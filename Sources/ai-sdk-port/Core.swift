@@ -299,6 +299,7 @@ public struct ObjectGenerationResult<Object: Sendable>: Sendable {
 
 public enum ObjectStreamPart<Object: Sendable>: Sendable {
     case textDelta(String)
+    case partialObject(JSONValue)
     case object(ObjectGenerationResult<Object>)
     case warning(AIWarning)
     case source(AISource)

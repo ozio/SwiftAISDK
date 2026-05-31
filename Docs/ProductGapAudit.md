@@ -60,9 +60,9 @@ Impact:
   dynamic tools, stream-side tool execution, and provider-defined tool wrapping
   still need follow-up work.
 - Object generation exists for `Decodable` results, and `streamObject` can now
-  stream JSON text deltas before yielding a final decoded object. Partial object
-  updates, richer schema adapters, typed validation errors, and advanced output
-  strategies still need follow-up work.
+  stream JSON text deltas, best-effort partial JSON objects, and a final decoded
+  object. Typed partials, richer schema adapters, typed validation errors, and
+  advanced output strategies still need follow-up work.
 
 Recommendation:
 
@@ -158,22 +158,23 @@ where possible.
 
 Upstream has `generateObject`, `streamObject`, schema adapters, JSON repair, and
 object output strategies. Swift now has `AI.generateObject` for `Decodable`
-types and `AI.streamObject` for streaming text deltas into a final decoded
-object, backed by provider JSON response-format hints.
+types and `AI.streamObject` for streaming text deltas, partial `JSONValue`
+objects, and a final decoded object, backed by provider JSON response-format
+hints.
 
 Impact:
 
-- Basic object generation and final-object streaming are available at product
-  level.
-- Partial object streaming, array/enum/no-schema output strategies, schema
+- Basic object generation, partial JSON object streaming, and final-object
+  streaming are available at product level.
+- Typed partial object streams, array/enum/no-schema output strategies, schema
   adapter protocols, and typed validation error surfaces are still unavailable.
 - Provider-specific schema support has first end-to-end coverage, but needs
   broader provider passes.
 
 Recommendation:
 
-Extend object generation beyond the first Swift-native slices: add partial
-object streaming, schema adapter protocols, richer validation errors,
+Extend object generation beyond the first Swift-native slices: add typed partial
+object streams, schema adapter protocols, richer validation errors,
 array/enum/no-schema strategies, and JSON instruction injection for providers
 without native response formats.
 
@@ -231,10 +232,10 @@ Keep turning documentation into executable product evidence:
 
 5. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
-   schema hints and repair callbacks. First `AI.streamObject` slice is in place
-   for text deltas plus final `Decodable` output. Next passes should add partial
-   object updates, schema adapter protocols, richer validation errors, and
-   array/enum/no-schema strategies.
+   schema hints and repair callbacks. `AI.streamObject` now emits text deltas,
+   best-effort partial `JSONValue` objects, and final `Decodable` output. Next
+   passes should add typed partials, schema adapter protocols, richer validation
+   errors, and array/enum/no-schema strategies.
 
 6. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first

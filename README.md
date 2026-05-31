@@ -103,7 +103,8 @@ print(result.object.title)
 ```
 
 `AI.streamObject` is the streaming counterpart for `Decodable` output. It emits
-text deltas while the model streams JSON, then yields the final decoded object:
+text deltas and best-effort `JSONValue` partial objects while the model streams
+JSON, then yields the final decoded object:
 
 ```swift
 for try await part in AI.streamObject(
@@ -111,6 +112,9 @@ for try await part in AI.streamObject(
     prompt: "Stream a compact summary.",
     as: Summary.self
 ) {
+    if case let .partialObject(partial) = part {
+        print(partial)
+    }
     if case let .object(result) = part {
         print(result.object.title)
     }

@@ -130,6 +130,7 @@ import Testing
     var object: ObjectGenerationResult<FacadeObjectAnswer>?
     var finish: (reason: String?, usage: TokenUsage?)?
     var warnings: [AIWarning] = []
+    var partials: [JSONValue] = []
     for try await part in AI.streamObject(
         model: model,
         prompt: "Stream JSON.",
@@ -142,6 +143,8 @@ import Testing
             text += delta
         case let .warning(warning):
             warnings.append(warning)
+        case let .partialObject(partial):
+            partials.append(partial)
         case let .object(result):
             object = result
         case let .finish(reason, usage):
@@ -153,6 +156,10 @@ import Testing
 
     #expect(text == #"{"value":"streamed","count":3}"#)
     #expect(warnings == [warning])
+    #expect(partials == [
+        .object(["value": .string("strea")]),
+        .object(["value": .string("streamed"), "count": .number(3)])
+    ])
     #expect(object?.object == FacadeObjectAnswer(value: "streamed", count: 3))
     #expect(object?.text == #"{"value":"streamed","count":3}"#)
     #expect(object?.rawObject["count"]?.intValue == 3)
@@ -168,6 +175,43 @@ import Testing
     #expect(request.responseFormat == .json(schema: schema, name: "answer"))
     #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
     #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "answer")
+}
+
+@Test func aiStreamObjectEmitsBestEffortPartialObjects() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta("{"),
+            .textDelta(#""value":"partial str"#),
+            .textDelta(#"","count":42"#),
+            .textDelta("}"),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+
+    var partials: [JSONValue] = []
+    var object: ObjectGenerationResult<FacadeObjectAnswer>?
+    for try await part in AI.streamObject(
+        model: model,
+        prompt: "Stream partial JSON.",
+        as: FacadeObjectAnswer.self
+    ) {
+        switch part {
+        case let .partialObject(partial):
+            partials.append(partial)
+        case let .object(result):
+            object = result
+        default:
+            break
+        }
+    }
+
+    #expect(partials == [
+        .object([:]),
+        .object(["value": .string("partial str")]),
+        .object(["value": .string("partial str"), "count": .number(42)])
+    ])
+    #expect(object?.object == FacadeObjectAnswer(value: "partial str", count: 42))
 }
 
 @Test func aiStreamObjectCanRepairFinalText() async throws {
