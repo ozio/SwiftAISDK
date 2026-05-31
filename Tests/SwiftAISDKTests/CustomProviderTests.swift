@@ -2,6 +2,68 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func providerRegistryRoutesCombinedModelIDsToRegisteredProviders() throws {
+    let appProvider = customProvider(
+        providerID: "app",
+        languageModels: ["chat": CustomLanguageModel(modelID: "app-chat")],
+        embeddingModels: ["embed": CustomEmbeddingModel(modelID: "app-embed")],
+        imageModels: ["image": CustomImageModel(modelID: "app-image")],
+        transcriptionModels: ["transcribe": CustomTranscriptionModel(modelID: "app-transcribe")],
+        speechModels: ["speech": CustomSpeechModel(modelID: "app-speech")],
+        videoModels: ["video": CustomVideoModel(modelID: "app-video")],
+        rerankingModels: ["rank": CustomRerankingModel(modelID: "app-rank")]
+    )
+    let registry = createProviderRegistry(["app": appProvider])
+
+    #expect(registry.providerID == "provider-registry")
+    #expect(registry.supportedCapabilities == customProviderModelCapabilities)
+    #expect((try registry.languageModel("app:chat") as? CustomLanguageModel)?.modelID == "app-chat")
+    #expect((try registry.embeddingModel("app:embed") as? CustomEmbeddingModel)?.modelID == "app-embed")
+    #expect((try registry.imageModel("app:image") as? CustomImageModel)?.modelID == "app-image")
+    #expect((try registry.transcriptionModel("app:transcribe") as? CustomTranscriptionModel)?.modelID == "app-transcribe")
+    #expect((try registry.speechModel("app:speech") as? CustomSpeechModel)?.modelID == "app-speech")
+    #expect((try registry.videoModel("app:video") as? CustomVideoModel)?.modelID == "app-video")
+    #expect((try registry.rerankingModel("app:rank") as? CustomRerankingModel)?.modelID == "app-rank")
+}
+
+@Test func providerRegistrySupportsCustomSeparatorAndFactoryAlias() throws {
+    let appProvider = customProvider(languageModels: ["chat:v1": CustomLanguageModel(modelID: "nested-id")])
+    let registry = AIProviders.providerRegistry(["app": appProvider], separator: "/")
+
+    #expect((try registry.languageModel("app/chat:v1") as? CustomLanguageModel)?.modelID == "nested-id")
+}
+
+@Test func providerRegistryRoutesFilesAndSkillsByProviderID() async throws {
+    let appProvider = customProvider(
+        files: CustomFileClient(providerID: "app.files"),
+        skills: CustomSkillsClient(providerID: "app.skills")
+    )
+    let registry = experimentalCreateProviderRegistry(["app": appProvider])
+
+    let file = try await AI.uploadFile(client: try registry.files("app"), request: FileUploadRequest(data: Data("file".utf8), mediaType: "text/plain"))
+    let skill = try await AI.uploadSkill(client: try registry.skills("app"), request: SkillUploadRequest(files: [SkillUploadFile(path: "skill.md", data: Data("skill".utf8))]))
+
+    #expect(file.providerReference["file"] == "custom-file")
+    #expect(skill.providerReference["skill"] == "custom-skill")
+}
+
+@Test func providerRegistryReportsInvalidIDsAndMissingProviders() throws {
+    let registry = createProviderRegistry(["app": RegistryLanguageOnlyProvider()])
+
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "chat", modelType: "languageModel", separator: ":")) {
+        _ = try registry.languageModel("chat")
+    }
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "languageModel", availableProviders: ["app"])) {
+        _ = try registry.languageModel("missing:chat")
+    }
+    #expect(throws: AIProviderRegistryError.unsupportedFiles(providerID: "app")) {
+        _ = try registry.files("app")
+    }
+    #expect(throws: AIProviderRegistryError.unsupportedSkills(providerID: "app")) {
+        _ = try registry.skills("app")
+    }
+}
+
 @Test func customProviderReturnsConfiguredModelsAndClients() async throws {
     let language = CustomLanguageModel(modelID: "local-language")
     let embedding = CustomEmbeddingModel(modelID: "local-embedding")
@@ -180,6 +242,39 @@ private final class CustomFallbackProvider: AIFileProvider, AISkillsProvider, @u
     func skills() throws -> any AISkillsClient {
         guard let skillsClient else { throw AIError.invalidArgument(argument: "skills", message: "fallback has no skills client.") }
         return skillsClient
+    }
+}
+
+private final class RegistryLanguageOnlyProvider: AIProvider, @unchecked Sendable {
+    let providerID = "registry-language-only"
+    let supportedCapabilities: Set<ModelCapability> = [.language]
+
+    func languageModel(_ modelID: String) throws -> any LanguageModel {
+        CustomLanguageModel(modelID: modelID)
+    }
+
+    func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .embedding, modelID: modelID)
+    }
+
+    func imageModel(_ modelID: String) throws -> any ImageModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .image, modelID: modelID)
+    }
+
+    func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .transcription, modelID: modelID)
+    }
+
+    func speechModel(_ modelID: String) throws -> any SpeechModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .speech, modelID: modelID)
+    }
+
+    func videoModel(_ modelID: String) throws -> any VideoModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .video, modelID: modelID)
+    }
+
+    func rerankingModel(_ modelID: String) throws -> any RerankingModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
     }
 }
 

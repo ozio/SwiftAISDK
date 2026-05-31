@@ -1,5 +1,131 @@
 import Foundation
 
+public enum AIProviderRegistryError: Error, Equatable, CustomStringConvertible, Sendable {
+    case invalidModelID(modelID: String, modelType: String, separator: String)
+    case noSuchProvider(providerID: String, modelType: String, availableProviders: [String])
+    case unsupportedFiles(providerID: String)
+    case unsupportedSkills(providerID: String)
+
+    public var description: String {
+        switch self {
+        case let .invalidModelID(modelID, modelType, separator):
+            return "Invalid \(modelType) id for registry: \(modelID) (must be in the format \"providerId\(separator)modelId\")."
+        case let .noSuchProvider(providerID, modelType, availableProviders):
+            let available = availableProviders.sorted().joined(separator: ", ")
+            return "No provider '\(providerID)' for \(modelType). Available providers: \(available)."
+        case let .unsupportedFiles(providerID):
+            return "The provider '\(providerID)' does not support file uploads. Make sure it conforms to AIFileProvider."
+        case let .unsupportedSkills(providerID):
+            return "The provider '\(providerID)' does not support skills. Make sure it conforms to AISkillsProvider."
+        }
+    }
+}
+
+public final class AIProviderRegistry: AIProvider, @unchecked Sendable {
+    public let providerID: String
+    public let supportedCapabilities: Set<ModelCapability>
+
+    private let providers: [String: any AIProvider]
+    private let separator: String
+
+    public init(
+        providers: [String: any AIProvider],
+        separator: String = ":",
+        providerID: String = "provider-registry"
+    ) {
+        self.providers = providers
+        self.separator = separator
+        self.providerID = providerID
+        self.supportedCapabilities = providers.values.reduce(into: Set<ModelCapability>()) { result, provider in
+            result.formUnion(provider.supportedCapabilities)
+        }
+    }
+
+    public func languageModel(_ modelID: String) throws -> any LanguageModel {
+        let (providerID, routedModelID) = try split(modelID, modelType: "languageModel")
+        return try provider(providerID, modelType: "languageModel").languageModel(routedModelID)
+    }
+
+    public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
+        let (providerID, routedModelID) = try split(modelID, modelType: "embeddingModel")
+        return try provider(providerID, modelType: "embeddingModel").embeddingModel(routedModelID)
+    }
+
+    public func imageModel(_ modelID: String) throws -> any ImageModel {
+        let (providerID, routedModelID) = try split(modelID, modelType: "imageModel")
+        return try provider(providerID, modelType: "imageModel").imageModel(routedModelID)
+    }
+
+    public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
+        let (providerID, routedModelID) = try split(modelID, modelType: "transcriptionModel")
+        return try provider(providerID, modelType: "transcriptionModel").transcriptionModel(routedModelID)
+    }
+
+    public func speechModel(_ modelID: String) throws -> any SpeechModel {
+        let (providerID, routedModelID) = try split(modelID, modelType: "speechModel")
+        return try provider(providerID, modelType: "speechModel").speechModel(routedModelID)
+    }
+
+    public func videoModel(_ modelID: String) throws -> any VideoModel {
+        let (providerID, routedModelID) = try split(modelID, modelType: "videoModel")
+        return try provider(providerID, modelType: "videoModel").videoModel(routedModelID)
+    }
+
+    public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
+        let (providerID, routedModelID) = try split(modelID, modelType: "rerankingModel")
+        return try provider(providerID, modelType: "rerankingModel").rerankingModel(routedModelID)
+    }
+
+    public func files(_ providerID: String) throws -> any AIFileClient {
+        guard let provider = try provider(providerID, modelType: "files") as? any AIFileProvider else {
+            throw AIProviderRegistryError.unsupportedFiles(providerID: providerID)
+        }
+        return try provider.files()
+    }
+
+    public func skills(_ providerID: String) throws -> any AISkillsClient {
+        guard let provider = try provider(providerID, modelType: "skills") as? any AISkillsProvider else {
+            throw AIProviderRegistryError.unsupportedSkills(providerID: providerID)
+        }
+        return try provider.skills()
+    }
+
+    private func provider(_ providerID: String, modelType: String) throws -> any AIProvider {
+        guard let provider = providers[providerID] else {
+            throw AIProviderRegistryError.noSuchProvider(
+                providerID: providerID,
+                modelType: modelType,
+                availableProviders: Array(providers.keys)
+            )
+        }
+        return provider
+    }
+
+    private func split(_ modelID: String, modelType: String) throws -> (providerID: String, modelID: String) {
+        guard let range = modelID.range(of: separator) else {
+            throw AIProviderRegistryError.invalidModelID(modelID: modelID, modelType: modelType, separator: separator)
+        }
+        return (
+            providerID: String(modelID[..<range.lowerBound]),
+            modelID: String(modelID[range.upperBound...])
+        )
+    }
+}
+
+public func createProviderRegistry(
+    _ providers: [String: any AIProvider],
+    separator: String = ":"
+) -> AIProviderRegistry {
+    AIProviderRegistry(providers: providers, separator: separator)
+}
+
+public func experimentalCreateProviderRegistry(
+    _ providers: [String: any AIProvider],
+    separator: String = ":"
+) -> AIProviderRegistry {
+    createProviderRegistry(providers, separator: separator)
+}
+
 public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecked Sendable {
     public let providerID: String
     public let supportedCapabilities: Set<ModelCapability>
@@ -197,6 +323,20 @@ extension AIProviders {
             skills: skills,
             fallbackProvider: fallbackProvider
         )
+    }
+
+    public static func providerRegistry(
+        _ providers: [String: any AIProvider],
+        separator: String = ":"
+    ) -> AIProviderRegistry {
+        createProviderRegistry(providers, separator: separator)
+    }
+
+    public static func experimentalCreateProviderRegistry(
+        _ providers: [String: any AIProvider],
+        separator: String = ":"
+    ) -> AIProviderRegistry {
+        createProviderRegistry(providers, separator: separator)
     }
 }
 

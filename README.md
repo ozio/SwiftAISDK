@@ -290,6 +290,18 @@ let fast = try appProvider.languageModel("fast")
 let fallback = try appProvider.languageModel("anthropic/claude-sonnet-4")
 ```
 
+Use `createProviderRegistry(...)` when you want upstream-style combined IDs:
+
+```swift
+let registry = createProviderRegistry([
+    "openai": try AIProviders.openAI(),
+    "anthropic": try AIProviders.anthropic()
+])
+
+let chat = try registry.languageModel("openai:gpt-4.1-mini")
+let claude = try registry.languageModel("anthropic:claude-sonnet-4-20250514")
+```
+
 Use `AIProviderCapabilities.all` for a machine-readable provider/capability
 matrix, or read [Docs/ProviderCapabilityMatrix.md](Docs/ProviderCapabilityMatrix.md)
 for the human table. Optional live smoke tests are available with real keys:
