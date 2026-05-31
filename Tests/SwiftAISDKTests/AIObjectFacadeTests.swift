@@ -3,6 +3,7 @@ import Testing
 @testable import SwiftAISDK
 
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
+    let recorder = ObjectTelemetryRecorder()
     let schema = objectFacadeAnswerSchema()
     let warning = AIWarning(type: "unsupported", feature: "seed")
     let responseMetadata = AIResponseMetadata(id: "stream-resp")
@@ -27,7 +28,8 @@ import Testing
         prompt: "Stream JSON.",
         as: ObjectFacadeAnswer.self,
         schema: schema,
-        schemaName: "answer"
+        schemaName: "answer",
+        telemetry: AITelemetryOptions(integrations: [recorder])
     ) {
         switch part {
         case let .textDelta(delta):
@@ -44,8 +46,18 @@ import Testing
             break
         }
     }
+    let events = await recorder.events()
 
     #expect(text == #"{"value":"streamed","count":3}"#)
+    #expect(events.map(\.kind) == [.start, .end])
+    #expect(events.allSatisfy { $0.operationID == "ai.streamObject" })
+    #expect(events[0].input?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Stream JSON.")
+    #expect(events[1].output?["text"]?.stringValue == #"{"value":"streamed","count":3}"#)
+    #expect(events[1].output?["rawObject"]?["count"]?.intValue == 3)
+    #expect(events[1].output?["partialObjectCount"]?.intValue == 2)
+    #expect(events[1].usage?.totalTokens == 9)
+    #expect(events[1].warnings == [warning])
+    #expect(events[1].responseMetadata == responseMetadata)
     #expect(warnings == [warning])
     #expect(partials == [
         .object(["value": .string("strea")]),
@@ -399,6 +411,18 @@ private func objectFacadeAnswerSchema(
 private struct ObjectFacadeAnswer: Codable, Equatable, Sendable {
     var value: String
     var count: Int
+}
+
+private actor ObjectTelemetryRecorder: AITelemetryIntegration {
+    private var recordedEvents: [AITelemetryEvent] = []
+
+    func record(_ event: AITelemetryEvent) {
+        recordedEvents.append(event)
+    }
+
+    func events() -> [AITelemetryEvent] {
+        recordedEvents
+    }
 }
 
 private final class ObjectFacadeMockLanguageModel: LanguageModel, @unchecked Sendable {

@@ -558,15 +558,31 @@ public enum AI {
     public static func streamText(
         model: any LanguageModel,
         request: LanguageModelRequest,
-        timeoutNanoseconds: UInt64? = nil
+        timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
-            return failingPartStream(AIError.invalidArgument(
+            let stream: AsyncThrowingStream<LanguageStreamPart, Error> = failingPartStream(AIError.invalidArgument(
                 argument: "timeoutNanoseconds",
                 message: "timeoutNanoseconds must be greater than zero."
             ))
+            return streamTextWithTelemetry(
+                stream,
+                operationID: "ai.streamText",
+                providerID: model.providerID,
+                modelID: model.modelID,
+                input: languageRequestTelemetryInput(request),
+                telemetry: telemetry
+            )
         }
-        return streamWithTimeout(model.stream(request), timeoutNanoseconds: timeoutNanoseconds)
+        return streamTextWithTelemetry(
+            streamWithTimeout(model.stream(request), timeoutNanoseconds: timeoutNanoseconds),
+            operationID: "ai.streamText",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: languageRequestTelemetryInput(request),
+            telemetry: telemetry
+        )
     }
 
     public static func streamText(
@@ -577,7 +593,8 @@ public enum AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
-        timeoutNanoseconds: UInt64? = nil
+        timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let stream = AsyncThrowingStream<LanguageStreamPart, Error> { continuation in
             let task = Task {
@@ -683,7 +700,14 @@ public enum AI {
                 task.cancel()
             }
         }
-        return streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds)
+        return streamTextWithTelemetry(
+            streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds),
+            operationID: "ai.streamText",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: languageRequestTelemetryInput(request),
+            telemetry: telemetry
+        )
     }
 
     public static func streamText(
@@ -710,7 +734,8 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
-        timeoutNanoseconds: UInt64? = nil
+        timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let request = LanguageModelRequest(
             messages: [.user(prompt)],
@@ -733,7 +758,7 @@ public enum AI {
         )
 
         if executableTools.isEmpty && prepareStep == nil {
-            return streamText(model: model, request: request, timeoutNanoseconds: timeoutNanoseconds)
+            return streamText(model: model, request: request, timeoutNanoseconds: timeoutNanoseconds, telemetry: telemetry)
         }
 
         return streamText(
@@ -744,7 +769,8 @@ public enum AI {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
-            timeoutNanoseconds: timeoutNanoseconds
+            timeoutNanoseconds: timeoutNanoseconds,
+            telemetry: telemetry
         )
     }
 
@@ -756,6 +782,7 @@ public enum AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
         var objectRequest = request
@@ -873,7 +900,14 @@ public enum AI {
                 task.cancel()
             }
         }
-        return streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds)
+        return objectStreamWithTelemetry(
+            streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds),
+            operationID: "ai.streamObject",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: languageRequestTelemetryInput(streamRequest),
+            telemetry: telemetry
+        )
     }
 
     public static func streamObject<Object: Decodable & Sendable>(
@@ -896,6 +930,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
         streamObject(
@@ -921,6 +956,7 @@ public enum AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             timeoutNanoseconds: timeoutNanoseconds,
+            telemetry: telemetry,
             repairText: repairText
         )
     }
@@ -1169,11 +1205,14 @@ private struct LanguageStreamToolStep {
     var toolCalls: [AIToolCall] = []
     var approvalRequests: [AIToolApprovalRequest] = []
     var approvalResponses: [AIToolApprovalResponse] = []
+    var warnings: [AIWarning] = []
     var providerMetadata: [String: JSONValue] = [:]
     var responseMetadata = AIResponseMetadata()
 
     mutating func record(_ part: LanguageStreamPart) {
         switch part {
+        case let .streamStart(partWarnings):
+            warnings.append(contentsOf: partWarnings)
         case let .textDelta(delta):
             text += delta
         case let .textDeltaPart(_, delta, _):
@@ -1360,6 +1399,189 @@ private func withTelemetry<Output: Sendable>(
             errorDescription: String(describing: error)
         ))
         throw error
+    }
+}
+
+private func streamTextWithTelemetry(
+    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    operationID: String,
+    providerID: String,
+    modelID: String?,
+    input: JSONValue?,
+    telemetry: AITelemetryOptions?
+) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+    let dispatcher = AITelemetryDispatcher(options: telemetry)
+    guard dispatcher.isEnabled else { return stream }
+
+    return AsyncThrowingStream { continuation in
+        let task = Task {
+            let callID = UUID().uuidString
+            let started = DispatchTime.now().uptimeNanoseconds
+            var step = LanguageStreamToolStep()
+            await dispatcher.record(telemetryEvent(
+                kind: .start,
+                callID: callID,
+                operationID: operationID,
+                providerID: providerID,
+                modelID: modelID,
+                options: telemetry,
+                input: input
+            ))
+
+            do {
+                for try await part in stream {
+                    try Task.checkCancellation()
+                    step.record(part)
+                    continuation.yield(part)
+                }
+                let result = TextGenerationResult(
+                    text: step.text,
+                    reasoning: step.reasoning,
+                    finishReason: step.finishReason,
+                    usage: step.usage,
+                    toolCalls: step.toolCalls,
+                    toolApprovalRequests: step.approvalRequests,
+                    toolApprovalResponses: step.approvalResponses,
+                    providerMetadata: step.providerMetadata,
+                    rawValue: .object([:]),
+                    warnings: step.warnings,
+                    responseMetadata: step.responseMetadata
+                )
+                await dispatcher.record(telemetryEvent(
+                    kind: .end,
+                    callID: callID,
+                    operationID: operationID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    options: telemetry,
+                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                    output: textGenerationTelemetryOutput(result),
+                    usage: result.usage,
+                    warnings: result.warnings,
+                    providerMetadata: result.providerMetadata,
+                    responseMetadata: result.responseMetadata
+                ))
+                continuation.finish()
+            } catch {
+                await dispatcher.record(telemetryEvent(
+                    kind: .error,
+                    callID: callID,
+                    operationID: operationID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    options: telemetry,
+                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                    errorDescription: String(describing: error)
+                ))
+                continuation.finish(throwing: error)
+            }
+        }
+
+        continuation.onTermination = { _ in
+            task.cancel()
+        }
+    }
+}
+
+private func objectStreamWithTelemetry<Object: Sendable>(
+    _ stream: AsyncThrowingStream<ObjectStreamPart<Object>, Error>,
+    operationID: String,
+    providerID: String,
+    modelID: String?,
+    input: JSONValue?,
+    telemetry: AITelemetryOptions?
+) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
+    let dispatcher = AITelemetryDispatcher(options: telemetry)
+    guard dispatcher.isEnabled else { return stream }
+
+    return AsyncThrowingStream { continuation in
+        let task = Task {
+            let callID = UUID().uuidString
+            let started = DispatchTime.now().uptimeNanoseconds
+            var text = ""
+            var partialCount = 0
+            var objectResult: ObjectGenerationResult<Object>?
+            var finishReason: String?
+            var usage: TokenUsage?
+            var warnings: [AIWarning] = []
+            var providerMetadata: [String: JSONValue] = [:]
+            var responseMetadata = AIResponseMetadata()
+            await dispatcher.record(telemetryEvent(
+                kind: .start,
+                callID: callID,
+                operationID: operationID,
+                providerID: providerID,
+                modelID: modelID,
+                options: telemetry,
+                input: input
+            ))
+
+            do {
+                for try await part in stream {
+                    try Task.checkCancellation()
+                    switch part {
+                    case let .textDelta(delta):
+                        text += delta
+                    case .partialObject:
+                        partialCount += 1
+                    case let .object(result):
+                        objectResult = result
+                        warnings = result.warnings
+                        providerMetadata = result.providerMetadata
+                        responseMetadata = result.responseMetadata
+                    case let .warning(warning):
+                        warnings.append(warning)
+                    case let .metadata(metadata):
+                        providerMetadata.merge(metadata) { _, new in new }
+                    case let .responseMetadata(metadata):
+                        responseMetadata = metadata
+                    case let .finish(reason, partUsage):
+                        finishReason = reason
+                        usage = partUsage
+                    default:
+                        break
+                    }
+                    continuation.yield(part)
+                }
+                let output = objectStreamTelemetryOutput(
+                    text: objectResult?.text ?? text,
+                    rawObject: objectResult?.rawObject,
+                    partialCount: partialCount,
+                    finishReason: objectResult?.finishReason ?? finishReason
+                )
+                await dispatcher.record(telemetryEvent(
+                    kind: .end,
+                    callID: callID,
+                    operationID: operationID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    options: telemetry,
+                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                    output: output,
+                    usage: objectResult?.usage ?? usage,
+                    warnings: warnings,
+                    providerMetadata: providerMetadata,
+                    responseMetadata: responseMetadata
+                ))
+                continuation.finish()
+            } catch {
+                await dispatcher.record(telemetryEvent(
+                    kind: .error,
+                    callID: callID,
+                    operationID: operationID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    options: telemetry,
+                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                    errorDescription: String(describing: error)
+                ))
+                continuation.finish(throwing: error)
+            }
+        }
+
+        continuation.onTermination = { _ in
+            task.cancel()
+        }
     }
 }
 
@@ -1801,6 +2023,20 @@ private func textGenerationTelemetryOutput(_ result: TextGenerationResult) -> JS
         "toolResultCount": .number(Double(result.toolResults.count)),
         "sourceCount": .number(Double(result.sources.count)),
         "rawValue": result.rawValue
+    ])
+}
+
+private func objectStreamTelemetryOutput(
+    text: String,
+    rawObject: JSONValue?,
+    partialCount: Int,
+    finishReason: String?
+) -> JSONValue {
+    .object([
+        "text": .string(text),
+        "rawObject": rawObject,
+        "partialObjectCount": .number(Double(partialCount)),
+        "finishReason": finishReason.map(JSONValue.string)
     ])
 }
 

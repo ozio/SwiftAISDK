@@ -242,38 +242,63 @@ import Testing
 }
 
 @Test func aiStreamTextForwardsRequestToModel() async throws {
+    let recorder = TelemetryRecorder()
+    let warning = AIWarning(type: "unsupported", feature: "seed")
+    let responseMetadata = AIResponseMetadata(id: "stream-resp")
     let parts: [LanguageStreamPart] = [
-        .streamStart(warnings: []),
+        .streamStart(warnings: [warning]),
         .textDelta("hi"),
+        .metadata(["mock": .object(["stream": .bool(true)])]),
+        .responseMetadata(responseMetadata),
         .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
     ]
     let model = MockLanguageModel(result: TextGenerationResult(text: "", rawValue: .object([:])), streamParts: parts)
 
     var streamed: [LanguageStreamPart] = []
-    for try await part in AI.streamText(model: model, prompt: "Stream", includeRawChunks: true) {
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Stream",
+        includeRawChunks: true,
+        telemetry: AITelemetryOptions(integrations: [recorder])
+    ) {
         streamed.append(part)
     }
+    let events = await recorder.events()
 
     #expect(streamed == parts)
+    #expect(events.map(\.kind) == [.start, .end])
+    #expect(events.allSatisfy { $0.operationID == "ai.streamText" })
+    #expect(events[0].input?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Stream")
+    #expect(events[1].output?["text"]?.stringValue == "hi")
+    #expect(events[1].usage == TokenUsage(totalTokens: 1))
+    #expect(events[1].warnings == [warning])
+    #expect(events[1].providerMetadata["mock"]?["stream"]?.boolValue == true)
+    #expect(events[1].responseMetadata == responseMetadata)
     #expect(model.streamRequests.count == 1)
     #expect(model.streamRequests.first?.messages == [.user("Stream")])
     #expect(model.streamRequests.first?.includeRawChunks == true)
 }
 
 @Test func aiStreamTextTimesOut() async throws {
+    let recorder = TelemetryRecorder()
     let model = SlowStreamingLanguageModel(delayNanoseconds: 80_000_000)
 
     do {
         for try await _ in AI.streamText(
             model: model,
             prompt: "Too slow",
-            timeoutNanoseconds: 1_000_000
+            timeoutNanoseconds: 1_000_000,
+            telemetry: AITelemetryOptions(integrations: [recorder])
         ) {}
         Issue.record("Expected stream timeout.")
     } catch let error as AIError {
         #expect(error == .timeout(durationNanoseconds: 1_000_000))
     }
+    let events = await recorder.events()
 
+    #expect(events.map(\.kind) == [.start, .error])
+    #expect(events[1].operationID == "ai.streamText")
+    #expect(events[1].errorDescription?.contains("timed out") == true)
     #expect(model.streamRequests.count == 1)
 }
 

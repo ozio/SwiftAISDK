@@ -57,10 +57,10 @@ Impact:
   timeout on `AIRetryPolicy`, and direct stream timeouts on `streamText` and
   `streamObject`. HTTP `Retry-After` headers are now preserved from provider
   responses and honored by facade retries. A first Swift telemetry surface now
-  emits start, retry, end, and error events for non-streaming facade calls,
-  with per-call or globally registered integrations. Richer cancellation
-  controls, stream/tool-level telemetry, and warning logging still need
-  follow-up work.
+  emits start, retry, end, and error events for non-streaming facade calls plus
+  start, end, and error events for `streamText` and `streamObject`, with
+  per-call or globally registered integrations. Richer cancellation controls,
+  step/tool-level telemetry, and warning logging still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -291,11 +291,12 @@ Progress:
 4. **Facade pass 3: telemetry.**
    First telemetry slice is in place with `AITelemetryOptions`,
    `AITelemetryIntegration`, `AITelemetry.register(...)`, and lifecycle events
-   for non-streaming facade operations. Events carry call IDs, operation IDs,
+   for non-streaming facade operations, plus start/end/error events for
+   `streamText` and `streamObject`. Events carry call IDs, operation IDs,
    provider/model IDs, retry attempts, timing, usage, warnings, metadata,
    response metadata, and input/output payloads gated by record flags. Next
-   passes should add stream telemetry, per-step/tool execution events, object
-   generation event names, and wrapper-style execute hooks.
+   passes should add per-step/tool execution events, object generation event
+   names, and wrapper-style execute hooks.
 
 5. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed

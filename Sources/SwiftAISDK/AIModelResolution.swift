@@ -130,13 +130,15 @@ public extension AI {
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: LanguageModelRequest,
-        timeoutNanoseconds: UInt64? = nil
+        timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
             return streamText(
                 model: try resolveLanguageModel(modelID, provider: provider),
                 request: request,
-                timeoutNanoseconds: timeoutNanoseconds
+                timeoutNanoseconds: timeoutNanoseconds,
+                telemetry: telemetry
             )
         } catch {
             return failingStream(error)
@@ -152,7 +154,8 @@ public extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
-        timeoutNanoseconds: UInt64? = nil
+        timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
             return streamText(
@@ -163,7 +166,8 @@ public extension AI {
                 stopWhen: stopWhen,
                 prepareStep: prepareStep,
                 toolApproval: toolApproval,
-                timeoutNanoseconds: timeoutNanoseconds
+                timeoutNanoseconds: timeoutNanoseconds,
+                telemetry: telemetry
             )
         } catch {
             return failingStream(error)
@@ -195,7 +199,8 @@ public extension AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
-        timeoutNanoseconds: UInt64? = nil
+        timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
             return streamText(
@@ -222,7 +227,8 @@ public extension AI {
                 providerOptions: providerOptions,
                 extraBody: extraBody,
                 headers: headers,
-                timeoutNanoseconds: timeoutNanoseconds
+                timeoutNanoseconds: timeoutNanoseconds,
+                telemetry: telemetry
             )
         } catch {
             return failingStream(error)
@@ -316,6 +322,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        telemetry: AITelemetryOptions? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
         do {
@@ -327,6 +334,7 @@ public extension AI {
                 schemaName: schemaName,
                 schemaDescription: schemaDescription,
                 timeoutNanoseconds: timeoutNanoseconds,
+                telemetry: telemetry,
                 repairText: repairText
             )
         } catch {
