@@ -285,6 +285,21 @@ struct ModelHTTPConfig: @unchecked Sendable {
         }
         return try response.jsonValue()
     }
+
+    func withProviderID(_ providerID: String) -> ModelHTTPConfig {
+        ModelHTTPConfig(
+            providerID: providerID,
+            baseURL: baseURL,
+            headers: headers,
+            transport: transport,
+            includeUsage: includeUsage,
+            queryParams: queryParams,
+            supportsStructuredOutputs: supportsStructuredOutputs,
+            maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            transformRequestBody: transformRequestBody,
+            url: url
+        )
+    }
 }
 
 private func openAICompatibleURL(_ string: String, queryParams: [String: String]) throws -> URL {
@@ -384,7 +399,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             modelID: modelID,
             providerID: providerID,
             stream: stream,
-            unwrapOpenAIProviderOptions: openAIBackedProviderIDs.contains(providerID),
+            unwrapOpenAIProviderOptions: isOpenAIBackedProvider(providerID),
             supportsStructuredOutputs: config.supportsStructuredOutputs
         )
         if stream, config.includeUsage {
@@ -431,7 +446,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             }
         }
         let extraBody = unwrapOpenAIProviderOptions
-            ? openAIProviderOptions(from: request.extraBody)
+            ? openAIProviderOptions(from: request.extraBody, providerID: providerID)
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         body.merge(openAICompatibleChatOptions(from: extraBody, supportsStructuredOutputs: supportsStructuredOutputs)) { _, new in new }
         return body
@@ -773,7 +788,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         if stream, config.includeUsage { body["stream_options"] = .object(["include_usage": .bool(true)]) }
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
-        let extraBody = openAIBackedProviderIDs.contains(providerID)
+        let extraBody = isOpenAIBackedProvider(providerID)
             ? openAICompletionProviderOptions(from: request.extraBody, providerID: providerID)
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
         body.merge(extraBody) { _, new in new }
@@ -872,7 +887,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
-        let extraBody = openAIBackedProviderIDs.contains(providerID)
+        let extraBody = isOpenAIBackedProvider(providerID)
             ? openAIResponsesProviderOptions(from: request.extraBody, providerID: providerID)
             : request.extraBody
         body.merge(openAIResponsesOptions(from: extraBody)) { _, new in new }
@@ -1365,14 +1380,33 @@ private func openAIResponsesFinishReason(status: String?, incompleteReason: Stri
     }
 }
 
-private let openAIBackedProviderIDs: Set<String> = ["openai", "azure"]
+private func isOpenAIBackedProvider(_ providerID: String) -> Bool {
+    providerID == "openai" || providerID.hasPrefix("openai.")
+        || providerID == "azure" || providerID.hasPrefix("azure.")
+}
 
-private func openAIProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
+private func openAIProviderOptions(from extraBody: [String: JSONValue], providerID: String = "openai") -> [String: JSONValue] {
     var output = extraBody
     if let nested = output.removeValue(forKey: "openai")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
+    if let root = openAIBackedProviderRoot(providerID), root != "openai", let nested = output.removeValue(forKey: root)?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    if providerID != "openai", providerID != openAIBackedProviderRoot(providerID), let nested = output.removeValue(forKey: providerID)?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     return output
+}
+
+private func openAIBackedProviderRoot(_ providerID: String) -> String? {
+    if providerID == "openai" || providerID.hasPrefix("openai.") {
+        return "openai"
+    }
+    if providerID == "azure" || providerID.hasPrefix("azure.") {
+        return "azure"
+    }
+    return nil
 }
 
 private func openAICompatibleProviderOptions(from extraBody: [String: JSONValue], providerID: String, includeCompatibilityNamespace: Bool) -> [String: JSONValue] {
@@ -1412,30 +1446,15 @@ private func openAICompatibleCamelCase(_ value: String) -> String {
 }
 
 private func openAICompletionProviderOptions(from extraBody: [String: JSONValue], providerID: String) -> [String: JSONValue] {
-    var output = extraBody
-    let openAIOptions = output.removeValue(forKey: "openai")?.objectValue
-    let providerOptions = output.removeValue(forKey: providerID)?.objectValue
-    if let openAIOptions {
-        output.merge(openAIOptions) { _, nested in nested }
-    }
-    if let providerOptions {
-        output.merge(providerOptions) { _, nested in nested }
-    }
-    return output
+    openAIProviderOptions(from: extraBody, providerID: providerID)
 }
 
 private func openAIResponsesProviderOptions(from extraBody: [String: JSONValue], providerID: String) -> [String: JSONValue] {
-    var output = extraBody
-    let openAIOptions = output.removeValue(forKey: "openai")?.objectValue
-    let providerOptions = output.removeValue(forKey: providerID)?.objectValue
-    if let nested = providerOptions ?? openAIOptions {
-        output.merge(nested) { _, nested in nested }
-    }
-    return output
+    openAIProviderOptions(from: extraBody, providerID: providerID)
 }
 
-private func openAIImageOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = openAIProviderOptions(from: extraBody)
+private func openAIImageOptions(from extraBody: [String: JSONValue], providerID: String = "openai") -> [String: JSONValue] {
+    var output = openAIProviderOptions(from: extraBody, providerID: providerID)
     openAIResponsesMoveKey("outputFormat", to: "output_format", in: &output)
     openAIResponsesMoveKey("outputCompression", to: "output_compression", in: &output)
     openAIResponsesMoveKey("inputFidelity", to: "input_fidelity", in: &output)
@@ -1455,8 +1474,8 @@ private func openAIImageMaxImagesPerCall(_ modelID: String) -> Int {
     }
 }
 
-private func openAITranscriptionOptions(from extraBody: [String: JSONValue], modelID: String) -> [String: JSONValue] {
-    var output = openAIProviderOptions(from: extraBody)
+private func openAITranscriptionOptions(from extraBody: [String: JSONValue], providerID: String = "openai", modelID: String) -> [String: JSONValue] {
+    var output = openAIProviderOptions(from: extraBody, providerID: providerID)
     let hadProviderOptions = !output.isEmpty
     openAIResponsesMoveKey("timestampGranularities", to: "timestamp_granularities", in: &output)
     openAIResponsesMoveKey("responseFormat", to: "response_format", in: &output)
@@ -1494,8 +1513,8 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             "input": .array(request.values)
         ]
         if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
-        let extraBody = openAIBackedProviderIDs.contains(providerID)
-            ? openAIProviderOptions(from: request.extraBody)
+        let extraBody = isOpenAIBackedProvider(providerID)
+            ? openAIProviderOptions(from: request.extraBody, providerID: providerID)
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         body.merge(extraBody) { _, new in new }
 
@@ -1517,7 +1536,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
     public let modelID: String
     private let config: ModelHTTPConfig
     private var maxImagesPerCall: Int {
-        openAIBackedProviderIDs.contains(providerID) ? openAIImageMaxImagesPerCall(modelID) : 10
+        isOpenAIBackedProvider(providerID) ? openAIImageMaxImagesPerCall(modelID) : 10
     }
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -1540,10 +1559,10 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         ]
         if let size = request.size { body["size"] = .string(size) }
         if let count = request.count { body["n"] = .number(Double(count)) }
-        body.merge(openAIBackedProviderIDs.contains(providerID) ? openAIImageOptions(from: request.extraBody) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)) { _, new in new }
-        if openAIBackedProviderIDs.contains(providerID), body["response_format"] == nil, !openAIImageHasDefaultResponseFormat(modelID) {
+        body.merge(isOpenAIBackedProvider(providerID) ? openAIImageOptions(from: request.extraBody, providerID: providerID) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)) { _, new in new }
+        if isOpenAIBackedProvider(providerID), body["response_format"] == nil, !openAIImageHasDefaultResponseFormat(modelID) {
             body["response_format"] = .string("b64_json")
-        } else if !openAIBackedProviderIDs.contains(providerID) {
+        } else if !isOpenAIBackedProvider(providerID) {
             body["response_format"] = .string("b64_json")
         }
 
@@ -1577,7 +1596,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             form.appendField(name: "size", value: size)
         }
 
-        let extraBody = openAIBackedProviderIDs.contains(providerID) ? openAIImageOptions(from: request.extraBody) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        let extraBody = isOpenAIBackedProvider(providerID) ? openAIImageOptions(from: request.extraBody, providerID: providerID) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
         for (key, value) in extraBody {
             if case let .array(items) = value {
                 for item in items {
@@ -1665,14 +1684,14 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
             "model": .string(modelID),
             "input": .string(request.text)
         ]
-        if openAIBackedProviderIDs.contains(providerID) {
+        if isOpenAIBackedProvider(providerID) {
             body["voice"] = .string(request.voice ?? "alloy")
             body["response_format"] = .string(request.format ?? "mp3")
         } else {
             if let voice = request.voice { body["voice"] = .string(voice) }
             if let format = request.format { body["response_format"] = .string(format) }
         }
-        let extraBody = openAIBackedProviderIDs.contains(providerID) ? openAIProviderOptions(from: request.extraBody) : request.extraBody
+        let extraBody = isOpenAIBackedProvider(providerID) ? openAIProviderOptions(from: request.extraBody, providerID: providerID) : request.extraBody
         body.merge(extraBody) { _, new in new }
 
         let response = try await config.transport.send(config.request(path: "/audio/speech", modelID: modelID, body: .object(body), headers: request.headers))
@@ -1707,7 +1726,7 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
         if let prompt = request.prompt {
             form.appendField(name: "prompt", value: prompt)
         }
-        let extraBody = openAIBackedProviderIDs.contains(providerID) ? openAITranscriptionOptions(from: request.extraBody, modelID: modelID) : request.extraBody
+        let extraBody = isOpenAIBackedProvider(providerID) ? openAITranscriptionOptions(from: request.extraBody, providerID: providerID, modelID: modelID) : request.extraBody
         for (key, value) in extraBody {
             if case let .array(items) = value {
                 for item in items {

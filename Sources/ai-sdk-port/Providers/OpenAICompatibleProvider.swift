@@ -34,12 +34,24 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         self.config = config
     }
 
+    private func modelConfig(surface: String) -> ModelHTTPConfig {
+        switch providerID {
+        case "openai":
+            return config.withProviderID("openai.\(surface)")
+        case "azure":
+            let suffix = surface == "embedding" ? "embeddings" : surface
+            return config.withProviderID("azure.\(suffix)")
+        default:
+            return config
+        }
+    }
+
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
         guard supportedCapabilities.contains(.language) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .language, modelID: modelID)
         }
         if providerID == "openai" {
-            return OpenAICompatibleResponsesModel(modelID: modelID, config: config)
+            return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
         }
         if providerID == "xai" {
             return OpenAICompatibleResponsesModel(modelID: modelID, config: config)
@@ -93,7 +105,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
                 )
             )
         }
-        return OpenAICompatibleChatModel(modelID: modelID, config: config)
+        return OpenAICompatibleChatModel(modelID: modelID, config: modelConfig(surface: "chat"))
     }
 
     public func chatModel(_ modelID: String) throws -> any LanguageModel {
@@ -106,7 +118,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         default:
             break
         }
-        return OpenAICompatibleChatModel(modelID: modelID, config: config)
+        return OpenAICompatibleChatModel(modelID: modelID, config: modelConfig(surface: "chat"))
     }
 
     public func chat(_ modelID: String) throws -> any LanguageModel {
@@ -117,7 +129,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         guard supportedCapabilities.contains(.completion) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .completion, modelID: modelID)
         }
-        return OpenAICompatibleCompletionModel(modelID: modelID, config: config)
+        return OpenAICompatibleCompletionModel(modelID: modelID, config: modelConfig(surface: "completion"))
     }
 
     public func completion(_ modelID: String) throws -> any LanguageModel {
@@ -128,7 +140,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         guard supportedCapabilities.contains(.language) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .language, modelID: modelID)
         }
-        return OpenAICompatibleResponsesModel(modelID: modelID, config: config)
+        return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
     }
 
     public func responses(_ modelID: String) throws -> any LanguageModel {
@@ -154,7 +166,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "voyage" {
             return VoyageEmbeddingModel(modelID: modelID, config: config)
         }
-        return OpenAICompatibleEmbeddingModel(modelID: modelID, config: config)
+        return OpenAICompatibleEmbeddingModel(modelID: modelID, config: modelConfig(surface: "embedding"))
     }
 
     public func imageModel(_ modelID: String) throws -> any ImageModel {
@@ -191,7 +203,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "quiverai" {
             return QuiverAIImageModel(modelID: modelID, config: config)
         }
-        return OpenAICompatibleImageModel(modelID: modelID, config: config)
+        return OpenAICompatibleImageModel(modelID: modelID, config: modelConfig(surface: "image"))
     }
 
     public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
@@ -219,7 +231,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "elevenlabs" {
             return ElevenLabsTranscriptionModel(modelID: modelID, config: config)
         }
-        return OpenAICompatibleTranscriptionModel(modelID: modelID, config: config)
+        return OpenAICompatibleTranscriptionModel(modelID: modelID, config: modelConfig(surface: "transcription"))
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {
@@ -241,7 +253,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "elevenlabs" {
             return ElevenLabsSpeechModel(modelID: modelID, config: config)
         }
-        return OpenAICompatibleSpeechModel(modelID: modelID, config: config)
+        return OpenAICompatibleSpeechModel(modelID: modelID, config: modelConfig(surface: "speech"))
     }
 
     public func videoModel(_ modelID: String) throws -> any VideoModel {
@@ -496,7 +508,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel { try provider.responsesModel(modelID) }
-    public func chatModel(_ modelID: String) throws -> any LanguageModel { try provider.languageModel(modelID) }
+    public func chatModel(_ modelID: String) throws -> any LanguageModel { try provider.chatModel(modelID) }
     public func chat(_ modelID: String) throws -> any LanguageModel { try chatModel(modelID) }
     public func completionModel(_ modelID: String) throws -> any LanguageModel { try provider.completionModel(modelID) }
     public func completion(_ modelID: String) throws -> any LanguageModel { try completionModel(modelID) }

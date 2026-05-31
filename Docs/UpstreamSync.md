@@ -271,6 +271,7 @@ the touched surface into the newer naming pattern.
 | Provider-defined tools | Tool builders live near their provider: `OpenAITools`, `AzureOpenAITools`, `AnthropicTools`, `GoogleTools`, `GoogleVertexTools`, `GoogleVertexAnthropicTools`, `GatewayTools`, `GroqTools`, `XAITools`. |
 | Tool headers and beta flags | Match upstream tests. Anthropic-on-Bedrock uses body `anthropic_beta`; regular Anthropic uses headers. |
 | OpenAI-compatible providers | Share the compatible model implementation, but keep provider-specific defaults, path quirks, headers, tools, and provider IDs explicit. |
+| OpenAI/Azure provider IDs | Root providers stay `openai` and `azure`, but concrete models use upstream surface IDs: `openai.responses`, `openai.chat`, `openai.completion`, `openai.embedding`, `openai.image`, `openai.transcription`, `openai.speech`, `openai.files`, `openai.skills`; Azure uses the same pattern except embeddings is `azure.embeddings`. |
 | Provider options | Preserve upstream namespaces and avoid leaking provider-specific options into unrelated providers. |
 | Auth and provider settings | Mirror upstream env var names, base URL fallbacks, and header strategy. OpenAI settings include `OPENAI_BASE_URL`, organization, and project headers. |
 | AWS providers | Keep SigV4 service name, region, path encoding, and EventStream parsing covered by tests. |
@@ -300,9 +301,8 @@ the touched surface into the newer naming pattern.
 
 - Continue comparing upstream provider test suites for small model-specific
   request flags, provider IDs, warnings, and error normalization.
-- Keep OpenAI and Azure surface IDs aligned with upstream capability-specific
-  IDs (`.chat`, `.responses`, `.completion`, `.embedding`, `.image`,
-  `.transcription`, `.speech`, `.files`, `.skills`).
+- Continue auditing OpenAI and Azure model-specific request defaults now that
+  capability-specific provider IDs are aligned.
 - Bedrock Anthropic supports invoke and streaming paths; deeper parity can still
   expand around model-specific exclusions and structured output details.
 - Keep file-management and skill clients aligned if upstream adds operations
