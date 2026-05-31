@@ -85,6 +85,61 @@ import Testing
     #expect(model.requests.count == 2)
 }
 
+@Test func aiGenerateTextTimesOutThroughRetryPolicy() async throws {
+    let model = SlowLanguageModel(delayNanoseconds: 80_000_000)
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Too slow",
+            retryPolicy: AIRetryPolicy(
+                maxRetries: 2,
+                initialDelayNanoseconds: 0,
+                timeoutNanoseconds: 1_000_000
+            )
+        )
+        Issue.record("Expected timeout.")
+    } catch let error as AIError {
+        #expect(error == .timeout(durationNanoseconds: 1_000_000))
+    }
+
+    #expect(model.requests.count == 1)
+}
+
+@Test func aiFacadeTimeoutAppliesToNonLanguageCalls() async throws {
+    let model = SlowEmbeddingModel(delayNanoseconds: 80_000_000)
+
+    do {
+        _ = try await AI.embed(
+            model: model,
+            value: "slow",
+            retryPolicy: AIRetryPolicy(timeoutNanoseconds: 1_000_000)
+        )
+        Issue.record("Expected timeout.")
+    } catch let error as AIError {
+        #expect(error == .timeout(durationNanoseconds: 1_000_000))
+    }
+
+    #expect(model.requests.count == 1)
+}
+
+@Test func aiRetryPolicyRejectsInvalidTimeout() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(text: "unused", rawValue: .object([:])))
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Invalid timeout",
+            retryPolicy: AIRetryPolicy(timeoutNanoseconds: 0)
+        )
+        Issue.record("Expected invalid timeout.")
+    } catch let error as AIError {
+        #expect(error == .invalidArgument(argument: "timeoutNanoseconds", message: "timeoutNanoseconds must be greater than zero."))
+    }
+
+    #expect(model.requests.isEmpty)
+}
+
 @Test func aiStreamTextForwardsRequestToModel() async throws {
     let parts: [LanguageStreamPart] = [
         .streamStart(warnings: []),
@@ -916,6 +971,23 @@ private final class FlakyLanguageModel: LanguageModel, @unchecked Sendable {
     }
 }
 
+private final class SlowLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "slow-language"
+    var requests: [LanguageModelRequest] = []
+    let delayNanoseconds: UInt64
+
+    init(delayNanoseconds: UInt64) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        requests.append(request)
+        try await Task.sleep(nanoseconds: delayNanoseconds)
+        return TextGenerationResult(text: "late", rawValue: .object([:]))
+    }
+}
+
 private final class MockEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     let providerID = "mock"
     let modelID = "mock-embedding"
@@ -929,6 +1001,23 @@ private final class MockEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         requests.append(request)
         return results.count > 1 ? results.removeFirst() : results[0]
+    }
+}
+
+private final class SlowEmbeddingModel: EmbeddingModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "slow-embedding"
+    var requests: [EmbeddingRequest] = []
+    let delayNanoseconds: UInt64
+
+    init(delayNanoseconds: UInt64) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
+        requests.append(request)
+        try await Task.sleep(nanoseconds: delayNanoseconds)
+        return EmbeddingResult(embeddings: [[0.1]], rawValue: .object([:]))
     }
 }
 

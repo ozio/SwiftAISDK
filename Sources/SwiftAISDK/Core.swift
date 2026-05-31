@@ -7,6 +7,7 @@ public enum AIError: Error, Equatable, CustomStringConvertible, Sendable {
     case invalidResponse(provider: String, message: String)
     case httpStatus(provider: String, statusCode: Int, body: String)
     case invalidURL(String)
+    case timeout(durationNanoseconds: UInt64)
 
     public var description: String {
         switch self {
@@ -22,6 +23,8 @@ public enum AIError: Error, Equatable, CustomStringConvertible, Sendable {
             return "\(provider) request failed with HTTP \(statusCode): \(body)"
         case let .invalidURL(url):
             return "Invalid URL: \(url)"
+        case let .timeout(durationNanoseconds):
+            return "AI call timed out after \(durationNanoseconds) nanoseconds."
         }
     }
 }
@@ -61,17 +64,20 @@ public struct AIRetryPolicy: Equatable, Sendable {
     public var initialDelayNanoseconds: UInt64
     public var backoffFactor: Double
     public var maxDelayNanoseconds: UInt64
+    public var timeoutNanoseconds: UInt64?
 
     public init(
         maxRetries: Int = 2,
         initialDelayNanoseconds: UInt64 = 2_000_000_000,
         backoffFactor: Double = 2,
-        maxDelayNanoseconds: UInt64 = 60_000_000_000
+        maxDelayNanoseconds: UInt64 = 60_000_000_000,
+        timeoutNanoseconds: UInt64? = nil
     ) {
         self.maxRetries = maxRetries
         self.initialDelayNanoseconds = initialDelayNanoseconds
         self.backoffFactor = backoffFactor
         self.maxDelayNanoseconds = maxDelayNanoseconds
+        self.timeoutNanoseconds = timeoutNanoseconds
     }
 
     public static let `default` = AIRetryPolicy()

@@ -62,14 +62,18 @@ Provider-specific options can be passed through request types or facade
 overloads via `providerOptions`, `extraBody`, and `headers`.
 
 Facade calls retry transient failures by default (`maxRetries: 2`), matching the
-AI SDK product-level default. Pass `retryPolicy: .none` to disable retries or a
-custom `AIRetryPolicy` to tune retry count and backoff:
+AI SDK product-level default. Pass `retryPolicy: .none` to disable retries, or a
+custom `AIRetryPolicy` to tune retry count, backoff, and per-attempt timeout:
 
 ```swift
 let text = try await AI.generateText(
     model: model,
     prompt: "Hello",
-    retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 500_000_000)
+    retryPolicy: AIRetryPolicy(
+        maxRetries: 1,
+        initialDelayNanoseconds: 500_000_000,
+        timeoutNanoseconds: 30_000_000_000
+    )
 )
 ```
 

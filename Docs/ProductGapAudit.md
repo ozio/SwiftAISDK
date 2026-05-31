@@ -53,9 +53,9 @@ product behavior still trails upstream.
 
 Impact:
 
-- Facade calls now have a retry policy for transient errors, but richer
-  cancellation/timeout surfaces, telemetry hooks, and warning logging still need
-  follow-up work.
+- Facade calls now have a retry policy for transient errors and a per-attempt
+  timeout on `AIRetryPolicy`, but richer cancellation controls, telemetry hooks,
+  and warning logging still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -274,9 +274,10 @@ Progress:
 
 3. **Facade pass 2: retries and cancellation.**
    First retry slice is in place with `AIRetryPolicy` and default
-   `maxRetries: 2` for product-level calls. Next passes should add request
-   timeouts, richer cancellation controls, retry-after header support, and
-   streaming retry behavior.
+   `maxRetries: 2` for product-level calls. Non-streaming facade calls can now
+   set a per-attempt `timeoutNanoseconds` on `AIRetryPolicy`. Next passes should
+   add richer cancellation controls, retry-after header support, telemetry, and
+   streaming retry/timeout behavior.
 
 4. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed
@@ -299,8 +300,8 @@ Progress:
 6. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first
    machine-readable provider capability matrix and opt-in live smoke harness are
-   in place. Next pass should generate the markdown table from source and add
-   deeper provider-option examples.
+   in place. The markdown table is generated from source and guarded by tests.
+   Next pass should add deeper provider-option examples.
 
 Provider micro-parity should continue, but it should be the second track. The
 first track should now be the SDK facade and core contract, because those change

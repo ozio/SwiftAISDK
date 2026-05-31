@@ -1105,13 +1105,18 @@ private func isStopConditionMet(_ stopConditions: [AIStopCondition], steps: [AIT
 
 private func withRetry<Output: Sendable>(
     policy: AIRetryPolicy,
-    operation: @Sendable () async throws -> Output
+    operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
     guard policy.maxRetries >= 0 else {
         throw AIError.invalidArgument(argument: "maxRetries", message: "maxRetries must be >= 0.")
     }
     guard policy.backoffFactor >= 1 else {
         throw AIError.invalidArgument(argument: "backoffFactor", message: "backoffFactor must be >= 1.")
+    }
+    if let timeout = policy.timeoutNanoseconds {
+        guard timeout > 0 else {
+            throw AIError.invalidArgument(argument: "timeoutNanoseconds", message: "timeoutNanoseconds must be greater than zero.")
+        }
     }
 
     var errors: [String] = []
@@ -1120,7 +1125,7 @@ private func withRetry<Output: Sendable>(
     while true {
         try Task.checkCancellation()
         do {
-            return try await operation()
+            return try await withTimeout(policy.timeoutNanoseconds, operation: operation)
         } catch is CancellationError {
             throw AIRetryError(reason: .cancelled, attempts: errors.count + 1, errors: errors)
         } catch {
@@ -1139,6 +1144,32 @@ private func withRetry<Output: Sendable>(
             }
             delay = nextDelay(current: delay, policy: policy)
         }
+    }
+}
+
+private func withTimeout<Output: Sendable>(
+    _ timeoutNanoseconds: UInt64?,
+    operation: @escaping @Sendable () async throws -> Output
+) async throws -> Output {
+    guard let timeoutNanoseconds else {
+        return try await operation()
+    }
+
+    return try await withThrowingTaskGroup(of: Output.self) { group in
+        defer { group.cancelAll() }
+
+        group.addTask {
+            try await operation()
+        }
+        group.addTask {
+            try await Task.sleep(nanoseconds: timeoutNanoseconds)
+            throw AIError.timeout(durationNanoseconds: timeoutNanoseconds)
+        }
+
+        guard let result = try await group.next() else {
+            throw CancellationError()
+        }
+        return result
     }
 }
 
