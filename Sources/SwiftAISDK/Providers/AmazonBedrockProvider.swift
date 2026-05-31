@@ -310,7 +310,7 @@ struct BedrockRuntimeConfig: @unchecked Sendable {
     func sendJSON(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:]) async throws -> JSONValue {
         let response = try await transport.send(try request(path: path, body: body, headers: requestHeaders))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return try response.jsonValue()
     }

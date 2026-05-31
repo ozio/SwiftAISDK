@@ -37,7 +37,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                     let body = JSONValue.object(perplexityBody(for: request, modelID: modelID, stream: true))
                     let response = try await config.transport.send(config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
 
                     var latestUsage: TokenUsage?

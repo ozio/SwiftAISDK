@@ -132,7 +132,7 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         for url in urls {
             let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:]))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             images.append(response.body.base64EncodedString())
         }
@@ -221,7 +221,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             if raw["status"]?.stringValue == "done" || raw["video"]?["url"]?.stringValue != nil {

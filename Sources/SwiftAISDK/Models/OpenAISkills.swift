@@ -25,7 +25,7 @@ public final class OpenAISkillsClient: AISkillsClient, @unchecked Sendable {
             headers: request.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
 
         let raw = try response.jsonValue()
@@ -86,7 +86,7 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             headers: headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
 
         let raw = try response.jsonValue()
@@ -116,7 +116,7 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             body: nil
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         return (raw["name"]?.stringValue, raw["description"]?.stringValue)

@@ -281,7 +281,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     func sendJSON(path: String, modelID: String, body: JSONValue, headers: [String: String] = [:]) async throws -> JSONValue {
         let response = try await transport.send(request(path: path, modelID: modelID, body: body, headers: headers))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return try response.jsonValue()
     }
@@ -357,7 +357,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
                     var toolCalls = OpenAICompatibleStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -804,7 +804,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                     let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -883,7 +883,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     let body = body(for: request, stream: true)
                     let response = try await config.transport.send(config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
                     var toolCallBuffers = OpenAIResponsesStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -1854,7 +1854,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             )
         )
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         guard case let .array(data) = raw["data"] else {
@@ -1901,7 +1901,7 @@ private func openAICompatibleResolveImageFile(_ file: ImageInputFile, providerID
     }
     let response = try await transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url)))
     guard (200..<300).contains(response.statusCode) else {
-        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+        throw httpStatusError(provider: providerID, response: response)
     }
     let mediaType = file.mediaType
         ?? response.headers["content-type"]
@@ -1947,7 +1947,7 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
 
         let response = try await config.transport.send(config.request(path: "/audio/speech", modelID: modelID, body: .object(body), headers: request.headers))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return SpeechResult(audio: response.body, contentType: response.headers["content-type"] ?? response.headers["Content-Type"])
     }
@@ -2000,7 +2000,7 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
             )
         )
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         guard let text = raw["text"]?.stringValue else {

@@ -83,6 +83,32 @@ func requireURL(_ string: String) throws -> URL {
     return url
 }
 
+func httpStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    httpStatusError(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: response.bodyText,
+        headers: response.headers
+    )
+}
+
+func httpStatusError(
+    provider: String,
+    statusCode: Int,
+    body: String,
+    headers: [String: String] = [:]
+) -> AIError {
+    guard !headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(
+        provider: provider,
+        statusCode: statusCode,
+        body: body,
+        headers: headers
+    )
+}
+
 func withoutTrailingSlash(_ value: String) -> String {
     var result = value
     while result.hasSuffix("/") {

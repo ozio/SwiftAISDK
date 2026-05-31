@@ -36,7 +36,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                     let httpRequest = try config.request(path: "/chat", modelID: modelID, body: .object(body(for: request, stream: true)), headers: request.headers)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
                     var finishReason: String?
                     var usage: TokenUsage?

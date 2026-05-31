@@ -139,7 +139,7 @@ struct GoogleVertexConfig: @unchecked Sendable {
     func sendJSON(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:]) async throws -> JSONValue {
         let response = try await transport.send(try await request(path: path, body: body, headers: requestHeaders))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return try response.jsonValue()
     }
@@ -181,7 +181,17 @@ enum GoogleServiceAccountTokenGenerator {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw AIError.httpStatus(provider: "google.vertex", statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0, body: String(data: data, encoding: .utf8) ?? "")
+            let http = response as? HTTPURLResponse
+            let headers = http?.allHeaderFields.reduce(into: [String: String]()) { partial, element in
+                guard let key = element.key as? String else { return }
+                partial[key] = String(describing: element.value)
+            } ?? [:]
+            throw httpStatusError(
+                provider: "google.vertex",
+                statusCode: http?.statusCode ?? 0,
+                body: String(data: data, encoding: .utf8) ?? "",
+                headers: headers
+            )
         }
         let raw = try decodeJSONBody(data)
         guard let token = raw["access_token"]?.stringValue else {

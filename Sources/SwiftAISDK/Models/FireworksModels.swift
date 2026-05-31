@@ -41,7 +41,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
                 body: try encodeJSONBody(.object(body))
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             return ImageGenerationResult(urls: [], base64Images: [response.body.base64EncodedString()], rawValue: .object([
                 "contentType": fireworksContentType(response.headers).map(JSONValue.string)
@@ -59,7 +59,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             body: try encodeJSONBody(.object(body))
         ))
         guard (200..<300).contains(submit.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: submit.statusCode, body: submit.bodyText)
+            throw httpStatusError(provider: providerID, response: submit)
         }
         let submitRaw = try submit.jsonValue()
         guard let requestID = submitRaw["request_id"]?.stringValue else {
@@ -72,7 +72,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             headers: config.headers.mergingHeaders(requestHeaders)
         ))
         guard (200..<300).contains(imageResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: imageResponse.statusCode, body: imageResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: imageResponse)
         }
         return ImageGenerationResult(urls: [imageURL], base64Images: [imageResponse.body.base64EncodedString()], rawValue: submitRaw)
     }
@@ -89,7 +89,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
                 body: try encodeJSONBody(.object(["id": .string(requestID)]))
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {

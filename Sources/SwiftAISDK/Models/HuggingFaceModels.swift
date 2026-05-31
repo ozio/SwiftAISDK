@@ -40,7 +40,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                     let httpRequest = try config.request(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: true)), headers: request.headers)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
 
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {

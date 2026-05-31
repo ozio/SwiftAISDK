@@ -55,8 +55,9 @@ Impact:
 
 - Facade calls now have a retry policy for transient errors, a per-attempt
   timeout on `AIRetryPolicy`, and direct stream timeouts on `streamText` and
-  `streamObject`, but richer cancellation controls, telemetry hooks, and
-  warning logging still need follow-up work.
+  `streamObject`. HTTP `Retry-After` headers are now preserved from provider
+  responses and honored by facade retries. Richer cancellation controls,
+  telemetry hooks, and warning logging still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -278,9 +279,10 @@ Progress:
    First retry slice is in place with `AIRetryPolicy` and default
    `maxRetries: 2` for product-level calls. Non-streaming facade calls can now
    set a per-attempt `timeoutNanoseconds` on `AIRetryPolicy`, and `streamText`
-   plus `streamObject` accept direct stream timeouts. Next passes should add
-   richer cancellation controls, retry-after header support, telemetry, and
-   streaming retry behavior.
+   plus `streamObject` accept direct stream timeouts. Provider HTTP errors now
+   preserve response headers, and facade retries honor `Retry-After` on
+   retryable status codes. Next passes should add richer cancellation controls,
+   telemetry, and streaming retry behavior.
 
 4. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed

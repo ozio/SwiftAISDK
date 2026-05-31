@@ -40,7 +40,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             body: try encodeJSONBody(.object(body))
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let base64Images = raw["images"]?.arrayValue?.compactMap { image in
@@ -91,7 +91,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             body: form.finalize()
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let base64Images = raw["data"]?.arrayValue?.compactMap { $0["b64_json"]?.stringValue } ?? []
@@ -125,7 +125,7 @@ private func deepInfraResolveImageFile(_ file: ImageInputFile, transport: AITran
     }
     let response = try await transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url)))
     guard (200..<300).contains(response.statusCode) else {
-        throw AIError.httpStatus(provider: "deepinfra.image", statusCode: response.statusCode, body: response.bodyText)
+        throw httpStatusError(provider: "deepinfra.image", response: response)
     }
     let mediaType = file.mediaType
         ?? response.headers["content-type"]

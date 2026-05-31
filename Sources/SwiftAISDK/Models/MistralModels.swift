@@ -38,7 +38,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                         headers: request.headers
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
                     var finishReason: String?
                     var usage: TokenUsage?

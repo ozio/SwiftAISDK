@@ -387,7 +387,12 @@ import Testing
         ))
         Issue.record("Expected Gateway video error event to throw.")
     } catch let error as AIError {
-        #expect(error == .httpStatus(provider: "gateway", statusCode: 429, body: "Rate limit exceeded"))
+        #expect(error == .httpStatusWithHeaders(
+            provider: "gateway",
+            statusCode: 429,
+            body: "Rate limit exceeded",
+            headers: ["content-type": "text/event-stream"]
+        ))
     }
 
     let request = try #require(await transport.requests().first)

@@ -218,7 +218,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         headers: anthropicHeaders(request.headers, configHeaders: config.headers, betas: preparedRequest.betas)
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
                     var toolCalls = AnthropicStreamingToolCalls()
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
@@ -393,7 +393,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                         headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"])
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
 
                     var toolCalls = AnthropicStreamingToolCalls()

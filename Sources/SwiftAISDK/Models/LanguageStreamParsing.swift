@@ -2,7 +2,7 @@ import Foundation
 
 func streamFromSSE(providerID: String, response: AIHTTPResponse, mapChunk: (JSONValue) -> [LanguageStreamPart]) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
-        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+        throw httpStatusError(provider: providerID, response: response)
     }
     var parts: [LanguageStreamPart] = []
     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -68,7 +68,7 @@ func googleStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
 
 func streamFromGoogleGenerateContent(providerID: String, response: AIHTTPResponse) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
-        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+        throw httpStatusError(provider: providerID, response: response)
     }
 
     var parts: [LanguageStreamPart] = []
@@ -478,7 +478,7 @@ private struct BedrockStreamState {
 
 func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
-        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+        throw httpStatusError(provider: providerID, response: response)
     }
 
     let contentType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value

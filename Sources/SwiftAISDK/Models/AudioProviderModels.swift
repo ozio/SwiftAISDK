@@ -28,7 +28,7 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
             headers: request.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let text = raw["results"]?["channels"]?[0]?["alternatives"]?[0]?["transcript"]?.stringValue ?? ""
@@ -61,7 +61,7 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
             headers: request.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return SpeechResult(audio: response.body, contentType: response.headers.contentType)
     }
@@ -95,7 +95,7 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
             headers: request.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return SpeechResult(audio: response.body, contentType: response.headers.contentType)
     }
@@ -141,7 +141,7 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
             headers: request.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return SpeechResult(audio: response.body, contentType: response.headers.contentType)
     }
@@ -215,7 +215,7 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
             headers: request.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return SpeechResult(audio: response.body, contentType: response.headers.contentType)
     }
@@ -266,7 +266,7 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             headers: request.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         return TranscriptionResult(text: raw["text"]?.stringValue ?? "", rawValue: raw)
@@ -302,7 +302,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
             headers: [:]
         ))
         guard (200..<300).contains(audioResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: audioResponse.statusCode, body: audioResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: audioResponse)
         }
         return SpeechResult(audio: audioResponse.body, contentType: audioResponse.headers.contentType)
     }
@@ -349,7 +349,7 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
             body: try encodeJSONBody(.object(body))
         ))
         guard (200..<300).contains(queueResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: queueResponse.statusCode, body: queueResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: queueResponse)
         }
         let queued = try queueResponse.jsonValue()
         guard let requestID = queued["request_id"]?.stringValue else {
@@ -399,7 +399,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
             headers: request.headers
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: uploadResponse.statusCode, body: uploadResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: uploadResponse)
         }
         let uploadRaw = try uploadResponse.jsonValue()
         guard let uploadURL = uploadRaw["upload_url"]?.stringValue else {
@@ -431,7 +431,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         while true {
             let response = try await config.transport.send(try getRequest(path: "/v2/transcript/\(id)", headers: request.headers))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {
@@ -483,7 +483,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             headers: request.headers
         ))
         guard (200..<300).contains(submitResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: submitResponse.statusCode, body: submitResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: submitResponse)
         }
         var job = try submitResponse.jsonValue()
         guard let jobID = job["id"]?.stringValue else {
@@ -492,7 +492,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
         job = try await pollRevAIJob(id: jobID, initial: job, request: request)
         let transcriptResponse = try await config.transport.send(try getRequest(path: "/speechtotext/v1/jobs/\(jobID)/transcript", headers: request.headers))
         guard (200..<300).contains(transcriptResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: transcriptResponse.statusCode, body: transcriptResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: transcriptResponse)
         }
         let raw = try transcriptResponse.jsonValue()
         return TranscriptionResult(text: revAITranscriptText(from: raw), rawValue: raw)
@@ -511,7 +511,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             try await Task.sleep(nanoseconds: 1_000_000_000)
             let response = try await config.transport.send(try getRequest(path: "/speechtotext/v1/jobs/\(id)", headers: request.headers))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             job = try response.jsonValue()
         }
@@ -550,7 +550,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             headers: request.headers
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: uploadResponse.statusCode, body: uploadResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: uploadResponse)
         }
         let uploadRaw = try uploadResponse.jsonValue()
         guard let audioURL = uploadRaw["audio_url"]?.stringValue else {
@@ -582,7 +582,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
                 headers: config.headers.mergingHeaders(request.headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {

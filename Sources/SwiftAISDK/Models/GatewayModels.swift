@@ -106,7 +106,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                         config.request(path: "/language-model", modelID: modelID, body: gatewayLanguageBody(for: request), headers: request.headers.mergingHeaders(modelHeaders(streaming: true)))
                     )
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
                     var toolBuffers: [String: GatewayStreamingToolCall] = [:]
                     var sawToolCalls = false
@@ -359,7 +359,7 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
         ]))
         let response = try await config.transport.send(httpRequest)
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let raw: JSONValue
         if let event = parseServerSentEvents(response.body).first(where: { $0.data != "[DONE]" }) {
@@ -368,10 +368,11 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
             raw = try response.jsonValue()
         }
         if raw["type"]?.stringValue == "error" {
-            throw AIError.httpStatus(
+            throw httpStatusError(
                 provider: providerID,
                 statusCode: raw["statusCode"]?.intValue ?? response.statusCode,
-                body: raw["message"]?.stringValue ?? String(describing: raw)
+                body: raw["message"]?.stringValue ?? String(describing: raw),
+                headers: response.headers
             )
         }
         let videos = raw["videos"]?.arrayValue ?? raw["data"]?.arrayValue ?? []

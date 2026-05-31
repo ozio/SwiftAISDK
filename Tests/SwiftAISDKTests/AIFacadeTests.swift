@@ -45,6 +45,44 @@ import Testing
     #expect(model.requests.count == 2)
 }
 
+@Test func aiGenerateTextHonorsRetryAfterHeader() async throws {
+    let model = FlakyLanguageModel(failures: [
+        AIError.httpStatusWithHeaders(
+            provider: "mock",
+            statusCode: 429,
+            body: "rate limited",
+            headers: ["Retry-After": "0"]
+        )
+    ], result: TextGenerationResult(text: "recovered", rawValue: .object([:])))
+
+    let started = DispatchTime.now().uptimeNanoseconds
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Retry after",
+        retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 2_000_000_000)
+    )
+    let elapsed = DispatchTime.now().uptimeNanoseconds - started
+
+    #expect(result.text == "recovered")
+    #expect(model.requests.count == 2)
+    #expect(elapsed < 1_000_000_000)
+}
+
+@Test func httpStatusErrorPreservesResponseHeaders() throws {
+    let response = AIHTTPResponse(
+        statusCode: 429,
+        headers: ["Retry-After": "0"],
+        body: Data("rate limited".utf8)
+    )
+
+    #expect(httpStatusError(provider: "mock", response: response) == .httpStatusWithHeaders(
+        provider: "mock",
+        statusCode: 429,
+        body: "rate limited",
+        headers: ["Retry-After": "0"]
+    ))
+}
+
 @Test func aiGenerateTextDoesNotRetryNonRetryableErrors() async throws {
     let model = FlakyLanguageModel(failures: [
         AIError.httpStatus(provider: "mock", statusCode: 400, body: "bad request")

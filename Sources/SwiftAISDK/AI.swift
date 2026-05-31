@@ -1157,8 +1157,9 @@ private func withRetry<Output: Sendable>(
             guard attempts <= policy.maxRetries else {
                 throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
             }
-            if delay > 0 {
-                try await Task.sleep(nanoseconds: delay)
+            let sleepDelay = retryAfterDelayNanoseconds(from: error) ?? delay
+            if sleepDelay > 0 {
+                try await Task.sleep(nanoseconds: sleepDelay)
             }
             delay = nextDelay(current: delay, policy: policy)
         }
@@ -1243,7 +1244,10 @@ private func failingPartStream<Part: Sendable>(_ error: Error) -> AsyncThrowingS
 private func isRetryable(_ error: Error) -> Bool {
     if let error = error as? AIError {
         if case let .httpStatus(_, statusCode, _) = error {
-            return statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+            return isRetryableHTTPStatus(statusCode)
+        }
+        if case let .httpStatusWithHeaders(_, statusCode, _, _) = error {
+            return isRetryableHTTPStatus(statusCode)
         }
         return false
     }
@@ -1256,6 +1260,72 @@ private func isRetryable(_ error: Error) -> Bool {
         }
     }
     return false
+}
+
+private func isRetryableHTTPStatus(_ statusCode: Int) -> Bool {
+    statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+}
+
+private func retryAfterDelayNanoseconds(from error: Error) -> UInt64? {
+    guard let headers = httpHeaders(from: error) else { return nil }
+    guard let value = headerValue("retry-after", in: headers) else { return nil }
+    return retryAfterDelayNanoseconds(from: value, now: Date())
+}
+
+private func httpHeaders(from error: Error) -> [String: String]? {
+    if let error = error as? AIError {
+        if case let .httpStatusWithHeaders(_, _, _, headers) = error {
+            return headers
+        }
+    }
+    return nil
+}
+
+private func headerValue(_ name: String, in headers: [String: String]) -> String? {
+    if let value = headers[name] {
+        return value
+    }
+    let lowercasedName = name.lowercased()
+    return headers.first { key, _ in key.lowercased() == lowercasedName }?.value
+}
+
+private func retryAfterDelayNanoseconds(from value: String, now: Date) -> UInt64? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    if let seconds = Double(trimmed) {
+        return nanoseconds(fromSeconds: seconds)
+    }
+    guard let date = httpDate(from: trimmed) else { return nil }
+    return nanoseconds(fromSeconds: date.timeIntervalSince(now))
+}
+
+private func nanoseconds(fromSeconds seconds: Double) -> UInt64? {
+    guard seconds.isFinite else { return nil }
+    guard seconds > 0 else { return 0 }
+    let nanoseconds = seconds * 1_000_000_000
+    guard nanoseconds.isFinite else { return UInt64.max }
+    if nanoseconds >= Double(UInt64.max) {
+        return UInt64.max
+    }
+    return UInt64(nanoseconds.rounded(.up))
+}
+
+private func httpDate(from value: String) -> Date? {
+    let formats = [
+        "EEE',' dd MMM yyyy HH':'mm':'ss zzz",
+        "EEEE',' dd'-'MMM'-'yy HH':'mm':'ss zzz",
+        "EEE MMM d HH':'mm':'ss yyyy"
+    ]
+    for format in formats {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = format
+        if let date = formatter.date(from: value) {
+            return date
+        }
+    }
+    return nil
 }
 
 private func nextDelay(current: UInt64, policy: AIRetryPolicy) -> UInt64 {

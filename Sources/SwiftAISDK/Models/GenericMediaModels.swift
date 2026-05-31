@@ -93,7 +93,7 @@ public final class JSONSpeechModel: SpeechModel, @unchecked Sendable {
 
         let response = try await config.transport.send(config.request(path: path, modelID: modelID, body: .object(body), headers: request.headers))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         if let raw = try? response.jsonValue(),
            let base64 = raw["audio"]?.stringValue ?? raw["audio_base64"]?.stringValue,

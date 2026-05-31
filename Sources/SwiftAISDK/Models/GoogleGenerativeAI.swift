@@ -305,7 +305,7 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             latest = raw
@@ -374,7 +374,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                         headers: googleInteractionsHeaders(request.headers)
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                        throw httpStatusError(provider: providerID, response: response)
                     }
 
                     var toolCalls = GoogleInteractionsStreamingToolCalls()
@@ -438,7 +438,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
     private func sendInteractions(body: JSONValue, headers: [String: String]) async throws -> JSONValue {
         let response = try await config.transport.send(config.request(path: "/interactions", modelID: modelID, body: body, headers: googleInteractionsHeaders(headers)))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         return try response.jsonValue()
     }
@@ -461,7 +461,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                 headers: config.headers.mergingHeaders(googleInteractionsHeaders(requestHeaders))
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             if googleInteractionsIsTerminal(raw["status"]?.stringValue) {

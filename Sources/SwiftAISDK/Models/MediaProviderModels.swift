@@ -41,7 +41,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             images.append(response.body.base64EncodedString())
         }
@@ -115,7 +115,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             prediction = try response.jsonValue()
         }
@@ -266,7 +266,7 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
         for url in urls {
             let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:]))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             images.append(response.body.base64EncodedString())
         }
@@ -302,7 +302,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
             headers: request.headers
         ).withURL(try requireURL("https://queue.fal.run/fal-ai/\(normalized)")))
         guard (200..<300).contains(queueResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: queueResponse.statusCode, body: queueResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: queueResponse)
         }
         let queued = try queueResponse.jsonValue()
         guard let responseURL = queued["response_url"]?.stringValue else {
@@ -328,7 +328,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
                 return try response.jsonValue()
             }
             if !falIsInProgress(response) {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                 throw AIError.invalidResponse(provider: providerID, message: "Fal video generation timed out.")
@@ -386,7 +386,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             headers: config.headers.mergingHeaders(request.headers)
         ))
         guard (200..<300).contains(image.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: image.statusCode, body: image.bodyText)
+            throw httpStatusError(provider: providerID, response: image)
         }
         return ImageGenerationResult(urls: [url], base64Images: [image.body.base64EncodedString()], rawValue: raw)
     }
@@ -397,7 +397,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         while true {
             let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(pollURL), headers: config.headers.mergingHeaders(headers)))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             let status = raw["status"]?.stringValue ?? raw["state"]?.stringValue
@@ -544,7 +544,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
         }
         let image = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:]))
         guard (200..<300).contains(image.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: image.statusCode, body: image.bodyText)
+            throw httpStatusError(provider: providerID, response: image)
         }
         return ImageGenerationResult(urls: [url], base64Images: [image.body.base64EncodedString()], rawValue: raw)
     }
@@ -557,7 +557,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["state"]?.stringValue {
@@ -714,7 +714,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["data"]?["task_status"]?.stringValue {
@@ -906,7 +906,7 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {
@@ -1111,7 +1111,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
             headers: request.headers.mergingHeaders(["X-DashScope-Async": "enable"])
         ).withURL(try requireURL("\(base)/api/v1/services/aigc/video-generation/video-synthesis")))
         guard (200..<300).contains(createResponse.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: createResponse.statusCode, body: createResponse.bodyText)
+            throw httpStatusError(provider: providerID, response: createResponse)
         }
         let created = try createResponse.jsonValue()
         guard let taskID = created["output"]?["task_id"]?.stringValue else {
@@ -1139,7 +1139,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
                 headers: config.headers.mergingHeaders(headers)
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["output"]?["task_status"]?.stringValue {
@@ -1199,7 +1199,7 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
             body: payload
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let multipart = try parseMultipartResponse(response)
         guard multipart.contains(where: { $0.name == "job" }) else {
@@ -1245,7 +1245,7 @@ public final class ProdiaImageModel: ImageModel, @unchecked Sendable {
             headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; image/png"])
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let multipart = try parseMultipartResponse(response)
         let output = multipart.first { $0.name == "output" || $0.contentType?.hasPrefix("image/") == true }
@@ -1282,7 +1282,7 @@ public final class ProdiaVideoModel: VideoModel, @unchecked Sendable {
             headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; video/mp4"])
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+            throw httpStatusError(provider: providerID, response: response)
         }
         let multipart = try parseMultipartResponse(response)
         guard multipart.contains(where: { $0.name == "output" || $0.contentType?.hasPrefix("video/") == true }) else {
@@ -1666,7 +1666,7 @@ private func prodiaInputImage(from messages: [AIMessage], transport: AITransport
         case let .imageURL(urlString):
             let response = try await transport.send(AIHTTPRequest(method: "GET", url: try requireURL(urlString)))
             guard (200..<300).contains(response.statusCode) else {
-                throw AIError.httpStatus(provider: "prodia.language", statusCode: response.statusCode, body: response.bodyText)
+                throw httpStatusError(provider: "prodia.language", response: response)
             }
             return (response.body, response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value ?? "image/png")
         case .text, .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
