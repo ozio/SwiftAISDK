@@ -14,6 +14,8 @@ The Swift package is a library-only SwiftPM package with one product,
 
 - `Core.swift`: model protocols, request/result structs, stream parts, warnings.
 - `ProviderRegistry.swift`: provider factories.
+- `ProviderCapabilityMatrix.swift`: machine-readable provider/package
+  capability coverage.
 - `Models/*`: provider-specific request/response implementations.
 - `Docs/UpstreamSync.md`: provider sync playbook.
 
@@ -172,28 +174,29 @@ protocols, richer validation errors, array/enum/no-schema strategies, JSON
 instruction injection for providers without native response formats, and
 `streamObject`.
 
-### 5. Documentation and product entrypoint are too thin
+### 5. Product reality is not fully gated yet
 
-`README.md` is effectively empty. `UpstreamSync.md` is useful for maintainers,
-but it is not a product guide.
+The README, upstream sync guide, and provider capability matrix now make the
+current product shape visible, but the verification gates are still uneven.
 
 Impact:
 
-- A user cannot tell how to install, configure, or call the package.
-- Provider coverage looks impressive in tests, but there is no public capability
-  matrix or quick-start.
+- Provider breadth is visible through `AIProviderCapabilities`, but matrix rows
+  still depend on humans updating the static source when a provider pass changes.
+- Mock transport tests prove wire shape, but live provider health is only covered
+  by an opt-in smoke suite for representative first-party providers.
+- A user can start from the README, but there is not yet a generated matrix or
+  per-provider cookbook.
 
 Recommendation:
 
-Add a real README once the facade direction is chosen. It should include:
+Keep turning documentation into executable product evidence:
 
-- install/import;
-- provider setup examples;
-- `generateText`, streaming, embeddings, images, transcription, speech, video,
-  reranking;
-- provider options;
-- file and skill upload examples;
-- a generated provider capability matrix.
+- generate the markdown capability matrix from `AIProviderCapabilities`;
+- expand live smoke coverage by provider family without making it default CI;
+- add per-provider quick-start snippets only where the SDK surface differs;
+- keep `UpstreamSync.md` as a short manifest/checklist, with detailed evidence
+  in the matrix and tests.
 
 ## Recommended Next Rounds
 
@@ -230,9 +233,10 @@ Add a real README once the facade direction is chosen. It should include:
    strategies.
 
 6. **README and capability matrix.**
-   README now has a quick-start and facade/tool/object examples. Next pass
-   should add a generated provider capability matrix and deeper provider-option
-   examples.
+   README now has a quick-start and facade/tool/object examples. A first
+   machine-readable provider capability matrix and opt-in live smoke harness are
+   in place. Next pass should generate the markdown table from source and add
+   deeper provider-option examples.
 
 Provider micro-parity should continue, but it should be the second track. The
 first track should now be the SDK facade and core contract, because those change

@@ -24,6 +24,19 @@ tests, update the matrix, then commit and push the round.
 - Swift package: library-only SwiftPM package (`ai-sdk-port`)
 - Verification command: `swift test`
 
+## Sync Manifest
+
+| Artifact | Purpose | Update When |
+| --- | --- | --- |
+| `Sources/ai-sdk-port/Providers/ProviderRegistry.swift` | Public provider factories, aliases, auth, base URLs, and provider-level capability sets. | A provider package is added, removed, renamed, or changes supported model families. |
+| `Sources/ai-sdk-port/Providers/ProviderCapabilityMatrix.swift` | Machine-readable product coverage for provider packages, Swift factories, capabilities, files, and skills. | Any provider capability or factory changes. |
+| `Docs/ProviderCapabilityMatrix.md` | Human-readable coverage table and live-smoke instructions. | The source matrix changes. |
+| `Tests/ai-sdk-portTests/*` | Wire-shape, response, stream, warning, and registry evidence. | Every behavior port. |
+| `Tests/ai-sdk-portTests/LiveProviderSmokeTests.swift` | Opt-in real-provider health checks. | Representative live coverage changes. |
+
+Treat the matrix as the product inventory, not as marketing copy. A provider is
+not "covered" unless the registry, matrix, and tests agree.
+
 ## What Counts As In Scope
 
 Port official `@ai-sdk/*` packages that are provider/model surfaces. Ignore UI,
@@ -105,8 +118,10 @@ valibot, codemod, devtools, workflow, provider, provider-utils, ui-utils, otel
 5. Port behavior in the closest existing Swift provider/model file.
 6. Add focused tests in the closest split test file.
 7. Run a narrow test filter, then `swift test`.
-8. Update this guide if provider coverage, known gaps, or porting rules changed.
-9. Commit and push the round.
+8. Update `AIProviderCapabilities` and `Docs/ProviderCapabilityMatrix.md` if
+   provider coverage changed.
+9. Update this guide if provider coverage, known gaps, or porting rules changed.
+10. Commit and push the round.
 
 Keep rounds small. A good round changes one provider, one capability, or one
 shared behavior such as streaming, provider options, or provider IDs.
@@ -201,6 +216,7 @@ Known gaps left:
 | JSON model used by request builders | `Sources/ai-sdk-port/JSONValue.swift` |
 | HTTP transport, multipart, SSE/EventStream parsing | `Sources/ai-sdk-port/HTTP.swift` |
 | Public provider registry | `Sources/ai-sdk-port/Providers/ProviderRegistry.swift` |
+| Provider capability matrix | `Sources/ai-sdk-port/Providers/ProviderCapabilityMatrix.swift`, `Docs/ProviderCapabilityMatrix.md` |
 | OpenAI chat, responses, compatible models | `Sources/ai-sdk-port/Models/OpenAI*.swift`, `Sources/ai-sdk-port/Providers/OpenAICompatibleProvider.swift` |
 | Anthropic and Bedrock/Vertex Anthropic behavior | `Sources/ai-sdk-port/Models/Anthropic.swift`, `Sources/ai-sdk-port/Providers/AnthropicAWSProvider.swift` |
 | Google Gemini and Vertex Gemini behavior | `Sources/ai-sdk-port/Models/Google*.swift`, `Sources/ai-sdk-port/Providers/GoogleVertexProvider.swift` |
@@ -208,7 +224,7 @@ Known gaps left:
 | Bedrock native, Bedrock Anthropic, Mantle | `Sources/ai-sdk-port/Models/AmazonBedrockModels.swift`, `Sources/ai-sdk-port/Providers/AmazonBedrockProvider.swift` |
 | Media and audio providers | `Sources/ai-sdk-port/Models/*Media*.swift`, `Sources/ai-sdk-port/Models/*Audio*.swift` |
 | Files and skills clients | `Sources/ai-sdk-port/Models/FileClients.swift`, `Sources/ai-sdk-port/Models/OpenAISkills.swift` |
-| Tests | `Tests/ai-sdk-portTests/*.swift` |
+| Tests | `Tests/ai-sdk-portTests/*.swift`, including opt-in live checks in `LiveProviderSmokeTests.swift` |
 
 Tests are split by provider or feature surface. Add new coverage to the closest
 existing file instead of rebuilding a large monolithic test.
@@ -260,8 +276,8 @@ the touched surface into the newer naming pattern.
 | Google Vertex | `@ai-sdk/google-vertex` | `AIProviders.googleVertex`, `GoogleVertexProvider` with `google.vertex.chat`, `.embedding`, `.image`, `.video`; `GoogleVertexAnthropicProvider`, `GoogleVertexTools`, `GoogleVertexAnthropicTools` | `GoogleVertexTests.swift` |
 | AI Gateway | `@ai-sdk/gateway` | `AIProviders.gateway`, `GatewayProvider`, `GatewayTools`, `GatewayManagementClient` | `GatewayTests.swift` |
 | Mistral, Cohere, Voyage | `@ai-sdk/mistral`, `@ai-sdk/cohere`, `@ai-sdk/voyage` | Provider-specific Swift models plus registry helpers | `CohereMistralVoyageTests.swift` |
-| Vercel | `@ai-sdk/vercel` | `AIProviders.vercel`, Vercel chat and image models | `ProviderRegistryVercelTests.swift` |
-| Hugging Face | `@ai-sdk/huggingface` | `AIProviders.huggingFace`, image model | `ProviderRegistryVercelTests.swift` |
+| Vercel | `@ai-sdk/vercel` | `AIProviders.vercel`, Vercel chat model | `ProviderRegistryVercelTests.swift` |
+| Hugging Face | `@ai-sdk/huggingface` | `AIProviders.huggingFace`, responses language model | `ProviderRegistryVercelTests.swift`, `ResponsesEndpointTests.swift` |
 | Fireworks, DeepInfra, TogetherAI, Baseten, MoonshotAI | provider packages with OpenAI-compatible cores plus native media/rerank pieces | OpenAI-compatible chat/completion/embedding with upstream surface IDs such as `fireworks.chat`, `deepinfra.embedding`, `togetherai.completion`, plus native image/rerank models | `NativeMediaProviderTests.swift`, `NativeReasoningProviderTests.swift`, `OpenAICompatibleTests.swift` |
 | Replicate and fal | `@ai-sdk/replicate`, `@ai-sdk/fal` | Provider-specific media models | `ReplicateFalTests.swift` |
 | Alibaba, Prodia, Quiver, Luma, Kling, ByteDance | `@ai-sdk/alibaba`, `prodia`, `quiverai`, `luma`, `klingai`, `bytedance` | Provider-specific media/video models | `AlibabaProdiaAzureQuiverTests.swift`, `ImageVideoProviderTests.swift`, `NativeMediaProviderTests.swift` |
@@ -289,10 +305,33 @@ the touched surface into the newer naming pattern.
 | AWS providers | Keep SigV4 service name, region, path encoding, and EventStream parsing covered by tests. |
 | Error behavior | Convert provider errors into `AIError` with the surface provider ID that failed. |
 
+## Product Reality Gates
+
+Use these gates before calling a surface complete:
+
+1. **Inventory:** `AIProviderCapabilities` lists the upstream package, Swift
+   factory names, supported model capabilities, file upload, and skill upload.
+2. **Mock conformance:** Swift tests assert request URLs/bodies/headers and
+   response or stream parsing for each listed capability.
+3. **Live smoke:** representative first-party providers can be checked with:
+
+   ```sh
+   LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
+   ```
+
+   The live suite reads API keys from environment variables first, then from the
+   ignored root files `openai-api-key.txt`, `claude-api-key.txt`, and
+   `gemini-api-key.txt`.
+
+4. **Docs:** README and `Docs/ProviderCapabilityMatrix.md` point users to the
+   same capability story as the code.
+
 ## Pre-Commit Checklist
 
 - Public factory and aliases match upstream exports.
 - Supported capabilities match upstream model methods.
+- `AIProviderCapabilities` and `Docs/ProviderCapabilityMatrix.md` match the
+  registry and any new provider/client surfaces.
 - Provider IDs match upstream, including capability suffixes where present.
 - Default base URL, env var names, auth headers, and query parameters match.
 - Request body conversion is covered for normal generation plus tools,
@@ -305,6 +344,8 @@ the touched surface into the newer naming pattern.
   header/body behavior.
 - Focused tests cover at least one request and one response/stream for each new
   or changed surface.
+- If live behavior changed for OpenAI, Anthropic, or Gemini, run or explicitly
+  defer `LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke`.
 - `swift test` passes.
 - This guide's snapshot, index, or known gaps are updated if the pass changed
   provider coverage.

@@ -137,6 +137,14 @@ Google, Google Vertex, Gateway, xAI, Mistral, Groq, Cohere, Voyage, Bedrock,
 Replicate, fal, Deepgram, ElevenLabs, and other official `@ai-sdk/*` provider
 packages.
 
+Use `AIProviderCapabilities.all` for a machine-readable provider/capability
+matrix, or read [Docs/ProviderCapabilityMatrix.md](Docs/ProviderCapabilityMatrix.md)
+for the human table. Optional live smoke tests are available with real keys:
+
+```sh
+LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
+```
+
 See [Docs/UpstreamSync.md](Docs/UpstreamSync.md) for the upstream porting
 workflow and [Docs/ProductGapAudit.md](Docs/ProductGapAudit.md) for remaining
 product-level gaps.
