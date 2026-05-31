@@ -548,27 +548,32 @@ public final class AmazonBedrockRerankingModel: RerankingModel, @unchecked Senda
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
+        let providerOptions = bedrockRequestProviderOptions(from: request.extraBody)
         let modelArn = "arn:aws:bedrock:\(config.region)::foundation-model/\(modelID)"
+        var modelConfiguration: [String: JSONValue] = ["modelArn": .string(modelArn)]
+        if let additionalModelRequestFields = providerOptions["additionalModelRequestFields"] {
+            modelConfiguration["additionalModelRequestFields"] = additionalModelRequestFields
+        }
+
+        var bedrockRerankingConfiguration: [String: JSONValue] = [
+            "modelConfiguration": .object(modelConfiguration)
+        ]
+        if let topK = request.topK {
+            bedrockRerankingConfiguration["numberOfResults"] = .number(Double(topK))
+        }
+
         var body: [String: JSONValue] = [
             "queries": .array([.object(["type": "TEXT", "textQuery": .object(["text": .string(request.query)])])]),
             "sources": .array(request.documents.map { .object(["type": "INLINE", "inlineDocumentSource": .object(["type": "TEXT", "textDocument": .object(["text": .string($0)])])]) }),
             "rerankingConfiguration": .object([
                 "type": "BEDROCK_RERANKING_MODEL",
-                "bedrockRerankingConfiguration": .object([
-                    "modelConfiguration": .object(["modelArn": .string(modelArn)])
-                ])
+                "amazonBedrockRerankingConfiguration": .object(bedrockRerankingConfiguration)
             ])
         ]
-        if let topK = request.topK {
-            body["rerankingConfiguration"] = .object([
-                "type": "BEDROCK_RERANKING_MODEL",
-                "bedrockRerankingConfiguration": .object([
-                    "numberOfResults": .number(Double(topK)),
-                    "modelConfiguration": .object(["modelArn": .string(modelArn)])
-                ])
-            ])
+        if let nextToken = providerOptions["nextToken"] {
+            body["nextToken"] = nextToken
         }
-        body.merge(request.extraBody) { _, new in new }
+        body.merge(bedrockPassthroughExtraBody(request.extraBody)) { _, new in new }
         let raw = try await config.sendJSON(path: "/rerank", body: .object(body), headers: request.headers)
         let results = raw["results"]?.arrayValue?.compactMap { item -> RerankedDocument? in
             guard let index = item["index"]?.intValue,

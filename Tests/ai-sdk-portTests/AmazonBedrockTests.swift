@@ -427,6 +427,49 @@ import Testing
     #expect(body["dimensions"]?.intValue == 256)
 }
 
+@Test func amazonBedrockRerankingUsesAgentRuntimeShapeAndNestedOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"results":[{"index":1,"relevanceScore":0.81},{"index":0,"relevanceScore":0.42}]}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-west-2",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.rerankingModel("cohere.rerank-v3-5:0")
+
+    let result = try await model.rerank(RerankingRequest(
+        query: "rainy day",
+        documents: ["sunny beach", "rainy city"],
+        topK: 2,
+        extraBody: [
+            "amazonBedrock": .object([
+                "nextToken": .string("token-1"),
+                "additionalModelRequestFields": .object(["truncate": .string("END")])
+            ])
+        ]
+    ))
+
+    #expect(result.results.map(\.index) == [1, 0])
+    #expect(result.results.map(\.score) == [0.81, 0.42])
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://bedrock-agent-runtime.us-west-2.amazonaws.com/rerank")
+    #expect(request.headers["Authorization"] == "Bearer bearer-key")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["nextToken"]?.stringValue == "token-1")
+    #expect(body["queries"]?[0]?["textQuery"]?["text"]?.stringValue == "rainy day")
+    #expect(body["sources"]?[0]?["inlineDocumentSource"]?["textDocument"]?["text"]?.stringValue == "sunny beach")
+    #expect(body["sources"]?[1]?["inlineDocumentSource"]?["textDocument"]?["text"]?.stringValue == "rainy city")
+    let rerankingConfig = body["rerankingConfiguration"]
+    #expect(rerankingConfig?["type"]?.stringValue == "BEDROCK_RERANKING_MODEL")
+    let bedrockConfig = rerankingConfig?["amazonBedrockRerankingConfiguration"]
+    #expect(bedrockConfig?["numberOfResults"]?.intValue == 2)
+    #expect(bedrockConfig?["modelConfiguration"]?["modelArn"]?.stringValue == "arn:aws:bedrock:us-west-2::foundation-model/cohere.rerank-v3-5:0")
+    #expect(bedrockConfig?["modelConfiguration"]?["additionalModelRequestFields"]?["truncate"]?.stringValue == "END")
+    #expect(rerankingConfig?["bedrockRerankingConfiguration"] == nil)
+    #expect(body["amazonBedrock"] == nil)
+}
+
 @Test func amazonBedrockImageMapsTextOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"images":["image-1"]}"#))
     let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(

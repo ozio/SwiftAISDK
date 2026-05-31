@@ -155,7 +155,7 @@ existing file instead of recreating a monolithic test suite.
 | Google Gemini | `@ai-sdk/google` | `AIProviders.google`, `GoogleGenerativeAIModel`, `GoogleTools` | `GoogleGenerativeAITests.swift` |
 | Google Vertex | `@ai-sdk/google-vertex` | `AIProviders.googleVertex`, `GoogleVertexProvider`, `GoogleVertexAnthropicProvider`, `GoogleVertexTools`, `GoogleVertexAnthropicTools` | `GoogleVertexTests.swift` |
 | AI Gateway | `@ai-sdk/gateway` | `AIProviders.gateway`, `GatewayProvider`, `GatewayTools`, `GatewayManagementClient` | `GatewayTests.swift` |
-| Amazon Bedrock native | `@ai-sdk/amazon-bedrock` | `AIProviders.amazonBedrock`, `AmazonBedrockLanguageModel`, `AmazonBedrockEmbeddingModel`, `AmazonBedrockImageModel` | `AmazonBedrockTests.swift` |
+| Amazon Bedrock native | `@ai-sdk/amazon-bedrock` | `AIProviders.amazonBedrock`, `AmazonBedrockLanguageModel`, `AmazonBedrockEmbeddingModel`, `AmazonBedrockImageModel`, `AmazonBedrockRerankingModel` | `AmazonBedrockTests.swift` |
 | Mistral, Cohere, Voyage | `@ai-sdk/mistral`, `@ai-sdk/cohere`, `@ai-sdk/voyage` | Provider-specific Swift providers and models | `CohereMistralVoyageTests.swift` |
 | Vercel | `@ai-sdk/vercel` | `AIProviders.vercel`, Vercel chat and image models | `ProviderRegistryVercelTests.swift` |
 | Hugging Face | `@ai-sdk/huggingface` | `AIProviders.huggingFace`, image model | `ProviderRegistryVercelTests.swift` |
