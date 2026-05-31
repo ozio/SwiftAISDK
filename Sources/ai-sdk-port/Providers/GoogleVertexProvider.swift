@@ -86,19 +86,19 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
-        GoogleVertexLanguageModel(modelID: modelID, config: config)
+        GoogleVertexLanguageModel(modelID: modelID, config: config.withProviderID("google.vertex.chat"))
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
-        GoogleVertexEmbeddingModel(modelID: modelID, config: config)
+        GoogleVertexEmbeddingModel(modelID: modelID, config: config.withProviderID("google.vertex.embedding"))
     }
 
     public func imageModel(_ modelID: String) throws -> any ImageModel {
-        GoogleVertexImageModel(modelID: modelID, config: config)
+        GoogleVertexImageModel(modelID: modelID, config: config.withProviderID("google.vertex.image"))
     }
 
     public func videoModel(_ modelID: String) throws -> any VideoModel {
-        GoogleVertexVideoModel(modelID: modelID, config: config)
+        GoogleVertexVideoModel(modelID: modelID, config: config.withProviderID("google.vertex.video"))
     }
 
     public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
@@ -157,6 +157,17 @@ struct GoogleVertexConfig: @unchecked Sendable {
             mergedHeaders["Authorization"] = mergedHeaders["Authorization"] ?? "Bearer \(token)"
         }
         return AIHTTPRequest(method: "POST", url: try requireURL("\(withoutTrailingSlash(baseURL))\(path)"), headers: mergedHeaders, body: try encodeJSONBody(body))
+    }
+
+    func withProviderID(_ providerID: String) -> GoogleVertexConfig {
+        GoogleVertexConfig(
+            providerID: providerID,
+            baseURL: baseURL,
+            headers: headers,
+            auth: auth,
+            transport: transport,
+            date: date
+        )
     }
 }
 

@@ -9,6 +9,7 @@ import Testing
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
     let model = try provider.languageModel("gemini-2.5-flash")
 
+    #expect(model.providerID == "google.generative-ai")
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Ping")]))
 
     #expect(result.text == "gemini")
@@ -203,6 +204,7 @@ import Testing
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
     let model = try provider.imageModel("gemini-2.5-flash-image")
 
+    #expect(model.providerID == "google.generative-ai")
     let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "1:1"))
 
     #expect(result.base64Images == ["gemini-image"])
@@ -222,6 +224,7 @@ import Testing
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
     let model = try provider.videoModel("veo-3.1-generate-preview")
 
+    #expect(model.providerID == "google.generative-ai")
     let result = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
         aspectRatio: "16:9",
@@ -540,7 +543,11 @@ import Testing
         """)
     ])
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let result = try await provider.files().uploadFile(FileUploadRequest(data: Data("video".utf8), mediaType: "video/mp4", displayName: "Clip"))
+    let imageModel = try provider.imageModel("imagen-3.0-generate-002")
+    #expect(imageModel.providerID == "google.generative-ai")
+    let files = provider.files()
+    #expect(files.providerID == "google.generative-ai")
+    let result = try await files.uploadFile(FileUploadRequest(data: Data("video".utf8), mediaType: "video/mp4", displayName: "Clip"))
 
     #expect(result.providerReference["google"] == "https://generativelanguage.googleapis.com/v1beta/files/abc")
     let requests = await transport.requests()

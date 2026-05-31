@@ -450,7 +450,7 @@ public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
     }
 
     public func files() -> any AIFileClient {
-        GoogleFileClient(providerID: "google.files", config: config)
+        GoogleFileClient(providerID: config.providerID, config: config)
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {

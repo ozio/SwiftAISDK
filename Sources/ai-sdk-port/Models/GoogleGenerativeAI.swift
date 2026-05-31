@@ -157,7 +157,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
-        self.providerID = "\(config.providerID).image"
+        self.providerID = config.providerID
         self.modelID = modelID
         self.config = config
     }
@@ -253,7 +253,7 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
-        self.providerID = "\(config.providerID).video"
+        self.providerID = config.providerID
         self.modelID = modelID
         self.config = config
     }

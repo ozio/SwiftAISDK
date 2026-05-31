@@ -45,6 +45,7 @@ import Testing
     ))
     let model = try provider.languageModel("gemini-2.5-pro")
 
+    #expect(model.providerID == "google.vertex.chat")
     let result = try await model.generate(LanguageModelRequest(messages: [.system("Brief"), .user("Hi")], maxOutputTokens: 32))
 
     #expect(result.text == "vertex")
@@ -237,6 +238,7 @@ import Testing
     let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", transport: transport))
     let model = try provider.embeddingModel("text-embedding-005")
 
+    #expect(model.providerID == "google.vertex.embedding")
     let result = try await model.embed(EmbeddingRequest(values: ["hello"], dimensions: 128))
 
     #expect(result.embeddings == [[0.4, 0.5]])
@@ -253,7 +255,9 @@ import Testing
     {"predictions":[{"bytesBase64Encoded":"abc"}]}
     """))
     let imageProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", baseURL: "https://api.example.com", transport: imageTransport))
-    let image = try await imageProvider.imageModel("imagen-3.0-generate-002").generateImage(ImageGenerationRequest(prompt: "cat", count: 2))
+    let imageModel = try imageProvider.imageModel("imagen-3.0-generate-002")
+    #expect(imageModel.providerID == "google.vertex.image")
+    let image = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", count: 2))
     #expect(image.base64Images == ["abc"])
     let imageRequest = try #require(await imageTransport.requests().first)
     #expect(imageRequest.url.absoluteString == "https://api.example.com/models/imagen-3.0-generate-002:predict")
@@ -265,7 +269,9 @@ import Testing
     {"name":"operations/123"}
     """))
     let videoProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", baseURL: "https://api.example.com", transport: videoTransport))
-    let video = try await videoProvider.videoModel("veo-2.0-generate-001").generateVideo(VideoGenerationRequest(prompt: "cat running", aspectRatio: "16:9", durationSeconds: 4))
+    let videoModel = try videoProvider.videoModel("veo-2.0-generate-001")
+    #expect(videoModel.providerID == "google.vertex.video")
+    let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat running", aspectRatio: "16:9", durationSeconds: 4))
     #expect(video.operationID == "operations/123")
     let videoRequest = try #require(await videoTransport.requests().first)
     #expect(videoRequest.url.absoluteString == "https://api.example.com/models/veo-2.0-generate-001:predictLongRunning")
