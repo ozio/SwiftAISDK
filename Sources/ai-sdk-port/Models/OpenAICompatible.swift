@@ -414,6 +414,11 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         if providerID == "googleVertex.xai" {
             body.removeValue(forKey: "reasoning_effort")
         }
+        if providerID.hasPrefix("xai.") {
+            if let topLogprobs = body.removeValue(forKey: "topLogprobs") {
+                body["top_logprobs"] = topLogprobs
+            }
+        }
         return config.transformRequestBody?(body) ?? body
     }
 
@@ -887,10 +892,19 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
-        let extraBody = isOpenAIBackedProvider(providerID)
-            ? openAIResponsesProviderOptions(from: request.extraBody, providerID: providerID)
-            : request.extraBody
-        body.merge(openAIResponsesOptions(from: extraBody)) { _, new in new }
+        let extraBody: [String: JSONValue]
+        if isOpenAIBackedProvider(providerID) {
+            extraBody = openAIResponsesProviderOptions(from: request.extraBody, providerID: providerID)
+        } else if providerID.hasPrefix("xai.") {
+            extraBody = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        } else {
+            extraBody = request.extraBody
+        }
+        var options = openAIResponsesOptions(from: extraBody)
+        if providerID.hasPrefix("xai.") {
+            options = xaiResponsesOptions(from: options)
+        }
+        body.merge(options) { _, new in new }
         let preparedTools = openAIResponsesTools(from: request.tools)
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)
@@ -967,6 +981,24 @@ private func openAIResponsesOptions(from extraBody: [String: JSONValue]) -> [Str
         output["reasoning"] = .object(reasoning)
     }
 
+    return output
+}
+
+private func xaiResponsesOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
+    var output = extraBody
+    if let topLogprobs = output.removeValue(forKey: "topLogprobs") {
+        output["top_logprobs"] = topLogprobs
+        output["logprobs"] = output["logprobs"] ?? .bool(true)
+    }
+    if output["store"]?.boolValue == true {
+        output.removeValue(forKey: "store")
+    } else if output["store"]?.boolValue == false {
+        var include = output["include"]?.arrayValue ?? []
+        if !include.contains(.string("reasoning.encrypted_content")) {
+            include.append(.string("reasoning.encrypted_content"))
+        }
+        output["include"] = .array(include)
+    }
     return output
 }
 
@@ -1423,6 +1455,9 @@ private func openAICompatibleProviderOptions(from extraBody: [String: JSONValue]
     }
 
     let camelProviderID = openAICompatibleCamelCase(providerID)
+    if providerID.hasPrefix("xai."), let rootProviderOptions = output.removeValue(forKey: "xai")?.objectValue {
+        nested.merge(rootProviderOptions) { _, value in value }
+    }
     if let rawProviderOptions = output.removeValue(forKey: providerID)?.objectValue {
         nested.merge(rawProviderOptions) { _, value in value }
     }

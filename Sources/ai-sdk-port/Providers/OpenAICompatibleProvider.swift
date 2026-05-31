@@ -41,6 +41,8 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         case "azure":
             let suffix = surface == "embedding" ? "embeddings" : surface
             return config.withProviderID("azure.\(suffix)")
+        case "xai":
+            return config.withProviderID("xai.\(surface)")
         default:
             return config
         }
@@ -54,7 +56,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
         }
         if providerID == "xai" {
-            return OpenAICompatibleResponsesModel(modelID: modelID, config: config)
+            return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
         }
         if providerID == "huggingface" {
             return HuggingFaceResponsesLanguageModel(modelID: modelID, config: config)
@@ -301,7 +303,10 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
     }
 
     public func files() -> any AIFileClient {
-        MultipartFileClient(
+        if providerID == "xai" {
+            return XAIFileClient(config: config.withProviderID("xai.files"))
+        }
+        return MultipartFileClient(
             providerID: "\(providerID).files",
             providerReferenceKey: providerID == "xai" ? "xai" : providerID,
             config: config,

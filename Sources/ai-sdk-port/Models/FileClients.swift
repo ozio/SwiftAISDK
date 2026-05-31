@@ -134,6 +134,56 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
     }
 }
 
+public final class XAIFileClient: AIFileClient, @unchecked Sendable {
+    public let providerID = "xai.files"
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        self.config = config
+    }
+
+    public func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
+        let options = xaiFileOptions(from: request.extraBody)
+        var form = MultipartFormData()
+        form.appendFile(name: "file", fileName: request.filename ?? "blob", mimeType: request.mediaType, data: request.data)
+        if let teamID = options["teamId"]?.stringValue ?? options["team_id"]?.stringValue {
+            form.appendField(name: "team_id", value: teamID)
+        }
+
+        let response = try await config.transport.send(config.rawRequest(
+            path: "/files",
+            modelID: "",
+            body: form.finalize(),
+            contentType: "multipart/form-data; boundary=\(form.boundary)",
+            headers: request.headers
+        ))
+        guard (200..<300).contains(response.statusCode) else {
+            throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+        }
+        let raw = try response.jsonValue()
+        var metadata: [String: JSONValue] = [:]
+        if let filename = raw["filename"] { metadata["filename"] = filename }
+        if let bytes = raw["bytes"] { metadata["bytes"] = bytes }
+        if let createdAt = raw["created_at"] { metadata["createdAt"] = createdAt }
+        return FileUploadResult(
+            providerReference: ["xai": raw["id"]?.stringValue ?? ""],
+            filename: raw["filename"]?.stringValue ?? request.filename,
+            mediaType: request.mediaType,
+            metadata: ["xai": .object(metadata)],
+            rawValue: raw
+        )
+    }
+}
+
+private func xaiFileOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
+    if let nested = extraBody["xai"]?.objectValue {
+        return nested
+    }
+    var output = extraBody
+    output.removeValue(forKey: "xai")
+    return output
+}
+
 private func fileMetadata(from raw: JSONValue) -> [String: JSONValue] {
     guard case let .object(object) = raw else { return [:] }
     return object

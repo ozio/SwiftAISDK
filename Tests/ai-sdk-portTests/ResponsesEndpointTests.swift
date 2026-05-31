@@ -9,6 +9,8 @@ import Testing
 
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], maxOutputTokens: 12))
 
+    #expect(provider.providerID == "xai")
+    #expect(model.providerID == "xai.responses")
     #expect(result.text == "xai text")
     #expect(result.usage?.totalTokens == 5)
     let request = try #require(await transport.requests().first)
@@ -19,6 +21,50 @@ import Testing
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
     #expect(body["input"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
     #expect(body["max_output_tokens"]?.intValue == 12)
+}
+
+@Test func xAIProviderAliasesUseUpstreamProviderIDsAndOptions() async throws {
+    let responsesTransport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai responses"}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: responsesTransport))
+    let responsesModel = try provider.responses("grok-4")
+
+    _ = try await responsesModel.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: [
+            "xai": .object([
+                "topLogprobs": .number(2),
+                "store": .bool(false),
+                "include": .array([.string("file_search_call.results")])
+            ])
+        ]
+    ))
+
+    #expect(responsesModel.providerID == "xai.responses")
+    #expect(try provider.chat("grok-4").providerID == "xai.chat")
+    #expect(try provider.imageModel("grok-2-image").providerID == "xai.image")
+    #expect(try provider.videoModel("grok-2-video").providerID == "xai.video")
+    #expect(provider.files().providerID == "xai.files")
+
+    let responsesBody = try decodeJSONBody(try #require((await responsesTransport.requests()).first?.body))
+    #expect(responsesBody["top_logprobs"]?.intValue == 2)
+    #expect(responsesBody["logprobs"]?.boolValue == true)
+    #expect(responsesBody["store"]?.boolValue == false)
+    #expect(responsesBody["include"]?[0]?.stringValue == "file_search_call.results")
+    #expect(responsesBody["include"]?[1]?.stringValue == "reasoning.encrypted_content")
+    #expect(responsesBody["xai"] == nil)
+
+    let chatTransport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"xai chat"},"finish_reason":"stop"}]}"#))
+    let chatProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: chatTransport))
+    let chatModel = try chatProvider.chat("grok-4")
+    _ = try await chatModel.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: ["xai": .object(["reasoningEffort": .string("high"), "topLogprobs": .number(3)])]
+    ))
+
+    let chatBody = try decodeJSONBody(try #require((await chatTransport.requests()).first?.body))
+    #expect(chatBody["reasoning_effort"]?.stringValue == "high")
+    #expect(chatBody["top_logprobs"]?.intValue == 3)
+    #expect(chatBody["xai"] == nil)
 }
 
 @Test func xAIToolsHelpersMirrorResponsesToolFactories() async throws {

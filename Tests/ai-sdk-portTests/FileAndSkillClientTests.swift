@@ -21,6 +21,33 @@ import Testing
     #expect(bodyText.contains("assistants"))
 }
 
+@Test func xAIFilesUploadUsesFilesEndpointTeamIDAndMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"file_xai_123","object":"file","filename":"upload.csv","bytes":512,"created_at":1700000000}
+    """))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let result = try await provider.files().uploadFile(FileUploadRequest(
+        data: Data("a,b\n1,2".utf8),
+        mediaType: "text/csv",
+        extraBody: ["xai": .object(["teamId": .string("team-123")])]
+    ))
+
+    #expect(result.providerReference["xai"] == "file_xai_123")
+    #expect(result.filename == "upload.csv")
+    #expect(result.mediaType == "text/csv")
+    #expect(result.metadata["xai"]?["filename"]?.stringValue == "upload.csv")
+    #expect(result.metadata["xai"]?["bytes"]?.intValue == 512)
+    #expect(result.metadata["xai"]?["createdAt"]?.intValue == 1_700_000_000)
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.x.ai/v1/files")
+    #expect(request.headers["Authorization"] == "Bearer xai-key")
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"file\"; filename=\"blob\""))
+    #expect(bodyText.contains("name=\"team_id\""))
+    #expect(bodyText.contains("team-123"))
+    #expect(!bodyText.contains("name=\"purpose\""))
+}
+
 @Test func openAISkillsUploadUsesMultipartSkillsEndpoint() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"skill_123","object":"skill","name":"capture-skill","description":"captures data","default_version":"1","latest_version":"2","created_at":1772078479,"updated_at":1772078480}

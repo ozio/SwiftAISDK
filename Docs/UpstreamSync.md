@@ -247,7 +247,7 @@ the touched surface into the newer naming pattern.
 | OpenAI Files/Skills | `@ai-sdk/openai` file and skill clients | `OpenAIFileClient`, `OpenAISkillsClient` | `FileAndSkillClientTests.swift` |
 | Azure OpenAI | `@ai-sdk/azure` | `AIProviders.azureOpenAI`, `AzureOpenAIProvider`, `AzureOpenAITools` | `AlibabaProdiaAzureQuiverTests.swift`, `OpenAIResponsesTests.swift` |
 | OpenAI-compatible providers | `@ai-sdk/openai-compatible`, `deepseek`, `togetherai`, `groq`, `perplexity`, `fireworks`, `deepinfra`, `baseten`, `cerebras`, `moonshotai` | `OpenAICompatibleProvider`, provider-specific registry helpers | `OpenAICompatibleTests.swift`, `ProviderRegistryVercelTests.swift`, `CohereMistralVoyageTests.swift` |
-| xAI | `@ai-sdk/xai` | `AIProviders.xAI`, `XAITools`, OpenAI-compatible chat/responses models | `OpenAICompatibleTests.swift` |
+| xAI | `@ai-sdk/xai` | `AIProviders.xAI`, `XAITools`, `XAIImageModel`, `XAIVideoModel`, `XAIFileClient`, OpenAI-compatible chat/responses models with xAI surface IDs | `OpenAICompatibleTests.swift`, `ResponsesEndpointTests.swift`, `NativeMediaProviderTests.swift`, `FileAndSkillClientTests.swift` |
 | Anthropic | `@ai-sdk/anthropic` | `AIProviders.anthropic`, `AnthropicLanguageModel`, `AnthropicTools` | `AnthropicTests.swift`, `AnthropicStreamingAndClientsTests.swift` |
 | Anthropic AWS | `packages/anthropic-aws/src` | `AIProviders.anthropicAWS`, `AnthropicAWSProvider` | `AnthropicStreamingAndClientsTests.swift` |
 | Amazon Bedrock native | `@ai-sdk/amazon-bedrock` | `AIProviders.amazonBedrock`, `AmazonBedrockLanguageModel`, `AmazonBedrockEmbeddingModel`, `AmazonBedrockImageModel`, `AmazonBedrockRerankingModel` | `AmazonBedrockTests.swift` |
@@ -272,6 +272,7 @@ the touched surface into the newer naming pattern.
 | Tool headers and beta flags | Match upstream tests. Anthropic-on-Bedrock uses body `anthropic_beta`; regular Anthropic uses headers. |
 | OpenAI-compatible providers | Share the compatible model implementation, but keep provider-specific defaults, path quirks, headers, tools, and provider IDs explicit. |
 | OpenAI/Azure provider IDs | Root providers stay `openai` and `azure`, but concrete models use upstream surface IDs: `openai.responses`, `openai.chat`, `openai.completion`, `openai.embedding`, `openai.image`, `openai.transcription`, `openai.speech`, `openai.files`, `openai.skills`; Azure uses the same pattern except embeddings is `azure.embeddings`. |
+| xAI provider IDs and files | Root provider stays `xai`, concrete surfaces use `xai.responses`, `xai.chat`, `xai.image`, `xai.video`, and `xai.files`. xAI file uploads use `team_id` from provider options and do not send OpenAI's `purpose` field. |
 | Provider options | Preserve upstream namespaces and avoid leaking provider-specific options into unrelated providers. |
 | Auth and provider settings | Mirror upstream env var names, base URL fallbacks, and header strategy. OpenAI settings include `OPENAI_BASE_URL`, organization, and project headers. |
 | AWS providers | Keep SigV4 service name, region, path encoding, and EventStream parsing covered by tests. |
