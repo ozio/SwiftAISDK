@@ -326,6 +326,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        let warnings = isOpenAIBackedProvider(providerID)
+            ? []
+            : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         let raw = try await config.sendJSON(path: "/chat/completions", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers)
         let choice = raw["choices"]?[0]
         let toolCalls = openAICompatibleChatToolCalls(from: choice?["message"]?["tool_calls"])
@@ -341,7 +344,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             finishReason: openAICompatibleFinishReason(choice?["finish_reason"]?.stringValue),
             usage: usage(from: raw),
             toolCalls: toolCalls,
-            rawValue: raw
+            rawValue: raw,
+            warnings: warnings
         )
     }
 
@@ -1480,6 +1484,28 @@ private func openAICompatibleProviderOptions(from extraBody: [String: JSONValue]
     return output
 }
 
+private func openAICompatibleProviderOptionWarnings(from extraBody: [String: JSONValue], providerID: String, includeCompatibilityNamespace: Bool) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if includeCompatibilityNamespace, extraBody["openai-compatible"] != nil {
+        warnings.append(AIWarning(
+            type: "deprecated",
+            setting: "providerOptions key 'openai-compatible'",
+            message: "Use 'openaiCompatible' instead."
+        ))
+    }
+
+    let providerOptionsKey = openAICompatibleProviderRoot(providerID)
+    let camelProviderOptionsKey = openAICompatibleCamelCase(providerOptionsKey)
+    if camelProviderOptionsKey != providerOptionsKey, extraBody[providerOptionsKey] != nil {
+        warnings.append(AIWarning(
+            type: "deprecated",
+            setting: "providerOptions key '\(providerOptionsKey)'",
+            message: "Use '\(camelProviderOptionsKey)' instead."
+        ))
+    }
+    return warnings
+}
+
 private func openAICompatibleProviderRoot(_ providerID: String) -> String {
     String(providerID.split(separator: ".", maxSplits: 1).first.map(String.init) ?? providerID)
 }
@@ -1697,16 +1723,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
 }
 
 private func openAICompatibleImageWarnings(from request: ImageGenerationRequest, providerID: String) -> [AIWarning] {
-    var warnings: [AIWarning] = []
-    let providerOptionsKey = openAICompatibleProviderRoot(providerID)
-    let camelProviderOptionsKey = openAICompatibleCamelCase(providerOptionsKey)
-    if camelProviderOptionsKey != providerOptionsKey, request.extraBody[providerOptionsKey] != nil {
-        warnings.append(AIWarning(
-            type: "deprecated",
-            setting: "providerOptions key '\(providerOptionsKey)'",
-            message: "Use '\(camelProviderOptionsKey)' instead."
-        ))
-    }
+    var warnings = openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
     if request.aspectRatio != nil {
         warnings.append(AIWarning(
             type: "unsupported",

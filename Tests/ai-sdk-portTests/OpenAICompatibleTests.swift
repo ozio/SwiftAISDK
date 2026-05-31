@@ -350,6 +350,72 @@ import Testing
     #expect(imageBody["testProvider"] == nil)
 }
 
+@Test func openAICompatibleChatWarnsForDeprecatedProviderOptionsKeys() async throws {
+    let compatibilityTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}
+    """))
+    let compatibilityProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: compatibilityTransport
+    )
+
+    let compatibilityResult = try await compatibilityProvider.chatModel("chat-model").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: ["openai-compatible": .object(["user": .string("deprecated-user")])]
+    ))
+
+    #expect(compatibilityResult.warnings == [
+        AIWarning(type: "deprecated", setting: "providerOptions key 'openai-compatible'", message: "Use 'openaiCompatible' instead.")
+    ])
+    let compatibilityBody = try decodeJSONBody(try #require((await compatibilityTransport.requests()).first?.body))
+    #expect(compatibilityBody["user"]?.stringValue == "deprecated-user")
+    #expect(compatibilityBody["openai-compatible"] == nil)
+
+    let rawTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}
+    """))
+    let rawProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: rawTransport
+    )
+
+    let rawResult = try await rawProvider.chatModel("chat-model").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: ["test-provider": .object(["reasoningEffort": .string("high")])]
+    ))
+
+    #expect(rawResult.warnings == [
+        AIWarning(type: "deprecated", setting: "providerOptions key 'test-provider'", message: "Use 'testProvider' instead.")
+    ])
+    let rawBody = try decodeJSONBody(try #require((await rawTransport.requests()).first?.body))
+    #expect(rawBody["reasoning_effort"]?.stringValue == "high")
+    #expect(rawBody["test-provider"] == nil)
+
+    let camelTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}
+    """))
+    let camelProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: camelTransport
+    )
+
+    let camelResult = try await camelProvider.chatModel("chat-model").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: ["testProvider": .object(["reasoningEffort": .string("low")])]
+    ))
+
+    #expect(camelResult.warnings.isEmpty)
+    let camelBody = try decodeJSONBody(try #require((await camelTransport.requests()).first?.body))
+    #expect(camelBody["reasoning_effort"]?.stringValue == "low")
+    #expect(camelBody["testProvider"] == nil)
+}
+
 @Test func openAICompatibleImageRejectsMoreThanMaxImagesPerCall() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"unused"}]}"#))
     let provider = try AIProviders.openAICompatible(

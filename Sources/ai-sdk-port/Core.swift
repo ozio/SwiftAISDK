@@ -132,6 +132,7 @@ public struct TextGenerationResult: Sendable {
     public var sources: [AISource]
     public var providerMetadata: [String: JSONValue]
     public var rawValue: JSONValue
+    public var warnings: [AIWarning]
 
     public init(
         text: String,
@@ -141,7 +142,8 @@ public struct TextGenerationResult: Sendable {
         toolCalls: [AIToolCall] = [],
         sources: [AISource] = [],
         providerMetadata: [String: JSONValue] = [:],
-        rawValue: JSONValue
+        rawValue: JSONValue,
+        warnings: [AIWarning] = []
     ) {
         self.text = text
         self.reasoning = reasoning
@@ -151,6 +153,7 @@ public struct TextGenerationResult: Sendable {
         self.sources = sources
         self.providerMetadata = providerMetadata
         self.rawValue = rawValue
+        self.warnings = warnings
     }
 }
 
