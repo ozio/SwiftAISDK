@@ -17,25 +17,41 @@ public enum AI {
         executableTools: [AITool],
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
         retryPolicy: AIRetryPolicy = .default
     ) async throws -> TextGenerationResult {
-        guard !executableTools.isEmpty else {
+        guard !executableTools.isEmpty || prepareStep != nil else {
             return try await generateText(model: model, request: request, retryPolicy: retryPolicy)
         }
         guard maxSteps > 0 else {
             throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
         }
 
-        let toolsByName = try toolsByName(from: executableTools)
+        let initialRequest = request
         var currentRequest = request
         currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
 
         var steps: [AIToolStep] = []
         var allToolResults: [AIToolResult] = []
+        var responseMessages: [AIMessage] = []
         var lastResult: TextGenerationResult?
 
         for index in 0..<maxSteps {
-            var result = try await generateText(model: model, request: currentRequest, retryPolicy: retryPolicy)
+            let prepared = try await prepareStep?(AIPrepareStepContext(
+                model: model,
+                stepNumber: index,
+                steps: steps,
+                request: currentRequest,
+                initialRequest: initialRequest,
+                responseMessages: responseMessages
+            ))
+            let stepModel = prepared?.model ?? model
+            let stepTools = prepared?.executableTools ?? executableTools
+            let toolsByName = try toolsByName(from: stepTools)
+            var stepRequest = prepared?.request ?? currentRequest
+            stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
+
+            var result = try await generateText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy)
             let executableCalls = result.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
 
             if executableCalls.isEmpty {
@@ -76,8 +92,13 @@ public enum AI {
             if try await isStopConditionMet(stopWhen, steps: steps) {
                 return result
             }
-            currentRequest.messages.append(.assistant(text: result.text, toolCalls: result.toolCalls))
-            currentRequest.messages.append(contentsOf: toolResults.map(AIMessage.toolResult))
+            let assistantMessage = AIMessage.assistant(text: result.text, toolCalls: result.toolCalls)
+            let toolResultMessages = toolResults.map(AIMessage.toolResult)
+            responseMessages.append(assistantMessage)
+            responseMessages.append(contentsOf: toolResultMessages)
+            currentRequest = stepRequest
+            currentRequest.messages.append(assistantMessage)
+            currentRequest.messages.append(contentsOf: toolResultMessages)
         }
 
         guard var result = lastResult else {
@@ -105,6 +126,7 @@ public enum AI {
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
         retryPolicy: AIRetryPolicy = .default,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
@@ -132,7 +154,7 @@ public enum AI {
             headers: headers
         )
 
-        if executableTools.isEmpty {
+        if executableTools.isEmpty && prepareStep == nil {
             return try await generateText(model: model, request: request, retryPolicy: retryPolicy)
         }
 
@@ -142,6 +164,7 @@ public enum AI {
             executableTools: executableTools,
             maxSteps: maxSteps,
             stopWhen: stopWhen,
+            prepareStep: prepareStep,
             retryPolicy: retryPolicy
         )
     }
@@ -243,12 +266,13 @@ public enum AI {
         request: LanguageModelRequest,
         executableTools: [AITool],
         maxSteps: Int = 5,
-        stopWhen: [AIStopCondition] = []
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    guard !executableTools.isEmpty else {
+                    guard !executableTools.isEmpty || prepareStep != nil else {
                         for try await part in streamText(model: model, request: request) {
                             continuation.yield(part)
                         }
@@ -259,14 +283,29 @@ public enum AI {
                         throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
                     }
 
-                    let toolsByName = try toolsByName(from: executableTools)
+                    let initialRequest = request
                     var currentRequest = request
                     currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
                     var steps: [AIToolStep] = []
+                    var responseMessages: [AIMessage] = []
 
                     for index in 0..<maxSteps {
+                        let prepared = try await prepareStep?(AIPrepareStepContext(
+                            model: model,
+                            stepNumber: index,
+                            steps: steps,
+                            request: currentRequest,
+                            initialRequest: initialRequest,
+                            responseMessages: responseMessages
+                        ))
+                        let stepModel = prepared?.model ?? model
+                        let stepTools = prepared?.executableTools ?? executableTools
+                        let toolsByName = try toolsByName(from: stepTools)
+                        var stepRequest = prepared?.request ?? currentRequest
+                        stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
+
                         let step = try await forwardLanguageStream(
-                            streamText(model: model, request: currentRequest),
+                            streamText(model: stepModel, request: stepRequest),
                             to: continuation
                         )
                         let executableCalls = step.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
@@ -287,8 +326,13 @@ public enum AI {
                             continuation.finish()
                             return
                         }
-                        currentRequest.messages.append(.assistant(text: step.text, toolCalls: step.toolCalls))
-                        currentRequest.messages.append(contentsOf: toolResults.map(AIMessage.toolResult))
+                        let assistantMessage = AIMessage.assistant(text: step.text, toolCalls: step.toolCalls)
+                        let toolResultMessages = toolResults.map(AIMessage.toolResult)
+                        responseMessages.append(assistantMessage)
+                        responseMessages.append(contentsOf: toolResultMessages)
+                        currentRequest = stepRequest
+                        currentRequest.messages.append(assistantMessage)
+                        currentRequest.messages.append(contentsOf: toolResultMessages)
                     }
 
                     continuation.finish()
@@ -320,6 +364,7 @@ public enum AI {
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
@@ -346,11 +391,11 @@ public enum AI {
             headers: headers
         )
 
-        if executableTools.isEmpty {
+        if executableTools.isEmpty && prepareStep == nil {
             return streamText(model: model, request: request)
         }
 
-        return streamText(model: model, request: request, executableTools: executableTools, maxSteps: maxSteps, stopWhen: stopWhen)
+        return streamText(model: model, request: request, executableTools: executableTools, maxSteps: maxSteps, stopWhen: stopWhen, prepareStep: prepareStep)
     }
 
     public static func streamObject<Object: Decodable & Sendable>(

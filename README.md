@@ -167,6 +167,25 @@ for try await part in AI.streamText(
 }
 ```
 
+Use `prepareStep` when a later tool-loop step needs different request settings
+or a narrowed tool set:
+
+```swift
+let answer = try await AI.generateText(
+    model: model,
+    prompt: "Plan the day.",
+    executableTools: [weather],
+    maxSteps: 3,
+    prepareStep: { context in
+        guard context.stepNumber == 1 else { return nil }
+        var request = context.request
+        request.providerOptions["openai"] = ["parallelToolCalls": false]
+        request.messages.append(.user("Use the tool result and answer directly."))
+        return AIPrepareStepResult(request: request)
+    }
+)
+```
+
 ## Provider Factories
 
 Provider factories live under `AIProviders`, including OpenAI, Azure, Anthropic,

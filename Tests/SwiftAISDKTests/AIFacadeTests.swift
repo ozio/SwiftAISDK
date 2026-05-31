@@ -204,6 +204,56 @@ import Testing
     ])
 }
 
+@Test func aiStreamTextPrepareStepOverridesRequestAndReceivesResponseMessages() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .textDelta("prepared stream"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+            ]
+        ]
+    )
+    let capture = PrepareStepCapture()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { _ in
+        ["forecast": "sunny"]
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 3,
+        prepareStep: { context in
+            await capture.record(context)
+            guard context.stepNumber == 1 else { return nil }
+            var request = context.request
+            request.messages.append(.user("prepared follow-up"))
+            request.providerOptions["test"] = ["step": 2]
+            return AIPrepareStepResult(request: request)
+        }
+    ) {
+        streamed.append(part)
+    }
+
+    #expect(streamed.contains(.textDelta("prepared stream")))
+    #expect(model.streamRequests.count == 2)
+    #expect(model.streamRequests[1].messages.last == .user("prepared follow-up"))
+    #expect(model.streamRequests[1].providerOptions["test"]?["step"]?.intValue == 2)
+    #expect(await capture.stepNumbers() == [0, 1])
+    #expect(await capture.stepCounts() == [0, 1])
+    #expect(await capture.responseMessageCounts() == [0, 2])
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let schema: JSONValue = [
         "type": "object",
@@ -420,6 +470,46 @@ import Testing
     #expect(result.steps[0].toolResults.count == 1)
 }
 
+@Test func aiGenerateTextPrepareStepOverridesRequestAndReceivesResponseMessages() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object(["step": 1])),
+        TextGenerationResult(text: "prepared answer", finishReason: "stop", rawValue: .object(["step": 2]))
+    ])
+    let capture = PrepareStepCapture()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { _ in
+        ["forecast": "sunny"]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 3,
+        prepareStep: { context in
+            await capture.record(context)
+            guard context.stepNumber == 1 else { return nil }
+            var request = context.request
+            request.messages.append(.user("prepared follow-up"))
+            request.toolChoice = ["type": "tool", "toolName": "lookup"]
+            request.providerOptions["test"] = ["step": 2]
+            return AIPrepareStepResult(request: request)
+        }
+    )
+
+    #expect(result.text == "prepared answer")
+    #expect(model.requests.count == 2)
+    #expect(model.requests[1].messages.last == .user("prepared follow-up"))
+    #expect(model.requests[1].toolChoice?["toolName"]?.stringValue == "lookup")
+    #expect(model.requests[1].providerOptions["test"]?["step"]?.intValue == 2)
+    #expect(await capture.stepNumbers() == [0, 1])
+    #expect(await capture.stepCounts() == [0, 1])
+    #expect(await capture.responseMessageCounts() == [0, 2])
+}
+
 @Test func aiStopConditionsMatchUpstreamStepHelpers() async throws {
     let searchStep = AIToolStep(
         index: 0,
@@ -515,6 +605,30 @@ private actor ToolCapture {
 
     func value() -> JSONValue? {
         arguments
+    }
+}
+
+private actor PrepareStepCapture {
+    private var numbers: [Int] = []
+    private var steps: [Int] = []
+    private var responseMessages: [Int] = []
+
+    func record(_ context: AIPrepareStepContext) {
+        numbers.append(context.stepNumber)
+        steps.append(context.steps.count)
+        responseMessages.append(context.responseMessages.count)
+    }
+
+    func stepNumbers() -> [Int] {
+        numbers
+    }
+
+    func stepCounts() -> [Int] {
+        steps
+    }
+
+    func responseMessageCounts() -> [Int] {
+        responseMessages
     }
 }
 

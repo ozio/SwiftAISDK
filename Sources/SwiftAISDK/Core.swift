@@ -386,6 +386,49 @@ public struct AIStopCondition: Sendable {
     }
 }
 
+public struct AIPrepareStepContext: Sendable {
+    public var model: any LanguageModel
+    public var stepNumber: Int
+    public var steps: [AIToolStep]
+    public var request: LanguageModelRequest
+    public var initialRequest: LanguageModelRequest
+    public var responseMessages: [AIMessage]
+
+    public init(
+        model: any LanguageModel,
+        stepNumber: Int,
+        steps: [AIToolStep],
+        request: LanguageModelRequest,
+        initialRequest: LanguageModelRequest,
+        responseMessages: [AIMessage]
+    ) {
+        self.model = model
+        self.stepNumber = stepNumber
+        self.steps = steps
+        self.request = request
+        self.initialRequest = initialRequest
+        self.responseMessages = responseMessages
+    }
+}
+
+public struct AIPrepareStepResult: Sendable {
+    public var model: (any LanguageModel)?
+    public var request: LanguageModelRequest?
+    public var executableTools: [AITool]?
+
+    public init(
+        model: (any LanguageModel)? = nil,
+        request: LanguageModelRequest? = nil,
+        executableTools: [AITool]? = nil
+    ) {
+        self.model = model
+        self.request = request
+        self.executableTools = executableTools
+    }
+}
+
+public typealias AIPrepareStep = @Sendable (AIPrepareStepContext) async throws -> AIPrepareStepResult?
+
 public struct AISource: Equatable, Hashable, Sendable {
     public var id: String
     public var sourceType: String

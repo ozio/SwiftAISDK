@@ -57,8 +57,9 @@ Impact:
   cancellation/timeout surfaces, telemetry hooks, and warning logging still need
   follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
-  upstream-style stop conditions, but approval flow, dynamic tools, and
-  provider-defined tool wrapping still need follow-up work.
+  upstream-style stop conditions and per-step request/model/tool preparation,
+  but approval flow, dynamic tools, and provider-defined tool wrapping still
+  need follow-up work.
 - Object generation exists for `Decodable` results, and `streamObject` can now
   stream JSON text deltas, best-effort partial JSON objects, and a final decoded
   object. Typed partials, richer schema adapters, typed validation errors, and
@@ -145,6 +146,9 @@ Impact:
 - Automatic multi-step execution exists for `AI.generateText` and `AI.streamText`.
 - Stop conditions now mirror the upstream `isStepCount`, `isLoopFinished`, and
   `hasToolCall` helpers.
+- `prepareStep` now exists as a Swift hook for per-step request/model/tool
+  overrides, with accumulated steps and response messages passed into the
+  callback.
 - Tool-result messages are now first-class in core, but provider passes should
   keep tightening wire-format parity.
 
@@ -228,9 +232,9 @@ Keep turning documentation into executable product evidence:
 4. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed
    `AITool`, execute callbacks, step/tool-result messages, streamed tool-result
-   parts, and upstream-style stop conditions. Next passes should add validation,
-   dynamic tools, approval policies, provider-defined tool wrappers, and richer
-   stream lifecycle handling.
+   parts, upstream-style stop conditions, and a Swift `prepareStep` hook. Next
+   passes should add validation, dynamic tools, approval policies,
+   provider-defined tool wrappers, and richer stream lifecycle handling.
 
 5. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
