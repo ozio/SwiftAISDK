@@ -56,8 +56,8 @@ Impact:
 - Facade calls now have a retry policy for transient errors, but richer
   cancellation/timeout surfaces, telemetry hooks, and warning logging still need
   follow-up work.
-- Tool execution exists for `generateText`, but stop conditions, approval flow,
-  dynamic tools, stream-side tool execution, and provider-defined tool wrapping
+- Tool execution exists for `generateText` and `streamText`, but stop
+  conditions, approval flow, dynamic tools, and provider-defined tool wrapping
   still need follow-up work.
 - Object generation exists for `Decodable` results, and `streamObject` can now
   stream JSON text deltas, best-effort partial JSON objects, and a final decoded
@@ -67,8 +67,8 @@ Impact:
 Recommendation:
 
 Continue growing the `AI` facade above provider models: cancellation,
-timeouts, telemetry, stream-side tool execution, richer schema/object
-generation, and middleware should be separate product rounds.
+timeouts, telemetry, richer schema/object generation, and middleware should be
+separate product rounds.
 
 ### 2. Core model contract is lossy compared with upstream v4
 
@@ -142,16 +142,15 @@ Impact:
 
 - `dynamicTool(...)`, typed input/output validation, approval flow, and
   stop-condition policies are still missing.
-- Automatic multi-step execution exists for `AI.generateText`, but not yet for
-  `AI.streamText`.
+- Automatic multi-step execution exists for `AI.generateText` and `AI.streamText`.
 - Tool-result messages are now first-class in core, but provider passes should
   keep tightening wire-format parity.
 
 Recommendation:
 
 Build on the new `AITool` abstraction: add dynamic tools, validation hooks,
-approval requests, stop conditions, and stream-side execution. Keep
-provider-defined tools as specialized `AITool` values instead of plain JSON
+approval requests, stop conditions, and richer stream tool lifecycle events.
+Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
 ### 4. Object generation and schema validation are partial
@@ -214,9 +213,9 @@ Keep turning documentation into executable product evidence:
    `AI.generateImage`, `AI.transcribe`, `AI.generateSpeech`,
    `AI.generateVideo`, and `AI.rerank` as thin wrappers over existing model
    protocols.
-   First slice is in place, including upload-file and upload-skill wrappers.
-   Follow-up work should add richer result objects, cancellation/timeout
-   behavior, and streaming orchestration.
+   First slice is in place, including upload-file and upload-skill wrappers plus
+   stream-side local tool execution. Follow-up work should add richer result
+   objects, cancellation/timeout behavior, and streaming orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
    First retry slice is in place with `AIRetryPolicy` and default
@@ -225,10 +224,11 @@ Keep turning documentation into executable product evidence:
    streaming retry behavior.
 
 4. **Tool loop pass.**
-   First `generateText` slice is in place with typed `AITool`, execute
-   callbacks, step results, and tool-result messages. Next passes should add
-   validation, dynamic tools, approval/stop-condition policies, provider-defined
-   tool wrappers, and stream-side tool execution.
+   First `generateText` and `streamText` slices are in place with typed
+   `AITool`, execute callbacks, step/tool-result messages, and streamed
+   tool-result parts. Next passes should add validation, dynamic tools,
+   approval/stop-condition policies, provider-defined tool wrappers, and richer
+   stream lifecycle handling.
 
 5. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

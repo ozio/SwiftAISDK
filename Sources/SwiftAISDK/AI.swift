@@ -235,6 +235,63 @@ public enum AI {
 
     public static func streamText(
         model: any LanguageModel,
+        request: LanguageModelRequest,
+        executableTools: [AITool],
+        maxSteps: Int = 5
+    ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    guard !executableTools.isEmpty else {
+                        for try await part in streamText(model: model, request: request) {
+                            continuation.yield(part)
+                        }
+                        continuation.finish()
+                        return
+                    }
+                    guard maxSteps > 0 else {
+                        throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
+                    }
+
+                    let toolsByName = try toolsByName(from: executableTools)
+                    var currentRequest = request
+                    currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
+
+                    for _ in 0..<maxSteps {
+                        let step = try await forwardLanguageStream(
+                            streamText(model: model, request: currentRequest),
+                            to: continuation
+                        )
+                        let executableCalls = step.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
+
+                        guard !executableCalls.isEmpty else {
+                            continuation.finish()
+                            return
+                        }
+
+                        let toolResults = try await executeToolCalls(executableCalls, toolsByName: toolsByName)
+                        for toolResult in toolResults {
+                            continuation.yield(.toolResult(toolResult))
+                        }
+
+                        currentRequest.messages.append(.assistant(text: step.text, toolCalls: step.toolCalls))
+                        currentRequest.messages.append(contentsOf: toolResults.map(AIMessage.toolResult))
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+
+    public static func streamText(
+        model: any LanguageModel,
         prompt: String,
         temperature: Double? = nil,
         topP: Double? = nil,
@@ -247,34 +304,39 @@ public enum AI {
         responseFormat: AIResponseFormat? = nil,
         reasoning: String? = nil,
         tools: [String: JSONValue] = [:],
+        executableTools: [AITool] = [],
+        maxSteps: Int = 5,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:]
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
-        streamText(
-            model: model,
-            request: LanguageModelRequest(
-                messages: [.user(prompt)],
-                temperature: temperature,
-                topP: topP,
-                topK: topK,
-                presencePenalty: presencePenalty,
-                frequencyPenalty: frequencyPenalty,
-                seed: seed,
-                maxOutputTokens: maxOutputTokens,
-                stopSequences: stopSequences,
-                responseFormat: responseFormat,
-                reasoning: reasoning,
-                tools: tools,
-                toolChoice: toolChoice,
-                includeRawChunks: includeRawChunks,
-                providerOptions: providerOptions,
-                extraBody: extraBody,
-                headers: headers
-            )
+        let request = LanguageModelRequest(
+            messages: [.user(prompt)],
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            responseFormat: responseFormat,
+            reasoning: reasoning,
+            tools: tools,
+            toolChoice: toolChoice,
+            includeRawChunks: includeRawChunks,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers
         )
+
+        if executableTools.isEmpty {
+            return streamText(model: model, request: request)
+        }
+
+        return streamText(model: model, request: request, executableTools: executableTools, maxSteps: maxSteps)
     }
 
     public static func streamObject<Object: Decodable & Sendable>(
@@ -569,6 +631,57 @@ private func optionalSum(_ lhs: Int?, _ rhs: Int?) -> Int? {
     case (nil, nil):
         return nil
     }
+}
+
+private struct LanguageStreamToolStep {
+    var text = ""
+    var reasoning = ""
+    var finishReason: String?
+    var usage: TokenUsage?
+    var toolCalls: [AIToolCall] = []
+    var providerMetadata: [String: JSONValue] = [:]
+    var responseMetadata = AIResponseMetadata()
+
+    mutating func record(_ part: LanguageStreamPart) {
+        switch part {
+        case let .textDelta(delta):
+            text += delta
+        case let .textDeltaPart(_, delta, _):
+            text += delta
+        case let .reasoningDelta(delta):
+            reasoning += delta
+        case let .reasoningDeltaPart(_, delta, _):
+            reasoning += delta
+        case let .toolCall(toolCall):
+            toolCalls.append(toolCall)
+        case let .metadata(metadata):
+            providerMetadata.merge(metadata) { _, new in new }
+        case let .responseMetadata(metadata):
+            responseMetadata = metadata
+        case let .finish(reason, partUsage):
+            finishReason = reason
+            usage = partUsage
+        case let .finishMetadata(reason, partUsage, metadata):
+            finishReason = reason
+            usage = partUsage
+            providerMetadata.merge(metadata) { _, new in new }
+        default:
+            break
+        }
+    }
+}
+
+private func forwardLanguageStream(
+    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    to continuation: AsyncThrowingStream<LanguageStreamPart, Error>.Continuation
+) async throws -> LanguageStreamToolStep {
+    var step = LanguageStreamToolStep()
+    for try await part in stream {
+        try Task.checkCancellation()
+        step.record(part)
+        continuation.yield(part)
+    }
+    return step
 }
 
 private func withRetry<Output: Sendable>(

@@ -2,7 +2,7 @@
 
 SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK.
 It exposes provider factories plus an `AI` facade for common model calls,
-embeddings, media, reranking, uploads, and first-pass tool execution.
+embeddings, media, reranking, uploads, and typed tool execution.
 
 ## Install
 
@@ -123,8 +123,9 @@ for try await part in AI.streamObject(
 
 ## Tools
 
-`AI.generateText` can execute typed Swift tools and continue the conversation
-until the model returns a final answer or `maxSteps` is reached:
+`AI.generateText` and `AI.streamText` can execute typed Swift tools and continue
+the conversation until the model returns a final answer or `maxSteps` is
+reached:
 
 ```swift
 let weather = AITool(
@@ -147,6 +148,20 @@ let answer = try await AI.generateText(
 
 print(answer.text)
 print(answer.steps.count)
+```
+
+Streaming tools yield the model parts, then a `.toolResult(...)` part before the
+next model step starts:
+
+```swift
+for try await part in AI.streamText(
+    model: model,
+    prompt: "What should I wear in Tokyo?",
+    executableTools: [weather],
+    maxSteps: 3
+) {
+    // handle LanguageStreamPart
+}
 ```
 
 ## Provider Factories

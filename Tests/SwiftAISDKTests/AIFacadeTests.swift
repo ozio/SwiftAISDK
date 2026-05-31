@@ -104,6 +104,65 @@ import Testing
     #expect(model.streamRequests.first?.includeRawChunks == true)
 }
 
+@Test func aiStreamTextExecutesTypedToolsAndContinuesUntilFinalStream() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .streamStart(warnings: []),
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .textDelta("It "),
+                .textDelta("is sunny."),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+            ]
+        ]
+    )
+    let capture = ToolCapture()
+    let lookup = AITool(
+        name: "lookup",
+        description: "Look up a value.",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { arguments in
+        await capture.record(arguments)
+        return ["forecast": "sunny"]
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 3
+    ) {
+        streamed.append(part)
+    }
+
+    #expect(streamed == [
+        .streamStart(warnings: []),
+        .toolCall(toolCall),
+        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .toolResult(AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["forecast": "sunny"])),
+        .textDelta("It "),
+        .textDelta("is sunny."),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+    ])
+    #expect(await capture.value()?["query"]?.stringValue == "weather")
+    #expect(model.streamRequests.count == 2)
+    #expect(model.streamRequests[0].tools["lookup"]?["description"]?.stringValue == "Look up a value.")
+    #expect(model.streamRequests[1].messages.count == 3)
+    #expect(model.streamRequests[1].messages[1].content == [.toolCall(toolCall)])
+    guard case let .toolResult(toolResult) = model.streamRequests[1].messages[2].content.first else {
+        Issue.record("Expected a tool result message.")
+        return
+    }
+    #expect(toolResult.toolName == "lookup")
+    #expect(toolResult.result["forecast"]?.stringValue == "sunny")
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let schema: JSONValue = [
         "type": "object",
@@ -448,16 +507,21 @@ private final class MockLanguageModel: LanguageModel, @unchecked Sendable {
     var requests: [LanguageModelRequest] = []
     var streamRequests: [LanguageModelRequest] = []
     private var results: [TextGenerationResult]
-    private let streamParts: [LanguageStreamPart]
+    private var streamSequences: [[LanguageStreamPart]]
 
     init(result: TextGenerationResult, streamParts: [LanguageStreamPart] = []) {
         self.results = [result]
-        self.streamParts = streamParts
+        self.streamSequences = [streamParts]
     }
 
     init(results: [TextGenerationResult], streamParts: [LanguageStreamPart] = []) {
         self.results = results
-        self.streamParts = streamParts
+        self.streamSequences = [streamParts]
+    }
+
+    init(result: TextGenerationResult, streamSequences: [[LanguageStreamPart]]) {
+        self.results = [result]
+        self.streamSequences = streamSequences
     }
 
     func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
@@ -467,7 +531,7 @@ private final class MockLanguageModel: LanguageModel, @unchecked Sendable {
 
     func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         streamRequests.append(request)
-        let parts = streamParts
+        let parts = streamSequences.count > 1 ? streamSequences.removeFirst() : streamSequences[0]
         return AsyncThrowingStream { continuation in
             for part in parts {
                 continuation.yield(part)
