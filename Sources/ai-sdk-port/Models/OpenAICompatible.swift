@@ -1596,6 +1596,9 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
         guard request.values.count <= maxEmbeddingsPerCall else {
             throw AIError.invalidArgument(argument: "values", message: "OpenAI-compatible embedding models support at most \(maxEmbeddingsPerCall) values per call.")
         }
+        let warnings = isOpenAIBackedProvider(providerID)
+            ? []
+            : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
 
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -1616,7 +1619,7 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             guard case let .array(values) = item["embedding"] else { return nil }
             return values.compactMap(\.doubleValue)
         }
-        return EmbeddingResult(embeddings: embeddings, usage: tokenUsage(from: raw), rawValue: raw)
+        return EmbeddingResult(embeddings: embeddings, usage: tokenUsage(from: raw), rawValue: raw, warnings: warnings)
     }
 }
 

@@ -233,11 +233,13 @@ public struct EmbeddingResult: Sendable {
     public var embeddings: [[Double]]
     public var usage: TokenUsage?
     public var rawValue: JSONValue
+    public var warnings: [AIWarning]
 
-    public init(embeddings: [[Double]], usage: TokenUsage? = nil, rawValue: JSONValue) {
+    public init(embeddings: [[Double]], usage: TokenUsage? = nil, rawValue: JSONValue, warnings: [AIWarning] = []) {
         self.embeddings = embeddings
         self.usage = usage
         self.rawValue = rawValue
+        self.warnings = warnings
     }
 }
 
