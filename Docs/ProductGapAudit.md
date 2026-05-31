@@ -44,7 +44,7 @@ Upstream `packages/ai/src/index.ts` exports product-level APIs:
 ```text
 generateText, streamText, generateObject, streamObject, embed, embedMany,
 generateImage, experimental_generateVideo, experimental_generateSpeech,
-experimental_transcribe, rerank, uploadFile, uploadSkill, customProvider,
+experimental_transcribe, rerank, uploadFile, uploadSkill,
 middleware wrappers, prompt conversion, telemetry, UI streams, agents
 ```
 
@@ -65,12 +65,16 @@ Impact:
   object. Non-streaming array, enum, and no-schema JSON strategies are also
   available. Typed partials, richer schema adapters, typed validation errors,
   and streaming strategy variants still need follow-up work.
+- `customProvider(...)` exists as a Swift-native composition layer for local
+  model maps, fallback providers, and files/skills clients. Upstream string
+  model-id resolution and full registry middleware remain follow-up product
+  work.
 
 Recommendation:
 
 Continue growing the `AI` facade above provider models: cancellation,
-timeouts, telemetry, richer schema/object generation, and middleware should be
-separate product rounds.
+timeouts, telemetry, provider registries, richer schema/object generation, and
+middleware should be separate product rounds.
 
 ### 2. Core model contract is lossy compared with upstream v4
 
@@ -244,8 +248,10 @@ Keep turning documentation into executable product evidence:
    `AI.generateVideo`, and `AI.rerank` as thin wrappers over existing model
    protocols.
    First slice is in place, including upload-file and upload-skill wrappers plus
-   stream-side local tool execution. Follow-up work should add richer result
-   objects, cancellation/timeout behavior, and streaming orchestration.
+   stream-side local tool execution and `customProvider(...)` for local model
+   maps plus fallback providers. Follow-up work should add richer result
+   objects, provider registries, cancellation/timeout behavior, and streaming
+   orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
    First retry slice is in place with `AIRetryPolicy` and default

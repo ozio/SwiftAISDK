@@ -1363,6 +1363,14 @@ public protocol AIProvider: Sendable {
     func rerankingModel(_ modelID: String) throws -> any RerankingModel
 }
 
+public protocol AIFileProvider: AIProvider {
+    func files() throws -> any AIFileClient
+}
+
+public protocol AISkillsProvider: AIProvider {
+    func skills() throws -> any AISkillsClient
+}
+
 public extension AIProvider {
     func callAsFunction(_ modelID: String) throws -> any LanguageModel {
         try languageModel(modelID)

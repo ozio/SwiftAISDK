@@ -273,6 +273,23 @@ Google, Google Vertex, Gateway, xAI, Mistral, Groq, Cohere, Voyage, Bedrock,
 Replicate, fal, Deepgram, ElevenLabs, and other official `@ai-sdk/*` provider
 packages.
 
+Use `customProvider(...)` or `AIProviders.customProvider(...)` to compose local
+model aliases and a fallback provider, matching upstream's `customProvider`
+surface:
+
+```swift
+let appProvider = customProvider(
+    providerID: "app",
+    languageModels: [
+        "fast": try AIProviders.openAI().languageModel("gpt-4.1-mini")
+    ],
+    fallbackProvider: try AIProviders.gateway()
+)
+
+let fast = try appProvider.languageModel("fast")
+let fallback = try appProvider.languageModel("anthropic/claude-sonnet-4")
+```
+
 Use `AIProviderCapabilities.all` for a machine-readable provider/capability
 matrix, or read [Docs/ProviderCapabilityMatrix.md](Docs/ProviderCapabilityMatrix.md)
 for the human table. Optional live smoke tests are available with real keys:

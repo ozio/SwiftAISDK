@@ -221,6 +221,7 @@ Known gaps left:
 | JSON model used by request builders | `Sources/SwiftAISDK/JSONValue.swift` |
 | HTTP transport, multipart, SSE/EventStream parsing | `Sources/SwiftAISDK/HTTP.swift` |
 | Public provider registry | `Sources/SwiftAISDK/Providers/ProviderRegistry.swift` |
+| Custom provider composition | `Sources/SwiftAISDK/Providers/CustomProvider.swift` |
 | Provider capability matrix | `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`, `Docs/ProviderCapabilityMatrix.md` |
 | OpenAI chat, responses, compatible models | `Sources/SwiftAISDK/Models/OpenAI*.swift`, `Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift` |
 | Anthropic and Bedrock/Vertex Anthropic behavior | `Sources/SwiftAISDK/Models/Anthropic.swift`, `Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift` |
@@ -249,6 +250,7 @@ the touched surface into the newer naming pattern.
 | Upstream concept | Swift porting rule |
 | --- | --- |
 | Provider factory | Add or update an `AIProviders.<name>` entry point. Keep upstream aliases when they are public. |
+| Custom provider | Upstream `customProvider(...)` maps to Swift `customProvider(...)` and `AIProviders.customProvider(...)`. Keep local model maps preferred over fallback providers, expose files/skills when locally supplied or when the fallback conforms to `AIFileProvider`/`AISkillsProvider`, and throw `AIError.unsupportedModel` when no model route exists. |
 | Factory spelling | Prefer idiomatic Swift casing for primary names, but also expose upstream JS spellings such as `openai`, `xai`, `revai`, `moonshotai`, and `anthropicAws` when they differ. |
 | Provider ID | Match upstream provider IDs, including capability suffixes such as `.chat`, `.responses`, `.embedding`, `.image`, `.files`, or `.skills` when upstream uses them. |
 | Settings object | Prefer extending `ProviderSettings` or the provider-specific settings type over ad hoc parameters. |
@@ -288,6 +290,7 @@ the touched surface into the newer naming pattern.
 | Alibaba, Prodia, Quiver, Luma, Kling, ByteDance | `@ai-sdk/alibaba`, `prodia`, `quiverai`, `luma`, `klingai`, `bytedance` | Provider-specific media/video models | `AlibabaProdiaAzureQuiverTests.swift`, `ImageVideoProviderTests.swift`, `NativeMediaProviderTests.swift` |
 | Black Forest Labs | `@ai-sdk/black-forest-labs` | Native image provider | `ImageVideoProviderTests.swift`, `NativeMediaProviderTests.swift` |
 | Deepgram, ElevenLabs, Hume, LMNT, RevAI, Gladia, AssemblyAI | Audio provider packages | Provider-specific transcription/speech models | `AudioProviderTests.swift` |
+| Custom provider composition | `packages/ai/src/registry/custom-provider.ts` | `customProvider(...)`, `AIProviders.customProvider(...)`, `AICustomProvider`, `AIFileProvider`, `AISkillsProvider` | `CustomProviderTests.swift` |
 
 ## Cross-Cutting Surfaces
 
@@ -296,6 +299,7 @@ the touched surface into the newer naming pattern.
 | Provider-defined tools | Tool builders live near their provider: `OpenAITools`, `AzureOpenAITools`, `AnthropicTools`, `GoogleTools`, `GoogleVertexTools`, `GoogleVertexAnthropicTools`, `GatewayTools`, `GroqTools`, `XAITools`. |
 | MCP client | `MCPClient` mirrors `@ai-sdk/mcp` for initialize, tool listing, tool calls, cached tool definitions, conversion to dynamic `AITool`, resource listing/reading, resource templates, and prompt listing/getting. `MCPHTTPTransport` covers simple JSON-RPC-over-HTTP servers; custom transports can implement `MCPTransport`. Elicitation, SSE/session handling, and richer content-to-model-output conversion remain follow-up MCP passes. |
 | Provider registry aliases | `AIProviders` keeps Swift-style factories and upstream JS spellings for mismatched names, so `openAI`/`openai`, `xAI`/`xai`, `revAI`/`revai`, and similar pairs construct the same provider IDs. |
+| Custom provider | `customProvider(...)` mirrors upstream local-model maps plus fallback routing for language, embedding, image, transcription, speech, video, reranking, files, and skills. Swift does not yet have upstream's global string model-id resolver or `createProviderRegistry` separator routing; those remain registry-layer follow-up passes. |
 | Tool headers and beta flags | Match upstream tests. Anthropic-on-Bedrock uses body `anthropic_beta`; regular Anthropic uses headers. |
 | OpenAI-compatible providers | Share the compatible model implementation, but keep provider-specific defaults, path quirks, headers, tools, and provider IDs explicit. |
 | OpenAI/Azure provider IDs | Root providers stay `openai` and `azure`, but concrete models use upstream surface IDs: `openai.responses`, `openai.chat`, `openai.completion`, `openai.embedding`, `openai.image`, `openai.transcription`, `openai.speech`, `openai.files`, `openai.skills`; Azure uses the same pattern except embeddings is `azure.embeddings`. |
