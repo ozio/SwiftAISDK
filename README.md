@@ -107,7 +107,10 @@ print(result.object.title)
 ```
 
 When a schema is supplied, the final decoded JSON is also checked against that
-schema; `repairText` can repair parsing or schema-validation failures.
+schema; `repairText` can repair parsing or schema-validation failures. Failed
+object parsing throws `AIObjectGenerationError`, including the output strategy,
+failure kind, schema path when available, original text, and whether repair was
+attempted.
 
 The facade also mirrors upstream's non-streaming object output strategies:
 `generateObjectArray` wraps an element schema as `{ "elements": [...] }` for

@@ -187,6 +187,48 @@ import Testing
     #expect(result.text == #"{"value":"repaired","count":1}"#)
 }
 
+@Test func aiGenerateObjectThrowsTypedNoJSONError() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(text: "value: missing-json", rawValue: .object([:])))
+
+    do {
+        _ = try await AI.generateObject(
+            model: model,
+            prompt: "Return JSON.",
+            as: ObjectFacadeAnswer.self
+        )
+        Issue.record("Expected object generation to fail.")
+    } catch let error as AIObjectGenerationError {
+        #expect(error.provider == "mock")
+        #expect(error.strategy == .object)
+        #expect(error.kind == .noJSON)
+        #expect(error.path == nil)
+        #expect(error.text == "value: missing-json")
+        #expect(!error.repairAttempted)
+    }
+}
+
+@Test func aiGenerateObjectThrowsTypedRepairFailure() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(text: "value: broken", rawValue: .object([:])))
+
+    do {
+        _ = try await AI.generateObject(
+            model: model,
+            prompt: "Return JSON.",
+            as: ObjectFacadeAnswer.self
+        ) { context in
+            #expect(context.errorMessage.contains("noJSON"))
+            return "still broken"
+        }
+        Issue.record("Expected repaired object generation to fail.")
+    } catch let error as AIObjectGenerationError {
+        #expect(error.provider == "mock")
+        #expect(error.strategy == .object)
+        #expect(error.kind == .noJSON)
+        #expect(error.text == "still broken")
+        #expect(error.repairAttempted)
+    }
+}
+
 @Test func aiGenerateObjectValidatesGeneratedObjectAgainstSchema() async throws {
     let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(text: #"{"value":"too-many","count":10}"#, rawValue: .object([:])))
     let schema = objectFacadeAnswerSchema(countMaximum: 5)
@@ -199,10 +241,14 @@ import Testing
             schema: schema
         )
         Issue.record("Expected generated object to fail schema validation.")
-    } catch let error as AIError {
-        #expect(error.description.contains("No object generated"))
-        #expect(error.description.contains("$.count"))
-        #expect(error.description.contains("must be <="))
+    } catch let error as AIObjectGenerationError {
+        #expect(error.provider == "mock")
+        #expect(error.strategy == .object)
+        #expect(error.kind == .schemaValidation)
+        #expect(error.path == "$.count")
+        #expect(error.message.contains("must be <="))
+        #expect(error.text == #"{"value":"too-many","count":10}"#)
+        #expect(!error.repairAttempted)
     }
 }
 

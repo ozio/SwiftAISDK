@@ -353,6 +353,54 @@ public struct AIObjectRepairContext: Sendable {
     }
 }
 
+public enum AIObjectGenerationFailureKind: String, Equatable, Sendable {
+    case noJSON
+    case schemaValidation
+    case decoding
+    case repairFailed
+}
+
+public enum AIObjectOutputStrategy: String, Equatable, Sendable {
+    case object
+    case array
+    case enumeration
+    case json
+}
+
+public struct AIObjectGenerationError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var provider: String
+    public var strategy: AIObjectOutputStrategy
+    public var kind: AIObjectGenerationFailureKind
+    public var message: String
+    public var path: String?
+    public var text: String
+    public var repairAttempted: Bool
+
+    public init(
+        provider: String,
+        strategy: AIObjectOutputStrategy,
+        kind: AIObjectGenerationFailureKind,
+        message: String,
+        path: String? = nil,
+        text: String,
+        repairAttempted: Bool = false
+    ) {
+        self.provider = provider
+        self.strategy = strategy
+        self.kind = kind
+        self.message = message
+        self.path = path
+        self.text = text
+        self.repairAttempted = repairAttempted
+    }
+
+    public var description: String {
+        let pathSuffix = path.map { " at \($0)" } ?? ""
+        let repairSuffix = repairAttempted ? " after repair" : ""
+        return "\(provider) did not generate a valid \(strategy.rawValue)\(repairSuffix): \(kind.rawValue)\(pathSuffix): \(message)"
+    }
+}
+
 public struct AIToolStep: Sendable {
     public var index: Int
     public var text: String

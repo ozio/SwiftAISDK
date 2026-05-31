@@ -1438,17 +1438,29 @@ private func parseObject<Object: Decodable>(
     do {
         return try decodeAndValidateObject(Object.self, from: text, schema: schema)
     } catch {
-        let message = objectErrorDescription(error)
+        let failure = objectGenerationError(
+            error,
+            providerID: providerID,
+            strategy: .object,
+            text: text
+        )
+        let message = failure.description
         guard let repairText else {
-            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(message)")
+            throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(message)")
+            throw failure
         }
         do {
             return try decodeAndValidateObject(Object.self, from: repaired, schema: schema)
         } catch {
-            throw AIError.invalidResponse(provider: providerID, message: "No object generated after repair: \(objectErrorDescription(error))")
+            throw objectGenerationError(
+                error,
+                providerID: providerID,
+                strategy: .object,
+                text: repaired,
+                repairAttempted: true
+            )
         }
     }
 }
@@ -1464,17 +1476,29 @@ private func parseObjectArray<Element: Decodable>(
     do {
         return try decodeAndValidateObjectArray(Element.self, from: text, schema: schema)
     } catch {
-        let message = objectErrorDescription(error)
+        let failure = objectGenerationError(
+            error,
+            providerID: providerID,
+            strategy: .array,
+            text: text
+        )
+        let message = failure.description
         guard let repairText else {
-            throw AIError.invalidResponse(provider: providerID, message: "No object array generated: \(message)")
+            throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw AIError.invalidResponse(provider: providerID, message: "No object array generated: \(message)")
+            throw failure
         }
         do {
             return try decodeAndValidateObjectArray(Element.self, from: repaired, schema: schema)
         } catch {
-            throw AIError.invalidResponse(provider: providerID, message: "No object array generated after repair: \(objectErrorDescription(error))")
+            throw objectGenerationError(
+                error,
+                providerID: providerID,
+                strategy: .array,
+                text: repaired,
+                repairAttempted: true
+            )
         }
     }
 }
@@ -1489,17 +1513,29 @@ private func parseEnum(
     do {
         return try decodeAndValidateEnum(from: text, schema: schema)
     } catch {
-        let message = objectErrorDescription(error)
+        let failure = objectGenerationError(
+            error,
+            providerID: providerID,
+            strategy: .enumeration,
+            text: text
+        )
+        let message = failure.description
         guard let repairText else {
-            throw AIError.invalidResponse(provider: providerID, message: "No enum generated: \(message)")
+            throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw AIError.invalidResponse(provider: providerID, message: "No enum generated: \(message)")
+            throw failure
         }
         do {
             return try decodeAndValidateEnum(from: repaired, schema: schema)
         } catch {
-            throw AIError.invalidResponse(provider: providerID, message: "No enum generated after repair: \(objectErrorDescription(error))")
+            throw objectGenerationError(
+                error,
+                providerID: providerID,
+                strategy: .enumeration,
+                text: repaired,
+                repairAttempted: true
+            )
         }
     }
 }
@@ -1512,23 +1548,84 @@ private func parseJSONValueObject(
     do {
         return try decodeJSONValueObject(from: text)
     } catch {
-        let message = objectErrorDescription(error)
+        let failure = objectGenerationError(
+            error,
+            providerID: providerID,
+            strategy: .json,
+            text: text
+        )
+        let message = failure.description
         guard let repairText else {
-            throw AIError.invalidResponse(provider: providerID, message: "No JSON generated: \(message)")
+            throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw AIError.invalidResponse(provider: providerID, message: "No JSON generated: \(message)")
+            throw failure
         }
         do {
             return try decodeJSONValueObject(from: repaired)
         } catch {
-            throw AIError.invalidResponse(provider: providerID, message: "No JSON generated after repair: \(objectErrorDescription(error))")
+            throw objectGenerationError(
+                error,
+                providerID: providerID,
+                strategy: .json,
+                text: repaired,
+                repairAttempted: true
+            )
         }
     }
 }
 
-private func objectErrorDescription(_ error: Error) -> String {
-    String(describing: error)
+private func objectGenerationError(
+    _ error: Error,
+    providerID: String,
+    strategy: AIObjectOutputStrategy,
+    text: String,
+    repairAttempted: Bool = false
+) -> AIObjectGenerationError {
+    if let error = error as? AIObjectGenerationError {
+        var output = error
+        output.repairAttempted = output.repairAttempted || repairAttempted
+        return output
+    }
+    if let issue = error as? AIJSONSchemaValidationIssue {
+        return AIObjectGenerationError(
+            provider: providerID,
+            strategy: strategy,
+            kind: .schemaValidation,
+            message: issue.message,
+            path: issue.path,
+            text: text,
+            repairAttempted: repairAttempted
+        )
+    }
+    if let error = error as? DecodingError {
+        return AIObjectGenerationError(
+            provider: providerID,
+            strategy: strategy,
+            kind: .decoding,
+            message: String(describing: error),
+            text: text,
+            repairAttempted: repairAttempted
+        )
+    }
+    if let error = error as? AIError, case let .invalidArgument(argument, message) = error, argument == "text" {
+        return AIObjectGenerationError(
+            provider: providerID,
+            strategy: strategy,
+            kind: .noJSON,
+            message: message,
+            text: text,
+            repairAttempted: repairAttempted
+        )
+    }
+    return AIObjectGenerationError(
+        provider: providerID,
+        strategy: strategy,
+        kind: repairAttempted ? .repairFailed : .decoding,
+        message: String(describing: error),
+        text: text,
+        repairAttempted: repairAttempted
+    )
 }
 
 private func decodeAndValidateObject<Object: Decodable>(
@@ -1538,11 +1635,7 @@ private func decodeAndValidateObject<Object: Decodable>(
 ) throws -> (object: Object, rawObject: JSONValue, text: String) {
     let parsed = try decodeObject(Object.self, from: text)
     if let schema {
-        do {
-            try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
-        } catch let issue as AIJSONSchemaValidationIssue {
-            throw AIError.invalidArgument(argument: "schema", message: "Generated object does not match schema: \(issue.description)")
-        }
+        try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
     }
     return parsed
 }
@@ -1553,13 +1646,9 @@ private func decodeAndValidateObjectArray<Element: Decodable>(
     schema: JSONValue
 ) throws -> (object: [Element], rawObject: JSONValue, text: String) {
     let parsed = try decodeObject(JSONValue.self, from: text)
-    do {
-        try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
-    } catch let issue as AIJSONSchemaValidationIssue {
-        throw AIError.invalidArgument(argument: "schema", message: "Generated object array does not match schema: \(issue.description)")
-    }
+    try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
     guard let elements = parsed.rawObject["elements"]?.arrayValue else {
-        throw AIError.invalidArgument(argument: "text", message: "Expected JSON object with an elements array.")
+        throw AIJSONSchemaValidationIssue(path: "$.elements", message: "Expected JSON object with an elements array.")
     }
     let rawArray = JSONValue.array(elements)
     let data = try encodeJSONBody(rawArray)
@@ -1572,13 +1661,9 @@ private func decodeAndValidateEnum(
     schema: JSONValue
 ) throws -> (object: String, rawObject: JSONValue, text: String) {
     let parsed = try decodeObject(JSONValue.self, from: text)
-    do {
-        try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
-    } catch let issue as AIJSONSchemaValidationIssue {
-        throw AIError.invalidArgument(argument: "schema", message: "Generated enum does not match schema: \(issue.description)")
-    }
+    try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
     guard let result = parsed.rawObject["result"]?.stringValue else {
-        throw AIError.invalidArgument(argument: "text", message: "Expected JSON object with a result string.")
+        throw AIJSONSchemaValidationIssue(path: "$.result", message: "Expected JSON object with a result string.")
     }
     return (result, .string(result), result)
 }
