@@ -192,6 +192,161 @@ import Testing
     #expect(object?.object == ObjectFacadePartialAnswer(value: "typed", count: 7))
 }
 
+@Test func aiStreamObjectArrayStreamsPartialAndFinalArrays() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"elements":[{"value":"one","count":1}"#),
+            .textDelta(#",{"value":"two","count":2}]}"#),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+        ]
+    )
+
+    var rawPartials: [JSONValue] = []
+    var typedPartials: [[ObjectFacadeAnswer]] = []
+    var object: ObjectGenerationResult<[ObjectFacadeAnswer]>?
+    for try await part in AI.streamObjectArray(
+        model: model,
+        prompt: "Stream answers.",
+        as: ObjectFacadeAnswer.self,
+        elementSchema: objectFacadeAnswerSchema(),
+        schemaName: "answers"
+    ) {
+        switch part {
+        case let .partialObject(partial):
+            rawPartials.append(partial)
+        case let .partial(partial):
+            typedPartials.append(partial)
+        case let .object(result):
+            object = result
+        default:
+            break
+        }
+    }
+
+    #expect(rawPartials == [
+        .array([.object(["value": .string("one"), "count": .number(1)])]),
+        .array([
+            .object(["value": .string("one"), "count": .number(1)]),
+            .object(["value": .string("two"), "count": .number(2)])
+        ])
+    ])
+    #expect(typedPartials == [
+        [ObjectFacadeAnswer(value: "one", count: 1)],
+        [ObjectFacadeAnswer(value: "one", count: 1), ObjectFacadeAnswer(value: "two", count: 2)]
+    ])
+    #expect(object?.object == [
+        ObjectFacadeAnswer(value: "one", count: 1),
+        ObjectFacadeAnswer(value: "two", count: 2)
+    ])
+    #expect(object?.rawObject == rawPartials.last)
+    let objectText = try #require(object?.text)
+    #expect(try decodeJSONBody(Data(objectText.utf8)) == rawPartials.last)
+    #expect(object?.finishReason == "stop")
+    #expect(object?.usage?.totalTokens == 8)
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.responseFormat == .json(schema: arrayOutputSchemaForTest(elementSchema: objectFacadeAnswerSchema()), name: "answers"))
+    #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["elements"]?["items"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+}
+
+@Test func aiStreamEnumStreamsSelectedValue() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"result":"fast"}"#),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+
+    var rawPartials: [JSONValue] = []
+    var typedPartials: [String] = []
+    var object: ObjectGenerationResult<String>?
+    for try await part in AI.streamEnum(
+        model: model,
+        prompt: "Choose speed.",
+        values: ["slow", "fast"]
+    ) {
+        switch part {
+        case let .partialObject(partial):
+            rawPartials.append(partial)
+        case let .partial(partial):
+            typedPartials.append(partial)
+        case let .object(result):
+            object = result
+        default:
+            break
+        }
+    }
+
+    #expect(rawPartials == [.string("fast")])
+    #expect(typedPartials == ["fast"])
+    #expect(object?.object == "fast")
+    #expect(object?.rawObject == .string("fast"))
+    #expect(object?.text == "fast")
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.responseFormat == .json(schema: enumOutputSchemaForTest(values: ["slow", "fast"])))
+    #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["result"]?["enum"]?[1]?.stringValue == "fast")
+}
+
+@Test func aiStreamEnumRejectsEmptyValues() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(text: "", rawValue: .object([:])))
+
+    do {
+        for try await _ in AI.streamEnum(model: model, prompt: "Choose.", values: []) {}
+        Issue.record("Expected empty enum values to fail.")
+    } catch let error as AIError {
+        #expect(error == .invalidArgument(argument: "values", message: "Enum values are required."))
+    }
+
+    #expect(model.streamRequests.isEmpty)
+}
+
+@Test func aiStreamJSONStreamsNoSchemaValue() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"["loose","#),
+            .textDelta(#"1,true]"#),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+
+    var rawPartials: [JSONValue] = []
+    var typedPartials: [JSONValue] = []
+    var object: ObjectGenerationResult<JSONValue>?
+    for try await part in AI.streamJSON(
+        model: model,
+        prompt: "Stream any JSON."
+    ) {
+        switch part {
+        case let .partialObject(partial):
+            rawPartials.append(partial)
+        case let .partial(partial):
+            typedPartials.append(partial)
+        case let .object(result):
+            object = result
+        default:
+            break
+        }
+    }
+
+    #expect(rawPartials == [
+        .array([.string("loose")]),
+        .array([.string("loose"), .number(1), .bool(true)])
+    ])
+    #expect(typedPartials == rawPartials)
+    #expect(object?.object == .array([.string("loose"), .number(1), .bool(true)]))
+    #expect(object?.rawObject == object?.object)
+    #expect(object?.text == #"["loose",1,true]"#)
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.responseFormat == .json())
+    #expect(request.extraBody["responseFormat"]?["type"]?.stringValue == "json")
+    #expect(request.extraBody["responseFormat"]?["schema"] == nil)
+}
+
 @Test func aiStreamObjectTimesOut() async throws {
     let model = SlowObjectFacadeLanguageModel(delayNanoseconds: 80_000_000)
 
@@ -502,6 +657,43 @@ private func objectFacadeAnswerSchema(
         schema["additionalProperties"] = .bool(additionalProperties)
     }
     return .object(schema)
+}
+
+private func arrayOutputSchemaForTest(elementSchema: JSONValue) -> JSONValue {
+    let itemSchema: JSONValue
+    if var object = elementSchema.objectValue {
+        object.removeValue(forKey: "$schema")
+        itemSchema = .object(object)
+    } else {
+        itemSchema = elementSchema
+    }
+    return .object([
+        "$schema": .string("http://json-schema.org/draft-07/schema#"),
+        "type": .string("object"),
+        "properties": .object([
+            "elements": .object([
+                "type": .string("array"),
+                "items": itemSchema
+            ])
+        ]),
+        "required": .array([.string("elements")]),
+        "additionalProperties": .bool(false)
+    ])
+}
+
+private func enumOutputSchemaForTest(values: [String]) -> JSONValue {
+    .object([
+        "$schema": .string("http://json-schema.org/draft-07/schema#"),
+        "type": .string("object"),
+        "properties": .object([
+            "result": .object([
+                "type": .string("string"),
+                "enum": .array(values.map(JSONValue.string))
+            ])
+        ]),
+        "required": .array([.string("result")]),
+        "additionalProperties": .bool(false)
+    ])
 }
 
 private struct ObjectFacadeAnswer: Codable, Equatable, Sendable {

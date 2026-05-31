@@ -1024,6 +1024,228 @@ public enum AI {
         )
     }
 
+    public static func streamObjectArray<Element: Decodable & Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        as type: Element.Type = Element.self,
+        elementSchema: JSONValue,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<[Element]>, Error> {
+        let schema = arrayOutputSchema(elementSchema: elementSchema)
+        return mapObjectStream(
+            streamObject(
+                model: model,
+                request: request,
+                as: AIObjectArrayEnvelope<Element>.self,
+                schema: schema,
+                schemaName: schemaName,
+                schemaDescription: schemaDescription,
+                timeoutNanoseconds: timeoutNanoseconds,
+                retryPolicy: retryPolicy,
+                telemetry: telemetry,
+                repairText: repairText
+            ),
+            transform: arrayStreamPart
+        )
+    }
+
+    public static func streamObjectArray<Element: Decodable & Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        as type: Element.Type = Element.self,
+        elementSchema: JSONValue,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<[Element]>, Error> {
+        streamObjectArray(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(schema: arrayOutputSchema(elementSchema: elementSchema), name: schemaName, description: schemaDescription),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            as: Element.self,
+            elementSchema: elementSchema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
+    public static func streamEnum(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        values: [String],
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<String>, Error> {
+        guard !values.isEmpty else {
+            return failingPartStream(AIError.invalidArgument(argument: "values", message: "Enum values are required."))
+        }
+        let schema = enumOutputSchema(values: values)
+        return mapObjectStream(
+            streamObject(
+                model: model,
+                request: request,
+                as: AIEnumEnvelope.self,
+                schema: schema,
+                timeoutNanoseconds: timeoutNanoseconds,
+                retryPolicy: retryPolicy,
+                telemetry: telemetry,
+                repairText: repairText
+            ),
+            transform: enumStreamPart
+        )
+    }
+
+    public static func streamEnum(
+        model: any LanguageModel,
+        prompt: String,
+        values: [String],
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<String>, Error> {
+        streamEnum(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(schema: enumOutputSchema(values: values)),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            values: values,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
+    public static func streamJSON(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<JSONValue>, Error> {
+        streamObject(
+            model: model,
+            request: request,
+            as: JSONValue.self,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
+    public static func streamJSON(
+        model: any LanguageModel,
+        prompt: String,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<JSONValue>, Error> {
+        streamJSON(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
     public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
         try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy, telemetry: telemetry)
     }
@@ -1733,6 +1955,29 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                     durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
                     errorDescription: String(describing: error)
                 ))
+                continuation.finish(throwing: error)
+            }
+        }
+
+        continuation.onTermination = { _ in
+            task.cancel()
+        }
+    }
+}
+
+private func mapObjectStream<Input: Sendable, Output: Sendable>(
+    _ stream: AsyncThrowingStream<ObjectStreamPart<Input>, Error>,
+    transform: @escaping @Sendable (ObjectStreamPart<Input>) -> ObjectStreamPart<Output>
+) -> AsyncThrowingStream<ObjectStreamPart<Output>, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            do {
+                for try await part in stream {
+                    try Task.checkCancellation()
+                    continuation.yield(transform(part))
+                }
+                continuation.finish()
+            } catch {
                 continuation.finish(throwing: error)
             }
         }
@@ -2465,6 +2710,114 @@ private func responseFormatJSON(schema: JSONValue?, name: String?, description: 
         "name": name.map(JSONValue.string),
         "description": description.map(JSONValue.string)
     ])
+}
+
+private struct AIObjectArrayEnvelope<Element: Decodable & Sendable>: Decodable, Sendable {
+    var elements: [Element]
+}
+
+private struct AIEnumEnvelope: Decodable, Sendable {
+    var result: String
+}
+
+private func arrayStreamPart<Element: Decodable & Sendable>(
+    _ part: ObjectStreamPart<AIObjectArrayEnvelope<Element>>
+) -> ObjectStreamPart<[Element]> {
+    switch part {
+    case let .textDelta(delta):
+        return .textDelta(delta)
+    case let .partialObject(partial):
+        return .partialObject(partial["elements"] ?? partial)
+    case let .partial(envelope):
+        return .partial(envelope.elements)
+    case let .object(result):
+        return .object(arrayObjectResult(from: result))
+    case let .warning(warning):
+        return .warning(warning)
+    case let .source(source):
+        return .source(source)
+    case let .metadata(metadata):
+        return .metadata(metadata)
+    case let .responseMetadata(metadata):
+        return .responseMetadata(metadata)
+    case let .raw(raw):
+        return .raw(raw)
+    case let .finish(reason, usage):
+        return .finish(reason: reason, usage: usage)
+    }
+}
+
+private func enumStreamPart(_ part: ObjectStreamPart<AIEnumEnvelope>) -> ObjectStreamPart<String> {
+    switch part {
+    case let .textDelta(delta):
+        return .textDelta(delta)
+    case let .partialObject(partial):
+        return .partialObject(partial["result"] ?? partial)
+    case let .partial(envelope):
+        return .partial(envelope.result)
+    case let .object(result):
+        return .object(enumObjectResult(from: result))
+    case let .warning(warning):
+        return .warning(warning)
+    case let .source(source):
+        return .source(source)
+    case let .metadata(metadata):
+        return .metadata(metadata)
+    case let .responseMetadata(metadata):
+        return .responseMetadata(metadata)
+    case let .raw(raw):
+        return .raw(raw)
+    case let .finish(reason, usage):
+        return .finish(reason: reason, usage: usage)
+    }
+}
+
+private func arrayObjectResult<Element: Decodable & Sendable>(
+    from result: ObjectGenerationResult<AIObjectArrayEnvelope<Element>>
+) -> ObjectGenerationResult<[Element]> {
+    let rawArray = result.rawObject["elements"] ?? .array([JSONValue]())
+    let text = canonicalJSONText(rawArray) ?? result.text
+    var textResult = result.textResult
+    textResult.text = text
+    textResult.rawValue = rawArray
+
+    return ObjectGenerationResult(
+        object: result.object.elements,
+        text: text,
+        rawObject: rawArray,
+        reasoning: result.reasoning,
+        finishReason: result.finishReason,
+        usage: result.usage,
+        warnings: result.warnings,
+        providerMetadata: result.providerMetadata,
+        responseMetadata: result.responseMetadata,
+        textResult: textResult
+    )
+}
+
+private func enumObjectResult(from result: ObjectGenerationResult<AIEnumEnvelope>) -> ObjectGenerationResult<String> {
+    let rawValue = JSONValue.string(result.object.result)
+    var textResult = result.textResult
+    textResult.text = result.object.result
+    textResult.rawValue = rawValue
+
+    return ObjectGenerationResult(
+        object: result.object.result,
+        text: result.object.result,
+        rawObject: rawValue,
+        reasoning: result.reasoning,
+        finishReason: result.finishReason,
+        usage: result.usage,
+        warnings: result.warnings,
+        providerMetadata: result.providerMetadata,
+        responseMetadata: result.responseMetadata,
+        textResult: textResult
+    )
+}
+
+private func canonicalJSONText(_ value: JSONValue) -> String? {
+    guard let data = try? encodeJSONBody(value) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func arrayOutputSchema(elementSchema: JSONValue) -> JSONValue {

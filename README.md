@@ -155,7 +155,10 @@ without a schema and returns raw `JSONValue`.
 
 `AI.streamObject` is the streaming counterpart for `Decodable` output. It emits
 text deltas, best-effort `JSONValue` partial objects, typed partials when the
-current JSON can decode into your Swift type, and then the final decoded object:
+current JSON can decode into your Swift type, and then the final decoded object.
+Streaming variants are also available for upstream-style array, enum, and
+no-schema JSON strategies through `streamObjectArray`, `streamEnum`, and
+`streamJSON`:
 
 ```swift
 for try await part in AI.streamObject(
@@ -171,6 +174,19 @@ for try await part in AI.streamObject(
     }
     if case let .object(result) = part {
         print(result.object.title)
+    }
+}
+```
+
+```swift
+for try await part in AI.streamObjectArray(
+    model: model,
+    prompt: "Stream summaries.",
+    as: Summary.self,
+    elementSchema: ["type": "object"]
+) {
+    if case let .partial(items) = part {
+        print(items.count)
     }
 }
 ```

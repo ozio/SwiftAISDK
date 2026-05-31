@@ -67,11 +67,12 @@ Impact:
   but richer schema validation, provider-defined tool wrapping, and UI-facing
   approval plumbing still need follow-up work.
 - Object generation exists for `Decodable` results, and `streamObject` can now
-  stream JSON text deltas, best-effort partial JSON objects, and a final decoded
-  object. Non-streaming array, enum, and no-schema JSON strategies are also
-  available. Object parse/schema/decode failures now throw
-  `AIObjectGenerationError`. Typed partials, richer schema adapters, and
-  streaming strategy variants still need follow-up work.
+  stream JSON text deltas, best-effort partial JSON objects, typed partial
+  values when the current JSON can decode, and a final decoded object.
+  Non-streaming and streaming array, enum, and no-schema JSON strategies are
+  also available. Object parse/schema/decode failures now throw
+  `AIObjectGenerationError`. Richer schema adapters and provider-specific
+  structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as
@@ -209,25 +210,27 @@ where possible.
 Upstream has `generateObject`, `streamObject`, schema adapters, JSON repair, and
 object output strategies. Swift now has `AI.generateObject` for `Decodable`
 types and `AI.streamObject` for streaming text deltas, partial `JSONValue`
-objects, and a final decoded object, backed by provider JSON response-format
-hints. Non-streaming array, enum, and no-schema JSON strategies are exposed as
-`generateObjectArray`, `generateEnum`, and `generateJSON`.
+objects, typed partial `Decodable` values, and a final decoded object, backed by
+provider JSON response-format hints. Array, enum, and no-schema JSON strategies
+are exposed as both non-streaming and streaming variants:
+`generateObjectArray`, `streamObjectArray`, `generateEnum`, `streamEnum`,
+`generateJSON`, and `streamJSON`.
 
 Impact:
 
-- Basic object generation, partial JSON object streaming, final-object
-  streaming, final JSON Schema validation, and typed object-generation failures
-  are available at product level.
-- Typed partial object streams, streaming array/enum/no-schema strategies, and
-  schema adapter protocols are still unavailable.
+- Basic object generation, partial JSON object streaming, typed partial object
+  streaming, final-object streaming, final JSON Schema validation, and typed
+  object-generation failures are available at product level.
+- Streaming array/enum/no-schema strategies are now available; schema adapter
+  protocols are still unavailable.
 - Provider-specific schema support has first end-to-end coverage, but needs
   broader provider passes.
 
 Recommendation:
 
 Extend object generation beyond the first Swift-native slices: add schema
-adapter protocols, streaming strategy variants, and JSON instruction injection
-for providers without native response formats.
+adapter protocols, provider-specific structured-output parity, and JSON
+instruction injection for providers without native response formats.
 
 ### 5. Product reality is not fully gated yet
 
@@ -315,10 +318,11 @@ Progress:
    schema hints and repair callbacks. `AI.streamObject` now emits text deltas,
    best-effort partial `JSONValue` objects, typed partial `Decodable` values
    when the current partial JSON decodes, and final `Decodable` output.
-   Non-streaming array, enum, and no-schema JSON output strategies now mirror
-   upstream's wrapper schemas, and `AIObjectGenerationError` exposes typed
-   parse/schema/decode failures. Next passes should add schema adapter
-   protocols and streaming strategy variants.
+   Array, enum, and no-schema JSON output strategies now mirror upstream's
+   wrapper schemas for both non-streaming and streaming calls, and
+   `AIObjectGenerationError` exposes typed parse/schema/decode failures. Next
+   passes should add schema adapter protocols and provider-specific structured
+   output parity.
 
 7. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first
