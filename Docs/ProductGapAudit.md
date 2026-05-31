@@ -142,9 +142,9 @@ tools.
 Impact:
 
 - Upstream-style dynamic tools are now represented by `AITool.dynamic(...)`;
-  typed output validation/error surfaces are still missing. Tool input
-  refinement exists through `AITool.refineArguments`, but there is no
-  schema-adapter-backed typed validation layer yet.
+  richer typed output/error surfaces are still missing. Tool input refinement
+  exists through `AITool.refineArguments`, and refined tool arguments now pass
+  through first-pass JSON Schema validation before execution.
 - Automatic multi-step execution exists for `AI.generateText` and `AI.streamText`.
 - Stop conditions now mirror the upstream `isStepCount`, `isLoopFinished`, and
   `hasToolCall` helpers.
@@ -168,10 +168,10 @@ Impact:
 
 Recommendation:
 
-Build on the new `AITool` abstraction: add typed validation errors,
-provider-defined executable wrappers, richer stream tool lifecycle events, and
-provider-executed approval response mapping for non-OpenAI providers that expose
-an equivalent native wire format.
+Build on the new `AITool` abstraction: add richer typed validation errors,
+schema adapter protocols, provider-defined executable wrappers, richer stream
+tool lifecycle events, and provider-executed approval response mapping for
+non-OpenAI providers that expose an equivalent native wire format.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -185,8 +185,8 @@ hints.
 
 Impact:
 
-- Basic object generation, partial JSON object streaming, and final-object
-  streaming are available at product level.
+- Basic object generation, partial JSON object streaming, final-object
+  streaming, and final JSON Schema validation are available at product level.
 - Typed partial object streams, array/enum/no-schema output strategies, schema
   adapter protocols, and typed validation error surfaces are still unavailable.
 - Provider-specific schema support has first end-to-end coverage, but needs

@@ -102,6 +102,9 @@ let result = try await AI.generateObject(
 print(result.object.title)
 ```
 
+When a schema is supplied, the final decoded JSON is also checked against that
+schema; `repairText` can repair parsing or schema-validation failures.
+
 `AI.streamObject` is the streaming counterpart for `Decodable` output. It emits
 text deltas and best-effort `JSONValue` partial objects while the model streams
 JSON, then yields the final decoded object:
@@ -157,6 +160,9 @@ let answer = try await AI.generateText(
 print(answer.text)
 print(answer.steps.count)
 ```
+
+Swift-executed tool arguments are parsed, refined, and validated against the
+tool JSON Schema before the execute callback runs.
 
 Streaming tools yield the model parts, then a `.toolResult(...)` part before the
 next model step starts:

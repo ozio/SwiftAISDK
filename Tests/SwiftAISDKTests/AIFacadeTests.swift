@@ -298,6 +298,77 @@ import Testing
     #expect(streamed.contains(.toolResult(AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["city": "Kyoto"]))))
 }
 
+@Test func aiGenerateTextValidatesToolArgumentsAgainstSchema() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":42}"#)
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "",
+        finishReason: "tool-calls",
+        toolCalls: [toolCall],
+        rawValue: .object([:])
+    ))
+    let capture = ToolCapture()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: [
+            "type": "object",
+            "properties": ["city": ["type": "string"]],
+            "required": ["city"],
+            "additionalProperties": false
+        ]
+    ) { arguments in
+        await capture.record(arguments)
+        return ["city": arguments["city"] ?? .null]
+    }
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Weather?",
+            executableTools: [lookup]
+        )
+        Issue.record("Expected invalid tool arguments to fail schema validation.")
+    } catch let error as AIError {
+        #expect(error.description.contains("Tool call arguments do not match tool schema"))
+        #expect(error.description.contains("$.city"))
+        #expect(error.description.contains("expected string"))
+    }
+
+    #expect(await capture.value() == nil)
+    #expect(model.requests.count == 1)
+}
+
+@Test func aiGenerateTextValidatesToolArgumentsAfterRefinement() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":42}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object(["step": 1])),
+        TextGenerationResult(text: "done", finishReason: "stop", rawValue: .object(["step": 2]))
+    ])
+    let capture = ToolCapture()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: [
+            "type": "object",
+            "properties": ["city": ["type": "string"]],
+            "required": ["city"]
+        ],
+        refineArguments: { _ in ["city": "Tokyo"] }
+    ) { arguments in
+        await capture.record(arguments)
+        return ["city": arguments["city"] ?? .null]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 2
+    )
+
+    #expect(result.text == "done")
+    #expect(await capture.value()?["city"]?.stringValue == "Tokyo")
+    #expect(result.toolResults.first?.result["city"]?.stringValue == "Tokyo")
+}
+
 @Test func aiStreamTextMarksDynamicToolPartsAndResults() async throws {
     let toolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#)
     let dynamicToolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#, dynamic: true)
@@ -869,6 +940,58 @@ import Testing
 
     #expect(result.object == FacadeObjectAnswer(value: "repaired", count: 1))
     #expect(result.text == #"{"value":"repaired","count":1}"#)
+}
+
+@Test func aiGenerateObjectValidatesGeneratedObjectAgainstSchema() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(text: #"{"value":"too-many","count":10}"#, rawValue: .object([:])))
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "value": ["type": "string"],
+            "count": ["type": "integer", "maximum": 5]
+        ],
+        "required": ["value", "count"]
+    ]
+
+    do {
+        _ = try await AI.generateObject(
+            model: model,
+            prompt: "Return JSON.",
+            as: FacadeObjectAnswer.self,
+            schema: schema
+        )
+        Issue.record("Expected generated object to fail schema validation.")
+    } catch let error as AIError {
+        #expect(error.description.contains("No object generated"))
+        #expect(error.description.contains("$.count"))
+        #expect(error.description.contains("must be <="))
+    }
+}
+
+@Test func aiGenerateObjectCanRepairSchemaValidationFailures() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(text: #"{"value":"too-many","count":10}"#, rawValue: .object([:])))
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "value": ["type": "string"],
+            "count": ["type": "integer", "maximum": 5]
+        ],
+        "required": ["value", "count"]
+    ]
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return JSON.",
+        as: FacadeObjectAnswer.self,
+        schema: schema
+    ) { context in
+        #expect(context.text == #"{"value":"too-many","count":10}"#)
+        #expect(context.errorMessage.contains("$.count"))
+        return #"{"value":"repaired","count":3}"#
+    }
+
+    #expect(result.object == FacadeObjectAnswer(value: "repaired", count: 3))
+    #expect(result.rawObject["count"]?.intValue == 3)
 }
 
 private struct FacadeObjectAnswer: Codable, Equatable, Sendable {

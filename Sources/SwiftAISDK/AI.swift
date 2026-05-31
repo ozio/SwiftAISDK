@@ -223,6 +223,7 @@ public enum AI {
         let parsed = try await parseObject(
             Object.self,
             from: textResult.text,
+            schema: schema,
             repairText: repairText,
             providerID: model.providerID
         )
@@ -554,6 +555,7 @@ public enum AI {
                     let parsed = try await parseObject(
                         Object.self,
                         from: text,
+                        schema: schema,
                         repairText: repairText,
                         providerID: model.providerID
                     )
@@ -997,6 +999,7 @@ private func executeToolCalls(
         guard let tool = toolsByName[call.name] else { continue }
         let arguments = try toolArguments(from: call)
         let refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
+        try validateToolArguments(refinedArguments, schema: tool.parameters, toolName: call.name)
         let approvalStatus = try await toolApproval?(AIToolApprovalContext(
             toolCall: call,
             arguments: refinedArguments,
@@ -1089,6 +1092,17 @@ private func toolArguments(from call: AIToolCall) throws -> JSONValue {
     }
 }
 
+private func validateToolArguments(_ arguments: JSONValue, schema: JSONValue, toolName: String) throws {
+    do {
+        try AIJSONSchemaValidator.validate(arguments, schema: schema)
+    } catch let issue as AIJSONSchemaValidationIssue {
+        throw AIError.invalidArgument(
+            argument: "toolCalls.\(toolName).arguments",
+            message: "Tool call arguments do not match tool schema: \(issue.description)"
+        )
+    }
+}
+
 private func responseFormatJSON(schema: JSONValue?, name: String?, description: String?) -> JSONValue {
     .object([
         "type": .string("json"),
@@ -1101,24 +1115,46 @@ private func responseFormatJSON(schema: JSONValue?, name: String?, description: 
 private func parseObject<Object: Decodable>(
     _ type: Object.Type,
     from text: String,
+    schema: JSONValue? = nil,
     repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?,
     providerID: String
 ) async throws -> (object: Object, rawObject: JSONValue, text: String) {
     do {
-        return try decodeObject(Object.self, from: text)
+        return try decodeAndValidateObject(Object.self, from: text, schema: schema)
     } catch {
+        let message = objectErrorDescription(error)
         guard let repairText else {
-            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(error.localizedDescription)")
+            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(message)")
         }
-        guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: error.localizedDescription)) else {
-            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(error.localizedDescription)")
+        guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
+            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(message)")
         }
         do {
-            return try decodeObject(Object.self, from: repaired)
+            return try decodeAndValidateObject(Object.self, from: repaired, schema: schema)
         } catch {
-            throw AIError.invalidResponse(provider: providerID, message: "No object generated after repair: \(error.localizedDescription)")
+            throw AIError.invalidResponse(provider: providerID, message: "No object generated after repair: \(objectErrorDescription(error))")
         }
     }
+}
+
+private func objectErrorDescription(_ error: Error) -> String {
+    String(describing: error)
+}
+
+private func decodeAndValidateObject<Object: Decodable>(
+    _ type: Object.Type,
+    from text: String,
+    schema: JSONValue?
+) throws -> (object: Object, rawObject: JSONValue, text: String) {
+    let parsed = try decodeObject(Object.self, from: text)
+    if let schema {
+        do {
+            try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
+        } catch let issue as AIJSONSchemaValidationIssue {
+            throw AIError.invalidArgument(argument: "schema", message: "Generated object does not match schema: \(issue.description)")
+        }
+    }
+    return parsed
 }
 
 private func decodeObject<Object: Decodable>(_ type: Object.Type, from text: String) throws -> (object: Object, rawObject: JSONValue, text: String) {
