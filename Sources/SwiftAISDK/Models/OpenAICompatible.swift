@@ -516,7 +516,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     "type": .string("image_url"),
                     "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
                 ])
-            case .toolCall, .toolResult:
+            case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
                 return .object(["type": .string("text"), "text": .string("")])
             }
         }
@@ -1016,7 +1016,7 @@ private func openAIResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<
             "filename": .string(openAIResponsesFileName(for: mimeType, index: index)),
             "file_data": .string(dataURL)
         ])
-    case .toolCall, .toolResult:
+    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }

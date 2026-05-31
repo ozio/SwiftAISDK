@@ -58,8 +58,8 @@ Impact:
   follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
-  but approval flow, richer schema validation, and provider-defined tool
-  wrapping still need follow-up work.
+  but richer schema validation, provider-defined tool wrapping, and UI-facing
+  approval plumbing still need follow-up work.
 - Object generation exists for `Decodable` results, and `streamObject` can now
   stream JSON text deltas, best-effort partial JSON objects, and a final decoded
   object. Typed partials, richer schema adapters, typed validation errors, and
@@ -142,8 +142,8 @@ tools.
 Impact:
 
 - Upstream-style dynamic tools are now represented by `AITool.dynamic(...)`;
-  typed output validation/error surfaces and approval flow are still missing.
-  Tool input refinement exists through `AITool.refineArguments`, but there is no
+  typed output validation/error surfaces are still missing. Tool input
+  refinement exists through `AITool.refineArguments`, but there is no
   schema-adapter-backed typed validation layer yet.
 - Automatic multi-step execution exists for `AI.generateText` and `AI.streamText`.
 - Stop conditions now mirror the upstream `isStepCount`, `isLoopFinished`, and
@@ -156,14 +156,17 @@ Impact:
 - `AITool.dynamic(...)` marks runtime-discovered tools while keeping provider
   request schemas in function-tool form, matching upstream `dynamicTool(...)`
   behavior for tool calls, stream parts, results, and follow-up messages.
+- `toolApproval` exists on `AI.generateText` and `AI.streamText` for
+  Swift-executed tools. It supports automatic approve/deny stages and stops the
+  loop for `.userApproval`, matching the first upstream approval control flow.
 - Tool-result messages are now first-class in core, but provider passes should
   keep tightening wire-format parity.
 
 Recommendation:
 
-Build on the new `AITool` abstraction: add typed validation errors, approval
-requests, provider-defined executable wrappers, and richer stream tool lifecycle
-events.
+Build on the new `AITool` abstraction: add typed validation errors,
+provider-executed approval responses, provider-defined executable wrappers, and
+richer stream tool lifecycle events.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -241,9 +244,10 @@ Keep turning documentation into executable product evidence:
    First `generateText` and `streamText` slices are in place with typed
    `AITool`, execute callbacks, step/tool-result messages, streamed tool-result
    parts, upstream-style stop conditions, a Swift `prepareStep` hook, and tool
-   argument refinement, plus dynamic tool marking. Next passes should add typed
-   validation errors, approval policies, provider-defined tool wrappers, and
-   richer stream lifecycle handling.
+   argument refinement, dynamic tool marking, and first-pass tool approval
+   policies. Next passes should add typed validation errors, provider-executed
+   approval responses, provider-defined tool wrappers, and richer stream
+   lifecycle handling.
 
 5. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

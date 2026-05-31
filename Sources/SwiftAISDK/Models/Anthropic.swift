@@ -338,6 +338,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     "tool_use_id": .string(result.toolCallID),
                     "content": .string(anthropicJSONString(result.result) ?? result.result.stringValue ?? "")
                 ])
+            case .toolApprovalRequest, .toolApprovalResponse:
+                return .object(["type": .string("text"), "text": .string("")])
             }
         }
         return .object(["role": .string(role), "content": .array(parts)])
@@ -720,7 +722,7 @@ private func anthropicCitationDocuments(from messages: [AIMessage]) -> [Anthropi
             guard url.lowercased().contains(".pdf") else { return nil }
             let filename = url.split(separator: "/").last.map(String.init)
             return AnthropicCitationDocument(title: filename ?? "Document", filename: filename, mediaType: "application/pdf")
-        case .text, .toolCall, .toolResult:
+        case .text, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             return nil
         }
     }

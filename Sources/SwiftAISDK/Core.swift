@@ -103,6 +103,8 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
     case file(mimeType: String, data: Data, filename: String? = nil)
     case toolCall(AIToolCall)
     case toolResult(AIToolResult)
+    case toolApprovalRequest(AIToolApprovalRequest)
+    case toolApprovalResponse(AIToolApprovalResponse)
 
     public var text: String? {
         if case let .text(value) = self { value } else { nil }
@@ -114,7 +116,7 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
             return (mimeType, data, nil)
         case let .file(mimeType, data, filename):
             return (mimeType, data, filename)
-        case .text, .imageURL, .toolCall, .toolResult:
+        case .text, .imageURL, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             return nil
         }
     }
@@ -141,12 +143,32 @@ public struct AIMessage: Equatable, Hashable, Sendable {
         AIMessage(role: .assistant, content: [.text(text)])
     }
 
-    public static func assistant(text: String = "", toolCalls: [AIToolCall]) -> AIMessage {
-        AIMessage(role: .assistant, content: (text.isEmpty ? [] : [.text(text)]) + toolCalls.map(AIContentPart.toolCall))
+    public static func assistant(
+        text: String = "",
+        toolCalls: [AIToolCall],
+        toolApprovalRequests: [AIToolApprovalRequest] = []
+    ) -> AIMessage {
+        AIMessage(
+            role: .assistant,
+            content: (text.isEmpty ? [] : [.text(text)])
+                + toolCalls.map(AIContentPart.toolCall)
+                + toolApprovalRequests.map(AIContentPart.toolApprovalRequest)
+        )
     }
 
     public static func toolResult(_ result: AIToolResult) -> AIMessage {
         AIMessage(role: .tool, content: [.toolResult(result)])
+    }
+
+    public static func toolResponses(
+        approvalResponses: [AIToolApprovalResponse] = [],
+        toolResults: [AIToolResult] = []
+    ) -> AIMessage {
+        AIMessage(
+            role: .tool,
+            content: approvalResponses.map(AIContentPart.toolApprovalResponse)
+                + toolResults.map(AIContentPart.toolResult)
+        )
     }
 
     public var combinedText: String {
@@ -224,6 +246,8 @@ public struct TextGenerationResult: Sendable {
     public var usage: TokenUsage?
     public var toolCalls: [AIToolCall]
     public var toolResults: [AIToolResult]
+    public var toolApprovalRequests: [AIToolApprovalRequest]
+    public var toolApprovalResponses: [AIToolApprovalResponse]
     public var steps: [AIToolStep]
     public var sources: [AISource]
     public var providerMetadata: [String: JSONValue]
@@ -238,6 +262,8 @@ public struct TextGenerationResult: Sendable {
         usage: TokenUsage? = nil,
         toolCalls: [AIToolCall] = [],
         toolResults: [AIToolResult] = [],
+        toolApprovalRequests: [AIToolApprovalRequest] = [],
+        toolApprovalResponses: [AIToolApprovalResponse] = [],
         steps: [AIToolStep] = [],
         sources: [AISource] = [],
         providerMetadata: [String: JSONValue] = [:],
@@ -251,6 +277,8 @@ public struct TextGenerationResult: Sendable {
         self.usage = usage
         self.toolCalls = toolCalls
         self.toolResults = toolResults
+        self.toolApprovalRequests = toolApprovalRequests
+        self.toolApprovalResponses = toolApprovalResponses
         self.steps = steps
         self.sources = sources
         self.providerMetadata = providerMetadata
@@ -327,6 +355,8 @@ public struct AIToolStep: Sendable {
     public var usage: TokenUsage?
     public var toolCalls: [AIToolCall]
     public var toolResults: [AIToolResult]
+    public var toolApprovalRequests: [AIToolApprovalRequest]
+    public var toolApprovalResponses: [AIToolApprovalResponse]
     public var providerMetadata: [String: JSONValue]
     public var responseMetadata: AIResponseMetadata
 
@@ -338,6 +368,8 @@ public struct AIToolStep: Sendable {
         usage: TokenUsage? = nil,
         toolCalls: [AIToolCall] = [],
         toolResults: [AIToolResult] = [],
+        toolApprovalRequests: [AIToolApprovalRequest] = [],
+        toolApprovalResponses: [AIToolApprovalResponse] = [],
         providerMetadata: [String: JSONValue] = [:],
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
@@ -348,6 +380,8 @@ public struct AIToolStep: Sendable {
         self.usage = usage
         self.toolCalls = toolCalls
         self.toolResults = toolResults
+        self.toolApprovalRequests = toolApprovalRequests
+        self.toolApprovalResponses = toolApprovalResponses
         self.providerMetadata = providerMetadata
         self.responseMetadata = responseMetadata
     }
@@ -521,17 +555,73 @@ public struct AIToolResult: Equatable, Hashable, Sendable {
 
 public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
     public var id: String
+    public var toolCallID: String?
     public var toolName: String
     public var arguments: String
+    public var isAutomatic: Bool
     public var providerMetadata: [String: JSONValue]
 
-    public init(id: String, toolName: String, arguments: String, providerMetadata: [String: JSONValue] = [:]) {
+    public init(
+        id: String,
+        toolName: String,
+        arguments: String,
+        toolCallID: String? = nil,
+        isAutomatic: Bool = false,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
         self.id = id
+        self.toolCallID = toolCallID
         self.toolName = toolName
         self.arguments = arguments
+        self.isAutomatic = isAutomatic
         self.providerMetadata = providerMetadata
     }
 }
+
+public struct AIToolApprovalResponse: Equatable, Hashable, Sendable {
+    public var id: String
+    public var approved: Bool
+    public var reason: String?
+    public var providerExecuted: Bool
+    public var providerMetadata: [String: JSONValue]
+
+    public init(
+        id: String,
+        approved: Bool,
+        reason: String? = nil,
+        providerExecuted: Bool = false,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.id = id
+        self.approved = approved
+        self.reason = reason
+        self.providerExecuted = providerExecuted
+        self.providerMetadata = providerMetadata
+    }
+}
+
+public enum AIToolApprovalStatus: Equatable, Hashable, Sendable {
+    case notApplicable
+    case approved(reason: String? = nil)
+    case denied(reason: String? = nil)
+    case userApproval
+}
+
+public struct AIToolApprovalContext: Sendable {
+    public var toolCall: AIToolCall
+    public var arguments: JSONValue
+    public var tool: AITool
+    public var request: LanguageModelRequest
+
+    public init(toolCall: AIToolCall, arguments: JSONValue, tool: AITool, request: LanguageModelRequest) {
+        self.toolCall = toolCall
+        self.arguments = arguments
+        self.tool = tool
+        self.request = request
+    }
+}
+
+public typealias AIToolApproval = @Sendable (AIToolApprovalContext) async throws -> AIToolApprovalStatus?
 
 public struct AITool: Sendable {
     public var name: String
@@ -653,6 +743,7 @@ public enum LanguageStreamPart: Equatable, Sendable {
     case toolCall(AIToolCall)
     case toolResult(AIToolResult)
     case toolApprovalRequest(AIToolApprovalRequest)
+    case toolApprovalResponse(AIToolApprovalResponse)
     case file(AIStreamFile)
     case reasoningFile(AIStreamFile)
     case custom(JSONValue, providerMetadata: [String: JSONValue] = [:])

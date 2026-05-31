@@ -114,6 +114,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         "response": result.result
                     ])
                 ])
+            case .toolApprovalRequest, .toolApprovalResponse:
+                return .object(["text": .string("")])
             }
         }
         return .object(["role": .string(role), "parts": .array(parts)])
@@ -688,6 +690,8 @@ private func googleInteractionsContent(_ content: [AIContentPart]) -> [JSONValue
                 "name": .string(result.toolName),
                 "response": result.result
             ])
+        case .toolApprovalRequest, .toolApprovalResponse:
+            return .object(["type": .string("text"), "text": .string("")])
         }
     }
 }

@@ -220,6 +220,8 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                                 "toolName": .string(result.toolName),
                                 "result": result.result
                             ])
+                        case .toolApprovalRequest, .toolApprovalResponse:
+                            return .object(["type": .string("text"), "text": .string("")])
                         }
                     })
                 ])

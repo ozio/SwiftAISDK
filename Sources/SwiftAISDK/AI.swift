@@ -18,6 +18,7 @@ public enum AI {
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
         retryPolicy: AIRetryPolicy = .default
     ) async throws -> TextGenerationResult {
         guard !executableTools.isEmpty || prepareStep != nil else {
@@ -33,6 +34,8 @@ public enum AI {
 
         var steps: [AIToolStep] = []
         var allToolResults: [AIToolResult] = []
+        var allApprovalRequests: [AIToolApprovalRequest] = []
+        var allApprovalResponses: [AIToolApprovalResponse] = []
         var responseMessages: [AIMessage] = []
         var lastResult: TextGenerationResult?
 
@@ -57,6 +60,8 @@ public enum AI {
 
             if executableCalls.isEmpty {
                 result.toolResults = allToolResults
+                result.toolApprovalRequests = allApprovalRequests
+                result.toolApprovalResponses = allApprovalResponses
                 result.steps = steps + [
                     AIToolStep(
                         index: index,
@@ -65,6 +70,8 @@ public enum AI {
                         finishReason: result.finishReason,
                         usage: result.usage,
                         toolCalls: result.toolCalls,
+                        toolApprovalRequests: result.toolApprovalRequests,
+                        toolApprovalResponses: result.toolApprovalResponses,
                         providerMetadata: result.providerMetadata,
                         responseMetadata: result.responseMetadata
                     )
@@ -72,8 +79,15 @@ public enum AI {
                 return result
             }
 
-            let toolResults = try await executeToolCalls(executableCalls, toolsByName: toolsByName)
-            allToolResults.append(contentsOf: toolResults)
+            let toolExecution = try await executeToolCalls(
+                executableCalls,
+                toolsByName: toolsByName,
+                request: stepRequest,
+                toolApproval: toolApproval
+            )
+            allApprovalRequests.append(contentsOf: toolExecution.approvalRequests)
+            allApprovalResponses.append(contentsOf: toolExecution.approvalResponses)
+            allToolResults.append(contentsOf: toolExecution.results)
             let step = AIToolStep(
                 index: index,
                 text: result.text,
@@ -81,20 +95,34 @@ public enum AI {
                 finishReason: result.finishReason,
                 usage: result.usage,
                 toolCalls: result.toolCalls,
-                toolResults: toolResults,
+                toolResults: toolExecution.results,
+                toolApprovalRequests: toolExecution.approvalRequests,
+                toolApprovalResponses: toolExecution.approvalResponses,
                 providerMetadata: result.providerMetadata,
                 responseMetadata: result.responseMetadata
             )
             steps.append(step)
 
             result.toolResults = allToolResults
+            result.toolApprovalRequests = allApprovalRequests
+            result.toolApprovalResponses = allApprovalResponses
             result.steps = steps
             lastResult = result
+            if toolExecution.needsUserApproval {
+                return result
+            }
             if try await isStopConditionMet(stopWhen, steps: steps) {
                 return result
             }
-            let assistantMessage = AIMessage.assistant(text: result.text, toolCalls: result.toolCalls)
-            let toolResultMessages = toolResults.map(AIMessage.toolResult)
+            let assistantMessage = AIMessage.assistant(
+                text: result.text,
+                toolCalls: result.toolCalls,
+                toolApprovalRequests: toolExecution.approvalRequests
+            )
+            let toolResultMessages = toolResponseMessages(
+                approvalResponses: toolExecution.approvalResponses,
+                toolResults: toolExecution.results
+            )
             responseMessages.append(assistantMessage)
             responseMessages.append(contentsOf: toolResultMessages)
             currentRequest = stepRequest
@@ -106,6 +134,8 @@ public enum AI {
             return try await generateText(model: model, request: currentRequest, retryPolicy: retryPolicy)
         }
         result.toolResults = allToolResults
+        result.toolApprovalRequests = allApprovalRequests
+        result.toolApprovalResponses = allApprovalResponses
         result.steps = steps
         return result
     }
@@ -128,6 +158,7 @@ public enum AI {
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
         retryPolicy: AIRetryPolicy = .default,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
@@ -166,6 +197,7 @@ public enum AI {
             maxSteps: maxSteps,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
+            toolApproval: toolApproval,
             retryPolicy: retryPolicy
         )
     }
@@ -268,7 +300,8 @@ public enum AI {
         executableTools: [AITool],
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
-        prepareStep: AIPrepareStep? = nil
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -317,19 +350,46 @@ public enum AI {
                             return
                         }
 
-                        let toolResults = try await executeToolCalls(executableCalls, toolsByName: toolsByName)
-                        for toolResult in toolResults {
+                        let toolExecution = try await executeToolCalls(
+                            executableCalls,
+                            toolsByName: toolsByName,
+                            request: stepRequest,
+                            toolApproval: toolApproval
+                        )
+                        for approvalRequest in toolExecution.approvalRequests {
+                            continuation.yield(.toolApprovalRequest(approvalRequest))
+                        }
+                        for approvalResponse in toolExecution.approvalResponses {
+                            continuation.yield(.toolApprovalResponse(approvalResponse))
+                        }
+                        for toolResult in toolExecution.results {
                             continuation.yield(.toolResult(toolResult))
                         }
 
-                        let completedStep = step.toolStep(index: index, toolResults: toolResults)
+                        let completedStep = step.toolStep(
+                            index: index,
+                            toolResults: toolExecution.results,
+                            approvalRequests: toolExecution.approvalRequests,
+                            approvalResponses: toolExecution.approvalResponses
+                        )
                         steps.append(completedStep)
+                        if toolExecution.needsUserApproval {
+                            continuation.finish()
+                            return
+                        }
                         if try await isStopConditionMet(stopWhen, steps: steps) {
                             continuation.finish()
                             return
                         }
-                        let assistantMessage = AIMessage.assistant(text: step.text, toolCalls: step.toolCalls)
-                        let toolResultMessages = toolResults.map(AIMessage.toolResult)
+                        let assistantMessage = AIMessage.assistant(
+                            text: step.text,
+                            toolCalls: step.toolCalls,
+                            toolApprovalRequests: toolExecution.approvalRequests
+                        )
+                        let toolResultMessages = toolResponseMessages(
+                            approvalResponses: toolExecution.approvalResponses,
+                            toolResults: toolExecution.results
+                        )
                         responseMessages.append(assistantMessage)
                         responseMessages.append(contentsOf: toolResultMessages)
                         currentRequest = stepRequest
@@ -367,6 +427,7 @@ public enum AI {
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
@@ -397,7 +458,15 @@ public enum AI {
             return streamText(model: model, request: request)
         }
 
-        return streamText(model: model, request: request, executableTools: executableTools, maxSteps: maxSteps, stopWhen: stopWhen, prepareStep: prepareStep)
+        return streamText(
+            model: model,
+            request: request,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval
+        )
     }
 
     public static func streamObject<Object: Decodable & Sendable>(
@@ -700,6 +769,8 @@ private struct LanguageStreamToolStep {
     var finishReason: String?
     var usage: TokenUsage?
     var toolCalls: [AIToolCall] = []
+    var approvalRequests: [AIToolApprovalRequest] = []
+    var approvalResponses: [AIToolApprovalResponse] = []
     var providerMetadata: [String: JSONValue] = [:]
     var responseMetadata = AIResponseMetadata()
 
@@ -715,6 +786,10 @@ private struct LanguageStreamToolStep {
             reasoning += delta
         case let .toolCall(toolCall):
             toolCalls.append(toolCall)
+        case let .toolApprovalRequest(approvalRequest):
+            approvalRequests.append(approvalRequest)
+        case let .toolApprovalResponse(approvalResponse):
+            approvalResponses.append(approvalResponse)
         case let .metadata(metadata):
             providerMetadata.merge(metadata) { _, new in new }
         case let .responseMetadata(metadata):
@@ -731,7 +806,12 @@ private struct LanguageStreamToolStep {
         }
     }
 
-    func toolStep(index: Int, toolResults: [AIToolResult]) -> AIToolStep {
+    func toolStep(
+        index: Int,
+        toolResults: [AIToolResult],
+        approvalRequests: [AIToolApprovalRequest],
+        approvalResponses: [AIToolApprovalResponse]
+    ) -> AIToolStep {
         AIToolStep(
             index: index,
             text: text,
@@ -740,6 +820,8 @@ private struct LanguageStreamToolStep {
             usage: usage,
             toolCalls: toolCalls,
             toolResults: toolResults,
+            toolApprovalRequests: self.approvalRequests + approvalRequests,
+            toolApprovalResponses: self.approvalResponses + approvalResponses,
             providerMetadata: providerMetadata,
             responseMetadata: responseMetadata
         )
@@ -852,6 +934,21 @@ private func toolsByName(from tools: [AITool]) throws -> [String: AITool] {
     return output
 }
 
+private struct AIToolExecutionBatch: Sendable {
+    var results: [AIToolResult] = []
+    var approvalRequests: [AIToolApprovalRequest] = []
+    var approvalResponses: [AIToolApprovalResponse] = []
+    var needsUserApproval = false
+}
+
+private func toolResponseMessages(
+    approvalResponses: [AIToolApprovalResponse],
+    toolResults: [AIToolResult]
+) -> [AIMessage] {
+    guard !approvalResponses.isEmpty || !toolResults.isEmpty else { return [] }
+    return [AIMessage.toolResponses(approvalResponses: approvalResponses, toolResults: toolResults)]
+}
+
 private func annotateToolCalls(_ calls: [AIToolCall], toolsByName: [String: AITool]) -> [AIToolCall] {
     calls.map { call in
         guard toolsByName[call.name]?.dynamic == true, !call.dynamic else { return call }
@@ -889,15 +986,82 @@ private func annotateStreamPart(_ part: LanguageStreamPart, toolsByName: [String
     }
 }
 
-private func executeToolCalls(_ calls: [AIToolCall], toolsByName: [String: AITool]) async throws -> [AIToolResult] {
-    var results: [AIToolResult] = []
+private func executeToolCalls(
+    _ calls: [AIToolCall],
+    toolsByName: [String: AITool],
+    request: LanguageModelRequest,
+    toolApproval: AIToolApproval?
+) async throws -> AIToolExecutionBatch {
+    var batch = AIToolExecutionBatch()
     for call in calls {
         guard let tool = toolsByName[call.name] else { continue }
         let arguments = try toolArguments(from: call)
         let refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
+        let approvalStatus = try await toolApproval?(AIToolApprovalContext(
+            toolCall: call,
+            arguments: refinedArguments,
+            tool: tool,
+            request: request
+        )) ?? .notApplicable
+        let approvalID = "approval-\(call.id)"
+        switch approvalStatus {
+        case .notApplicable:
+            break
+        case let .approved(reason):
+            batch.approvalRequests.append(AIToolApprovalRequest(
+                id: approvalID,
+                toolName: call.name,
+                arguments: call.arguments,
+                toolCallID: call.id,
+                isAutomatic: true,
+                providerMetadata: call.providerMetadata
+            ))
+            batch.approvalResponses.append(AIToolApprovalResponse(
+                id: approvalID,
+                approved: true,
+                reason: reason,
+                providerExecuted: call.providerExecuted,
+                providerMetadata: call.providerMetadata
+            ))
+        case let .denied(reason):
+            batch.approvalRequests.append(AIToolApprovalRequest(
+                id: approvalID,
+                toolName: call.name,
+                arguments: call.arguments,
+                toolCallID: call.id,
+                isAutomatic: true,
+                providerMetadata: call.providerMetadata
+            ))
+            batch.approvalResponses.append(AIToolApprovalResponse(
+                id: approvalID,
+                approved: false,
+                reason: reason,
+                providerExecuted: call.providerExecuted,
+                providerMetadata: call.providerMetadata
+            ))
+            let dynamic = call.dynamic || tool.dynamic
+            batch.results.append(AIToolResult(
+                toolCallID: call.id,
+                toolName: call.name,
+                result: executionDeniedResult(reason: reason),
+                dynamic: dynamic,
+                providerMetadata: call.providerMetadata
+            ))
+            continue
+        case .userApproval:
+            batch.approvalRequests.append(AIToolApprovalRequest(
+                id: approvalID,
+                toolName: call.name,
+                arguments: call.arguments,
+                toolCallID: call.id,
+                providerMetadata: call.providerMetadata
+            ))
+            batch.needsUserApproval = true
+            continue
+        }
         let result = try await tool.execute(refinedArguments)
         let dynamic = call.dynamic || tool.dynamic
-        results.append(AIToolResult(
+        batch.results.append(AIToolResult(
             toolCallID: call.id,
             toolName: call.name,
             result: result,
@@ -905,7 +1069,14 @@ private func executeToolCalls(_ calls: [AIToolCall], toolsByName: [String: AIToo
             providerMetadata: call.providerMetadata
         ))
     }
-    return results
+    return batch
+}
+
+private func executionDeniedResult(reason: String?) -> JSONValue {
+    .object([
+        "type": .string("execution-denied"),
+        "reason": reason.map(JSONValue.string)
+    ].compactMapValues { $0 })
 }
 
 private func toolArguments(from call: AIToolCall) throws -> JSONValue {

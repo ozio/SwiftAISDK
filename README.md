@@ -191,6 +191,22 @@ let runtimeSearch = AITool.dynamic(
 }
 ```
 
+Use `toolApproval` when a tool call needs a policy decision before execution.
+Returning `.denied(...)` records an approval response and sends an
+`execution-denied` tool result back into the loop; returning `.userApproval`
+emits a `.toolApprovalRequest(...)` stream part and stops before executing:
+
+```swift
+let guarded = try await AI.generateText(
+    model: model,
+    prompt: "Delete the temporary file.",
+    executableTools: [deleteFile],
+    toolApproval: { context in
+        context.toolCall.name == "deleteFile" ? .userApproval : .notApplicable
+    }
+)
+```
+
 Use `prepareStep` when a later tool-loop step needs different request settings
 or a narrowed tool set:
 

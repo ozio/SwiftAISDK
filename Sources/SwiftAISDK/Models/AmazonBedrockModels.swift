@@ -116,6 +116,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                                 "status": .string(result.isError ? "error" : "success")
                             ])
                         ])
+                    case .toolApprovalRequest, .toolApprovalResponse:
+                        return .object(["text": .string("")])
                     }
                 }
 

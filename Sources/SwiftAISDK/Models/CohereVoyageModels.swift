@@ -336,7 +336,7 @@ private func cohereContentPartJSON(_ part: AIContentPart) -> JSONValue? {
             "type": .string("image_url"),
             "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
         ])
-    case .data, .file, .toolCall, .toolResult:
+    case .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }

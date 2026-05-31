@@ -1669,7 +1669,7 @@ private func prodiaInputImage(from messages: [AIMessage], transport: AITransport
                 throw AIError.httpStatus(provider: "prodia.language", statusCode: response.statusCode, body: response.bodyText)
             }
             return (response.body, response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value ?? "image/png")
-        case .text, .data, .file, .toolCall, .toolResult:
+        case .text, .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             continue
         }
     }

@@ -350,6 +350,58 @@ import Testing
     #expect(model.streamRequests[1].messages[2].content == [.toolResult(dynamicResult)])
 }
 
+@Test func aiStreamTextStopsForUserApprovalRequest() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "deleteFile", arguments: #"{"path":"/tmp/a.txt"}"#)
+    let approvalRequest = AIToolApprovalRequest(
+        id: "approval-call-1",
+        toolName: "deleteFile",
+        arguments: #"{"path":"/tmp/a.txt"}"#,
+        toolCallID: "call-1"
+    )
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .textDelta("This should not stream."),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+            ]
+        ]
+    )
+    let deleteFile = AITool(
+        name: "deleteFile",
+        parameters: ["type": "object", "properties": ["path": ["type": "string"]]]
+    ) { _ in
+        Issue.record("Tool should not execute before user approval.")
+        return ["deleted": true]
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Delete the file.",
+        executableTools: [deleteFile],
+        maxSteps: 2,
+        toolApproval: { context in
+            #expect(context.toolCall == toolCall)
+            #expect(context.arguments["path"]?.stringValue == "/tmp/a.txt")
+            return .userApproval
+        }
+    ) {
+        streamed.append(part)
+    }
+
+    #expect(model.streamRequests.count == 1)
+    #expect(streamed == [
+        .toolCall(toolCall),
+        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .toolApprovalRequest(approvalRequest)
+    ])
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let schema: JSONValue = [
         "type": "object",
@@ -675,6 +727,67 @@ import Testing
     #expect(model.requests[0].tools["runtimeSearch"]?["dynamic"] == nil)
     #expect(model.requests[1].messages[1].content == [.toolCall(dynamicToolCall)])
     #expect(model.requests[1].messages[2].content == [.toolResult(dynamicResult)])
+}
+
+@Test func aiGenerateTextAddsDeniedApprovalResultAndContinues() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "deleteFile", arguments: #"{"path":"/tmp/a.txt"}"#)
+    let approvalRequest = AIToolApprovalRequest(
+        id: "approval-call-1",
+        toolName: "deleteFile",
+        arguments: #"{"path":"/tmp/a.txt"}"#,
+        toolCallID: "call-1",
+        isAutomatic: true
+    )
+    let approvalResponse = AIToolApprovalResponse(
+        id: "approval-call-1",
+        approved: false,
+        reason: "User denied access"
+    )
+    let deniedResult = AIToolResult(
+        toolCallID: "call-1",
+        toolName: "deleteFile",
+        result: ["type": "execution-denied", "reason": "User denied access"]
+    )
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object(["step": 1])),
+        TextGenerationResult(text: "Skipped deletion.", finishReason: "stop", rawValue: .object(["step": 2]))
+    ])
+    let deleteFile = AITool(
+        name: "deleteFile",
+        parameters: ["type": "object", "properties": ["path": ["type": "string"]]]
+    ) { _ in
+        Issue.record("Denied tool should not execute.")
+        return ["deleted": true]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Delete the file.",
+        executableTools: [deleteFile],
+        maxSteps: 2,
+        toolApproval: { context in
+            #expect(context.toolCall == toolCall)
+            #expect(context.arguments["path"]?.stringValue == "/tmp/a.txt")
+            return .denied(reason: "User denied access")
+        }
+    )
+
+    #expect(result.text == "Skipped deletion.")
+    #expect(result.toolApprovalRequests == [approvalRequest])
+    #expect(result.toolApprovalResponses == [approvalResponse])
+    #expect(result.toolResults == [deniedResult])
+    #expect(result.steps[0].toolApprovalRequests == [approvalRequest])
+    #expect(result.steps[0].toolApprovalResponses == [approvalResponse])
+    #expect(result.steps[0].toolResults == [deniedResult])
+    #expect(model.requests.count == 2)
+    #expect(model.requests[1].messages[1].content == [
+        .toolCall(toolCall),
+        .toolApprovalRequest(approvalRequest)
+    ])
+    #expect(model.requests[1].messages[2].content == [
+        .toolApprovalResponse(approvalResponse),
+        .toolResult(deniedResult)
+    ])
 }
 
 @Test func aiStopConditionsMatchUpstreamStepHelpers() async throws {

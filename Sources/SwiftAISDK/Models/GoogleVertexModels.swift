@@ -166,6 +166,8 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
                             "response": result.result
                         ])
                     ])
+                case .toolApprovalRequest, .toolApprovalResponse:
+                    return .object(["text": .string("")])
                 }
             })
         ])

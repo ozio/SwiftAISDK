@@ -146,7 +146,7 @@ private func huggingFaceInputContentPart(_ part: AIContentPart) -> JSONValue? {
             "type": .string("input_image"),
             "image_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")
         ])
-    case .toolCall, .toolResult:
+    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }
