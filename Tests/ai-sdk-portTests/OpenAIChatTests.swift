@@ -187,6 +187,50 @@ import Testing
     #expect(toolContent["forecast"]?.stringValue == "sunny")
 }
 
+@Test func openAICompatibleAIFacadeGenerateObjectSendsStructuredResponseFormat() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"{\\"value\\":\\"typed\\",\\"count\\":3}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport,
+        supportsStructuredOutputs: true
+    )
+    let model = try provider.chatModel("chat-model")
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "value": ["type": "string"],
+            "count": ["type": "integer"]
+        ],
+        "required": ["value", "count"]
+    ]
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return a typed object.",
+        as: OpenAIObjectAnswer.self,
+        schema: schema,
+        schemaName: "answer",
+        schemaDescription: "A typed answer."
+    )
+
+    #expect(result.object == OpenAIObjectAnswer(value: "typed", count: 3))
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
+    #expect(body["response_format"]?["json_schema"]?["description"]?.stringValue == "A typed answer.")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(body["responseFormat"] == nil)
+}
+
+private struct OpenAIObjectAnswer: Codable, Equatable, Sendable {
+    var value: String
+    var count: Int
+}
+
 @Test func openAICompatibleChatParsesToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"query\\":\\"weather\\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}

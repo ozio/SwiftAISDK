@@ -56,13 +56,15 @@ Impact:
 - Tool execution exists for `generateText`, but stop conditions, approval flow,
   dynamic tools, stream-side tool execution, and provider-defined tool wrapping
   still need follow-up work.
-- No object-generation helper with JSON schema prompting and validation.
+- Object generation exists for `Decodable` results, but streaming objects,
+  richer schema adapters, typed validation errors, and advanced output
+  strategies still need follow-up work.
 
 Recommendation:
 
 Continue growing the `AI` facade above provider models: retries, cancellation,
-telemetry, stream-side tool execution, schema/object generation, and middleware
-should be separate product rounds.
+telemetry, stream-side tool execution, richer schema/object generation, and
+middleware should be separate product rounds.
 
 ### 2. Core model contract is lossy compared with upstream v4
 
@@ -148,23 +150,26 @@ approval requests, stop conditions, and stream-side execution. Keep
 provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
-### 4. Object generation and schema validation are missing
+### 4. Object generation and schema validation are partial
 
 Upstream has `generateObject`, `streamObject`, schema adapters, JSON repair, and
-object output strategies. Swift currently has raw JSON response-format support
-in some provider request builders, but no user-facing object-generation API.
+object output strategies. Swift now has `AI.generateObject` for `Decodable`
+types and optional JSON repair, backed by provider JSON response-format hints.
 
 Impact:
 
-- A major AI SDK use case is unavailable even when providers support structured
-  outputs.
-- Provider-specific schema support cannot be tested end-to-end at product level.
+- Basic object generation is available at product level.
+- `streamObject`, array/enum/no-schema output strategies, schema adapter
+  protocols, and typed validation error surfaces are still unavailable.
+- Provider-specific schema support has first end-to-end coverage, but needs
+  broader provider passes.
 
 Recommendation:
 
-After `generateText`, add `generateObject` around Swift `Codable` and JSON
-Schema. Keep a first pass simple: generate JSON text, decode `Decodable`, return
-raw text and validation errors. Add streaming object support later.
+Extend `generateObject` beyond the first Swift-native slice: add schema adapter
+protocols, richer validation errors, array/enum/no-schema strategies, JSON
+instruction injection for providers without native response formats, and
+`streamObject`.
 
 ### 5. Documentation and product entrypoint are too thin
 
@@ -215,11 +220,15 @@ Add a real README once the facade direction is chosen. It should include:
    tool wrappers, and stream-side tool execution.
 
 5. **Object generation pass.**
-   Add `generateObject` for `Decodable` plus JSON schema/repair strategy.
+   First `AI.generateObject` slice is in place for `Decodable` plus JSON
+   schema hints and repair callbacks. Next passes should add `streamObject`,
+   schema adapter protocols, richer validation errors, and array/enum/no-schema
+   strategies.
 
 6. **README and capability matrix.**
-   README now has a quick-start and facade examples. Next pass should add a
-   generated provider capability matrix and deeper provider-option examples.
+   README now has a quick-start and facade/tool/object examples. Next pass
+   should add a generated provider capability matrix and deeper provider-option
+   examples.
 
 Provider micro-parity should continue, but it should be the second track. The
 first track should now be the SDK facade and core contract, because those change

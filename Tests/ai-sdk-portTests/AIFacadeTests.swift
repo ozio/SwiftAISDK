@@ -95,6 +95,71 @@ import Testing
     #expect(toolResult.result["forecast"]?.stringValue == "sunny")
 }
 
+@Test func aiGenerateObjectDecodesJSONAndRequestsSchemaResponseFormat() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: """
+        ```json
+        {"value":"test-value","count":2}
+        ```
+        """,
+        finishReason: "stop",
+        usage: TokenUsage(totalTokens: 7),
+        rawValue: .object(["id": "raw-1"]),
+        responseMetadata: AIResponseMetadata(id: "resp-1")
+    ))
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "value": ["type": "string"],
+            "count": ["type": "integer"]
+        ],
+        "required": ["value", "count"]
+    ]
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return an object.",
+        as: FacadeObjectAnswer.self,
+        schema: schema,
+        schemaName: "answer",
+        schemaDescription: "A typed answer."
+    )
+
+    #expect(result.object == FacadeObjectAnswer(value: "test-value", count: 2))
+    #expect(result.rawObject["value"]?.stringValue == "test-value")
+    #expect(result.finishReason == "stop")
+    #expect(result.usage?.totalTokens == 7)
+    #expect(result.responseMetadata.id == "resp-1")
+
+    let request = try #require(model.requests.first)
+    #expect(request.responseFormat == .json(schema: schema, name: "answer", description: "A typed answer."))
+    #expect(request.extraBody["responseFormat"]?["type"]?.stringValue == "json")
+    #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "answer")
+    #expect(request.extraBody["responseFormat"]?["description"]?.stringValue == "A typed answer.")
+}
+
+@Test func aiGenerateObjectCanRepairInvalidJSONText() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(text: "value: repaired", rawValue: .object([:])))
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return JSON.",
+        as: FacadeObjectAnswer.self
+    ) { context in
+        #expect(context.text == "value: repaired")
+        return #"{"value":"repaired","count":1}"#
+    }
+
+    #expect(result.object == FacadeObjectAnswer(value: "repaired", count: 1))
+    #expect(result.text == #"{"value":"repaired","count":1}"#)
+}
+
+private struct FacadeObjectAnswer: Codable, Equatable, Sendable {
+    var value: String
+    var count: Int
+}
+
 private actor ToolCapture {
     private var arguments: JSONValue?
 

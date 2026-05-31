@@ -61,6 +61,35 @@ let image = try await AI.generateImage(
 Provider-specific options can be passed through request types or facade
 overloads via `providerOptions`, `extraBody`, and `headers`.
 
+## Objects
+
+`AI.generateObject` requests JSON output and decodes the result into a Swift
+`Decodable` type:
+
+```swift
+struct Summary: Decodable, Sendable {
+    var title: String
+    var bullets: [String]
+}
+
+let result = try await AI.generateObject(
+    model: model,
+    prompt: "Summarize this changelog.",
+    as: Summary.self,
+    schema: [
+        "type": "object",
+        "properties": [
+            "title": ["type": "string"],
+            "bullets": ["type": "array", "items": ["type": "string"]]
+        ],
+        "required": ["title", "bullets"]
+    ],
+    schemaName: "summary"
+)
+
+print(result.object.title)
+```
+
 ## Tools
 
 `AI.generateText` can execute typed Swift tools and continue the conversation

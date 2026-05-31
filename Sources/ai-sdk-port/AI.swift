@@ -132,6 +132,91 @@ public enum AI {
         )
     }
 
+    public static func generateObject<Object: Decodable & Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        as type: Object.Type = Object.self,
+        schema: JSONValue? = nil,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<Object> {
+        var objectRequest = request
+        let responseFormat = AIResponseFormat.json(schema: schema, name: schemaName, description: schemaDescription)
+        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
+        if objectRequest.extraBody["responseFormat"] == nil {
+            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
+        }
+
+        let textResult = try await generateText(model: model, request: objectRequest)
+        let parsed = try await parseObject(
+            Object.self,
+            from: textResult.text,
+            repairText: repairText,
+            providerID: model.providerID
+        )
+
+        return ObjectGenerationResult(
+            object: parsed.object,
+            text: parsed.text,
+            rawObject: parsed.rawObject,
+            reasoning: textResult.reasoning,
+            finishReason: textResult.finishReason,
+            usage: textResult.usage,
+            warnings: textResult.warnings,
+            providerMetadata: textResult.providerMetadata,
+            responseMetadata: textResult.responseMetadata,
+            textResult: textResult
+        )
+    }
+
+    public static func generateObject<Object: Decodable & Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        as type: Object.Type = Object.self,
+        schema: JSONValue? = nil,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<Object> {
+        try await generateObject(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(schema: schema, name: schemaName, description: schemaDescription),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            as: Object.self,
+            schema: schema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            repairText: repairText
+        )
+    }
+
     public static func streamText(model: any LanguageModel, request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         model.stream(request)
     }
@@ -325,6 +410,105 @@ private func toolArguments(from call: AIToolCall) throws -> JSONValue {
     } catch {
         throw AIError.invalidArgument(argument: "toolCalls.\(call.name).arguments", message: "Tool call arguments must be valid JSON.")
     }
+}
+
+private func responseFormatJSON(schema: JSONValue?, name: String?, description: String?) -> JSONValue {
+    .object([
+        "type": .string("json"),
+        "schema": schema,
+        "name": name.map(JSONValue.string),
+        "description": description.map(JSONValue.string)
+    ])
+}
+
+private func parseObject<Object: Decodable>(
+    _ type: Object.Type,
+    from text: String,
+    repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?,
+    providerID: String
+) async throws -> (object: Object, rawObject: JSONValue, text: String) {
+    do {
+        return try decodeObject(Object.self, from: text)
+    } catch {
+        guard let repairText else {
+            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(error.localizedDescription)")
+        }
+        guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: error.localizedDescription)) else {
+            throw AIError.invalidResponse(provider: providerID, message: "No object generated: \(error.localizedDescription)")
+        }
+        do {
+            return try decodeObject(Object.self, from: repaired)
+        } catch {
+            throw AIError.invalidResponse(provider: providerID, message: "No object generated after repair: \(error.localizedDescription)")
+        }
+    }
+}
+
+private func decodeObject<Object: Decodable>(_ type: Object.Type, from text: String) throws -> (object: Object, rawObject: JSONValue, text: String) {
+    let jsonText = try extractJSONObjectText(from: text)
+    let rawObject = try decodeJSONBody(Data(jsonText.utf8))
+    let data = try encodeJSONBody(rawObject)
+    return (try JSONDecoder().decode(Object.self, from: data), rawObject, jsonText)
+}
+
+private func extractJSONObjectText(from text: String) throws -> String {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if (try? decodeJSONBody(Data(trimmed.utf8))) != nil {
+        return trimmed
+    }
+
+    if let fenced = fencedJSONText(from: trimmed), (try? decodeJSONBody(Data(fenced.utf8))) != nil {
+        return fenced
+    }
+
+    if let balanced = balancedJSONText(from: trimmed), (try? decodeJSONBody(Data(balanced.utf8))) != nil {
+        return balanced
+    }
+
+    throw AIError.invalidArgument(argument: "text", message: "Expected JSON object or array text.")
+}
+
+private func fencedJSONText(from text: String) -> String? {
+    guard let opening = text.range(of: "```") else { return nil }
+    let afterOpening = text[opening.upperBound...]
+    let contentStart = afterOpening.firstIndex(of: "\n").map { text.index(after: $0) } ?? afterOpening.startIndex
+    guard let closing = text[contentStart...].range(of: "```") else { return nil }
+    return String(text[contentStart..<closing.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func balancedJSONText(from text: String) -> String? {
+    guard let start = text.firstIndex(where: { $0 == "{" || $0 == "[" }) else { return nil }
+    let opening = text[start]
+    let closing: Character = opening == "{" ? "}" : "]"
+    var depth = 0
+    var inString = false
+    var escaped = false
+    var index = start
+
+    while index < text.endIndex {
+        let character = text[index]
+        if inString {
+            if escaped {
+                escaped = false
+            } else if character == "\\" {
+                escaped = true
+            } else if character == "\"" {
+                inString = false
+            }
+        } else if character == "\"" {
+            inString = true
+        } else if character == opening {
+            depth += 1
+        } else if character == closing {
+            depth -= 1
+            if depth == 0 {
+                return String(text[start...index])
+            }
+        }
+        index = text.index(after: index)
+    }
+
+    return nil
 }
 
 private extension Array {

@@ -208,6 +208,53 @@ public struct TextGenerationResult: Sendable {
     }
 }
 
+public struct ObjectGenerationResult<Object: Sendable>: Sendable {
+    public var object: Object
+    public var text: String
+    public var rawObject: JSONValue
+    public var reasoning: String
+    public var finishReason: String?
+    public var usage: TokenUsage?
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
+    public var textResult: TextGenerationResult
+
+    public init(
+        object: Object,
+        text: String,
+        rawObject: JSONValue,
+        reasoning: String = "",
+        finishReason: String? = nil,
+        usage: TokenUsage? = nil,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+        textResult: TextGenerationResult
+    ) {
+        self.object = object
+        self.text = text
+        self.rawObject = rawObject
+        self.reasoning = reasoning
+        self.finishReason = finishReason
+        self.usage = usage
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
+        self.textResult = textResult
+    }
+}
+
+public struct AIObjectRepairContext: Sendable {
+    public var text: String
+    public var errorMessage: String
+
+    public init(text: String, errorMessage: String) {
+        self.text = text
+        self.errorMessage = errorMessage
+    }
+}
+
 public struct AIToolStep: Sendable {
     public var index: Int
     public var text: String
