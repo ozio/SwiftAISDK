@@ -100,6 +100,22 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             document["citations"] = .object(["enabled": .bool(true)])
                         }
                         return .object(["document": .object(document)])
+                    case let .toolCall(call):
+                        return .object([
+                            "toolUse": .object([
+                                "toolUseId": .string(call.id),
+                                "name": .string(call.name),
+                                "input": bedrockToolArguments(call.arguments)
+                            ])
+                        ])
+                    case let .toolResult(result):
+                        return .object([
+                            "toolResult": .object([
+                                "toolUseId": .string(result.toolCallID),
+                                "content": .array([.object(["json": result.result])]),
+                                "status": .string(result.isError ? "error" : "success")
+                            ])
+                        ])
                     }
                 }
 
@@ -122,6 +138,10 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         body.merge(bedrockPassthroughExtraBody(request.extraBody)) { _, new in new }
         return .object(body)
     }
+}
+
+private func bedrockToolArguments(_ arguments: String) -> JSONValue {
+    (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
 
 public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Sendable {

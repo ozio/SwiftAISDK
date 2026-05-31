@@ -7,6 +7,79 @@ public enum AI {
 
     public static func generateText(
         model: any LanguageModel,
+        request: LanguageModelRequest,
+        executableTools: [AITool],
+        maxSteps: Int = 5
+    ) async throws -> TextGenerationResult {
+        guard !executableTools.isEmpty else {
+            return try await model.generate(request)
+        }
+        guard maxSteps > 0 else {
+            throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
+        }
+
+        let toolsByName = try toolsByName(from: executableTools)
+        var currentRequest = request
+        currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
+
+        var steps: [AIToolStep] = []
+        var allToolResults: [AIToolResult] = []
+        var lastResult: TextGenerationResult?
+
+        for index in 0..<maxSteps {
+            var result = try await model.generate(currentRequest)
+            let executableCalls = result.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
+
+            if executableCalls.isEmpty {
+                result.toolResults = allToolResults
+                result.steps = steps + [
+                    AIToolStep(
+                        index: index,
+                        text: result.text,
+                        reasoning: result.reasoning,
+                        finishReason: result.finishReason,
+                        usage: result.usage,
+                        toolCalls: result.toolCalls,
+                        providerMetadata: result.providerMetadata,
+                        responseMetadata: result.responseMetadata
+                    )
+                ]
+                return result
+            }
+
+            let toolResults = try await executeToolCalls(executableCalls, toolsByName: toolsByName)
+            allToolResults.append(contentsOf: toolResults)
+            steps.append(
+                AIToolStep(
+                    index: index,
+                    text: result.text,
+                    reasoning: result.reasoning,
+                    finishReason: result.finishReason,
+                    usage: result.usage,
+                    toolCalls: result.toolCalls,
+                    toolResults: toolResults,
+                    providerMetadata: result.providerMetadata,
+                    responseMetadata: result.responseMetadata
+                )
+            )
+
+            result.toolResults = allToolResults
+            result.steps = steps
+            lastResult = result
+            currentRequest.messages.append(.assistant(text: result.text, toolCalls: result.toolCalls))
+            currentRequest.messages.append(contentsOf: toolResults.map(AIMessage.toolResult))
+        }
+
+        guard var result = lastResult else {
+            return try await model.generate(currentRequest)
+        }
+        result.toolResults = allToolResults
+        result.steps = steps
+        return result
+    }
+
+    public static func generateText(
+        model: any LanguageModel,
         prompt: String,
         temperature: Double? = nil,
         topP: Double? = nil,
@@ -19,33 +92,43 @@ public enum AI {
         responseFormat: AIResponseFormat? = nil,
         reasoning: String? = nil,
         tools: [String: JSONValue] = [:],
+        executableTools: [AITool] = [],
+        maxSteps: Int = 5,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:]
     ) async throws -> TextGenerationResult {
-        try await generateText(
+        let request = LanguageModelRequest(
+            messages: [.user(prompt)],
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            responseFormat: responseFormat,
+            reasoning: reasoning,
+            tools: tools,
+            toolChoice: toolChoice,
+            includeRawChunks: includeRawChunks,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers
+        )
+
+        if executableTools.isEmpty {
+            return try await generateText(model: model, request: request)
+        }
+
+        return try await generateText(
             model: model,
-            request: LanguageModelRequest(
-                messages: [.user(prompt)],
-                temperature: temperature,
-                topP: topP,
-                topK: topK,
-                presencePenalty: presencePenalty,
-                frequencyPenalty: frequencyPenalty,
-                seed: seed,
-                maxOutputTokens: maxOutputTokens,
-                stopSequences: stopSequences,
-                responseFormat: responseFormat,
-                reasoning: reasoning,
-                tools: tools,
-                toolChoice: toolChoice,
-                includeRawChunks: includeRawChunks,
-                providerOptions: providerOptions,
-                extraBody: extraBody,
-                headers: headers
-            )
+            request: request,
+            executableTools: executableTools,
+            maxSteps: maxSteps
         )
     }
 
@@ -199,6 +282,48 @@ private func optionalSum(_ lhs: Int?, _ rhs: Int?) -> Int? {
         return rhs
     case (nil, nil):
         return nil
+    }
+}
+
+private func toolsDictionary(from tools: [AITool]) -> [String: JSONValue] {
+    Dictionary(uniqueKeysWithValues: tools.map { ($0.name, $0.schema) })
+}
+
+private func toolsByName(from tools: [AITool]) throws -> [String: AITool] {
+    var output: [String: AITool] = [:]
+    for tool in tools {
+        guard output[tool.name] == nil else {
+            throw AIError.invalidArgument(argument: "executableTools", message: "Duplicate tool name '\(tool.name)'.")
+        }
+        output[tool.name] = tool
+    }
+    return output
+}
+
+private func executeToolCalls(_ calls: [AIToolCall], toolsByName: [String: AITool]) async throws -> [AIToolResult] {
+    var results: [AIToolResult] = []
+    for call in calls {
+        guard let tool = toolsByName[call.name] else { continue }
+        let arguments = try toolArguments(from: call)
+        let result = try await tool.execute(arguments)
+        results.append(AIToolResult(
+            toolCallID: call.id,
+            toolName: call.name,
+            result: result,
+            dynamic: call.dynamic,
+            providerMetadata: call.providerMetadata
+        ))
+    }
+    return results
+}
+
+private func toolArguments(from call: AIToolCall) throws -> JSONValue {
+    let trimmed = call.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return .object([:]) }
+    do {
+        return try decodeJSONBody(Data(trimmed.utf8))
+    } catch {
+        throw AIError.invalidArgument(argument: "toolCalls.\(call.name).arguments", message: "Tool call arguments must be valid JSON.")
     }
 }
 

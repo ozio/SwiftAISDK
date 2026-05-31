@@ -140,6 +140,53 @@ import Testing
     #expect(body["verbosity"]?.stringValue == "medium")
 }
 
+@Test func openAIChatAIFacadeExecutesToolsAndSerializesToolResultMessages() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"choices":[{"message":{"content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"query\\":\\"weather\\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"total_tokens":8}}
+        """),
+        jsonResponse("""
+        {"choices":[{"message":{"content":"It is sunny."},"finish_reason":"stop"}],"usage":{"total_tokens":4}}
+        """)
+    ])
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.chatModel("gpt-4.1-mini")
+    let lookup = AITool(
+        name: "lookup",
+        description: "Look up a value.",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { arguments in
+        #expect(arguments["query"]?.stringValue == "weather")
+        return ["forecast": "sunny"]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 3
+    )
+
+    #expect(result.text == "It is sunny.")
+    #expect(result.steps.count == 2)
+    #expect(result.toolResults.first?.result["forecast"]?.stringValue == "sunny")
+
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    let firstBody = try decodeJSONBody(try #require(requests.first?.body))
+    #expect(firstBody["tools"]?[0]?["function"]?["name"]?.stringValue == "lookup")
+    #expect(firstBody["tools"]?[0]?["function"]?["description"]?.stringValue == "Look up a value.")
+
+    let secondBody = try decodeJSONBody(try #require(requests.last?.body))
+    #expect(secondBody["messages"]?[1]?["role"]?.stringValue == "assistant")
+    #expect(secondBody["messages"]?[1]?["tool_calls"]?[0]?["id"]?.stringValue == "call_1")
+    #expect(secondBody["messages"]?[1]?["tool_calls"]?[0]?["function"]?["name"]?.stringValue == "lookup")
+    #expect(secondBody["messages"]?[2]?["role"]?.stringValue == "tool")
+    #expect(secondBody["messages"]?[2]?["tool_call_id"]?.stringValue == "call_1")
+    let toolContent = try decodeJSONBody(Data((try #require(secondBody["messages"]?[2]?["content"]?.stringValue)).utf8))
+    #expect(toolContent["forecast"]?.stringValue == "sunny")
+}
+
 @Test func openAICompatibleChatParsesToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"query\\":\\"weather\\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}

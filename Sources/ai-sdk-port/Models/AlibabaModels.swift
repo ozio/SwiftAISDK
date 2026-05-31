@@ -185,6 +185,8 @@ private func alibabaUserContentParts(_ content: [AIContentPart]) -> [JSONValue] 
                 "type": .string("image_url"),
                 "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
             ])
+        case .toolCall, .toolResult:
+            return nil
         }
     }
 }

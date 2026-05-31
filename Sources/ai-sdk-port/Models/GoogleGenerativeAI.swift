@@ -100,6 +100,20 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         "data": .string(data.base64EncodedString())
                     ])
                 ])
+            case let .toolCall(call):
+                return .object([
+                    "functionCall": .object([
+                        "name": .string(call.name),
+                        "args": googleToolArguments(call.arguments)
+                    ])
+                ])
+            case let .toolResult(result):
+                return .object([
+                    "functionResponse": .object([
+                        "name": .string(result.toolName),
+                        "response": result.result
+                    ])
+                ])
             }
         }
         return .object(["role": .string(role), "parts": .array(parts)])
@@ -662,8 +676,24 @@ private func googleInteractionsContent(_ content: [AIContentPart]) -> [JSONValue
                 "mime_type": .string(mimeType),
                 "data": .string(data.base64EncodedString())
             ])
+        case let .toolCall(call):
+            return .object([
+                "type": .string("function_call"),
+                "name": .string(call.name),
+                "arguments": googleToolArguments(call.arguments)
+            ])
+        case let .toolResult(result):
+            return .object([
+                "type": .string("function_response"),
+                "name": .string(result.toolName),
+                "response": result.result
+            ])
         }
     }
+}
+
+private func googleToolArguments(_ arguments: String) -> JSONValue {
+    (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
 
 private func googleInteractionsOptions(from extraBody: [String: JSONValue], isAgent: Bool) -> [String: JSONValue] {

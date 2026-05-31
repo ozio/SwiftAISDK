@@ -462,6 +462,38 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
     }
 
     static func messageJSON(_ message: AIMessage) -> JSONValue {
+        if message.role == .tool,
+           let result = message.content.compactMap({ part -> AIToolResult? in
+               if case let .toolResult(result) = part { result } else { nil }
+           }).first {
+            return .object([
+                "role": .string("tool"),
+                "tool_call_id": .string(result.toolCallID),
+                "content": .string(openAIResponsesJSONString(result.result) ?? result.result.stringValue ?? "")
+            ])
+        }
+
+        let toolCalls = message.content.compactMap { part -> AIToolCall? in
+            if case let .toolCall(call) = part { call } else { nil }
+        }
+        if message.role == .assistant, !toolCalls.isEmpty {
+            var output: [String: JSONValue] = [
+                "role": .string("assistant"),
+                "content": .string(message.combinedText)
+            ]
+            output["tool_calls"] = .array(toolCalls.map { call in
+                .object([
+                    "id": .string(call.id),
+                    "type": .string("function"),
+                    "function": .object([
+                        "name": .string(call.name),
+                        "arguments": .string(call.arguments)
+                    ])
+                ])
+            })
+            return .object(output)
+        }
+
         let textOnly = message.content.allSatisfy {
             if case .text = $0 { true } else { false }
         }
@@ -484,6 +516,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     "type": .string("image_url"),
                     "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
                 ])
+            case .toolCall, .toolResult:
+                return .object(["type": .string("text"), "text": .string("")])
             }
         }
 
@@ -924,6 +958,27 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
 }
 
 private func openAIResponsesInputMessageJSON(_ message: AIMessage) -> JSONValue {
+    if let result = message.content.compactMap({ part -> AIToolResult? in
+        if case let .toolResult(result) = part { result } else { nil }
+    }).first {
+        return .object([
+            "type": .string("function_call_output"),
+            "call_id": .string(result.toolCallID),
+            "output": .string(openAIResponsesJSONString(result.result) ?? result.result.stringValue ?? "")
+        ])
+    }
+
+    if let call = message.content.compactMap({ part -> AIToolCall? in
+        if case let .toolCall(call) = part { call } else { nil }
+    }).first {
+        return .object([
+            "type": .string("function_call"),
+            "call_id": .string(call.id),
+            "name": .string(call.name),
+            "arguments": .string(call.arguments)
+        ])
+    }
+
     if message.role == .user {
         return .object([
             "role": .string("user"),
@@ -961,6 +1016,8 @@ private func openAIResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<
             "filename": .string(openAIResponsesFileName(for: mimeType, index: index)),
             "file_data": .string(dataURL)
         ])
+    case .toolCall, .toolResult:
+        return nil
     }
 }
 

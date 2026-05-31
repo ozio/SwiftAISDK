@@ -325,6 +325,19 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         "data": .string(data.base64EncodedString())
                     ])
                 ])
+            case let .toolCall(call):
+                return .object([
+                    "type": .string("tool_use"),
+                    "id": .string(call.id),
+                    "name": .string(call.name),
+                    "input": anthropicToolArguments(call.arguments)
+                ])
+            case let .toolResult(result):
+                return .object([
+                    "type": .string("tool_result"),
+                    "tool_use_id": .string(result.toolCallID),
+                    "content": .string(anthropicJSONString(result.result) ?? result.result.stringValue ?? "")
+                ])
             }
         }
         return .object(["role": .string(role), "content": .array(parts)])
@@ -707,10 +720,14 @@ private func anthropicCitationDocuments(from messages: [AIMessage]) -> [Anthropi
             guard url.lowercased().contains(".pdf") else { return nil }
             let filename = url.split(separator: "/").last.map(String.init)
             return AnthropicCitationDocument(title: filename ?? "Document", filename: filename, mediaType: "application/pdf")
-        case .text:
+        case .text, .toolCall, .toolResult:
             return nil
         }
     }
+}
+
+private func anthropicToolArguments(_ arguments: String) -> JSONValue {
+    (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
 
 private func anthropicSources(from content: JSONValue?, citationDocuments: [AnthropicCitationDocument]) -> [AISource] {

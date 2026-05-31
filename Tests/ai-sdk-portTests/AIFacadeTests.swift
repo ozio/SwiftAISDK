@@ -49,6 +49,64 @@ import Testing
     #expect(model.streamRequests.first?.includeRawChunks == true)
 }
 
+@Test func aiGenerateTextExecutesTypedToolsAndContinuesUntilFinalText() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object(["step": 1])),
+        TextGenerationResult(text: "It is sunny.", finishReason: "stop", rawValue: .object(["step": 2]))
+    ])
+    let capture = ToolCapture()
+    let lookup = AITool(
+        name: "lookup",
+        description: "Look up a value.",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { arguments in
+        await capture.record(arguments)
+        return ["forecast": "sunny"]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 3
+    )
+
+    #expect(result.text == "It is sunny.")
+    let executedArguments = await capture.value()
+    #expect(executedArguments?["query"]?.stringValue == "weather")
+    #expect(result.toolResults.count == 1)
+    #expect(result.toolResults[0].toolCallID == "call-1")
+    #expect(result.toolResults[0].result["forecast"]?.stringValue == "sunny")
+    #expect(result.steps.count == 2)
+    #expect(result.steps[0].toolCalls == [toolCall])
+    #expect(result.steps[0].toolResults.count == 1)
+    #expect(result.steps[1].text == "It is sunny.")
+
+    #expect(model.requests.count == 2)
+    #expect(model.requests[0].tools["lookup"]?["description"]?.stringValue == "Look up a value.")
+    #expect(model.requests[1].messages.count == 3)
+    #expect(model.requests[1].messages[1].content == [.toolCall(toolCall)])
+    guard case let .toolResult(toolResult) = model.requests[1].messages[2].content.first else {
+        Issue.record("Expected a tool result message.")
+        return
+    }
+    #expect(toolResult.toolName == "lookup")
+    #expect(toolResult.result["forecast"]?.stringValue == "sunny")
+}
+
+private actor ToolCapture {
+    private var arguments: JSONValue?
+
+    func record(_ arguments: JSONValue) {
+        self.arguments = arguments
+    }
+
+    func value() -> JSONValue? {
+        arguments
+    }
+}
+
 @Test func aiEmbedManyChunksAndAggregatesResults() async throws {
     let model = MockEmbeddingModel(results: [
         EmbeddingResult(
@@ -130,17 +188,22 @@ private final class MockLanguageModel: LanguageModel, @unchecked Sendable {
     let modelID = "mock-language"
     var requests: [LanguageModelRequest] = []
     var streamRequests: [LanguageModelRequest] = []
-    private let result: TextGenerationResult
+    private var results: [TextGenerationResult]
     private let streamParts: [LanguageStreamPart]
 
     init(result: TextGenerationResult, streamParts: [LanguageStreamPart] = []) {
-        self.result = result
+        self.results = [result]
+        self.streamParts = streamParts
+    }
+
+    init(results: [TextGenerationResult], streamParts: [LanguageStreamPart] = []) {
+        self.results = results
         self.streamParts = streamParts
     }
 
     func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         requests.append(request)
-        return result
+        return results.count > 1 ? results.removeFirst() : results[0]
     }
 
     func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {

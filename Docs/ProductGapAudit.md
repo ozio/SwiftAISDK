@@ -46,26 +46,23 @@ experimental_transcribe, rerank, uploadFile, uploadSkill, customProvider,
 middleware wrappers, prompt conversion, telemetry, UI streams, agents
 ```
 
-The Swift package currently asks callers to directly get a provider model and
-call methods such as `generate`, `stream`, `embed`, or `generateImage`.
+The Swift package now has an `AI` facade for the common calls, but deeper
+product behavior still trails upstream.
 
 Impact:
 
-- No single Swift equivalent of `generateText` or `streamText`.
 - No high-level retry policy, abort/cancellation surface, telemetry hooks, or
   warning logging.
-- No automatic tool loop, step results, stop conditions, tool execution, or tool
-  approval flow.
-- No `embedMany` chunking helper above provider batch limits.
+- Tool execution exists for `generateText`, but stop conditions, approval flow,
+  dynamic tools, stream-side tool execution, and provider-defined tool wrapping
+  still need follow-up work.
 - No object-generation helper with JSON schema prompting and validation.
 
 Recommendation:
 
-Build a small `AI` facade module before doing more warning-level parity. Start
-with `generateText`, `streamText`, `embed`, `embedMany`, `generateImage`,
-`transcribe`, `generateSpeech`, `generateVideo`, and `rerank` wrappers that call
-the existing models. Then add retries, step/tool loop, schema/object generation,
-and telemetry in separate rounds.
+Continue growing the `AI` facade above provider models: retries, cancellation,
+telemetry, stream-side tool execution, schema/object generation, and middleware
+should be separate product rounds.
 
 ### 2. Core model contract is lossy compared with upstream v4
 
@@ -131,21 +128,25 @@ Progress:
 
 Provider-defined tools exist as builders such as `OpenAITools`,
 `AnthropicTools`, `GoogleTools`, `GatewayTools`, `GroqTools`, and `XAITools`.
-Generic tools, however, are still raw JSON in `LanguageModelRequest.tools`.
+Generic low-level provider requests can still pass raw JSON tools through
+`LanguageModelRequest.tools`, but the facade now also exposes typed executable
+tools.
 
 Impact:
 
-- No typed Swift equivalent of upstream `tool(...)`, `dynamicTool(...)`,
-  tool input/output validation, or `execute` callbacks.
-- No automatic multi-step loop like upstream `generateText`/`streamText`.
-- Provider tool calls can be parsed, but user tool results are not a first-class
-  conversation primitive.
+- `dynamicTool(...)`, typed input/output validation, approval flow, and
+  stop-condition policies are still missing.
+- Automatic multi-step execution exists for `AI.generateText`, but not yet for
+  `AI.streamText`.
+- Tool-result messages are now first-class in core, but provider passes should
+  keep tightening wire-format parity.
 
 Recommendation:
 
-Add a Swift `AITool` abstraction and a tool execution pipeline after the facade
-exists. Keep provider-defined tools as specialized `AITool` values instead of
-plain JSON where possible.
+Build on the new `AITool` abstraction: add dynamic tools, validation hooks,
+approval requests, stop conditions, and stream-side execution. Keep
+provider-defined tools as specialized `AITool` values instead of plain JSON
+where possible.
 
 ### 4. Object generation and schema validation are missing
 
@@ -202,14 +203,16 @@ Add a real README once the facade direction is chosen. It should include:
    protocols.
    First slice is in place, including upload-file and upload-skill wrappers.
    Follow-up work should add richer result objects, retry/cancellation behavior,
-   and tool-loop orchestration.
+   and streaming orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
    Port upstream retry semantics and add Swift cancellation/timeout behavior.
 
 4. **Tool loop pass.**
-   Add typed tools, tool execution callbacks, step results, stop conditions, and
-   tool-result messages.
+   First `generateText` slice is in place with typed `AITool`, execute
+   callbacks, step results, and tool-result messages. Next passes should add
+   validation, dynamic tools, approval/stop-condition policies, provider-defined
+   tool wrappers, and stream-side tool execution.
 
 5. **Object generation pass.**
    Add `generateObject` for `Decodable` plus JSON schema/repair strategy.

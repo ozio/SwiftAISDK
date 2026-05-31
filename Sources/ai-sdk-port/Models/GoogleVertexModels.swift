@@ -152,6 +152,20 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
                     return .object(["fileData": .object(["fileUri": .string(url)])])
                 case let .data(mimeType, data), let .file(mimeType, data, _):
                     return .object(["inlineData": .object(["mimeType": .string(mimeType), "data": .string(data.base64EncodedString())])])
+                case let .toolCall(call):
+                    return .object([
+                        "functionCall": .object([
+                            "name": .string(call.name),
+                            "args": googleVertexToolArguments(call.arguments)
+                        ])
+                    ])
+                case let .toolResult(result):
+                    return .object([
+                        "functionResponse": .object([
+                            "name": .string(result.toolName),
+                            "response": result.result
+                        ])
+                    ])
                 }
             })
         ])
@@ -174,6 +188,10 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     }
     body.merge(googleExtraBodyWithoutToolChoice(request.extraBody)) { _, new in new }
     return .object(body)
+}
+
+private func googleVertexToolArguments(_ arguments: String) -> JSONValue {
+    (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
 
 private func googleVertexImageBody(for request: ImageGenerationRequest) throws -> [String: JSONValue] {

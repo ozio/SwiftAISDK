@@ -206,6 +206,20 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                             ]
                             if let filename { file["filename"] = .string(filename) }
                             return .object(file)
+                        case let .toolCall(call):
+                            return .object([
+                                "type": .string("tool-call"),
+                                "toolCallId": .string(call.id),
+                                "toolName": .string(call.name),
+                                "args": gatewayToolArguments(call.arguments)
+                            ])
+                        case let .toolResult(result):
+                            return .object([
+                                "type": .string("tool-result"),
+                                "toolCallId": .string(result.toolCallID),
+                                "toolName": .string(result.toolName),
+                                "result": result.result
+                            ])
                         }
                     })
                 ])
@@ -233,6 +247,10 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
             "ai-language-model-streaming": String(streaming)
         ]
     }
+}
+
+private func gatewayToolArguments(_ arguments: String) -> JSONValue {
+    (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
 
 public final class GatewayEmbeddingModel: EmbeddingModel, @unchecked Sendable {

@@ -49,6 +49,8 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
     case imageURL(String)
     case data(mimeType: String, data: Data)
     case file(mimeType: String, data: Data, filename: String? = nil)
+    case toolCall(AIToolCall)
+    case toolResult(AIToolResult)
 
     public var text: String? {
         if case let .text(value) = self { value } else { nil }
@@ -60,7 +62,7 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
             return (mimeType, data, nil)
         case let .file(mimeType, data, filename):
             return (mimeType, data, filename)
-        case .text, .imageURL:
+        case .text, .imageURL, .toolCall, .toolResult:
             return nil
         }
     }
@@ -85,6 +87,14 @@ public struct AIMessage: Equatable, Hashable, Sendable {
 
     public static func assistant(_ text: String) -> AIMessage {
         AIMessage(role: .assistant, content: [.text(text)])
+    }
+
+    public static func assistant(text: String = "", toolCalls: [AIToolCall]) -> AIMessage {
+        AIMessage(role: .assistant, content: (text.isEmpty ? [] : [.text(text)]) + toolCalls.map(AIContentPart.toolCall))
+    }
+
+    public static func toolResult(_ result: AIToolResult) -> AIMessage {
+        AIMessage(role: .tool, content: [.toolResult(result)])
     }
 
     public var combinedText: String {
@@ -161,6 +171,8 @@ public struct TextGenerationResult: Sendable {
     public var finishReason: String?
     public var usage: TokenUsage?
     public var toolCalls: [AIToolCall]
+    public var toolResults: [AIToolResult]
+    public var steps: [AIToolStep]
     public var sources: [AISource]
     public var providerMetadata: [String: JSONValue]
     public var rawValue: JSONValue
@@ -173,6 +185,8 @@ public struct TextGenerationResult: Sendable {
         finishReason: String? = nil,
         usage: TokenUsage? = nil,
         toolCalls: [AIToolCall] = [],
+        toolResults: [AIToolResult] = [],
+        steps: [AIToolStep] = [],
         sources: [AISource] = [],
         providerMetadata: [String: JSONValue] = [:],
         rawValue: JSONValue,
@@ -184,10 +198,46 @@ public struct TextGenerationResult: Sendable {
         self.finishReason = finishReason
         self.usage = usage
         self.toolCalls = toolCalls
+        self.toolResults = toolResults
+        self.steps = steps
         self.sources = sources
         self.providerMetadata = providerMetadata
         self.rawValue = rawValue
         self.warnings = warnings
+        self.responseMetadata = responseMetadata
+    }
+}
+
+public struct AIToolStep: Sendable {
+    public var index: Int
+    public var text: String
+    public var reasoning: String
+    public var finishReason: String?
+    public var usage: TokenUsage?
+    public var toolCalls: [AIToolCall]
+    public var toolResults: [AIToolResult]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
+
+    public init(
+        index: Int,
+        text: String,
+        reasoning: String = "",
+        finishReason: String? = nil,
+        usage: TokenUsage? = nil,
+        toolCalls: [AIToolCall] = [],
+        toolResults: [AIToolResult] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
+        self.index = index
+        self.text = text
+        self.reasoning = reasoning
+        self.finishReason = finishReason
+        self.usage = usage
+        self.toolCalls = toolCalls
+        self.toolResults = toolResults
+        self.providerMetadata = providerMetadata
         self.responseMetadata = responseMetadata
     }
 }
@@ -293,6 +343,32 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
         self.toolName = toolName
         self.arguments = arguments
         self.providerMetadata = providerMetadata
+    }
+}
+
+public struct AITool: Sendable {
+    public var name: String
+    public var description: String?
+    public var parameters: JSONValue
+    public var execute: @Sendable (JSONValue) async throws -> JSONValue
+
+    public init(
+        name: String,
+        description: String? = nil,
+        parameters: JSONValue,
+        execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
+    ) {
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+        self.execute = execute
+    }
+
+    public var schema: JSONValue {
+        guard let description else { return parameters }
+        var object = parameters.objectValue ?? ["type": .string("object")]
+        object["description"] = .string(description)
+        return .object(object)
     }
 }
 
