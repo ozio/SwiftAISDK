@@ -302,6 +302,19 @@ let chat = try registry.languageModel("openai:gpt-4.1-mini")
 let claude = try registry.languageModel("anthropic:claude-sonnet-4-20250514")
 ```
 
+Language models and providers can be wrapped with middleware, mirroring
+upstream `wrapLanguageModel`, `wrapProvider`, and `defaultSettingsMiddleware`:
+
+```swift
+let tunedModel = wrapLanguageModel(
+    model,
+    middleware: defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings(
+        temperature: 0.3,
+        providerOptions: ["openai": ["parallelToolCalls": false]]
+    ))
+)
+```
+
 Use `AIProviderCapabilities.all` for a machine-readable provider/capability
 matrix, or read [Docs/ProviderCapabilityMatrix.md](Docs/ProviderCapabilityMatrix.md)
 for the human table. Optional live smoke tests are available with real keys:

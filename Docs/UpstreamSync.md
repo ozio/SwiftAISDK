@@ -218,6 +218,7 @@ Known gaps left:
 | Swift area | Files |
 | --- | --- |
 | Core protocols and request/response shapes | `Sources/SwiftAISDK/Core.swift` |
+| Middleware wrappers | `Sources/SwiftAISDK/Middleware.swift` |
 | JSON model used by request builders | `Sources/SwiftAISDK/JSONValue.swift` |
 | HTTP transport, multipart, SSE/EventStream parsing | `Sources/SwiftAISDK/HTTP.swift` |
 | Public provider registry | `Sources/SwiftAISDK/Providers/ProviderRegistry.swift` |
@@ -252,6 +253,7 @@ the touched surface into the newer naming pattern.
 | Provider factory | Add or update an `AIProviders.<name>` entry point. Keep upstream aliases when they are public. |
 | Custom provider | Upstream `customProvider(...)` maps to Swift `customProvider(...)` and `AIProviders.customProvider(...)`. Keep local model maps preferred over fallback providers, expose files/skills when locally supplied or when the fallback conforms to `AIFileProvider`/`AISkillsProvider`, and throw `AIError.unsupportedModel` when no model route exists. |
 | Provider registry | Upstream `createProviderRegistry(...)` maps to Swift `createProviderRegistry(...)`, `experimentalCreateProviderRegistry(...)`, and `AIProviders.providerRegistry(...)`. Split combined IDs on the configured separator, route every model family to the selected provider, expose `files(providerID)`/`skills(providerID)`, and use `AIProviderRegistryError` for missing separators, missing providers, and unsupported files/skills. Registry middleware and global string model-id resolution remain follow-up work. |
+| Middleware | Upstream `wrapLanguageModel(...)` maps to Swift `wrapLanguageModel(...)`, `AILanguageModelMiddleware`, request transforms, generate/stream wrappers, provider/model ID overrides, and `defaultSettingsMiddleware(...)`. Upstream `wrapProvider(...)` maps to Swift `wrapProvider(...)` for language models while other model families pass through. Image/embedding middleware, extract/simulate specialized middlewares, and registry-level middleware remain follow-up work. |
 | Factory spelling | Prefer idiomatic Swift casing for primary names, but also expose upstream JS spellings such as `openai`, `xai`, `revai`, `moonshotai`, and `anthropicAws` when they differ. |
 | Provider ID | Match upstream provider IDs, including capability suffixes such as `.chat`, `.responses`, `.embedding`, `.image`, `.files`, or `.skills` when upstream uses them. |
 | Settings object | Prefer extending `ProviderSettings` or the provider-specific settings type over ad hoc parameters. |
@@ -292,6 +294,7 @@ the touched surface into the newer naming pattern.
 | Black Forest Labs | `@ai-sdk/black-forest-labs` | Native image provider | `ImageVideoProviderTests.swift`, `NativeMediaProviderTests.swift` |
 | Deepgram, ElevenLabs, Hume, LMNT, RevAI, Gladia, AssemblyAI | Audio provider packages | Provider-specific transcription/speech models | `AudioProviderTests.swift` |
 | Custom provider and registry composition | `packages/ai/src/registry/custom-provider.ts`, `provider-registry.ts` | `customProvider(...)`, `createProviderRegistry(...)`, `experimentalCreateProviderRegistry(...)`, `AIProviders.customProvider(...)`, `AIProviders.providerRegistry(...)`, `AICustomProvider`, `AIProviderRegistry`, `AIFileProvider`, `AISkillsProvider` | `CustomProviderTests.swift` |
+| Language middleware | `packages/ai/src/middleware/wrap-language-model.ts`, `wrap-provider.ts`, `default-settings-middleware.ts` | `AILanguageModelMiddleware`, `wrapLanguageModel(...)`, `wrapProvider(...)`, `defaultSettingsMiddleware(...)`, `AIDefaultLanguageModelSettings` | `MiddlewareTests.swift` |
 
 ## Cross-Cutting Surfaces
 
@@ -301,6 +304,7 @@ the touched surface into the newer naming pattern.
 | MCP client | `MCPClient` mirrors `@ai-sdk/mcp` for initialize, tool listing, tool calls, cached tool definitions, conversion to dynamic `AITool`, resource listing/reading, resource templates, and prompt listing/getting. `MCPHTTPTransport` covers simple JSON-RPC-over-HTTP servers; custom transports can implement `MCPTransport`. Elicitation, SSE/session handling, and richer content-to-model-output conversion remain follow-up MCP passes. |
 | Provider registry aliases | `AIProviders` keeps Swift-style factories and upstream JS spellings for mismatched names, so `openAI`/`openai`, `xAI`/`xai`, `revAI`/`revai`, and similar pairs construct the same provider IDs. |
 | Custom provider and registry | `customProvider(...)` mirrors upstream local-model maps plus fallback routing for language, embedding, image, transcription, speech, video, reranking, files, and skills. `createProviderRegistry(...)` mirrors upstream separator routing for `provider:model` IDs and provider-scoped files/skills. Swift does not yet have upstream's global string model-id resolver or registry middleware; those remain registry-layer follow-up passes. |
+| Language middleware | `wrapLanguageModel(...)` applies request transforms before generate/stream calls and wraps operations in upstream order, with the first middleware outside and transforms flowing left to right. `defaultSettingsMiddleware(...)` applies Swift defaults only when request values are absent and deep-merges JSON provider options. `wrapProvider(...)` applies language middleware to models created by a provider and passes other model families through. |
 | Tool headers and beta flags | Match upstream tests. Anthropic-on-Bedrock uses body `anthropic_beta`; regular Anthropic uses headers. |
 | OpenAI-compatible providers | Share the compatible model implementation, but keep provider-specific defaults, path quirks, headers, tools, and provider IDs explicit. |
 | OpenAI/Azure provider IDs | Root providers stay `openai` and `azure`, but concrete models use upstream surface IDs: `openai.responses`, `openai.chat`, `openai.completion`, `openai.embedding`, `openai.image`, `openai.transcription`, `openai.speech`, `openai.files`, `openai.skills`; Azure uses the same pattern except embeddings is `azure.embeddings`. |
@@ -359,7 +363,7 @@ Use these gates before calling a surface complete:
   defer `LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke`.
 - `swift test` passes.
 - This guide's snapshot, index, or known gaps are updated if the pass changed
-  provider coverage.
+  provider coverage or product-level SDK surfaces.
 
 ## Known Gaps And Next Passes
 
@@ -374,5 +378,9 @@ Use these gates before calling a surface complete:
   expand around model-specific exclusions and structured output details.
 - Keep file-management and skill clients aligned if upstream adds operations
   beyond the current OpenAI-oriented clients.
+- Continue middleware parity with image/embedding wrappers, specialized
+  extract/simulate middleware, and registry-level middleware once the language
+  model wrapper surface needs more than the current transform/wrap/default
+  settings slice.
 - Refresh npm search before each substantial provider pass so newly published
   official providers are not missed.

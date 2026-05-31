@@ -71,12 +71,17 @@ Impact:
   `provider:model` through registered Swift providers. Upstream global string
   model-id resolution and full registry middleware remain follow-up product
   work.
+- Language model middleware now covers the first upstream wrapper layer:
+  `wrapLanguageModel`, `wrapProvider`, request transforms, generate/stream
+  wrappers, provider/model ID overrides, and `defaultSettingsMiddleware`.
+  Image/embedding middleware, extract/simulate specialized middlewares,
+  telemetry, and registry-level middleware remain follow-up product work.
 
 Recommendation:
 
 Continue growing the `AI` facade above provider models: cancellation,
-timeouts, telemetry, richer schema/object generation, and middleware should be
-separate product rounds.
+timeouts, telemetry, richer schema/object generation, and specialized
+middleware should be separate product rounds.
 
 ### 2. Core model contract is lossy compared with upstream v4
 
@@ -253,8 +258,8 @@ Keep turning documentation into executable product evidence:
    stream-side local tool execution and `customProvider(...)` for local model
    maps plus fallback providers. `createProviderRegistry(...)` now covers
    upstream-style `provider:model` routing. Follow-up work should add richer
-   result objects, cancellation/timeout behavior, registry middleware, global
-   string model-id resolution, and streaming orchestration.
+   result objects, cancellation/timeout behavior, specialized middleware,
+   global string model-id resolution, and streaming orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
    First retry slice is in place with `AIRetryPolicy` and default
