@@ -15,13 +15,13 @@ Add the package to `Package.swift`:
 Then depend on the library product:
 
 ```swift
-.product(name: "ai-sdk-port", package: "SwiftAISDK")
+.product(name: "SwiftAISDK", package: "SwiftAISDK")
 ```
 
 ## Quick Start
 
 ```swift
-import ai_sdk_port
+import SwiftAISDK
 
 let provider = try AIProviders.openAI()
 let model = try provider.languageModel("gpt-4.1")

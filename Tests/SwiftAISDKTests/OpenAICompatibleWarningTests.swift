@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func openAICompatibleChatWarnsForDeprecatedProviderOptionsKeys() async throws {
     let compatibilityTransport = RecordingTransport(response: jsonResponse("""

@@ -21,18 +21,18 @@ tests, update the matrix, then commit and push the round.
   ab6d664 2026-05-29T17:54:18-07:00 Version Packages (canary) (#15714)
   ```
 
-- Swift package: library-only SwiftPM package (`ai-sdk-port`)
+- Swift package: library-only SwiftPM package (`SwiftAISDK`)
 - Verification command: `swift test`
 
 ## Sync Manifest
 
 | Artifact | Purpose | Update When |
 | --- | --- | --- |
-| `Sources/ai-sdk-port/Providers/ProviderRegistry.swift` | Public provider factories, aliases, auth, base URLs, and provider-level capability sets. | A provider package is added, removed, renamed, or changes supported model families. |
-| `Sources/ai-sdk-port/Providers/ProviderCapabilityMatrix.swift` | Machine-readable product coverage for provider packages, Swift factories, capabilities, files, and skills. | Any provider capability or factory changes. |
+| `Sources/SwiftAISDK/Providers/ProviderRegistry.swift` | Public provider factories, aliases, auth, base URLs, and provider-level capability sets. | A provider package is added, removed, renamed, or changes supported model families. |
+| `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift` | Machine-readable product coverage for provider packages, Swift factories, capabilities, files, and skills. | Any provider capability or factory changes. |
 | `Docs/ProviderCapabilityMatrix.md` | Human-readable coverage table and live-smoke instructions. | The source matrix changes. |
-| `Tests/ai-sdk-portTests/*` | Wire-shape, response, stream, warning, and registry evidence. | Every behavior port. |
-| `Tests/ai-sdk-portTests/LiveProviderSmokeTests.swift` | Opt-in real-provider health checks. | Representative live coverage changes. |
+| `Tests/SwiftAISDKTests/*` | Wire-shape, response, stream, warning, and registry evidence. | Every behavior port. |
+| `Tests/SwiftAISDKTests/LiveProviderSmokeTests.swift` | Opt-in real-provider health checks. | Representative live coverage changes. |
 
 Treat the matrix as the product inventory, not as marketing copy. A provider is
 not "covered" unless the registry, matrix, and tests agree.
@@ -212,19 +212,19 @@ Known gaps left:
 
 | Swift area | Files |
 | --- | --- |
-| Core protocols and request/response shapes | `Sources/ai-sdk-port/Core.swift` |
-| JSON model used by request builders | `Sources/ai-sdk-port/JSONValue.swift` |
-| HTTP transport, multipart, SSE/EventStream parsing | `Sources/ai-sdk-port/HTTP.swift` |
-| Public provider registry | `Sources/ai-sdk-port/Providers/ProviderRegistry.swift` |
-| Provider capability matrix | `Sources/ai-sdk-port/Providers/ProviderCapabilityMatrix.swift`, `Docs/ProviderCapabilityMatrix.md` |
-| OpenAI chat, responses, compatible models | `Sources/ai-sdk-port/Models/OpenAI*.swift`, `Sources/ai-sdk-port/Providers/OpenAICompatibleProvider.swift` |
-| Anthropic and Bedrock/Vertex Anthropic behavior | `Sources/ai-sdk-port/Models/Anthropic.swift`, `Sources/ai-sdk-port/Providers/AnthropicAWSProvider.swift` |
-| Google Gemini and Vertex Gemini behavior | `Sources/ai-sdk-port/Models/Google*.swift`, `Sources/ai-sdk-port/Providers/GoogleVertexProvider.swift` |
-| Gateway behavior and management APIs | `Sources/ai-sdk-port/Models/GatewayModels.swift`, `Sources/ai-sdk-port/Providers/GatewayProvider.swift` |
-| Bedrock native, Bedrock Anthropic, Mantle | `Sources/ai-sdk-port/Models/AmazonBedrockModels.swift`, `Sources/ai-sdk-port/Providers/AmazonBedrockProvider.swift` |
-| Media and audio providers | `Sources/ai-sdk-port/Models/*Media*.swift`, `Sources/ai-sdk-port/Models/*Audio*.swift` |
-| Files and skills clients | `Sources/ai-sdk-port/Models/FileClients.swift`, `Sources/ai-sdk-port/Models/OpenAISkills.swift` |
-| Tests | `Tests/ai-sdk-portTests/*.swift`, including opt-in live checks in `LiveProviderSmokeTests.swift` |
+| Core protocols and request/response shapes | `Sources/SwiftAISDK/Core.swift` |
+| JSON model used by request builders | `Sources/SwiftAISDK/JSONValue.swift` |
+| HTTP transport, multipart, SSE/EventStream parsing | `Sources/SwiftAISDK/HTTP.swift` |
+| Public provider registry | `Sources/SwiftAISDK/Providers/ProviderRegistry.swift` |
+| Provider capability matrix | `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`, `Docs/ProviderCapabilityMatrix.md` |
+| OpenAI chat, responses, compatible models | `Sources/SwiftAISDK/Models/OpenAI*.swift`, `Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift` |
+| Anthropic and Bedrock/Vertex Anthropic behavior | `Sources/SwiftAISDK/Models/Anthropic.swift`, `Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift` |
+| Google Gemini and Vertex Gemini behavior | `Sources/SwiftAISDK/Models/Google*.swift`, `Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift` |
+| Gateway behavior and management APIs | `Sources/SwiftAISDK/Models/GatewayModels.swift`, `Sources/SwiftAISDK/Providers/GatewayProvider.swift` |
+| Bedrock native, Bedrock Anthropic, Mantle | `Sources/SwiftAISDK/Models/AmazonBedrockModels.swift`, `Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift` |
+| Media and audio providers | `Sources/SwiftAISDK/Models/*Media*.swift`, `Sources/SwiftAISDK/Models/*Audio*.swift` |
+| Files and skills clients | `Sources/SwiftAISDK/Models/FileClients.swift`, `Sources/SwiftAISDK/Models/OpenAISkills.swift` |
+| Tests | `Tests/SwiftAISDKTests/*.swift`, including opt-in live checks in `LiveProviderSmokeTests.swift` |
 
 Tests are split by provider or feature surface. Add new coverage to the closest
 existing file instead of rebuilding a large monolithic test.

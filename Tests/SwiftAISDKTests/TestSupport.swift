@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 actor RecordingTransport: AITransport {
     private var _requests: [AIHTTPRequest] = []

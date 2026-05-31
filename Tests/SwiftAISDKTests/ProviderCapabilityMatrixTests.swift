@@ -1,5 +1,5 @@
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func providerCapabilityMatrixCoversDiscoveredProviderPackages() {
     let expectedPackages: Set<String> = [

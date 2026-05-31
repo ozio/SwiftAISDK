@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func togetherAIImageAndRerankingUseNativeEndpoints() async throws {
     let imageTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"base64-image"}]}"#))
@@ -326,7 +326,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepinfra.com/v1/openai/images/edits")
     #expect(request.headers["Authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = try #require(request.body)
     #expect(body.range(of: Data(#"name="model""#.utf8)) != nil)
     #expect(body.range(of: Data("black-forest-labs/FLUX.1-Kontext-dev".utf8)) != nil)

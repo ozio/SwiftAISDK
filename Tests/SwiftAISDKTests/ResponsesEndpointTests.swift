@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func xAILanguageDefaultsToResponsesEndpoint() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai text","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}"#))

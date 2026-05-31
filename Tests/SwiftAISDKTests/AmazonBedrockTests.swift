@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func amazonBedrockConverseUsesSigV4AndConverseShape() async throws {
     let fixedDate = DateComponents(
@@ -194,7 +194,7 @@ import Testing
     #expect(request.url.absoluteString == "https://bedrock-mantle.us-west-2.api.aws/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer mantle-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "ai-sdk-port/amazon-bedrock")
+    #expect(request.headers["user-agent"] == "SwiftAISDK/amazon-bedrock")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai.gpt-oss-20b")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")

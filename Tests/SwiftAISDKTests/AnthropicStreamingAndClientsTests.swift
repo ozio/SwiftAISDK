@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func anthropicFilesUploadAddsBetaHeader() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -53,7 +53,7 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://api.anthropic.com/v1/skills")
     #expect(requests[0].headers["x-api-key"] == "claude-key")
     #expect(requests[0].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"display_title\""))
     #expect(bodyText.contains("My Custom Title"))

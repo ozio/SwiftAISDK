@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func alibabaVideoUsesDashScopeAsyncTaskAPI() async throws {
     let transport = RecordingTransport(responses: [
@@ -269,7 +269,7 @@ import Testing
     #expect(request.url.absoluteString == "https://inference.prodia.com/v2/job?price=true")
     #expect(request.headers["Authorization"] == "Bearer prodia-token")
     #expect(request.headers["Accept"] == "multipart/form-data")
-    #expect(request.headers["Content-Type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(request.headers["Content-Type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains(#""type":"inference.nano-banana.img2img.v2""#))
     #expect(bodyText.contains(#""prompt":"Use short captions.\nDescribe this""#))

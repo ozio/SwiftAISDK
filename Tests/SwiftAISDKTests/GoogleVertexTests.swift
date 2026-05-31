@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func googleVertexAnthropicToolsHelpersExposeSupportedSubset() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

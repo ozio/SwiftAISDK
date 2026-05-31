@@ -3,7 +3,7 @@
 Snapshot date: 2026-05-31
 
 The source of truth for this table is `AIProviderCapabilities` in
-`Sources/ai-sdk-port/Providers/ProviderCapabilityMatrix.swift`. Update that
+`Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`. Update that
 file first when adding or changing provider coverage, then update this document
 and the related tests.
 

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func deepgramTranscriptionPostsRawAudioToListenEndpoint() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -219,7 +219,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.rev.ai/speechtotext/v1/jobs")
     #expect(requests[0].headers["Authorization"] == "Bearer rev-key")
-    #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let form = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(form.contains("name=\"media\"; filename=\"clip.wav\""))
     #expect(form.contains("name=\"config\""))
@@ -319,7 +319,7 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.gladia.io/v2/upload")
     #expect(requests[0].headers["x-gladia-key"] == "gladia-key")
-    #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let uploadBody = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(uploadBody.contains("name=\"audio\"; filename=\"clip.wav\""))
 
@@ -646,7 +646,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/speech-to-text")
     #expect(request.headers["xi-api-key"] == "eleven-key")
-    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(body.contains("name=\"model_id\""))
     #expect(body.contains("scribe_v1"))

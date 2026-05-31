@@ -10,7 +10,7 @@ Swift package mostly exposes low-level provider models.
 ## Current Shape
 
 The Swift package is a library-only SwiftPM package with one product,
-`ai-sdk-port`. Public APIs are concentrated in:
+`SwiftAISDK`. Public APIs are concentrated in:
 
 - `Core.swift`: model protocols, request/result structs, stream parts, warnings.
 - `ProviderRegistry.swift`: provider factories.

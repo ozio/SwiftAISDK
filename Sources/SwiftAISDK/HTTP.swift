@@ -97,7 +97,7 @@ func environmentValue(_ names: [String]) -> String? {
 }
 
 func userAgent(_ providerID: String) -> String {
-    "ai-sdk-port/\(providerID)"
+    "SwiftAISDK/\(providerID)"
 }
 
 func tokenUsage(from raw: JSONValue) -> TokenUsage? {
@@ -145,7 +145,7 @@ func parseServerSentEvents(_ data: Data) -> [ServerSentEvent] {
 }
 
 struct MultipartFormData {
-    var boundary: String = "ai-sdk-port-\(UUID().uuidString)"
+    var boundary: String = "SwiftAISDK-\(UUID().uuidString)"
     private var body = Data()
 
     mutating func appendField(name: String, value: String) {

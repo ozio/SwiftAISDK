@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ai_sdk_port
+@testable import SwiftAISDK
 
 @Test func openAITranscriptionUsesMultipartFormData() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -21,7 +21,7 @@ import Testing
     #expect(result.text == "transcribed")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/audio/transcriptions")
-    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"model\""))
     #expect(bodyText.contains("whisper-1"))
@@ -240,7 +240,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/images/edits")
     #expect(request.headers["Authorization"] == "Bearer test-key")
-    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=ai-sdk-port-") == true)
+    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = try #require(request.body)
     #expect(body.range(of: Data(#"name="model""#.utf8)) != nil)
     #expect(body.range(of: Data("gpt-image-1".utf8)) != nil)
