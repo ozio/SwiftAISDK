@@ -279,6 +279,74 @@ import Testing
     #expect(model.streamRequests.first?.includeRawChunks == true)
 }
 
+@Test func aiStreamTextRetriesRetryableStartErrors() async throws {
+    let recorder = TelemetryRecorder()
+    let model = FlakyStreamingLanguageModel(outcomes: [
+        .failure(AIError.httpStatusWithHeaders(
+            provider: "mock",
+            statusCode: 429,
+            body: "rate limited",
+            headers: ["Retry-After": "0"]
+        )),
+        .parts([
+            .textDelta("recovered"),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 2))
+        ])
+    ])
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Retry stream",
+        retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 1_000_000_000),
+        telemetry: AITelemetryOptions(integrations: [recorder])
+    ) {
+        streamed.append(part)
+    }
+    let events = await recorder.events()
+
+    #expect(streamed == [
+        .textDelta("recovered"),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 2))
+    ])
+    #expect(model.streamRequests.count == 2)
+    #expect(events.map(\.kind) == [.start, .retry, .end])
+    #expect(events[1].attempt == 1)
+    #expect(events[1].delayNanoseconds == 0)
+    #expect(events[1].errorDescription?.contains("HTTP 429") == true)
+    #expect(events[2].output?["text"]?.stringValue == "recovered")
+}
+
+@Test func aiStreamTextDoesNotRetryAfterYieldingPart() async throws {
+    let model = FlakyStreamingLanguageModel(outcomes: [
+        .partsThenFailure(
+            [.textDelta("partial")],
+            AIError.httpStatus(provider: "mock", statusCode: 503, body: "interrupted")
+        ),
+        .parts([
+            .textDelta("duplicated"),
+            .finish(reason: "stop", usage: nil)
+        ])
+    ])
+
+    var streamed: [LanguageStreamPart] = []
+    do {
+        for try await part in AI.streamText(
+            model: model,
+            prompt: "Do not duplicate",
+            retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0)
+        ) {
+            streamed.append(part)
+        }
+        Issue.record("Expected stream failure after first part.")
+    } catch let error as AIError {
+        #expect(error == .httpStatus(provider: "mock", statusCode: 503, body: "interrupted"))
+    }
+
+    #expect(streamed == [.textDelta("partial")])
+    #expect(model.streamRequests.count == 1)
+}
+
 @Test func aiStreamTextTimesOut() async throws {
     let recorder = TelemetryRecorder()
     let model = SlowStreamingLanguageModel(delayNanoseconds: 80_000_000)
@@ -1198,6 +1266,50 @@ private final class SlowStreamingLanguageModel: LanguageModel, @unchecked Sendab
             }
             continuation.onTermination = { _ in
                 task.cancel()
+            }
+        }
+    }
+}
+
+private enum StreamingOutcome {
+    case failure(Error)
+    case parts([LanguageStreamPart])
+    case partsThenFailure([LanguageStreamPart], Error)
+}
+
+private final class FlakyStreamingLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "flaky-stream-language"
+    var requests: [LanguageModelRequest] = []
+    var streamRequests: [LanguageModelRequest] = []
+    private var outcomes: [StreamingOutcome]
+
+    init(outcomes: [StreamingOutcome]) {
+        self.outcomes = outcomes
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        requests.append(request)
+        return TextGenerationResult(text: "", rawValue: .object([:]))
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamRequests.append(request)
+        let outcome = outcomes.count > 1 ? outcomes.removeFirst() : outcomes[0]
+        return AsyncThrowingStream { continuation in
+            switch outcome {
+            case let .failure(error):
+                continuation.finish(throwing: error)
+            case let .parts(parts):
+                for part in parts {
+                    continuation.yield(part)
+                }
+                continuation.finish()
+            case let .partsThenFailure(parts, error):
+                for part in parts {
+                    continuation.yield(part)
+                }
+                continuation.finish(throwing: error)
             }
         }
     }

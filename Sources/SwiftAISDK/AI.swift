@@ -559,28 +559,37 @@ public enum AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
-            let stream: AsyncThrowingStream<LanguageStreamPart, Error> = failingPartStream(AIError.invalidArgument(
-                argument: "timeoutNanoseconds",
-                message: "timeoutNanoseconds must be greater than zero."
-            ))
             return streamTextWithTelemetry(
-                stream,
+                makeStream: {
+                    failingPartStream(AIError.invalidArgument(
+                        argument: "timeoutNanoseconds",
+                        message: "timeoutNanoseconds must be greater than zero."
+                    ))
+                },
                 operationID: "ai.streamText",
                 providerID: model.providerID,
                 modelID: model.modelID,
                 input: languageRequestTelemetryInput(request),
+                retryPolicy: retryPolicy,
                 telemetry: telemetry
             )
         }
         return streamTextWithTelemetry(
-            streamWithTimeout(model.stream(request), timeoutNanoseconds: timeoutNanoseconds),
+            makeStream: {
+                streamWithTimeout(
+                    model.stream(request),
+                    timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
+                )
+            },
             operationID: "ai.streamText",
             providerID: model.providerID,
             modelID: model.modelID,
             input: languageRequestTelemetryInput(request),
+            retryPolicy: retryPolicy,
             telemetry: telemetry
         )
     }
@@ -594,13 +603,19 @@ public enum AI {
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let stream = AsyncThrowingStream<LanguageStreamPart, Error> { continuation in
             let task = Task {
                 do {
                     guard !executableTools.isEmpty || prepareStep != nil else {
-                        for try await part in streamText(model: model, request: request, timeoutNanoseconds: nil) {
+                        for try await part in streamText(
+                            model: model,
+                            request: request,
+                            timeoutNanoseconds: nil,
+                            retryPolicy: retryPolicy
+                        ) {
                             continuation.yield(part)
                         }
                         continuation.finish()
@@ -632,7 +647,7 @@ public enum AI {
                         stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
 
                         let step = try await forwardLanguageStream(
-                            streamText(model: stepModel, request: stepRequest),
+                            streamText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy),
                             to: continuation,
                             toolsByName: toolsByName
                         )
@@ -701,11 +716,17 @@ public enum AI {
             }
         }
         return streamTextWithTelemetry(
-            streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds),
+            makeStream: {
+                streamWithTimeout(
+                    stream,
+                    timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
+                )
+            },
             operationID: "ai.streamText",
             providerID: model.providerID,
             modelID: model.modelID,
             input: languageRequestTelemetryInput(request),
+            retryPolicy: .none,
             telemetry: telemetry
         )
     }
@@ -735,6 +756,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let request = LanguageModelRequest(
@@ -758,7 +780,13 @@ public enum AI {
         )
 
         if executableTools.isEmpty && prepareStep == nil {
-            return streamText(model: model, request: request, timeoutNanoseconds: timeoutNanoseconds, telemetry: telemetry)
+            return streamText(
+                model: model,
+                request: request,
+                timeoutNanoseconds: timeoutNanoseconds,
+                retryPolicy: retryPolicy,
+                telemetry: telemetry
+            )
         }
 
         return streamText(
@@ -770,6 +798,7 @@ public enum AI {
             prepareStep: prepareStep,
             toolApproval: toolApproval,
             timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
             telemetry: telemetry
         )
     }
@@ -782,6 +811,7 @@ public enum AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
@@ -793,7 +823,25 @@ public enum AI {
         }
         let streamRequest = objectRequest
 
-        let stream = AsyncThrowingStream<ObjectStreamPart<Object>, Error> { continuation in
+        if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
+            return objectStreamWithTelemetry(
+                makeStream: {
+                    failingPartStream(AIError.invalidArgument(
+                        argument: "timeoutNanoseconds",
+                        message: "timeoutNanoseconds must be greater than zero."
+                    ))
+                },
+                operationID: "ai.streamObject",
+                providerID: model.providerID,
+                modelID: model.modelID,
+                input: languageRequestTelemetryInput(streamRequest),
+                retryPolicy: retryPolicy,
+                telemetry: telemetry
+            )
+        }
+
+        let makeStream: @Sendable () -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> = {
+            AsyncThrowingStream<ObjectStreamPart<Object>, Error> { continuation in
             let task = Task {
                 var text = ""
                 var reasoning = ""
@@ -807,7 +855,7 @@ public enum AI {
                 var lastPartialObject: JSONValue?
 
                 do {
-                    for try await part in streamText(model: model, request: streamRequest) {
+                    for try await part in streamText(model: model, request: streamRequest, retryPolicy: .none) {
                         try Task.checkCancellation()
                         switch part {
                         case let .streamStart(partWarnings):
@@ -900,12 +948,19 @@ public enum AI {
                 task.cancel()
             }
         }
+        }
         return objectStreamWithTelemetry(
-            streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds),
+            makeStream: {
+                streamWithTimeout(
+                    makeStream(),
+                    timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
+                )
+            },
             operationID: "ai.streamObject",
             providerID: model.providerID,
             modelID: model.modelID,
             input: languageRequestTelemetryInput(streamRequest),
+            retryPolicy: retryPolicy,
             telemetry: telemetry
         )
     }
@@ -930,6 +985,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
@@ -956,6 +1012,7 @@ public enum AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
             telemetry: telemetry,
             repairText: repairText
         )
@@ -1403,65 +1460,112 @@ private func withTelemetry<Output: Sendable>(
 }
 
 private func streamTextWithTelemetry(
-    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    makeStream: @escaping @Sendable () -> AsyncThrowingStream<LanguageStreamPart, Error>,
     operationID: String,
     providerID: String,
     modelID: String?,
     input: JSONValue?,
+    retryPolicy: AIRetryPolicy,
     telemetry: AITelemetryOptions?
 ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
-    guard dispatcher.isEnabled else { return stream }
 
     return AsyncThrowingStream { continuation in
         let task = Task {
             let callID = UUID().uuidString
             let started = DispatchTime.now().uptimeNanoseconds
             var step = LanguageStreamToolStep()
-            await dispatcher.record(telemetryEvent(
-                kind: .start,
-                callID: callID,
-                operationID: operationID,
-                providerID: providerID,
-                modelID: modelID,
-                options: telemetry,
-                input: input
-            ))
 
             do {
-                for try await part in stream {
-                    try Task.checkCancellation()
-                    step.record(part)
-                    continuation.yield(part)
-                }
-                let result = TextGenerationResult(
-                    text: step.text,
-                    reasoning: step.reasoning,
-                    finishReason: step.finishReason,
-                    usage: step.usage,
-                    toolCalls: step.toolCalls,
-                    toolApprovalRequests: step.approvalRequests,
-                    toolApprovalResponses: step.approvalResponses,
-                    providerMetadata: step.providerMetadata,
-                    rawValue: .object([:]),
-                    warnings: step.warnings,
-                    responseMetadata: step.responseMetadata
-                )
                 await dispatcher.record(telemetryEvent(
-                    kind: .end,
+                    kind: .start,
                     callID: callID,
                     operationID: operationID,
                     providerID: providerID,
                     modelID: modelID,
                     options: telemetry,
-                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                    output: textGenerationTelemetryOutput(result),
-                    usage: result.usage,
-                    warnings: result.warnings,
-                    providerMetadata: result.providerMetadata,
-                    responseMetadata: result.responseMetadata
+                    maxRetries: retryPolicy.maxRetries,
+                    input: input
                 ))
-                continuation.finish()
+                try validateRetryPolicy(retryPolicy)
+
+                var errors: [String] = []
+                var delay = retryPolicy.initialDelayNanoseconds
+                while true {
+                    var yieldedPart = false
+                    do {
+                        for try await part in makeStream() {
+                            try Task.checkCancellation()
+                            yieldedPart = true
+                            step.record(part)
+                            continuation.yield(part)
+                        }
+                        let result = TextGenerationResult(
+                            text: step.text,
+                            reasoning: step.reasoning,
+                            finishReason: step.finishReason,
+                            usage: step.usage,
+                            toolCalls: step.toolCalls,
+                            toolApprovalRequests: step.approvalRequests,
+                            toolApprovalResponses: step.approvalResponses,
+                            providerMetadata: step.providerMetadata,
+                            rawValue: .object([:]),
+                            warnings: step.warnings,
+                            responseMetadata: step.responseMetadata
+                        )
+                        await dispatcher.record(telemetryEvent(
+                            kind: .end,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            output: textGenerationTelemetryOutput(result),
+                            usage: result.usage,
+                            warnings: result.warnings,
+                            providerMetadata: result.providerMetadata,
+                            responseMetadata: result.responseMetadata
+                        ))
+                        continuation.finish()
+                        return
+                    } catch is CancellationError {
+                        throw AIRetryError(reason: .cancelled, attempts: errors.count + 1, errors: errors)
+                    } catch {
+                        if yieldedPart {
+                            throw error
+                        }
+                        errors.append(String(describing: error))
+                        let attempts = errors.count
+                        guard retryPolicy.maxRetries > 0 else { throw error }
+                        guard isRetryable(error) else {
+                            if attempts == 1 { throw error }
+                            throw AIRetryError(reason: .errorNotRetryable, attempts: attempts, errors: errors)
+                        }
+                        guard attempts <= retryPolicy.maxRetries else {
+                            throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
+                        }
+                        let sleepDelay = retryAfterDelayNanoseconds(from: error) ?? delay
+                        await dispatcher.record(telemetryEvent(
+                            kind: .retry,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            attempt: attempts,
+                            maxRetries: retryPolicy.maxRetries,
+                            delayNanoseconds: sleepDelay,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: String(describing: error)
+                        ))
+                        if sleepDelay > 0 {
+                            try await Task.sleep(nanoseconds: sleepDelay)
+                        }
+                        delay = nextDelay(current: delay, policy: retryPolicy)
+                    }
+                }
             } catch {
                 await dispatcher.record(telemetryEvent(
                     kind: .error,
@@ -1470,6 +1574,7 @@ private func streamTextWithTelemetry(
                     providerID: providerID,
                     modelID: modelID,
                     options: telemetry,
+                    maxRetries: retryPolicy.maxRetries,
                     durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
                     errorDescription: String(describing: error)
                 ))
@@ -1484,15 +1589,15 @@ private func streamTextWithTelemetry(
 }
 
 private func objectStreamWithTelemetry<Object: Sendable>(
-    _ stream: AsyncThrowingStream<ObjectStreamPart<Object>, Error>,
+    makeStream: @escaping @Sendable () -> AsyncThrowingStream<ObjectStreamPart<Object>, Error>,
     operationID: String,
     providerID: String,
     modelID: String?,
     input: JSONValue?,
+    retryPolicy: AIRetryPolicy,
     telemetry: AITelemetryOptions?
 ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
-    guard dispatcher.isEnabled else { return stream }
 
     return AsyncThrowingStream { continuation in
         let task = Task {
@@ -1506,64 +1611,110 @@ private func objectStreamWithTelemetry<Object: Sendable>(
             var warnings: [AIWarning] = []
             var providerMetadata: [String: JSONValue] = [:]
             var responseMetadata = AIResponseMetadata()
-            await dispatcher.record(telemetryEvent(
-                kind: .start,
-                callID: callID,
-                operationID: operationID,
-                providerID: providerID,
-                modelID: modelID,
-                options: telemetry,
-                input: input
-            ))
-
             do {
-                for try await part in stream {
-                    try Task.checkCancellation()
-                    switch part {
-                    case let .textDelta(delta):
-                        text += delta
-                    case .partialObject:
-                        partialCount += 1
-                    case let .object(result):
-                        objectResult = result
-                        warnings = result.warnings
-                        providerMetadata = result.providerMetadata
-                        responseMetadata = result.responseMetadata
-                    case let .warning(warning):
-                        warnings.append(warning)
-                    case let .metadata(metadata):
-                        providerMetadata.merge(metadata) { _, new in new }
-                    case let .responseMetadata(metadata):
-                        responseMetadata = metadata
-                    case let .finish(reason, partUsage):
-                        finishReason = reason
-                        usage = partUsage
-                    default:
-                        break
-                    }
-                    continuation.yield(part)
-                }
-                let output = objectStreamTelemetryOutput(
-                    text: objectResult?.text ?? text,
-                    rawObject: objectResult?.rawObject,
-                    partialCount: partialCount,
-                    finishReason: objectResult?.finishReason ?? finishReason
-                )
                 await dispatcher.record(telemetryEvent(
-                    kind: .end,
+                    kind: .start,
                     callID: callID,
                     operationID: operationID,
                     providerID: providerID,
                     modelID: modelID,
                     options: telemetry,
-                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                    output: output,
-                    usage: objectResult?.usage ?? usage,
-                    warnings: warnings,
-                    providerMetadata: providerMetadata,
-                    responseMetadata: responseMetadata
+                    maxRetries: retryPolicy.maxRetries,
+                    input: input
                 ))
-                continuation.finish()
+                try validateRetryPolicy(retryPolicy)
+
+                var errors: [String] = []
+                var delay = retryPolicy.initialDelayNanoseconds
+                while true {
+                    var yieldedPart = false
+                    do {
+                        for try await part in makeStream() {
+                            try Task.checkCancellation()
+                            yieldedPart = true
+                            switch part {
+                            case let .textDelta(delta):
+                                text += delta
+                            case .partialObject:
+                                partialCount += 1
+                            case let .object(result):
+                                objectResult = result
+                                warnings = result.warnings
+                                providerMetadata = result.providerMetadata
+                                responseMetadata = result.responseMetadata
+                            case let .warning(warning):
+                                warnings.append(warning)
+                            case let .metadata(metadata):
+                                providerMetadata.merge(metadata) { _, new in new }
+                            case let .responseMetadata(metadata):
+                                responseMetadata = metadata
+                            case let .finish(reason, partUsage):
+                                finishReason = reason
+                                usage = partUsage
+                            default:
+                                break
+                            }
+                            continuation.yield(part)
+                        }
+                        let output = objectStreamTelemetryOutput(
+                            text: objectResult?.text ?? text,
+                            rawObject: objectResult?.rawObject,
+                            partialCount: partialCount,
+                            finishReason: objectResult?.finishReason ?? finishReason
+                        )
+                        await dispatcher.record(telemetryEvent(
+                            kind: .end,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            output: output,
+                            usage: objectResult?.usage ?? usage,
+                            warnings: warnings,
+                            providerMetadata: providerMetadata,
+                            responseMetadata: responseMetadata
+                        ))
+                        continuation.finish()
+                        return
+                    } catch is CancellationError {
+                        throw AIRetryError(reason: .cancelled, attempts: errors.count + 1, errors: errors)
+                    } catch {
+                        if yieldedPart {
+                            throw error
+                        }
+                        errors.append(String(describing: error))
+                        let attempts = errors.count
+                        guard retryPolicy.maxRetries > 0 else { throw error }
+                        guard isRetryable(error) else {
+                            if attempts == 1 { throw error }
+                            throw AIRetryError(reason: .errorNotRetryable, attempts: attempts, errors: errors)
+                        }
+                        guard attempts <= retryPolicy.maxRetries else {
+                            throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
+                        }
+                        let sleepDelay = retryAfterDelayNanoseconds(from: error) ?? delay
+                        await dispatcher.record(telemetryEvent(
+                            kind: .retry,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            attempt: attempts,
+                            maxRetries: retryPolicy.maxRetries,
+                            delayNanoseconds: sleepDelay,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: String(describing: error)
+                        ))
+                        if sleepDelay > 0 {
+                            try await Task.sleep(nanoseconds: sleepDelay)
+                        }
+                        delay = nextDelay(current: delay, policy: retryPolicy)
+                    }
+                }
             } catch {
                 await dispatcher.record(telemetryEvent(
                     kind: .error,
@@ -1572,6 +1723,7 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                     providerID: providerID,
                     modelID: modelID,
                     options: telemetry,
+                    maxRetries: retryPolicy.maxRetries,
                     durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
                     errorDescription: String(describing: error)
                 ))
@@ -1635,17 +1787,7 @@ private func withRetry<Output: Sendable>(
     onRetry: @escaping @Sendable (AIRetryAttemptTelemetry) async -> Void = { _ in },
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
-    guard policy.maxRetries >= 0 else {
-        throw AIError.invalidArgument(argument: "maxRetries", message: "maxRetries must be >= 0.")
-    }
-    guard policy.backoffFactor >= 1 else {
-        throw AIError.invalidArgument(argument: "backoffFactor", message: "backoffFactor must be >= 1.")
-    }
-    if let timeout = policy.timeoutNanoseconds {
-        guard timeout > 0 else {
-            throw AIError.invalidArgument(argument: "timeoutNanoseconds", message: "timeoutNanoseconds must be greater than zero.")
-        }
-    }
+    try validateRetryPolicy(policy)
 
     var errors: [String] = []
     var delay = policy.initialDelayNanoseconds
@@ -1678,6 +1820,20 @@ private func withRetry<Output: Sendable>(
                 try await Task.sleep(nanoseconds: sleepDelay)
             }
             delay = nextDelay(current: delay, policy: policy)
+        }
+    }
+}
+
+private func validateRetryPolicy(_ policy: AIRetryPolicy) throws {
+    guard policy.maxRetries >= 0 else {
+        throw AIError.invalidArgument(argument: "maxRetries", message: "maxRetries must be >= 0.")
+    }
+    guard policy.backoffFactor >= 1 else {
+        throw AIError.invalidArgument(argument: "backoffFactor", message: "backoffFactor must be >= 1.")
+    }
+    if let timeout = policy.timeoutNanoseconds {
+        guard timeout > 0 else {
+            throw AIError.invalidArgument(argument: "timeoutNanoseconds", message: "timeoutNanoseconds must be greater than zero.")
         }
     }
 }

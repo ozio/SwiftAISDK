@@ -80,6 +80,40 @@ import Testing
     #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "answer")
 }
 
+@Test func aiStreamObjectRetriesRetryableStartErrors() async throws {
+    let recorder = ObjectTelemetryRecorder()
+    let model = ObjectFacadeFlakyStreamingLanguageModel(outcomes: [
+        .failure(AIError.httpStatus(provider: "mock", statusCode: 503, body: "try again")),
+        .parts([
+            .textDelta(#"{"value":"retried","count":5}"#),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 7))
+        ])
+    ])
+
+    var object: ObjectGenerationResult<ObjectFacadeAnswer>?
+    for try await part in AI.streamObject(
+        model: model,
+        prompt: "Retry JSON.",
+        as: ObjectFacadeAnswer.self,
+        schema: objectFacadeAnswerSchema(),
+        retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0),
+        telemetry: AITelemetryOptions(integrations: [recorder])
+    ) {
+        if case let .object(result) = part {
+            object = result
+        }
+    }
+    let events = await recorder.events()
+
+    #expect(object?.object == ObjectFacadeAnswer(value: "retried", count: 5))
+    #expect(model.streamRequests.count == 2)
+    #expect(events.map(\.kind) == [.start, .retry, .end])
+    #expect(events[1].operationID == "ai.streamObject")
+    #expect(events[1].attempt == 1)
+    #expect(events[1].errorDescription?.contains("HTTP 503") == true)
+    #expect(events[2].output?["rawObject"]?["value"]?.stringValue == "retried")
+}
+
 @Test func aiStreamObjectEmitsBestEffortPartialObjects() async throws {
     let model = ObjectFacadeMockLanguageModel(
         result: TextGenerationResult(text: "", rawValue: .object([:])),
@@ -133,6 +167,27 @@ import Testing
     }
 
     #expect(model.streamRequests.count == 1)
+}
+
+@Test func aiStreamObjectRejectsInvalidTimeout() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: []
+    )
+
+    do {
+        for try await _ in AI.streamObject(
+            model: model,
+            prompt: "Invalid timeout.",
+            as: ObjectFacadeAnswer.self,
+            timeoutNanoseconds: 0
+        ) {}
+        Issue.record("Expected invalid object stream timeout.")
+    } catch let error as AIError {
+        #expect(error == .invalidArgument(argument: "timeoutNanoseconds", message: "timeoutNanoseconds must be greater than zero."))
+    }
+
+    #expect(model.streamRequests.isEmpty)
 }
 
 @Test func aiStreamObjectCanRepairFinalText() async throws {
@@ -451,6 +506,44 @@ private final class ObjectFacadeMockLanguageModel: LanguageModel, @unchecked Sen
                 continuation.yield(part)
             }
             continuation.finish()
+        }
+    }
+}
+
+private enum ObjectStreamingOutcome {
+    case failure(Error)
+    case parts([LanguageStreamPart])
+}
+
+private final class ObjectFacadeFlakyStreamingLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "flaky-object-language"
+    var requests: [LanguageModelRequest] = []
+    var streamRequests: [LanguageModelRequest] = []
+    private var outcomes: [ObjectStreamingOutcome]
+
+    init(outcomes: [ObjectStreamingOutcome]) {
+        self.outcomes = outcomes
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        requests.append(request)
+        return TextGenerationResult(text: "", rawValue: .object([:]))
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamRequests.append(request)
+        let outcome = outcomes.count > 1 ? outcomes.removeFirst() : outcomes[0]
+        return AsyncThrowingStream { continuation in
+            switch outcome {
+            case let .failure(error):
+                continuation.finish(throwing: error)
+            case let .parts(parts):
+                for part in parts {
+                    continuation.yield(part)
+                }
+                continuation.finish()
+            }
         }
     }
 }

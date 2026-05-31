@@ -56,11 +56,12 @@ Impact:
 - Facade calls now have a retry policy for transient errors, a per-attempt
   timeout on `AIRetryPolicy`, and direct stream timeouts on `streamText` and
   `streamObject`. HTTP `Retry-After` headers are now preserved from provider
-  responses and honored by facade retries. A first Swift telemetry surface now
-  emits start, retry, end, and error events for non-streaming facade calls plus
-  start, end, and error events for `streamText` and `streamObject`, with
-  per-call or globally registered integrations. Richer cancellation controls,
-  step/tool-level telemetry, and warning logging still need follow-up work.
+  responses and honored by facade retries, including stream retries before the
+  first emitted part. A first Swift telemetry surface now emits start, retry,
+  end, and error events for non-streaming facade calls plus `streamText` and
+  `streamObject`, with per-call or globally registered integrations. Richer
+  cancellation controls, step/tool-level telemetry, and warning logging still
+  need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -283,10 +284,11 @@ Progress:
    First retry slice is in place with `AIRetryPolicy` and default
    `maxRetries: 2` for product-level calls. Non-streaming facade calls can now
    set a per-attempt `timeoutNanoseconds` on `AIRetryPolicy`, and `streamText`
-   plus `streamObject` accept direct stream timeouts. Provider HTTP errors now
-   preserve response headers, and facade retries honor `Retry-After` on
-   retryable status codes. Next passes should add richer cancellation controls
-   and streaming retry behavior.
+   plus `streamObject` accept direct stream timeouts. Streams retry retryable
+   start failures before the first emitted part and do not retry after chunks
+   have been yielded. Provider HTTP errors now preserve response headers, and
+   facade retries honor `Retry-After` on retryable status codes. Next passes
+   should add richer cancellation controls.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slice is in place with `AITelemetryOptions`,

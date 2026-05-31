@@ -131,6 +131,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
@@ -138,6 +139,7 @@ public extension AI {
                 model: try resolveLanguageModel(modelID, provider: provider),
                 request: request,
                 timeoutNanoseconds: timeoutNanoseconds,
+                retryPolicy: retryPolicy,
                 telemetry: telemetry
             )
         } catch {
@@ -155,6 +157,7 @@ public extension AI {
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
@@ -167,6 +170,7 @@ public extension AI {
                 prepareStep: prepareStep,
                 toolApproval: toolApproval,
                 timeoutNanoseconds: timeoutNanoseconds,
+                retryPolicy: retryPolicy,
                 telemetry: telemetry
             )
         } catch {
@@ -200,6 +204,7 @@ public extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
@@ -228,6 +233,7 @@ public extension AI {
                 extraBody: extraBody,
                 headers: headers,
                 timeoutNanoseconds: timeoutNanoseconds,
+                retryPolicy: retryPolicy,
                 telemetry: telemetry
             )
         } catch {
@@ -322,6 +328,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
@@ -334,6 +341,7 @@ public extension AI {
                 schemaName: schemaName,
                 schemaDescription: schemaDescription,
                 timeoutNanoseconds: timeoutNanoseconds,
+                retryPolicy: retryPolicy,
                 telemetry: telemetry,
                 repairText: repairText
             )

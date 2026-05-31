@@ -62,10 +62,11 @@ Provider-specific options can be passed through request types or facade
 overloads via `providerOptions`, `extraBody`, and `headers`.
 
 Facade calls retry transient failures by default (`maxRetries: 2`), matching the
-AI SDK product-level default. HTTP `Retry-After` headers are honored when
-providers return rate-limit or overloaded responses. Pass `retryPolicy: .none`
-to disable retries, or a custom `AIRetryPolicy` to tune retry count, backoff,
-and per-attempt timeout:
+AI SDK product-level default. Streaming calls retry only when the failure occurs
+before the first emitted part, so already-delivered chunks are never duplicated.
+HTTP `Retry-After` headers are honored when providers return rate-limit or
+overloaded responses. Pass `retryPolicy: .none` to disable retries, or a custom
+`AIRetryPolicy` to tune retry count, backoff, and per-attempt timeout:
 
 ```swift
 let text = try await AI.generateText(
@@ -79,7 +80,7 @@ let text = try await AI.generateText(
 )
 ```
 
-Streaming calls accept `timeoutNanoseconds` directly:
+Streaming calls also accept `timeoutNanoseconds` directly:
 
 ```swift
 for try await part in AI.streamText(
