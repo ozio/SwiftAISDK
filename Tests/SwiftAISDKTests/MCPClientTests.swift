@@ -66,6 +66,75 @@ import Testing
     }
 }
 
+@Test func mcpClientListsReadsResourcesAndTemplates() async throws {
+    let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
+    let client = try await MCPClient.connect(transport: transport)
+
+    let resources = try await client.listResources(cursor: "cursor-1")
+    #expect(resources.nextCursor == "cursor-2")
+    #expect(resources.resources.first?.uri == "file:///docs/intro.md")
+    #expect(resources.resources.first?.title == "Intro")
+    #expect(resources.resources.first?.mimeType == "text/markdown")
+
+    let content = try await client.readResource(uri: "file:///docs/intro.md")
+    #expect(content.contents.first?.text == "# Intro")
+    #expect(content.contents.first?.mimeType == "text/markdown")
+
+    let templates = try await client.listResourceTemplates()
+    #expect(templates.resourceTemplates.first?.uriTemplate == "file:///docs/{slug}.md")
+    #expect(templates.resourceTemplates.first?.name == "doc")
+
+    let sent = await transport.sentMessages()
+    #expect(sent.map { $0["method"]?.stringValue } == [
+        "initialize",
+        "notifications/initialized",
+        "resources/list",
+        "resources/read",
+        "resources/templates/list"
+    ])
+    #expect(sent[2]["params"]?["cursor"]?.stringValue == "cursor-1")
+    #expect(sent[3]["params"]?["uri"]?.stringValue == "file:///docs/intro.md")
+}
+
+@Test func mcpClientListsAndGetsPrompts() async throws {
+    let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
+    let client = try await MCPClient.connect(transport: transport)
+
+    let prompts = try await client.experimentalListPrompts(cursor: "prompt-cursor")
+    #expect(prompts.nextCursor == "prompt-cursor-2")
+    #expect(prompts.prompts.first?.name == "summarize")
+    #expect(prompts.prompts.first?.arguments.first?.name == "topic")
+    #expect(prompts.prompts.first?.arguments.first?.required == true)
+
+    let prompt = try await client.experimentalGetPrompt(name: "summarize", arguments: ["topic": "Swift"])
+    #expect(prompt.description == "Summarize a topic.")
+    #expect(prompt.messages.first?.role == "user")
+    #expect(prompt.messages.first?.content["text"]?.stringValue == "Summarize Swift")
+
+    let sent = await transport.sentMessages()
+    #expect(sent.map { $0["method"]?.stringValue } == [
+        "initialize",
+        "notifications/initialized",
+        "prompts/list",
+        "prompts/get"
+    ])
+    #expect(sent[2]["params"]?["cursor"]?.stringValue == "prompt-cursor")
+    #expect(sent[3]["params"]?["name"]?.stringValue == "summarize")
+    #expect(sent[3]["params"]?["arguments"]?["topic"]?.stringValue == "Swift")
+}
+
+@Test func mcpClientRejectsResourcesWhenServerHasNoResourceCapability() async throws {
+    let transport = MockMCPTransport(capabilities: .object(["tools": .object([:])]))
+    let client = try await MCPClient.connect(transport: transport)
+
+    do {
+        _ = try await client.listResources()
+        Issue.record("Expected missing resource capability to throw.")
+    } catch let error as MCPClientError {
+        #expect(error.description.contains("does not support resources"))
+    }
+}
+
 @Test func mcpHTTPTransportPostsJSONRPCMessages() async throws {
     let http = RecordingTransport(responses: [
         jsonResponse(#"{"jsonrpc":"2.0","id":7,"result":{"ok":true}}"#),
@@ -160,6 +229,94 @@ private actor MockMCPTransport: MCPTransport {
                     "isError": false
                 ]
             ]
+        case "resources/list":
+            return [
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [
+                    "nextCursor": "cursor-2",
+                    "resources": [
+                        [
+                            "uri": "file:///docs/intro.md",
+                            "name": "intro",
+                            "title": "Intro",
+                            "description": "Intro docs",
+                            "mimeType": "text/markdown",
+                            "size": 128
+                        ]
+                    ]
+                ]
+            ]
+        case "resources/read":
+            return [
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [
+                    "contents": [
+                        [
+                            "uri": "file:///docs/intro.md",
+                            "mimeType": "text/markdown",
+                            "text": "# Intro"
+                        ]
+                    ]
+                ]
+            ]
+        case "resources/templates/list":
+            return [
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [
+                    "resourceTemplates": [
+                        [
+                            "uriTemplate": "file:///docs/{slug}.md",
+                            "name": "doc",
+                            "title": "Doc",
+                            "description": "Documentation page",
+                            "mimeType": "text/markdown"
+                        ]
+                    ]
+                ]
+            ]
+        case "prompts/list":
+            return [
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [
+                    "nextCursor": "prompt-cursor-2",
+                    "prompts": [
+                        [
+                            "name": "summarize",
+                            "title": "Summarize",
+                            "description": "Summarize a topic.",
+                            "arguments": [
+                                [
+                                    "name": "topic",
+                                    "description": "Topic to summarize",
+                                    "required": true
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        case "prompts/get":
+            let topic = message["params"]?["arguments"]?["topic"]?.stringValue ?? "topic"
+            return [
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [
+                    "description": "Summarize a topic.",
+                    "messages": [
+                        [
+                            "role": "user",
+                            "content": [
+                                "type": "text",
+                                "text": .string("Summarize \(topic)")
+                            ]
+                        ]
+                    ]
+                ]
+            ]
         default:
             return [
                 "jsonrpc": "2.0",
@@ -185,6 +342,14 @@ private actor MockMCPTransport: MCPTransport {
     func reset() {
         messages = []
     }
+}
+
+private func fullMCPCapabilities() -> JSONValue {
+    .object([
+        "tools": .object(["listChanged": .bool(false)]),
+        "resources": .object(["listChanged": .bool(false)]),
+        "prompts": .object(["listChanged": .bool(false)])
+    ])
 }
 
 private extension Data {

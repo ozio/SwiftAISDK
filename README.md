@@ -203,19 +203,25 @@ let runtimeSearch = AITool.dynamic(
 }
 ```
 
-`MCPClient` mirrors the official `@ai-sdk/mcp` tool bridge: it performs the
-MCP initialize handshake, lists server tools, and converts them into dynamic
-`AITool` values that can be passed to `generateText` or `streamText`:
+`MCPClient` mirrors the core of official `@ai-sdk/mcp`: it performs the MCP
+initialize handshake, lists server tools, converts them into dynamic `AITool`
+values, and can also read MCP resources, resource templates, and prompts:
 
 ```swift
 let mcp = try await MCPClient.connect(
     transport: try MCPHTTPTransport(url: "https://mcp.example.com/rpc")
 )
 let mcpTools = try await mcp.tools()
+let docs = try await mcp.listResources()
+let topic = docs.resources.first?.name ?? "docs"
+let summarize = try await mcp.experimentalGetPrompt(
+    name: "summarize",
+    arguments: ["topic": .string(topic)]
+)
 
 let answer = try await AI.generateText(
     model: model,
-    prompt: "Search the docs.",
+    prompt: summarize.messages.first?.content["text"]?.stringValue ?? "Search the docs.",
     executableTools: Array(mcpTools.values)
 )
 ```

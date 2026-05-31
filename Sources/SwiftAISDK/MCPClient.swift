@@ -152,6 +152,318 @@ public struct MCPCallToolResult: Equatable, Hashable, Sendable {
     }
 }
 
+public struct MCPResource: Equatable, Hashable, Sendable {
+    public var uri: String
+    public var name: String
+    public var title: String?
+    public var description: String?
+    public var mimeType: String?
+    public var size: Int?
+    public var rawValue: JSONValue
+
+    public init(uri: String, name: String, title: String? = nil, description: String? = nil, mimeType: String? = nil, size: Int? = nil, rawValue: JSONValue? = nil) {
+        self.uri = uri
+        self.name = name
+        self.title = title
+        self.description = description
+        self.mimeType = mimeType
+        self.size = size
+        self.rawValue = rawValue ?? .object([
+            "uri": .string(uri),
+            "name": .string(name),
+            "title": title.map(JSONValue.string),
+            "description": description.map(JSONValue.string),
+            "mimeType": mimeType.map(JSONValue.string),
+            "size": size.map { .number(Double($0)) }
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let uri = json["uri"]?.stringValue, let name = json["name"]?.stringValue else {
+            throw MCPClientError(message: "Expected MCP resource with uri and name.")
+        }
+        self.init(
+            uri: uri,
+            name: name,
+            title: json["title"]?.stringValue,
+            description: json["description"]?.stringValue,
+            mimeType: json["mimeType"]?.stringValue,
+            size: json["size"]?.intValue,
+            rawValue: json
+        )
+    }
+}
+
+public struct MCPListResourcesResult: Equatable, Hashable, Sendable {
+    public var resources: [MCPResource]
+    public var nextCursor: String?
+    public var rawValue: JSONValue
+
+    public init(resources: [MCPResource], nextCursor: String? = nil, rawValue: JSONValue? = nil) {
+        self.resources = resources
+        self.nextCursor = nextCursor
+        self.rawValue = rawValue ?? .object([
+            "resources": .array(resources.map(\.rawValue)),
+            "nextCursor": nextCursor.map(JSONValue.string)
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let values = json["resources"]?.arrayValue else {
+            throw MCPClientError(message: "Expected MCP resources/list result with resources array.")
+        }
+        self.init(
+            resources: try values.map(MCPResource.init(json:)),
+            nextCursor: json["nextCursor"]?.stringValue,
+            rawValue: json
+        )
+    }
+}
+
+public struct MCPResourceContent: Equatable, Hashable, Sendable {
+    public var uri: String
+    public var mimeType: String?
+    public var text: String?
+    public var blob: String?
+    public var rawValue: JSONValue
+
+    public init(uri: String, mimeType: String? = nil, text: String? = nil, blob: String? = nil, rawValue: JSONValue? = nil) {
+        self.uri = uri
+        self.mimeType = mimeType
+        self.text = text
+        self.blob = blob
+        self.rawValue = rawValue ?? .object([
+            "uri": .string(uri),
+            "mimeType": mimeType.map(JSONValue.string),
+            "text": text.map(JSONValue.string),
+            "blob": blob.map(JSONValue.string)
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let uri = json["uri"]?.stringValue else {
+            throw MCPClientError(message: "Expected MCP resource content with uri.")
+        }
+        self.init(
+            uri: uri,
+            mimeType: json["mimeType"]?.stringValue,
+            text: json["text"]?.stringValue,
+            blob: json["blob"]?.stringValue,
+            rawValue: json
+        )
+    }
+}
+
+public struct MCPReadResourceResult: Equatable, Hashable, Sendable {
+    public var contents: [MCPResourceContent]
+    public var rawValue: JSONValue
+
+    public init(contents: [MCPResourceContent], rawValue: JSONValue? = nil) {
+        self.contents = contents
+        self.rawValue = rawValue ?? .object(["contents": .array(contents.map(\.rawValue))])
+    }
+
+    init(json: JSONValue) throws {
+        guard let values = json["contents"]?.arrayValue else {
+            throw MCPClientError(message: "Expected MCP resources/read result with contents array.")
+        }
+        self.init(contents: try values.map(MCPResourceContent.init(json:)), rawValue: json)
+    }
+}
+
+public struct MCPResourceTemplate: Equatable, Hashable, Sendable {
+    public var uriTemplate: String
+    public var name: String
+    public var title: String?
+    public var description: String?
+    public var mimeType: String?
+    public var rawValue: JSONValue
+
+    public init(uriTemplate: String, name: String, title: String? = nil, description: String? = nil, mimeType: String? = nil, rawValue: JSONValue? = nil) {
+        self.uriTemplate = uriTemplate
+        self.name = name
+        self.title = title
+        self.description = description
+        self.mimeType = mimeType
+        self.rawValue = rawValue ?? .object([
+            "uriTemplate": .string(uriTemplate),
+            "name": .string(name),
+            "title": title.map(JSONValue.string),
+            "description": description.map(JSONValue.string),
+            "mimeType": mimeType.map(JSONValue.string)
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let uriTemplate = json["uriTemplate"]?.stringValue, let name = json["name"]?.stringValue else {
+            throw MCPClientError(message: "Expected MCP resource template with uriTemplate and name.")
+        }
+        self.init(
+            uriTemplate: uriTemplate,
+            name: name,
+            title: json["title"]?.stringValue,
+            description: json["description"]?.stringValue,
+            mimeType: json["mimeType"]?.stringValue,
+            rawValue: json
+        )
+    }
+}
+
+public struct MCPListResourceTemplatesResult: Equatable, Hashable, Sendable {
+    public var resourceTemplates: [MCPResourceTemplate]
+    public var rawValue: JSONValue
+
+    public init(resourceTemplates: [MCPResourceTemplate], rawValue: JSONValue? = nil) {
+        self.resourceTemplates = resourceTemplates
+        self.rawValue = rawValue ?? .object(["resourceTemplates": .array(resourceTemplates.map(\.rawValue))])
+    }
+
+    init(json: JSONValue) throws {
+        guard let values = json["resourceTemplates"]?.arrayValue else {
+            throw MCPClientError(message: "Expected MCP resources/templates/list result with resourceTemplates array.")
+        }
+        self.init(resourceTemplates: try values.map(MCPResourceTemplate.init(json:)), rawValue: json)
+    }
+}
+
+public struct MCPPromptArgument: Equatable, Hashable, Sendable {
+    public var name: String
+    public var description: String?
+    public var required: Bool?
+    public var rawValue: JSONValue
+
+    public init(name: String, description: String? = nil, required: Bool? = nil, rawValue: JSONValue? = nil) {
+        self.name = name
+        self.description = description
+        self.required = required
+        self.rawValue = rawValue ?? .object([
+            "name": .string(name),
+            "description": description.map(JSONValue.string),
+            "required": required.map(JSONValue.bool)
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let name = json["name"]?.stringValue else {
+            throw MCPClientError(message: "Expected MCP prompt argument with name.")
+        }
+        self.init(
+            name: name,
+            description: json["description"]?.stringValue,
+            required: json["required"]?.boolValue,
+            rawValue: json
+        )
+    }
+}
+
+public struct MCPPrompt: Equatable, Hashable, Sendable {
+    public var name: String
+    public var title: String?
+    public var description: String?
+    public var arguments: [MCPPromptArgument]
+    public var rawValue: JSONValue
+
+    public init(name: String, title: String? = nil, description: String? = nil, arguments: [MCPPromptArgument] = [], rawValue: JSONValue? = nil) {
+        self.name = name
+        self.title = title
+        self.description = description
+        self.arguments = arguments
+        self.rawValue = rawValue ?? .object([
+            "name": .string(name),
+            "title": title.map(JSONValue.string),
+            "description": description.map(JSONValue.string),
+            "arguments": .array(arguments.map(\.rawValue))
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let name = json["name"]?.stringValue else {
+            throw MCPClientError(message: "Expected MCP prompt with name.")
+        }
+        self.init(
+            name: name,
+            title: json["title"]?.stringValue,
+            description: json["description"]?.stringValue,
+            arguments: try (json["arguments"]?.arrayValue ?? []).map(MCPPromptArgument.init(json:)),
+            rawValue: json
+        )
+    }
+}
+
+public struct MCPListPromptsResult: Equatable, Hashable, Sendable {
+    public var prompts: [MCPPrompt]
+    public var nextCursor: String?
+    public var rawValue: JSONValue
+
+    public init(prompts: [MCPPrompt], nextCursor: String? = nil, rawValue: JSONValue? = nil) {
+        self.prompts = prompts
+        self.nextCursor = nextCursor
+        self.rawValue = rawValue ?? .object([
+            "prompts": .array(prompts.map(\.rawValue)),
+            "nextCursor": nextCursor.map(JSONValue.string)
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let values = json["prompts"]?.arrayValue else {
+            throw MCPClientError(message: "Expected MCP prompts/list result with prompts array.")
+        }
+        self.init(
+            prompts: try values.map(MCPPrompt.init(json:)),
+            nextCursor: json["nextCursor"]?.stringValue,
+            rawValue: json
+        )
+    }
+}
+
+public struct MCPPromptMessage: Equatable, Hashable, Sendable {
+    public var role: String
+    public var content: JSONValue
+    public var rawValue: JSONValue
+
+    public init(role: String, content: JSONValue, rawValue: JSONValue? = nil) {
+        self.role = role
+        self.content = content
+        self.rawValue = rawValue ?? .object([
+            "role": .string(role),
+            "content": content
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let role = json["role"]?.stringValue, let content = json["content"] else {
+            throw MCPClientError(message: "Expected MCP prompt message with role and content.")
+        }
+        self.init(role: role, content: content, rawValue: json)
+    }
+}
+
+public struct MCPGetPromptResult: Equatable, Hashable, Sendable {
+    public var description: String?
+    public var messages: [MCPPromptMessage]
+    public var rawValue: JSONValue
+
+    public init(description: String? = nil, messages: [MCPPromptMessage], rawValue: JSONValue? = nil) {
+        self.description = description
+        self.messages = messages
+        self.rawValue = rawValue ?? .object([
+            "description": description.map(JSONValue.string),
+            "messages": .array(messages.map(\.rawValue))
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let values = json["messages"]?.arrayValue else {
+            throw MCPClientError(message: "Expected MCP prompts/get result with messages array.")
+        }
+        self.init(
+            description: json["description"]?.stringValue,
+            messages: try values.map(MCPPromptMessage.init(json:)),
+            rawValue: json
+        )
+    }
+}
+
 public protocol MCPTransport: Sendable {
     func start() async throws
     func request(_ message: JSONValue) async throws -> JSONValue
@@ -296,6 +608,46 @@ public actor MCPClient {
         definitions.tools.reduce(into: [String: AITool]()) { output, definition in
             output[definition.name] = tool(from: definition)
         }
+    }
+
+    public func listResources(cursor: String? = nil) async throws -> MCPListResourcesResult {
+        let result = try await request(
+            method: "resources/list",
+            params: cursor.map { .object(["cursor": .string($0)]) }
+        )
+        return try MCPListResourcesResult(json: result)
+    }
+
+    public func readResource(uri: String) async throws -> MCPReadResourceResult {
+        let result = try await request(
+            method: "resources/read",
+            params: .object(["uri": .string(uri)])
+        )
+        return try MCPReadResourceResult(json: result)
+    }
+
+    public func listResourceTemplates() async throws -> MCPListResourceTemplatesResult {
+        let result = try await request(method: "resources/templates/list")
+        return try MCPListResourceTemplatesResult(json: result)
+    }
+
+    public func experimentalListPrompts(cursor: String? = nil) async throws -> MCPListPromptsResult {
+        let result = try await request(
+            method: "prompts/list",
+            params: cursor.map { .object(["cursor": .string($0)]) }
+        )
+        return try MCPListPromptsResult(json: result)
+    }
+
+    public func experimentalGetPrompt(name: String, arguments: JSONValue = .object([:])) async throws -> MCPGetPromptResult {
+        let result = try await request(
+            method: "prompts/get",
+            params: .object([
+                "name": .string(name),
+                "arguments": arguments
+            ])
+        )
+        return try MCPGetPromptResult(json: result)
     }
 
     private func initialize() async throws {
