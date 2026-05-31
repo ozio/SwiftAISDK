@@ -280,6 +280,7 @@ the touched surface into the newer naming pattern.
 | xAI provider IDs and files | Root provider stays `xai`, concrete surfaces use `xai.responses`, `xai.chat`, `xai.image`, `xai.video`, and `xai.files`. xAI file uploads use `team_id` from provider options and do not send OpenAI's `purpose` field. |
 | Provider options | Preserve upstream namespaces and avoid leaking provider-specific options into unrelated providers. |
 | OpenAI-compatible warnings | Chat, completion, embedding, and image models return deprecated warnings for raw provider option keys such as `openai-compatible` or `test-provider`, pointing callers to the camelCase keys. Image models also return unsupported warnings for top-level `aspectRatio` and `seed`; these settings are intentionally not forwarded to OpenAI-style image endpoints. |
+| Core v4 contract | Core request/result/stream types now have v4-shaped slots for provider options, response metadata, provider metadata, warnings, stream lifecycle parts, tool results/approval requests, files, custom parts, and streamed errors. Provider passes should populate these fields when upstream exposes equivalent data. |
 | Auth and provider settings | Mirror upstream env var names, base URL fallbacks, and header strategy. OpenAI settings include `OPENAI_BASE_URL`, organization, and project headers. |
 | AWS providers | Keep SigV4 service name, region, path encoding, and EventStream parsing covered by tests. |
 | Error behavior | Convert provider errors into `AIError` with the surface provider ID that failed. |

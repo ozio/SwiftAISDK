@@ -96,9 +96,18 @@ public struct LanguageModelRequest: Sendable {
     public var messages: [AIMessage]
     public var temperature: Double?
     public var topP: Double?
+    public var topK: Int?
+    public var presencePenalty: Double?
+    public var frequencyPenalty: Double?
+    public var seed: Int?
     public var maxOutputTokens: Int?
     public var stopSequences: [String]
+    public var responseFormat: AIResponseFormat?
+    public var reasoning: String?
     public var tools: [String: JSONValue]
+    public var toolChoice: JSONValue?
+    public var includeRawChunks: Bool
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
@@ -106,21 +115,44 @@ public struct LanguageModelRequest: Sendable {
         messages: [AIMessage],
         temperature: Double? = nil,
         topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
         maxOutputTokens: Int? = nil,
         stopSequences: [String] = [],
+        responseFormat: AIResponseFormat? = nil,
+        reasoning: String? = nil,
         tools: [String: JSONValue] = [:],
+        toolChoice: JSONValue? = nil,
+        includeRawChunks: Bool = false,
+        providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:]
     ) {
         self.messages = messages
         self.temperature = temperature
         self.topP = topP
+        self.topK = topK
+        self.presencePenalty = presencePenalty
+        self.frequencyPenalty = frequencyPenalty
+        self.seed = seed
         self.maxOutputTokens = maxOutputTokens
         self.stopSequences = stopSequences
+        self.responseFormat = responseFormat
+        self.reasoning = reasoning
         self.tools = tools
+        self.toolChoice = toolChoice
+        self.includeRawChunks = includeRawChunks
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
+}
+
+public enum AIResponseFormat: Equatable, Hashable, Sendable {
+    case text
+    case json(schema: JSONValue? = nil, name: String? = nil, description: String? = nil)
 }
 
 public struct TextGenerationResult: Sendable {
@@ -133,6 +165,7 @@ public struct TextGenerationResult: Sendable {
     public var providerMetadata: [String: JSONValue]
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
+    public var responseMetadata: AIResponseMetadata
 
     public init(
         text: String,
@@ -143,7 +176,8 @@ public struct TextGenerationResult: Sendable {
         sources: [AISource] = [],
         providerMetadata: [String: JSONValue] = [:],
         rawValue: JSONValue,
-        warnings: [AIWarning] = []
+        warnings: [AIWarning] = [],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.text = text
         self.reasoning = reasoning
@@ -154,6 +188,7 @@ public struct TextGenerationResult: Sendable {
         self.providerMetadata = providerMetadata
         self.rawValue = rawValue
         self.warnings = warnings
+        self.responseMetadata = responseMetadata
     }
 }
 
@@ -193,37 +228,174 @@ public struct AIToolCall: Equatable, Hashable, Sendable {
     public var name: String
     public var arguments: String
     public var providerExecuted: Bool
+    public var dynamic: Bool
+    public var title: String?
+    public var providerMetadata: [String: JSONValue]
     public var rawValue: JSONValue?
 
-    public init(id: String, name: String, arguments: String, providerExecuted: Bool = false, rawValue: JSONValue? = nil) {
+    public init(
+        id: String,
+        name: String,
+        arguments: String,
+        providerExecuted: Bool = false,
+        dynamic: Bool = false,
+        title: String? = nil,
+        providerMetadata: [String: JSONValue] = [:],
+        rawValue: JSONValue? = nil
+    ) {
         self.id = id
         self.name = name
         self.arguments = arguments
         self.providerExecuted = providerExecuted
+        self.dynamic = dynamic
+        self.title = title
+        self.providerMetadata = providerMetadata
         self.rawValue = rawValue
     }
 }
 
+public struct AIToolResult: Equatable, Hashable, Sendable {
+    public var toolCallID: String
+    public var toolName: String
+    public var result: JSONValue
+    public var isError: Bool
+    public var preliminary: Bool
+    public var dynamic: Bool
+    public var providerMetadata: [String: JSONValue]
+
+    public init(
+        toolCallID: String,
+        toolName: String,
+        result: JSONValue,
+        isError: Bool = false,
+        preliminary: Bool = false,
+        dynamic: Bool = false,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.toolCallID = toolCallID
+        self.toolName = toolName
+        self.result = result
+        self.isError = isError
+        self.preliminary = preliminary
+        self.dynamic = dynamic
+        self.providerMetadata = providerMetadata
+    }
+}
+
+public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
+    public var id: String
+    public var toolName: String
+    public var arguments: String
+    public var providerMetadata: [String: JSONValue]
+
+    public init(id: String, toolName: String, arguments: String, providerMetadata: [String: JSONValue] = [:]) {
+        self.id = id
+        self.toolName = toolName
+        self.arguments = arguments
+        self.providerMetadata = providerMetadata
+    }
+}
+
+public struct AIStreamFile: Equatable, Hashable, Sendable {
+    public var id: String?
+    public var mediaType: String
+    public var data: Data?
+    public var url: String?
+    public var filename: String?
+    public var providerMetadata: [String: JSONValue]
+    public var rawValue: JSONValue?
+
+    public init(
+        id: String? = nil,
+        mediaType: String,
+        data: Data? = nil,
+        url: String? = nil,
+        filename: String? = nil,
+        providerMetadata: [String: JSONValue] = [:],
+        rawValue: JSONValue? = nil
+    ) {
+        self.id = id
+        self.mediaType = mediaType
+        self.data = data
+        self.url = url
+        self.filename = filename
+        self.providerMetadata = providerMetadata
+        self.rawValue = rawValue
+    }
+}
+
+public struct AIResponseMetadata: Equatable, Hashable, Sendable {
+    public var id: String?
+    public var timestamp: Date?
+    public var modelID: String?
+    public var headers: [String: String]
+    public var body: JSONValue?
+
+    public init(id: String? = nil, timestamp: Date? = nil, modelID: String? = nil, headers: [String: String] = [:], body: JSONValue? = nil) {
+        self.id = id
+        self.timestamp = timestamp
+        self.modelID = modelID
+        self.headers = headers
+        self.body = body
+    }
+}
+
+public struct AIRequestMetadata: Equatable, Hashable, Sendable {
+    public var body: JSONValue?
+    public var headers: [String: String]
+
+    public init(body: JSONValue? = nil, headers: [String: String] = [:]) {
+        self.body = body
+        self.headers = headers
+    }
+}
+
 public enum LanguageStreamPart: Equatable, Sendable {
+    case streamStart(warnings: [AIWarning])
+    case textStart(id: String, providerMetadata: [String: JSONValue] = [:])
     case textDelta(String)
+    case textDeltaPart(id: String, delta: String, providerMetadata: [String: JSONValue] = [:])
+    case textEnd(id: String, providerMetadata: [String: JSONValue] = [:])
+    case reasoningStart(id: String, providerMetadata: [String: JSONValue] = [:])
     case reasoningDelta(String)
+    case reasoningDeltaPart(id: String, delta: String, providerMetadata: [String: JSONValue] = [:])
+    case reasoningEnd(id: String, providerMetadata: [String: JSONValue] = [:])
+    case toolInputStart(id: String, name: String, providerExecuted: Bool = false, dynamic: Bool = false, title: String? = nil, providerMetadata: [String: JSONValue] = [:])
+    case toolInputDelta(id: String, delta: String, providerMetadata: [String: JSONValue] = [:])
+    case toolInputEnd(id: String, providerMetadata: [String: JSONValue] = [:])
     case toolCallDelta(id: String?, name: String?, argumentsDelta: String, index: Int?)
     case toolCall(AIToolCall)
+    case toolResult(AIToolResult)
+    case toolApprovalRequest(AIToolApprovalRequest)
+    case file(AIStreamFile)
+    case reasoningFile(AIStreamFile)
+    case custom(JSONValue, providerMetadata: [String: JSONValue] = [:])
     case source(AISource)
     case metadata([String: JSONValue])
+    case responseMetadata(AIResponseMetadata)
     case raw(JSONValue)
+    case error(message: String, rawValue: JSONValue? = nil)
     case finish(reason: String?, usage: TokenUsage?)
+    case finishMetadata(reason: String?, usage: TokenUsage?, providerMetadata: [String: JSONValue])
 }
 
 public struct EmbeddingRequest: Sendable {
     public var values: [String]
     public var dimensions: Int?
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
-    public init(values: [String], dimensions: Int? = nil, extraBody: [String: JSONValue] = [:], headers: [String: String] = [:]) {
+    public init(
+        values: [String],
+        dimensions: Int? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:]
+    ) {
         self.values = values
         self.dimensions = dimensions
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
@@ -234,12 +406,23 @@ public struct EmbeddingResult: Sendable {
     public var usage: TokenUsage?
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
 
-    public init(embeddings: [[Double]], usage: TokenUsage? = nil, rawValue: JSONValue, warnings: [AIWarning] = []) {
+    public init(
+        embeddings: [[Double]],
+        usage: TokenUsage? = nil,
+        rawValue: JSONValue,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
         self.embeddings = embeddings
         self.usage = usage
         self.rawValue = rawValue
         self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
     }
 }
 
@@ -251,6 +434,7 @@ public struct ImageGenerationRequest: Sendable {
     public var count: Int?
     public var files: [ImageInputFile]
     public var mask: ImageInputFile?
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
@@ -262,6 +446,7 @@ public struct ImageGenerationRequest: Sendable {
         count: Int? = nil,
         files: [ImageInputFile] = [],
         mask: ImageInputFile? = nil,
+        providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:]
     ) {
@@ -272,6 +457,7 @@ public struct ImageGenerationRequest: Sendable {
         self.count = count
         self.files = files
         self.mask = mask
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
@@ -303,12 +489,26 @@ public struct ImageGenerationResult: Sendable {
     public var base64Images: [String]
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
+    public var usage: TokenUsage?
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
 
-    public init(urls: [String], base64Images: [String] = [], rawValue: JSONValue, warnings: [AIWarning] = []) {
+    public init(
+        urls: [String],
+        base64Images: [String] = [],
+        rawValue: JSONValue,
+        warnings: [AIWarning] = [],
+        usage: TokenUsage? = nil,
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
         self.urls = urls
         self.base64Images = base64Images
         self.rawValue = rawValue
         self.warnings = warnings
+        self.usage = usage
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
     }
 }
 
@@ -318,15 +518,26 @@ public struct AudioTranscriptionRequest: Sendable {
     public var mimeType: String
     public var language: String?
     public var prompt: String?
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
-    public init(audio: Data, fileName: String = "audio.wav", mimeType: String = "audio/wav", language: String? = nil, prompt: String? = nil, extraBody: [String: JSONValue] = [:], headers: [String: String] = [:]) {
+    public init(
+        audio: Data,
+        fileName: String = "audio.wav",
+        mimeType: String = "audio/wav",
+        language: String? = nil,
+        prompt: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:]
+    ) {
         self.audio = audio
         self.fileName = fileName
         self.mimeType = mimeType
         self.language = language
         self.prompt = prompt
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
@@ -335,10 +546,46 @@ public struct AudioTranscriptionRequest: Sendable {
 public struct TranscriptionResult: Sendable {
     public var text: String
     public var rawValue: JSONValue
+    public var segments: [TranscriptionSegment]
+    public var language: String?
+    public var durationInSeconds: Double?
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
+    public var responseMetadata: AIResponseMetadata
 
-    public init(text: String, rawValue: JSONValue) {
+    public init(
+        text: String,
+        rawValue: JSONValue,
+        segments: [TranscriptionSegment] = [],
+        language: String? = nil,
+        durationInSeconds: Double? = nil,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
         self.text = text
         self.rawValue = rawValue
+        self.segments = segments
+        self.language = language
+        self.durationInSeconds = durationInSeconds
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
+        self.responseMetadata = responseMetadata
+    }
+}
+
+public struct TranscriptionSegment: Equatable, Sendable {
+    public var text: String
+    public var startSecond: Double
+    public var endSecond: Double
+
+    public init(text: String, startSecond: Double, endSecond: Double) {
+        self.text = text
+        self.startSecond = startSecond
+        self.endSecond = endSecond
     }
 }
 
@@ -346,13 +593,22 @@ public struct SpeechRequest: Sendable {
     public var text: String
     public var voice: String?
     public var format: String?
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
-    public init(text: String, voice: String? = nil, format: String? = nil, extraBody: [String: JSONValue] = [:], headers: [String: String] = [:]) {
+    public init(
+        text: String,
+        voice: String? = nil,
+        format: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:]
+    ) {
         self.text = text
         self.voice = voice
         self.format = format
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
@@ -361,10 +617,25 @@ public struct SpeechRequest: Sendable {
 public struct SpeechResult: Sendable {
     public var audio: Data
     public var contentType: String?
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
+    public var responseMetadata: AIResponseMetadata
 
-    public init(audio: Data, contentType: String? = nil) {
+    public init(
+        audio: Data,
+        contentType: String? = nil,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
         self.audio = audio
         self.contentType = contentType
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
+        self.responseMetadata = responseMetadata
     }
 }
 
@@ -372,13 +643,22 @@ public struct VideoGenerationRequest: Sendable {
     public var prompt: String
     public var aspectRatio: String?
     public var durationSeconds: Double?
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
-    public init(prompt: String, aspectRatio: String? = nil, durationSeconds: Double? = nil, extraBody: [String: JSONValue] = [:], headers: [String: String] = [:]) {
+    public init(
+        prompt: String,
+        aspectRatio: String? = nil,
+        durationSeconds: Double? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:]
+    ) {
         self.prompt = prompt
         self.aspectRatio = aspectRatio
         self.durationSeconds = durationSeconds
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
@@ -388,11 +668,24 @@ public struct VideoGenerationResult: Sendable {
     public var urls: [String]
     public var operationID: String?
     public var rawValue: JSONValue
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
 
-    public init(urls: [String], operationID: String? = nil, rawValue: JSONValue) {
+    public init(
+        urls: [String],
+        operationID: String? = nil,
+        rawValue: JSONValue,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
         self.urls = urls
         self.operationID = operationID
         self.rawValue = rawValue
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
     }
 }
 
@@ -400,13 +693,22 @@ public struct RerankingRequest: Sendable {
     public var query: String
     public var documents: [String]
     public var topK: Int?
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
-    public init(query: String, documents: [String], topK: Int? = nil, extraBody: [String: JSONValue] = [:], headers: [String: String] = [:]) {
+    public init(
+        query: String,
+        documents: [String],
+        topK: Int? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:]
+    ) {
         self.query = query
         self.documents = documents
         self.topK = topK
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
@@ -415,10 +717,22 @@ public struct RerankingRequest: Sendable {
 public struct RerankingResult: Sendable {
     public var results: [RerankedDocument]
     public var rawValue: JSONValue
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
 
-    public init(results: [RerankedDocument], rawValue: JSONValue) {
+    public init(
+        results: [RerankedDocument],
+        rawValue: JSONValue,
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
         self.results = results
         self.rawValue = rawValue
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
     }
 }
 
@@ -442,6 +756,7 @@ public struct FileUploadRequest: Sendable {
     public var displayName: String?
     public var pollIntervalNanoseconds: UInt64
     public var pollTimeoutNanoseconds: UInt64
+    public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
 
@@ -453,6 +768,7 @@ public struct FileUploadRequest: Sendable {
         displayName: String? = nil,
         pollIntervalNanoseconds: UInt64 = 2_000_000_000,
         pollTimeoutNanoseconds: UInt64 = 300_000_000_000,
+        providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:]
     ) {
@@ -463,6 +779,7 @@ public struct FileUploadRequest: Sendable {
         self.displayName = displayName
         self.pollIntervalNanoseconds = pollIntervalNanoseconds
         self.pollTimeoutNanoseconds = pollTimeoutNanoseconds
+        self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
     }
@@ -474,13 +791,25 @@ public struct FileUploadResult: Sendable {
     public var mediaType: String?
     public var metadata: [String: JSONValue]
     public var rawValue: JSONValue
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
 
-    public init(providerReference: [String: String], filename: String? = nil, mediaType: String? = nil, metadata: [String: JSONValue] = [:], rawValue: JSONValue) {
+    public init(
+        providerReference: [String: String],
+        filename: String? = nil,
+        mediaType: String? = nil,
+        metadata: [String: JSONValue] = [:],
+        rawValue: JSONValue,
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
         self.providerReference = providerReference
         self.filename = filename
         self.mediaType = mediaType
         self.metadata = metadata
         self.rawValue = rawValue
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
     }
 }
 

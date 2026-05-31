@@ -116,6 +116,17 @@ Introduce v4-shaped Swift core structs before expanding deeper provider parity:
 - shared response metadata and provider metadata on every result type;
 - warnings on every result type that upstream can warn from.
 
+Progress:
+
+- First contract slice added: language requests now carry v4-style sampling,
+  response-format, reasoning, raw-chunk, tool-choice, and provider-options
+  fields; every model request has a `providerOptions` slot; result types now
+  carry shared warnings/provider metadata/response metadata where upstream v4 can
+  report them; language streams can represent lifecycle parts, stream-start
+  warnings, tool results, tool approval requests, files, custom parts, response
+  metadata, and streamed errors. Provider implementations still need follow-up
+  passes to populate these fields consistently.
+
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 
 Provider-defined tools exist as builders such as `OpenAITools`,
@@ -180,8 +191,9 @@ Add a real README once the facade direction is chosen. It should include:
 ## Recommended Next Rounds
 
 1. **Core v4 result/stream contract pass.**
-   Add shared response metadata, provider metadata, warnings across all result
-   types, and richer stream part cases. This unlocks faithful provider ports.
+   First slice is in place. Continue wiring providers into the richer fields and
+   add missing request/result details where upstream tests prove concrete
+   behavior.
 
 2. **Facade pass 1: direct wrappers.**
    Add `AI.generateText`, `AI.streamText`, `AI.embed`, `AI.embedMany`,
