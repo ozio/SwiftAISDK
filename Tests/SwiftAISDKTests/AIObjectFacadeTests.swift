@@ -452,6 +452,36 @@ import Testing
     #expect(request.extraBody["responseFormat"]?["description"]?.stringValue == "A typed answer.")
 }
 
+@Test func aiGenerateObjectAcceptsSchemaAdapter() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"value":"schema-adapter","count":6}"#,
+        rawValue: .object([:])
+    ))
+    let schema = AIJSONSchema<ObjectFacadeAnswer>(
+        objectFacadeAnswerSchema(),
+        name: "adapterAnswer",
+        description: "Schema supplied through an adapter."
+    )
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return an adapter object.",
+        schema: schema
+    )
+
+    #expect(result.object == ObjectFacadeAnswer(value: "schema-adapter", count: 6))
+
+    let request = try #require(model.requests.first)
+    #expect(request.responseFormat == .json(
+        schema: objectFacadeAnswerSchema(),
+        name: "adapterAnswer",
+        description: "Schema supplied through an adapter."
+    ))
+    #expect(request.extraBody["responseFormat"]?["schema"]?["required"]?[0]?.stringValue == "value")
+    #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "adapterAnswer")
+    #expect(request.extraBody["responseFormat"]?["description"]?.stringValue == "Schema supplied through an adapter.")
+}
+
 @Test func aiGenerateObjectCanRepairInvalidJSONText() async throws {
     let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(text: "value: repaired", rawValue: .object([:])))
 
@@ -588,6 +618,44 @@ import Testing
     #expect(schema["properties"]?["elements"]?["items"]?["properties"]?["value"]?["type"]?.stringValue == "string")
     #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["elements"]?["items"]?["properties"]?["count"]?["type"]?.stringValue == "integer")
     #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "answers")
+}
+
+@Test func aiStreamObjectArrayAcceptsElementSchemaAdapter() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"elements":[{"value":"adapter","count":9}]}"#),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+    let schema = AIJSONSchema<ObjectFacadeAnswer>(
+        objectFacadeAnswerSchema(),
+        name: "adapterAnswers",
+        description: "Adapter element schema."
+    )
+
+    var object: ObjectGenerationResult<[ObjectFacadeAnswer]>?
+    for try await part in AI.streamObjectArray(
+        model: model,
+        prompt: "Stream adapter answers.",
+        elementSchema: schema
+    ) {
+        if case let .object(result) = part {
+            object = result
+        }
+    }
+
+    #expect(object?.object == [ObjectFacadeAnswer(value: "adapter", count: 9)])
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.responseFormat == .json(
+        schema: arrayOutputSchemaForTest(elementSchema: objectFacadeAnswerSchema()),
+        name: "adapterAnswers",
+        description: "Adapter element schema."
+    ))
+    #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["elements"]?["items"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "adapterAnswers")
+    #expect(request.extraBody["responseFormat"]?["description"]?.stringValue == "Adapter element schema.")
 }
 
 @Test func aiGenerateEnumWrapsEnumValuesAndReturnsSelectedValue() async throws {

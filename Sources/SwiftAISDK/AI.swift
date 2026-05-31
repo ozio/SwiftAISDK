@@ -323,6 +323,72 @@ public enum AI {
         )
     }
 
+    public static func generateObject<Schema: AIObjectSchema>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        schema: Schema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<Schema.Output> {
+        try await generateObject(
+            model: model,
+            request: request,
+            as: Schema.Output.self,
+            schema: schema.jsonSchema,
+            schemaName: schemaName ?? schema.name,
+            schemaDescription: schemaDescription ?? schema.description,
+            retryPolicy: retryPolicy,
+            repairText: repairText
+        )
+    }
+
+    public static func generateObject<Schema: AIObjectSchema>(
+        model: any LanguageModel,
+        prompt: String,
+        schema: Schema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<Schema.Output> {
+        try await generateObject(
+            model: model,
+            prompt: prompt,
+            as: Schema.Output.self,
+            schema: schema.jsonSchema,
+            schemaName: schemaName ?? schema.name,
+            schemaDescription: schemaDescription ?? schema.description,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            reasoning: reasoning,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers,
+            retryPolicy: retryPolicy,
+            repairText: repairText
+        )
+    }
+
     public static func generateObjectArray<Element: Decodable & Sendable>(
         model: any LanguageModel,
         request: LanguageModelRequest,
@@ -408,6 +474,72 @@ public enum AI {
             elementSchema: elementSchema,
             schemaName: schemaName,
             schemaDescription: schemaDescription,
+            retryPolicy: retryPolicy,
+            repairText: repairText
+        )
+    }
+
+    public static func generateObjectArray<ElementSchema: AIObjectSchema>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        elementSchema: ElementSchema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<[ElementSchema.Output]> {
+        try await generateObjectArray(
+            model: model,
+            request: request,
+            as: ElementSchema.Output.self,
+            elementSchema: elementSchema.jsonSchema,
+            schemaName: schemaName ?? elementSchema.name,
+            schemaDescription: schemaDescription ?? elementSchema.description,
+            retryPolicy: retryPolicy,
+            repairText: repairText
+        )
+    }
+
+    public static func generateObjectArray<ElementSchema: AIObjectSchema>(
+        model: any LanguageModel,
+        prompt: String,
+        elementSchema: ElementSchema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<[ElementSchema.Output]> {
+        try await generateObjectArray(
+            model: model,
+            prompt: prompt,
+            as: ElementSchema.Output.self,
+            elementSchema: elementSchema.jsonSchema,
+            schemaName: schemaName ?? elementSchema.name,
+            schemaDescription: schemaDescription ?? elementSchema.description,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            reasoning: reasoning,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers,
             retryPolicy: retryPolicy,
             repairText: repairText
         )
@@ -1063,6 +1195,80 @@ public enum AI {
         )
     }
 
+    public static func streamObject<Schema: AIObjectSchema>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        schema: Schema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<Schema.Output>, Error> {
+        streamObject(
+            model: model,
+            request: request,
+            as: Schema.Output.self,
+            schema: schema.jsonSchema,
+            schemaName: schemaName ?? schema.name,
+            schemaDescription: schemaDescription ?? schema.description,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
+    public static func streamObject<Schema: AIObjectSchema>(
+        model: any LanguageModel,
+        prompt: String,
+        schema: Schema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<Schema.Output>, Error> {
+        streamObject(
+            model: model,
+            prompt: prompt,
+            as: Schema.Output.self,
+            schema: schema.jsonSchema,
+            schemaName: schemaName ?? schema.name,
+            schemaDescription: schemaDescription ?? schema.description,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            reasoning: reasoning,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
     public static func streamObjectArray<Element: Decodable & Sendable>(
         model: any LanguageModel,
         request: LanguageModelRequest,
@@ -1139,6 +1345,80 @@ public enum AI {
             elementSchema: elementSchema,
             schemaName: schemaName,
             schemaDescription: schemaDescription,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
+    public static func streamObjectArray<ElementSchema: AIObjectSchema>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        elementSchema: ElementSchema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<[ElementSchema.Output]>, Error> {
+        streamObjectArray(
+            model: model,
+            request: request,
+            as: ElementSchema.Output.self,
+            elementSchema: elementSchema.jsonSchema,
+            schemaName: schemaName ?? elementSchema.name,
+            schemaDescription: schemaDescription ?? elementSchema.description,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            repairText: repairText
+        )
+    }
+
+    public static func streamObjectArray<ElementSchema: AIObjectSchema>(
+        model: any LanguageModel,
+        prompt: String,
+        elementSchema: ElementSchema,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<[ElementSchema.Output]>, Error> {
+        streamObjectArray(
+            model: model,
+            prompt: prompt,
+            as: ElementSchema.Output.self,
+            elementSchema: elementSchema.jsonSchema,
+            schemaName: schemaName ?? elementSchema.name,
+            schemaDescription: schemaDescription ?? elementSchema.description,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            reasoning: reasoning,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers,
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,

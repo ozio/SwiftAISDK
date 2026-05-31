@@ -72,8 +72,9 @@ Impact:
   values when the current JSON can decode, and a final decoded object.
   Non-streaming and streaming array, enum, and no-schema JSON strategies are
   also available. Object parse/schema/decode failures now throw
-  `AIObjectGenerationError`. Richer schema adapters and provider-specific
-  structured-output passes still need follow-up work.
+  `AIObjectGenerationError`, and `AIObjectSchema`/`AIJSONSchema` provide a
+  reusable schema-adapter surface for object and array outputs. Richer
+  provider-specific structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as
@@ -200,9 +201,9 @@ Impact:
 Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
-schema adapter protocols, MCP elicitation and SSE/session support, richer
-stream tool lifecycle events, and provider-executed approval response mapping
-for non-OpenAI providers that expose an equivalent native wire format.
+provider-defined tool schema adapters, MCP elicitation and SSE/session support,
+richer stream tool lifecycle events, and provider-executed approval response
+mapping for non-OpenAI providers that expose an equivalent native wire format.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -215,23 +216,24 @@ objects, typed partial `Decodable` values, and a final decoded object, backed by
 provider JSON response-format hints. Array, enum, and no-schema JSON strategies
 are exposed as both non-streaming and streaming variants:
 `generateObjectArray`, `streamObjectArray`, `generateEnum`, `streamEnum`,
-`generateJSON`, and `streamJSON`.
+`generateJSON`, and `streamJSON`. `AIObjectSchema` and `AIJSONSchema` now let
+callers pass reusable schema adapters instead of raw `JSONValue` schemas.
 
 Impact:
 
 - Basic object generation, partial JSON object streaming, typed partial object
   streaming, final-object streaming, final JSON Schema validation, and typed
   object-generation failures are available at product level.
-- Streaming array/enum/no-schema strategies are now available; schema adapter
-  protocols are still unavailable.
+- Streaming array/enum/no-schema strategies and first-pass schema adapter
+  protocols are now available.
 - Provider-specific schema support has first end-to-end coverage, but needs
   broader provider passes.
 
 Recommendation:
 
-Extend object generation beyond the first Swift-native slices: add schema
-adapter protocols, provider-specific structured-output parity, and JSON
-instruction injection for providers without native response formats.
+Extend object generation beyond the first Swift-native slices: add
+provider-specific structured-output parity, richer schema adapter integrations,
+and JSON instruction injection for providers without native response formats.
 
 ### 5. Product reality is not fully gated yet
 
@@ -321,9 +323,10 @@ Progress:
    when the current partial JSON decodes, and final `Decodable` output.
    Array, enum, and no-schema JSON output strategies now mirror upstream's
    wrapper schemas for both non-streaming and streaming calls, and
-   `AIObjectGenerationError` exposes typed parse/schema/decode failures. Next
-   passes should add schema adapter protocols and provider-specific structured
-   output parity.
+   `AIObjectGenerationError` exposes typed parse/schema/decode failures.
+   `AIObjectSchema` and `AIJSONSchema` add a first reusable schema-adapter
+   surface. Next passes should add provider-specific structured output parity
+   and richer adapter integrations.
 
 7. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first

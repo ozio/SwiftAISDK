@@ -142,6 +142,29 @@ let result = try await AI.generateObject(
 print(result.object.title)
 ```
 
+You can also package the JSON Schema as a reusable adapter, closer to upstream
+schema helpers:
+
+```swift
+let summarySchema = AIJSONSchema<Summary>(
+    [
+        "type": "object",
+        "properties": [
+            "title": ["type": "string"],
+            "bullets": ["type": "array", "items": ["type": "string"]]
+        ],
+        "required": ["title", "bullets"]
+    ],
+    name: "summary"
+)
+
+let adapted = try await AI.generateObject(
+    model: model,
+    prompt: "Summarize this changelog.",
+    schema: summarySchema
+)
+```
+
 When a schema is supplied, the final decoded JSON is also checked against that
 schema; `repairText` can repair parsing or schema-validation failures. Failed
 object parsing throws `AIObjectGenerationError`, including the output strategy,
