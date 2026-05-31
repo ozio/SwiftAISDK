@@ -302,19 +302,25 @@ let chat = try registry.languageModel("openai:gpt-4.1-mini")
 let claude = try registry.languageModel("anthropic:claude-sonnet-4-20250514")
 ```
 
-Registries can also apply language middleware to every routed language model:
+Registries can also apply middleware to routed language and image models:
 
 ```swift
 let tunedRegistry = createProviderRegistry(
     ["openai": try AIProviders.openAI()],
     languageModelMiddleware: defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings(
         temperature: 0.3
-    ))
+    )),
+    imageModelMiddleware: AIImageModelMiddleware(transformRequest: { context in
+        var request = context.request
+        request.count = request.count ?? 1
+        return request
+    })
 )
 ```
 
-Language models and providers can be wrapped with middleware, mirroring
-upstream `wrapLanguageModel`, `wrapProvider`, and `defaultSettingsMiddleware`:
+Language, image, and embedding models can be wrapped with middleware, mirroring
+upstream `wrapLanguageModel`, `wrapImageModel`, `wrapEmbeddingModel`,
+`wrapProvider`, and `defaultSettingsMiddleware`:
 
 ```swift
 let tunedModel = wrapLanguageModel(
@@ -323,6 +329,15 @@ let tunedModel = wrapLanguageModel(
         temperature: 0.3,
         providerOptions: ["openai": ["parallelToolCalls": false]]
     ))
+)
+
+let tunedEmbeddings = wrapEmbeddingModel(
+    embeddingModel,
+    middleware: AIEmbeddingModelMiddleware(transformRequest: { context in
+        var request = context.request
+        request.dimensions = request.dimensions ?? 1024
+        return request
+    })
 )
 ```
 

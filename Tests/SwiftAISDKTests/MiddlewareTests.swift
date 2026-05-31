@@ -169,20 +169,122 @@ import Testing
     #expect(request.headers["X-Override"] == "request")
 }
 
-@Test func wrapProviderAppliesLanguageMiddlewareOnly() async throws {
+@Test func wrapImageModelTransformsAndWrapsGenerateInUpstreamOrder() async throws {
+    let model = MiddlewareImageModel(result: ImageGenerationResult(urls: ["base"], rawValue: .object([:])))
+    let first = AIImageModelMiddleware(
+        overrideProviderID: { _ in "image-provider" },
+        overrideModelID: { _ in "image-model" },
+        transformRequest: { context in
+            var request = context.request
+            request.prompt += "|first"
+            request.headers["x-first"] = context.model.modelID
+            return request
+        },
+        wrapGenerate: { context in
+            var result = try await context.doGenerate()
+            result.urls = result.urls.map { "first(\($0))" }
+            return result
+        }
+    )
+    let second = AIImageModelMiddleware(
+        transformRequest: { context in
+            var request = context.request
+            request.prompt += "|second"
+            request.providerOptions["second"] = .string(context.model.providerID)
+            return request
+        },
+        wrapGenerate: { context in
+            var result = try await context.doGenerate()
+            result.urls = result.urls.map { "second(\($0))" }
+            return result
+        }
+    )
+    let wrapped = wrapImageModel(model, middleware: [first, second])
+
+    let result = try await wrapped.generateImage(ImageGenerationRequest(prompt: "base"))
+
+    #expect(wrapped.providerID == "image-provider")
+    #expect(wrapped.modelID == "image-model")
+    #expect(result.urls == ["first(second(base))"])
+    #expect(model.requests.first?.prompt == "base|first|second")
+    #expect(model.requests.first?.headers["x-first"] == "image")
+    #expect(model.requests.first?.providerOptions["second"]?.stringValue == "middleware-image")
+}
+
+@Test func wrapEmbeddingModelTransformsAndWrapsEmbedInUpstreamOrder() async throws {
+    let model = MiddlewareEmbeddingModel(result: EmbeddingResult(embeddings: [[1]], rawValue: .object([:])))
+    let first = AIEmbeddingModelMiddleware(
+        overrideProviderID: { _ in "embedding-provider" },
+        overrideModelID: { _ in "embedding-model" },
+        transformRequest: { context in
+            var request = context.request
+            request.values.append("first")
+            request.headers["x-first"] = context.model.modelID
+            return request
+        },
+        wrapEmbed: { context in
+            var result = try await context.doEmbed()
+            result.embeddings.append([3])
+            return result
+        }
+    )
+    let second = AIEmbeddingModelMiddleware(
+        transformRequest: { context in
+            var request = context.request
+            request.values.append("second")
+            request.providerOptions["second"] = .string(context.model.providerID)
+            return request
+        },
+        wrapEmbed: { context in
+            var result = try await context.doEmbed()
+            result.embeddings.append([2])
+            return result
+        }
+    )
+    let wrapped = wrapEmbeddingModel(model, middleware: [first, second])
+
+    let result = try await wrapped.embed(EmbeddingRequest(values: ["base"]))
+
+    #expect(wrapped.providerID == "embedding-provider")
+    #expect(wrapped.modelID == "embedding-model")
+    #expect(result.embeddings == [[1], [2], [3]])
+    #expect(model.requests.first?.values == ["base", "first", "second"])
+    #expect(model.requests.first?.headers["x-first"] == "embedding")
+    #expect(model.requests.first?.providerOptions["second"]?.stringValue == "middleware-embedding")
+}
+
+@Test func wrapProviderAppliesMiddlewareToLanguageImageAndEmbeddingModels() async throws {
     let language = MiddlewareLanguageModel()
     let embedding = MiddlewareEmbeddingModel()
-    let provider = MiddlewareProvider(language: language, embedding: embedding)
+    let image = MiddlewareImageModel()
+    let provider = MiddlewareProvider(language: language, embedding: embedding, image: image)
     let wrapped = wrapProvider(
         provider,
-        languageModelMiddleware: defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings(temperature: 0.4))
+        languageModelMiddleware: defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings(temperature: 0.4)),
+        imageModelMiddleware: [
+            AIImageModelMiddleware(transformRequest: { context in
+                var request = context.request
+                request.prompt += " with image middleware"
+                return request
+            })
+        ],
+        embeddingModelMiddleware: [
+            AIEmbeddingModelMiddleware(transformRequest: { context in
+                var request = context.request
+                request.dimensions = 64
+                return request
+            })
+        ]
     )
 
     _ = try await wrapped.languageModel("chat").generate(LanguageModelRequest(messages: [.user("Hi")]))
     _ = try await wrapped.embeddingModel("embed").embed(EmbeddingRequest(values: ["a"]))
+    _ = try await wrapped.imageModel("image").generateImage(ImageGenerationRequest(prompt: "draw"))
 
     #expect(language.generateRequests.first?.temperature == 0.4)
     #expect(embedding.requests.first?.values == ["a"])
+    #expect(embedding.requests.first?.dimensions == 64)
+    #expect(image.requests.first?.prompt == "draw with image middleware")
 }
 
 @Test func providerRegistryAppliesLanguageMiddlewareToRoutedModels() async throws {
@@ -230,6 +332,29 @@ import Testing
     #expect(language.generateRequests.first?.headers["x-second"] == "generate")
 }
 
+@Test func providerRegistryAppliesImageMiddlewareToRoutedModels() async throws {
+    let image = MiddlewareImageModel()
+    let provider = MiddlewareProvider(
+        language: MiddlewareLanguageModel(),
+        embedding: MiddlewareEmbeddingModel(),
+        image: image
+    )
+    let registry = createProviderRegistry(
+        ["app": provider],
+        imageModelMiddleware: AIImageModelMiddleware(transformRequest: { context in
+            var request = context.request
+            request.count = 2
+            request.headers["x-image-model"] = context.model.modelID
+            return request
+        })
+    )
+
+    _ = try await registry.imageModel("app:image").generateImage(ImageGenerationRequest(prompt: "Hi"))
+
+    #expect(image.requests.first?.count == 2)
+    #expect(image.requests.first?.headers["x-image-model"] == "image")
+}
+
 private final class MiddlewareLanguageModel: LanguageModel, @unchecked Sendable {
     let providerID: String
     let modelID: String
@@ -263,25 +388,64 @@ private final class MiddlewareLanguageModel: LanguageModel, @unchecked Sendable 
 }
 
 private final class MiddlewareEmbeddingModel: EmbeddingModel, @unchecked Sendable {
-    let providerID = "middleware"
-    let modelID = "embedding"
+    let providerID: String
+    let modelID: String
     var requests: [EmbeddingRequest] = []
+    private let result: EmbeddingResult
+
+    init(
+        providerID: String = "middleware-embedding",
+        modelID: String = "embedding",
+        result: EmbeddingResult = EmbeddingResult(embeddings: [[1]], rawValue: .object([:]))
+    ) {
+        self.providerID = providerID
+        self.modelID = modelID
+        self.result = result
+    }
 
     func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         requests.append(request)
-        return EmbeddingResult(embeddings: [[1]], rawValue: .object([:]))
+        return result
+    }
+}
+
+private final class MiddlewareImageModel: ImageModel, @unchecked Sendable {
+    let providerID: String
+    let modelID: String
+    var requests: [ImageGenerationRequest] = []
+    private let result: ImageGenerationResult
+
+    init(
+        providerID: String = "middleware-image",
+        modelID: String = "image",
+        result: ImageGenerationResult = ImageGenerationResult(urls: ["image"], rawValue: .object([:]))
+    ) {
+        self.providerID = providerID
+        self.modelID = modelID
+        self.result = result
+    }
+
+    func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+        requests.append(request)
+        return result
     }
 }
 
 private final class MiddlewareProvider: AIProvider, @unchecked Sendable {
     let providerID = "middleware-provider"
-    let supportedCapabilities: Set<ModelCapability> = [.language, .embedding]
+    let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image]
     private let language: MiddlewareLanguageModel
     private let embedding: MiddlewareEmbeddingModel
+    private let image: MiddlewareImageModel
 
-    init(language: MiddlewareLanguageModel, embedding: MiddlewareEmbeddingModel) {
+    init(
+        language: MiddlewareLanguageModel,
+        embedding: MiddlewareEmbeddingModel,
+        image: MiddlewareImageModel = MiddlewareImageModel()
+    ) {
         self.language = language
         self.embedding = embedding
+        self.image = image
     }
 
     func languageModel(_ modelID: String) throws -> any LanguageModel {
@@ -293,7 +457,7 @@ private final class MiddlewareProvider: AIProvider, @unchecked Sendable {
     }
 
     func imageModel(_ modelID: String) throws -> any ImageModel {
-        throw AIError.unsupportedModel(provider: providerID, capability: .image, modelID: modelID)
+        image
     }
 
     func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {

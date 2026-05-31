@@ -77,6 +77,96 @@ public struct AILanguageModelMiddleware: Sendable {
     }
 }
 
+public struct AIImageModelTransformContext: Sendable {
+    public var request: ImageGenerationRequest
+    public var model: any ImageModel
+
+    public init(request: ImageGenerationRequest, model: any ImageModel) {
+        self.request = request
+        self.model = model
+    }
+}
+
+public struct AIImageModelGenerateContext: Sendable {
+    public var doGenerate: @Sendable () async throws -> ImageGenerationResult
+    public var request: ImageGenerationRequest
+    public var model: any ImageModel
+
+    public init(
+        doGenerate: @escaping @Sendable () async throws -> ImageGenerationResult,
+        request: ImageGenerationRequest,
+        model: any ImageModel
+    ) {
+        self.doGenerate = doGenerate
+        self.request = request
+        self.model = model
+    }
+}
+
+public struct AIImageModelMiddleware: Sendable {
+    public var overrideProviderID: (@Sendable (_ model: any ImageModel) -> String)?
+    public var overrideModelID: (@Sendable (_ model: any ImageModel) -> String)?
+    public var transformRequest: (@Sendable (AIImageModelTransformContext) async throws -> ImageGenerationRequest)?
+    public var wrapGenerate: (@Sendable (AIImageModelGenerateContext) async throws -> ImageGenerationResult)?
+
+    public init(
+        overrideProviderID: (@Sendable (_ model: any ImageModel) -> String)? = nil,
+        overrideModelID: (@Sendable (_ model: any ImageModel) -> String)? = nil,
+        transformRequest: (@Sendable (AIImageModelTransformContext) async throws -> ImageGenerationRequest)? = nil,
+        wrapGenerate: (@Sendable (AIImageModelGenerateContext) async throws -> ImageGenerationResult)? = nil
+    ) {
+        self.overrideProviderID = overrideProviderID
+        self.overrideModelID = overrideModelID
+        self.transformRequest = transformRequest
+        self.wrapGenerate = wrapGenerate
+    }
+}
+
+public struct AIEmbeddingModelTransformContext: Sendable {
+    public var request: EmbeddingRequest
+    public var model: any EmbeddingModel
+
+    public init(request: EmbeddingRequest, model: any EmbeddingModel) {
+        self.request = request
+        self.model = model
+    }
+}
+
+public struct AIEmbeddingModelEmbedContext: Sendable {
+    public var doEmbed: @Sendable () async throws -> EmbeddingResult
+    public var request: EmbeddingRequest
+    public var model: any EmbeddingModel
+
+    public init(
+        doEmbed: @escaping @Sendable () async throws -> EmbeddingResult,
+        request: EmbeddingRequest,
+        model: any EmbeddingModel
+    ) {
+        self.doEmbed = doEmbed
+        self.request = request
+        self.model = model
+    }
+}
+
+public struct AIEmbeddingModelMiddleware: Sendable {
+    public var overrideProviderID: (@Sendable (_ model: any EmbeddingModel) -> String)?
+    public var overrideModelID: (@Sendable (_ model: any EmbeddingModel) -> String)?
+    public var transformRequest: (@Sendable (AIEmbeddingModelTransformContext) async throws -> EmbeddingRequest)?
+    public var wrapEmbed: (@Sendable (AIEmbeddingModelEmbedContext) async throws -> EmbeddingResult)?
+
+    public init(
+        overrideProviderID: (@Sendable (_ model: any EmbeddingModel) -> String)? = nil,
+        overrideModelID: (@Sendable (_ model: any EmbeddingModel) -> String)? = nil,
+        transformRequest: (@Sendable (AIEmbeddingModelTransformContext) async throws -> EmbeddingRequest)? = nil,
+        wrapEmbed: (@Sendable (AIEmbeddingModelEmbedContext) async throws -> EmbeddingResult)? = nil
+    ) {
+        self.overrideProviderID = overrideProviderID
+        self.overrideModelID = overrideModelID
+        self.transformRequest = transformRequest
+        self.wrapEmbed = wrapEmbed
+    }
+}
+
 public func wrapLanguageModel(
     _ model: any LanguageModel,
     middleware: AILanguageModelMiddleware,
@@ -94,6 +184,56 @@ public func wrapLanguageModel(
 ) -> any LanguageModel {
     middleware.reversed().reduce(model) { wrappedModel, nextMiddleware in
         AIWrappedLanguageModel(
+            model: wrappedModel,
+            middleware: nextMiddleware,
+            modelID: modelID,
+            providerID: providerID
+        )
+    }
+}
+
+public func wrapImageModel(
+    _ model: any ImageModel,
+    middleware: AIImageModelMiddleware,
+    modelID: String? = nil,
+    providerID: String? = nil
+) -> any ImageModel {
+    wrapImageModel(model, middleware: [middleware], modelID: modelID, providerID: providerID)
+}
+
+public func wrapImageModel(
+    _ model: any ImageModel,
+    middleware: [AIImageModelMiddleware],
+    modelID: String? = nil,
+    providerID: String? = nil
+) -> any ImageModel {
+    middleware.reversed().reduce(model) { wrappedModel, nextMiddleware in
+        AIWrappedImageModel(
+            model: wrappedModel,
+            middleware: nextMiddleware,
+            modelID: modelID,
+            providerID: providerID
+        )
+    }
+}
+
+public func wrapEmbeddingModel(
+    _ model: any EmbeddingModel,
+    middleware: AIEmbeddingModelMiddleware,
+    modelID: String? = nil,
+    providerID: String? = nil
+) -> any EmbeddingModel {
+    wrapEmbeddingModel(model, middleware: [middleware], modelID: modelID, providerID: providerID)
+}
+
+public func wrapEmbeddingModel(
+    _ model: any EmbeddingModel,
+    middleware: [AIEmbeddingModelMiddleware],
+    modelID: String? = nil,
+    providerID: String? = nil
+) -> any EmbeddingModel {
+    middleware.reversed().reduce(model) { wrappedModel, nextMiddleware in
+        AIWrappedEmbeddingModel(
             model: wrappedModel,
             middleware: nextMiddleware,
             modelID: modelID,
@@ -162,16 +302,58 @@ public func defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings) 
 
 public func wrapProvider(
     _ provider: any AIProvider,
-    languageModelMiddleware: AILanguageModelMiddleware
+    languageModelMiddleware: AILanguageModelMiddleware,
+    imageModelMiddleware: [AIImageModelMiddleware] = [],
+    embeddingModelMiddleware: [AIEmbeddingModelMiddleware] = []
 ) -> any AIProvider {
-    wrapProvider(provider, languageModelMiddleware: [languageModelMiddleware])
+    wrapProvider(
+        provider,
+        languageModelMiddleware: [languageModelMiddleware],
+        imageModelMiddleware: imageModelMiddleware,
+        embeddingModelMiddleware: embeddingModelMiddleware
+    )
 }
 
 public func wrapProvider(
     _ provider: any AIProvider,
-    languageModelMiddleware: [AILanguageModelMiddleware]
+    languageModelMiddleware: [AILanguageModelMiddleware],
+    imageModelMiddleware: [AIImageModelMiddleware] = [],
+    embeddingModelMiddleware: [AIEmbeddingModelMiddleware] = []
 ) -> any AIProvider {
-    AIWrappedProvider(provider: provider, languageModelMiddleware: languageModelMiddleware)
+    AIWrappedProvider(
+        provider: provider,
+        languageModelMiddleware: languageModelMiddleware,
+        imageModelMiddleware: imageModelMiddleware,
+        embeddingModelMiddleware: embeddingModelMiddleware
+    )
+}
+
+public func wrapProvider(
+    _ provider: any AIProvider,
+    languageModelMiddleware: [AILanguageModelMiddleware] = [],
+    imageModelMiddleware: AIImageModelMiddleware,
+    embeddingModelMiddleware: [AIEmbeddingModelMiddleware] = []
+) -> any AIProvider {
+    wrapProvider(
+        provider,
+        languageModelMiddleware: languageModelMiddleware,
+        imageModelMiddleware: [imageModelMiddleware],
+        embeddingModelMiddleware: embeddingModelMiddleware
+    )
+}
+
+public func wrapProvider(
+    _ provider: any AIProvider,
+    languageModelMiddleware: [AILanguageModelMiddleware] = [],
+    imageModelMiddleware: [AIImageModelMiddleware] = [],
+    embeddingModelMiddleware: AIEmbeddingModelMiddleware
+) -> any AIProvider {
+    wrapProvider(
+        provider,
+        languageModelMiddleware: languageModelMiddleware,
+        imageModelMiddleware: imageModelMiddleware,
+        embeddingModelMiddleware: [embeddingModelMiddleware]
+    )
 }
 
 private final class AIWrappedLanguageModel: LanguageModel, @unchecked Sendable {
@@ -254,16 +436,107 @@ private final class AIWrappedLanguageModel: LanguageModel, @unchecked Sendable {
     }
 }
 
+private final class AIWrappedImageModel: ImageModel, @unchecked Sendable {
+    private let model: any ImageModel
+    private let middleware: AIImageModelMiddleware
+    let providerID: String
+    let modelID: String
+
+    init(
+        model: any ImageModel,
+        middleware: AIImageModelMiddleware,
+        modelID: String?,
+        providerID: String?
+    ) {
+        self.model = model
+        self.middleware = middleware
+        self.providerID = providerID ?? middleware.overrideProviderID?(model) ?? model.providerID
+        self.modelID = modelID ?? middleware.overrideModelID?(model) ?? model.modelID
+    }
+
+    func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+        let transformed = try await transform(request)
+        let doGenerate: @Sendable () async throws -> ImageGenerationResult = { [model] in
+            try await model.generateImage(transformed)
+        }
+        guard let wrapGenerate = middleware.wrapGenerate else {
+            return try await doGenerate()
+        }
+        return try await wrapGenerate(AIImageModelGenerateContext(
+            doGenerate: doGenerate,
+            request: transformed,
+            model: model
+        ))
+    }
+
+    private func transform(_ request: ImageGenerationRequest) async throws -> ImageGenerationRequest {
+        guard let transformRequest = middleware.transformRequest else {
+            return request
+        }
+        return try await transformRequest(AIImageModelTransformContext(request: request, model: model))
+    }
+}
+
+private final class AIWrappedEmbeddingModel: EmbeddingModel, @unchecked Sendable {
+    private let model: any EmbeddingModel
+    private let middleware: AIEmbeddingModelMiddleware
+    let providerID: String
+    let modelID: String
+
+    init(
+        model: any EmbeddingModel,
+        middleware: AIEmbeddingModelMiddleware,
+        modelID: String?,
+        providerID: String?
+    ) {
+        self.model = model
+        self.middleware = middleware
+        self.providerID = providerID ?? middleware.overrideProviderID?(model) ?? model.providerID
+        self.modelID = modelID ?? middleware.overrideModelID?(model) ?? model.modelID
+    }
+
+    func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
+        let transformed = try await transform(request)
+        let doEmbed: @Sendable () async throws -> EmbeddingResult = { [model] in
+            try await model.embed(transformed)
+        }
+        guard let wrapEmbed = middleware.wrapEmbed else {
+            return try await doEmbed()
+        }
+        return try await wrapEmbed(AIEmbeddingModelEmbedContext(
+            doEmbed: doEmbed,
+            request: transformed,
+            model: model
+        ))
+    }
+
+    private func transform(_ request: EmbeddingRequest) async throws -> EmbeddingRequest {
+        guard let transformRequest = middleware.transformRequest else {
+            return request
+        }
+        return try await transformRequest(AIEmbeddingModelTransformContext(request: request, model: model))
+    }
+}
+
 private final class AIWrappedProvider: AIFileProvider, AISkillsProvider, @unchecked Sendable {
     private let provider: any AIProvider
     private let languageModelMiddleware: [AILanguageModelMiddleware]
+    private let imageModelMiddleware: [AIImageModelMiddleware]
+    private let embeddingModelMiddleware: [AIEmbeddingModelMiddleware]
 
     let providerID: String
     let supportedCapabilities: Set<ModelCapability>
 
-    init(provider: any AIProvider, languageModelMiddleware: [AILanguageModelMiddleware]) {
+    init(
+        provider: any AIProvider,
+        languageModelMiddleware: [AILanguageModelMiddleware],
+        imageModelMiddleware: [AIImageModelMiddleware],
+        embeddingModelMiddleware: [AIEmbeddingModelMiddleware]
+    ) {
         self.provider = provider
         self.languageModelMiddleware = languageModelMiddleware
+        self.imageModelMiddleware = imageModelMiddleware
+        self.embeddingModelMiddleware = embeddingModelMiddleware
         self.providerID = provider.providerID
         self.supportedCapabilities = provider.supportedCapabilities
     }
@@ -273,11 +546,19 @@ private final class AIWrappedProvider: AIFileProvider, AISkillsProvider, @unchec
     }
 
     func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
-        try provider.embeddingModel(modelID)
+        let model = try provider.embeddingModel(modelID)
+        guard !embeddingModelMiddleware.isEmpty else {
+            return model
+        }
+        return wrapEmbeddingModel(model, middleware: embeddingModelMiddleware)
     }
 
     func imageModel(_ modelID: String) throws -> any ImageModel {
-        try provider.imageModel(modelID)
+        let model = try provider.imageModel(modelID)
+        guard !imageModelMiddleware.isEmpty else {
+            return model
+        }
+        return wrapImageModel(model, middleware: imageModelMiddleware)
     }
 
     func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
