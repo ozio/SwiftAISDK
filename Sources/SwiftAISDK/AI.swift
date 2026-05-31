@@ -291,6 +291,254 @@ public enum AI {
         )
     }
 
+    public static func generateObjectArray<Element: Decodable & Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        as type: Element.Type = Element.self,
+        elementSchema: JSONValue,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<[Element]> {
+        let schema = arrayOutputSchema(elementSchema: elementSchema)
+        var objectRequest = request
+        let responseFormat = AIResponseFormat.json(schema: schema, name: schemaName, description: schemaDescription)
+        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
+        if objectRequest.extraBody["responseFormat"] == nil {
+            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
+        }
+
+        let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
+        let parsed = try await parseObjectArray(
+            Element.self,
+            from: textResult.text,
+            elementSchema: elementSchema,
+            repairText: repairText,
+            providerID: model.providerID
+        )
+
+        return ObjectGenerationResult(
+            object: parsed.object,
+            text: parsed.text,
+            rawObject: parsed.rawObject,
+            reasoning: textResult.reasoning,
+            finishReason: textResult.finishReason,
+            usage: textResult.usage,
+            warnings: textResult.warnings,
+            providerMetadata: textResult.providerMetadata,
+            responseMetadata: textResult.responseMetadata,
+            textResult: textResult
+        )
+    }
+
+    public static func generateObjectArray<Element: Decodable & Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        as type: Element.Type = Element.self,
+        elementSchema: JSONValue,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<[Element]> {
+        try await generateObjectArray(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(schema: arrayOutputSchema(elementSchema: elementSchema), name: schemaName, description: schemaDescription),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            as: Element.self,
+            elementSchema: elementSchema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            retryPolicy: retryPolicy,
+            repairText: repairText
+        )
+    }
+
+    public static func generateEnum(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        values: [String],
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<String> {
+        guard !values.isEmpty else {
+            throw AIError.invalidArgument(argument: "values", message: "Enum values are required.")
+        }
+        let schema = enumOutputSchema(values: values)
+        var objectRequest = request
+        let responseFormat = AIResponseFormat.json(schema: schema)
+        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
+        if objectRequest.extraBody["responseFormat"] == nil {
+            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: nil, description: nil)
+        }
+
+        let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
+        let parsed = try await parseEnum(
+            from: textResult.text,
+            values: values,
+            repairText: repairText,
+            providerID: model.providerID
+        )
+
+        return ObjectGenerationResult(
+            object: parsed.object,
+            text: parsed.text,
+            rawObject: parsed.rawObject,
+            reasoning: textResult.reasoning,
+            finishReason: textResult.finishReason,
+            usage: textResult.usage,
+            warnings: textResult.warnings,
+            providerMetadata: textResult.providerMetadata,
+            responseMetadata: textResult.responseMetadata,
+            textResult: textResult
+        )
+    }
+
+    public static func generateEnum(
+        model: any LanguageModel,
+        prompt: String,
+        values: [String],
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<String> {
+        try await generateEnum(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(schema: enumOutputSchema(values: values)),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            values: values,
+            retryPolicy: retryPolicy,
+            repairText: repairText
+        )
+    }
+
+    public static func generateJSON(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<JSONValue> {
+        var objectRequest = request
+        let responseFormat = AIResponseFormat.json()
+        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
+        if objectRequest.extraBody["responseFormat"] == nil {
+            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: nil, name: nil, description: nil)
+        }
+
+        let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
+        let parsed = try await parseJSONValueObject(
+            from: textResult.text,
+            repairText: repairText,
+            providerID: model.providerID
+        )
+
+        return ObjectGenerationResult(
+            object: parsed.object,
+            text: parsed.text,
+            rawObject: parsed.rawObject,
+            reasoning: textResult.reasoning,
+            finishReason: textResult.finishReason,
+            usage: textResult.usage,
+            warnings: textResult.warnings,
+            providerMetadata: textResult.providerMetadata,
+            responseMetadata: textResult.responseMetadata,
+            textResult: textResult
+        )
+    }
+
+    public static func generateJSON(
+        model: any LanguageModel,
+        prompt: String,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        retryPolicy: AIRetryPolicy = .default,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> ObjectGenerationResult<JSONValue> {
+        try await generateJSON(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            retryPolicy: retryPolicy,
+            repairText: repairText
+        )
+    }
+
     public static func streamText(model: any LanguageModel, request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         model.stream(request)
     }
@@ -1112,6 +1360,43 @@ private func responseFormatJSON(schema: JSONValue?, name: String?, description: 
     ])
 }
 
+private func arrayOutputSchema(elementSchema: JSONValue) -> JSONValue {
+    let itemSchema: JSONValue
+    if var object = elementSchema.objectValue {
+        object.removeValue(forKey: "$schema")
+        itemSchema = .object(object)
+    } else {
+        itemSchema = elementSchema
+    }
+    return .object([
+        "$schema": .string("http://json-schema.org/draft-07/schema#"),
+        "type": .string("object"),
+        "properties": .object([
+            "elements": .object([
+                "type": .string("array"),
+                "items": itemSchema
+            ])
+        ]),
+        "required": .array([.string("elements")]),
+        "additionalProperties": .bool(false)
+    ])
+}
+
+private func enumOutputSchema(values: [String]) -> JSONValue {
+    .object([
+        "$schema": .string("http://json-schema.org/draft-07/schema#"),
+        "type": .string("object"),
+        "properties": .object([
+            "result": .object([
+                "type": .string("string"),
+                "enum": .array(values.map(JSONValue.string))
+            ])
+        ]),
+        "required": .array([.string("result")]),
+        "additionalProperties": .bool(false)
+    ])
+}
+
 private func parseObject<Object: Decodable>(
     _ type: Object.Type,
     from text: String,
@@ -1137,6 +1422,80 @@ private func parseObject<Object: Decodable>(
     }
 }
 
+private func parseObjectArray<Element: Decodable>(
+    _ type: Element.Type,
+    from text: String,
+    elementSchema: JSONValue,
+    repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?,
+    providerID: String
+) async throws -> (object: [Element], rawObject: JSONValue, text: String) {
+    let schema = arrayOutputSchema(elementSchema: elementSchema)
+    do {
+        return try decodeAndValidateObjectArray(Element.self, from: text, schema: schema)
+    } catch {
+        let message = objectErrorDescription(error)
+        guard let repairText else {
+            throw AIError.invalidResponse(provider: providerID, message: "No object array generated: \(message)")
+        }
+        guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
+            throw AIError.invalidResponse(provider: providerID, message: "No object array generated: \(message)")
+        }
+        do {
+            return try decodeAndValidateObjectArray(Element.self, from: repaired, schema: schema)
+        } catch {
+            throw AIError.invalidResponse(provider: providerID, message: "No object array generated after repair: \(objectErrorDescription(error))")
+        }
+    }
+}
+
+private func parseEnum(
+    from text: String,
+    values: [String],
+    repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?,
+    providerID: String
+) async throws -> (object: String, rawObject: JSONValue, text: String) {
+    let schema = enumOutputSchema(values: values)
+    do {
+        return try decodeAndValidateEnum(from: text, schema: schema)
+    } catch {
+        let message = objectErrorDescription(error)
+        guard let repairText else {
+            throw AIError.invalidResponse(provider: providerID, message: "No enum generated: \(message)")
+        }
+        guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
+            throw AIError.invalidResponse(provider: providerID, message: "No enum generated: \(message)")
+        }
+        do {
+            return try decodeAndValidateEnum(from: repaired, schema: schema)
+        } catch {
+            throw AIError.invalidResponse(provider: providerID, message: "No enum generated after repair: \(objectErrorDescription(error))")
+        }
+    }
+}
+
+private func parseJSONValueObject(
+    from text: String,
+    repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?,
+    providerID: String
+) async throws -> (object: JSONValue, rawObject: JSONValue, text: String) {
+    do {
+        return try decodeJSONValueObject(from: text)
+    } catch {
+        let message = objectErrorDescription(error)
+        guard let repairText else {
+            throw AIError.invalidResponse(provider: providerID, message: "No JSON generated: \(message)")
+        }
+        guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
+            throw AIError.invalidResponse(provider: providerID, message: "No JSON generated: \(message)")
+        }
+        do {
+            return try decodeJSONValueObject(from: repaired)
+        } catch {
+            throw AIError.invalidResponse(provider: providerID, message: "No JSON generated after repair: \(objectErrorDescription(error))")
+        }
+    }
+}
+
 private func objectErrorDescription(_ error: Error) -> String {
     String(describing: error)
 }
@@ -1155,6 +1514,48 @@ private func decodeAndValidateObject<Object: Decodable>(
         }
     }
     return parsed
+}
+
+private func decodeAndValidateObjectArray<Element: Decodable>(
+    _ type: Element.Type,
+    from text: String,
+    schema: JSONValue
+) throws -> (object: [Element], rawObject: JSONValue, text: String) {
+    let parsed = try decodeObject(JSONValue.self, from: text)
+    do {
+        try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
+    } catch let issue as AIJSONSchemaValidationIssue {
+        throw AIError.invalidArgument(argument: "schema", message: "Generated object array does not match schema: \(issue.description)")
+    }
+    guard let elements = parsed.rawObject["elements"]?.arrayValue else {
+        throw AIError.invalidArgument(argument: "text", message: "Expected JSON object with an elements array.")
+    }
+    let rawArray = JSONValue.array(elements)
+    let data = try encodeJSONBody(rawArray)
+    let arrayText = String(decoding: data, as: UTF8.self)
+    return (try JSONDecoder().decode([Element].self, from: data), rawArray, arrayText)
+}
+
+private func decodeAndValidateEnum(
+    from text: String,
+    schema: JSONValue
+) throws -> (object: String, rawObject: JSONValue, text: String) {
+    let parsed = try decodeObject(JSONValue.self, from: text)
+    do {
+        try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
+    } catch let issue as AIJSONSchemaValidationIssue {
+        throw AIError.invalidArgument(argument: "schema", message: "Generated enum does not match schema: \(issue.description)")
+    }
+    guard let result = parsed.rawObject["result"]?.stringValue else {
+        throw AIError.invalidArgument(argument: "text", message: "Expected JSON object with a result string.")
+    }
+    return (result, .string(result), result)
+}
+
+private func decodeJSONValueObject(from text: String) throws -> (object: JSONValue, rawObject: JSONValue, text: String) {
+    let jsonText = try extractJSONObjectText(from: text)
+    let rawObject = try decodeJSONBody(Data(jsonText.utf8))
+    return (rawObject, rawObject, jsonText)
 }
 
 private func decodeObject<Object: Decodable>(_ type: Object.Type, from text: String) throws -> (object: Object, rawObject: JSONValue, text: String) {

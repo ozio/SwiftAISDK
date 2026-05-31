@@ -105,6 +105,12 @@ print(result.object.title)
 When a schema is supplied, the final decoded JSON is also checked against that
 schema; `repairText` can repair parsing or schema-validation failures.
 
+The facade also mirrors upstream's non-streaming object output strategies:
+`generateObjectArray` wraps an element schema as `{ "elements": [...] }` for
+the model and returns `[Element]`, `generateEnum` wraps allowed strings as
+`{ "result": "..." }` and returns `String`, and `generateJSON` requests JSON
+without a schema and returns raw `JSONValue`.
+
 `AI.streamObject` is the streaming counterpart for `Decodable` output. It emits
 text deltas and best-effort `JSONValue` partial objects while the model streams
 JSON, then yields the final decoded object:
