@@ -33,12 +33,14 @@ public extension AI {
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: LanguageModelRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
         try await generateText(
             model: resolveLanguageModel(modelID, provider: provider),
             request: request,
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
         )
     }
 
@@ -51,7 +53,8 @@ public extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
         try await generateText(
             model: resolveLanguageModel(modelID, provider: provider),
@@ -61,7 +64,8 @@ public extension AI {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
         )
     }
 
@@ -90,7 +94,8 @@ public extension AI {
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
         try await generateText(
             model: resolveLanguageModel(modelID, provider: provider),
@@ -116,7 +121,8 @@ public extension AI {
             includeRawChunks: includeRawChunks,
             providerOptions: providerOptions,
             extraBody: extraBody,
-            headers: headers
+            headers: headers,
+            telemetry: telemetry
         )
     }
 
@@ -336,7 +342,8 @@ public extension AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> EmbeddingResult {
         try await embed(
             model: resolveEmbeddingModel(modelID, provider: provider),
@@ -345,7 +352,8 @@ public extension AI {
             providerOptions: providerOptions,
             extraBody: extraBody,
             headers: headers,
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
         )
     }
 
@@ -353,9 +361,10 @@ public extension AI {
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: EmbeddingRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> EmbeddingResult {
-        try await embed(model: resolveEmbeddingModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy)
+        try await embed(model: resolveEmbeddingModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
     static func embedMany(
@@ -367,7 +376,8 @@ public extension AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> EmbeddingResult {
         try await embedMany(
             model: resolveEmbeddingModel(modelID, provider: provider),
@@ -377,7 +387,8 @@ public extension AI {
             providerOptions: providerOptions,
             extraBody: extraBody,
             headers: headers,
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
         )
     }
 
@@ -385,9 +396,10 @@ public extension AI {
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: ImageGenerationRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> ImageGenerationResult {
-        try await generateImage(model: resolveImageModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy)
+        try await generateImage(model: resolveImageModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
     static func generateImage(
@@ -403,7 +415,8 @@ public extension AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> ImageGenerationResult {
         try await generateImage(
             model: resolveImageModel(modelID, provider: provider),
@@ -417,7 +430,8 @@ public extension AI {
             providerOptions: providerOptions,
             extraBody: extraBody,
             headers: headers,
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
         )
     }
 
@@ -425,36 +439,40 @@ public extension AI {
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: AudioTranscriptionRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> TranscriptionResult {
-        try await transcribe(model: resolveTranscriptionModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy)
+        try await transcribe(model: resolveTranscriptionModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
     static func generateSpeech(
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: SpeechRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> SpeechResult {
-        try await generateSpeech(model: resolveSpeechModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy)
+        try await generateSpeech(model: resolveSpeechModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
     static func generateVideo(
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: VideoGenerationRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> VideoGenerationResult {
-        try await generateVideo(model: resolveVideoModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy)
+        try await generateVideo(model: resolveVideoModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
     static func rerank(
         model modelID: String,
         provider: (any AIProvider)? = nil,
         request: RerankingRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> RerankingResult {
-        try await rerank(model: resolveRerankingModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy)
+        try await rerank(model: resolveRerankingModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
 }
 

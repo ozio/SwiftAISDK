@@ -4,9 +4,22 @@ public enum AI {
     public static func generateText(
         model: any LanguageModel,
         request: LanguageModelRequest,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
-        try await withRetry(policy: retryPolicy) {
+        try await withTelemetry(
+            operationID: "ai.generateText",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: languageRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: textGenerationTelemetryOutput,
+            usage: { $0.usage },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await model.generate(request)
         }
     }
@@ -19,10 +32,11 @@ public enum AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
         guard !executableTools.isEmpty || prepareStep != nil else {
-            return try await generateText(model: model, request: request, retryPolicy: retryPolicy)
+            return try await generateText(model: model, request: request, retryPolicy: retryPolicy, telemetry: telemetry)
         }
         guard maxSteps > 0 else {
             throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
@@ -54,7 +68,7 @@ public enum AI {
             var stepRequest = prepared?.request ?? currentRequest
             stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
 
-            var result = try await generateText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy)
+            var result = try await generateText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy, telemetry: telemetry)
             result.toolCalls = annotateToolCalls(result.toolCalls, toolsByName: toolsByName)
             let executableCalls = result.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
 
@@ -131,7 +145,7 @@ public enum AI {
         }
 
         guard var result = lastResult else {
-            return try await generateText(model: model, request: currentRequest, retryPolicy: retryPolicy)
+            return try await generateText(model: model, request: currentRequest, retryPolicy: retryPolicy, telemetry: telemetry)
         }
         result.toolResults = allToolResults
         result.toolApprovalRequests = allApprovalRequests
@@ -164,7 +178,8 @@ public enum AI {
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
         let request = LanguageModelRequest(
             messages: [.user(prompt)],
@@ -187,7 +202,7 @@ public enum AI {
         )
 
         if executableTools.isEmpty && prepareStep == nil {
-            return try await generateText(model: model, request: request, retryPolicy: retryPolicy)
+            return try await generateText(model: model, request: request, retryPolicy: retryPolicy, telemetry: telemetry)
         }
 
         return try await generateText(
@@ -198,7 +213,8 @@ public enum AI {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
         )
     }
 
@@ -909,12 +925,24 @@ public enum AI {
         )
     }
 
-    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default) async throws -> EmbeddingResult {
-        try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
+    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
+        try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
-    public static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default) async throws -> EmbeddingResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
+        try await withTelemetry(
+            operationID: request.values.count == 1 ? "ai.embed" : "ai.embedMany",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: embeddingRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: embeddingTelemetryOutput,
+            usage: { $0.usage },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await model.embed(request)
         }
     }
@@ -927,83 +955,185 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
-        retryPolicy: AIRetryPolicy = .default
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil
     ) async throws -> EmbeddingResult {
         guard let chunkSize, chunkSize > 0, values.count > chunkSize else {
-            return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
+            return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy, telemetry: telemetry)
         }
 
-        var embeddings: [[Double]] = []
-        var usage: TokenUsage?
-        var rawValues: [JSONValue] = []
-        var warnings: [AIWarning] = []
-        var providerMetadata: [String: JSONValue] = [:]
-        var responseMetadata = AIResponseMetadata()
+        let request = EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers)
+        return try await withTelemetry(
+            operationID: "ai.embedMany",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: embeddingRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: embeddingTelemetryOutput,
+            usage: { $0.usage },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
+            var embeddings: [[Double]] = []
+            var usage: TokenUsage?
+            var rawValues: [JSONValue] = []
+            var warnings: [AIWarning] = []
+            var providerMetadata: [String: JSONValue] = [:]
+            var responseMetadata = AIResponseMetadata()
 
-        for chunk in values.chunked(size: chunkSize) {
-            let result = try await embed(model: model, request: EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
-            embeddings.append(contentsOf: result.embeddings)
-            usage = sumTokenUsage(usage, result.usage)
-            rawValues.append(result.rawValue)
-            warnings.append(contentsOf: result.warnings)
-            providerMetadata.merge(result.providerMetadata) { _, new in new }
-            if responseMetadata == AIResponseMetadata() {
-                responseMetadata = result.responseMetadata
+            for chunk in values.chunked(size: chunkSize) {
+                let result = try await withRetry(policy: retryPolicy) {
+                    try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers))
+                }
+                embeddings.append(contentsOf: result.embeddings)
+                usage = sumTokenUsage(usage, result.usage)
+                rawValues.append(result.rawValue)
+                warnings.append(contentsOf: result.warnings)
+                providerMetadata.merge(result.providerMetadata) { _, new in new }
+                if responseMetadata == AIResponseMetadata() {
+                    responseMetadata = result.responseMetadata
+                }
             }
-        }
 
-        return EmbeddingResult(
-            embeddings: embeddings,
-            usage: usage,
-            rawValue: .array(rawValues),
-            warnings: warnings,
-            providerMetadata: providerMetadata,
-            responseMetadata: responseMetadata
-        )
+            return EmbeddingResult(
+                embeddings: embeddings,
+                usage: usage,
+                rawValue: .array(rawValues),
+                warnings: warnings,
+                providerMetadata: providerMetadata,
+                responseMetadata: responseMetadata
+            )
+        }
     }
 
-    public static func generateImage(model: any ImageModel, request: ImageGenerationRequest, retryPolicy: AIRetryPolicy = .default) async throws -> ImageGenerationResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func generateImage(model: any ImageModel, request: ImageGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> ImageGenerationResult {
+        try await withTelemetry(
+            operationID: "ai.generateImage",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: imageRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: imageTelemetryOutput,
+            usage: { $0.usage },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await model.generateImage(request)
         }
     }
 
-    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default) async throws -> ImageGenerationResult {
-        try await generateImage(model: model, request: ImageGenerationRequest(prompt: prompt, size: size, aspectRatio: aspectRatio, seed: seed, count: count, files: files, mask: mask, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
+    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> ImageGenerationResult {
+        try await generateImage(model: model, request: ImageGenerationRequest(prompt: prompt, size: size, aspectRatio: aspectRatio, seed: seed, count: count, files: files, mask: mask, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
-    public static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest, retryPolicy: AIRetryPolicy = .default) async throws -> TranscriptionResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> TranscriptionResult {
+        try await withTelemetry(
+            operationID: "ai.transcribe",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: transcriptionRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: transcriptionTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await model.transcribe(request)
         }
     }
 
-    public static func generateSpeech(model: any SpeechModel, request: SpeechRequest, retryPolicy: AIRetryPolicy = .default) async throws -> SpeechResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func generateSpeech(model: any SpeechModel, request: SpeechRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> SpeechResult {
+        try await withTelemetry(
+            operationID: "ai.generateSpeech",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: speechRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: speechTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await model.speak(request)
         }
     }
 
-    public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default) async throws -> VideoGenerationResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> VideoGenerationResult {
+        try await withTelemetry(
+            operationID: "ai.generateVideo",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: videoRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: videoTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await model.generateVideo(request)
         }
     }
 
-    public static func rerank(model: any RerankingModel, request: RerankingRequest, retryPolicy: AIRetryPolicy = .default) async throws -> RerankingResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func rerank(model: any RerankingModel, request: RerankingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> RerankingResult {
+        try await withTelemetry(
+            operationID: "ai.rerank",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: rerankingRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: rerankingTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await model.rerank(request)
         }
     }
 
-    public static func uploadFile(client: any AIFileClient, request: FileUploadRequest, retryPolicy: AIRetryPolicy = .default) async throws -> FileUploadResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func uploadFile(client: any AIFileClient, request: FileUploadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> FileUploadResult {
+        try await withTelemetry(
+            operationID: "ai.uploadFile",
+            providerID: client.providerID,
+            modelID: nil,
+            input: fileUploadRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: fileUploadTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { _ in [] },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
             try await client.uploadFile(request)
         }
     }
 
-    public static func uploadSkill(client: any AISkillsClient, request: SkillUploadRequest, retryPolicy: AIRetryPolicy = .default) async throws -> SkillUploadResult {
-        try await withRetry(policy: retryPolicy) {
+    public static func uploadSkill(client: any AISkillsClient, request: SkillUploadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> SkillUploadResult {
+        try await withTelemetry(
+            operationID: "ai.uploadSkill",
+            providerID: client.providerID,
+            modelID: nil,
+            input: skillUploadRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            output: skillUploadTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { _ in AIResponseMetadata() }
+        ) {
             try await client.uploadSkill(request)
         }
     }
@@ -1121,8 +1251,166 @@ private func isStopConditionMet(_ stopConditions: [AIStopCondition], steps: [AIT
     return false
 }
 
+private struct AIRetryAttemptTelemetry: Sendable {
+    var attempt: Int
+    var maxRetries: Int
+    var errorDescription: String
+    var delayNanoseconds: UInt64
+}
+
+private struct AITelemetryDispatcher: Sendable {
+    var options: AITelemetryOptions?
+    var integrations: [any AITelemetryIntegration]
+
+    init(options: AITelemetryOptions?) {
+        self.options = options
+        if options?.isEnabled == false {
+            integrations = []
+        } else {
+            integrations = options?.integrations ?? AITelemetry.registeredIntegrations()
+        }
+    }
+
+    var isEnabled: Bool {
+        !integrations.isEmpty
+    }
+
+    func record(_ event: AITelemetryEvent) async {
+        guard isEnabled else { return }
+        for integration in integrations {
+            await integration.record(event)
+        }
+    }
+}
+
+private func withTelemetry<Output: Sendable>(
+    operationID: String,
+    providerID: String,
+    modelID: String?,
+    input: JSONValue?,
+    telemetry: AITelemetryOptions?,
+    retryPolicy: AIRetryPolicy,
+    output: @escaping @Sendable (Output) -> JSONValue?,
+    usage: @escaping @Sendable (Output) -> TokenUsage?,
+    warnings: @escaping @Sendable (Output) -> [AIWarning],
+    providerMetadata: @escaping @Sendable (Output) -> [String: JSONValue],
+    responseMetadata: @escaping @Sendable (Output) -> AIResponseMetadata,
+    operation: @escaping @Sendable () async throws -> Output
+) async throws -> Output {
+    let dispatcher = AITelemetryDispatcher(options: telemetry)
+    guard dispatcher.isEnabled else {
+        return try await withRetry(policy: retryPolicy, operation: operation)
+    }
+
+    let callID = UUID().uuidString
+    let started = DispatchTime.now().uptimeNanoseconds
+    await dispatcher.record(telemetryEvent(
+        kind: .start,
+        callID: callID,
+        operationID: operationID,
+        providerID: providerID,
+        modelID: modelID,
+        options: telemetry,
+        maxRetries: retryPolicy.maxRetries,
+        input: input
+    ))
+
+    do {
+        let result = try await withRetry(policy: retryPolicy, onRetry: { retry in
+            await dispatcher.record(telemetryEvent(
+                kind: .retry,
+                callID: callID,
+                operationID: operationID,
+                providerID: providerID,
+                modelID: modelID,
+                options: telemetry,
+                attempt: retry.attempt,
+                maxRetries: retry.maxRetries,
+                delayNanoseconds: retry.delayNanoseconds,
+                durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                errorDescription: retry.errorDescription
+            ))
+        }, operation: operation)
+        await dispatcher.record(telemetryEvent(
+            kind: .end,
+            callID: callID,
+            operationID: operationID,
+            providerID: providerID,
+            modelID: modelID,
+            options: telemetry,
+            maxRetries: retryPolicy.maxRetries,
+            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+            output: output(result),
+            usage: usage(result),
+            warnings: warnings(result),
+            providerMetadata: providerMetadata(result),
+            responseMetadata: responseMetadata(result)
+        ))
+        return result
+    } catch {
+        await dispatcher.record(telemetryEvent(
+            kind: .error,
+            callID: callID,
+            operationID: operationID,
+            providerID: providerID,
+            modelID: modelID,
+            options: telemetry,
+            maxRetries: retryPolicy.maxRetries,
+            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+            errorDescription: String(describing: error)
+        ))
+        throw error
+    }
+}
+
+private func telemetryEvent(
+    kind: AITelemetryEventKind,
+    callID: String,
+    operationID: String,
+    providerID: String,
+    modelID: String?,
+    options: AITelemetryOptions?,
+    attempt: Int? = nil,
+    maxRetries: Int? = nil,
+    delayNanoseconds: UInt64? = nil,
+    durationNanoseconds: UInt64? = nil,
+    input: JSONValue? = nil,
+    output: JSONValue? = nil,
+    usage: TokenUsage? = nil,
+    warnings: [AIWarning] = [],
+    providerMetadata: [String: JSONValue] = [:],
+    responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+    errorDescription: String? = nil
+) -> AITelemetryEvent {
+    let recordInputs = options?.recordInputs ?? true
+    let recordOutputs = options?.recordOutputs ?? true
+    return AITelemetryEvent(
+        kind: kind,
+        callID: callID,
+        operationID: operationID,
+        providerID: providerID,
+        modelID: modelID,
+        functionID: options?.functionID,
+        attempt: attempt,
+        maxRetries: maxRetries,
+        delayNanoseconds: delayNanoseconds,
+        durationNanoseconds: durationNanoseconds,
+        input: recordInputs ? input : nil,
+        output: recordOutputs ? output : nil,
+        usage: usage,
+        warnings: warnings,
+        providerMetadata: providerMetadata,
+        responseMetadata: responseMetadata,
+        errorDescription: errorDescription,
+        metadata: options?.metadata ?? [:],
+        recordInputs: options?.recordInputs,
+        recordOutputs: options?.recordOutputs
+    )
+}
+
 private func withRetry<Output: Sendable>(
     policy: AIRetryPolicy,
+    onRetry: @escaping @Sendable (AIRetryAttemptTelemetry) async -> Void = { _ in },
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
     guard policy.maxRetries >= 0 else {
@@ -1158,6 +1446,12 @@ private func withRetry<Output: Sendable>(
                 throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
             }
             let sleepDelay = retryAfterDelayNanoseconds(from: error) ?? delay
+            await onRetry(AIRetryAttemptTelemetry(
+                attempt: attempts,
+                maxRetries: policy.maxRetries,
+                errorDescription: String(describing: error),
+                delayNanoseconds: sleepDelay
+            ))
             if sleepDelay > 0 {
                 try await Task.sleep(nanoseconds: sleepDelay)
             }
@@ -1335,6 +1629,253 @@ private func nextDelay(current: UInt64, policy: AIRetryPolicy) -> UInt64 {
         return policy.maxDelayNanoseconds
     }
     return Swift.min(UInt64(next), policy.maxDelayNanoseconds)
+}
+
+private func languageRequestTelemetryInput(_ request: LanguageModelRequest) -> JSONValue {
+    .object([
+        "messages": .array(request.messages.map(messageTelemetryJSON)),
+        "temperature": request.temperature.map(JSONValue.number),
+        "topP": request.topP.map(JSONValue.number),
+        "topK": request.topK.map { .number(Double($0)) },
+        "presencePenalty": request.presencePenalty.map(JSONValue.number),
+        "frequencyPenalty": request.frequencyPenalty.map(JSONValue.number),
+        "seed": request.seed.map { .number(Double($0)) },
+        "maxOutputTokens": request.maxOutputTokens.map { .number(Double($0)) },
+        "stopSequences": .array(request.stopSequences.map(JSONValue.string)),
+        "reasoning": request.reasoning.map(JSONValue.string),
+        "tools": request.tools.isEmpty ? nil : .object(request.tools),
+        "toolChoice": request.toolChoice,
+        "includeRawChunks": .bool(request.includeRawChunks),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func messageTelemetryJSON(_ message: AIMessage) -> JSONValue {
+    .object([
+        "role": .string(message.role.rawValue),
+        "content": .array(message.content.map(contentPartTelemetryJSON))
+    ])
+}
+
+private func contentPartTelemetryJSON(_ part: AIContentPart) -> JSONValue {
+    switch part {
+    case let .text(text):
+        return .object(["type": .string("text"), "text": .string(text)])
+    case let .imageURL(url):
+        return .object(["type": .string("image-url"), "url": .string(url)])
+    case let .data(mimeType, data):
+        return .object(["type": .string("data"), "mimeType": .string(mimeType), "byteLength": .number(Double(data.count))])
+    case let .file(mimeType, data, filename):
+        return .object(["type": .string("file"), "mimeType": .string(mimeType), "byteLength": .number(Double(data.count)), "filename": filename.map(JSONValue.string)])
+    case let .toolCall(call):
+        return .object(["type": .string("tool-call"), "id": .string(call.id), "name": .string(call.name), "arguments": .string(call.arguments)])
+    case let .toolResult(result):
+        return .object(["type": .string("tool-result"), "toolCallID": .string(result.toolCallID), "toolName": .string(result.toolName), "result": result.result])
+    case let .toolApprovalRequest(request):
+        return .object(["type": .string("tool-approval-request"), "id": .string(request.id), "toolName": .string(request.toolName), "arguments": .string(request.arguments)])
+    case let .toolApprovalResponse(response):
+        return .object(["type": .string("tool-approval-response"), "id": .string(response.id), "approved": .bool(response.approved)])
+    }
+}
+
+private func embeddingRequestTelemetryInput(_ request: EmbeddingRequest) -> JSONValue {
+    .object([
+        "values": .array(request.values.map(JSONValue.string)),
+        "dimensions": request.dimensions.map { .number(Double($0)) },
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func imageRequestTelemetryInput(_ request: ImageGenerationRequest) -> JSONValue {
+    .object([
+        "prompt": .string(request.prompt),
+        "size": request.size.map(JSONValue.string),
+        "aspectRatio": request.aspectRatio.map(JSONValue.string),
+        "seed": request.seed.map { .number(Double($0)) },
+        "count": request.count.map { .number(Double($0)) },
+        "files": .array(request.files.map(imageFileTelemetryJSON)),
+        "mask": request.mask.map(imageFileTelemetryJSON),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func imageFileTelemetryJSON(_ file: ImageInputFile) -> JSONValue {
+    .object([
+        "type": file.url == nil ? .string("data") : .string("url"),
+        "url": file.url.map(JSONValue.string),
+        "mediaType": file.mediaType.map(JSONValue.string),
+        "fileName": file.fileName.map(JSONValue.string),
+        "byteLength": file.data.map { .number(Double($0.count)) }
+    ])
+}
+
+private func transcriptionRequestTelemetryInput(_ request: AudioTranscriptionRequest) -> JSONValue {
+    .object([
+        "fileName": .string(request.fileName),
+        "mimeType": .string(request.mimeType),
+        "byteLength": .number(Double(request.audio.count)),
+        "language": request.language.map(JSONValue.string),
+        "prompt": request.prompt.map(JSONValue.string),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func speechRequestTelemetryInput(_ request: SpeechRequest) -> JSONValue {
+    .object([
+        "text": .string(request.text),
+        "voice": request.voice.map(JSONValue.string),
+        "format": request.format.map(JSONValue.string),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func videoRequestTelemetryInput(_ request: VideoGenerationRequest) -> JSONValue {
+    .object([
+        "prompt": .string(request.prompt),
+        "aspectRatio": request.aspectRatio.map(JSONValue.string),
+        "durationSeconds": request.durationSeconds.map(JSONValue.number),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func rerankingRequestTelemetryInput(_ request: RerankingRequest) -> JSONValue {
+    .object([
+        "query": .string(request.query),
+        "documents": .array(request.documents.map(JSONValue.string)),
+        "topK": request.topK.map { .number(Double($0)) },
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func fileUploadRequestTelemetryInput(_ request: FileUploadRequest) -> JSONValue {
+    .object([
+        "mediaType": .string(request.mediaType),
+        "filename": request.filename.map(JSONValue.string),
+        "purpose": request.purpose.map(JSONValue.string),
+        "displayName": request.displayName.map(JSONValue.string),
+        "byteLength": .number(Double(request.data.count)),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func skillUploadRequestTelemetryInput(_ request: SkillUploadRequest) -> JSONValue {
+    .object([
+        "displayTitle": request.displayTitle.map(JSONValue.string),
+        "files": .array(request.files.map { file in
+            .object([
+                "path": .string(file.path),
+                "mediaType": .string(file.mediaType),
+                "byteLength": .number(Double(file.data.count))
+            ])
+        }),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func headersTelemetryJSON(_ headers: [String: String]) -> JSONValue? {
+    headers.isEmpty ? nil : .object(headers.mapValues(JSONValue.string))
+}
+
+private func textGenerationTelemetryOutput(_ result: TextGenerationResult) -> JSONValue {
+    .object([
+        "text": .string(result.text),
+        "reasoning": result.reasoning.isEmpty ? nil : .string(result.reasoning),
+        "finishReason": result.finishReason.map(JSONValue.string),
+        "toolCallCount": .number(Double(result.toolCalls.count)),
+        "toolResultCount": .number(Double(result.toolResults.count)),
+        "sourceCount": .number(Double(result.sources.count)),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func embeddingTelemetryOutput(_ result: EmbeddingResult) -> JSONValue {
+    .object([
+        "embeddings": .array(result.embeddings.map { .array($0.map(JSONValue.number)) }),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func imageTelemetryOutput(_ result: ImageGenerationResult) -> JSONValue {
+    .object([
+        "urls": .array(result.urls.map(JSONValue.string)),
+        "base64ImageCount": .number(Double(result.base64Images.count)),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func transcriptionTelemetryOutput(_ result: TranscriptionResult) -> JSONValue {
+    .object([
+        "text": .string(result.text),
+        "language": result.language.map(JSONValue.string),
+        "durationInSeconds": result.durationInSeconds.map(JSONValue.number),
+        "segmentCount": .number(Double(result.segments.count)),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func speechTelemetryOutput(_ result: SpeechResult) -> JSONValue {
+    .object([
+        "byteLength": .number(Double(result.audio.count)),
+        "contentType": result.contentType.map(JSONValue.string)
+    ])
+}
+
+private func videoTelemetryOutput(_ result: VideoGenerationResult) -> JSONValue {
+    .object([
+        "urls": .array(result.urls.map(JSONValue.string)),
+        "operationID": result.operationID.map(JSONValue.string),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func rerankingTelemetryOutput(_ result: RerankingResult) -> JSONValue {
+    .object([
+        "results": .array(result.results.map { ranked in
+            .object([
+                "index": .number(Double(ranked.index)),
+                "score": .number(ranked.score),
+                "document": ranked.document.map(JSONValue.string)
+            ])
+        }),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func fileUploadTelemetryOutput(_ result: FileUploadResult) -> JSONValue {
+    .object([
+        "providerReference": .object(result.providerReference.mapValues(JSONValue.string)),
+        "filename": result.filename.map(JSONValue.string),
+        "mediaType": result.mediaType.map(JSONValue.string),
+        "metadata": result.metadata.isEmpty ? nil : .object(result.metadata),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func skillUploadTelemetryOutput(_ result: SkillUploadResult) -> JSONValue {
+    .object([
+        "providerReference": .object(result.providerReference.mapValues(JSONValue.string)),
+        "displayTitle": result.displayTitle.map(JSONValue.string),
+        "name": result.name.map(JSONValue.string),
+        "description": result.description.map(JSONValue.string),
+        "latestVersion": result.latestVersion.map(JSONValue.string),
+        "rawValue": result.rawValue
+    ])
 }
 
 private func toolsDictionary(from tools: [AITool]) -> [String: JSONValue] {

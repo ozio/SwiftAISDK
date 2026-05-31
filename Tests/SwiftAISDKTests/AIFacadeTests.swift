@@ -68,6 +68,69 @@ import Testing
     #expect(elapsed < 1_000_000_000)
 }
 
+@Test func aiGenerateTextEmitsTelemetryLifecycleAndRetryEvents() async throws {
+    let recorder = TelemetryRecorder()
+    let model = FlakyLanguageModel(failures: [
+        AIError.httpStatus(provider: "mock", statusCode: 503, body: "try again")
+    ], result: TextGenerationResult(
+        text: "recovered",
+        finishReason: "stop",
+        usage: TokenUsage(inputTokens: 1, outputTokens: 2, totalTokens: 3),
+        rawValue: .object(["ok": .bool(true)])
+    ))
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Telemetry",
+        retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0),
+        telemetry: AITelemetryOptions(
+            functionID: "unit.generateText",
+            metadata: ["tenant": .string("test")],
+            integrations: [recorder]
+        )
+    )
+
+    let events = await recorder.events()
+    #expect(result.text == "recovered")
+    #expect(events.map(\.kind) == [.start, .retry, .end])
+    #expect(Set(events.map(\.callID)).count == 1)
+    #expect(events.allSatisfy { $0.operationID == "ai.generateText" })
+    #expect(events.allSatisfy { $0.providerID == "mock" })
+    #expect(events.allSatisfy { $0.modelID == "flaky-language" })
+    #expect(events.allSatisfy { $0.functionID == "unit.generateText" })
+    #expect(events.allSatisfy { $0.metadata["tenant"] == .string("test") })
+    #expect(events[0].input?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Telemetry")
+    #expect(events[1].attempt == 1)
+    #expect(events[1].maxRetries == 1)
+    #expect(events[1].delayNanoseconds == 0)
+    #expect(events[1].errorDescription?.contains("HTTP 503") == true)
+    #expect(events[2].output?["text"]?.stringValue == "recovered")
+    #expect(events[2].usage == TokenUsage(inputTokens: 1, outputTokens: 2, totalTokens: 3))
+}
+
+@Test func aiGenerateTextTelemetryRecordsErrorsAndRespectsOutputFlag() async throws {
+    let recorder = TelemetryRecorder()
+    let model = FlakyLanguageModel(failures: [
+        AIError.httpStatus(provider: "mock", statusCode: 400, body: "bad request")
+    ], result: TextGenerationResult(text: "unused", rawValue: .object([:])))
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Telemetry error",
+            retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0),
+            telemetry: AITelemetryOptions(recordOutputs: false, integrations: [recorder])
+        )
+        Issue.record("Expected telemetry error path.")
+    } catch {
+        let events = await recorder.events()
+        #expect(events.map(\.kind) == [.start, .error])
+        #expect(events[0].input?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Telemetry error")
+        #expect(events[1].output == nil)
+        #expect(events[1].errorDescription?.contains("HTTP 400") == true)
+    }
+}
+
 @Test func httpStatusErrorPreservesResponseHeaders() throws {
     let response = AIHTTPResponse(
         statusCode: 429,
@@ -907,6 +970,7 @@ private actor PrepareStepCapture {
 }
 
 @Test func aiEmbedManyChunksAndAggregatesResults() async throws {
+    let recorder = TelemetryRecorder()
     let model = MockEmbeddingModel(results: [
         EmbeddingResult(
             embeddings: [[0.1], [0.2]],
@@ -929,12 +993,19 @@ private actor PrepareStepCapture {
         values: ["a", "b", "c"],
         dimensions: 64,
         chunkSize: 2,
-        providerOptions: ["test": .object(["flag": .bool(true)])]
+        providerOptions: ["test": .object(["flag": .bool(true)])],
+        telemetry: AITelemetryOptions(integrations: [recorder])
     )
+    let events = await recorder.events()
 
     #expect(model.requests.map(\.values) == [["a", "b"], ["c"]])
     #expect(model.requests.allSatisfy { $0.dimensions == 64 })
     #expect(model.requests.allSatisfy { $0.providerOptions["test"]?["flag"]?.boolValue == true })
+    #expect(events.map(\.kind) == [.start, .end])
+    #expect(events.allSatisfy { $0.operationID == "ai.embedMany" })
+    #expect(events[0].input?["values"]?[2]?.stringValue == "c")
+    #expect(events[1].output?["embeddings"]?[2]?[0]?.doubleValue == 0.3)
+    #expect(events[1].usage == TokenUsage(inputTokens: 3, totalTokens: 3))
     #expect(result.embeddings == [[0.1], [0.2], [0.3]])
     #expect(result.usage == TokenUsage(inputTokens: 3, totalTokens: 3))
     #expect(result.rawValue[0]?["chunk"]?.intValue == 1)
@@ -1040,6 +1111,18 @@ private final class FlakyLanguageModel: LanguageModel, @unchecked Sendable {
             throw failures.removeFirst()
         }
         return result
+    }
+}
+
+private actor TelemetryRecorder: AITelemetryIntegration {
+    private var recordedEvents: [AITelemetryEvent] = []
+
+    func record(_ event: AITelemetryEvent) {
+        recordedEvents.append(event)
+    }
+
+    func events() -> [AITelemetryEvent] {
+        recordedEvents
     }
 }
 

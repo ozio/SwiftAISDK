@@ -56,8 +56,11 @@ Impact:
 - Facade calls now have a retry policy for transient errors, a per-attempt
   timeout on `AIRetryPolicy`, and direct stream timeouts on `streamText` and
   `streamObject`. HTTP `Retry-After` headers are now preserved from provider
-  responses and honored by facade retries. Richer cancellation controls,
-  telemetry hooks, and warning logging still need follow-up work.
+  responses and honored by facade retries. A first Swift telemetry surface now
+  emits start, retry, end, and error events for non-streaming facade calls,
+  with per-call or globally registered integrations. Richer cancellation
+  controls, stream/tool-level telemetry, and warning logging still need
+  follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -81,7 +84,8 @@ Impact:
   JSON/reasoning extraction, simulated streaming, and tool input-example
   description transforms. `wrapProvider(...)` can apply all three middleware
   families, and `createProviderRegistry(...)` can apply language and image
-  middleware to routed models. Telemetry remains follow-up product work.
+  middleware to routed models. Telemetry now has lifecycle event hooks, but
+  middleware-specific trace wrapping remains follow-up product work.
 
 Recommendation:
 
@@ -281,10 +285,19 @@ Progress:
    set a per-attempt `timeoutNanoseconds` on `AIRetryPolicy`, and `streamText`
    plus `streamObject` accept direct stream timeouts. Provider HTTP errors now
    preserve response headers, and facade retries honor `Retry-After` on
-   retryable status codes. Next passes should add richer cancellation controls,
-   telemetry, and streaming retry behavior.
+   retryable status codes. Next passes should add richer cancellation controls
+   and streaming retry behavior.
 
-4. **Tool loop pass.**
+4. **Facade pass 3: telemetry.**
+   First telemetry slice is in place with `AITelemetryOptions`,
+   `AITelemetryIntegration`, `AITelemetry.register(...)`, and lifecycle events
+   for non-streaming facade operations. Events carry call IDs, operation IDs,
+   provider/model IDs, retry attempts, timing, usage, warnings, metadata,
+   response metadata, and input/output payloads gated by record flags. Next
+   passes should add stream telemetry, per-step/tool execution events, object
+   generation event names, and wrapper-style execute hooks.
+
+5. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed
    `AITool`, execute callbacks, step/tool-result messages, streamed tool-result
    parts, upstream-style stop conditions, a Swift `prepareStep` hook, and tool
@@ -294,7 +307,7 @@ Progress:
    validation errors, provider-executed approval responses, MCP elicitation and
    SSE/session support, and richer stream lifecycle handling.
 
-5. **Object generation pass.**
+6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
    schema hints and repair callbacks. `AI.streamObject` now emits text deltas,
    best-effort partial `JSONValue` objects, and final `Decodable` output.
@@ -303,7 +316,7 @@ Progress:
    parse/schema/decode failures. Next passes should add typed partials, schema
    adapter protocols, and streaming strategy variants.
 
-6. **README and capability matrix.**
+7. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first
    machine-readable provider capability matrix and opt-in live smoke harness are
    in place. The markdown table is generated from source and guarded by tests.

@@ -91,6 +91,26 @@ for try await part in AI.streamText(
 }
 ```
 
+Telemetry integrations can observe facade lifecycle events. Per-call
+integrations take precedence for that call; registered integrations are used
+when no per-call list is supplied:
+
+```swift
+struct LoggerTelemetry: AITelemetryIntegration {
+    func record(_ event: AITelemetryEvent) async {
+        print(event.kind, event.operationID, event.providerID)
+    }
+}
+
+AITelemetry.register(LoggerTelemetry())
+
+let observed = try await AI.generateText(
+    model: model,
+    prompt: "Hello",
+    telemetry: AITelemetryOptions(functionID: "chat.reply")
+)
+```
+
 ## Objects
 
 `AI.generateObject` requests JSON output and decodes the result into a Swift
