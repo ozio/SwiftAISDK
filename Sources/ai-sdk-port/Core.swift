@@ -241,6 +241,8 @@ public struct EmbeddingResult: Sendable {
 public struct ImageGenerationRequest: Sendable {
     public var prompt: String
     public var size: String?
+    public var aspectRatio: String?
+    public var seed: Int?
     public var count: Int?
     public var files: [ImageInputFile]
     public var mask: ImageInputFile?
@@ -250,6 +252,8 @@ public struct ImageGenerationRequest: Sendable {
     public init(
         prompt: String,
         size: String? = nil,
+        aspectRatio: String? = nil,
+        seed: Int? = nil,
         count: Int? = nil,
         files: [ImageInputFile] = [],
         mask: ImageInputFile? = nil,
@@ -258,6 +262,8 @@ public struct ImageGenerationRequest: Sendable {
     ) {
         self.prompt = prompt
         self.size = size
+        self.aspectRatio = aspectRatio
+        self.seed = seed
         self.count = count
         self.files = files
         self.mask = mask
@@ -291,11 +297,13 @@ public struct ImageGenerationResult: Sendable {
     public var urls: [String]
     public var base64Images: [String]
     public var rawValue: JSONValue
+    public var warnings: [AIWarning]
 
-    public init(urls: [String], base64Images: [String] = [], rawValue: JSONValue) {
+    public init(urls: [String], base64Images: [String] = [], rawValue: JSONValue, warnings: [AIWarning] = []) {
         self.urls = urls
         self.base64Images = base64Images
         self.rawValue = rawValue
+        self.warnings = warnings
     }
 }
 

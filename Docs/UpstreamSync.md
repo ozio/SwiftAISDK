@@ -238,6 +238,7 @@ the touched surface into the newer naming pattern.
 | Tools | Keep provider-defined tool builders beside the provider model. Test both tool schema and required beta/header behavior. |
 | Streaming | Reuse `HTTP.swift` parsers where possible. Add provider adapters only for genuinely different wire formats such as AWS EventStream. |
 | Media/audio multipart | Use structured multipart helpers and assert fields, filenames, MIME type, and endpoint path. |
+| Warnings | Return upstream-style warnings on result types when Swift exposes the same setting, and assert that unsupported settings do not leak into request bodies. |
 | Unsupported models | Throw `AIError.unsupportedModel` instead of silently routing to another capability. |
 
 ## Implementation Index
@@ -278,6 +279,7 @@ the touched surface into the newer naming pattern.
 | OpenAI/Azure provider IDs | Root providers stay `openai` and `azure`, but concrete models use upstream surface IDs: `openai.responses`, `openai.chat`, `openai.completion`, `openai.embedding`, `openai.image`, `openai.transcription`, `openai.speech`, `openai.files`, `openai.skills`; Azure uses the same pattern except embeddings is `azure.embeddings`. |
 | xAI provider IDs and files | Root provider stays `xai`, concrete surfaces use `xai.responses`, `xai.chat`, `xai.image`, `xai.video`, and `xai.files`. xAI file uploads use `team_id` from provider options and do not send OpenAI's `purpose` field. |
 | Provider options | Preserve upstream namespaces and avoid leaking provider-specific options into unrelated providers. |
+| Image warnings | OpenAI-compatible image models return unsupported warnings for top-level `aspectRatio` and `seed`; these settings are intentionally not forwarded to OpenAI-style image endpoints. |
 | Auth and provider settings | Mirror upstream env var names, base URL fallbacks, and header strategy. OpenAI settings include `OPENAI_BASE_URL`, organization, and project headers. |
 | AWS providers | Keep SigV4 service name, region, path encoding, and EventStream parsing covered by tests. |
 | Error behavior | Convert provider errors into `AIError` with the surface provider ID that failed. |

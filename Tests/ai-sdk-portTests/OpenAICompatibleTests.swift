@@ -367,6 +367,31 @@ import Testing
     #expect(await transport.requests().isEmpty)
 }
 
+@Test func openAICompatibleImageReturnsWarningsForUnsupportedSettings() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image-data"}]}"#))
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    let result = try await provider.imageModel("image-model").generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        aspectRatio: "16:9",
+        seed: 123
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "aspectRatio", message: "This model does not support aspect ratio. Use `size` instead."),
+        AIWarning(type: "unsupported", feature: "seed")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["aspectRatio"] == nil)
+    #expect(body["aspect_ratio"] == nil)
+    #expect(body["seed"] == nil)
+}
+
 @Test func openAIImageRejectsMoreThanModelSpecificMaxImagesPerCall() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"unused"}]}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))

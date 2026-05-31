@@ -1609,8 +1609,9 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count, count > maxImagesPerCall {
             throw AIError.invalidArgument(argument: "count", message: "OpenAI-compatible image models support at most \(maxImagesPerCall) image(s) per call.")
         }
+        let warnings = openAICompatibleImageWarnings(from: request)
         if !request.files.isEmpty {
-            return try await editImage(request)
+            return try await editImage(request, warnings: warnings)
         }
 
         var body: [String: JSONValue] = [
@@ -1633,11 +1634,12 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         return ImageGenerationResult(
             urls: data.compactMap { $0["url"]?.stringValue },
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
-            rawValue: raw
+            rawValue: raw,
+            warnings: warnings
         )
     }
 
-    private func editImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+    private func editImage(_ request: ImageGenerationRequest, warnings: [AIWarning]) async throws -> ImageGenerationResult {
         var form = MultipartFormData()
         form.appendField(name: "model", value: modelID)
         form.appendField(name: "prompt", value: request.prompt)
@@ -1688,9 +1690,25 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         return ImageGenerationResult(
             urls: data.compactMap { $0["url"]?.stringValue },
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
-            rawValue: raw
+            rawValue: raw,
+            warnings: warnings
         )
     }
+}
+
+private func openAICompatibleImageWarnings(from request: ImageGenerationRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.aspectRatio != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "aspectRatio",
+            message: "This model does not support aspect ratio. Use `size` instead."
+        ))
+    }
+    if request.seed != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "seed"))
+    }
+    return warnings
 }
 
 private struct OpenAICompatibleResolvedImageFile {
