@@ -306,6 +306,9 @@ the touched surface into the newer naming pattern.
 
 ## Known Gaps And Next Passes
 
+- Product-level gaps are tracked in `Docs/ProductGapAudit.md`. Treat that file
+  as the higher-level map when choosing between more provider micro-parity and a
+  broader SDK/core pass.
 - Continue comparing upstream provider test suites for small model-specific
   request flags, provider IDs, warnings, and error normalization.
 - Continue auditing OpenAI and Azure model-specific request defaults now that
