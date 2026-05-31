@@ -537,17 +537,20 @@ public struct AITool: Sendable {
     public var name: String
     public var description: String?
     public var parameters: JSONValue
+    public var refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)?
     public var execute: @Sendable (JSONValue) async throws -> JSONValue
 
     public init(
         name: String,
         description: String? = nil,
         parameters: JSONValue,
+        refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
         execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
     ) {
         self.name = name
         self.description = description
         self.parameters = parameters
+        self.refineArguments = refineArguments
         self.execute = execute
     }
 

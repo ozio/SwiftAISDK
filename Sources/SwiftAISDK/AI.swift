@@ -853,7 +853,8 @@ private func executeToolCalls(_ calls: [AIToolCall], toolsByName: [String: AIToo
     for call in calls {
         guard let tool = toolsByName[call.name] else { continue }
         let arguments = try toolArguments(from: call)
-        let result = try await tool.execute(arguments)
+        let refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
+        let result = try await tool.execute(refinedArguments)
         results.append(AIToolResult(
             toolCallID: call.id,
             toolName: call.name,

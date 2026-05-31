@@ -254,6 +254,50 @@ import Testing
     #expect(await capture.responseMessageCounts() == [0, 2])
 }
 
+@Test func aiStreamTextRefinesToolArgumentsBeforeExecution() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":" kyoto "}"#)
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .textDelta("done"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+            ]
+        ]
+    )
+    let capture = ToolCapture()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["city": ["type": "string"]]],
+        refineArguments: { arguments in
+            guard let city = arguments["city"]?.stringValue else {
+                throw AIError.invalidArgument(argument: "city", message: "city is required.")
+            }
+            return ["city": .string(city.trimmingCharacters(in: .whitespacesAndNewlines).capitalized)]
+        }
+    ) { arguments in
+        await capture.record(arguments)
+        return ["city": arguments["city"] ?? .string("missing")]
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 2
+    ) {
+        streamed.append(part)
+    }
+
+    #expect(await capture.value()?["city"]?.stringValue == "Kyoto")
+    #expect(streamed.contains(.toolResult(AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["city": "Kyoto"]))))
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let schema: JSONValue = [
         "type": "object",
@@ -508,6 +552,39 @@ import Testing
     #expect(await capture.stepNumbers() == [0, 1])
     #expect(await capture.stepCounts() == [0, 1])
     #expect(await capture.responseMessageCounts() == [0, 2])
+}
+
+@Test func aiGenerateTextRefinesToolArgumentsBeforeExecution() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":" tokyo "}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object(["step": 1])),
+        TextGenerationResult(text: "done", finishReason: "stop", rawValue: .object(["step": 2]))
+    ])
+    let capture = ToolCapture()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["city": ["type": "string"]]],
+        refineArguments: { arguments in
+            guard let city = arguments["city"]?.stringValue else {
+                throw AIError.invalidArgument(argument: "city", message: "city is required.")
+            }
+            return ["city": .string(city.trimmingCharacters(in: .whitespacesAndNewlines).capitalized)]
+        }
+    ) { arguments in
+        await capture.record(arguments)
+        return ["city": arguments["city"] ?? .string("missing")]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 2
+    )
+
+    #expect(result.text == "done")
+    #expect(await capture.value()?["city"]?.stringValue == "Tokyo")
+    #expect(result.toolResults.first?.result["city"]?.stringValue == "Tokyo")
 }
 
 @Test func aiStopConditionsMatchUpstreamStepHelpers() async throws {

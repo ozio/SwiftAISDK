@@ -141,21 +141,25 @@ tools.
 
 Impact:
 
-- `dynamicTool(...)`, typed input/output validation, and approval flow are still
-  missing.
+- `dynamicTool(...)`, typed output validation/error surfaces, and approval flow
+  are still missing. Tool input refinement exists through
+  `AITool.refineArguments`, but there is no schema-adapter-backed typed
+  validation layer yet.
 - Automatic multi-step execution exists for `AI.generateText` and `AI.streamText`.
 - Stop conditions now mirror the upstream `isStepCount`, `isLoopFinished`, and
   `hasToolCall` helpers.
 - `prepareStep` now exists as a Swift hook for per-step request/model/tool
   overrides, with accumulated steps and response messages passed into the
   callback.
+- `AITool.refineArguments` mirrors upstream `experimental_refineToolInput` for
+  validating or normalizing parsed tool arguments before execution.
 - Tool-result messages are now first-class in core, but provider passes should
   keep tightening wire-format parity.
 
 Recommendation:
 
-Build on the new `AITool` abstraction: add dynamic tools, validation hooks,
-approval requests, and richer stream tool lifecycle events.
+Build on the new `AITool` abstraction: add dynamic tools, typed validation
+errors, approval requests, and richer stream tool lifecycle events.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -232,9 +236,10 @@ Keep turning documentation into executable product evidence:
 4. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed
    `AITool`, execute callbacks, step/tool-result messages, streamed tool-result
-   parts, upstream-style stop conditions, and a Swift `prepareStep` hook. Next
-   passes should add validation, dynamic tools, approval policies,
-   provider-defined tool wrappers, and richer stream lifecycle handling.
+   parts, upstream-style stop conditions, a Swift `prepareStep` hook, and tool
+   argument refinement. Next passes should add typed validation errors, dynamic
+   tools, approval policies, provider-defined tool wrappers, and richer stream
+   lifecycle handling.
 
 5. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

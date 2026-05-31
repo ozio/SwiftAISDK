@@ -135,7 +135,13 @@ let weather = AITool(
     parameters: [
         "type": "object",
         "properties": ["city": ["type": "string"]]
-    ]
+    ],
+    refineArguments: { arguments in
+        guard let city = arguments["city"]?.stringValue else {
+            throw AIError.invalidArgument(argument: "city", message: "city is required.")
+        }
+        return ["city": .string(city.trimmingCharacters(in: .whitespacesAndNewlines))]
+    }
 ) { arguments in
     ["forecast": "sunny in \(arguments["city"]?.stringValue ?? "unknown")"]
 }
