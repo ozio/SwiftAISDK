@@ -302,6 +302,22 @@ let chat = try registry.languageModel("openai:gpt-4.1-mini")
 let claude = try registry.languageModel("anthropic:claude-sonnet-4-20250514")
 ```
 
+The `AI` facade can resolve upstream-style string model IDs through an explicit
+provider or a global default provider:
+
+```swift
+AIDefaultProvider.set(registry)
+let result = try await AI.generateText(
+    model: "openai:gpt-4.1-mini",
+    prompt: "Write a launch checklist."
+)
+
+let embedding = try await AI.embed(
+    model: "openai:text-embedding-3-small",
+    value: "SwiftAISDK"
+)
+```
+
 Registries can also apply middleware to routed language and image models:
 
 ```swift

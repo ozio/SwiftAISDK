@@ -68,8 +68,9 @@ Impact:
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as
-  `provider:model` through registered Swift providers. Upstream global string
-  model-id resolution remains follow-up product work.
+  `provider:model` through registered Swift providers. `AIDefaultProvider` and
+  the string-model overloads on the `AI` facade now mirror upstream global
+  default-provider model resolution.
 - Model middleware now covers the upstream wrapper layer for language, image,
   and embedding models: request transforms, operation wrappers,
   provider/model ID overrides, `defaultSettingsMiddleware` for language
@@ -259,9 +260,9 @@ Keep turning documentation into executable product evidence:
    First slice is in place, including upload-file and upload-skill wrappers plus
    stream-side local tool execution and `customProvider(...)` for local model
    maps plus fallback providers. `createProviderRegistry(...)` now covers
-   upstream-style `provider:model` routing. Follow-up work should add richer
-   result objects, cancellation/timeout behavior, global string model-id
-   resolution, and streaming orchestration.
+   upstream-style `provider:model` routing and string model IDs through
+   `AIDefaultProvider`. Follow-up work should add richer result objects,
+   cancellation/timeout behavior, and streaming orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
    First retry slice is in place with `AIRetryPolicy` and default
