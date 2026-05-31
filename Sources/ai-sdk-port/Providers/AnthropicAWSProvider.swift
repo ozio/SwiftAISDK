@@ -107,11 +107,15 @@ public final class AnthropicAWSProvider: AIProvider, @unchecked Sendable {
 
     public func files() -> any AIFileClient {
         MultipartFileClient(
-            providerID: "anthropic-aws.files",
+            providerID: "anthropic-aws.messages",
             providerReferenceKey: "anthropic-aws",
             config: config,
             betaHeader: ("anthropic-beta", "files-api-2025-04-14")
         )
+    }
+
+    public func skills() -> any AISkillsClient {
+        AnthropicSkillsClient(providerID: "anthropic-aws.skills", providerReferenceKey: "anthropic-aws", config: config)
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {

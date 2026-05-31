@@ -7,7 +7,9 @@ import Testing
     {"id":"file_abc","type":"file","filename":"data.pdf","mime_type":"application/pdf","size_bytes":10,"created_at":"2026-01-01T00:00:00Z","downloadable":true}
     """))
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
-    let result = try await provider.files().uploadFile(FileUploadRequest(data: Data([1, 2, 3]), mediaType: "application/pdf", filename: "data.pdf"))
+    let files = provider.files()
+    #expect(files.providerID == "anthropic.messages")
+    let result = try await files.uploadFile(FileUploadRequest(data: Data([1, 2, 3]), mediaType: "application/pdf", filename: "data.pdf"))
 
     #expect(result.providerReference["anthropic"] == "file_abc")
     #expect(result.mediaType == "application/pdf")
@@ -27,7 +29,9 @@ import Testing
         """)
     ])
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
-    let result = try await provider.skills().uploadSkill(SkillUploadRequest(
+    let skills = provider.skills()
+    #expect(skills.providerID == "anthropic.skills")
+    let result = try await skills.uploadSkill(SkillUploadRequest(
         files: [
             SkillUploadFile(path: "index.ts", data: Data("console.log('hi')".utf8), mediaType: "text/typescript")
         ],
@@ -58,6 +62,51 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.anthropic.com/v1/skills/skill_01/versions/1772078378207930")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
+}
+
+@Test func anthropicAWSFilesAndSkillsUseUpstreamProviderIDs() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"id":"file_aws","type":"file","filename":"data.pdf","mime_type":"application/pdf","size_bytes":10}
+        """),
+        jsonResponse("""
+        {"id":"skill_aws","display_title":"AWS Skill","latest_version":"v1","source":"custom"}
+        """),
+        jsonResponse("""
+        {"type":"skill_version","skill_id":"skill_aws","name":"aws-skill","description":"AWS hosted skill"}
+        """)
+    ])
+    let provider = try AIProviders.anthropicAWS(settings: AnthropicAWSProviderSettings(
+        region: "us-west-2",
+        workspaceID: "wrkspc_test",
+        apiKey: "aws-api-key",
+        transport: transport
+    ))
+
+    let files = provider.files()
+    #expect(files.providerID == "anthropic-aws.messages")
+    let file = try await files.uploadFile(FileUploadRequest(data: Data([1, 2, 3]), mediaType: "application/pdf", filename: "data.pdf"))
+    #expect(file.providerReference["anthropic-aws"] == "file_aws")
+
+    let skills = provider.skills()
+    #expect(skills.providerID == "anthropic-aws.skills")
+    let skill = try await skills.uploadSkill(SkillUploadRequest(
+        files: [
+            SkillUploadFile(path: "index.ts", data: Data("console.log('hi')".utf8), mediaType: "text/typescript")
+        ],
+        displayTitle: "AWS Skill"
+    ))
+    #expect(skill.providerReference["anthropic-aws"] == "skill_aws")
+    #expect(skill.providerMetadata["anthropic-aws"]?["source"]?.stringValue == "custom")
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests[0].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/files")
+    #expect(requests[0].headers["x-api-key"] == "aws-api-key")
+    #expect(requests[0].headers["anthropic-beta"] == "files-api-2025-04-14")
+    #expect(requests[1].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills")
+    #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
+    #expect(requests[2].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills/skill_aws/versions/v1")
 }
 
 @Test func anthropicLanguageStreamsMessagesEvents() async throws {

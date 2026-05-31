@@ -9,6 +9,7 @@ import Testing
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
     let model = try provider.languageModel("claude-3-5-haiku-latest")
 
+    #expect(model.providerID == "anthropic.messages")
     let result = try await model.generate(LanguageModelRequest(messages: [.system("French."), .user("Hi")]))
 
     #expect(result.text == "bonjour")
@@ -28,6 +29,7 @@ import Testing
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
     let model = try provider.messages("claude-3-5-haiku-latest")
 
+    #expect(model.providerID == "anthropic.messages")
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     #expect(result.text == "alias")
@@ -47,6 +49,7 @@ import Testing
     ))
     let model = try provider.languageModel("claude-sonnet-4-6")
 
+    #expect(model.providerID == "anthropic-aws.messages")
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Hello")]))
 
     #expect(result.text == "aws claude")

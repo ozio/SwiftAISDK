@@ -59,10 +59,12 @@ public final class OpenAISkillsClient: AISkillsClient, @unchecked Sendable {
 
 public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
     public let providerID: String
+    private let providerReferenceKey: String
     private let config: ModelHTTPConfig
 
-    init(providerID: String, config: ModelHTTPConfig) {
+    init(providerID: String, providerReferenceKey: String, config: ModelHTTPConfig) {
         self.providerID = providerID
+        self.providerReferenceKey = providerReferenceKey
         self.config = config
     }
 
@@ -92,12 +94,12 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
         let metadata = anthropicSkillMetadata(from: raw)
 
         return SkillUploadResult(
-            providerReference: ["anthropic": raw["id"]?.stringValue ?? ""],
+            providerReference: [providerReferenceKey: raw["id"]?.stringValue ?? ""],
             displayTitle: raw["display_title"]?.stringValue,
             name: versionMetadata.name ?? raw["name"]?.stringValue,
             description: versionMetadata.description ?? raw["description"]?.stringValue,
             latestVersion: raw["latest_version"]?.stringValue,
-            providerMetadata: metadata.isEmpty ? [:] : ["anthropic": .object(metadata)],
+            providerMetadata: metadata.isEmpty ? [:] : [providerReferenceKey: .object(metadata)],
             warnings: [],
             rawValue: raw
         )

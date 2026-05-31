@@ -369,7 +369,7 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
-        AnthropicLanguageModel(modelID: modelID, config: config)
+        AnthropicLanguageModel(modelID: modelID, config: config.withProviderID("anthropic.messages"))
     }
 
     public func messages(_ modelID: String) throws -> any LanguageModel {
@@ -378,15 +378,15 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
 
     public func files() -> any AIFileClient {
         MultipartFileClient(
-            providerID: "anthropic.files",
+            providerID: "anthropic.messages",
             providerReferenceKey: "anthropic",
-            config: config,
+            config: config.withProviderID("anthropic.messages"),
             betaHeader: ("anthropic-beta", "files-api-2025-04-14")
         )
     }
 
     public func skills() -> any AISkillsClient {
-        AnthropicSkillsClient(providerID: "anthropic.skills", config: config)
+        AnthropicSkillsClient(providerID: "anthropic.skills", providerReferenceKey: "anthropic", config: config)
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
