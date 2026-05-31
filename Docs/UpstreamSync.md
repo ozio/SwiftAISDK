@@ -175,7 +175,7 @@ existing file instead of recreating a monolithic test suite.
 | Streaming | Prefer central parsers in `HTTP.swift` when possible. Bedrock Anthropic converts AWS EventStream `chunk.bytes` payloads back into Anthropic event lines before reuse. |
 | OpenAI-compatible providers | Share the compatible model implementation, but keep provider-specific defaults, path quirks, headers, and tools explicit in provider setup. |
 | Provider options | Preserve upstream option namespaces and wire them into request body conversion without leaking unknown options into unrelated providers. |
-| Auth | Mirror upstream env var names and header strategy. Tests should assert the final header for each provider family. |
+| Auth and provider settings | Mirror upstream env var names, base URL fallbacks, and header strategy. OpenAI settings include `OPENAI_BASE_URL`, organization, and project headers; tests should assert final headers for each provider family. |
 | Unsupported models | Provider methods should throw unsupported-model errors rather than silently routing to the wrong model kind. |
 
 ## Porting Checklist

@@ -178,6 +178,8 @@ public enum AuthorizationStyle: Equatable, Hashable, Sendable {
 public struct ProviderSettings: Sendable {
     public var apiKey: String?
     public var baseURL: String?
+    public var organization: String?
+    public var project: String?
     public var headers: [String: String]
     public var queryParams: [String: String]
     public var transport: any AITransport
@@ -189,6 +191,8 @@ public struct ProviderSettings: Sendable {
     public init(
         apiKey: String? = nil,
         baseURL: String? = nil,
+        organization: String? = nil,
+        project: String? = nil,
         headers: [String: String] = [:],
         queryParams: [String: String] = [:],
         transport: any AITransport = URLSessionTransport.shared,
@@ -199,6 +203,8 @@ public struct ProviderSettings: Sendable {
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL
+        self.organization = organization
+        self.project = project
         self.headers = headers
         self.queryParams = queryParams
         self.transport = transport

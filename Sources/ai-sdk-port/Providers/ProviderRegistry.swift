@@ -3,7 +3,15 @@ import Foundation
 
 public enum AIProviders {
     public static func openAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "openai", defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings)
+        var settings = settings
+        settings.baseURL = settings.baseURL ?? environmentValue(["OPENAI_BASE_URL"])
+        if let organization = settings.organization {
+            settings.headers["OpenAI-Organization"] = settings.headers["OpenAI-Organization"] ?? organization
+        }
+        if let project = settings.project {
+            settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
+        }
+        return try OpenAICompatibleProvider(providerID: "openai", defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings)
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {

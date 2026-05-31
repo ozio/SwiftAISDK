@@ -63,6 +63,28 @@ import Testing
     #expect(body["input"]?[1]?["content"]?[2]?["file_data"]?.stringValue == "data:application/pdf;base64,\(pdf.base64EncodedString())")
 }
 
+@Test func openAIProviderSettingsMapBaseURLOrganizationAndProject() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"configured","usage":{"total_tokens":2}}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(
+        apiKey: "test-key",
+        baseURL: "https://proxy.example.com/openai/v1/",
+        organization: "org-123",
+        project: "proj-456",
+        headers: ["OpenAI-Project": "proj-header"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("gpt-5-mini")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "configured")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://proxy.example.com/openai/v1/responses")
+    #expect(request.headers["Authorization"] == "Bearer test-key")
+    #expect(request.headers["OpenAI-Organization"] == "org-123")
+    #expect(request.headers["OpenAI-Project"] == "proj-header")
+}
+
 @Test func openAIProviderAliasesRouteToUpstreamEndpoints() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"responses alias"}"#),
