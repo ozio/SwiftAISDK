@@ -353,6 +353,39 @@ public struct AIToolStep: Sendable {
     }
 }
 
+public struct AIStopConditionContext: Sendable {
+    public var steps: [AIToolStep]
+
+    public init(steps: [AIToolStep]) {
+        self.steps = steps
+    }
+}
+
+public struct AIStopCondition: Sendable {
+    public var evaluate: @Sendable (AIStopConditionContext) async throws -> Bool
+
+    public init(_ evaluate: @escaping @Sendable (AIStopConditionContext) async throws -> Bool) {
+        self.evaluate = evaluate
+    }
+
+    public static func isStepCount(_ stepCount: Int) -> AIStopCondition {
+        AIStopCondition { context in
+            context.steps.count == stepCount
+        }
+    }
+
+    public static func isLoopFinished() -> AIStopCondition {
+        AIStopCondition { _ in false }
+    }
+
+    public static func hasToolCall(_ toolNames: String...) -> AIStopCondition {
+        AIStopCondition { context in
+            guard let lastStep = context.steps.last else { return false }
+            return lastStep.toolCalls.contains { toolNames.contains($0.name) }
+        }
+    }
+}
+
 public struct AISource: Equatable, Hashable, Sendable {
     public var id: String
     public var sourceType: String

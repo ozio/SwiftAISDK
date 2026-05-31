@@ -16,6 +16,7 @@ public enum AI {
         request: LanguageModelRequest,
         executableTools: [AITool],
         maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
         retryPolicy: AIRetryPolicy = .default
     ) async throws -> TextGenerationResult {
         guard !executableTools.isEmpty else {
@@ -56,23 +57,25 @@ public enum AI {
 
             let toolResults = try await executeToolCalls(executableCalls, toolsByName: toolsByName)
             allToolResults.append(contentsOf: toolResults)
-            steps.append(
-                AIToolStep(
-                    index: index,
-                    text: result.text,
-                    reasoning: result.reasoning,
-                    finishReason: result.finishReason,
-                    usage: result.usage,
-                    toolCalls: result.toolCalls,
-                    toolResults: toolResults,
-                    providerMetadata: result.providerMetadata,
-                    responseMetadata: result.responseMetadata
-                )
+            let step = AIToolStep(
+                index: index,
+                text: result.text,
+                reasoning: result.reasoning,
+                finishReason: result.finishReason,
+                usage: result.usage,
+                toolCalls: result.toolCalls,
+                toolResults: toolResults,
+                providerMetadata: result.providerMetadata,
+                responseMetadata: result.responseMetadata
             )
+            steps.append(step)
 
             result.toolResults = allToolResults
             result.steps = steps
             lastResult = result
+            if try await isStopConditionMet(stopWhen, steps: steps) {
+                return result
+            }
             currentRequest.messages.append(.assistant(text: result.text, toolCalls: result.toolCalls))
             currentRequest.messages.append(contentsOf: toolResults.map(AIMessage.toolResult))
         }
@@ -101,6 +104,7 @@ public enum AI {
         tools: [String: JSONValue] = [:],
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
         retryPolicy: AIRetryPolicy = .default,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
@@ -137,6 +141,7 @@ public enum AI {
             request: request,
             executableTools: executableTools,
             maxSteps: maxSteps,
+            stopWhen: stopWhen,
             retryPolicy: retryPolicy
         )
     }
@@ -237,7 +242,8 @@ public enum AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         executableTools: [AITool],
-        maxSteps: Int = 5
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = []
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -256,8 +262,9 @@ public enum AI {
                     let toolsByName = try toolsByName(from: executableTools)
                     var currentRequest = request
                     currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
+                    var steps: [AIToolStep] = []
 
-                    for _ in 0..<maxSteps {
+                    for index in 0..<maxSteps {
                         let step = try await forwardLanguageStream(
                             streamText(model: model, request: currentRequest),
                             to: continuation
@@ -274,6 +281,12 @@ public enum AI {
                             continuation.yield(.toolResult(toolResult))
                         }
 
+                        let completedStep = step.toolStep(index: index, toolResults: toolResults)
+                        steps.append(completedStep)
+                        if try await isStopConditionMet(stopWhen, steps: steps) {
+                            continuation.finish()
+                            return
+                        }
                         currentRequest.messages.append(.assistant(text: step.text, toolCalls: step.toolCalls))
                         currentRequest.messages.append(contentsOf: toolResults.map(AIMessage.toolResult))
                     }
@@ -306,6 +319,7 @@ public enum AI {
         tools: [String: JSONValue] = [:],
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
@@ -336,7 +350,7 @@ public enum AI {
             return streamText(model: model, request: request)
         }
 
-        return streamText(model: model, request: request, executableTools: executableTools, maxSteps: maxSteps)
+        return streamText(model: model, request: request, executableTools: executableTools, maxSteps: maxSteps, stopWhen: stopWhen)
     }
 
     public static func streamObject<Object: Decodable & Sendable>(
@@ -669,6 +683,20 @@ private struct LanguageStreamToolStep {
             break
         }
     }
+
+    func toolStep(index: Int, toolResults: [AIToolResult]) -> AIToolStep {
+        AIToolStep(
+            index: index,
+            text: text,
+            reasoning: reasoning,
+            finishReason: finishReason,
+            usage: usage,
+            toolCalls: toolCalls,
+            toolResults: toolResults,
+            providerMetadata: providerMetadata,
+            responseMetadata: responseMetadata
+        )
+    }
 }
 
 private func forwardLanguageStream(
@@ -682,6 +710,16 @@ private func forwardLanguageStream(
         continuation.yield(part)
     }
     return step
+}
+
+private func isStopConditionMet(_ stopConditions: [AIStopCondition], steps: [AIToolStep]) async throws -> Bool {
+    let context = AIStopConditionContext(steps: steps)
+    for condition in stopConditions {
+        if try await condition.evaluate(context) {
+            return true
+        }
+    }
+    return false
 }
 
 private func withRetry<Output: Sendable>(

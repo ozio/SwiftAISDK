@@ -163,6 +163,47 @@ import Testing
     #expect(toolResult.result["forecast"]?.stringValue == "sunny")
 }
 
+@Test func aiStreamTextStopsWhenToolLoopConditionMatches() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .textDelta("This should not stream."),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+            ]
+        ]
+    )
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { arguments in
+        ["forecast": "sunny", "query": arguments["query"] ?? .string("")]
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 3,
+        stopWhen: [.isStepCount(1)]
+    ) {
+        streamed.append(part)
+    }
+
+    #expect(model.streamRequests.count == 1)
+    #expect(streamed == [
+        .toolCall(toolCall),
+        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .toolResult(AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["forecast": "sunny", "query": "weather"]))
+    ])
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let schema: JSONValue = [
         "type": "object",
@@ -346,6 +387,58 @@ import Testing
     }
     #expect(toolResult.toolName == "lookup")
     #expect(toolResult.result["forecast"]?.stringValue == "sunny")
+}
+
+@Test func aiGenerateTextStopsWhenToolLoopConditionMatches() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "finalAnswer", arguments: #"{"value":"done"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object(["step": 1])),
+        TextGenerationResult(text: "This should not be requested.", finishReason: "stop", rawValue: .object(["step": 2]))
+    ])
+    let finalAnswer = AITool(
+        name: "finalAnswer",
+        parameters: ["type": "object", "properties": ["value": ["type": "string"]]]
+    ) { arguments in
+        ["value": arguments["value"] ?? .string("missing")]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Stop after final answer tool.",
+        executableTools: [finalAnswer],
+        maxSteps: 3,
+        stopWhen: [.hasToolCall("finalAnswer")]
+    )
+
+    #expect(model.requests.count == 1)
+    #expect(result.text == "")
+    #expect(result.toolResults == [
+        AIToolResult(toolCallID: "call-1", toolName: "finalAnswer", result: ["value": "done"])
+    ])
+    #expect(result.steps.count == 1)
+    #expect(result.steps[0].toolCalls == [toolCall])
+    #expect(result.steps[0].toolResults.count == 1)
+}
+
+@Test func aiStopConditionsMatchUpstreamStepHelpers() async throws {
+    let searchStep = AIToolStep(
+        index: 0,
+        text: "",
+        toolCalls: [AIToolCall(id: "call-1", name: "search", arguments: "{}")]
+    )
+    let finalStep = AIToolStep(
+        index: 1,
+        text: "",
+        toolCalls: [AIToolCall(id: "call-2", name: "finalAnswer", arguments: "{}")]
+    )
+    let context = AIStopConditionContext(steps: [searchStep, finalStep])
+
+    #expect(try await AIStopCondition.isStepCount(2).evaluate(context))
+    #expect(try await !AIStopCondition.isStepCount(1).evaluate(context))
+    #expect(try await !AIStopCondition.isLoopFinished().evaluate(context))
+    #expect(try await AIStopCondition.hasToolCall("finalAnswer").evaluate(context))
+    #expect(try await AIStopCondition.hasToolCall("search", "finalAnswer").evaluate(context))
+    #expect(try await !AIStopCondition.hasToolCall("search").evaluate(context))
 }
 
 @Test func aiGenerateObjectDecodesJSONAndRequestsSchemaResponseFormat() async throws {

@@ -56,9 +56,9 @@ Impact:
 - Facade calls now have a retry policy for transient errors, but richer
   cancellation/timeout surfaces, telemetry hooks, and warning logging still need
   follow-up work.
-- Tool execution exists for `generateText` and `streamText`, but stop
-  conditions, approval flow, dynamic tools, and provider-defined tool wrapping
-  still need follow-up work.
+- Tool execution exists for `generateText` and `streamText`, including
+  upstream-style stop conditions, but approval flow, dynamic tools, and
+  provider-defined tool wrapping still need follow-up work.
 - Object generation exists for `Decodable` results, and `streamObject` can now
   stream JSON text deltas, best-effort partial JSON objects, and a final decoded
   object. Typed partials, richer schema adapters, typed validation errors, and
@@ -140,16 +140,18 @@ tools.
 
 Impact:
 
-- `dynamicTool(...)`, typed input/output validation, approval flow, and
-  stop-condition policies are still missing.
+- `dynamicTool(...)`, typed input/output validation, and approval flow are still
+  missing.
 - Automatic multi-step execution exists for `AI.generateText` and `AI.streamText`.
+- Stop conditions now mirror the upstream `isStepCount`, `isLoopFinished`, and
+  `hasToolCall` helpers.
 - Tool-result messages are now first-class in core, but provider passes should
   keep tightening wire-format parity.
 
 Recommendation:
 
 Build on the new `AITool` abstraction: add dynamic tools, validation hooks,
-approval requests, stop conditions, and richer stream tool lifecycle events.
+approval requests, and richer stream tool lifecycle events.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -225,9 +227,9 @@ Keep turning documentation into executable product evidence:
 
 4. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed
-   `AITool`, execute callbacks, step/tool-result messages, and streamed
-   tool-result parts. Next passes should add validation, dynamic tools,
-   approval/stop-condition policies, provider-defined tool wrappers, and richer
+   `AITool`, execute callbacks, step/tool-result messages, streamed tool-result
+   parts, and upstream-style stop conditions. Next passes should add validation,
+   dynamic tools, approval policies, provider-defined tool wrappers, and richer
    stream lifecycle handling.
 
 5. **Object generation pass.**

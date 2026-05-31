@@ -125,7 +125,8 @@ for try await part in AI.streamObject(
 
 `AI.generateText` and `AI.streamText` can execute typed Swift tools and continue
 the conversation until the model returns a final answer or `maxSteps` is
-reached:
+reached. Use `stopWhen` to mirror upstream step controls such as `isStepCount`
+and `hasToolCall`:
 
 ```swift
 let weather = AITool(
@@ -143,7 +144,8 @@ let answer = try await AI.generateText(
     model: model,
     prompt: "What should I wear in Tokyo?",
     executableTools: [weather],
-    maxSteps: 3
+    maxSteps: 3,
+    stopWhen: [.isStepCount(2)]
 )
 
 print(answer.text)
@@ -158,7 +160,8 @@ for try await part in AI.streamText(
     model: model,
     prompt: "What should I wear in Tokyo?",
     executableTools: [weather],
-    maxSteps: 3
+    maxSteps: 3,
+    stopWhen: [.hasToolCall("weather")]
 ) {
     // handle LanguageStreamPart
 }
