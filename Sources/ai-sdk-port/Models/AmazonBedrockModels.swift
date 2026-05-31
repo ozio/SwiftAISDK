@@ -310,7 +310,7 @@ public final class AmazonBedrockImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
-private func bedrockEncodeModelID(_ modelID: String) -> String {
+func bedrockEncodeModelID(_ modelID: String) -> String {
     var allowed = CharacterSet.alphanumerics
     allowed.insert(charactersIn: "-._~")
     return modelID.addingPercentEncoding(withAllowedCharacters: allowed) ?? modelID

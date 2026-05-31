@@ -104,6 +104,70 @@ public final class AmazonBedrockProvider: AIProvider, @unchecked Sendable {
     }
 }
 
+public final class AmazonBedrockAnthropicProvider: AIProvider, @unchecked Sendable {
+    public let providerID = "bedrock.anthropic"
+    public let supportedCapabilities: Set<ModelCapability> = [.language]
+    private let runtimeConfig: BedrockRuntimeConfig
+
+    public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
+        let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
+        let runtimeBaseURL = settings.baseURL ?? "https://bedrock-runtime.\(region).amazonaws.com"
+
+        let auth: BedrockAuth
+        let rawAPIKey = settings.apiKey ?? environmentValue(["AWS_BEARER_TOKEN_BEDROCK"])
+        if let apiKey = rawAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
+            auth = .bearer(apiKey)
+        } else {
+            let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
+            let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
+            guard let accessKeyID, let secretAccessKey else {
+                throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
+            }
+            auth = .sigV4(AWSCredentials(
+                accessKeyID: accessKeyID,
+                secretAccessKey: secretAccessKey,
+                sessionToken: settings.sessionToken ?? environmentValue(["AWS_SESSION_TOKEN"])
+            ))
+        }
+
+        var headers = settings.headers
+        headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
+        runtimeConfig = BedrockRuntimeConfig(providerID: providerID, region: region, service: "bedrock", baseURL: runtimeBaseURL, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
+    }
+
+    public func languageModel(_ modelID: String) throws -> any LanguageModel {
+        AmazonBedrockAnthropicLanguageModel(modelID: modelID, config: runtimeConfig)
+    }
+
+    public func messages(_ modelID: String) throws -> any LanguageModel {
+        try languageModel(modelID)
+    }
+
+    public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .embedding, modelID: modelID)
+    }
+
+    public func imageModel(_ modelID: String) throws -> any ImageModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .image, modelID: modelID)
+    }
+
+    public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .transcription, modelID: modelID)
+    }
+
+    public func speechModel(_ modelID: String) throws -> any SpeechModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .speech, modelID: modelID)
+    }
+
+    public func videoModel(_ modelID: String) throws -> any VideoModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .video, modelID: modelID)
+    }
+
+    public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
+    }
+}
+
 enum BedrockAuth: Sendable {
     case bearer(String)
     case sigV4(AWSCredentials)

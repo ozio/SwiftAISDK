@@ -244,7 +244,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    private static func body(for request: LanguageModelRequest, modelID: String, stream: Bool = false) -> (body: [String: JSONValue], betas: [String]) {
+    fileprivate static func body(for request: LanguageModelRequest, modelID: String, stream: Bool = false) -> (body: [String: JSONValue], betas: [String]) {
         let systemText = request.messages
             .filter { $0.role == .system }
             .map(\.combinedText)
@@ -328,6 +328,80 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             }
         }
         return .object(["role": .string(role), "content": .array(parts)])
+    }
+}
+
+public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecked Sendable {
+    public let providerID = "bedrock.anthropic.messages"
+    public let modelID: String
+    private let config: BedrockRuntimeConfig
+
+    init(modelID: String, config: BedrockRuntimeConfig) {
+        self.modelID = modelID
+        self.config = config
+    }
+
+    public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        let prepared = AnthropicLanguageModel.body(for: request, modelID: modelID)
+        let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
+        let raw = try await config.sendJSON(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers)
+        let toolCalls = anthropicToolCalls(from: raw["content"])
+        let sources = anthropicSources(from: raw["content"], citationDocuments: anthropicCitationDocuments(from: request.messages))
+        let text = raw["content"]?.arrayValue?.compactMap { part in
+            part["text"]?.stringValue
+        }.joined()
+        guard let text = text ?? (toolCalls.isEmpty ? nil : "") else {
+            throw AIError.invalidResponse(provider: providerID, message: "No text block found in Bedrock Anthropic response.")
+        }
+        return TextGenerationResult(
+            text: text,
+            finishReason: anthropicFinishReason(raw["stop_reason"]?.stringValue),
+            usage: TokenUsage(
+                inputTokens: raw["usage"]?["input_tokens"]?.intValue,
+                outputTokens: raw["usage"]?["output_tokens"]?.intValue
+            ),
+            toolCalls: toolCalls,
+            sources: sources,
+            rawValue: raw
+        )
+    }
+
+    public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let prepared = AnthropicLanguageModel.body(for: request, modelID: modelID, stream: true)
+                    let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
+                    let response = try await config.transport.send(try config.request(
+                        path: "/model/\(bedrockEncodeModelID(modelID))/invoke-with-response-stream",
+                        body: .object(body),
+                        headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"])
+                    ))
+                    guard (200..<300).contains(response.statusCode) else {
+                        throw AIError.httpStatus(provider: providerID, statusCode: response.statusCode, body: response.bodyText)
+                    }
+
+                    var toolCalls = AnthropicStreamingToolCalls()
+                    let citationDocuments = anthropicCitationDocuments(from: request.messages)
+                    var sourceCounter = 0
+                    for raw in try amazonBedrockAnthropicStreamEvents(from: response) {
+                        continuation.yield(.raw(raw))
+                        for part in anthropicStreamParts(from: raw) {
+                            continuation.yield(part)
+                        }
+                        for source in anthropicSources(from: raw, citationDocuments: citationDocuments, sourceCounter: &sourceCounter) {
+                            continuation.yield(.source(source))
+                        }
+                        for part in toolCalls.apply(event: raw) {
+                            continuation.yield(part)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
     }
 }
 
@@ -526,6 +600,89 @@ private func anthropicHeaders(_ requestHeaders: [String: String], configHeaders:
     var headers = requestHeaders
     headers["anthropic-beta"] = betaValues.joined(separator: ",")
     return headers
+}
+
+private func amazonBedrockAnthropicBody(_ body: [String: JSONValue], betas: [String]) -> [String: JSONValue] {
+    var output = body
+    output.removeValue(forKey: "model")
+    output.removeValue(forKey: "stream")
+    var requiredBetas = betas
+
+    if let toolChoice = output["tool_choice"]?.objectValue {
+        output["tool_choice"] = .object([
+            "type": toolChoice["type"],
+            "name": toolChoice["name"]
+        ].compactMapValues { $0 })
+    }
+
+    if let tools = output["tools"]?.arrayValue {
+        output["tools"] = .array(tools.map { tool in
+            amazonBedrockAnthropicTool(tool, betas: &requiredBetas)
+        })
+    }
+
+    output["anthropic_version"] = .string("bedrock-2023-05-31")
+    if !requiredBetas.isEmpty {
+        output["anthropic_beta"] = .array(requiredBetas.map(JSONValue.string))
+    }
+    return output
+}
+
+private func amazonBedrockAnthropicTool(_ tool: JSONValue, betas: inout [String]) -> JSONValue {
+    guard var object = tool.objectValue, let originalType = object["type"]?.stringValue else {
+        return tool
+    }
+    let mappedType: String
+    switch originalType {
+    case "bash_20241022":
+        mappedType = "bash_20250124"
+    case "text_editor_20241022":
+        mappedType = "text_editor_20250728"
+    case "computer_20241022":
+        mappedType = "computer_20250124"
+    default:
+        mappedType = originalType
+    }
+    object["type"] = .string(mappedType)
+    if mappedType == "text_editor_20250728" {
+        object["name"] = .string("str_replace_based_edit_tool")
+    }
+    if let beta = amazonBedrockAnthropicBeta(for: mappedType), !betas.contains(beta) {
+        betas.append(beta)
+    }
+    return .object(object)
+}
+
+private func amazonBedrockAnthropicBeta(for toolType: String) -> String? {
+    switch toolType {
+    case "bash_20250124", "text_editor_20250124", "text_editor_20250429", "text_editor_20250728", "computer_20250124":
+        return "computer-use-2025-01-24"
+    case "bash_20241022", "text_editor_20241022", "computer_20241022":
+        return "computer-use-2024-10-22"
+    case "tool_search_tool_regex_20251119", "tool_search_tool_bm25_20251119":
+        return "tool-search-tool-2025-10-19"
+    default:
+        return nil
+    }
+}
+
+private func amazonBedrockAnthropicStreamEvents(from response: AIHTTPResponse) throws -> [JSONValue] {
+    let contentType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value
+    if contentType?.localizedCaseInsensitiveContains("application/vnd.amazon.eventstream") == true {
+        return try parseAmazonBedrockEventStream(response.body).compactMap { raw in
+            if let encoded = raw["chunk"]?["bytes"]?.stringValue,
+               let data = Data(base64Encoded: encoded) {
+                return try decodeJSONBody(data)
+            }
+            if raw["messageStop"] != nil {
+                return nil
+            }
+            return raw
+        }
+    }
+    return try parseServerSentEvents(response.body)
+        .filter { $0.data != "[DONE]" }
+        .map { try decodeJSONBody(Data($0.data.utf8)) }
 }
 
 private func anthropicToolCalls(from value: JSONValue?) -> [AIToolCall] {

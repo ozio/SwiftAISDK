@@ -96,6 +96,83 @@ import Testing
     #expect(body["bedrock"] == nil)
 }
 
+@Test func amazonBedrockAnthropicUsesInvokeModelAndTransformsMessagesBody() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"bedrock anthropic"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """))
+    let provider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.messages("anthropic.claude-3-5-sonnet-20241022-v2:0")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.system("Brief."), .user("Hi")],
+        maxOutputTokens: 32,
+        tools: [
+            "bash": AnthropicTools.bash_20241022(),
+            "editor": AnthropicTools.textEditor_20241022(),
+            "computer": AnthropicTools.computer_20241022(displayWidthPx: 1024, displayHeightPx: 768)
+        ],
+        extraBody: [
+            "toolChoice": ["type": "auto", "disable_parallel_tool_use": true]
+        ]
+    ))
+
+    #expect(result.text == "bedrock anthropic")
+    #expect(result.usage?.inputTokens == 3)
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke")
+    #expect(request.headers["Authorization"] == "Bearer bedrock-key")
+    #expect(request.headers["anthropic-beta"] == nil)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"] == nil)
+    #expect(body["stream"] == nil)
+    #expect(body["anthropic_version"]?.stringValue == "bedrock-2023-05-31")
+    #expect(body["system"]?.stringValue == "Brief.")
+    #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
+    #expect(body["max_tokens"]?.intValue == 32)
+    #expect(body["tool_choice"]?["type"]?.stringValue == "auto")
+    #expect(body["tool_choice"]?["disable_parallel_tool_use"] == nil)
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools.contains { $0["type"]?.stringValue == "bash_20250124" && $0["name"]?.stringValue == "bash" })
+    #expect(tools.contains { $0["type"]?.stringValue == "text_editor_20250728" && $0["name"]?.stringValue == "str_replace_based_edit_tool" })
+    #expect(tools.contains { $0["type"]?.stringValue == "computer_20250124" && $0["name"]?.stringValue == "computer" })
+    #expect(body["anthropic_beta"]?.arrayValue?.contains(.string("computer-use-2025-01-24")) == true)
+}
+
+@Test func amazonBedrockAnthropicStreamsEventStreamAsAnthropicEvents() async throws {
+    let event1 = #"{"type":"content_block_delta","delta":{"type":"text_delta","text":"bed"}}"#
+    let event2 = #"{"type":"content_block_delta","delta":{"type":"text_delta","text":"rock"}}"#
+    let transport = RecordingTransport(response: amazonEventStreamResponse([
+        ("chunk", #"{"bytes":"\#(Data(event1.utf8).base64EncodedString())"}"#),
+        ("chunk", #"{"bytes":"\#(Data(event2.utf8).base64EncodedString())"}"#),
+        ("messageStop", #"{}"#)
+    ]))
+    let provider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+
+    var deltas: [String] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .textDelta(delta) = part {
+            deltas.append(delta)
+        }
+    }
+
+    #expect(deltas == ["bed", "rock"])
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-haiku-20240307-v1%3A0/invoke-with-response-stream")
+    #expect(request.headers["accept"] == "application/vnd.amazon.eventstream")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["anthropic_version"]?.stringValue == "bedrock-2023-05-31")
+    #expect(body["stream"] == nil)
+}
+
 @Test func amazonBedrockConverseParsesToolUseBlocks() async throws {
     let fixedDate = DateComponents(
         calendar: Calendar(identifier: .gregorian),

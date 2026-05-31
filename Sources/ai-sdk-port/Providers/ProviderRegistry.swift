@@ -114,6 +114,10 @@ public enum AIProviders {
         try AmazonBedrockProvider(settings: settings)
     }
 
+    public static func amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws -> AmazonBedrockAnthropicProvider {
+        try AmazonBedrockAnthropicProvider(settings: settings)
+    }
+
     public static func groq(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "groq", defaultBaseURL: "https://api.groq.com/openai/v1", authorization: .bearer(environmentVariables: ["GROQ_API_KEY"]), supportedCapabilities: [.language, .transcription], settings: settings)
     }
