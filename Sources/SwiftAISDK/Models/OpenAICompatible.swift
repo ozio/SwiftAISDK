@@ -856,6 +856,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let raw = try await config.sendJSON(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers)
         let toolCalls = openAIResponsesToolCalls(from: raw)
+        let toolApprovalRequests = openAIResponsesToolApprovalRequests(from: raw)
         let text = raw["output_text"]?.stringValue
             ?? raw["output"]?[0]?["content"]?[0]?["text"]?.stringValue
             ?? raw["choices"]?[0]?["message"]?["content"]?.stringValue
@@ -870,6 +871,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             ),
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
+            toolApprovalRequests: toolApprovalRequests,
             rawValue: raw
         )
     }
@@ -925,14 +927,6 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 
     private func body(for request: LanguageModelRequest, stream: Bool) -> [String: JSONValue] {
-        var body: [String: JSONValue] = [
-            "model": .string(modelID),
-            "input": .array(request.messages.map(openAIResponsesInputMessageJSON))
-        ]
-        if stream { body["stream"] = true }
-        if let temperature = request.temperature { body["temperature"] = .number(temperature) }
-        if let topP = request.topP { body["top_p"] = .number(topP) }
-        if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
         let extraBody: [String: JSONValue]
         if isOpenAIBackedProvider(providerID) {
             extraBody = openAIResponsesProviderOptions(from: request.extraBody, providerID: providerID)
@@ -945,6 +939,18 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if providerID.hasPrefix("xai.") {
             options = xaiResponsesOptions(from: options)
         }
+        let store = options["store"]?.boolValue ?? true
+        var processedApprovalIDs: Set<String> = []
+        var body: [String: JSONValue] = [
+            "model": .string(modelID),
+            "input": .array(request.messages.flatMap {
+                openAIResponsesInputMessageJSON($0, store: store, processedApprovalIDs: &processedApprovalIDs)
+            })
+        ]
+        if stream { body["stream"] = true }
+        if let temperature = request.temperature { body["temperature"] = .number(temperature) }
+        if let topP = request.topP { body["top_p"] = .number(topP) }
+        if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
         body.merge(options) { _, new in new }
         let preparedTools = openAIResponsesTools(from: request.tools)
         if !preparedTools.tools.isEmpty {
@@ -957,46 +963,74 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 }
 
-private func openAIResponsesInputMessageJSON(_ message: AIMessage) -> JSONValue {
-    if let result = message.content.compactMap({ part -> AIToolResult? in
-        if case let .toolResult(result) = part { result } else { nil }
-    }).first {
-        return .object([
-            "type": .string("function_call_output"),
-            "call_id": .string(result.toolCallID),
-            "output": .string(openAIResponsesJSONString(result.result) ?? result.result.stringValue ?? "")
-        ])
+private func openAIResponsesInputMessageJSON(_ message: AIMessage, store: Bool, processedApprovalIDs: inout Set<String>) -> [JSONValue] {
+    if message.role == .tool {
+        return message.content.flatMap { part -> [JSONValue] in
+            switch part {
+            case let .toolApprovalResponse(response):
+                guard response.providerExecuted, processedApprovalIDs.insert(response.id).inserted else {
+                    return []
+                }
+                var items: [JSONValue] = []
+                if store {
+                    items.append(.object([
+                        "type": .string("item_reference"),
+                        "id": .string(response.id)
+                    ]))
+                }
+                items.append(.object([
+                    "type": .string("mcp_approval_response"),
+                    "approval_request_id": .string(response.id),
+                    "approve": .bool(response.approved)
+                ]))
+                return items
+            case let .toolResult(result):
+                guard !openAIResponsesShouldSkipToolResult(result) else { return [] }
+                return [.object([
+                    "type": .string("function_call_output"),
+                    "call_id": .string(result.toolCallID),
+                    "output": .string(openAIResponsesJSONString(result.result) ?? result.result.stringValue ?? "")
+                ])]
+            default:
+                return []
+            }
+        }
     }
 
     if let call = message.content.compactMap({ part -> AIToolCall? in
         if case let .toolCall(call) = part { call } else { nil }
     }).first {
-        return .object([
+        return [.object([
             "type": .string("function_call"),
             "call_id": .string(call.id),
             "name": .string(call.name),
             "arguments": .string(call.arguments)
-        ])
+        ])]
     }
 
     if message.role == .user {
-        return .object([
+        return [.object([
             "role": .string("user"),
             "content": .array(message.content.enumerated().compactMap(openAIResponsesInputContentPart))
-        ])
+        ])]
     }
 
     if message.role == .assistant {
-        return .object([
+        return [.object([
             "role": .string("assistant"),
             "content": .array(message.combinedText.isEmpty ? [] : [.object(["type": .string("output_text"), "text": .string(message.combinedText)])])
-        ])
+        ])]
     }
 
-    return .object([
+    return [.object([
         "role": .string(message.role.rawValue),
         "content": .string(message.combinedText)
-    ])
+    ])]
+}
+
+private func openAIResponsesShouldSkipToolResult(_ result: AIToolResult) -> Bool {
+    guard result.result["type"]?.stringValue == "execution-denied" else { return false }
+    return result.providerMetadata["openai"]?["approvalId"]?.stringValue != nil
 }
 
 private func openAIResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContentPart]>.Element) -> JSONValue? {
@@ -1356,7 +1390,11 @@ private struct OpenAIResponsesStreamingToolCalls {
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
             buffers[index] = nil
             guard let toolCall = openAIResponsesToolCall(from: item) else { return [] }
-            return [.toolCall(toolCall)]
+            var parts: [LanguageStreamPart] = [.toolCall(toolCall)]
+            if let approvalRequest = openAIResponsesToolApprovalRequest(from: item) {
+                parts.append(.toolApprovalRequest(approvalRequest))
+            }
+            return parts
         default:
             return []
         }
@@ -1365,6 +1403,10 @@ private struct OpenAIResponsesStreamingToolCalls {
 
 private func openAIResponsesToolCalls(from raw: JSONValue) -> [AIToolCall] {
     raw["output"]?.arrayValue?.compactMap(openAIResponsesToolCall) ?? []
+}
+
+private func openAIResponsesToolApprovalRequests(from raw: JSONValue) -> [AIToolApprovalRequest] {
+    raw["output"]?.arrayValue?.compactMap(openAIResponsesToolApprovalRequest) ?? []
 }
 
 private func openAIResponsesToolCall(from item: JSONValue) -> AIToolCall? {
@@ -1421,9 +1463,51 @@ private func openAIResponsesToolCall(from item: JSONValue) -> AIToolCall? {
         return openAIResponsesHostedToolCall(item: item, name: "shell", idKey: "call_id", arguments: openAIResponsesJSONString(.object(["action": item["action"] ?? .null])) ?? "{}")
     case "apply_patch_call":
         return openAIResponsesHostedToolCall(item: item, name: "apply_patch", idKey: "call_id", arguments: openAIResponsesJSONString(.object(["callId": item["call_id"] ?? .null, "operation": item["operation"] ?? .null])) ?? "{}")
+    case "mcp_approval_request":
+        let approvalRequestID = openAIResponsesApprovalRequestID(from: item)
+        let toolName = "mcp.\(item["name"]?.stringValue ?? "tool")"
+        return AIToolCall(
+            id: openAIResponsesApprovalToolCallID(from: item),
+            name: toolName,
+            arguments: item["arguments"]?.stringValue ?? "{}",
+            providerExecuted: true,
+            dynamic: true,
+            providerMetadata: [
+                "openai": .object([
+                    "itemId": item["id"] ?? .string(approvalRequestID),
+                    "approvalId": .string(approvalRequestID)
+                ])
+            ],
+            rawValue: item
+        )
     default:
         return nil
     }
+}
+
+private func openAIResponsesToolApprovalRequest(from item: JSONValue) -> AIToolApprovalRequest? {
+    guard item["type"]?.stringValue == "mcp_approval_request" else { return nil }
+    let approvalRequestID = openAIResponsesApprovalRequestID(from: item)
+    return AIToolApprovalRequest(
+        id: approvalRequestID,
+        toolName: "mcp.\(item["name"]?.stringValue ?? "tool")",
+        arguments: item["arguments"]?.stringValue ?? "{}",
+        toolCallID: openAIResponsesApprovalToolCallID(from: item),
+        providerMetadata: [
+            "openai": .object([
+                "itemId": item["id"] ?? .string(approvalRequestID)
+            ])
+        ]
+    )
+}
+
+private func openAIResponsesApprovalRequestID(from item: JSONValue) -> String {
+    item["approval_request_id"]?.stringValue ?? item["id"]?.stringValue ?? "mcp-approval-request"
+}
+
+private func openAIResponsesApprovalToolCallID(from item: JSONValue) -> String {
+    let approvalRequestID = openAIResponsesApprovalRequestID(from: item)
+    return item["call_id"]?.stringValue ?? "tool-call-\(approvalRequestID)"
 }
 
 private func openAIResponsesHostedToolCall(item: JSONValue, name: String, idKey: String = "id", arguments: String = "{}") -> AIToolCall {

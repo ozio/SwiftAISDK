@@ -159,14 +159,19 @@ Impact:
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
+- OpenAI Responses now maps provider-executed MCP approval requests into
+  `AIToolApprovalRequest` values and sends provider-executed
+  `AIToolApprovalResponse` values back as `mcp_approval_response` items,
+  including `store: false` and duplicate-response handling.
 - Tool-result messages are now first-class in core, but provider passes should
   keep tightening wire-format parity.
 
 Recommendation:
 
 Build on the new `AITool` abstraction: add typed validation errors,
-provider-executed approval responses, provider-defined executable wrappers, and
-richer stream tool lifecycle events.
+provider-defined executable wrappers, richer stream tool lifecycle events, and
+provider-executed approval response mapping for non-OpenAI providers that expose
+an equivalent native wire format.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 

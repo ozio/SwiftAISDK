@@ -207,6 +207,11 @@ let guarded = try await AI.generateText(
 )
 ```
 
+OpenAI Responses MCP approvals also round-trip through the same core approval
+types: provider `mcp_approval_request` items surface as `AIToolApprovalRequest`,
+and `AIToolApprovalResponse(providerExecuted: true)` is sent back as
+`mcp_approval_response`.
+
 Use `prepareStep` when a later tool-loop step needs different request settings
 or a narrowed tool set:
 

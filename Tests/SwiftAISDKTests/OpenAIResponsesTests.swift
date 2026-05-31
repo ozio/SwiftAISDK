@@ -301,6 +301,66 @@ import Testing
     #expect(body["tool_choice"]?["name"]?.stringValue == "grammar_tool")
 }
 
+@Test func openAIResponsesMapsProviderExecutedToolApprovalResponses() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#),
+        jsonResponse(#"{"id":"resp-2","status":"completed","output_text":"done"}"#)
+    ])
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    let approvalResponse = AIToolApprovalResponse(id: "approval-for-mcp", approved: true, providerExecuted: true)
+    let duplicateApprovalResponse = AIToolApprovalResponse(id: "approval-for-mcp", approved: false, providerExecuted: true)
+    let localApprovalResponse = AIToolApprovalResponse(id: "local-approval", approved: true)
+    let regularResult = AIToolResult(
+        toolCallID: "regular-call-1",
+        toolName: "calculator",
+        result: ["result": 42]
+    )
+    let deniedProviderResult = AIToolResult(
+        toolCallID: "mcp-call-1",
+        toolName: "mcp.create_short_url",
+        result: ["type": "execution-denied", "reason": "Denied"],
+        providerMetadata: ["openai": ["approvalId": "approval-for-mcp"]]
+    )
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            .user("Continue."),
+            .toolResponses(
+                approvalResponses: [approvalResponse, duplicateApprovalResponse, localApprovalResponse],
+                toolResults: [regularResult, deniedProviderResult]
+            )
+        ]
+    ))
+
+    let firstBody = try decodeJSONBody(try #require((await transport.requests())[0].body))
+    let firstInput = try #require(firstBody["input"]?.arrayValue)
+    #expect(firstInput.count == 4)
+    #expect(firstInput[1]["type"]?.stringValue == "item_reference")
+    #expect(firstInput[1]["id"]?.stringValue == "approval-for-mcp")
+    #expect(firstInput[2]["type"]?.stringValue == "mcp_approval_response")
+    #expect(firstInput[2]["approval_request_id"]?.stringValue == "approval-for-mcp")
+    #expect(firstInput[2]["approve"]?.boolValue == true)
+    #expect(firstInput[3]["type"]?.stringValue == "function_call_output")
+    #expect(firstInput[3]["call_id"]?.stringValue == "regular-call-1")
+    #expect(firstInput[3]["output"]?.stringValue == #"{"result":42}"#)
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            .toolResponses(approvalResponses: [approvalResponse])
+        ],
+        extraBody: ["openai": ["store": false]]
+    ))
+
+    let secondBody = try decodeJSONBody(try #require((await transport.requests())[1].body))
+    let secondInput = try #require(secondBody["input"]?.arrayValue)
+    #expect(secondInput.count == 1)
+    #expect(secondInput[0]["type"]?.stringValue == "mcp_approval_response")
+    #expect(secondInput[0]["approval_request_id"]?.stringValue == "approval-for-mcp")
+    #expect(secondInput[0]["approve"]?.boolValue == true)
+}
+
 @Test func openAIResponsesParsesFunctionAndHostedToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"resp-1","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\\"query\\":\\"weather\\"}"},{"type":"web_search_call","id":"ws_1","status":"completed","action":{"type":"search","query":"weather"}}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}
@@ -319,6 +379,29 @@ import Testing
     #expect(result.toolCalls[1].id == "ws_1")
     #expect(result.toolCalls[1].name == "web_search")
     #expect(result.toolCalls[1].providerExecuted == true)
+}
+
+@Test func openAIResponsesParsesMCPApprovalRequests() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"resp-1","status":"completed","output":[{"type":"mcp_approval_request","id":"mcpr_1","approval_request_id":"approval-1","name":"create_short_url","arguments":"{\\"url\\":\\"https://example.com\\"}"}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Shorten this.")] ))
+
+    #expect(result.text == "")
+    #expect(result.toolCalls.count == 1)
+    #expect(result.toolCalls[0].id == "tool-call-approval-1")
+    #expect(result.toolCalls[0].name == "mcp.create_short_url")
+    #expect(result.toolCalls[0].arguments == #"{"url":"https://example.com"}"#)
+    #expect(result.toolCalls[0].providerExecuted == true)
+    #expect(result.toolCalls[0].dynamic == true)
+    #expect(result.toolApprovalRequests.count == 1)
+    #expect(result.toolApprovalRequests[0].id == "approval-1")
+    #expect(result.toolApprovalRequests[0].toolCallID == "tool-call-approval-1")
+    #expect(result.toolApprovalRequests[0].toolName == "mcp.create_short_url")
+    #expect(result.toolApprovalRequests[0].arguments == #"{"url":"https://example.com"}"#)
 }
 
 @Test func openAIResponsesStreamsFunctionToolCalls() async throws {
@@ -357,6 +440,41 @@ import Testing
     #expect(toolCall?.id == "call_1")
     #expect(toolCall?.name == "lookup")
     #expect(toolCall?.arguments == #"{"query":"weather"}"#)
+    #expect(finishReason == "stop")
+}
+
+@Test func openAIResponsesStreamsMCPApprovalRequests() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.done","output_index":0,"item":{"type":"mcp_approval_request","id":"mcpr_1","approval_request_id":"approval-1","name":"create_short_url","arguments":"{\\"url\\":\\"https://example.com\\"}"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    var toolCall: AIToolCall?
+    var approvalRequest: AIToolApprovalRequest?
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Shorten this.")])) {
+        switch part {
+        case let .toolCall(call):
+            toolCall = call
+        case let .toolApprovalRequest(request):
+            approvalRequest = request
+        case let .finish(reason, _):
+            finishReason = reason
+        default:
+            break
+        }
+    }
+
+    #expect(toolCall?.id == "tool-call-approval-1")
+    #expect(toolCall?.name == "mcp.create_short_url")
+    #expect(toolCall?.providerExecuted == true)
+    #expect(toolCall?.dynamic == true)
+    #expect(approvalRequest?.id == "approval-1")
+    #expect(approvalRequest?.toolCallID == "tool-call-approval-1")
     #expect(finishReason == "stop")
 }
 
