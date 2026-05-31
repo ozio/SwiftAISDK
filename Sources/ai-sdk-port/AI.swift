@@ -277,6 +277,169 @@ public enum AI {
         )
     }
 
+    public static func streamObject<Object: Decodable & Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        as type: Object.Type = Object.self,
+        schema: JSONValue? = nil,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
+        var objectRequest = request
+        let responseFormat = AIResponseFormat.json(schema: schema, name: schemaName, description: schemaDescription)
+        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
+        if objectRequest.extraBody["responseFormat"] == nil {
+            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
+        }
+        let streamRequest = objectRequest
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                var text = ""
+                var reasoning = ""
+                var finishReason: String?
+                var usage: TokenUsage?
+                var warnings: [AIWarning] = []
+                var sources: [AISource] = []
+                var providerMetadata: [String: JSONValue] = [:]
+                var responseMetadata = AIResponseMetadata()
+                var rawValues: [JSONValue] = []
+
+                do {
+                    for try await part in streamText(model: model, request: streamRequest) {
+                        try Task.checkCancellation()
+                        switch part {
+                        case let .streamStart(partWarnings):
+                            warnings.append(contentsOf: partWarnings)
+                            for warning in partWarnings {
+                                continuation.yield(.warning(warning))
+                            }
+                        case let .textDelta(delta):
+                            text += delta
+                            continuation.yield(.textDelta(delta))
+                        case let .textDeltaPart(_, delta, _):
+                            text += delta
+                            continuation.yield(.textDelta(delta))
+                        case let .reasoningDelta(delta):
+                            reasoning += delta
+                            continuation.yield(.raw(part))
+                        case let .reasoningDeltaPart(_, delta, _):
+                            reasoning += delta
+                            continuation.yield(.raw(part))
+                        case let .source(source):
+                            sources.append(source)
+                            continuation.yield(.source(source))
+                        case let .metadata(metadata):
+                            continuation.yield(.metadata(metadata))
+                        case let .responseMetadata(metadata):
+                            responseMetadata = metadata
+                            continuation.yield(.responseMetadata(metadata))
+                        case let .raw(raw):
+                            rawValues.append(raw)
+                            continuation.yield(.raw(part))
+                        case let .finish(reason, partUsage):
+                            finishReason = reason
+                            usage = partUsage
+                        case let .finishMetadata(reason, partUsage, metadata):
+                            finishReason = reason
+                            usage = partUsage
+                            providerMetadata.merge(metadata) { _, new in new }
+                        default:
+                            continuation.yield(.raw(part))
+                        }
+                    }
+
+                    let parsed = try await parseObject(
+                        Object.self,
+                        from: text,
+                        repairText: repairText,
+                        providerID: model.providerID
+                    )
+                    let textResult = TextGenerationResult(
+                        text: parsed.text,
+                        reasoning: reasoning,
+                        finishReason: finishReason,
+                        usage: usage,
+                        sources: sources,
+                        providerMetadata: providerMetadata,
+                        rawValue: rawValues.isEmpty ? parsed.rawObject : .array(rawValues),
+                        warnings: warnings,
+                        responseMetadata: responseMetadata
+                    )
+                    let objectResult = ObjectGenerationResult(
+                        object: parsed.object,
+                        text: parsed.text,
+                        rawObject: parsed.rawObject,
+                        reasoning: reasoning,
+                        finishReason: finishReason,
+                        usage: usage,
+                        warnings: warnings,
+                        providerMetadata: providerMetadata,
+                        responseMetadata: responseMetadata,
+                        textResult: textResult
+                    )
+                    continuation.yield(.object(objectResult))
+                    continuation.yield(.finish(reason: finishReason, usage: usage))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+
+    public static func streamObject<Object: Decodable & Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        as type: Object.Type = Object.self,
+        schema: JSONValue? = nil,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
+        streamObject(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                responseFormat: .json(schema: schema, name: schemaName, description: schemaDescription),
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers
+            ),
+            as: Object.self,
+            schema: schema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            repairText: repairText
+        )
+    }
+
     public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default) async throws -> EmbeddingResult {
         try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
     }

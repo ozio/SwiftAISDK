@@ -37,7 +37,7 @@ protocol contract.
 
 ## Serious Gaps
 
-### 1. No AI SDK facade layer
+### 1. AI SDK facade layer is still partial
 
 Upstream `packages/ai/src/index.ts` exports product-level APIs:
 
@@ -59,8 +59,9 @@ Impact:
 - Tool execution exists for `generateText`, but stop conditions, approval flow,
   dynamic tools, stream-side tool execution, and provider-defined tool wrapping
   still need follow-up work.
-- Object generation exists for `Decodable` results, but streaming objects,
-  richer schema adapters, typed validation errors, and advanced output
+- Object generation exists for `Decodable` results, and `streamObject` can now
+  stream JSON text deltas before yielding a final decoded object. Partial object
+  updates, richer schema adapters, typed validation errors, and advanced output
   strategies still need follow-up work.
 
 Recommendation:
@@ -157,22 +158,24 @@ where possible.
 
 Upstream has `generateObject`, `streamObject`, schema adapters, JSON repair, and
 object output strategies. Swift now has `AI.generateObject` for `Decodable`
-types and optional JSON repair, backed by provider JSON response-format hints.
+types and `AI.streamObject` for streaming text deltas into a final decoded
+object, backed by provider JSON response-format hints.
 
 Impact:
 
-- Basic object generation is available at product level.
-- `streamObject`, array/enum/no-schema output strategies, schema adapter
-  protocols, and typed validation error surfaces are still unavailable.
+- Basic object generation and final-object streaming are available at product
+  level.
+- Partial object streaming, array/enum/no-schema output strategies, schema
+  adapter protocols, and typed validation error surfaces are still unavailable.
 - Provider-specific schema support has first end-to-end coverage, but needs
   broader provider passes.
 
 Recommendation:
 
-Extend `generateObject` beyond the first Swift-native slice: add schema adapter
-protocols, richer validation errors, array/enum/no-schema strategies, JSON
-instruction injection for providers without native response formats, and
-`streamObject`.
+Extend object generation beyond the first Swift-native slices: add partial
+object streaming, schema adapter protocols, richer validation errors,
+array/enum/no-schema strategies, and JSON instruction injection for providers
+without native response formats.
 
 ### 5. Product reality is not fully gated yet
 
@@ -228,9 +231,10 @@ Keep turning documentation into executable product evidence:
 
 5. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
-   schema hints and repair callbacks. Next passes should add `streamObject`,
-   schema adapter protocols, richer validation errors, and array/enum/no-schema
-   strategies.
+   schema hints and repair callbacks. First `AI.streamObject` slice is in place
+   for text deltas plus final `Decodable` output. Next passes should add partial
+   object updates, schema adapter protocols, richer validation errors, and
+   array/enum/no-schema strategies.
 
 6. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first

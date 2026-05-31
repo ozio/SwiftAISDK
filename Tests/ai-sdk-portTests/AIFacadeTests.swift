@@ -104,6 +104,101 @@ import Testing
     #expect(model.streamRequests.first?.includeRawChunks == true)
 }
 
+@Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "value": ["type": "string"],
+            "count": ["type": "integer"]
+        ],
+        "required": ["value", "count"]
+    ]
+    let warning = AIWarning(type: "unsupported", feature: "seed")
+    let responseMetadata = AIResponseMetadata(id: "stream-resp")
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .streamStart(warnings: [warning]),
+            .textDelta(#"{"value":"strea"#),
+            .textDelta(#"med","count":3}"#),
+            .responseMetadata(responseMetadata),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 9))
+        ]
+    )
+
+    var text = ""
+    var object: ObjectGenerationResult<FacadeObjectAnswer>?
+    var finish: (reason: String?, usage: TokenUsage?)?
+    var warnings: [AIWarning] = []
+    for try await part in AI.streamObject(
+        model: model,
+        prompt: "Stream JSON.",
+        as: FacadeObjectAnswer.self,
+        schema: schema,
+        schemaName: "answer"
+    ) {
+        switch part {
+        case let .textDelta(delta):
+            text += delta
+        case let .warning(warning):
+            warnings.append(warning)
+        case let .object(result):
+            object = result
+        case let .finish(reason, usage):
+            finish = (reason, usage)
+        default:
+            break
+        }
+    }
+
+    #expect(text == #"{"value":"streamed","count":3}"#)
+    #expect(warnings == [warning])
+    #expect(object?.object == FacadeObjectAnswer(value: "streamed", count: 3))
+    #expect(object?.text == #"{"value":"streamed","count":3}"#)
+    #expect(object?.rawObject["count"]?.intValue == 3)
+    #expect(object?.finishReason == "stop")
+    #expect(object?.usage?.totalTokens == 9)
+    #expect(object?.warnings == [warning])
+    #expect(object?.responseMetadata == responseMetadata)
+    #expect(finish?.reason == "stop")
+    #expect(finish?.usage?.totalTokens == 9)
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.messages == [.user("Stream JSON.")])
+    #expect(request.responseFormat == .json(schema: schema, name: "answer"))
+    #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "answer")
+}
+
+@Test func aiStreamObjectCanRepairFinalText() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta("value: repaired"),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+
+    let stream = AI.streamObject(
+        model: model,
+        prompt: "Stream repaired JSON.",
+        as: FacadeObjectAnswer.self
+    ) { context in
+        #expect(context.text == "value: repaired")
+        return #"{"value":"repaired","count":4}"#
+    }
+
+    var object: ObjectGenerationResult<FacadeObjectAnswer>?
+    for try await part in stream {
+        if case let .object(result) = part {
+            object = result
+        }
+    }
+
+    #expect(object?.object == FacadeObjectAnswer(value: "repaired", count: 4))
+    #expect(object?.text == #"{"value":"repaired","count":4}"#)
+}
+
 @Test func aiGenerateTextExecutesTypedToolsAndContinuesUntilFinalText() async throws {
     let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
     let model = MockLanguageModel(results: [

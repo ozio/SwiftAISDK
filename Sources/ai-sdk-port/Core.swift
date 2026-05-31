@@ -297,6 +297,17 @@ public struct ObjectGenerationResult<Object: Sendable>: Sendable {
     }
 }
 
+public enum ObjectStreamPart<Object: Sendable>: Sendable {
+    case textDelta(String)
+    case object(ObjectGenerationResult<Object>)
+    case warning(AIWarning)
+    case source(AISource)
+    case metadata([String: JSONValue])
+    case responseMetadata(AIResponseMetadata)
+    case raw(LanguageStreamPart)
+    case finish(reason: String?, usage: TokenUsage?)
+}
+
 public struct AIObjectRepairContext: Sendable {
     public var text: String
     public var errorMessage: String

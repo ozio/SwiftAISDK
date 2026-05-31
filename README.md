@@ -102,6 +102,21 @@ let result = try await AI.generateObject(
 print(result.object.title)
 ```
 
+`AI.streamObject` is the streaming counterpart for `Decodable` output. It emits
+text deltas while the model streams JSON, then yields the final decoded object:
+
+```swift
+for try await part in AI.streamObject(
+    model: model,
+    prompt: "Stream a compact summary.",
+    as: Summary.self
+) {
+    if case let .object(result) = part {
+        print(result.object.title)
+    }
+}
+```
+
 ## Tools
 
 `AI.generateText` can execute typed Swift tools and continue the conversation
