@@ -537,6 +537,7 @@ public struct AITool: Sendable {
     public var name: String
     public var description: String?
     public var parameters: JSONValue
+    public var dynamic: Bool
     public var refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)?
     public var execute: @Sendable (JSONValue) async throws -> JSONValue
 
@@ -544,14 +545,33 @@ public struct AITool: Sendable {
         name: String,
         description: String? = nil,
         parameters: JSONValue,
+        dynamic: Bool = false,
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
         execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
     ) {
         self.name = name
         self.description = description
         self.parameters = parameters
+        self.dynamic = dynamic
         self.refineArguments = refineArguments
         self.execute = execute
+    }
+
+    public static func dynamic(
+        name: String,
+        description: String? = nil,
+        parameters: JSONValue,
+        refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
+        execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
+    ) -> AITool {
+        AITool(
+            name: name,
+            description: description,
+            parameters: parameters,
+            dynamic: true,
+            refineArguments: refineArguments,
+            execute: execute
+        )
     }
 
     public var schema: JSONValue {

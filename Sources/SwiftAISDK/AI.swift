@@ -52,6 +52,7 @@ public enum AI {
             stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
 
             var result = try await generateText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy)
+            result.toolCalls = annotateToolCalls(result.toolCalls, toolsByName: toolsByName)
             let executableCalls = result.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
 
             if executableCalls.isEmpty {
@@ -306,7 +307,8 @@ public enum AI {
 
                         let step = try await forwardLanguageStream(
                             streamText(model: stepModel, request: stepRequest),
-                            to: continuation
+                            to: continuation,
+                            toolsByName: toolsByName
                         )
                         let executableCalls = step.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
 
@@ -746,13 +748,15 @@ private struct LanguageStreamToolStep {
 
 private func forwardLanguageStream(
     _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
-    to continuation: AsyncThrowingStream<LanguageStreamPart, Error>.Continuation
+    to continuation: AsyncThrowingStream<LanguageStreamPart, Error>.Continuation,
+    toolsByName: [String: AITool] = [:]
 ) async throws -> LanguageStreamToolStep {
     var step = LanguageStreamToolStep()
     for try await part in stream {
         try Task.checkCancellation()
-        step.record(part)
-        continuation.yield(part)
+        let annotatedPart = annotateStreamPart(part, toolsByName: toolsByName)
+        step.record(annotatedPart)
+        continuation.yield(annotatedPart)
     }
     return step
 }
@@ -848,6 +852,43 @@ private func toolsByName(from tools: [AITool]) throws -> [String: AITool] {
     return output
 }
 
+private func annotateToolCalls(_ calls: [AIToolCall], toolsByName: [String: AITool]) -> [AIToolCall] {
+    calls.map { call in
+        guard toolsByName[call.name]?.dynamic == true, !call.dynamic else { return call }
+        var annotated = call
+        annotated.dynamic = true
+        return annotated
+    }
+}
+
+private func annotateToolResult(_ result: AIToolResult, toolsByName: [String: AITool]) -> AIToolResult {
+    guard toolsByName[result.toolName]?.dynamic == true, !result.dynamic else { return result }
+    var annotated = result
+    annotated.dynamic = true
+    return annotated
+}
+
+private func annotateStreamPart(_ part: LanguageStreamPart, toolsByName: [String: AITool]) -> LanguageStreamPart {
+    switch part {
+    case let .toolInputStart(id, name, providerExecuted, dynamic, title, providerMetadata):
+        guard toolsByName[name]?.dynamic == true, !dynamic else { return part }
+        return .toolInputStart(
+            id: id,
+            name: name,
+            providerExecuted: providerExecuted,
+            dynamic: true,
+            title: title,
+            providerMetadata: providerMetadata
+        )
+    case let .toolCall(call):
+        return .toolCall(annotateToolCalls([call], toolsByName: toolsByName)[0])
+    case let .toolResult(result):
+        return .toolResult(annotateToolResult(result, toolsByName: toolsByName))
+    default:
+        return part
+    }
+}
+
 private func executeToolCalls(_ calls: [AIToolCall], toolsByName: [String: AITool]) async throws -> [AIToolResult] {
     var results: [AIToolResult] = []
     for call in calls {
@@ -855,11 +896,12 @@ private func executeToolCalls(_ calls: [AIToolCall], toolsByName: [String: AIToo
         let arguments = try toolArguments(from: call)
         let refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
         let result = try await tool.execute(refinedArguments)
+        let dynamic = call.dynamic || tool.dynamic
         results.append(AIToolResult(
             toolCallID: call.id,
             toolName: call.name,
             result: result,
-            dynamic: call.dynamic,
+            dynamic: dynamic,
             providerMetadata: call.providerMetadata
         ))
     }

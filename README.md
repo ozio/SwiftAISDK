@@ -173,6 +173,24 @@ for try await part in AI.streamText(
 }
 ```
 
+Use `AITool.dynamic(...)` for runtime-discovered tools, such as tools loaded
+from an MCP server. Dynamic tools are sent to providers as normal function
+tools, while Swift marks related tool calls, stream parts, tool results, and
+follow-up messages with `dynamic: true`:
+
+```swift
+let runtimeSearch = AITool.dynamic(
+    name: "runtimeSearch",
+    description: "Search a runtime tool source.",
+    parameters: [
+        "type": "object",
+        "properties": ["query": ["type": "string"]]
+    ]
+) { arguments in
+    ["items": ["Found \(arguments["query"]?.stringValue ?? "something")"]]
+}
+```
+
 Use `prepareStep` when a later tool-loop step needs different request settings
 or a narrowed tool set:
 

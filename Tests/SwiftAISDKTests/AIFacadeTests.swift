@@ -298,6 +298,58 @@ import Testing
     #expect(streamed.contains(.toolResult(AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["city": "Kyoto"]))))
 }
 
+@Test func aiStreamTextMarksDynamicToolPartsAndResults() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#)
+    let dynamicToolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#, dynamic: true)
+    let dynamicResult = AIToolResult(
+        toolCallID: "call-1",
+        toolName: "runtimeSearch",
+        result: ["items": ["one"]],
+        dynamic: true
+    )
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .toolInputStart(id: "call-1", name: "runtimeSearch"),
+                .toolInputDelta(id: "call-1", delta: #"{"query":"docs"}"#),
+                .toolInputEnd(id: "call-1"),
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 4))
+            ],
+            [
+                .textDelta("done"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+            ]
+        ]
+    )
+    let runtimeSearch = AITool.dynamic(
+        name: "runtimeSearch",
+        description: "Runtime-discovered search tool.",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { _ in
+        ["items": ["one"]]
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Search runtime docs.",
+        executableTools: [runtimeSearch],
+        maxSteps: 2
+    ) {
+        streamed.append(part)
+    }
+
+    #expect(streamed.contains(.toolInputStart(id: "call-1", name: "runtimeSearch", dynamic: true)))
+    #expect(streamed.contains(.toolCall(dynamicToolCall)))
+    #expect(streamed.contains(.toolResult(dynamicResult)))
+    #expect(model.streamRequests[0].tools["runtimeSearch"]?["description"]?.stringValue == "Runtime-discovered search tool.")
+    #expect(model.streamRequests[0].tools["runtimeSearch"]?["dynamic"] == nil)
+    #expect(model.streamRequests[1].messages[1].content == [.toolCall(dynamicToolCall)])
+    #expect(model.streamRequests[1].messages[2].content == [.toolResult(dynamicResult)])
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let schema: JSONValue = [
         "type": "object",
@@ -585,6 +637,44 @@ import Testing
     #expect(result.text == "done")
     #expect(await capture.value()?["city"]?.stringValue == "Tokyo")
     #expect(result.toolResults.first?.result["city"]?.stringValue == "Tokyo")
+}
+
+@Test func aiGenerateTextMarksDynamicToolCallsResultsAndMessages() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#)
+    let dynamicToolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#, dynamic: true)
+    let dynamicResult = AIToolResult(
+        toolCallID: "call-1",
+        toolName: "runtimeSearch",
+        result: ["items": ["one"]],
+        dynamic: true
+    )
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object(["step": 1])),
+        TextGenerationResult(text: "done", finishReason: "stop", rawValue: .object(["step": 2]))
+    ])
+    let runtimeSearch = AITool.dynamic(
+        name: "runtimeSearch",
+        description: "Runtime-discovered search tool.",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+    ) { _ in
+        ["items": ["one"]]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Search runtime docs.",
+        executableTools: [runtimeSearch],
+        maxSteps: 2
+    )
+
+    #expect(result.text == "done")
+    #expect(result.toolResults == [dynamicResult])
+    #expect(result.steps[0].toolCalls == [dynamicToolCall])
+    #expect(result.steps[0].toolResults == [dynamicResult])
+    #expect(model.requests[0].tools["runtimeSearch"]?["description"]?.stringValue == "Runtime-discovered search tool.")
+    #expect(model.requests[0].tools["runtimeSearch"]?["dynamic"] == nil)
+    #expect(model.requests[1].messages[1].content == [.toolCall(dynamicToolCall)])
+    #expect(model.requests[1].messages[2].content == [.toolResult(dynamicResult)])
 }
 
 @Test func aiStopConditionsMatchUpstreamStepHelpers() async throws {
