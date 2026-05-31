@@ -185,6 +185,51 @@ import Testing
     #expect(embedding.requests.first?.values == ["a"])
 }
 
+@Test func providerRegistryAppliesLanguageMiddlewareToRoutedModels() async throws {
+    let language = MiddlewareLanguageModel()
+    let embedding = MiddlewareEmbeddingModel()
+    let provider = MiddlewareProvider(language: language, embedding: embedding)
+    let registry = createProviderRegistry(
+        ["app": provider],
+        languageModelMiddleware: defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings(
+            temperature: 0.6,
+            providerOptions: ["test": ["fromRegistry": true]]
+        ))
+    )
+
+    _ = try await registry.languageModel("app:chat").generate(LanguageModelRequest(messages: [.user("Hi")]))
+    _ = try await registry.embeddingModel("app:embed").embed(EmbeddingRequest(values: ["b"]))
+
+    #expect(language.generateRequests.first?.temperature == 0.6)
+    #expect(language.generateRequests.first?.providerOptions["test"]?["fromRegistry"]?.boolValue == true)
+    #expect(embedding.requests.first?.values == ["b"])
+}
+
+@Test func providerRegistryAppliesMultipleLanguageMiddlewaresInOrder() async throws {
+    let language = MiddlewareLanguageModel()
+    let provider = MiddlewareProvider(language: language, embedding: MiddlewareEmbeddingModel())
+    let registry = AIProviders.providerRegistry(
+        ["app": provider],
+        languageModelMiddleware: [
+            AILanguageModelMiddleware(transformRequest: { context in
+                var request = context.request
+                request.headers["x-first"] = context.type.rawValue
+                return request
+            }),
+            AILanguageModelMiddleware(transformRequest: { context in
+                var request = context.request
+                request.headers["x-second"] = context.request.headers["x-first"]
+                return request
+            })
+        ]
+    )
+
+    _ = try await registry.languageModel("app:chat").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(language.generateRequests.first?.headers["x-first"] == "generate")
+    #expect(language.generateRequests.first?.headers["x-second"] == "generate")
+}
+
 private final class MiddlewareLanguageModel: LanguageModel, @unchecked Sendable {
     let providerID: String
     let modelID: String

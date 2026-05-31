@@ -27,14 +27,17 @@ public final class AIProviderRegistry: AIProvider, @unchecked Sendable {
 
     private let providers: [String: any AIProvider]
     private let separator: String
+    private let languageModelMiddleware: [AILanguageModelMiddleware]
 
     public init(
         providers: [String: any AIProvider],
         separator: String = ":",
-        providerID: String = "provider-registry"
+        providerID: String = "provider-registry",
+        languageModelMiddleware: [AILanguageModelMiddleware] = []
     ) {
         self.providers = providers
         self.separator = separator
+        self.languageModelMiddleware = languageModelMiddleware
         self.providerID = providerID
         self.supportedCapabilities = providers.values.reduce(into: Set<ModelCapability>()) { result, provider in
             result.formUnion(provider.supportedCapabilities)
@@ -43,7 +46,11 @@ public final class AIProviderRegistry: AIProvider, @unchecked Sendable {
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
         let (providerID, routedModelID) = try split(modelID, modelType: "languageModel")
-        return try provider(providerID, modelType: "languageModel").languageModel(routedModelID)
+        let model = try provider(providerID, modelType: "languageModel").languageModel(routedModelID)
+        guard !languageModelMiddleware.isEmpty else {
+            return model
+        }
+        return wrapLanguageModel(model, middleware: languageModelMiddleware)
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
@@ -114,16 +121,50 @@ public final class AIProviderRegistry: AIProvider, @unchecked Sendable {
 
 public func createProviderRegistry(
     _ providers: [String: any AIProvider],
-    separator: String = ":"
+    separator: String = ":",
+    languageModelMiddleware: [AILanguageModelMiddleware] = []
 ) -> AIProviderRegistry {
-    AIProviderRegistry(providers: providers, separator: separator)
+    AIProviderRegistry(
+        providers: providers,
+        separator: separator,
+        languageModelMiddleware: languageModelMiddleware
+    )
+}
+
+public func createProviderRegistry(
+    _ providers: [String: any AIProvider],
+    separator: String = ":",
+    languageModelMiddleware: AILanguageModelMiddleware
+) -> AIProviderRegistry {
+    createProviderRegistry(
+        providers,
+        separator: separator,
+        languageModelMiddleware: [languageModelMiddleware]
+    )
 }
 
 public func experimentalCreateProviderRegistry(
     _ providers: [String: any AIProvider],
-    separator: String = ":"
+    separator: String = ":",
+    languageModelMiddleware: [AILanguageModelMiddleware] = []
 ) -> AIProviderRegistry {
-    createProviderRegistry(providers, separator: separator)
+    createProviderRegistry(
+        providers,
+        separator: separator,
+        languageModelMiddleware: languageModelMiddleware
+    )
+}
+
+public func experimentalCreateProviderRegistry(
+    _ providers: [String: any AIProvider],
+    separator: String = ":",
+    languageModelMiddleware: AILanguageModelMiddleware
+) -> AIProviderRegistry {
+    createProviderRegistry(
+        providers,
+        separator: separator,
+        languageModelMiddleware: languageModelMiddleware
+    )
 }
 
 public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecked Sendable {
@@ -327,16 +368,50 @@ extension AIProviders {
 
     public static func providerRegistry(
         _ providers: [String: any AIProvider],
-        separator: String = ":"
+        separator: String = ":",
+        languageModelMiddleware: [AILanguageModelMiddleware] = []
     ) -> AIProviderRegistry {
-        createProviderRegistry(providers, separator: separator)
+        createProviderRegistry(
+            providers,
+            separator: separator,
+            languageModelMiddleware: languageModelMiddleware
+        )
+    }
+
+    public static func providerRegistry(
+        _ providers: [String: any AIProvider],
+        separator: String = ":",
+        languageModelMiddleware: AILanguageModelMiddleware
+    ) -> AIProviderRegistry {
+        createProviderRegistry(
+            providers,
+            separator: separator,
+            languageModelMiddleware: languageModelMiddleware
+        )
     }
 
     public static func experimentalCreateProviderRegistry(
         _ providers: [String: any AIProvider],
-        separator: String = ":"
+        separator: String = ":",
+        languageModelMiddleware: [AILanguageModelMiddleware] = []
     ) -> AIProviderRegistry {
-        createProviderRegistry(providers, separator: separator)
+        createProviderRegistry(
+            providers,
+            separator: separator,
+            languageModelMiddleware: languageModelMiddleware
+        )
+    }
+
+    public static func experimentalCreateProviderRegistry(
+        _ providers: [String: any AIProvider],
+        separator: String = ":",
+        languageModelMiddleware: AILanguageModelMiddleware
+    ) -> AIProviderRegistry {
+        createProviderRegistry(
+            providers,
+            separator: separator,
+            languageModelMiddleware: languageModelMiddleware
+        )
     }
 }
 

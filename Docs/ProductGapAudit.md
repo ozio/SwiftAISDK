@@ -69,13 +69,14 @@ Impact:
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as
   `provider:model` through registered Swift providers. Upstream global string
-  model-id resolution and full registry middleware remain follow-up product
-  work.
+  model-id resolution remains follow-up product work.
 - Language model middleware now covers the first upstream wrapper layer:
   `wrapLanguageModel`, `wrapProvider`, request transforms, generate/stream
   wrappers, provider/model ID overrides, and `defaultSettingsMiddleware`.
+  `createProviderRegistry(...)` can apply language middleware to every routed
+  language model.
   Image/embedding middleware, extract/simulate specialized middlewares,
-  telemetry, and registry-level middleware remain follow-up product work.
+  telemetry, and registry-level image middleware remain follow-up product work.
 
 Recommendation:
 

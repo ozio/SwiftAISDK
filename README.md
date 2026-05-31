@@ -302,6 +302,17 @@ let chat = try registry.languageModel("openai:gpt-4.1-mini")
 let claude = try registry.languageModel("anthropic:claude-sonnet-4-20250514")
 ```
 
+Registries can also apply language middleware to every routed language model:
+
+```swift
+let tunedRegistry = createProviderRegistry(
+    ["openai": try AIProviders.openAI()],
+    languageModelMiddleware: defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings(
+        temperature: 0.3
+    ))
+)
+```
+
 Language models and providers can be wrapped with middleware, mirroring
 upstream `wrapLanguageModel`, `wrapProvider`, and `defaultSettingsMiddleware`:
 
