@@ -72,17 +72,18 @@ Impact:
   model-id resolution remains follow-up product work.
 - Model middleware now covers the upstream wrapper layer for language, image,
   and embedding models: request transforms, operation wrappers,
-  provider/model ID overrides, and `defaultSettingsMiddleware` for language
-  defaults. `wrapProvider(...)` can apply all three middleware families, and
-  `createProviderRegistry(...)` can apply language and image middleware to
-  routed models. Extract/simulate specialized middlewares and telemetry remain
-  follow-up product work.
+  provider/model ID overrides, `defaultSettingsMiddleware` for language
+  defaults, `defaultEmbeddingSettingsMiddleware` for embedding defaults,
+  JSON/reasoning extraction, simulated streaming, and tool input-example
+  description transforms. `wrapProvider(...)` can apply all three middleware
+  families, and `createProviderRegistry(...)` can apply language and image
+  middleware to routed models. Telemetry remains follow-up product work.
 
 Recommendation:
 
 Continue growing the `AI` facade above provider models: cancellation,
-timeouts, telemetry, richer schema/object generation, and specialized
-middleware should be separate product rounds.
+timeouts, telemetry, and richer schema/object generation should be separate
+product rounds.
 
 ### 2. Core model contract is lossy compared with upstream v4
 
@@ -259,8 +260,8 @@ Keep turning documentation into executable product evidence:
    stream-side local tool execution and `customProvider(...)` for local model
    maps plus fallback providers. `createProviderRegistry(...)` now covers
    upstream-style `provider:model` routing. Follow-up work should add richer
-   result objects, cancellation/timeout behavior, specialized middleware,
-   global string model-id resolution, and streaming orchestration.
+   result objects, cancellation/timeout behavior, global string model-id
+   resolution, and streaming orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
    First retry slice is in place with `AIRetryPolicy` and default

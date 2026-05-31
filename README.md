@@ -320,7 +320,7 @@ let tunedRegistry = createProviderRegistry(
 
 Language, image, and embedding models can be wrapped with middleware, mirroring
 upstream `wrapLanguageModel`, `wrapImageModel`, `wrapEmbeddingModel`,
-`wrapProvider`, and `defaultSettingsMiddleware`:
+`wrapProvider`, specialized text transforms, and default settings helpers:
 
 ```swift
 let tunedModel = wrapLanguageModel(
@@ -333,12 +333,14 @@ let tunedModel = wrapLanguageModel(
 
 let tunedEmbeddings = wrapEmbeddingModel(
     embeddingModel,
-    middleware: AIEmbeddingModelMiddleware(transformRequest: { context in
-        var request = context.request
-        request.dimensions = request.dimensions ?? 1024
-        return request
-    })
+    middleware: defaultEmbeddingSettingsMiddleware(settings: AIDefaultEmbeddingModelSettings(
+        providerOptions: ["openai": ["encodingFormat": "float"]]
+    ))
 )
+
+let jsonReady = wrapLanguageModel(model, middleware: extractJsonMiddleware())
+let reasoningReady = wrapLanguageModel(model, middleware: extractReasoningMiddleware(tagName: "think"))
+let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMiddleware())
 ```
 
 Use `AIProviderCapabilities.all` for a machine-readable provider/capability
