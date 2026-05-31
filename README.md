@@ -203,6 +203,23 @@ let runtimeSearch = AITool.dynamic(
 }
 ```
 
+`MCPClient` mirrors the official `@ai-sdk/mcp` tool bridge: it performs the
+MCP initialize handshake, lists server tools, and converts them into dynamic
+`AITool` values that can be passed to `generateText` or `streamText`:
+
+```swift
+let mcp = try await MCPClient.connect(
+    transport: try MCPHTTPTransport(url: "https://mcp.example.com/rpc")
+)
+let mcpTools = try await mcp.tools()
+
+let answer = try await AI.generateText(
+    model: model,
+    prompt: "Search the docs.",
+    executableTools: Array(mcpTools.values)
+)
+```
+
 Use `toolApproval` when a tool call needs a policy decision before execution.
 Returning `.denied(...)` records an approval response and sends an
 `execution-denied` tool result back into the loop; returning `.userApproval`

@@ -157,6 +157,10 @@ Impact:
 - `AITool.dynamic(...)` marks runtime-discovered tools while keeping provider
   request schemas in function-tool form, matching upstream `dynamicTool(...)`
   behavior for tool calls, stream parts, results, and follow-up messages.
+- `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
+  `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
+  transports, and conversion of MCP tool definitions into dynamic `AITool`
+  values with MCP provider metadata.
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
@@ -170,9 +174,9 @@ Impact:
 Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
-schema adapter protocols, provider-defined executable wrappers, richer stream
-tool lifecycle events, and provider-executed approval response mapping for
-non-OpenAI providers that expose an equivalent native wire format.
+schema adapter protocols, richer MCP resources/prompts/elicitation support,
+richer stream tool lifecycle events, and provider-executed approval response
+mapping for non-OpenAI providers that expose an equivalent native wire format.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -251,10 +255,11 @@ Keep turning documentation into executable product evidence:
    First `generateText` and `streamText` slices are in place with typed
    `AITool`, execute callbacks, step/tool-result messages, streamed tool-result
    parts, upstream-style stop conditions, a Swift `prepareStep` hook, and tool
-   argument refinement, dynamic tool marking, and first-pass tool approval
-   policies. Next passes should add typed validation errors, provider-executed
-   approval responses, provider-defined tool wrappers, and richer stream
-   lifecycle handling.
+   argument refinement, dynamic tool marking, first-pass tool approval
+   policies, and an MCP client bridge for server-discovered dynamic tools. Next
+   passes should add typed validation errors, provider-executed approval
+   responses, richer MCP resources/prompts/elicitation support, and richer
+   stream lifecycle handling.
 
 5. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
