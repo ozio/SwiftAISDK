@@ -1,5 +1,14 @@
+import Foundation
 import Testing
 @testable import SwiftAISDK
+
+@Test func providerCapabilityMatrixDocumentationMatchesGeneratedMarkdown() throws {
+    let documentURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        .appendingPathComponent("Docs/ProviderCapabilityMatrix.md")
+    let document = try String(contentsOf: documentURL, encoding: .utf8)
+
+    #expect(document == AIProviderCapabilities.markdownDocument())
+}
 
 @Test func providerCapabilityMatrixCoversDiscoveredProviderPackages() {
     let expectedPackages: Set<String> = [

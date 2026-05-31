@@ -30,12 +30,13 @@ tests, update the matrix, then commit and push the round.
 | --- | --- | --- |
 | `Sources/SwiftAISDK/Providers/ProviderRegistry.swift` | Public provider factories, aliases, auth, base URLs, and provider-level capability sets. | A provider package is added, removed, renamed, or changes supported model families. |
 | `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift` | Machine-readable product coverage for provider packages, Swift factories, capabilities, files, and skills. | Any provider capability or factory changes. |
-| `Docs/ProviderCapabilityMatrix.md` | Human-readable coverage table and live-smoke instructions. | The source matrix changes. |
+| `Docs/ProviderCapabilityMatrix.md` | Generated human-readable coverage table and live-smoke instructions. | The source matrix changes; keep it equal to `AIProviderCapabilities.markdownDocument()`. |
 | `Tests/SwiftAISDKTests/*` | Wire-shape, response, stream, warning, and registry evidence. | Every behavior port. |
 | `Tests/SwiftAISDKTests/LiveProviderSmokeTests.swift` | Opt-in real-provider health checks. | Representative live coverage changes. |
 
 Treat the matrix as the product inventory, not as marketing copy. A provider is
-not "covered" unless the registry, matrix, and tests agree.
+not "covered" unless the registry, source matrix, generated document, and tests
+agree.
 
 ## What Counts As In Scope
 
@@ -340,14 +341,17 @@ Use these gates before calling a surface complete:
    `gemini-api-key.txt`.
 
 4. **Docs:** README and `Docs/ProviderCapabilityMatrix.md` point users to the
-   same capability story as the code.
+   same capability story as the code. The provider matrix document is generated
+   by `AIProviderCapabilities.markdownDocument()` and guarded by
+   `providerCapabilityMatrixDocumentationMatchesGeneratedMarkdown()`.
 
 ## Pre-Commit Checklist
 
 - Public factory and aliases match upstream exports.
 - Supported capabilities match upstream model methods.
-- `AIProviderCapabilities` and `Docs/ProviderCapabilityMatrix.md` match the
-  registry and any new provider/client surfaces.
+- `AIProviderCapabilities` matches the registry and any new provider/client
+  surfaces, and `Docs/ProviderCapabilityMatrix.md` matches
+  `AIProviderCapabilities.markdownDocument()`.
 - Provider IDs match upstream, including capability suffixes where present.
 - Default base URL, env var names, auth headers, and query parameters match.
 - Request body conversion is covered for normal generation plus tools,

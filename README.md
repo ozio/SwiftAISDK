@@ -361,7 +361,8 @@ let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMidd
 
 Use `AIProviderCapabilities.all` for a machine-readable provider/capability
 matrix, or read [Docs/ProviderCapabilityMatrix.md](Docs/ProviderCapabilityMatrix.md)
-for the human table. Optional live smoke tests are available with real keys:
+for the generated human table. Optional live smoke tests are available with real
+keys:
 
 ```sh
 LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke

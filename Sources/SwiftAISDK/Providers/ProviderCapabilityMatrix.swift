@@ -33,6 +33,8 @@ public struct AIProviderCapabilityRow: Equatable, Sendable {
 }
 
 public enum AIProviderCapabilities {
+    public static let markdownSnapshotDate = "2026-05-31"
+
     public static let all: [AIProviderCapabilityRow] = [
         providerRow("alibaba", "@ai-sdk/alibaba", ["AIProviders.alibaba"], [.language, .video]),
         providerRow("amazon-bedrock", "@ai-sdk/amazon-bedrock", ["AIProviders.amazonBedrock"], [.language, .embedding, .image, .reranking]),
@@ -89,6 +91,99 @@ public enum AIProviderCapabilities {
     public static func rows(upstreamPackage: String) -> [AIProviderCapabilityRow] {
         all.filter { $0.upstreamPackage == upstreamPackage }
     }
+
+    public static func markdownDocument(snapshotDate: String = markdownSnapshotDate) -> String {
+        var lines: [String] = [
+            "# Provider Capability Matrix",
+            "",
+            "Snapshot date: \(snapshotDate)",
+            "",
+            "This document is generated from `AIProviderCapabilities` in",
+            "`Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`. Update that",
+            "file first when adding or changing provider coverage; the drift test will",
+            "fail until this document is regenerated from the same source.",
+            "",
+            "Legend:",
+            "",
+            "- `L`: language",
+            "- `C`: completion",
+            "- `E`: embedding",
+            "- `I`: image",
+            "- `T`: transcription",
+            "- `S`: speech",
+            "- `V`: video",
+            "- `R`: reranking",
+            "- `F`: file upload client",
+            "- `K`: skill upload client",
+            "",
+            markdownTable(),
+        ]
+
+        let rowsWithNotes = all.filter { $0.notes != nil }
+        if !rowsWithNotes.isEmpty {
+            lines.append(contentsOf: [
+                "",
+                "## Provider Notes",
+                "",
+                "| Provider ID | Note |",
+                "| --- | --- |",
+            ])
+
+            for row in rowsWithNotes {
+                lines.append("| `\(escapeMarkdownTable(row.providerID))` | \(escapeMarkdownTable(row.notes ?? "")) |")
+            }
+        }
+
+        lines.append(contentsOf: [
+            "",
+            "## Reality Gates",
+            "",
+            "Use three gates when judging provider completeness:",
+            "",
+            "1. The provider appears in `AIProviderCapabilities.all`.",
+            "2. Unit tests cover the request and response or stream shape for every",
+            "   supported capability in the matrix.",
+            "3. At least one opt-in live smoke test exists for representative first-party",
+            "   providers and can be run with real keys.",
+            "",
+            "The live smoke suite is intentionally off by default. Run it with:",
+            "",
+            "```sh",
+            "LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke",
+            "```",
+            "",
+            "The suite reads `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GEMINI_API_KEY`",
+            "first, then falls back to `openai-api-key.txt`, `claude-api-key.txt`, and",
+            "`gemini-api-key.txt` in the package root. Override model IDs with",
+            "`LIVE_OPENAI_MODEL`, `LIVE_ANTHROPIC_MODEL`, and `LIVE_GOOGLE_MODEL`.",
+            "",
+        ])
+
+        return lines.joined(separator: "\n")
+    }
+
+    public static func markdownTable() -> String {
+        let header = "| Upstream package | Provider ID | Swift factories | L | C | E | I | T | S | V | R | F | K |"
+        let separator = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        let rows = all.map { row in
+            let values = capabilityColumns.map { column in
+                row.supports(column.capability) ? "yes" : ""
+            }
+            let flags = values + [
+                row.supportsFileUpload ? "yes" : "",
+                row.supportsSkillUpload ? "yes" : "",
+            ]
+            return (
+                [
+                    "`\(escapeMarkdownTable(row.upstreamPackage))`",
+                    "`\(escapeMarkdownTable(row.providerID))`",
+                    row.factoryNames.map { "`\(escapeMarkdownTable($0))`" }.joined(separator: ", "),
+                ] + flags
+            ).asMarkdownTableRow()
+        }
+
+        return ([header, separator] + rows).joined(separator: "\n")
+    }
 }
 
 private func providerRow(
@@ -109,4 +204,25 @@ private func providerRow(
         supportsSkillUpload: skills,
         notes: notes
     )
+}
+
+private let capabilityColumns: [(label: String, capability: ModelCapability)] = [
+    ("L", .language),
+    ("C", .completion),
+    ("E", .embedding),
+    ("I", .image),
+    ("T", .transcription),
+    ("S", .speech),
+    ("V", .video),
+    ("R", .reranking),
+]
+
+private func escapeMarkdownTable(_ value: String) -> String {
+    value.replacingOccurrences(of: "|", with: "\\|")
+}
+
+private extension Array where Element == String {
+    func asMarkdownTableRow() -> String {
+        "| \(joined(separator: " | ")) |"
+    }
 }

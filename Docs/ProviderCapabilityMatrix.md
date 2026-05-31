@@ -2,10 +2,10 @@
 
 Snapshot date: 2026-05-31
 
-The source of truth for this table is `AIProviderCapabilities` in
+This document is generated from `AIProviderCapabilities` in
 `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`. Update that
-file first when adding or changing provider coverage, then update this document
-and the related tests.
+file first when adding or changing provider coverage; the drift test will
+fail until this document is regenerated from the same source.
 
 Legend:
 
@@ -68,6 +68,16 @@ Legend:
 | `@ai-sdk/vercel` | `vercel` | `AIProviders.vercel` | yes |  |  |  |  |  |  |  |  |  |
 | `@ai-sdk/voyage` | `voyage` | `AIProviders.voyage` |  |  | yes |  |  |  |  | yes |  |  |
 | `@ai-sdk/xai` | `xai` | `AIProviders.xAI`, `AIProviders.xai` | yes |  |  | yes |  |  | yes |  | yes |  |
+
+## Provider Notes
+
+| Provider ID | Note |
+| --- | --- |
+| `baseten` | Embedding requires a synchronous model URL, matching the upstream Baseten split. |
+| `gateway` | Gateway also exposes model, credits, spend, and generation metadata management APIs. |
+| `google.generative-ai` | Also exposes Gemini interactions models and agents. |
+| `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. |
+| `openai-compatible` | Generic OpenAI-compatible factory; caller supplies provider ID and base URL. |
 
 ## Reality Gates
 

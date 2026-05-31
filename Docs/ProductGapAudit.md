@@ -229,21 +229,29 @@ current product shape visible, but the verification gates are still uneven.
 Impact:
 
 - Provider breadth is visible through `AIProviderCapabilities`, but matrix rows
-  still depend on humans updating the static source when a provider pass changes.
+  are now rendered from that source and guarded by a drift test. The remaining
+  risk is that a provider pass forgets to update the source inventory itself.
 - Mock transport tests prove wire shape, but live provider health is only covered
   by an opt-in smoke suite for representative first-party providers.
-- A user can start from the README, but there is not yet a generated matrix or
+- A user can start from the README and generated matrix, but there is not yet a
   per-provider cookbook.
 
 Recommendation:
 
 Keep turning documentation into executable product evidence:
 
-- generate the markdown capability matrix from `AIProviderCapabilities`;
+- keep the markdown capability matrix generated from `AIProviderCapabilities`;
 - expand live smoke coverage by provider family without making it default CI;
 - add per-provider quick-start snippets only where the SDK surface differs;
 - keep `UpstreamSync.md` as a short manifest/checklist, with detailed evidence
   in the matrix and tests.
+
+Progress:
+
+- `AIProviderCapabilities.markdownDocument()` now renders
+  `Docs/ProviderCapabilityMatrix.md`, and
+  `providerCapabilityMatrixDocumentationMatchesGeneratedMarkdown()` fails if the
+  checked-in document drifts from source.
 
 ## Recommended Next Rounds
 
