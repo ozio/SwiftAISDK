@@ -416,6 +416,50 @@ import Testing
     #expect(camelBody["testProvider"] == nil)
 }
 
+@Test func openAICompatibleCompletionWarnsForDeprecatedProviderOptionsKeys() async throws {
+    let rawTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"text":"done","finish_reason":"stop"}]}
+    """))
+    let rawProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: rawTransport
+    )
+
+    let rawResult = try await rawProvider.completionModel("completion-model").generate(LanguageModelRequest(
+        messages: [.user("Finish")],
+        extraBody: ["test-provider": .object(["suffix": .string("raw")])]
+    ))
+
+    #expect(rawResult.warnings == [
+        AIWarning(type: "deprecated", setting: "providerOptions key 'test-provider'", message: "Use 'testProvider' instead.")
+    ])
+    let rawBody = try decodeJSONBody(try #require((await rawTransport.requests()).first?.body))
+    #expect(rawBody["suffix"]?.stringValue == "raw")
+    #expect(rawBody["test-provider"] == nil)
+
+    let camelTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"text":"done","finish_reason":"stop"}]}
+    """))
+    let camelProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: camelTransport
+    )
+
+    let camelResult = try await camelProvider.completionModel("completion-model").generate(LanguageModelRequest(
+        messages: [.user("Finish")],
+        extraBody: ["testProvider": .object(["suffix": .string("camel")])]
+    ))
+
+    #expect(camelResult.warnings.isEmpty)
+    let camelBody = try decodeJSONBody(try #require((await camelTransport.requests()).first?.body))
+    #expect(camelBody["suffix"]?.stringValue == "camel")
+    #expect(camelBody["testProvider"] == nil)
+}
+
 @Test func openAICompatibleImageRejectsMoreThanMaxImagesPerCall() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"unused"}]}"#))
     let provider = try AIProviders.openAICompatible(

@@ -751,12 +751,15 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        let warnings = isOpenAIBackedProvider(providerID)
+            ? []
+            : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
         let body = body(for: request, stream: false)
         let raw = try await config.sendJSON(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers)
         guard let text = raw["choices"]?[0]?["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No text found in completion response.")
         }
-        return TextGenerationResult(text: text, finishReason: raw["choices"]?[0]?["finish_reason"]?.stringValue, usage: tokenUsage(from: raw), rawValue: raw)
+        return TextGenerationResult(text: text, finishReason: raw["choices"]?[0]?["finish_reason"]?.stringValue, usage: tokenUsage(from: raw), rawValue: raw, warnings: warnings)
     }
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
