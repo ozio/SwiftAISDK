@@ -14,12 +14,20 @@ public enum AIProviders {
         return try OpenAICompatibleProvider(providerID: "openai", defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings)
     }
 
+    public static func openai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try openAI(settings: settings)
+    }
+
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
         try AnthropicProvider(settings: settings)
     }
 
     public static func anthropicAWS(settings: AnthropicAWSProviderSettings = AnthropicAWSProviderSettings()) throws -> AnthropicAWSProvider {
         try AnthropicAWSProvider(settings: settings)
+    }
+
+    public static func anthropicAws(settings: AnthropicAWSProviderSettings = AnthropicAWSProviderSettings()) throws -> AnthropicAWSProvider {
+        try anthropicAWS(settings: settings)
     }
 
     public static func google(settings: ProviderSettings = ProviderSettings()) throws -> GoogleGenerativeAIProvider {
@@ -98,6 +106,32 @@ public enum AIProviders {
         )
     }
 
+    public static func openaiCompatible(
+        name: String,
+        baseURL: String,
+        apiKey: String? = nil,
+        headers: [String: String] = [:],
+        queryParams: [String: String] = [:],
+        transport: any AITransport = URLSessionTransport.shared,
+        includeUsage: Bool = false,
+        supportsStructuredOutputs: Bool = false,
+        maxEmbeddingsPerCall: Int? = nil,
+        transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil
+    ) throws -> OpenAICompatibleProvider {
+        try openAICompatible(
+            name: name,
+            baseURL: baseURL,
+            apiKey: apiKey,
+            headers: headers,
+            queryParams: queryParams,
+            transport: transport,
+            includeUsage: includeUsage,
+            supportsStructuredOutputs: supportsStructuredOutputs,
+            maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            transformRequestBody: transformRequestBody
+        )
+    }
+
     public static func mistral(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "mistral", defaultBaseURL: "https://api.mistral.ai/v1", authorization: .bearer(environmentVariables: ["MISTRAL_API_KEY"]), supportedCapabilities: [.language, .embedding], settings: settings)
     }
@@ -106,12 +140,24 @@ public enum AIProviders {
         try OpenAICompatibleProvider(providerID: "xai", defaultBaseURL: "https://api.x.ai/v1", authorization: .bearer(environmentVariables: ["XAI_API_KEY"]), supportedCapabilities: [.language, .image, .video], settings: settings)
     }
 
+    public static func xai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try xAI(settings: settings)
+    }
+
     public static func deepSeek(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "deepseek", defaultBaseURL: "https://api.deepseek.com", authorization: .bearer(environmentVariables: ["DEEPSEEK_API_KEY"]), supportedCapabilities: [.language], settings: settings)
     }
 
+    public static func deepseek(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try deepSeek(settings: settings)
+    }
+
     public static func togetherAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "togetherai", defaultBaseURL: "https://api.together.xyz/v1", authorization: .bearer(environmentVariables: ["TOGETHER_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .reranking], settings: settings)
+    }
+
+    public static func togetherai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try togetherAI(settings: settings)
     }
 
     public static func cohere(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -150,6 +196,10 @@ public enum AIProviders {
         try OpenAICompatibleProvider(providerID: "deepinfra", defaultBaseURL: "https://api.deepinfra.com/v1/openai", authorization: .bearer(environmentVariables: ["DEEPINFRA_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image], settings: settings)
     }
 
+    public static func deepinfra(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try deepInfra(settings: settings)
+    }
+
     public static func baseten(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "baseten", defaultBaseURL: "https://inference.baseten.co/v1", authorization: .bearer(environmentVariables: ["BASETEN_API_KEY"]), supportedCapabilities: [.language, .embedding], settings: settings)
     }
@@ -170,8 +220,16 @@ public enum AIProviders {
         try OpenAICompatibleProvider(providerID: "moonshotai", defaultBaseURL: "https://api.moonshot.ai/v1", authorization: .bearer(environmentVariables: ["MOONSHOT_API_KEY"]), supportedCapabilities: [.language], settings: settings)
     }
 
+    public static func moonshotai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try moonshotAI(settings: settings)
+    }
+
     public static func huggingFace(settings: ProviderSettings = ProviderSettings()) throws -> HuggingFaceProvider {
         try HuggingFaceProvider(settings: settings)
+    }
+
+    public static func huggingface(settings: ProviderSettings = ProviderSettings()) throws -> HuggingFaceProvider {
+        try huggingFace(settings: settings)
     }
 
     public static func openResponses(name: String, url: String, settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -198,12 +256,24 @@ public enum AIProviders {
         try OpenAICompatibleProvider(providerID: "assemblyai", defaultBaseURL: "https://api.assemblyai.com", authorization: .apiKeyHeader(name: "authorization", environmentVariables: ["ASSEMBLYAI_API_KEY"]), supportedCapabilities: [.transcription], settings: settings)
     }
 
+    public static func assemblyai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try assemblyAI(settings: settings)
+    }
+
     public static func elevenLabs(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "elevenlabs", defaultBaseURL: "https://api.elevenlabs.io", authorization: .apiKeyHeader(name: "xi-api-key", environmentVariables: ["ELEVENLABS_API_KEY"]), supportedCapabilities: [.transcription, .speech], settings: settings)
     }
 
+    public static func elevenlabs(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try elevenLabs(settings: settings)
+    }
+
     public static func revAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "revai", defaultBaseURL: "https://api.rev.ai", authorization: .bearer(environmentVariables: ["REVAI_API_KEY"]), supportedCapabilities: [.transcription], settings: settings)
+    }
+
+    public static func revai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try revAI(settings: settings)
     }
 
     public static func gladia(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -251,8 +321,16 @@ public enum AIProviders {
         )
     }
 
+    public static func klingai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try klingAI(settings: settings)
+    }
+
     public static func byteDance(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "bytedance", defaultBaseURL: "https://ark.ap-southeast.bytepluses.com/api/v3", authorization: .bearer(environmentVariables: ["ARK_API_KEY", "BYTEDANCE_API_KEY"]), supportedCapabilities: [.video], settings: settings)
+    }
+
+    public static func bytedance(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try byteDance(settings: settings)
     }
 
     public static func voyage(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -261,6 +339,10 @@ public enum AIProviders {
 
     public static func quiverAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "quiverai", defaultBaseURL: "https://api.quiver.ai/v1", authorization: .bearer(environmentVariables: ["QUIVERAI_API_KEY"]), supportedCapabilities: [.image], settings: settings)
+    }
+
+    public static func quiverai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+        try quiverAI(settings: settings)
     }
 }
 

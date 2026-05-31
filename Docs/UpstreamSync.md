@@ -36,6 +36,7 @@ In scope provider packages:
 @ai-sdk/alibaba
 @ai-sdk/amazon-bedrock
 @ai-sdk/anthropic
+@ai-sdk/anthropic-aws
 @ai-sdk/assemblyai
 @ai-sdk/azure
 @ai-sdk/baseten
@@ -227,6 +228,7 @@ the touched surface into the newer naming pattern.
 | Upstream concept | Swift porting rule |
 | --- | --- |
 | Provider factory | Add or update an `AIProviders.<name>` entry point. Keep upstream aliases when they are public. |
+| Factory spelling | Prefer idiomatic Swift casing for primary names, but also expose upstream JS spellings such as `openai`, `xai`, `revai`, `moonshotai`, and `anthropicAws` when they differ. |
 | Provider ID | Match upstream provider IDs, including capability suffixes such as `.chat`, `.responses`, `.embedding`, `.image`, `.files`, or `.skills` when upstream uses them. |
 | Settings object | Prefer extending `ProviderSettings` or the provider-specific settings type over ad hoc parameters. |
 | Base URL | Preserve upstream defaults and env fallbacks. Tests should assert the final URL. |
@@ -270,6 +272,7 @@ the touched surface into the newer naming pattern.
 | Surface | Current rule |
 | --- | --- |
 | Provider-defined tools | Tool builders live near their provider: `OpenAITools`, `AzureOpenAITools`, `AnthropicTools`, `GoogleTools`, `GoogleVertexTools`, `GoogleVertexAnthropicTools`, `GatewayTools`, `GroqTools`, `XAITools`. |
+| Provider registry aliases | `AIProviders` keeps Swift-style factories and upstream JS spellings for mismatched names, so `openAI`/`openai`, `xAI`/`xai`, `revAI`/`revai`, and similar pairs construct the same provider IDs. |
 | Tool headers and beta flags | Match upstream tests. Anthropic-on-Bedrock uses body `anthropic_beta`; regular Anthropic uses headers. |
 | OpenAI-compatible providers | Share the compatible model implementation, but keep provider-specific defaults, path quirks, headers, tools, and provider IDs explicit. |
 | OpenAI/Azure provider IDs | Root providers stay `openai` and `azure`, but concrete models use upstream surface IDs: `openai.responses`, `openai.chat`, `openai.completion`, `openai.embedding`, `openai.image`, `openai.transcription`, `openai.speech`, `openai.files`, `openai.skills`; Azure uses the same pattern except embeddings is `azure.embeddings`. |
