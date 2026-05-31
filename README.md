@@ -77,6 +77,18 @@ let text = try await AI.generateText(
 )
 ```
 
+Streaming calls accept `timeoutNanoseconds` directly:
+
+```swift
+for try await part in AI.streamText(
+    model: model,
+    prompt: "Stream this",
+    timeoutNanoseconds: 30_000_000_000
+) {
+    print(part)
+}
+```
+
 ## Objects
 
 `AI.generateObject` requests JSON output and decodes the result into a Swift

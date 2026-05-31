@@ -539,8 +539,18 @@ public enum AI {
         )
     }
 
-    public static func streamText(model: any LanguageModel, request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
-        model.stream(request)
+    public static func streamText(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        timeoutNanoseconds: UInt64? = nil
+    ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
+            return failingPartStream(AIError.invalidArgument(
+                argument: "timeoutNanoseconds",
+                message: "timeoutNanoseconds must be greater than zero."
+            ))
+        }
+        return streamWithTimeout(model.stream(request), timeoutNanoseconds: timeoutNanoseconds)
     }
 
     public static func streamText(
@@ -550,13 +560,14 @@ public enum AI {
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
-        toolApproval: AIToolApproval? = nil
+        toolApproval: AIToolApproval? = nil,
+        timeoutNanoseconds: UInt64? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
-        AsyncThrowingStream { continuation in
+        let stream = AsyncThrowingStream<LanguageStreamPart, Error> { continuation in
             let task = Task {
                 do {
                     guard !executableTools.isEmpty || prepareStep != nil else {
-                        for try await part in streamText(model: model, request: request) {
+                        for try await part in streamText(model: model, request: request, timeoutNanoseconds: nil) {
                             continuation.yield(part)
                         }
                         continuation.finish()
@@ -656,6 +667,7 @@ public enum AI {
                 task.cancel()
             }
         }
+        return streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds)
     }
 
     public static func streamText(
@@ -681,7 +693,8 @@ public enum AI {
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        timeoutNanoseconds: UInt64? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let request = LanguageModelRequest(
             messages: [.user(prompt)],
@@ -704,7 +717,7 @@ public enum AI {
         )
 
         if executableTools.isEmpty && prepareStep == nil {
-            return streamText(model: model, request: request)
+            return streamText(model: model, request: request, timeoutNanoseconds: timeoutNanoseconds)
         }
 
         return streamText(
@@ -714,7 +727,8 @@ public enum AI {
             maxSteps: maxSteps,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
-            toolApproval: toolApproval
+            toolApproval: toolApproval,
+            timeoutNanoseconds: timeoutNanoseconds
         )
     }
 
@@ -725,6 +739,7 @@ public enum AI {
         schema: JSONValue? = nil,
         schemaName: String? = nil,
         schemaDescription: String? = nil,
+        timeoutNanoseconds: UInt64? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
         var objectRequest = request
@@ -735,7 +750,7 @@ public enum AI {
         }
         let streamRequest = objectRequest
 
-        return AsyncThrowingStream { continuation in
+        let stream = AsyncThrowingStream<ObjectStreamPart<Object>, Error> { continuation in
             let task = Task {
                 var text = ""
                 var reasoning = ""
@@ -842,6 +857,7 @@ public enum AI {
                 task.cancel()
             }
         }
+        return streamWithTimeout(stream, timeoutNanoseconds: timeoutNanoseconds)
     }
 
     public static func streamObject<Object: Decodable & Sendable>(
@@ -863,6 +879,7 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        timeoutNanoseconds: UInt64? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
         streamObject(
@@ -887,6 +904,7 @@ public enum AI {
             schema: schema,
             schemaName: schemaName,
             schemaDescription: schemaDescription,
+            timeoutNanoseconds: timeoutNanoseconds,
             repairText: repairText
         )
     }
@@ -1170,6 +1188,55 @@ private func withTimeout<Output: Sendable>(
             throw CancellationError()
         }
         return result
+    }
+}
+
+private func streamWithTimeout<Part: Sendable>(
+    _ stream: AsyncThrowingStream<Part, Error>,
+    timeoutNanoseconds: UInt64?
+) -> AsyncThrowingStream<Part, Error> {
+    guard let timeoutNanoseconds else { return stream }
+    guard timeoutNanoseconds > 0 else {
+        return failingPartStream(AIError.invalidArgument(
+            argument: "timeoutNanoseconds",
+            message: "timeoutNanoseconds must be greater than zero."
+        ))
+    }
+
+    return AsyncThrowingStream { continuation in
+        let task = Task {
+            await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    for try await part in stream {
+                        try Task.checkCancellation()
+                        continuation.yield(part)
+                    }
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    throw AIError.timeout(durationNanoseconds: timeoutNanoseconds)
+                }
+
+                do {
+                    _ = try await group.next()
+                    group.cancelAll()
+                    continuation.finish()
+                } catch {
+                    group.cancelAll()
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+
+        continuation.onTermination = { _ in
+            task.cancel()
+        }
+    }
+}
+
+private func failingPartStream<Part: Sendable>(_ error: Error) -> AsyncThrowingStream<Part, Error> {
+    AsyncThrowingStream { continuation in
+        continuation.finish(throwing: error)
     }
 }
 

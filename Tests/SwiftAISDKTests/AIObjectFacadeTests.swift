@@ -105,6 +105,24 @@ import Testing
     #expect(object?.object == ObjectFacadeAnswer(value: "partial str", count: 42))
 }
 
+@Test func aiStreamObjectTimesOut() async throws {
+    let model = SlowObjectFacadeLanguageModel(delayNanoseconds: 80_000_000)
+
+    do {
+        for try await _ in AI.streamObject(
+            model: model,
+            prompt: "Stream slowly.",
+            as: ObjectFacadeAnswer.self,
+            timeoutNanoseconds: 1_000_000
+        ) {}
+        Issue.record("Expected object stream timeout.")
+    } catch let error as AIError {
+        #expect(error == .timeout(durationNanoseconds: 1_000_000))
+    }
+
+    #expect(model.streamRequests.count == 1)
+}
+
 @Test func aiStreamObjectCanRepairFinalText() async throws {
     let model = ObjectFacadeMockLanguageModel(
         result: TextGenerationResult(text: "", rawValue: .object([:])),
@@ -409,6 +427,41 @@ private final class ObjectFacadeMockLanguageModel: LanguageModel, @unchecked Sen
                 continuation.yield(part)
             }
             continuation.finish()
+        }
+    }
+}
+
+private final class SlowObjectFacadeLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "slow-object-language"
+    var requests: [LanguageModelRequest] = []
+    var streamRequests: [LanguageModelRequest] = []
+    let delayNanoseconds: UInt64
+
+    init(delayNanoseconds: UInt64) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        requests.append(request)
+        return TextGenerationResult(text: "", rawValue: .object([:]))
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamRequests.append(request)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await Task.sleep(nanoseconds: delayNanoseconds)
+                    continuation.yield(.textDelta(#"{"value":"late","count":1}"#))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
         }
     }
 }

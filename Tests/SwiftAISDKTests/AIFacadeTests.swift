@@ -159,6 +159,40 @@ import Testing
     #expect(model.streamRequests.first?.includeRawChunks == true)
 }
 
+@Test func aiStreamTextTimesOut() async throws {
+    let model = SlowStreamingLanguageModel(delayNanoseconds: 80_000_000)
+
+    do {
+        for try await _ in AI.streamText(
+            model: model,
+            prompt: "Too slow",
+            timeoutNanoseconds: 1_000_000
+        ) {}
+        Issue.record("Expected stream timeout.")
+    } catch let error as AIError {
+        #expect(error == .timeout(durationNanoseconds: 1_000_000))
+    }
+
+    #expect(model.streamRequests.count == 1)
+}
+
+@Test func aiStreamTextRejectsInvalidTimeout() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(text: "", rawValue: .object([:])), streamParts: [])
+
+    do {
+        for try await _ in AI.streamText(
+            model: model,
+            prompt: "Invalid timeout",
+            timeoutNanoseconds: 0
+        ) {}
+        Issue.record("Expected invalid timeout.")
+    } catch let error as AIError {
+        #expect(error == .invalidArgument(argument: "timeoutNanoseconds", message: "timeoutNanoseconds must be greater than zero."))
+    }
+
+    #expect(model.streamRequests.isEmpty)
+}
+
 @Test func aiStreamTextExecutesTypedToolsAndContinuesUntilFinalStream() async throws {
     let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
     let model = MockLanguageModel(
@@ -985,6 +1019,41 @@ private final class SlowLanguageModel: LanguageModel, @unchecked Sendable {
         requests.append(request)
         try await Task.sleep(nanoseconds: delayNanoseconds)
         return TextGenerationResult(text: "late", rawValue: .object([:]))
+    }
+}
+
+private final class SlowStreamingLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "slow-stream-language"
+    var requests: [LanguageModelRequest] = []
+    var streamRequests: [LanguageModelRequest] = []
+    let delayNanoseconds: UInt64
+
+    init(delayNanoseconds: UInt64) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        requests.append(request)
+        return TextGenerationResult(text: "", rawValue: .object([:]))
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamRequests.append(request)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await Task.sleep(nanoseconds: delayNanoseconds)
+                    continuation.yield(.textDelta("late"))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
     }
 }
 
