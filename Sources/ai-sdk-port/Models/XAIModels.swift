@@ -1,5 +1,85 @@
 import Foundation
 
+public enum XAITools {
+    public static func codeExecution() -> JSONValue {
+        providerTool(id: "xai.code_execution", name: "code_execution")
+    }
+
+    public static func fileSearch(vectorStoreIDs: [String], maxNumResults: Int? = nil) -> JSONValue {
+        providerTool(id: "xai.file_search", name: "file_search", args: JSONValue.object([
+            "vectorStoreIds": .array(vectorStoreIDs),
+            "maxNumResults": maxNumResults.map { .number(Double($0)) }
+        ]).objectValue ?? [:])
+    }
+
+    public static func mcpServer(
+        serverURL: String,
+        serverLabel: String? = nil,
+        serverDescription: String? = nil,
+        allowedTools: [String]? = nil,
+        headers: JSONValue? = nil,
+        authorization: String? = nil
+    ) -> JSONValue {
+        providerTool(id: "xai.mcp", name: "mcp", args: JSONValue.object([
+            "serverUrl": .string(serverURL),
+            "serverLabel": serverLabel.map(JSONValue.string),
+            "serverDescription": serverDescription.map(JSONValue.string),
+            "allowedTools": allowedTools.map { .array($0.map(JSONValue.string)) },
+            "headers": headers,
+            "authorization": authorization.map(JSONValue.string)
+        ]).objectValue ?? [:])
+    }
+
+    public static func viewImage() -> JSONValue {
+        providerTool(id: "xai.view_image", name: "view_image")
+    }
+
+    public static func viewXVideo() -> JSONValue {
+        providerTool(id: "xai.view_x_video", name: "view_x_video")
+    }
+
+    public static func webSearch(
+        allowedDomains: [String]? = nil,
+        excludedDomains: [String]? = nil,
+        enableImageSearch: Bool? = nil,
+        enableImageUnderstanding: Bool? = nil
+    ) -> JSONValue {
+        providerTool(id: "xai.web_search", name: "web_search", args: JSONValue.object([
+            "allowedDomains": allowedDomains.map { .array($0.map(JSONValue.string)) },
+            "excludedDomains": excludedDomains.map { .array($0.map(JSONValue.string)) },
+            "enableImageSearch": enableImageSearch.map(JSONValue.bool),
+            "enableImageUnderstanding": enableImageUnderstanding.map(JSONValue.bool)
+        ]).objectValue ?? [:])
+    }
+
+    public static func xSearch(
+        allowedXHandles: [String]? = nil,
+        excludedXHandles: [String]? = nil,
+        fromDate: String? = nil,
+        toDate: String? = nil,
+        enableImageUnderstanding: Bool? = nil,
+        enableVideoUnderstanding: Bool? = nil
+    ) -> JSONValue {
+        providerTool(id: "xai.x_search", name: "x_search", args: JSONValue.object([
+            "allowedXHandles": allowedXHandles.map { .array($0.map(JSONValue.string)) },
+            "excludedXHandles": excludedXHandles.map { .array($0.map(JSONValue.string)) },
+            "fromDate": fromDate.map(JSONValue.string),
+            "toDate": toDate.map(JSONValue.string),
+            "enableImageUnderstanding": enableImageUnderstanding.map(JSONValue.bool),
+            "enableVideoUnderstanding": enableVideoUnderstanding.map(JSONValue.bool)
+        ]).objectValue ?? [:])
+    }
+
+    static func providerTool(id: String, name: String, args: [String: JSONValue] = [:]) -> JSONValue {
+        .object([
+            "type": .string("provider"),
+            "id": .string(id),
+            "name": .string(name),
+            "args": .object(args)
+        ])
+    }
+}
+
 public final class XAIImageModel: ImageModel, @unchecked Sendable {
     public let providerID = "xai.image"
     public let modelID: String

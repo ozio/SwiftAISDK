@@ -1080,6 +1080,42 @@ private func openAIResponsesProviderTool(name: String, id: String, args: [String
         if let description = args["description"] { tool["description"] = description }
         if let parameters = args["parameters"] { tool["parameters"] = parameters }
         return .object(tool)
+    case "xai.web_search":
+        var tool: [String: JSONValue] = ["type": .string("web_search")]
+        if let value = args["allowedDomains"] ?? args["allowed_domains"] { tool["allowed_domains"] = value }
+        if let value = args["excludedDomains"] ?? args["excluded_domains"] { tool["excluded_domains"] = value }
+        if let value = args["enableImageSearch"] ?? args["enable_image_search"] { tool["enable_image_search"] = value }
+        if let value = args["enableImageUnderstanding"] ?? args["enable_image_understanding"] { tool["enable_image_understanding"] = value }
+        return .object(tool)
+    case "xai.x_search":
+        var tool: [String: JSONValue] = ["type": .string("x_search")]
+        if let value = args["allowedXHandles"] ?? args["allowed_x_handles"] { tool["allowed_x_handles"] = value }
+        if let value = args["excludedXHandles"] ?? args["excluded_x_handles"] { tool["excluded_x_handles"] = value }
+        if let value = args["fromDate"] ?? args["from_date"] { tool["from_date"] = value }
+        if let value = args["toDate"] ?? args["to_date"] { tool["to_date"] = value }
+        if let value = args["enableImageUnderstanding"] ?? args["enable_image_understanding"] { tool["enable_image_understanding"] = value }
+        if let value = args["enableVideoUnderstanding"] ?? args["enable_video_understanding"] { tool["enable_video_understanding"] = value }
+        return .object(tool)
+    case "xai.code_execution":
+        return .object(["type": .string("code_interpreter")])
+    case "xai.view_image":
+        return .object(["type": .string("view_image")])
+    case "xai.view_x_video":
+        return .object(["type": .string("view_x_video")])
+    case "xai.file_search":
+        var tool: [String: JSONValue] = ["type": .string("file_search")]
+        if let value = args["vectorStoreIds"] ?? args["vector_store_ids"] { tool["vector_store_ids"] = value }
+        if let value = args["maxNumResults"] ?? args["max_num_results"] { tool["max_num_results"] = value }
+        return .object(tool)
+    case "xai.mcp":
+        var tool: [String: JSONValue] = ["type": .string("mcp")]
+        if let value = args["serverUrl"] ?? args["server_url"] { tool["server_url"] = value }
+        if let value = args["serverLabel"] ?? args["server_label"] { tool["server_label"] = value }
+        if let value = args["serverDescription"] ?? args["server_description"] { tool["server_description"] = value }
+        if let value = args["allowedTools"] ?? args["allowed_tools"] { tool["allowed_tools"] = value }
+        if let value = args["headers"] { tool["headers"] = value }
+        if let value = args["authorization"] { tool["authorization"] = value }
+        return .object(tool)
     default:
         return nil
     }

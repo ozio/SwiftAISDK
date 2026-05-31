@@ -163,6 +163,9 @@ rg -n 'baseURL|environmentVariableName|headers|new .*Model|NoSuchModelError' \
   `id: "openai.*"` map to hosted tools such as `web_search`,
   `web_search_preview`, `file_search`, `code_interpreter`,
   `image_generation`, `mcp`, shell/local-shell, `custom`, and `tool_search`;
+  provider-defined sentinels with `id: "xai.*"` map to upstream xAI Responses
+  hosted tools such as `web_search`, `x_search`, `file_search`, `mcp`,
+  `code_interpreter`, `view_image`, and `view_x_video`;
   `OpenAITools` provides Swift builders for those upstream `openai.tools`
   factories, and `toolChoice` maps to Responses `tool_choice`, including
   hosted and custom tool selection. Responses output parsing follows
@@ -400,7 +403,9 @@ rg -n 'baseURL|environmentVariableName|headers|new .*Model|NoSuchModelError' \
 
 - `Sources/ai-sdk-port/Models/XAIModels.swift`
   Native xAI image/video implementations. `languageModel` is wired to the
-  Responses endpoint by default, matching upstream; image generation sends
+  Responses endpoint by default, matching upstream; `XAITools` mirrors upstream
+  `xaiTools` factories for web search, X search, file search, MCP, code
+  execution, image viewing, and X video viewing. Image generation sends
   `response_format: b64_json` and downloads URL image outputs into returned
   bytes/base64 when needed, switches to `/images/edits` when `files` are
   present, unwraps nested `xai` options, and maps edit images to xAI `image` or
@@ -751,9 +756,9 @@ the OpenAI-compatible chat/completion/embedding paths.
 Native QuiverAI fidelity now includes SVG generation/vectorization with
 upstream option mapping and reference-image limits.
 xAI fidelity now defaults language calls to `/responses` and includes native
-image/video request lifecycles, image-edit inputs, nested image/video provider
-options, reference-to-video mapping, plus `/files` upload through the shared
-file client.
+`XAITools` provider-defined Responses tool builders, image/video request
+lifecycles, image-edit inputs, nested image/video provider options,
+reference-to-video mapping, plus `/files` upload through the shared file client.
 DeepInfra fidelity now includes native image generation and multipart image
 edit mode, with nested `deepinfra` provider options, in addition to
 OpenAI-compatible chat/completion/embedding paths.
