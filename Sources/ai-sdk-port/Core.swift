@@ -506,11 +506,13 @@ public struct SkillUploadRequest: Sendable {
 public struct AIWarning: Equatable, Sendable {
     public var type: String
     public var feature: String?
+    public var setting: String?
     public var message: String?
 
-    public init(type: String, feature: String? = nil, message: String? = nil) {
+    public init(type: String, feature: String? = nil, setting: String? = nil, message: String? = nil) {
         self.type = type
         self.feature = feature
+        self.setting = setting
         self.message = message
     }
 }

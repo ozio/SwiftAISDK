@@ -392,6 +392,46 @@ import Testing
     #expect(body["seed"] == nil)
 }
 
+@Test func openAICompatibleImageWarnsForDeprecatedRawProviderOptionsKey() async throws {
+    let rawTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"raw-image"}]}"#))
+    let rawProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: rawTransport
+    )
+
+    let rawResult = try await rawProvider.imageModel("image-model").generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        extraBody: ["test-provider": .object(["quality": .string("hd")])]
+    ))
+
+    #expect(rawResult.warnings == [
+        AIWarning(type: "deprecated", setting: "providerOptions key 'test-provider'", message: "Use 'testProvider' instead.")
+    ])
+    let rawBody = try decodeJSONBody(try #require((await rawTransport.requests()).first?.body))
+    #expect(rawBody["quality"]?.stringValue == "hd")
+    #expect(rawBody["test-provider"] == nil)
+
+    let camelTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"camel-image"}]}"#))
+    let camelProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: camelTransport
+    )
+
+    let camelResult = try await camelProvider.imageModel("image-model").generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        extraBody: ["testProvider": .object(["quality": .string("standard")])]
+    ))
+
+    #expect(camelResult.warnings.isEmpty)
+    let camelBody = try decodeJSONBody(try #require((await camelTransport.requests()).first?.body))
+    #expect(camelBody["quality"]?.stringValue == "standard")
+    #expect(camelBody["testProvider"] == nil)
+}
+
 @Test func openAIImageRejectsMoreThanModelSpecificMaxImagesPerCall() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"unused"}]}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))

@@ -1609,7 +1609,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count, count > maxImagesPerCall {
             throw AIError.invalidArgument(argument: "count", message: "OpenAI-compatible image models support at most \(maxImagesPerCall) image(s) per call.")
         }
-        let warnings = openAICompatibleImageWarnings(from: request)
+        let warnings = openAICompatibleImageWarnings(from: request, providerID: providerID)
         if !request.files.isEmpty {
             return try await editImage(request, warnings: warnings)
         }
@@ -1696,8 +1696,17 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
-private func openAICompatibleImageWarnings(from request: ImageGenerationRequest) -> [AIWarning] {
+private func openAICompatibleImageWarnings(from request: ImageGenerationRequest, providerID: String) -> [AIWarning] {
     var warnings: [AIWarning] = []
+    let providerOptionsKey = openAICompatibleProviderRoot(providerID)
+    let camelProviderOptionsKey = openAICompatibleCamelCase(providerOptionsKey)
+    if camelProviderOptionsKey != providerOptionsKey, request.extraBody[providerOptionsKey] != nil {
+        warnings.append(AIWarning(
+            type: "deprecated",
+            setting: "providerOptions key '\(providerOptionsKey)'",
+            message: "Use '\(camelProviderOptionsKey)' instead."
+        ))
+    }
     if request.aspectRatio != nil {
         warnings.append(AIWarning(
             type: "unsupported",
