@@ -168,9 +168,133 @@ public final class AmazonBedrockAnthropicProvider: AIProvider, @unchecked Sendab
     }
 }
 
+public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
+    public let providerID = "bedrock-mantle"
+    public let supportedCapabilities: Set<ModelCapability> = [.language]
+    private let chatProvider: OpenAICompatibleProvider
+    private let responsesProvider: OpenAICompatibleProvider
+
+    public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
+        let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
+        let baseURL = settings.baseURL ?? "https://bedrock-mantle.\(region).api.aws/v1"
+
+        let auth: BedrockAuth
+        let rawAPIKey = settings.apiKey ?? environmentValue(["AWS_BEARER_TOKEN_BEDROCK"])
+        if let apiKey = rawAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
+            auth = .bearer(apiKey)
+        } else {
+            let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
+            let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
+            guard let accessKeyID, let secretAccessKey else {
+                throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
+            }
+            auth = .sigV4(AWSCredentials(
+                accessKeyID: accessKeyID,
+                secretAccessKey: secretAccessKey,
+                sessionToken: settings.sessionToken ?? environmentValue(["AWS_SESSION_TOKEN"])
+            ))
+        }
+
+        var headers = settings.headers
+        headers["user-agent"] = headers["user-agent"] ?? userAgent("amazon-bedrock")
+        let transport = BedrockSigningTransport(
+            region: region,
+            service: "bedrock-mantle",
+            auth: auth,
+            transport: settings.transport,
+            date: settings.date
+        )
+        let chatConfig = ModelHTTPConfig(
+            providerID: "bedrock-mantle.chat",
+            baseURL: baseURL,
+            headers: headers,
+            transport: transport
+        )
+        let responsesConfig = ModelHTTPConfig(
+            providerID: "bedrock-mantle.responses",
+            baseURL: baseURL,
+            headers: headers,
+            transport: transport
+        )
+        chatProvider = OpenAICompatibleProvider(providerID: "bedrock-mantle.chat", supportedCapabilities: [.language], config: chatConfig)
+        responsesProvider = OpenAICompatibleProvider(providerID: "bedrock-mantle.responses", supportedCapabilities: [.language], config: responsesConfig)
+    }
+
+    public func languageModel(_ modelID: String) throws -> any LanguageModel {
+        try chat(modelID)
+    }
+
+    public func chat(_ modelID: String) throws -> any LanguageModel {
+        try chatProvider.chatModel(modelID)
+    }
+
+    public func responses(_ modelID: String) throws -> any LanguageModel {
+        try responsesProvider.responsesModel(modelID)
+    }
+
+    public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .embedding, modelID: modelID)
+    }
+
+    public func imageModel(_ modelID: String) throws -> any ImageModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .image, modelID: modelID)
+    }
+
+    public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .transcription, modelID: modelID)
+    }
+
+    public func speechModel(_ modelID: String) throws -> any SpeechModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .speech, modelID: modelID)
+    }
+
+    public func videoModel(_ modelID: String) throws -> any VideoModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .video, modelID: modelID)
+    }
+
+    public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
+        throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
+    }
+}
+
 enum BedrockAuth: Sendable {
     case bearer(String)
     case sigV4(AWSCredentials)
+}
+
+private final class BedrockSigningTransport: AITransport, @unchecked Sendable {
+    private let region: String
+    private let service: String
+    private let auth: BedrockAuth
+    private let transport: any AITransport
+    private let date: @Sendable () -> Date
+
+    init(region: String, service: String, auth: BedrockAuth, transport: any AITransport, date: @escaping @Sendable () -> Date) {
+        self.region = region
+        self.service = service
+        self.auth = auth
+        self.transport = transport
+        self.date = date
+    }
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        switch auth {
+        case let .bearer(apiKey):
+            var signed = request
+            signed.headers["Authorization"] = signed.headers["Authorization"] ?? "Bearer \(apiKey)"
+            return try await transport.send(signed)
+        case let .sigV4(credentials):
+            let signed = try AWSSigV4.sign(
+                request: request,
+                body: request.body ?? Data(),
+                credentials: credentials,
+                region: region,
+                service: service,
+                date: date()
+            )
+            return try await transport.send(signed)
+        }
+    }
 }
 
 struct BedrockRuntimeConfig: @unchecked Sendable {

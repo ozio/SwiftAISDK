@@ -173,6 +173,71 @@ import Testing
     #expect(body["stream"] == nil)
 }
 
+@Test func bedrockMantleChatUsesBearerAuthAndOpenAIChatEndpoint() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"mantle chat"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}
+    """))
+    let provider = try AIProviders.bedrockMantle(settings: AmazonBedrockProviderSettings(
+        region: "us-west-2",
+        apiKey: "mantle-key",
+        headers: ["custom-header": "custom-value"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("openai.gpt-oss-20b")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(provider.providerID == "bedrock-mantle")
+    #expect(model.providerID == "bedrock-mantle.chat")
+    #expect(result.text == "mantle chat")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://bedrock-mantle.us-west-2.api.aws/v1/chat/completions")
+    #expect(request.headers["Authorization"] == "Bearer mantle-key")
+    #expect(request.headers["custom-header"] == "custom-value")
+    #expect(request.headers["user-agent"] == "ai-sdk-port/amazon-bedrock")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"]?.stringValue == "openai.gpt-oss-20b")
+    #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")
+}
+
+@Test func bedrockMantleResponsesUsesSigV4ServiceAndResponsesEndpoint() async throws {
+    let fixedDate = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        timeZone: TimeZone(secondsFromGMT: 0),
+        year: 2024,
+        month: 3,
+        day: 15,
+        hour: 0,
+        minute: 0,
+        second: 0
+    ).date!
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output_text":"mantle responses","status":"completed","usage":{"total_tokens":7}}
+    """))
+    let provider = try AIProviders.bedrockMantle(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+        transport: transport,
+        date: { fixedDate }
+    ))
+    let model = try provider.responses("openai.gpt-oss-120b")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], maxOutputTokens: 8))
+
+    #expect(model.providerID == "bedrock-mantle.responses")
+    #expect(result.text == "mantle responses")
+    #expect(result.usage?.totalTokens == 7)
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://bedrock-mantle.us-east-1.api.aws/v1/responses")
+    #expect(request.headers["x-amz-date"] == "20240315T000000Z")
+    #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-east-1/bedrock-mantle/aws4_request") == true)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"]?.stringValue == "openai.gpt-oss-120b")
+    #expect(body["max_output_tokens"]?.intValue == 8)
+    #expect(body["input"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
+}
+
 @Test func amazonBedrockConverseParsesToolUseBlocks() async throws {
     let fixedDate = DateComponents(
         calendar: Calendar(identifier: .gregorian),

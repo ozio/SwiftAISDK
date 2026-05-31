@@ -19,6 +19,7 @@ import Testing
     _ = try AIProviders.perplexity(settings: settings)
     _ = try AIProviders.fireworks(settings: settings)
     _ = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(region: "us-east-1", accessKeyID: "access", secretAccessKey: "secret", transport: transport))
+    _ = try AIProviders.bedrockMantle(settings: AmazonBedrockProviderSettings(region: "us-east-1", accessKeyID: "access", secretAccessKey: "secret", transport: transport))
     _ = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", transport: transport))
     _ = try AIProviders.deepInfra(settings: settings)
     _ = try AIProviders.baseten(settings: settings)
