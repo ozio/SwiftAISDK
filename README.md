@@ -61,6 +61,18 @@ let image = try await AI.generateImage(
 Provider-specific options can be passed through request types or facade
 overloads via `providerOptions`, `extraBody`, and `headers`.
 
+Facade calls retry transient failures by default (`maxRetries: 2`), matching the
+AI SDK product-level default. Pass `retryPolicy: .none` to disable retries or a
+custom `AIRetryPolicy` to tune retry count and backoff:
+
+```swift
+let text = try await AI.generateText(
+    model: model,
+    prompt: "Hello",
+    retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 500_000_000)
+)
+```
+
 ## Objects
 
 `AI.generateObject` requests JSON output and decodes the result into a Swift

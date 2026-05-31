@@ -1,18 +1,25 @@
 import Foundation
 
 public enum AI {
-    public static func generateText(model: any LanguageModel, request: LanguageModelRequest) async throws -> TextGenerationResult {
-        try await model.generate(request)
+    public static func generateText(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        retryPolicy: AIRetryPolicy = .default
+    ) async throws -> TextGenerationResult {
+        try await withRetry(policy: retryPolicy) {
+            try await model.generate(request)
+        }
     }
 
     public static func generateText(
         model: any LanguageModel,
         request: LanguageModelRequest,
         executableTools: [AITool],
-        maxSteps: Int = 5
+        maxSteps: Int = 5,
+        retryPolicy: AIRetryPolicy = .default
     ) async throws -> TextGenerationResult {
         guard !executableTools.isEmpty else {
-            return try await model.generate(request)
+            return try await generateText(model: model, request: request, retryPolicy: retryPolicy)
         }
         guard maxSteps > 0 else {
             throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
@@ -27,7 +34,7 @@ public enum AI {
         var lastResult: TextGenerationResult?
 
         for index in 0..<maxSteps {
-            var result = try await model.generate(currentRequest)
+            var result = try await generateText(model: model, request: currentRequest, retryPolicy: retryPolicy)
             let executableCalls = result.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
 
             if executableCalls.isEmpty {
@@ -71,7 +78,7 @@ public enum AI {
         }
 
         guard var result = lastResult else {
-            return try await model.generate(currentRequest)
+            return try await generateText(model: model, request: currentRequest, retryPolicy: retryPolicy)
         }
         result.toolResults = allToolResults
         result.steps = steps
@@ -94,6 +101,7 @@ public enum AI {
         tools: [String: JSONValue] = [:],
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
+        retryPolicy: AIRetryPolicy = .default,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
@@ -121,14 +129,15 @@ public enum AI {
         )
 
         if executableTools.isEmpty {
-            return try await generateText(model: model, request: request)
+            return try await generateText(model: model, request: request, retryPolicy: retryPolicy)
         }
 
         return try await generateText(
             model: model,
             request: request,
             executableTools: executableTools,
-            maxSteps: maxSteps
+            maxSteps: maxSteps,
+            retryPolicy: retryPolicy
         )
     }
 
@@ -139,6 +148,7 @@ public enum AI {
         schema: JSONValue? = nil,
         schemaName: String? = nil,
         schemaDescription: String? = nil,
+        retryPolicy: AIRetryPolicy = .default,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Object> {
         var objectRequest = request
@@ -148,7 +158,7 @@ public enum AI {
             objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
         }
 
-        let textResult = try await generateText(model: model, request: objectRequest)
+        let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
         let parsed = try await parseObject(
             Object.self,
             from: textResult.text,
@@ -189,6 +199,7 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        retryPolicy: AIRetryPolicy = .default,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Object> {
         try await generateObject(
@@ -213,6 +224,7 @@ public enum AI {
             schema: schema,
             schemaName: schemaName,
             schemaDescription: schemaDescription,
+            retryPolicy: retryPolicy,
             repairText: repairText
         )
     }
@@ -265,12 +277,14 @@ public enum AI {
         )
     }
 
-    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:]) async throws -> EmbeddingResult {
-        try await model.embed(EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers))
+    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default) async throws -> EmbeddingResult {
+        try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
     }
 
-    public static func embed(model: any EmbeddingModel, request: EmbeddingRequest) async throws -> EmbeddingResult {
-        try await model.embed(request)
+    public static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default) async throws -> EmbeddingResult {
+        try await withRetry(policy: retryPolicy) {
+            try await model.embed(request)
+        }
     }
 
     public static func embedMany(
@@ -280,10 +294,11 @@ public enum AI {
         chunkSize: Int? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        retryPolicy: AIRetryPolicy = .default
     ) async throws -> EmbeddingResult {
         guard let chunkSize, chunkSize > 0, values.count > chunkSize else {
-            return try await model.embed(EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers))
+            return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
         }
 
         var embeddings: [[Double]] = []
@@ -294,7 +309,7 @@ public enum AI {
         var responseMetadata = AIResponseMetadata()
 
         for chunk in values.chunked(size: chunkSize) {
-            let result = try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers))
+            let result = try await embed(model: model, request: EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
             embeddings.append(contentsOf: result.embeddings)
             usage = sumTokenUsage(usage, result.usage)
             rawValues.append(result.rawValue)
@@ -315,36 +330,50 @@ public enum AI {
         )
     }
 
-    public static func generateImage(model: any ImageModel, request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        try await model.generateImage(request)
+    public static func generateImage(model: any ImageModel, request: ImageGenerationRequest, retryPolicy: AIRetryPolicy = .default) async throws -> ImageGenerationResult {
+        try await withRetry(policy: retryPolicy) {
+            try await model.generateImage(request)
+        }
     }
 
-    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:]) async throws -> ImageGenerationResult {
-        try await generateImage(model: model, request: ImageGenerationRequest(prompt: prompt, size: size, aspectRatio: aspectRatio, seed: seed, count: count, files: files, mask: mask, providerOptions: providerOptions, extraBody: extraBody, headers: headers))
+    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default) async throws -> ImageGenerationResult {
+        try await generateImage(model: model, request: ImageGenerationRequest(prompt: prompt, size: size, aspectRatio: aspectRatio, seed: seed, count: count, files: files, mask: mask, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy)
     }
 
-    public static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        try await model.transcribe(request)
+    public static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest, retryPolicy: AIRetryPolicy = .default) async throws -> TranscriptionResult {
+        try await withRetry(policy: retryPolicy) {
+            try await model.transcribe(request)
+        }
     }
 
-    public static func generateSpeech(model: any SpeechModel, request: SpeechRequest) async throws -> SpeechResult {
-        try await model.speak(request)
+    public static func generateSpeech(model: any SpeechModel, request: SpeechRequest, retryPolicy: AIRetryPolicy = .default) async throws -> SpeechResult {
+        try await withRetry(policy: retryPolicy) {
+            try await model.speak(request)
+        }
     }
 
-    public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        try await model.generateVideo(request)
+    public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default) async throws -> VideoGenerationResult {
+        try await withRetry(policy: retryPolicy) {
+            try await model.generateVideo(request)
+        }
     }
 
-    public static func rerank(model: any RerankingModel, request: RerankingRequest) async throws -> RerankingResult {
-        try await model.rerank(request)
+    public static func rerank(model: any RerankingModel, request: RerankingRequest, retryPolicy: AIRetryPolicy = .default) async throws -> RerankingResult {
+        try await withRetry(policy: retryPolicy) {
+            try await model.rerank(request)
+        }
     }
 
-    public static func uploadFile(client: any AIFileClient, request: FileUploadRequest) async throws -> FileUploadResult {
-        try await client.uploadFile(request)
+    public static func uploadFile(client: any AIFileClient, request: FileUploadRequest, retryPolicy: AIRetryPolicy = .default) async throws -> FileUploadResult {
+        try await withRetry(policy: retryPolicy) {
+            try await client.uploadFile(request)
+        }
     }
 
-    public static func uploadSkill(client: any AISkillsClient, request: SkillUploadRequest) async throws -> SkillUploadResult {
-        try await client.uploadSkill(request)
+    public static func uploadSkill(client: any AISkillsClient, request: SkillUploadRequest, retryPolicy: AIRetryPolicy = .default) async throws -> SkillUploadResult {
+        try await withRetry(policy: retryPolicy) {
+            try await client.uploadSkill(request)
+        }
     }
 }
 
@@ -368,6 +397,72 @@ private func optionalSum(_ lhs: Int?, _ rhs: Int?) -> Int? {
     case (nil, nil):
         return nil
     }
+}
+
+private func withRetry<Output: Sendable>(
+    policy: AIRetryPolicy,
+    operation: @Sendable () async throws -> Output
+) async throws -> Output {
+    guard policy.maxRetries >= 0 else {
+        throw AIError.invalidArgument(argument: "maxRetries", message: "maxRetries must be >= 0.")
+    }
+    guard policy.backoffFactor >= 1 else {
+        throw AIError.invalidArgument(argument: "backoffFactor", message: "backoffFactor must be >= 1.")
+    }
+
+    var errors: [String] = []
+    var delay = policy.initialDelayNanoseconds
+
+    while true {
+        try Task.checkCancellation()
+        do {
+            return try await operation()
+        } catch is CancellationError {
+            throw AIRetryError(reason: .cancelled, attempts: errors.count + 1, errors: errors)
+        } catch {
+            errors.append(String(describing: error))
+            let attempts = errors.count
+            guard policy.maxRetries > 0 else { throw error }
+            guard isRetryable(error) else {
+                if attempts == 1 { throw error }
+                throw AIRetryError(reason: .errorNotRetryable, attempts: attempts, errors: errors)
+            }
+            guard attempts <= policy.maxRetries else {
+                throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
+            }
+            if delay > 0 {
+                try await Task.sleep(nanoseconds: delay)
+            }
+            delay = nextDelay(current: delay, policy: policy)
+        }
+    }
+}
+
+private func isRetryable(_ error: Error) -> Bool {
+    if let error = error as? AIError {
+        if case let .httpStatus(_, statusCode, _) = error {
+            return statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+        }
+        return false
+    }
+    if let error = error as? URLError {
+        switch error.code {
+        case .cancelled, .userCancelledAuthentication:
+            return false
+        default:
+            return true
+        }
+    }
+    return false
+}
+
+private func nextDelay(current: UInt64, policy: AIRetryPolicy) -> UInt64 {
+    guard current > 0 else { return 0 }
+    let next = Double(current) * policy.backoffFactor
+    guard next.isFinite, next < Double(UInt64.max) else {
+        return policy.maxDelayNanoseconds
+    }
+    return Swift.min(UInt64(next), policy.maxDelayNanoseconds)
 }
 
 private func toolsDictionary(from tools: [AITool]) -> [String: JSONValue] {

@@ -51,8 +51,9 @@ product behavior still trails upstream.
 
 Impact:
 
-- No high-level retry policy, abort/cancellation surface, telemetry hooks, or
-  warning logging.
+- Facade calls now have a retry policy for transient errors, but richer
+  cancellation/timeout surfaces, telemetry hooks, and warning logging still need
+  follow-up work.
 - Tool execution exists for `generateText`, but stop conditions, approval flow,
   dynamic tools, stream-side tool execution, and provider-defined tool wrapping
   still need follow-up work.
@@ -62,9 +63,9 @@ Impact:
 
 Recommendation:
 
-Continue growing the `AI` facade above provider models: retries, cancellation,
-telemetry, stream-side tool execution, richer schema/object generation, and
-middleware should be separate product rounds.
+Continue growing the `AI` facade above provider models: cancellation,
+timeouts, telemetry, stream-side tool execution, richer schema/object
+generation, and middleware should be separate product rounds.
 
 ### 2. Core model contract is lossy compared with upstream v4
 
@@ -207,11 +208,14 @@ Add a real README once the facade direction is chosen. It should include:
    `AI.generateVideo`, and `AI.rerank` as thin wrappers over existing model
    protocols.
    First slice is in place, including upload-file and upload-skill wrappers.
-   Follow-up work should add richer result objects, retry/cancellation behavior,
-   and streaming orchestration.
+   Follow-up work should add richer result objects, cancellation/timeout
+   behavior, and streaming orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
-   Port upstream retry semantics and add Swift cancellation/timeout behavior.
+   First retry slice is in place with `AIRetryPolicy` and default
+   `maxRetries: 2` for product-level calls. Next passes should add request
+   timeouts, richer cancellation controls, retry-after header support, and
+   streaming retry behavior.
 
 4. **Tool loop pass.**
    First `generateText` slice is in place with typed `AITool`, execute

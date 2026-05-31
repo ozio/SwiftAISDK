@@ -30,6 +30,61 @@ import Testing
     #expect(request.extraBody["user"]?.stringValue == "user-1")
 }
 
+@Test func aiGenerateTextRetriesRetryableErrors() async throws {
+    let model = FlakyLanguageModel(failures: [
+        AIError.httpStatus(provider: "mock", statusCode: 500, body: "temporary")
+    ], result: TextGenerationResult(text: "recovered", rawValue: .object([:])))
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Retry",
+        retryPolicy: AIRetryPolicy(maxRetries: 2, initialDelayNanoseconds: 0)
+    )
+
+    #expect(result.text == "recovered")
+    #expect(model.requests.count == 2)
+}
+
+@Test func aiGenerateTextDoesNotRetryNonRetryableErrors() async throws {
+    let model = FlakyLanguageModel(failures: [
+        AIError.httpStatus(provider: "mock", statusCode: 400, body: "bad request")
+    ], result: TextGenerationResult(text: "unused", rawValue: .object([:])))
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "No retry",
+            retryPolicy: AIRetryPolicy(maxRetries: 2, initialDelayNanoseconds: 0)
+        )
+        Issue.record("Expected non-retryable HTTP error.")
+    } catch let error as AIError {
+        #expect(error == AIError.httpStatus(provider: "mock", statusCode: 400, body: "bad request"))
+    }
+
+    #expect(model.requests.count == 1)
+}
+
+@Test func aiGenerateTextWrapsWhenMaxRetriesExceeded() async throws {
+    let model = FlakyLanguageModel(failures: [
+        AIError.httpStatus(provider: "mock", statusCode: 503, body: "one"),
+        AIError.httpStatus(provider: "mock", statusCode: 503, body: "two")
+    ], result: TextGenerationResult(text: "unused", rawValue: .object([:])))
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Retry once",
+            retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0)
+        )
+        Issue.record("Expected retry exhaustion.")
+    } catch let error as AIRetryError {
+        #expect(error.reason == .maxRetriesExceeded)
+        #expect(error.attempts == 2)
+    }
+
+    #expect(model.requests.count == 2)
+}
+
 @Test func aiStreamTextForwardsRequestToModel() async throws {
     let parts: [LanguageStreamPart] = [
         .streamStart(warnings: []),
@@ -280,6 +335,27 @@ private final class MockLanguageModel: LanguageModel, @unchecked Sendable {
             }
             continuation.finish()
         }
+    }
+}
+
+private final class FlakyLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "flaky-language"
+    var requests: [LanguageModelRequest] = []
+    private var failures: [Error]
+    private let result: TextGenerationResult
+
+    init(failures: [Error], result: TextGenerationResult) {
+        self.failures = failures
+        self.result = result
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        requests.append(request)
+        if !failures.isEmpty {
+            throw failures.removeFirst()
+        }
+        return result
     }
 }
 
