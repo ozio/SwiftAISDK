@@ -151,6 +151,47 @@ import Testing
     #expect(object?.object == ObjectFacadeAnswer(value: "partial str", count: 42))
 }
 
+@Test func aiStreamObjectEmitsTypedPartialObjectsWhenDecodable() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"value":"typed"#),
+            .textDelta(#"","count":7}"#),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+
+    var rawPartials: [JSONValue] = []
+    var typedPartials: [ObjectFacadePartialAnswer] = []
+    var object: ObjectGenerationResult<ObjectFacadePartialAnswer>?
+    for try await part in AI.streamObject(
+        model: model,
+        prompt: "Stream typed partial JSON.",
+        as: ObjectFacadePartialAnswer.self
+    ) {
+        switch part {
+        case let .partialObject(partial):
+            rawPartials.append(partial)
+        case let .partial(partial):
+            typedPartials.append(partial)
+        case let .object(result):
+            object = result
+        default:
+            break
+        }
+    }
+
+    #expect(rawPartials == [
+        .object(["value": .string("typed")]),
+        .object(["value": .string("typed"), "count": .number(7)])
+    ])
+    #expect(typedPartials == [
+        ObjectFacadePartialAnswer(value: "typed", count: nil),
+        ObjectFacadePartialAnswer(value: "typed", count: 7)
+    ])
+    #expect(object?.object == ObjectFacadePartialAnswer(value: "typed", count: 7))
+}
+
 @Test func aiStreamObjectTimesOut() async throws {
     let model = SlowObjectFacadeLanguageModel(delayNanoseconds: 80_000_000)
 
@@ -466,6 +507,11 @@ private func objectFacadeAnswerSchema(
 private struct ObjectFacadeAnswer: Codable, Equatable, Sendable {
     var value: String
     var count: Int
+}
+
+private struct ObjectFacadePartialAnswer: Codable, Equatable, Sendable {
+    var value: String?
+    var count: Int?
 }
 
 private actor ObjectTelemetryRecorder: AITelemetryIntegration {

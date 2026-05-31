@@ -154,8 +154,8 @@ the model and returns `[Element]`, `generateEnum` wraps allowed strings as
 without a schema and returns raw `JSONValue`.
 
 `AI.streamObject` is the streaming counterpart for `Decodable` output. It emits
-text deltas and best-effort `JSONValue` partial objects while the model streams
-JSON, then yields the final decoded object:
+text deltas, best-effort `JSONValue` partial objects, typed partials when the
+current JSON can decode into your Swift type, and then the final decoded object:
 
 ```swift
 for try await part in AI.streamObject(
@@ -165,6 +165,9 @@ for try await part in AI.streamObject(
 ) {
     if case let .partialObject(partial) = part {
         print(partial)
+    }
+    if case let .partial(summary) = part {
+        print(summary.title ?? "")
     }
     if case let .object(result) = part {
         print(result.object.title)

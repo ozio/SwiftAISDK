@@ -869,6 +869,9 @@ public enum AI {
                             if let partial = partialObject(from: text), partial != lastPartialObject {
                                 lastPartialObject = partial
                                 continuation.yield(.partialObject(partial))
+                                if let typedPartial = typedPartialObject(Object.self, from: partial) {
+                                    continuation.yield(.partial(typedPartial))
+                                }
                             }
                         case let .textDeltaPart(_, delta, _):
                             text += delta
@@ -876,6 +879,9 @@ public enum AI {
                             if let partial = partialObject(from: text), partial != lastPartialObject {
                                 lastPartialObject = partial
                                 continuation.yield(.partialObject(partial))
+                                if let typedPartial = typedPartialObject(Object.self, from: partial) {
+                                    continuation.yield(.partial(typedPartial))
+                                }
                             }
                         case let .reasoningDelta(delta):
                             reasoning += delta
@@ -2760,6 +2766,11 @@ private func partialObject(from text: String) -> JSONValue? {
     let repaired = fixPartialJSON(trimmed)
     guard repaired != trimmed, !repaired.isEmpty else { return nil }
     return try? decodeJSONBody(Data(repaired.utf8))
+}
+
+private func typedPartialObject<Object: Decodable>(_ type: Object.Type, from partial: JSONValue) -> Object? {
+    guard let data = try? encodeJSONBody(partial) else { return nil }
+    return try? JSONDecoder().decode(Object.self, from: data)
 }
 
 private func extractJSONObjectText(from text: String) throws -> String {

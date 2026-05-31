@@ -225,9 +225,9 @@ Impact:
 
 Recommendation:
 
-Extend object generation beyond the first Swift-native slices: add typed partial
-object streams, schema adapter protocols, streaming strategy variants, and JSON
-instruction injection for providers without native response formats.
+Extend object generation beyond the first Swift-native slices: add schema
+adapter protocols, streaming strategy variants, and JSON instruction injection
+for providers without native response formats.
 
 ### 5. Product reality is not fully gated yet
 
@@ -313,11 +313,12 @@ Progress:
 6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
    schema hints and repair callbacks. `AI.streamObject` now emits text deltas,
-   best-effort partial `JSONValue` objects, and final `Decodable` output.
+   best-effort partial `JSONValue` objects, typed partial `Decodable` values
+   when the current partial JSON decodes, and final `Decodable` output.
    Non-streaming array, enum, and no-schema JSON output strategies now mirror
    upstream's wrapper schemas, and `AIObjectGenerationError` exposes typed
-   parse/schema/decode failures. Next passes should add typed partials, schema
-   adapter protocols, and streaming strategy variants.
+   parse/schema/decode failures. Next passes should add schema adapter
+   protocols and streaming strategy variants.
 
 7. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first
