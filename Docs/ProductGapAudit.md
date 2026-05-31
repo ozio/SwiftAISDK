@@ -200,6 +200,9 @@ Add a real README once the facade direction is chosen. It should include:
    `AI.generateImage`, `AI.transcribe`, `AI.generateSpeech`,
    `AI.generateVideo`, and `AI.rerank` as thin wrappers over existing model
    protocols.
+   First slice is in place, including upload-file and upload-skill wrappers.
+   Follow-up work should add richer result objects, retry/cancellation behavior,
+   and tool-loop orchestration.
 
 3. **Facade pass 2: retries and cancellation.**
    Port upstream retry semantics and add Swift cancellation/timeout behavior.
@@ -212,8 +215,8 @@ Add a real README once the facade direction is chosen. It should include:
    Add `generateObject` for `Decodable` plus JSON schema/repair strategy.
 
 6. **README and capability matrix.**
-   Turn the package from a provider implementation dump into something a user can
-   evaluate and adopt.
+   README now has a quick-start and facade examples. Next pass should add a
+   generated provider capability matrix and deeper provider-option examples.
 
 Provider micro-parity should continue, but it should be the second track. The
 first track should now be the SDK facade and core contract, because those change
