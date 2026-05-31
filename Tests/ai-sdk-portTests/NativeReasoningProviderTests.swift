@@ -418,6 +418,7 @@ import Testing
     let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
     let model = try provider.languageModel("kimi-k2-thinking")
 
+    #expect(model.providerID == "moonshotai.chat")
     let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Hi")],
         extraBody: [

@@ -259,6 +259,7 @@ the touched surface into the newer naming pattern.
 | Mistral, Cohere, Voyage | `@ai-sdk/mistral`, `@ai-sdk/cohere`, `@ai-sdk/voyage` | Provider-specific Swift models plus registry helpers | `CohereMistralVoyageTests.swift` |
 | Vercel | `@ai-sdk/vercel` | `AIProviders.vercel`, Vercel chat and image models | `ProviderRegistryVercelTests.swift` |
 | Hugging Face | `@ai-sdk/huggingface` | `AIProviders.huggingFace`, image model | `ProviderRegistryVercelTests.swift` |
+| Fireworks, DeepInfra, TogetherAI, Baseten, MoonshotAI | provider packages with OpenAI-compatible cores plus native media/rerank pieces | OpenAI-compatible chat/completion/embedding with upstream surface IDs such as `fireworks.chat`, `deepinfra.embedding`, `togetherai.completion`, plus native image/rerank models | `NativeMediaProviderTests.swift`, `NativeReasoningProviderTests.swift`, `OpenAICompatibleTests.swift` |
 | Replicate and fal | `@ai-sdk/replicate`, `@ai-sdk/fal` | Provider-specific media models | `ReplicateFalTests.swift` |
 | Alibaba, Prodia, Quiver, Luma, Kling, ByteDance | `@ai-sdk/alibaba`, `prodia`, `quiverai`, `luma`, `klingai`, `bytedance` | Provider-specific media/video models | `AlibabaProdiaAzureQuiverTests.swift`, `ImageVideoProviderTests.swift`, `NativeMediaProviderTests.swift` |
 | Black Forest Labs | `@ai-sdk/black-forest-labs` | Native image provider | `ImageVideoProviderTests.swift`, `NativeMediaProviderTests.swift` |

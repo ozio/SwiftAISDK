@@ -43,6 +43,8 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return config.withProviderID("azure.\(suffix)")
         case "xai":
             return config.withProviderID("xai.\(surface)")
+        case "baseten", "deepinfra", "fireworks", "moonshotai", "togetherai":
+            return config.withProviderID("\(providerID).\(surface)")
         default:
             return config
         }

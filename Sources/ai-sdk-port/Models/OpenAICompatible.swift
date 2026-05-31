@@ -405,10 +405,10 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         if stream, config.includeUsage {
             body["stream_options"] = .object(["include_usage": .bool(true)])
         }
-        if providerID == "fireworks" {
+        if openAICompatibleProviderRoot(providerID) == "fireworks" {
             body = fireworksChatBody(from: body)
         }
-        if providerID == "moonshotai" {
+        if openAICompatibleProviderRoot(providerID) == "moonshotai" {
             body = moonshotChatBody(from: body)
         }
         if providerID == "googleVertex.xai" {
@@ -423,7 +423,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
     }
 
     private func usage(from raw: JSONValue) -> TokenUsage? {
-        providerID == "moonshotai" ? moonshotChatUsage(from: raw) : tokenUsage(from: raw)
+        openAICompatibleProviderRoot(providerID) == "moonshotai" ? moonshotChatUsage(from: raw) : tokenUsage(from: raw)
     }
 
     private static func body(
@@ -1454,6 +1454,17 @@ private func openAICompatibleProviderOptions(from extraBody: [String: JSONValue]
         }
     }
 
+    let providerRoots = openAICompatibleProviderOptionRoots(providerID)
+    for providerRoot in providerRoots {
+        if let rootProviderOptions = output.removeValue(forKey: providerRoot)?.objectValue {
+            nested.merge(rootProviderOptions) { _, value in value }
+        }
+        let camelRoot = openAICompatibleCamelCase(providerRoot)
+        if camelRoot != providerRoot, let camelRootOptions = output.removeValue(forKey: camelRoot)?.objectValue {
+            nested.merge(camelRootOptions) { _, value in value }
+        }
+    }
+
     let camelProviderID = openAICompatibleCamelCase(providerID)
     if providerID.hasPrefix("xai."), let rootProviderOptions = output.removeValue(forKey: "xai")?.objectValue {
         nested.merge(rootProviderOptions) { _, value in value }
@@ -1467,6 +1478,20 @@ private func openAICompatibleProviderOptions(from extraBody: [String: JSONValue]
 
     output.merge(nested) { _, nested in nested }
     return output
+}
+
+private func openAICompatibleProviderRoot(_ providerID: String) -> String {
+    String(providerID.split(separator: ".", maxSplits: 1).first.map(String.init) ?? providerID)
+}
+
+private func openAICompatibleProviderOptionRoots(_ providerID: String) -> [String] {
+    let root = openAICompatibleProviderRoot(providerID)
+    switch root {
+    case "baseten", "deepinfra", "fireworks", "moonshotai", "togetherai":
+        return providerID == root ? [] : [root]
+    default:
+        return []
+    }
 }
 
 private func openAICompatibleCamelCase(_ value: String) -> String {

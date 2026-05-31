@@ -143,7 +143,7 @@ public enum AIProviders {
     }
 
     public static func fireworks(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "fireworks", defaultBaseURL: "https://api.fireworks.ai/inference/v1", authorization: .bearer(environmentVariables: ["FIREWORKS_API_KEY"]), supportedCapabilities: [.language, .embedding, .image], settings: settings)
+        try OpenAICompatibleProvider(providerID: "fireworks", defaultBaseURL: "https://api.fireworks.ai/inference/v1", authorization: .bearer(environmentVariables: ["FIREWORKS_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image], settings: settings)
     }
 
     public static func deepInfra(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
