@@ -5,6 +5,11 @@ public enum AITelemetryEventKind: String, Equatable, Sendable {
     case retry
     case end
     case error
+    case stepStart
+    case stepEnd
+    case toolStart
+    case toolEnd
+    case toolError
 }
 
 public struct AITelemetryEvent: Equatable, Sendable {

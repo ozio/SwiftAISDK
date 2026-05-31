@@ -52,6 +52,12 @@ public enum AI {
         var allApprovalResponses: [AIToolApprovalResponse] = []
         var responseMessages: [AIMessage] = []
         var lastResult: TextGenerationResult?
+        let toolTelemetry = AIToolLoopTelemetryContext(
+            operationID: "ai.generateText",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            telemetry: telemetry
+        )
 
         for index in 0..<maxSteps {
             let prepared = try await prepareStep?(AIPrepareStepContext(
@@ -68,28 +74,35 @@ public enum AI {
             var stepRequest = prepared?.request ?? currentRequest
             stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
 
+            await toolTelemetry.recordStepStart(
+                index: index,
+                maxSteps: maxSteps,
+                model: stepModel,
+                request: stepRequest,
+                tools: stepTools
+            )
             var result = try await generateText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy, telemetry: telemetry)
             result.toolCalls = annotateToolCalls(result.toolCalls, toolsByName: toolsByName)
             let executableCalls = result.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
 
             if executableCalls.isEmpty {
+                let finalStep = AIToolStep(
+                    index: index,
+                    text: result.text,
+                    reasoning: result.reasoning,
+                    finishReason: result.finishReason,
+                    usage: result.usage,
+                    toolCalls: result.toolCalls,
+                    toolApprovalRequests: result.toolApprovalRequests,
+                    toolApprovalResponses: result.toolApprovalResponses,
+                    providerMetadata: result.providerMetadata,
+                    responseMetadata: result.responseMetadata
+                )
                 result.toolResults = allToolResults
                 result.toolApprovalRequests = allApprovalRequests
                 result.toolApprovalResponses = allApprovalResponses
-                result.steps = steps + [
-                    AIToolStep(
-                        index: index,
-                        text: result.text,
-                        reasoning: result.reasoning,
-                        finishReason: result.finishReason,
-                        usage: result.usage,
-                        toolCalls: result.toolCalls,
-                        toolApprovalRequests: result.toolApprovalRequests,
-                        toolApprovalResponses: result.toolApprovalResponses,
-                        providerMetadata: result.providerMetadata,
-                        responseMetadata: result.responseMetadata
-                    )
-                ]
+                result.steps = steps + [finalStep]
+                await toolTelemetry.recordStepEnd(finalStep)
                 return result
             }
 
@@ -97,7 +110,9 @@ public enum AI {
                 executableCalls,
                 toolsByName: toolsByName,
                 request: stepRequest,
-                toolApproval: toolApproval
+                toolApproval: toolApproval,
+                telemetry: toolTelemetry,
+                stepIndex: index
             )
             allApprovalRequests.append(contentsOf: toolExecution.approvalRequests)
             allApprovalResponses.append(contentsOf: toolExecution.approvalResponses)
@@ -116,6 +131,7 @@ public enum AI {
                 responseMetadata: result.responseMetadata
             )
             steps.append(step)
+            await toolTelemetry.recordStepEnd(step)
 
             result.toolResults = allToolResults
             result.toolApprovalRequests = allApprovalRequests
@@ -630,6 +646,12 @@ public enum AI {
                     currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
                     var steps: [AIToolStep] = []
                     var responseMessages: [AIMessage] = []
+                    let toolTelemetry = AIToolLoopTelemetryContext(
+                        operationID: "ai.streamText",
+                        providerID: model.providerID,
+                        modelID: model.modelID,
+                        telemetry: telemetry
+                    )
 
                     for index in 0..<maxSteps {
                         let prepared = try await prepareStep?(AIPrepareStepContext(
@@ -646,6 +668,13 @@ public enum AI {
                         var stepRequest = prepared?.request ?? currentRequest
                         stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
 
+                        await toolTelemetry.recordStepStart(
+                            index: index,
+                            maxSteps: maxSteps,
+                            model: stepModel,
+                            request: stepRequest,
+                            tools: stepTools
+                        )
                         let step = try await forwardLanguageStream(
                             streamText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy),
                             to: continuation,
@@ -654,6 +683,13 @@ public enum AI {
                         let executableCalls = step.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
 
                         guard !executableCalls.isEmpty else {
+                            let completedStep = step.toolStep(
+                                index: index,
+                                toolResults: [],
+                                approvalRequests: [],
+                                approvalResponses: []
+                            )
+                            await toolTelemetry.recordStepEnd(completedStep)
                             continuation.finish()
                             return
                         }
@@ -662,7 +698,9 @@ public enum AI {
                             executableCalls,
                             toolsByName: toolsByName,
                             request: stepRequest,
-                            toolApproval: toolApproval
+                            toolApproval: toolApproval,
+                            telemetry: toolTelemetry,
+                            stepIndex: index
                         )
                         for approvalRequest in toolExecution.approvalRequests {
                             continuation.yield(.toolApprovalRequest(approvalRequest))
@@ -681,6 +719,7 @@ public enum AI {
                             approvalResponses: toolExecution.approvalResponses
                         )
                         steps.append(completedStep)
+                        await toolTelemetry.recordStepEnd(completedStep)
                         if toolExecution.needsUserApproval {
                             continuation.finish()
                             return
@@ -1607,6 +1646,134 @@ private struct AITelemetryDispatcher: Sendable {
     }
 }
 
+private struct AIToolLoopTelemetryContext: Sendable {
+    var dispatcher: AITelemetryDispatcher
+    var callID: String
+    var operationID: String
+    var providerID: String
+    var modelID: String?
+    var telemetry: AITelemetryOptions?
+    var started: UInt64
+
+    init(
+        operationID: String,
+        providerID: String,
+        modelID: String?,
+        telemetry: AITelemetryOptions?
+    ) {
+        self.dispatcher = AITelemetryDispatcher(options: telemetry)
+        self.callID = UUID().uuidString
+        self.operationID = operationID
+        self.providerID = providerID
+        self.modelID = modelID
+        self.telemetry = telemetry
+        self.started = DispatchTime.now().uptimeNanoseconds
+    }
+
+    func recordStepStart(
+        index: Int,
+        maxSteps: Int,
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        tools: [AITool]
+    ) async {
+        await dispatcher.record(telemetryEvent(
+            kind: .stepStart,
+            callID: callID,
+            operationID: "\(operationID).step",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            options: telemetry,
+            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+            input: stepTelemetryInput(index: index, maxSteps: maxSteps, request: request, tools: tools)
+        ))
+    }
+
+    func recordStepEnd(_ step: AIToolStep) async {
+        await dispatcher.record(telemetryEvent(
+            kind: .stepEnd,
+            callID: callID,
+            operationID: "\(operationID).step",
+            providerID: providerID,
+            modelID: modelID,
+            options: telemetry,
+            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+            output: toolStepTelemetryOutput(step),
+            usage: step.usage,
+            providerMetadata: step.providerMetadata,
+            responseMetadata: step.responseMetadata
+        ))
+    }
+
+    func recordToolStart(
+        stepIndex: Int,
+        call: AIToolCall,
+        tool: AITool
+    ) async {
+        await dispatcher.record(telemetryEvent(
+            kind: .toolStart,
+            callID: callID,
+            operationID: "\(operationID).tool",
+            providerID: providerID,
+            modelID: modelID,
+            options: telemetry,
+            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+            input: toolExecutionTelemetryInput(stepIndex: stepIndex, call: call, tool: tool)
+        ))
+    }
+
+    func recordToolEnd(
+        stepIndex: Int,
+        call: AIToolCall,
+        status: String,
+        arguments: JSONValue?,
+        result: AIToolResult? = nil,
+        approvalRequest: AIToolApprovalRequest? = nil,
+        approvalResponse: AIToolApprovalResponse? = nil
+    ) async {
+        await dispatcher.record(telemetryEvent(
+            kind: .toolEnd,
+            callID: callID,
+            operationID: "\(operationID).tool",
+            providerID: providerID,
+            modelID: modelID,
+            options: telemetry,
+            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+            output: toolExecutionTelemetryOutput(
+                stepIndex: stepIndex,
+                call: call,
+                status: status,
+                arguments: arguments,
+                result: result,
+                approvalRequest: approvalRequest,
+                approvalResponse: approvalResponse
+            ),
+            providerMetadata: result?.providerMetadata ?? call.providerMetadata
+        ))
+    }
+
+    func recordToolError(
+        stepIndex: Int,
+        call: AIToolCall,
+        error: Error
+    ) async {
+        await dispatcher.record(telemetryEvent(
+            kind: .toolError,
+            callID: callID,
+            operationID: "\(operationID).tool",
+            providerID: providerID,
+            modelID: modelID,
+            options: telemetry,
+            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+            input: .object([
+                "stepNumber": .number(Double(stepIndex)),
+                "toolCall": toolCallTelemetryJSON(call)
+            ]),
+            errorDescription: String(describing: error)
+        ))
+    }
+}
+
 private func withTelemetry<Output: Sendable>(
     operationID: String,
     providerID: String,
@@ -2421,6 +2588,117 @@ private func headersTelemetryJSON(_ headers: [String: String]) -> JSONValue? {
     headers.isEmpty ? nil : .object(headers.mapValues(JSONValue.string))
 }
 
+private func stepTelemetryInput(
+    index: Int,
+    maxSteps: Int,
+    request: LanguageModelRequest,
+    tools: [AITool]
+) -> JSONValue {
+    .object([
+        "stepNumber": .number(Double(index)),
+        "maxSteps": .number(Double(maxSteps)),
+        "request": languageRequestTelemetryInput(request),
+        "tools": .array(tools.map(toolTelemetryJSON))
+    ])
+}
+
+private func toolStepTelemetryOutput(_ step: AIToolStep) -> JSONValue {
+    .object([
+        "stepNumber": .number(Double(step.index)),
+        "text": .string(step.text),
+        "reasoning": step.reasoning.isEmpty ? nil : .string(step.reasoning),
+        "finishReason": step.finishReason.map(JSONValue.string),
+        "toolCalls": .array(step.toolCalls.map(toolCallTelemetryJSON)),
+        "toolResults": .array(step.toolResults.map(toolResultTelemetryJSON)),
+        "toolApprovalRequests": .array(step.toolApprovalRequests.map(toolApprovalRequestTelemetryJSON)),
+        "toolApprovalResponses": .array(step.toolApprovalResponses.map(toolApprovalResponseTelemetryJSON))
+    ])
+}
+
+private func toolTelemetryJSON(_ tool: AITool) -> JSONValue {
+    .object([
+        "name": .string(tool.name),
+        "description": tool.description.map(JSONValue.string),
+        "parameters": tool.parameters,
+        "dynamic": .bool(tool.dynamic),
+        "providerMetadata": tool.providerMetadata.isEmpty ? nil : .object(tool.providerMetadata)
+    ])
+}
+
+private func toolCallTelemetryJSON(_ call: AIToolCall) -> JSONValue {
+    .object([
+        "id": .string(call.id),
+        "name": .string(call.name),
+        "arguments": .string(call.arguments),
+        "providerExecuted": .bool(call.providerExecuted),
+        "dynamic": .bool(call.dynamic),
+        "title": call.title.map(JSONValue.string),
+        "providerMetadata": call.providerMetadata.isEmpty ? nil : .object(call.providerMetadata),
+        "rawValue": call.rawValue
+    ])
+}
+
+private func toolResultTelemetryJSON(_ result: AIToolResult) -> JSONValue {
+    .object([
+        "toolCallID": .string(result.toolCallID),
+        "toolName": .string(result.toolName),
+        "result": result.result,
+        "isError": .bool(result.isError),
+        "preliminary": .bool(result.preliminary),
+        "dynamic": .bool(result.dynamic),
+        "providerMetadata": result.providerMetadata.isEmpty ? nil : .object(result.providerMetadata)
+    ])
+}
+
+private func toolApprovalRequestTelemetryJSON(_ request: AIToolApprovalRequest) -> JSONValue {
+    .object([
+        "id": .string(request.id),
+        "toolCallID": request.toolCallID.map(JSONValue.string),
+        "toolName": .string(request.toolName),
+        "arguments": .string(request.arguments),
+        "isAutomatic": .bool(request.isAutomatic),
+        "providerMetadata": request.providerMetadata.isEmpty ? nil : .object(request.providerMetadata)
+    ])
+}
+
+private func toolApprovalResponseTelemetryJSON(_ response: AIToolApprovalResponse) -> JSONValue {
+    .object([
+        "id": .string(response.id),
+        "approved": .bool(response.approved),
+        "reason": response.reason.map(JSONValue.string),
+        "providerExecuted": .bool(response.providerExecuted),
+        "providerMetadata": response.providerMetadata.isEmpty ? nil : .object(response.providerMetadata)
+    ])
+}
+
+private func toolExecutionTelemetryInput(stepIndex: Int, call: AIToolCall, tool: AITool) -> JSONValue {
+    .object([
+        "stepNumber": .number(Double(stepIndex)),
+        "toolCall": toolCallTelemetryJSON(call),
+        "tool": toolTelemetryJSON(tool)
+    ])
+}
+
+private func toolExecutionTelemetryOutput(
+    stepIndex: Int,
+    call: AIToolCall,
+    status: String,
+    arguments: JSONValue?,
+    result: AIToolResult?,
+    approvalRequest: AIToolApprovalRequest?,
+    approvalResponse: AIToolApprovalResponse?
+) -> JSONValue {
+    .object([
+        "stepNumber": .number(Double(stepIndex)),
+        "toolCall": toolCallTelemetryJSON(call),
+        "status": .string(status),
+        "arguments": arguments,
+        "result": result.map(toolResultTelemetryJSON),
+        "approvalRequest": approvalRequest.map(toolApprovalRequestTelemetryJSON),
+        "approvalResponse": approvalResponse.map(toolApprovalResponseTelemetryJSON)
+    ])
+}
+
 private func textGenerationTelemetryOutput(_ result: TextGenerationResult) -> JSONValue {
     .object([
         "text": .string(result.text),
@@ -2592,85 +2870,127 @@ private func executeToolCalls(
     _ calls: [AIToolCall],
     toolsByName: [String: AITool],
     request: LanguageModelRequest,
-    toolApproval: AIToolApproval?
+    toolApproval: AIToolApproval?,
+    telemetry: AIToolLoopTelemetryContext? = nil,
+    stepIndex: Int = 0
 ) async throws -> AIToolExecutionBatch {
     var batch = AIToolExecutionBatch()
     for call in calls {
         guard let tool = toolsByName[call.name] else { continue }
-        let arguments = try toolArguments(from: call)
-        let refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
-        try validateToolArguments(refinedArguments, schema: tool.parameters, toolName: call.name)
-        let approvalStatus = try await toolApproval?(AIToolApprovalContext(
-            toolCall: call,
-            arguments: refinedArguments,
-            tool: tool,
-            request: request
-        )) ?? .notApplicable
-        let approvalID = "approval-\(call.id)"
-        switch approvalStatus {
-        case .notApplicable:
-            break
-        case let .approved(reason):
-            batch.approvalRequests.append(AIToolApprovalRequest(
-                id: approvalID,
-                toolName: call.name,
-                arguments: call.arguments,
-                toolCallID: call.id,
-                isAutomatic: true,
-                providerMetadata: call.providerMetadata
-            ))
-            batch.approvalResponses.append(AIToolApprovalResponse(
-                id: approvalID,
-                approved: true,
-                reason: reason,
-                providerExecuted: call.providerExecuted,
-                providerMetadata: call.providerMetadata
-            ))
-        case let .denied(reason):
-            batch.approvalRequests.append(AIToolApprovalRequest(
-                id: approvalID,
-                toolName: call.name,
-                arguments: call.arguments,
-                toolCallID: call.id,
-                isAutomatic: true,
-                providerMetadata: call.providerMetadata
-            ))
-            batch.approvalResponses.append(AIToolApprovalResponse(
-                id: approvalID,
-                approved: false,
-                reason: reason,
-                providerExecuted: call.providerExecuted,
-                providerMetadata: call.providerMetadata
-            ))
+        await telemetry?.recordToolStart(stepIndex: stepIndex, call: call, tool: tool)
+        do {
+            let arguments = try toolArguments(from: call)
+            let refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
+            try validateToolArguments(refinedArguments, schema: tool.parameters, toolName: call.name)
+            let approvalStatus = try await toolApproval?(AIToolApprovalContext(
+                toolCall: call,
+                arguments: refinedArguments,
+                tool: tool,
+                request: request
+            )) ?? .notApplicable
+            let approvalID = "approval-\(call.id)"
+            var approvalRequest: AIToolApprovalRequest?
+            var approvalResponse: AIToolApprovalResponse?
+            switch approvalStatus {
+            case .notApplicable:
+                break
+            case let .approved(reason):
+                approvalRequest = AIToolApprovalRequest(
+                    id: approvalID,
+                    toolName: call.name,
+                    arguments: call.arguments,
+                    toolCallID: call.id,
+                    isAutomatic: true,
+                    providerMetadata: call.providerMetadata
+                )
+                approvalResponse = AIToolApprovalResponse(
+                    id: approvalID,
+                    approved: true,
+                    reason: reason,
+                    providerExecuted: call.providerExecuted,
+                    providerMetadata: call.providerMetadata
+                )
+                batch.approvalRequests.append(approvalRequest!)
+                batch.approvalResponses.append(approvalResponse!)
+            case let .denied(reason):
+                approvalRequest = AIToolApprovalRequest(
+                    id: approvalID,
+                    toolName: call.name,
+                    arguments: call.arguments,
+                    toolCallID: call.id,
+                    isAutomatic: true,
+                    providerMetadata: call.providerMetadata
+                )
+                approvalResponse = AIToolApprovalResponse(
+                    id: approvalID,
+                    approved: false,
+                    reason: reason,
+                    providerExecuted: call.providerExecuted,
+                    providerMetadata: call.providerMetadata
+                )
+                batch.approvalRequests.append(approvalRequest!)
+                batch.approvalResponses.append(approvalResponse!)
+                let dynamic = call.dynamic || tool.dynamic
+                let result = AIToolResult(
+                    toolCallID: call.id,
+                    toolName: call.name,
+                    result: executionDeniedResult(reason: reason),
+                    dynamic: dynamic,
+                    providerMetadata: call.providerMetadata
+                )
+                batch.results.append(result)
+                await telemetry?.recordToolEnd(
+                    stepIndex: stepIndex,
+                    call: call,
+                    status: "denied",
+                    arguments: refinedArguments,
+                    result: result,
+                    approvalRequest: approvalRequest,
+                    approvalResponse: approvalResponse
+                )
+                continue
+            case .userApproval:
+                approvalRequest = AIToolApprovalRequest(
+                    id: approvalID,
+                    toolName: call.name,
+                    arguments: call.arguments,
+                    toolCallID: call.id,
+                    providerMetadata: call.providerMetadata
+                )
+                batch.approvalRequests.append(approvalRequest!)
+                batch.needsUserApproval = true
+                await telemetry?.recordToolEnd(
+                    stepIndex: stepIndex,
+                    call: call,
+                    status: "userApproval",
+                    arguments: refinedArguments,
+                    approvalRequest: approvalRequest
+                )
+                continue
+            }
+            let resultValue = try await tool.execute(refinedArguments)
             let dynamic = call.dynamic || tool.dynamic
-            batch.results.append(AIToolResult(
+            let result = AIToolResult(
                 toolCallID: call.id,
                 toolName: call.name,
-                result: executionDeniedResult(reason: reason),
+                result: resultValue,
                 dynamic: dynamic,
                 providerMetadata: call.providerMetadata
-            ))
-            continue
-        case .userApproval:
-            batch.approvalRequests.append(AIToolApprovalRequest(
-                id: approvalID,
-                toolName: call.name,
-                arguments: call.arguments,
-                toolCallID: call.id,
-                providerMetadata: call.providerMetadata
-            ))
-            batch.needsUserApproval = true
-            continue
+            )
+            batch.results.append(result)
+            await telemetry?.recordToolEnd(
+                stepIndex: stepIndex,
+                call: call,
+                status: "executed",
+                arguments: refinedArguments,
+                result: result,
+                approvalRequest: approvalRequest,
+                approvalResponse: approvalResponse
+            )
+        } catch {
+            await telemetry?.recordToolError(stepIndex: stepIndex, call: call, error: error)
+            throw error
         }
-        let result = try await tool.execute(refinedArguments)
-        let dynamic = call.dynamic || tool.dynamic
-        batch.results.append(AIToolResult(
-            toolCallID: call.id,
-            toolName: call.name,
-            result: result,
-            dynamic: dynamic,
-            providerMetadata: call.providerMetadata
-        ))
     }
     return batch
 }

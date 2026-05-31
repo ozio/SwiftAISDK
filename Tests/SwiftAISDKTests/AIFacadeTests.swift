@@ -131,6 +131,113 @@ import Testing
     }
 }
 
+@Test func aiGenerateTextEmitsStepAndToolTelemetryEvents() async throws {
+    let recorder = TelemetryRecorder()
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Kyoto"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(
+            text: "",
+            finishReason: "tool-calls",
+            usage: TokenUsage(totalTokens: 3),
+            toolCalls: [toolCall],
+            rawValue: .object([:])
+        ),
+        TextGenerationResult(
+            text: "Sunny",
+            finishReason: "stop",
+            usage: TokenUsage(totalTokens: 5),
+            rawValue: .object([:])
+        )
+    ])
+    let lookup = AITool(
+        name: "lookup",
+        parameters: [
+            "type": "object",
+            "properties": ["city": ["type": "string"]],
+            "required": ["city"]
+        ]
+    ) { arguments in
+        ["city": arguments["city"] ?? .string("missing"), "forecast": "sunny"]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 2,
+        telemetry: AITelemetryOptions(functionID: "unit.toolLoop", integrations: [recorder])
+    )
+    let events = await recorder.events()
+    let stepEvents = events.filter { $0.operationID == "ai.generateText.step" }
+    let toolEvents = events.filter { $0.operationID == "ai.generateText.tool" }
+
+    #expect(result.text == "Sunny")
+    #expect(stepEvents.map(\.kind) == [.stepStart, .stepEnd, .stepStart, .stepEnd])
+    #expect(Set(stepEvents.map(\.callID)).count == 1)
+    #expect(stepEvents.allSatisfy { $0.functionID == "unit.toolLoop" })
+    #expect(stepEvents[0].input?["stepNumber"]?.intValue == 0)
+    #expect(stepEvents[0].input?["request"]?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Weather?")
+    #expect(stepEvents[1].output?["toolCalls"]?[0]?["name"]?.stringValue == "lookup")
+    #expect(stepEvents[2].input?["stepNumber"]?.intValue == 1)
+    #expect(stepEvents[3].output?["text"]?.stringValue == "Sunny")
+    #expect(stepEvents[3].usage?.totalTokens == 5)
+
+    #expect(toolEvents.map(\.kind) == [.toolStart, .toolEnd])
+    #expect(Set(toolEvents.map(\.callID)).count == 1)
+    #expect(toolEvents[0].input?["toolCall"]?["name"]?.stringValue == "lookup")
+    #expect(toolEvents[0].input?["tool"]?["parameters"]?["required"]?[0]?.stringValue == "city")
+    #expect(toolEvents[1].output?["status"]?.stringValue == "executed")
+    #expect(toolEvents[1].output?["arguments"]?["city"]?.stringValue == "Kyoto")
+    #expect(toolEvents[1].output?["result"]?["result"]?["forecast"]?.stringValue == "sunny")
+}
+
+@Test func aiStreamTextEmitsStepAndToolTelemetryEvents() async throws {
+    let recorder = TelemetryRecorder()
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Kyoto"}"#)
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .textDelta("Sunny"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+            ]
+        ]
+    )
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["city": ["type": "string"]]]
+    ) { arguments in
+        ["city": arguments["city"] ?? .string("missing")]
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 2,
+        telemetry: AITelemetryOptions(functionID: "unit.streamToolLoop", integrations: [recorder])
+    ) {
+        streamed.append(part)
+    }
+    let events = await recorder.events()
+    let stepEvents = events.filter { $0.operationID == "ai.streamText.step" }
+    let toolEvents = events.filter { $0.operationID == "ai.streamText.tool" }
+
+    #expect(streamed.contains(.textDelta("Sunny")))
+    #expect(stepEvents.map(\.kind) == [.stepStart, .stepEnd, .stepStart, .stepEnd])
+    #expect(stepEvents[1].output?["finishReason"]?.stringValue == "tool-calls")
+    #expect(stepEvents[3].output?["text"]?.stringValue == "Sunny")
+    #expect(toolEvents.map(\.kind) == [.toolStart, .toolEnd])
+    #expect(toolEvents.allSatisfy { $0.functionID == "unit.streamToolLoop" })
+    #expect(toolEvents[1].output?["result"]?["toolName"]?.stringValue == "lookup")
+    #expect(toolEvents[1].output?["result"]?["result"]?["city"]?.stringValue == "Kyoto")
+}
+
 @Test func httpStatusErrorPreservesResponseHeaders() throws {
     let response = AIHTTPResponse(
         statusCode: 429,
