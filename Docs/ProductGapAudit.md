@@ -118,9 +118,12 @@ Impact:
   system instruction for no-schema JSON calls. Groq now maps
   standard JSON response formats to native `json_schema`/`json_object`
   requests, keeps `structuredOutputs`/`strictJsonSchema` as control options
-  instead of leaking them into the provider body, and returns the upstream
-  unsupported warning when schema output is requested with structured outputs
-  disabled. DeepSeek now requests `json_object`, injects the upstream JSON
+  instead of leaking them into the provider body, maps top-level
+  seed/frequency/presence/reasoning settings, preserves response metadata,
+  forwards abort signals, emits text/reasoning stream lifecycle parts, and
+  returns upstream unsupported warnings for `topK`, schema output with
+  structured outputs disabled, and unsupported provider-defined tools.
+  DeepSeek now requests `json_object`, injects the upstream JSON
   system instruction or schema instruction, returns compatibility and
   unsupported-setting warnings, maps nested `deepseek` provider options plus
   top-level reasoning/frequency/presence settings, preserves
@@ -195,7 +198,7 @@ The Swift contract keeps only a compact subset. For example:
   is still uneven: OpenAI-compatible chat/responses, Anthropic, Google
   GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere,
   Groq, DeepSeek, Cerebras, and Alibaba streams now emit tool input
-  start/delta/end parts alongside final tool calls. Mistral, Cohere,
+  start/delta/end parts alongside final tool calls. Mistral, Cohere, Groq,
   DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit
   text/reasoning start/delta/end parts. Remaining native language stream
   parsers should get the same treatment where upstream exposes equivalent
@@ -326,6 +329,12 @@ Impact:
   parts in addition to legacy `.toolCallDelta` and final `.toolCall` parts, so
   consumers can observe argument assembly without waiting for the final tool
   call.
+- Groq chat now follows the upstream native model path more closely: top-level
+  `seed`, `frequencyPenalty`, `presencePenalty`, and reasoning map into the
+  OpenAI-compatible Groq request, generate/stream calls preserve response
+  metadata and forward abort signals, streams emit start/delta/end lifecycle
+  parts for reasoning and text, and unsupported `topK`/provider-tool warnings
+  are returned to callers.
 - Cerebras chat now uses the upstream OpenAI-compatible function-tool wire
   shape, maps call-level `responseFormat` into native structured outputs,
   forwards abort signals, preserves response/provider metadata, and emits

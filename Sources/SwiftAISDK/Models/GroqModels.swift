@@ -23,12 +23,14 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let prepared = groqPreparedCall(for: request, modelID: modelID, stream: false)
-        let raw = try await config.sendJSON(
+        let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
             body: .object(prepared.body),
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         )
+        let raw = response.json
         let choice = raw["choices"]?[0]
         let toolCalls = groqToolCalls(from: choice?["message"]?["tool_calls"])
         guard let text = choice?["message"]?["content"]?.stringValue ?? (toolCalls.isEmpty ? nil : "") else {
@@ -36,11 +38,13 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
         }
         return TextGenerationResult(
             text: text,
+            reasoning: choice?["message"]?["reasoning"]?.stringValue ?? "",
             finishReason: groqFinishReason(choice?["finish_reason"]?.stringValue),
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
             rawValue: raw,
-            warnings: prepared.warnings
+            warnings: prepared.warnings,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -53,29 +57,54 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                         path: "/chat/completions",
                         modelID: modelID,
                         body: .object(prepared.body),
-                        headers: request.headers
+                        headers: request.headers,
+                        abortSignal: request.abortSignal
                     ))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
-                    if !prepared.warnings.isEmpty {
-                        continuation.yield(.streamStart(warnings: prepared.warnings))
-                    }
+                    continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
+                    var finishReason: String?
                     var toolCalls = GroqStreamingToolCalls()
+                    var didEmitResponseMetadata = false
+                    var activeReasoningID: String?
+                    var activeTextID: String?
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
+                        if !didEmitResponseMetadata {
+                            didEmitResponseMetadata = true
+                            continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: response, modelID: modelID)))
+                        }
                         latestUsage = tokenUsage(from: raw["x_groq"] ?? raw) ?? tokenUsage(from: raw) ?? latestUsage
                         if let reasoning = raw["choices"]?[0]?["delta"]?["reasoning"]?.stringValue, !reasoning.isEmpty {
-                            continuation.yield(.reasoningDelta(reasoning))
+                            let id = activeReasoningID ?? "reasoning-0"
+                            if activeReasoningID == nil {
+                                activeReasoningID = id
+                                continuation.yield(.reasoningStart(id: id))
+                            }
+                            continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning))
                         }
                         if let delta = raw["choices"]?[0]?["delta"]?["content"]?.stringValue, !delta.isEmpty {
-                            continuation.yield(.textDelta(delta))
+                            if let reasoningID = activeReasoningID {
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                                activeReasoningID = nil
+                            }
+                            let id = activeTextID ?? "txt-0"
+                            if activeTextID == nil {
+                                activeTextID = id
+                                continuation.yield(.textStart(id: id))
+                            }
+                            continuation.yield(.textDeltaPart(id: id, delta: delta))
                         }
                         if let toolCallDeltas = raw["choices"]?[0]?["delta"]?["tool_calls"]?.arrayValue {
+                            if let reasoningID = activeReasoningID {
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                                activeReasoningID = nil
+                            }
                             for toolCallDelta in toolCallDeltas {
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)
@@ -83,12 +112,19 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                         }
                         if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
-                            for part in toolCalls.finishedParts() {
-                                continuation.yield(part)
-                            }
-                            continuation.yield(.finish(reason: groqFinishReason(reason), usage: latestUsage))
+                            finishReason = groqFinishReason(reason)
                         }
                     }
+                    if let reasoningID = activeReasoningID {
+                        continuation.yield(.reasoningEnd(id: reasoningID))
+                    }
+                    if let textID = activeTextID {
+                        continuation.yield(.textEnd(id: textID))
+                    }
+                    for part in toolCalls.finishedParts() {
+                        continuation.yield(part)
+                    }
+                    continuation.yield(.finish(reason: finishReason, usage: latestUsage))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -102,6 +138,11 @@ private typealias GroqStreamingToolCalls = OpenAIStyleStreamingToolCalls
 
 private struct GroqPreparedCall {
     var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
+
+private struct GroqPreparedTools {
+    var tools: [JSONValue]
     var warnings: [AIWarning]
 }
 
@@ -176,7 +217,7 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
 }
 
 private func groqPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> GroqPreparedCall {
-    var options = groqProviderOptions(from: request.extraBody)
+    var options = groqProviderOptions(from: request)
     let responseFormat = groqResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
@@ -185,12 +226,15 @@ private func groqPreparedCall(for request: LanguageModelRequest, modelID: String
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
     if let topP = request.topP { body["top_p"] = .number(topP) }
+    if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
+    if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
+    if let seed = request.seed { body["seed"] = .number(Double(seed)) }
     if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
     if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
-    let tools = groqTools(from: request.tools, modelID: modelID)
-    if !tools.isEmpty {
-        body["tools"] = .array(tools)
-        if let toolChoice = groqToolChoice(from: request.extraBody["toolChoice"]) {
+    let preparedTools = groqTools(from: request.tools, modelID: modelID)
+    if !preparedTools.tools.isEmpty {
+        body["tools"] = .array(preparedTools.tools)
+        if let toolChoice = groqToolChoice(from: request.toolChoice ?? options["toolChoice"]) {
             body["tool_choice"] = toolChoice
         }
     }
@@ -198,9 +242,10 @@ private func groqPreparedCall(for request: LanguageModelRequest, modelID: String
         body["response_format"] = groqResponseFormat(from: responseFormat, options: options)
     }
     body.merge(groqLanguageOptions(from: options)) { _, new in new }
+    groqApplyReasoning(request.reasoning, to: &body)
     return GroqPreparedCall(
         body: body,
-        warnings: groqWarnings(responseFormat: responseFormat, options: options)
+        warnings: groqWarnings(request: request, responseFormat: responseFormat, options: options) + preparedTools.warnings
     )
 }
 
@@ -265,25 +310,35 @@ private func groqResponseFormat(from value: JSONValue, options: [String: JSONVal
     ])
 }
 
-private func groqWarnings(responseFormat: JSONValue?, options: [String: JSONValue]) -> [AIWarning] {
-    guard responseFormat?["type"]?.stringValue == "json",
-          responseFormat?["schema"] != nil,
-          options["structuredOutputs"]?.boolValue == false else {
-        return []
+private func groqWarnings(request: LanguageModelRequest, responseFormat: JSONValue?, options: [String: JSONValue]) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.topK != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "topK"))
     }
-    return [
-        AIWarning(
+    if responseFormat?["type"]?.stringValue == "json",
+       responseFormat?["schema"] != nil,
+       options["structuredOutputs"]?.boolValue == false {
+        warnings.append(AIWarning(
             type: "unsupported",
             feature: "responseFormat",
             message: "JSON response format schema is only supported with structuredOutputs"
-        )
-    ]
+        ))
+    }
+    return warnings
 }
 
 private func groqTranscriptionOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = groqProviderOptions(from: extraBody)
     moveKey("responseFormat", to: "response_format", in: &output)
     moveKey("timestampGranularities", to: "timestamp_granularities", in: &output)
+    return output
+}
+
+private func groqProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+    var output = groqProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["groq"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     return output
 }
 
@@ -301,13 +356,18 @@ private func moveKey(_ source: String, to destination: String, in values: inout 
     }
 }
 
-private func groqTools(from tools: [String: JSONValue], modelID: String) -> [JSONValue] {
-    tools.compactMap { name, schema in
+private func groqTools(from tools: [String: JSONValue], modelID: String) -> GroqPreparedTools {
+    var warnings: [AIWarning] = []
+    let values: [JSONValue] = tools.compactMap { name, schema in
         let object = schema.objectValue
         let providerToolID = object?["id"]?.stringValue
         if object?["type"]?.stringValue == "provider" || providerToolID != nil || name == "groq.browser_search" {
             guard (providerToolID ?? name) == "groq.browser_search",
                   groqBrowserSearchSupportedModels.contains(modelID) else {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "provider-defined tool \(providerToolID ?? name)"
+                ))
                 return nil
             }
             return .object(["type": .string("browser_search")])
@@ -333,6 +393,7 @@ private func groqTools(from tools: [String: JSONValue], modelID: String) -> [JSO
             "function": .object(function)
         ])
     }
+    return GroqPreparedTools(tools: values, warnings: warnings)
 }
 
 private func groqToolChoice(from value: JSONValue?) -> JSONValue? {
@@ -404,4 +465,13 @@ private func groqReasoningEffort(_ value: String) -> String {
     default:
         return value
     }
+}
+
+private func groqApplyReasoning(_ reasoning: String?, to body: inout [String: JSONValue]) {
+    guard let reasoning,
+          reasoning != "none",
+          body["reasoning_effort"] == nil else {
+        return
+    }
+    body["reasoning_effort"] = .string(groqReasoningEffort(reasoning))
 }

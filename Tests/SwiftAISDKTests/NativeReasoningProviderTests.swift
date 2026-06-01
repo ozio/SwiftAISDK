@@ -4,33 +4,54 @@ import Testing
 
 @Test func groqLanguageStreamsReasoningAndMapsOptions() async throws {
     let transport = RecordingTransport(response: sseResponse("""
-    data: {"id":"groq-1","model":"qwen/qwen3-32b","choices":[{"index":0,"delta":{"reasoning":"think"},"finish_reason":null}]}
+    data: {"id":"groq-1","created":1780326500,"model":"qwen/qwen3-32b","choices":[{"index":0,"delta":{"reasoning":"think"},"finish_reason":null}]}
 
     data: {"id":"groq-1","model":"qwen/qwen3-32b","choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}],"x_groq":{"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"completion_tokens_details":{"reasoning_tokens":1}}}}
 
     data: [DONE]
 
-    """))
+    """, headers: ["x-groq": "stream"]))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.languageModel("qwen/qwen3-32b")
 
-    var reasoning: [String] = []
-    var text: [String] = []
+    var streamStartWarnings: [AIWarning]?
+    var responseMetadata: AIResponseMetadata?
+    var reasoningLifecycle: [String] = []
+    var textLifecycle: [String] = []
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(
         messages: [.user("Hi")],
+        reasoning: "xhigh",
+        providerOptions: [
+            "groq": [
+                "reasoningFormat": "parsed",
+                "parallelToolCalls": false,
+                "serviceTier": "flex"
+            ]
+        ],
         extraBody: [
             "reasoningFormat": "parsed",
-            "reasoningEffort": "xhigh",
-            "parallelToolCalls": false,
-            "serviceTier": "flex"
+            "parallelToolCalls": true,
+            "serviceTier": "performance"
         ]
     )) {
         switch part {
-        case let .reasoningDelta(delta):
-            reasoning.append(delta)
-        case let .textDelta(delta):
-            text.append(delta)
+        case let .streamStart(warnings):
+            streamStartWarnings = warnings
+        case let .responseMetadata(metadata):
+            responseMetadata = metadata
+        case let .reasoningStart(id, _):
+            reasoningLifecycle.append("start:\(id)")
+        case let .reasoningDeltaPart(id, delta, _):
+            reasoningLifecycle.append("delta:\(id):\(delta)")
+        case let .reasoningEnd(id, _):
+            reasoningLifecycle.append("end:\(id)")
+        case let .textStart(id, _):
+            textLifecycle.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            textLifecycle.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            textLifecycle.append("end:\(id)")
         case let .finish(_, usage):
             totalTokens = usage?.totalTokens
         default:
@@ -38,8 +59,12 @@ import Testing
         }
     }
 
-    #expect(reasoning == ["think"])
-    #expect(text == ["answer"])
+    #expect(streamStartWarnings == [])
+    #expect(responseMetadata?.id == "groq-1")
+    #expect(responseMetadata?.modelID == "qwen/qwen3-32b")
+    #expect(responseMetadata?.headers["x-groq"] == "stream")
+    #expect(reasoningLifecycle == ["start:reasoning-0", "delta:reasoning-0:think", "end:reasoning-0"])
+    #expect(textLifecycle == ["start:txt-0", "delta:txt-0:answer", "end:txt-0"])
     #expect(totalTokens == 5)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.groq.com/openai/v1/chat/completions")
@@ -57,8 +82,12 @@ import Testing
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.languageModel("openai/gpt-oss-20b")
 
-    _ = try await model.generate(LanguageModelRequest(
+    let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Hi")],
+        topK: 4,
+        presencePenalty: 0.1,
+        frequencyPenalty: 0.2,
+        seed: 123,
         extraBody: [
             "user": "user-123",
             "serviceTier": "flex",
@@ -72,10 +101,14 @@ import Testing
         ]
     ))
 
+    #expect(result.warnings == [AIWarning(type: "unsupported", feature: "topK")])
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["groq"] == nil)
     #expect(body["user"]?.stringValue == "user-123")
+    #expect(body["presence_penalty"]?.doubleValue == 0.1)
+    #expect(body["frequency_penalty"]?.doubleValue == 0.2)
+    #expect(body["seed"]?.intValue == 123)
     #expect(body["reasoning_format"]?.stringValue == "parsed")
     #expect(body["reasoning_effort"]?.stringValue == "low")
     #expect(body["parallel_tool_calls"]?.boolValue == false)
@@ -153,7 +186,7 @@ import Testing
             ],
             "groq.browser_search": GroqTools.browserSearch()
         ],
-        extraBody: ["toolChoice": ["type": "tool", "toolName": "lookup"]]
+        toolChoice: ["type": "tool", "toolName": "lookup"]
     ))
 
     #expect(result.text == "answer")
@@ -175,8 +208,8 @@ import Testing
 
 @Test func groqLanguageParsesToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"groq-1","model":"llama-3.3-70b-versatile","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"tk85n1k4m","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":210,"completion_tokens":15,"total_tokens":225}}
-    """))
+    {"id":"groq-1","created":1780326500,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning":"Need weather.","tool_calls":[{"id":"tk85n1k4m","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":210,"completion_tokens":15,"total_tokens":225}}
+    """, headers: ["x-groq": "generate"]))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.languageModel("llama-3.3-70b-versatile")
 
@@ -186,8 +219,12 @@ import Testing
     ))
 
     #expect(result.text == "")
+    #expect(result.reasoning == "Need weather.")
     #expect(result.finishReason == "tool-calls")
     #expect(result.usage?.totalTokens == 225)
+    #expect(result.responseMetadata.id == "groq-1")
+    #expect(result.responseMetadata.modelID == "llama-3.3-70b-versatile")
+    #expect(result.responseMetadata.headers["x-groq"] == "generate")
     #expect(result.toolCalls.count == 1)
     #expect(result.toolCalls[0].id == "tk85n1k4m")
     #expect(result.toolCalls[0].name == "weather")
@@ -261,7 +298,7 @@ import Testing
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.languageModel("gemma2-9b-it")
 
-    _ = try await model.generate(LanguageModelRequest(
+    let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Search.")],
         tools: [
             "groq.browser_search": GroqTools.browserSearch()
@@ -269,6 +306,9 @@ import Testing
         extraBody: ["toolChoice": "required"]
     ))
 
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "provider-defined tool groq.browser_search")
+    ])
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["tools"] == nil)
