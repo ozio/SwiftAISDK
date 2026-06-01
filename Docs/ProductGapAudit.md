@@ -413,6 +413,13 @@ Impact:
   bodies; standard `size`, `aspectRatio`, `seed`, and `mask` return warnings;
   results preserve usage, image provider metadata, response metadata,
   `QUIVERAI_BASE_URL`, and abort propagation.
+- Luma image generation now follows the upstream Dream Machine provider more
+  closely: top-level `aspectRatio` maps to `aspect_ratio`, standard `size` and
+  `seed` return unsupported warnings instead of leaking into the request,
+  `providerOptions.luma` is parsed separately from raw extra body fields, URL
+  files map to `image`, `style`, `character`, and `modify_image` references with
+  per-image config, and submit/poll/download requests preserve response
+  metadata and abort signals.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

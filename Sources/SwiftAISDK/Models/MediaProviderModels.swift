@@ -614,27 +614,44 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+        let options = lumaProviderOptions(from: request)
+        var warnings: [AIWarning] = []
         var body: [String: JSONValue] = [
             "prompt": .string(request.prompt),
             "model": .string(modelID)
         ]
-        if let aspectRatio = request.extraBody["aspectRatio"] ?? request.extraBody["aspect_ratio"] {
-            body["aspect_ratio"] = aspectRatio
-        } else if let aspectRatio = request.size.map(sizeToAspectRatio) {
-            body["aspect_ratio"] = .string(aspectRatio)
+        if request.seed != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "seed",
+                message: "This model does not support the `seed` option."
+            ))
         }
-        body.merge(try lumaOptions(from: request.extraBody, files: request.files, mask: request.mask)) { _, new in new }
-        let submitted = try await config.sendJSON(path: "/dream-machine/v1/generations/image", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
-        guard let id = submitted["id"]?.stringValue else {
+        if request.size != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "size",
+                message: "This model does not support the `size` option. Use `aspectRatio` instead."
+            ))
+        }
+        if let aspectRatio = request.aspectRatio {
+            body["aspect_ratio"] = .string(aspectRatio)
+        } else if let aspectRatio = options["aspectRatio"] ?? options["aspect_ratio"] {
+            body["aspect_ratio"] = aspectRatio
+        }
+        body.merge(try lumaOptions(from: options, files: request.files, mask: request.mask)) { _, new in new }
+        let submitted = try await config.sendJSONResponse(path: "/dream-machine/v1/generations/image", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        guard let id = submitted.json["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Luma submit response did not contain id.")
         }
-        let raw = try await pollLuma(
+        let finalResponse = try await pollLuma(
             id: id,
             headers: request.headers,
-            intervalNanoseconds: lumaPollInterval(request.extraBody),
-            maxAttempts: lumaMaxPollAttempts(request.extraBody),
+            intervalNanoseconds: lumaPollInterval(options),
+            maxAttempts: lumaMaxPollAttempts(options),
             abortSignal: request.abortSignal
         )
+        let raw = finalResponse.raw
         guard let url = raw["assets"]?["image"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Luma completed response did not contain assets.image.")
         }
@@ -646,11 +663,13 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
             urls: [url],
             base64Images: [image.body.base64EncodedString()],
             rawValue: raw,
-            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body))
+            warnings: warnings,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
 
-    private func pollLuma(id: String, headers: [String: String], intervalNanoseconds: UInt64, maxAttempts: Int, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollLuma(id: String, headers: [String: String], intervalNanoseconds: UInt64, maxAttempts: Int, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         for _ in 0..<maxAttempts {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
@@ -664,7 +683,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
             let raw = try response.jsonValue()
             switch raw["state"]?.stringValue {
             case "completed":
-                return raw
+                return (raw, response)
             case "failed":
                 throw AIError.invalidResponse(provider: providerID, message: raw["failure_reason"]?.stringValue ?? "Luma image generation failed.")
             default:
@@ -675,11 +694,11 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
-private func lumaOptions(from extraBody: [String: JSONValue], files: [ImageInputFile], mask: ImageInputFile?) throws -> [String: JSONValue] {
+private func lumaOptions(from options: [String: JSONValue], files: [ImageInputFile], mask: ImageInputFile?) throws -> [String: JSONValue] {
     if mask != nil {
         throw AIError.invalidArgument(argument: "mask", message: "Luma AI does not support mask-based image editing.")
     }
-    var output = lumaProviderOptions(from: extraBody)
+    var output = options
     output.removeValue(forKey: "aspectRatio")
     output.removeValue(forKey: "aspect_ratio")
     output.removeValue(forKey: "pollIntervalMillis")
@@ -687,10 +706,15 @@ private func lumaOptions(from extraBody: [String: JSONValue], files: [ImageInput
 
     let referenceType = output.removeValue(forKey: "referenceType")?.stringValue ?? "image"
     let imageConfigs = output.removeValue(forKey: "images")?.arrayValue ?? []
-    let images = try lumaReferenceImages(from: files, fallback: imageConfigs)
+    let images = try lumaReferenceImages(from: files, imageConfigs: imageConfigs)
     guard !images.isEmpty else { return output }
 
     switch referenceType {
+    case "image":
+        guard images.count <= 4 else {
+            throw AIError.invalidArgument(argument: "files", message: "Luma AI image supports up to 4 reference images.")
+        }
+        output["image"] = .array(images.map { lumaWeightedURL($0, defaultWeight: 0.85) })
     case "style":
         output["style"] = .array(images.map { lumaWeightedURL($0, defaultWeight: 0.8) })
     case "character":
@@ -701,12 +725,17 @@ private func lumaOptions(from extraBody: [String: JSONValue], files: [ImageInput
         }
         output["modify_image"] = lumaWeightedURL(images[0], defaultWeight: 1.0)
     default:
-        guard images.count <= 4 else {
-            throw AIError.invalidArgument(argument: "files", message: "Luma AI image supports up to 4 reference images.")
-        }
-        output["image"] = .array(images.map { lumaWeightedURL($0, defaultWeight: 0.85) })
+        throw AIError.invalidArgument(argument: "referenceType", message: "Luma AI referenceType must be one of image, style, character, modify_image.")
     }
 
+    return output
+}
+
+private func lumaProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    var output = lumaProviderOptions(from: request.extraBody)
+    if let providerOptions = request.providerOptions["luma"]?.objectValue {
+        output.merge(providerOptions) { _, providerValue in providerValue }
+    }
     return output
 }
 
@@ -714,16 +743,16 @@ private func lumaProviderOptions(from extraBody: [String: JSONValue]) -> [String
     extraBody["luma"]?.objectValue ?? extraBody.filter { key, _ in key != "luma" }
 }
 
-private func lumaReferenceImages(from files: [ImageInputFile], fallback imageConfigs: [JSONValue]) throws -> [JSONValue] {
-    guard !files.isEmpty else { return imageConfigs }
+private func lumaReferenceImages(from files: [ImageInputFile], imageConfigs: [JSONValue]) throws -> [JSONValue] {
+    guard !files.isEmpty else { return [] }
     return try files.enumerated().map { index, file in
         guard let url = file.url else {
             throw AIError.invalidArgument(argument: "files", message: "Luma AI only supports URL-based images.")
         }
         var object: [String: JSONValue] = ["url": .string(url)]
         if imageConfigs.indices.contains(index), let config = imageConfigs[index].objectValue {
-            if let weight = config["weight"] { object["weight"] = weight }
-            if let id = config["id"] { object["id"] = id }
+            if let weight = config["weight"], weight != .null { object["weight"] = weight }
+            if let id = config["id"], id != .null { object["id"] = id }
         }
         return .object(object)
     }
@@ -731,7 +760,7 @@ private func lumaReferenceImages(from files: [ImageInputFile], fallback imageCon
 
 private func lumaWeightedURL(_ value: JSONValue, defaultWeight: Double) -> JSONValue {
     guard var object = value.objectValue else { return value }
-    if object["weight"] == nil {
+    if object["weight"]?.doubleValue == nil {
         object["weight"] = .number(defaultWeight)
     }
     return .object(object.filter { $0.key == "url" || $0.key == "weight" })
@@ -751,14 +780,12 @@ private func lumaCharacterReference(_ images: [JSONValue]) throws -> JSONValue {
     return .object(identities.mapValues { .object(["images": .array($0)]) })
 }
 
-private func lumaPollInterval(_ extraBody: [String: JSONValue]) -> UInt64 {
-    let options = lumaProviderOptions(from: extraBody)
+private func lumaPollInterval(_ options: [String: JSONValue]) -> UInt64 {
     let milliseconds = options["pollIntervalMillis"]?.intValue ?? 500
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
 
-private func lumaMaxPollAttempts(_ extraBody: [String: JSONValue]) -> Int {
-    let options = lumaProviderOptions(from: extraBody)
+private func lumaMaxPollAttempts(_ options: [String: JSONValue]) -> Int {
     return max(options["maxPollAttempts"]?.intValue ?? 120, 1)
 }
 

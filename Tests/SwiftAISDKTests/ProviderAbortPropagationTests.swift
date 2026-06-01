@@ -589,6 +589,29 @@ import Testing
     #expect(requests[1].abortSignal === controller.signal)
 }
 
+@Test func lumaImageForwardsAbortSignalToSubmitPollAndDownloadRequests() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"lum-1","state":"queued"}"#),
+        jsonResponse(#"{"id":"lum-1","state":"completed","assets":{"image":"https://luma.example.com/image.png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+    ])
+    let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
+    let model = try provider.imageModel("photon-1")
+    let controller = AIAbortController()
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["luma": .object(["pollIntervalMillis": .number(1)])],
+        abortSignal: controller.signal
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests[0].abortSignal === controller.signal)
+    #expect(requests[1].abortSignal === controller.signal)
+    #expect(requests[2].abortSignal === controller.signal)
+}
+
 @Test func falForwardsAbortSignalToImageVideoAndTranscriptionRequests() async throws {
     let imageTransport = RecordingTransport(responses: [
         jsonResponse(#"{"image":{"url":"https://fal.example.com/image.png"}}"#),
