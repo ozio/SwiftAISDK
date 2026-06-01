@@ -99,3 +99,5 @@ The suite reads `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GEMINI_API_KEY`
 first, then falls back to `openai-api-key.txt`, `claude-api-key.txt`, and
 `gemini-api-key.txt` in the package root. Override model IDs with
 `LIVE_OPENAI_MODEL`, `LIVE_ANTHROPIC_MODEL`, and `LIVE_GOOGLE_MODEL`.
+Embedding checks also read `LIVE_OPENAI_EMBEDDING_MODEL` and
+`LIVE_GOOGLE_EMBEDDING_MODEL`.

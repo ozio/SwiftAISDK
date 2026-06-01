@@ -349,7 +349,10 @@ Use these gates before calling a surface complete:
 
    The live suite reads API keys from environment variables first, then from the
    ignored root files `openai-api-key.txt`, `claude-api-key.txt`, and
-   `gemini-api-key.txt`.
+   `gemini-api-key.txt`. Language model IDs can be overridden with
+   `LIVE_OPENAI_MODEL`, `LIVE_ANTHROPIC_MODEL`, and `LIVE_GOOGLE_MODEL`;
+   embedding model IDs can be overridden with `LIVE_OPENAI_EMBEDDING_MODEL` and
+   `LIVE_GOOGLE_EMBEDDING_MODEL`.
 
 4. **Docs:** README and `Docs/ProviderCapabilityMatrix.md` point users to the
    same capability story as the code. The provider matrix document is generated

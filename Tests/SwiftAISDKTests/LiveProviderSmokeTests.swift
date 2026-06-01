@@ -5,8 +5,7 @@ import Testing
 @Test func liveProviderSmokeOpenAIGenerateText() async throws {
     guard LiveProviderSmoke.isEnabled else { return }
 
-    let apiKey = try LiveProviderSmoke.apiKey(environmentVariable: "OPENAI_API_KEY", fileName: "openai-api-key.txt")
-    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: apiKey))
+    let provider = try LiveProviderSmoke.openAIProvider()
     let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_OPENAI_MODEL", defaultValue: "gpt-4.1-mini"))
     let result = try await AI.generateText(
         model: model,
@@ -19,11 +18,39 @@ import Testing
     #expect(!result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 }
 
+@Test func liveProviderSmokeOpenAIStreamText() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.openAIProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_OPENAI_MODEL", defaultValue: "gpt-4.1-mini"))
+    let text = try await LiveProviderSmoke.collectText(
+        from: AI.streamText(
+            model: model,
+            prompt: "Reply with two short words.",
+            temperature: 0,
+            maxOutputTokens: 24,
+            retryPolicy: .none
+        )
+    )
+
+    #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+}
+
+@Test func liveProviderSmokeOpenAIEmbedding() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.openAIProvider()
+    let model = try provider.embeddingModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_OPENAI_EMBEDDING_MODEL", defaultValue: "text-embedding-3-small"))
+    let result = try await AI.embed(model: model, value: "live embedding smoke", retryPolicy: .none)
+
+    #expect(result.embeddings.count == 1)
+    #expect(result.embeddings.first?.isEmpty == false)
+}
+
 @Test func liveProviderSmokeAnthropicGenerateText() async throws {
     guard LiveProviderSmoke.isEnabled else { return }
 
-    let apiKey = try LiveProviderSmoke.apiKey(environmentVariable: "ANTHROPIC_API_KEY", fileName: "claude-api-key.txt")
-    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: apiKey))
+    let provider = try LiveProviderSmoke.anthropicProvider()
     let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_ANTHROPIC_MODEL", defaultValue: "claude-haiku-4-5-20251001"))
     let result = try await AI.generateText(
         model: model,
@@ -36,11 +63,28 @@ import Testing
     #expect(!result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 }
 
+@Test func liveProviderSmokeAnthropicStreamText() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.anthropicProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_ANTHROPIC_MODEL", defaultValue: "claude-haiku-4-5-20251001"))
+    let text = try await LiveProviderSmoke.collectText(
+        from: AI.streamText(
+            model: model,
+            prompt: "Reply with two short words.",
+            temperature: 0,
+            maxOutputTokens: 24,
+            retryPolicy: .none
+        )
+    )
+
+    #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+}
+
 @Test func liveProviderSmokeGoogleGenerateText() async throws {
     guard LiveProviderSmoke.isEnabled else { return }
 
-    let apiKey = try LiveProviderSmoke.apiKey(environmentVariable: "GEMINI_API_KEY", fileName: "gemini-api-key.txt")
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: apiKey))
+    let provider = try LiveProviderSmoke.googleProvider()
     let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_GOOGLE_MODEL", defaultValue: "gemini-flash-lite-latest"))
     let result = try await AI.generateText(
         model: model,
@@ -53,9 +97,68 @@ import Testing
     #expect(!result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 }
 
+@Test func liveProviderSmokeGoogleStreamText() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.googleProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_GOOGLE_MODEL", defaultValue: "gemini-flash-lite-latest"))
+    let text = try await LiveProviderSmoke.collectText(
+        from: AI.streamText(
+            model: model,
+            prompt: "Reply with two short words.",
+            temperature: 0,
+            maxOutputTokens: 64,
+            retryPolicy: .none
+        )
+    )
+
+    #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+}
+
+@Test func liveProviderSmokeGoogleEmbedding() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.googleProvider()
+    let model = try provider.embeddingModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_GOOGLE_EMBEDDING_MODEL", defaultValue: "gemini-embedding-001"))
+    let result = try await AI.embed(model: model, value: "live embedding smoke", retryPolicy: .none)
+
+    #expect(result.embeddings.count == 1)
+    #expect(result.embeddings.first?.isEmpty == false)
+}
+
 private enum LiveProviderSmoke {
     static var isEnabled: Bool {
         ProcessInfo.processInfo.environment["LIVE_AI_TESTS"] == "1"
+    }
+
+    static func openAIProvider() throws -> OpenAICompatibleProvider {
+        let apiKey = try apiKey(environmentVariable: "OPENAI_API_KEY", fileName: "openai-api-key.txt")
+        return try AIProviders.openAI(settings: ProviderSettings(apiKey: apiKey))
+    }
+
+    static func anthropicProvider() throws -> AnthropicProvider {
+        let apiKey = try apiKey(environmentVariable: "ANTHROPIC_API_KEY", fileName: "claude-api-key.txt")
+        return try AIProviders.anthropic(settings: ProviderSettings(apiKey: apiKey))
+    }
+
+    static func googleProvider() throws -> GoogleGenerativeAIProvider {
+        let apiKey = try apiKey(environmentVariable: "GEMINI_API_KEY", fileName: "gemini-api-key.txt")
+        return try AIProviders.google(settings: ProviderSettings(apiKey: apiKey))
+    }
+
+    static func collectText(from stream: AsyncThrowingStream<LanguageStreamPart, Error>) async throws -> String {
+        var text = ""
+        for try await part in stream {
+            switch part {
+            case let .textDelta(delta):
+                text += delta
+            case let .textDeltaPart(_, delta, _):
+                text += delta
+            default:
+                break
+            }
+        }
+        return text
     }
 
     static func modelID(environmentVariable: String, defaultValue: String) -> String {
