@@ -62,9 +62,10 @@ Impact:
   `streamText`, and `streamObject`, and step/tool execution events for
   `generateText` and `streamText` tool loops, with per-call or globally
   registered integrations. `AIObjectGenerationCallbacks` now mirrors upstream's
-  object lifecycle callbacks for `generateObject` and `streamObject`. Richer
-  cancellation controls, wrapper-style execute hooks, and warning logging still
-  need follow-up work.
+  object lifecycle callbacks for `generateObject` and `streamObject`.
+  `AIWarningLogging` now mirrors upstream warning logging controls with default,
+  custom, and disabled logger modes. Richer cancellation controls and
+  wrapper-style execute hooks still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -351,7 +352,15 @@ Progress:
    input/output payloads gated by record flags. Next passes should add
    wrapper-style execute hooks.
 
-5. **Tool loop pass.**
+5. **Facade pass 4: warning logging.**
+   `AIWarningLogging` mirrors upstream `AI_SDK_LOG_WARNINGS`: non-empty warning
+   arrays from facade calls are sent to a default stderr logger, callers can
+   install a custom `AIWarningLogger`, and logging can be disabled globally or
+   scoped to an async task without removing warnings from result values, stream
+   lifecycle parts, or telemetry events. Current coverage includes non-streaming
+   facade calls and stream completion logging for `streamText`/`streamObject`.
+
+6. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed
    `AITool`, execute callbacks, step/tool-result messages, streamed tool-result
    parts, upstream-style stop conditions, a Swift `prepareStep` hook, and tool
@@ -363,7 +372,7 @@ Progress:
    errors, provider-executed approval responses, and richer stream lifecycle
    handling.
 
-6. **Object generation pass.**
+7. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
    schema hints and repair callbacks. `AI.streamObject` now emits text deltas,
    best-effort partial `JSONValue` objects, typed partial `Decodable` values
@@ -376,7 +385,7 @@ Progress:
    object lifecycle hooks. Next passes should add provider-specific structured
    output parity, richer repair telemetry, and deeper adapter integrations.
 
-7. **README and capability matrix.**
+8. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first
    machine-readable provider capability matrix and opt-in live smoke harness are
    in place. The markdown table is generated from source and guarded by tests.

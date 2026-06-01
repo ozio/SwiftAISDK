@@ -2190,7 +2190,9 @@ private func withTelemetry<Output: Sendable>(
 ) async throws -> Output {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
     guard dispatcher.isEnabled else {
-        return try await withRetry(policy: retryPolicy, operation: operation)
+        let result = try await withRetry(policy: retryPolicy, operation: operation)
+        await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
+        return result
     }
 
     let callID = providedCallID ?? UUID().uuidString
@@ -2237,6 +2239,7 @@ private func withTelemetry<Output: Sendable>(
             providerMetadata: providerMetadata(result),
             responseMetadata: responseMetadata(result)
         ))
+        await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
         return result
     } catch {
         await dispatcher.record(telemetryEvent(
@@ -2420,6 +2423,7 @@ private func streamTextWithTelemetry(
                             providerMetadata: result.providerMetadata,
                             responseMetadata: result.responseMetadata
                         ))
+                        await AIWarningLogging.logWarnings(result.warnings, providerID: providerID, modelID: modelID)
                         continuation.finish()
                         return
                     } catch is CancellationError {
@@ -2618,6 +2622,7 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                             providerMetadata: providerMetadata,
                             responseMetadata: responseMetadata
                         ))
+                        await AIWarningLogging.logWarnings(warnings, providerID: providerID, modelID: modelID)
                         continuation.finish()
                         return
                     } catch is CancellationError {
