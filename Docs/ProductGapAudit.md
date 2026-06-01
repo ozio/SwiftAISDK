@@ -348,6 +348,11 @@ Impact:
   metadata and forward abort signals, streams emit start/delta/end lifecycle
   parts for reasoning and text, and unsupported `topK`/provider-tool warnings
   are returned to callers.
+- Groq transcription now follows upstream `providerOptions.groq` for
+  multipart fields (`language`, `prompt`, `responseFormat`, `temperature`,
+  and `timestampGranularities`), preserves safe request metadata for those
+  fields, forwards abort signals, and lives in a dedicated
+  `GroqProviderTests.swift` suite for provider-by-provider parity passes.
 - Cerebras chat now uses the upstream OpenAI-compatible function-tool wire
   shape, maps call-level `responseFormat` into native structured outputs,
   forwards abort signals, preserves response/provider metadata, and emits

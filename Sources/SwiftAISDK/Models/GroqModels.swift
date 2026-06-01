@@ -174,7 +174,17 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
             metadataBody["prompt"] = .string(prompt)
         }
 
-        for (key, value) in groqTranscriptionOptions(from: request.extraBody) {
+        let providerOptions = groqTranscriptionOptions(from: request)
+        if let language = providerOptions["language"]?.stringValue, request.language == nil {
+            form.appendField(name: "language", value: language)
+            metadataBody["language"] = .string(language)
+        }
+        if let prompt = providerOptions["prompt"]?.stringValue, request.prompt == nil {
+            form.appendField(name: "prompt", value: prompt)
+            metadataBody["prompt"] = .string(prompt)
+        }
+
+        for (key, value) in providerOptions where key != "language" && key != "prompt" {
             if case let .array(items) = value {
                 metadataBody[key] = value
                 for item in items {
@@ -194,7 +204,8 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
             modelID: modelID,
             body: body,
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -327,8 +338,11 @@ private func groqWarnings(request: LanguageModelRequest, responseFormat: JSONVal
     return warnings
 }
 
-private func groqTranscriptionOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = groqProviderOptions(from: extraBody)
+private func groqTranscriptionOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+    var output = groqProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["groq"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     moveKey("responseFormat", to: "response_format", in: &output)
     moveKey("timestampGranularities", to: "timestamp_granularities", in: &output)
     return output

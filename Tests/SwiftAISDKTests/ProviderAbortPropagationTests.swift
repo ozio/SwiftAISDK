@@ -203,6 +203,21 @@ import Testing
     #expect(streamRequest.abortSignal === streamController.signal)
 }
 
+@Test func groqTranscriptionForwardsAbortSignalToMultipartRequest() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"ok"}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.transcriptionModel("whisper-large-v3")
+    let controller = AIAbortController()
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        abortSignal: controller.signal
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.abortSignal === controller.signal)
+}
+
 @Test func perplexityLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
     {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
