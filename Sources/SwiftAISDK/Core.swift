@@ -1553,6 +1553,9 @@ public struct SpeechRequest: Sendable {
     public var text: String
     public var voice: String?
     public var format: String?
+    public var speed: Double?
+    public var language: String?
+    public var instructions: String?
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
@@ -1562,6 +1565,9 @@ public struct SpeechRequest: Sendable {
         text: String,
         voice: String? = nil,
         format: String? = nil,
+        speed: Double? = nil,
+        language: String? = nil,
+        instructions: String? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
@@ -1570,6 +1576,9 @@ public struct SpeechRequest: Sendable {
         self.text = text
         self.voice = voice
         self.format = format
+        self.speed = speed
+        self.language = language
+        self.instructions = instructions
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers

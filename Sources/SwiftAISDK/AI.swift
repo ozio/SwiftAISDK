@@ -3532,6 +3532,9 @@ private func speechRequestTelemetryInput(_ request: SpeechRequest) -> JSONValue 
         "text": .string(request.text),
         "voice": request.voice.map(JSONValue.string),
         "format": request.format.map(JSONValue.string),
+        "speed": request.speed.map(JSONValue.number),
+        "language": request.language.map(JSONValue.string),
+        "instructions": request.instructions.map(JSONValue.string),
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
         "headers": headersTelemetryJSON(request.headers)
@@ -3543,6 +3546,9 @@ private func speechRequestMetadataBody(_ request: SpeechRequest) -> JSONValue {
         "text": .string(request.text),
         "voice": request.voice.map(JSONValue.string),
         "format": request.format.map(JSONValue.string),
+        "speed": request.speed.map(JSONValue.number),
+        "language": request.language.map(JSONValue.string),
+        "instructions": request.instructions.map(JSONValue.string),
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
     ])

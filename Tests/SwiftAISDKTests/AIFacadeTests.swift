@@ -1430,11 +1430,17 @@ private actor PrepareStepCapture {
     #expect(transcriptionModel.requests.first?.language == "en")
 
     let speechModel = MockSpeechModel(result: SpeechResult(audio: Data("audio".utf8)))
-    let speech = try await AI.generateSpeech(model: speechModel, request: SpeechRequest(text: "hello", voice: "alloy"))
+    let speech = try await AI.generateSpeech(model: speechModel, request: SpeechRequest(text: "hello", voice: "alloy", speed: 1.2, language: "en", instructions: "Warm"))
     #expect(String(data: speech.audio, encoding: .utf8) == "audio")
     #expect(speech.requestMetadata.body?["text"]?.stringValue == "hello")
     #expect(speech.requestMetadata.body?["voice"]?.stringValue == "alloy")
+    #expect(speech.requestMetadata.body?["speed"]?.doubleValue == 1.2)
+    #expect(speech.requestMetadata.body?["language"]?.stringValue == "en")
+    #expect(speech.requestMetadata.body?["instructions"]?.stringValue == "Warm")
     #expect(speechModel.requests.first?.voice == "alloy")
+    #expect(speechModel.requests.first?.speed == 1.2)
+    #expect(speechModel.requests.first?.language == "en")
+    #expect(speechModel.requests.first?.instructions == "Warm")
 
     let videoModel = MockVideoModel(result: VideoGenerationResult(urls: ["https://example.com/video.mp4"], rawValue: .object([:])))
     let video = try await AI.generateVideo(model: videoModel, request: VideoGenerationRequest(prompt: "clip"))

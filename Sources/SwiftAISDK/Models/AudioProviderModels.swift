@@ -1181,6 +1181,27 @@ private func deepgramSpeechOptions(from extraBody: [String: JSONValue], current:
             message: "Deepgram TTS models embed the voice in the model ID. The voice parameter \"\(voice)\" was ignored. Use the model ID to select a voice (e.g., \"aura-2-helena-en\")."
         ))
     }
+    if request.speed != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "speed",
+            message: "Deepgram TTS REST API does not support speed adjustment. Speed parameter was ignored."
+        ))
+    }
+    if let language = request.language {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "language",
+            message: "Deepgram TTS models are language-specific via the model ID. Language parameter \"\(language)\" was ignored. Select a model with the appropriate language suffix (e.g., \"-en\" for English)."
+        ))
+    }
+    if request.instructions != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "instructions",
+            message: "Deepgram TTS REST API does not support instructions. Instructions parameter was ignored."
+        ))
+    }
 
     return DeepgramPreparedSpeechOptions(query: query.filter { $0.key != "model" }, warnings: warnings)
 }
