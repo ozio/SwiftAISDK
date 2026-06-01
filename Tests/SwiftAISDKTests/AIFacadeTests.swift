@@ -1159,6 +1159,42 @@ import Testing
     #expect(result.toolResults.first?.result["city"]?.stringValue == "Tokyo")
 }
 
+@Test func aiGenerateTextPassesAbortSignalToToolExecutionContext() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object([:])),
+        TextGenerationResult(text: "done", finishReason: "stop", rawValue: .object([:]))
+    ])
+    let capture = ToolExecutionContextCapture()
+    let controller = AIAbortController()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]],
+        executeWithContext: { arguments, context in
+            await capture.record(arguments: arguments, context: context)
+            return ["forecast": "sunny"]
+        },
+        execute: { _ in
+            Issue.record("Expected contextual execute closure to be used.")
+            return [:]
+        }
+    )
+
+    _ = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 3,
+        abortSignal: controller.signal
+    )
+
+    let snapshot = await capture.snapshot()
+    #expect(snapshot.arguments?["query"]?.stringValue == "weather")
+    #expect(snapshot.context?.toolCallID == "call-1")
+    #expect(snapshot.context?.abortSignal === controller.signal)
+    #expect(snapshot.context?.messages == [.user("Weather?")])
+}
+
 @Test func aiGenerateTextMarksDynamicToolCallsResultsAndMessages() async throws {
     let toolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#)
     let dynamicToolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#, dynamic: true)
@@ -1288,6 +1324,20 @@ private actor ToolCapture {
 
     func value() -> JSONValue? {
         arguments
+    }
+}
+
+private actor ToolExecutionContextCapture {
+    private var recordedArguments: JSONValue?
+    private var recordedContext: AIToolExecutionContext?
+
+    func record(arguments: JSONValue, context: AIToolExecutionContext) {
+        recordedArguments = arguments
+        recordedContext = context
+    }
+
+    func snapshot() -> (arguments: JSONValue?, context: AIToolExecutionContext?) {
+        (recordedArguments, recordedContext)
     }
 }
 

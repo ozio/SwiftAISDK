@@ -552,6 +552,7 @@ public protocol MCPTransport: Sendable {
     func setProtocolVersion(_ protocolVersion: String?) async
     func start() async throws
     func request(_ message: JSONValue) async throws -> JSONValue
+    func request(_ message: JSONValue, options: MCPRequestOptions?) async throws -> JSONValue
     func notify(_ message: JSONValue) async throws
     func close() async throws
 }
@@ -559,6 +560,18 @@ public protocol MCPTransport: Sendable {
 public extension MCPTransport {
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {}
     func setProtocolVersion(_ protocolVersion: String?) async {}
+    func request(_ message: JSONValue, options: MCPRequestOptions?) async throws -> JSONValue {
+        try options?.abortSignal?.throwIfAborted()
+        return try await request(message)
+    }
+}
+
+public struct MCPRequestOptions: Sendable {
+    public var abortSignal: AIAbortSignal?
+
+    public init(abortSignal: AIAbortSignal? = nil) {
+        self.abortSignal = abortSignal
+    }
 }
 
 public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
@@ -688,7 +701,11 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     }
 
     public func request(_ message: JSONValue) async throws -> JSONValue {
-        let response = try await send(message)
+        try await request(message, options: nil)
+    }
+
+    public func request(_ message: JSONValue, options: MCPRequestOptions?) async throws -> JSONValue {
+        let response = try await send(message, options: options)
         let expectedID = message["id"]?.intValue
         if let responseID = expectedID, let array = response.arrayValue {
             guard let match = array.first(where: { $0["id"]?.intValue == responseID }) else {
@@ -714,12 +731,14 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         )
     }
 
-    private func send(_ message: JSONValue) async throws -> JSONValue {
+    private func send(_ message: JSONValue, options: MCPRequestOptions? = nil) async throws -> JSONValue {
+        try options?.abortSignal?.throwIfAborted()
         if let streamingTransport {
             let response = try await sendRawStream(
                 method: "POST",
                 accept: "application/json, text/event-stream",
                 body: try encodeJSONBody(message),
+                abortSignal: options?.abortSignal,
                 transport: streamingTransport
             )
             return try await handleStreamingResponse(response, expectedID: message["id"]?.intValue)
@@ -728,7 +747,8 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         let response = try await sendRaw(
             method: "POST",
             accept: "application/json, text/event-stream",
-            body: try encodeJSONBody(message)
+            body: try encodeJSONBody(message),
+            abortSignal: options?.abortSignal
         )
         return try await handleBufferedResponse(response, expectedID: message["id"]?.intValue)
     }
@@ -756,14 +776,17 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         accept: String,
         body: Data?,
         extraHeaders: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
         triedAuth: Bool = false
     ) async throws -> AIHTTPResponse {
+        try abortSignal?.throwIfAborted()
         let requestHeaders = try await commonHeaders(accept: accept, hasBody: body != nil, extraHeaders: extraHeaders)
         let response = try await transport.send(AIHTTPRequest(
             method: method,
             url: url,
             headers: requestHeaders,
-            body: body
+            body: body,
+            abortSignal: abortSignal
         ))
         if let sessionID = response.headerValue("mcp-session-id") {
             self.sessionID = sessionID
@@ -787,6 +810,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                 accept: accept,
                 body: body,
                 extraHeaders: extraHeaders,
+                abortSignal: abortSignal,
                 triedAuth: true
             )
         }
@@ -810,15 +834,18 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         accept: String,
         body: Data?,
         extraHeaders: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
         triedAuth: Bool = false,
         transport: any AIStreamingTransport
     ) async throws -> AIHTTPStreamResponse {
+        try abortSignal?.throwIfAborted()
         let requestHeaders = try await commonHeaders(accept: accept, hasBody: body != nil, extraHeaders: extraHeaders)
         let response = try await transport.stream(AIHTTPRequest(
             method: method,
             url: url,
             headers: requestHeaders,
-            body: body
+            body: body,
+            abortSignal: abortSignal
         ))
         if let sessionID = response.headerValue("mcp-session-id") {
             self.sessionID = sessionID
@@ -841,6 +868,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                 accept: accept,
                 body: body,
                 extraHeaders: extraHeaders,
+                abortSignal: abortSignal,
                 triedAuth: true,
                 transport: transport
             )
@@ -1093,14 +1121,15 @@ public actor MCPClient {
         return try MCPListToolsResult(json: result)
     }
 
-    public func callTool(name: String, arguments: JSONValue = .object([:])) async throws -> MCPCallToolResult {
+    public func callTool(name: String, arguments: JSONValue = .object([:]), options: MCPRequestOptions? = nil) async throws -> MCPCallToolResult {
         try assertCapability("tools", method: "tools/call")
         let result = try await request(
             method: "tools/call",
             params: .object([
                 "name": .string(name),
                 "arguments": arguments
-            ])
+            ]),
+            options: options
         )
         return MCPCallToolResult(json: result)
     }
@@ -1248,7 +1277,13 @@ public actor MCPClient {
         }
     }
 
-    private func request(method: String, params: JSONValue? = nil, skipCapabilityCheck: Bool = false) async throws -> JSONValue {
+    private func request(
+        method: String,
+        params: JSONValue? = nil,
+        skipCapabilityCheck: Bool = false,
+        options: MCPRequestOptions? = nil
+    ) async throws -> JSONValue {
+        try options?.abortSignal?.throwIfAborted()
         guard !isClosed else {
             throw MCPClientError(message: "Attempted to send a request from a closed client.")
         }
@@ -1263,7 +1298,7 @@ public actor MCPClient {
             "method": .string(method),
             "params": params
         ])
-        let response = try await transport.request(message)
+        let response = try await transport.request(message, options: options)
         return try result(from: response, expectedID: id)
     }
 
@@ -1336,7 +1371,16 @@ public actor MCPClient {
             toModelOutput: { context in
                 mcpToolModelOutput(from: context.output)
             }
-        ) { [weak self] arguments in
+        ) { [weak self] arguments, context in
+            guard let self else {
+                throw MCPClientError(message: "MCP client has been released.")
+            }
+            return try await self.callTool(
+                name: definition.name,
+                arguments: arguments,
+                options: MCPRequestOptions(abortSignal: context.abortSignal)
+            ).rawValue
+        } execute: { [weak self] arguments in
             guard let self else {
                 throw MCPClientError(message: "MCP client has been released.")
             }

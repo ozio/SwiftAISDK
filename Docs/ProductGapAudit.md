@@ -211,15 +211,19 @@ Impact:
   requests through `MCPElicitationRequest` and `MCPElicitResult`. `AITool` now
   has an upstream-style `toModelOutput` hook, and MCP tools use it to convert
   MCP text/image/unknown content into model-facing output while preserving the
-  raw MCP call result. `MCPHTTPTransport` now also follows the upstream
-  Streamable HTTP shape for protocol-version headers, `mcp-session-id`
-  persistence, DELETE session termination, JSON response parsing, buffered SSE
-  fallback parsing, and true streaming SSE request/response handling when the
-  underlying transport conforms to `AIStreamingTransport`. `URLSessionTransport`
-  now provides that streaming transport path. Inbound SSE also tracks event IDs
-  and reconnects with `last-event-id` after stream failures. MCP transports can
-  now take an `MCPOAuthProvider`, attach bearer tokens, invalidate stale tokens
-  on 401 responses, parse `resource_metadata` from `WWW-Authenticate`, run an
+  raw MCP call result. `AIToolExecutionContext` now mirrors upstream tool
+  execution options for cancellation: `AI.generateText`/`AI.streamText` pass the
+  request `AIAbortSignal` into local tool execution, and MCP dynamic tools
+  forward it through `MCPRequestOptions` to `MCPHTTPTransport` requests.
+  `MCPHTTPTransport` now also follows the upstream Streamable HTTP shape for
+  protocol-version headers, `mcp-session-id` persistence, DELETE session
+  termination, JSON response parsing, buffered SSE fallback parsing, and true
+  streaming SSE request/response handling when the underlying transport conforms
+  to `AIStreamingTransport`. `URLSessionTransport` now provides that streaming
+  transport path. Inbound SSE also tracks event IDs and reconnects with
+  `last-event-id` after stream failures. MCP transports can now take an
+  `MCPOAuthProvider`, attach bearer tokens, invalidate stale tokens on 401
+  responses, parse `resource_metadata` from `WWW-Authenticate`, run an
   authorization recovery hook, and retry the original request once.
   `MCPStdioTransport` now covers the local-server `@ai-sdk/mcp/mcp-stdio`
   path on macOS/Linux with command/args/env/cwd process spawning,
@@ -353,10 +357,9 @@ Progress:
    instead of `error`. `AIAbortController`/`AIAbortSignal` are now available on
    core request structs and `AIHTTPRequest`; OpenAI-compatible providers, Google
    Generative AI, Google Vertex, Amazon Bedrock, file clients, media
-   polling/download flows, and native audio polling flows forward them to
-   transport. Next passes should audit
-   non-provider transports such as MCP/OAuth and keep new provider helpers covered
-   by propagation tests.
+   polling/download flows, native audio polling flows, MCP dynamic tool calls,
+   and MCP HTTP requests forward them to transport. Next passes should keep new
+   provider and transport helpers covered by propagation tests.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,

@@ -1143,6 +1143,25 @@ public struct AIToolApprovalContext: Sendable {
 
 public typealias AIToolApproval = @Sendable (AIToolApprovalContext) async throws -> AIToolApprovalStatus?
 
+public struct AIToolExecutionContext: Sendable {
+    public var toolCallID: String?
+    public var messages: [AIMessage]
+    public var abortSignal: AIAbortSignal?
+    public var metadata: [String: JSONValue]
+
+    public init(
+        toolCallID: String? = nil,
+        messages: [AIMessage] = [],
+        abortSignal: AIAbortSignal? = nil,
+        metadata: [String: JSONValue] = [:]
+    ) {
+        self.toolCallID = toolCallID
+        self.messages = messages
+        self.abortSignal = abortSignal
+        self.metadata = metadata
+    }
+}
+
 public struct AIToolModelOutputContext: Sendable {
     public var toolCallID: String
     public var input: JSONValue
@@ -1163,6 +1182,7 @@ public struct AITool: Sendable {
     public var providerMetadata: [String: JSONValue]
     public var refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)?
     public var execute: @Sendable (JSONValue) async throws -> JSONValue
+    public var executeWithContext: @Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue
     public var toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)?
 
     public init(
@@ -1173,6 +1193,7 @@ public struct AITool: Sendable {
         providerMetadata: [String: JSONValue] = [:],
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
         toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
+        executeWithContext: (@Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue)? = nil,
         execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
     ) {
         self.name = name
@@ -1183,6 +1204,9 @@ public struct AITool: Sendable {
         self.refineArguments = refineArguments
         self.toModelOutput = toModelOutput
         self.execute = execute
+        self.executeWithContext = executeWithContext ?? { arguments, _ in
+            try await execute(arguments)
+        }
     }
 
     public static func dynamic(
@@ -1192,6 +1216,7 @@ public struct AITool: Sendable {
         providerMetadata: [String: JSONValue] = [:],
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
         toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
+        executeWithContext: (@Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue)? = nil,
         execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
     ) -> AITool {
         AITool(
@@ -1202,6 +1227,7 @@ public struct AITool: Sendable {
             providerMetadata: providerMetadata,
             refineArguments: refineArguments,
             toModelOutput: toModelOutput,
+            executeWithContext: executeWithContext,
             execute: execute
         )
     }

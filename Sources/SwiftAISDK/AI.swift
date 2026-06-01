@@ -3919,12 +3919,18 @@ private func executeToolCalls(
                 continue
             }
             let resultValue: JSONValue
+            let executionContext = AIToolExecutionContext(
+                toolCallID: call.id,
+                messages: request.messages,
+                abortSignal: request.abortSignal,
+                metadata: call.providerMetadata
+            )
             if let telemetry {
                 resultValue = try await telemetry.executeTool(call: call) {
-                    try await tool.execute(refinedArguments)
+                    try await tool.executeWithContext(refinedArguments, executionContext)
                 }
             } else {
-                resultValue = try await tool.execute(refinedArguments)
+                resultValue = try await tool.executeWithContext(refinedArguments, executionContext)
             }
             let modelOutput = try await tool.toModelOutput?(AIToolModelOutputContext(
                 toolCallID: call.id,

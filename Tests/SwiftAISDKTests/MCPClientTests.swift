@@ -109,6 +109,28 @@ import Testing
     #expect(sent.map { $0["method"]?.stringValue } == ["tools/call"])
 }
 
+@Test func mcpDynamicToolHonorsAbortedExecutionContextBeforeToolCall() async throws {
+    let transport = MockMCPTransport()
+    let client = try await MCPClient.connect(transport: transport)
+    let search = try await #require(client.tools()["search"])
+    await transport.reset()
+    let controller = AIAbortController()
+    controller.abort(reason: "user cancelled")
+
+    do {
+        _ = try await search.executeWithContext(
+            ["query": "cancelled"],
+            AIToolExecutionContext(toolCallID: "call-1", abortSignal: controller.signal)
+        )
+        Issue.record("Expected aborted MCP tool execution to throw.")
+    } catch let error as AIAbortError {
+        #expect(error.reason == "user cancelled")
+    }
+
+    let sent = await transport.sentMessages()
+    #expect(sent.isEmpty)
+}
+
 @Test func mcpClientRejectsToolCallsWhenServerHasNoToolCapability() async throws {
     let transport = MockMCPTransport(capabilities: .object([:]))
     let client = try await MCPClient.connect(transport: transport)
@@ -119,6 +141,24 @@ import Testing
     } catch let error as MCPClientError {
         #expect(error.description.contains("does not support tools"))
     }
+}
+
+@Test func mcpHTTPTransportForwardsAbortSignalToRequests() async throws {
+    let controller = AIAbortController()
+    let http = RecordingTransport(response: jsonResponse(#"{"jsonrpc":"2.0","id":7,"result":{}}"#))
+    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
+
+    _ = try await transport.request(
+        [
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "ping"
+        ],
+        options: MCPRequestOptions(abortSignal: controller.signal)
+    )
+
+    let request = try #require(await http.requests().first)
+    #expect(request.abortSignal === controller.signal)
 }
 
 @Test func mcpClientListsReadsResourcesAndTemplates() async throws {
