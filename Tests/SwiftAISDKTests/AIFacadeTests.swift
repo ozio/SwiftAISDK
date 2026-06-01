@@ -131,6 +131,29 @@ import Testing
     }
 }
 
+@Test func aiTelemetryExecuteLanguageModelCallWrapsModelCallsInIntegrationOrder() async throws {
+    let log = ExecutionWrapperLog()
+    let model = MockLanguageModel(result: TextGenerationResult(text: "wrapped", rawValue: .object([:])))
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Wrap",
+        retryPolicy: .none,
+        telemetry: AITelemetryOptions(integrations: [
+            ExecutionWrappingTelemetry(name: "first", log: log),
+            ExecutionWrappingTelemetry(name: "second", log: log)
+        ])
+    )
+
+    #expect(result.text == "wrapped")
+    #expect(await log.entries() == [
+        "second-language-start:ai.generateText:mock-language",
+        "first-language-start:ai.generateText:mock-language",
+        "first-language-end",
+        "second-language-end"
+    ])
+}
+
 @Test func aiGenerateTextEmitsStepAndToolTelemetryEvents() async throws {
     let recorder = TelemetryRecorder()
     let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Kyoto"}"#)
@@ -189,6 +212,39 @@ import Testing
     #expect(toolEvents[1].output?["status"]?.stringValue == "executed")
     #expect(toolEvents[1].output?["arguments"]?["city"]?.stringValue == "Kyoto")
     #expect(toolEvents[1].output?["result"]?["result"]?["forecast"]?.stringValue == "sunny")
+}
+
+@Test func aiTelemetryExecuteToolWrapsToolExecution() async throws {
+    let log = ExecutionWrapperLog()
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Kyoto"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object([:])),
+        TextGenerationResult(text: "Done", finishReason: "stop", rawValue: .object([:]))
+    ])
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["city": ["type": "string"]]]
+    ) { arguments in
+        await log.append("tool-body:\(arguments["city"]?.stringValue ?? "missing")")
+        return ["forecast": "sunny"]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 2,
+        retryPolicy: .none,
+        telemetry: AITelemetryOptions(integrations: [ExecutionWrappingTelemetry(name: "wrapper", log: log)])
+    )
+
+    #expect(result.toolResults.first?.result["forecast"]?.stringValue == "sunny")
+    let entries = await log.entries()
+    #expect(entries.contains("wrapper-tool-start:call-1:lookup"))
+    #expect(entries.contains("tool-body:Kyoto"))
+    #expect(entries.contains("wrapper-tool-end"))
+    #expect(entries.firstIndex(of: "wrapper-tool-start:call-1:lookup")! < entries.firstIndex(of: "tool-body:Kyoto")!)
+    #expect(entries.firstIndex(of: "tool-body:Kyoto")! < entries.firstIndex(of: "wrapper-tool-end")!)
 }
 
 @Test func aiGenerateTextStoresToolModelOutput() async throws {
@@ -1365,6 +1421,39 @@ private actor TelemetryRecorder: AITelemetryIntegration {
 
     func events() -> [AITelemetryEvent] {
         recordedEvents
+    }
+}
+
+private actor ExecutionWrapperLog {
+    private var values: [String] = []
+
+    func append(_ value: String) {
+        values.append(value)
+    }
+
+    func entries() -> [String] {
+        values
+    }
+}
+
+private struct ExecutionWrappingTelemetry: AITelemetryIntegration {
+    var name: String
+    var log: ExecutionWrapperLog
+
+    func record(_ event: AITelemetryEvent) {}
+
+    func executeLanguageModelCall<Output: Sendable>(_ context: AITelemetryLanguageModelCallContext<Output>) async throws -> Output {
+        await log.append("\(name)-language-start:\(context.operationID):\(context.modelID ?? "unknown")")
+        let result = try await context.execute()
+        await log.append("\(name)-language-end")
+        return result
+    }
+
+    func executeTool<Output: Sendable>(_ context: AITelemetryToolExecutionContext<Output>) async throws -> Output {
+        await log.append("\(name)-tool-start:\(context.toolCallID):\(context.toolName)")
+        let result = try await context.execute()
+        await log.append("\(name)-tool-end")
+        return result
     }
 }
 

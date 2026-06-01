@@ -81,6 +81,59 @@ public struct AITelemetryEvent: Equatable, Sendable {
 
 public protocol AITelemetryIntegration: Sendable {
     func record(_ event: AITelemetryEvent) async
+    func executeLanguageModelCall<Output: Sendable>(_ context: AITelemetryLanguageModelCallContext<Output>) async throws -> Output
+    func executeTool<Output: Sendable>(_ context: AITelemetryToolExecutionContext<Output>) async throws -> Output
+}
+
+public extension AITelemetryIntegration {
+    func executeLanguageModelCall<Output: Sendable>(_ context: AITelemetryLanguageModelCallContext<Output>) async throws -> Output {
+        try await context.execute()
+    }
+
+    func executeTool<Output: Sendable>(_ context: AITelemetryToolExecutionContext<Output>) async throws -> Output {
+        try await context.execute()
+    }
+}
+
+public struct AITelemetryLanguageModelCallContext<Output: Sendable>: Sendable {
+    public var callID: String
+    public var operationID: String
+    public var providerID: String
+    public var modelID: String?
+    public var execute: @Sendable () async throws -> Output
+
+    public init(
+        callID: String,
+        operationID: String,
+        providerID: String,
+        modelID: String? = nil,
+        execute: @escaping @Sendable () async throws -> Output
+    ) {
+        self.callID = callID
+        self.operationID = operationID
+        self.providerID = providerID
+        self.modelID = modelID
+        self.execute = execute
+    }
+}
+
+public struct AITelemetryToolExecutionContext<Output: Sendable>: Sendable {
+    public var callID: String
+    public var toolCallID: String
+    public var toolName: String
+    public var execute: @Sendable () async throws -> Output
+
+    public init(
+        callID: String,
+        toolCallID: String,
+        toolName: String,
+        execute: @escaping @Sendable () async throws -> Output
+    ) {
+        self.callID = callID
+        self.toolCallID = toolCallID
+        self.toolName = toolName
+        self.execute = execute
+    }
 }
 
 public struct AITelemetryOptions: Sendable {

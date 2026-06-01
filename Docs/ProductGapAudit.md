@@ -64,8 +64,9 @@ Impact:
   registered integrations. `AIObjectGenerationCallbacks` now mirrors upstream's
   object lifecycle callbacks for `generateObject` and `streamObject`.
   `AIWarningLogging` now mirrors upstream warning logging controls with default,
-  custom, and disabled logger modes. Richer cancellation controls and
-  wrapper-style execute hooks still need follow-up work.
+  custom, and disabled logger modes. Telemetry integrations can now wrap
+  language model calls and tool execution with upstream-style execute hooks.
+  Richer cancellation controls still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -93,8 +94,9 @@ Impact:
   JSON/reasoning extraction, simulated streaming, and tool input-example
   description transforms. `wrapProvider(...)` can apply all three middleware
   families, and `createProviderRegistry(...)` can apply language and image
-  middleware to routed models. Telemetry now has lifecycle event hooks, but
-  middleware-specific trace wrapping remains follow-up product work.
+  middleware to routed models. Telemetry now has lifecycle events and execute
+  wrappers for model/tool spans; deeper middleware-specific trace metadata
+  remains follow-up product work.
 
 Recommendation:
 
@@ -348,9 +350,9 @@ Progress:
    for `generateText` and `streamText` tool loops. Events carry call IDs,
    operation IDs, provider/model
    IDs, retry attempts, timing, usage, warnings, metadata, response metadata,
-   object lifecycle callbacks for `generateObject` and `streamObject`, and
-   input/output payloads gated by record flags. Next passes should add
-   wrapper-style execute hooks.
+   object lifecycle callbacks for `generateObject` and `streamObject`,
+   input/output payloads gated by record flags, and execute wrappers for
+   language model calls plus tool execution.
 
 5. **Facade pass 4: warning logging.**
    `AIWarningLogging` mirrors upstream `AI_SDK_LOG_WARNINGS`: non-empty warning

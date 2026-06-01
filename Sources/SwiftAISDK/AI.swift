@@ -18,7 +18,8 @@ public enum AI {
             usage: { $0.usage },
             warnings: { $0.warnings },
             providerMetadata: { $0.providerMetadata },
-            responseMetadata: { $0.responseMetadata }
+            responseMetadata: { $0.responseMetadata },
+            wrapLanguageModelCall: true
         ) {
             try await model.generate(request)
         }
@@ -2043,6 +2044,58 @@ private struct AITelemetryDispatcher: Sendable {
             await integration.record(event)
         }
     }
+
+    func executeLanguageModelCall<Output: Sendable>(
+        callID: String,
+        operationID: String,
+        providerID: String,
+        modelID: String?,
+        operation: @escaping @Sendable () async throws -> Output
+    ) async throws -> Output {
+        guard isEnabled else {
+            return try await operation()
+        }
+
+        var execute = operation
+        for integration in integrations {
+            let innerExecute = execute
+            execute = {
+                try await integration.executeLanguageModelCall(AITelemetryLanguageModelCallContext(
+                    callID: callID,
+                    operationID: operationID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    execute: innerExecute
+                ))
+            }
+        }
+        return try await execute()
+    }
+
+    func executeTool<Output: Sendable>(
+        callID: String,
+        toolCallID: String,
+        toolName: String,
+        operation: @escaping @Sendable () async throws -> Output
+    ) async throws -> Output {
+        guard isEnabled else {
+            return try await operation()
+        }
+
+        var execute = operation
+        for integration in integrations {
+            let innerExecute = execute
+            execute = {
+                try await integration.executeTool(AITelemetryToolExecutionContext(
+                    callID: callID,
+                    toolCallID: toolCallID,
+                    toolName: toolName,
+                    execute: innerExecute
+                ))
+            }
+        }
+        return try await execute()
+    }
 }
 
 private struct AIToolLoopTelemetryContext: Sendable {
@@ -2171,6 +2224,18 @@ private struct AIToolLoopTelemetryContext: Sendable {
             errorDescription: String(describing: error)
         ))
     }
+
+    func executeTool<Output: Sendable>(
+        call: AIToolCall,
+        operation: @escaping @Sendable () async throws -> Output
+    ) async throws -> Output {
+        try await dispatcher.executeTool(
+            callID: callID,
+            toolCallID: call.id,
+            toolName: call.name,
+            operation: operation
+        )
+    }
 }
 
 private func withTelemetry<Output: Sendable>(
@@ -2186,6 +2251,7 @@ private func withTelemetry<Output: Sendable>(
     warnings: @escaping @Sendable (Output) -> [AIWarning],
     providerMetadata: @escaping @Sendable (Output) -> [String: JSONValue],
     responseMetadata: @escaping @Sendable (Output) -> AIResponseMetadata,
+    wrapLanguageModelCall: Bool = false,
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
@@ -2209,6 +2275,18 @@ private func withTelemetry<Output: Sendable>(
     ))
 
     do {
+        let wrappedOperation: @Sendable () async throws -> Output = {
+            if wrapLanguageModelCall {
+                return try await dispatcher.executeLanguageModelCall(
+                    callID: callID,
+                    operationID: operationID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    operation: operation
+                )
+            }
+            return try await operation()
+        }
         let result = try await withRetry(policy: retryPolicy, onRetry: { retry in
             await dispatcher.record(telemetryEvent(
                 kind: .retry,
@@ -2223,7 +2301,7 @@ private func withTelemetry<Output: Sendable>(
                 durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
                 errorDescription: retry.errorDescription
             ))
-        }, operation: operation)
+        }, operation: wrappedOperation)
         await dispatcher.record(telemetryEvent(
             kind: .end,
             callID: callID,
@@ -2310,7 +2388,14 @@ private func generateObjectResult<Output: Sendable>(
         providerMetadata: { $0.providerMetadata },
         responseMetadata: { $0.responseMetadata }
     ) {
-        let textResult = try await model.generate(request)
+        let textResult = try await AITelemetryDispatcher(options: telemetry).executeLanguageModelCall(
+            callID: callID,
+            operationID: "ai.generateObject",
+            providerID: model.providerID,
+            modelID: model.modelID
+        ) {
+            try await model.generate(request)
+        }
         await callbacks?.onStepFinish?(AIObjectGenerationStepFinishEvent(
             callID: callID,
             stepNumber: 0,
@@ -2355,7 +2440,7 @@ private func generateObjectResult<Output: Sendable>(
 }
 
 private func streamTextWithTelemetry(
-    makeStream: @escaping @Sendable () -> AsyncThrowingStream<LanguageStreamPart, Error>,
+    makeStream: @escaping @Sendable () async throws -> AsyncThrowingStream<LanguageStreamPart, Error>,
     operationID: String,
     providerID: String,
     modelID: String?,
@@ -2389,7 +2474,14 @@ private func streamTextWithTelemetry(
                 while true {
                     var yieldedPart = false
                     do {
-                        for try await part in makeStream() {
+                        let stream = try await dispatcher.executeLanguageModelCall(
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            operation: makeStream
+                        )
+                        for try await part in stream {
                             try Task.checkCancellation()
                             yieldedPart = true
                             step.record(part)
@@ -2485,7 +2577,7 @@ private func streamTextWithTelemetry(
 }
 
 private func objectStreamWithTelemetry<Object: Sendable>(
-    makeStream: @escaping @Sendable () -> AsyncThrowingStream<ObjectStreamPart<Object>, Error>,
+    makeStream: @escaping @Sendable () async throws -> AsyncThrowingStream<ObjectStreamPart<Object>, Error>,
     operationID: String,
     providerID: String,
     modelID: String?,
@@ -2547,7 +2639,14 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                 while true {
                     var yieldedPart = false
                     do {
-                        for try await part in makeStream() {
+                        let stream = try await dispatcher.executeLanguageModelCall(
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            operation: makeStream
+                        )
+                        for try await part in stream {
                             try Task.checkCancellation()
                             yieldedPart = true
                             switch part {
@@ -3641,7 +3740,14 @@ private func executeToolCalls(
                 )
                 continue
             }
-            let resultValue = try await tool.execute(refinedArguments)
+            let resultValue: JSONValue
+            if let telemetry {
+                resultValue = try await telemetry.executeTool(call: call) {
+                    try await tool.execute(refinedArguments)
+                }
+            } else {
+                resultValue = try await tool.execute(refinedArguments)
+            }
             let modelOutput = try await tool.toModelOutput?(AIToolModelOutputContext(
                 toolCallID: call.id,
                 input: refinedArguments,
