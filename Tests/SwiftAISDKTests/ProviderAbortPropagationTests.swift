@@ -397,6 +397,29 @@ import Testing
     #expect(request.abortSignal === controller.signal)
 }
 
+@Test func assemblyAIForwardsAbortSignalToUploadSubmitAndPollRequests() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+        jsonResponse(#"{"id":"assembly-job","status":"queued"}"#),
+        jsonResponse(#"{"id":"assembly-job","status":"completed","text":"assembly transcript"}"#)
+    ])
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: transport))
+    let model = try provider.transcriptionModel("best")
+    let controller = AIAbortController()
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        mimeType: "audio/wav",
+        abortSignal: controller.signal
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests[0].abortSignal === controller.signal)
+    #expect(requests[1].abortSignal === controller.signal)
+    #expect(requests[2].abortSignal === controller.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

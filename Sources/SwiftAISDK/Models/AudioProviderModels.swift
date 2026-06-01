@@ -457,7 +457,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = assemblyAIProviderOptions(from: request.extraBody)
+        let options = assemblyAIProviderOptions(from: request)
         let uploadResponse = try await config.transport.send(config.rawRequest(
             path: "/v2/upload",
             modelID: modelID,
@@ -839,6 +839,16 @@ private func assemblyAIProviderOptions(from extraBody: [String: JSONValue]) -> [
     if let nested = output.removeValue(forKey: "assemblyai")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
+    return output
+}
+
+private func assemblyAIProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+    assemblyAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func assemblyAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = assemblyAIProviderOptions(from: extraBody)
+    output.merge(assemblyAIProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     return output
 }
 
