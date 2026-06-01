@@ -52,6 +52,7 @@ public final class OpenAISkillsClient: AISkillsClient, @unchecked Sendable {
             description: raw["description"]?.stringValue,
             latestVersion: raw["latest_version"]?.stringValue,
             providerMetadata: openAIMetadata.isEmpty ? [:] : [providerReferenceKey: .object(openAIMetadata)],
+            requestMetadata: skillUploadRequestMetadata(request, includeDisplayTitle: false),
             responseMetadata: aiResponseMetadata(from: raw, response: response),
             warnings: warnings,
             rawValue: raw
@@ -108,6 +109,7 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             description: versionMetadata.description ?? raw["description"]?.stringValue,
             latestVersion: raw["latest_version"]?.stringValue,
             providerMetadata: metadata.isEmpty ? [:] : [providerReferenceKey: .object(metadata)],
+            requestMetadata: skillUploadRequestMetadata(request, includeDisplayTitle: true),
             responseMetadata: aiResponseMetadata(from: raw, response: response),
             warnings: [],
             rawValue: raw
@@ -145,4 +147,20 @@ private func anthropicSkillMetadata(from raw: JSONValue) -> [String: JSONValue] 
         metadata["updatedAt"] = updatedAt
     }
     return metadata
+}
+
+private func skillUploadRequestMetadata(_ request: SkillUploadRequest, includeDisplayTitle: Bool) -> AIRequestMetadata {
+    var body: [String: JSONValue] = [
+        "files": .array(request.files.map { file in
+            .object([
+                "path": .string(file.path),
+                "mediaType": .string(file.mediaType),
+                "byteLength": .number(Double(file.data.count))
+            ])
+        })
+    ]
+    if includeDisplayTitle, let displayTitle = request.displayTitle {
+        body["displayTitle"] = .string(displayTitle)
+    }
+    return AIRequestMetadata(body: .object(body), headers: request.headers)
 }

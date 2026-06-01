@@ -1758,6 +1758,7 @@ public struct FileUploadResult: Sendable {
     public var metadata: [String: JSONValue]
     public var rawValue: JSONValue
     public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
 
     public init(
@@ -1767,6 +1768,7 @@ public struct FileUploadResult: Sendable {
         metadata: [String: JSONValue] = [:],
         rawValue: JSONValue,
         providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.providerReference = providerReference
@@ -1775,6 +1777,7 @@ public struct FileUploadResult: Sendable {
         self.metadata = metadata
         self.rawValue = rawValue
         self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
     }
 }
@@ -1826,6 +1829,7 @@ public struct SkillUploadResult: Sendable {
     public var description: String?
     public var latestVersion: String?
     public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
     public var warnings: [AIWarning]
     public var rawValue: JSONValue
@@ -1837,6 +1841,7 @@ public struct SkillUploadResult: Sendable {
         description: String? = nil,
         latestVersion: String? = nil,
         providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata(),
         warnings: [AIWarning] = [],
         rawValue: JSONValue
@@ -1847,6 +1852,7 @@ public struct SkillUploadResult: Sendable {
         self.description = description
         self.latestVersion = latestVersion
         self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
         self.warnings = warnings
         self.rawValue = rawValue

@@ -63,6 +63,9 @@ import Testing
 
     #expect(file.responseMetadata.headers["google-header"] == "upload")
     #expect(file.responseMetadata.body?["file"]?["name"]?.stringValue == "files/abc")
+    #expect(file.requestMetadata.body?["file"]?["mediaType"]?.stringValue == "video/mp4")
+    #expect(file.requestMetadata.body?["file"]?["byteLength"]?.intValue == 5)
+    #expect(file.requestMetadata.body?["file"]?["data"] == nil)
 }
 
 @Test func googleVertexMediaModelsCarryResponseMetadata() async throws {

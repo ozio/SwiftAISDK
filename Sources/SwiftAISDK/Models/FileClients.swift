@@ -49,6 +49,7 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
             mediaType: raw["mime_type"]?.stringValue ?? request.mediaType,
             metadata: fileMetadata(from: raw),
             rawValue: raw,
+            requestMetadata: multipartFileUploadRequestMetadata(request, includePurpose: includePurpose),
             responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
     }
@@ -137,6 +138,7 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             mediaType: file["mimeType"]?.stringValue ?? request.mediaType,
             metadata: fileMetadata(from: file),
             rawValue: raw,
+            requestMetadata: googleFileUploadRequestMetadata(request),
             responseMetadata: aiResponseMetadata(from: raw, response: metadataResponse)
         )
     }
@@ -180,6 +182,7 @@ public final class XAIFileClient: AIFileClient, @unchecked Sendable {
             mediaType: request.mediaType,
             metadata: ["xai": .object(metadata)],
             rawValue: raw,
+            requestMetadata: xaiFileUploadRequestMetadata(request, options: options),
             responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
     }
@@ -197,6 +200,50 @@ private func xaiFileOptions(from extraBody: [String: JSONValue]) -> [String: JSO
 private func fileMetadata(from raw: JSONValue) -> [String: JSONValue] {
     guard case let .object(object) = raw else { return [:] }
     return object
+}
+
+private func multipartFileUploadRequestMetadata(_ request: FileUploadRequest, includePurpose: Bool) -> AIRequestMetadata {
+    var body: [String: JSONValue] = [
+        "file": .object(fileUploadMetadata(request, defaultFilename: "file")),
+        "mediaType": .string(request.mediaType)
+    ]
+    if includePurpose {
+        body["purpose"] = .string(request.purpose ?? "assistants")
+    }
+    if let displayName = request.displayName {
+        body["displayName"] = .string(displayName)
+    }
+    for (key, value) in request.extraBody where jsonScalarString(value) != nil {
+        body[key] = value
+    }
+    return AIRequestMetadata(body: .object(body), headers: request.headers)
+}
+
+private func googleFileUploadRequestMetadata(_ request: FileUploadRequest) -> AIRequestMetadata {
+    var file: [String: JSONValue] = fileUploadMetadata(request, defaultFilename: "file")
+    if let displayName = request.displayName {
+        file["displayName"] = .string(displayName)
+    }
+    return AIRequestMetadata(body: .object(["file": .object(file)]), headers: request.headers)
+}
+
+private func xaiFileUploadRequestMetadata(_ request: FileUploadRequest, options: [String: JSONValue]) -> AIRequestMetadata {
+    var body: [String: JSONValue] = [
+        "file": .object(fileUploadMetadata(request, defaultFilename: "blob")),
+        "mediaType": .string(request.mediaType)
+    ]
+    if let teamID = options["teamId"]?.stringValue ?? options["team_id"]?.stringValue {
+        body["teamId"] = .string(teamID)
+    }
+    return AIRequestMetadata(body: .object(body), headers: request.headers)
+}
+
+private func fileUploadMetadata(_ request: FileUploadRequest, defaultFilename: String) -> [String: JSONValue] {
+    [
+        "filename": .string(request.filename ?? defaultFilename),
+        "mediaType": .string(request.mediaType),
+        "byteLength": .number(Double(request.data.count))
+    ]
 }
 
 private func headerValue(_ headers: [String: String], _ name: String) -> String? {

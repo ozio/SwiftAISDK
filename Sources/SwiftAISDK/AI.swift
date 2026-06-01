@@ -3734,6 +3734,7 @@ private func fileUploadTelemetryOutput(_ result: FileUploadResult) -> JSONValue 
         "filename": result.filename.map(JSONValue.string),
         "mediaType": result.mediaType.map(JSONValue.string),
         "metadata": result.metadata.isEmpty ? nil : .object(result.metadata),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
 }
@@ -3745,7 +3746,18 @@ private func skillUploadTelemetryOutput(_ result: SkillUploadResult) -> JSONValu
         "name": result.name.map(JSONValue.string),
         "description": result.description.map(JSONValue.string),
         "latestVersion": result.latestVersion.map(JSONValue.string),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
+    ])
+}
+
+private func aiRequestMetadataJSON(_ metadata: AIRequestMetadata) -> JSONValue? {
+    guard metadata.body != nil || !metadata.headers.isEmpty else {
+        return nil
+    }
+    return .object([
+        "body": metadata.body,
+        "headers": metadata.headers.isEmpty ? nil : .object(metadata.headers.mapValues(JSONValue.string))
     ])
 }
 

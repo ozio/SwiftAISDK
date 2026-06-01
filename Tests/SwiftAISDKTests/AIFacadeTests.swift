@@ -1438,14 +1438,25 @@ private actor PrepareStepCapture {
     #expect(ranking.results.first?.index == 1)
     #expect(rerankingModel.requests.first?.topK == 1)
 
-    let fileClient = MockFileClient(result: FileUploadResult(providerReference: ["file": "file-1"], rawValue: .object([:])))
+    let fileClient = MockFileClient(result: FileUploadResult(
+        providerReference: ["file": "file-1"],
+        rawValue: .object([:]),
+        requestMetadata: AIRequestMetadata(body: .object(["file": .string("metadata")]))
+    ))
     let file = try await AI.uploadFile(client: fileClient, request: FileUploadRequest(data: Data("file".utf8), mediaType: "text/plain", filename: "a.txt"))
     #expect(file.providerReference["file"] == "file-1")
+    #expect(file.requestMetadata.body?["file"]?.stringValue == "metadata")
     #expect(fileClient.requests.first?.filename == "a.txt")
 
-    let skillClient = MockSkillsClient(result: SkillUploadResult(providerReference: ["skill": "skill-1"], responseMetadata: AIResponseMetadata(id: "skill-response"), rawValue: .object([:])))
+    let skillClient = MockSkillsClient(result: SkillUploadResult(
+        providerReference: ["skill": "skill-1"],
+        requestMetadata: AIRequestMetadata(body: .object(["skill": .string("metadata")])),
+        responseMetadata: AIResponseMetadata(id: "skill-response"),
+        rawValue: .object([:])
+    ))
     let skill = try await AI.uploadSkill(client: skillClient, request: SkillUploadRequest(files: [SkillUploadFile(path: "skill.md", data: Data("skill".utf8))]))
     #expect(skill.providerReference["skill"] == "skill-1")
+    #expect(skill.requestMetadata.body?["skill"]?.stringValue == "metadata")
     #expect(skill.responseMetadata.id == "skill-response")
     #expect(skillClient.requests.first?.files.first?.path == "skill.md")
 }

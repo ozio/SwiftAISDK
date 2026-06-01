@@ -214,7 +214,10 @@ Progress:
   flows keep the provider submit response as metadata rather than the
   SDK-managed asset download. File and skill clients now preserve response
   metadata for OpenAI-compatible multipart files, Google resumable files, xAI
-  files, and OpenAI/Anthropic skill uploads. Native embedding and reranking
+  files, and OpenAI/Anthropic skill uploads; those upload results also preserve
+  safe request metadata for file paths, media types, byte lengths, display
+  titles, and scalar options without storing raw uploaded bytes. Native
+  embedding and reranking
   models for Cohere,
   Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic
   JSON reranking wrappers also preserve provider response headers and raw JSON
