@@ -88,7 +88,9 @@ Impact:
   existing Swift request assertions do not churn all at once. JSON parsing
   parity now routes `decodeJSONBody(...)` through a secure parser that rejects
   upstream's forbidden prototype-pollution keys and exposes parse/safe-parse
-  helpers for provider and facade code.
+  helpers for provider and facade code. Provider reference helper parity now
+  covers detecting provider-reference records, resolving provider-specific IDs,
+  and typed missing-reference errors for uploaded file and skill results.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
