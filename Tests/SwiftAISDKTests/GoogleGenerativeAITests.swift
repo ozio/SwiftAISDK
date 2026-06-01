@@ -416,6 +416,91 @@ import Testing
     #expect(body["response_format"]?[0]?["image_size"]?.stringValue == "1K")
 }
 
+@Test func googleInteractionsMapsStandardStructuredResponseFormat() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"{\\"name\\":\\"Ada\\",\\"age\\":36}"}]}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = provider.interactionsModel("gemini-2.5-flash")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Person?")],
+        responseFormat: .json(schema: [
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": [
+                "name": ["type": "string", "description": "Full name."],
+                "age": ["type": "number", "description": "Age in years."]
+            ],
+            "required": ["name", "age"],
+            "additionalProperties": false
+        ])
+    ))
+
+    #expect(result.text == "{\"name\":\"Ada\",\"age\":36}")
+    #expect(result.warnings.isEmpty)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?[0]?["type"]?.stringValue == "text")
+    #expect(body["response_format"]?[0]?["mime_type"]?.stringValue == "application/json")
+    #expect(body["response_format"]?[0]?["schema"]?["$schema"]?.stringValue == "http://json-schema.org/draft-07/schema#")
+    #expect(body["response_format"]?[0]?["schema"]?["additionalProperties"]?.boolValue == false)
+    #expect(body["response_format"]?[0]?["schema"]?["properties"]?["name"]?["description"]?.stringValue == "Full name.")
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func googleInteractionsCombinesCallAndProviderResponseFormats() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"{\\"ok\\":true}"}]}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = provider.interactionsModel("gemini-2.5-flash")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("JSON and image.")],
+        responseFormat: .json(),
+        extraBody: [
+            "google": [
+                "responseFormat": [
+                    ["type": "image", "mimeType": "image/png", "aspectRatio": "1:1"]
+                ]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?[0]?["type"]?.stringValue == "text")
+    #expect(body["response_format"]?[0]?["mime_type"]?.stringValue == "application/json")
+    #expect(body["response_format"]?[0]?["schema"] == nil)
+    #expect(body["response_format"]?[1]?["type"]?.stringValue == "image")
+    #expect(body["response_format"]?[1]?["mime_type"]?.stringValue == "image/png")
+    #expect(body["response_format"]?[1]?["aspect_ratio"]?.stringValue == "1:1")
+    #expect(body["google"] == nil)
+}
+
+@Test func googleInteractionsAgentDropsStandardResponseFormatWithWarning() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"agent-interaction","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"agent done"}]}]}"#)
+    ])
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = provider.interactionsAgent("deep-research")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Research.")],
+        responseFormat: .json(schema: ["type": "object"])
+    ))
+
+    #expect(result.text == "agent done")
+    #expect(result.warnings == [
+        AIWarning(
+            type: "other",
+            message: "google.interactions: structured output (responseFormat) is not supported when an agent is set; responseFormat will be ignored."
+        )
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["agent"]?.stringValue == "deep-research")
+    #expect(body["response_format"] == nil)
+}
+
 @Test func googleInteractionsResolvesTopLevelInlineMediaType() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"saw image"}]}]}

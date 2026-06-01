@@ -123,7 +123,10 @@ Impact:
   Vertex now map standard JSON response formats into
   `generationConfig.responseMimeType` and `generationConfig.responseSchema`,
   using the same JSON-Schema-to-OpenAPI conversion path as Google function
-  tools and honoring `structuredOutputs: false`. Richer provider-specific
+  tools and honoring `structuredOutputs: false`. Google Interactions now maps
+  standard JSON response formats into `response_format` text entries, appends
+  provider-defined response-format entries, and warns while dropping call-level
+  structured output when an agent is selected. Richer provider-specific
   structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.

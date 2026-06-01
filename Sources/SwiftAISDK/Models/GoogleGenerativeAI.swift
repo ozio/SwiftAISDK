@@ -388,8 +388,8 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let body = try googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: false)
-        let raw = try await sendInteractions(body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let prepared = try googleInteractionsPreparedCall(for: request, modelID: modelID, agent: agent, stream: false)
+        let raw = try await sendInteractions(body: .object(prepared.body), headers: request.headers, abortSignal: request.abortSignal)
         let final = try await resolvedInteraction(raw, requestHeaders: request.headers, abortSignal: request.abortSignal)
         let text = googleInteractionsText(from: final)
         let toolCalls = googleInteractionsToolCalls(from: final)
@@ -403,7 +403,8 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
             toolCalls: toolCalls,
             sources: googleInteractionsSources(from: final),
             providerMetadata: googleInteractionsProviderMetadata(from: final),
-            rawValue: final
+            rawValue: final,
+            warnings: prepared.warnings
         )
     }
 
@@ -411,18 +412,21 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let body = try googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: true)
-	                    let response = try await config.transport.send(config.request(
-	                        path: "/interactions",
-	                        modelID: modelID,
-	                        body: .object(body),
-	                        headers: googleInteractionsHeaders(request.headers),
-	                        abortSignal: request.abortSignal
-	                    ))
+                    let prepared = try googleInteractionsPreparedCall(for: request, modelID: modelID, agent: agent, stream: true)
+                    let response = try await config.transport.send(config.request(
+                        path: "/interactions",
+                        modelID: modelID,
+                        body: .object(prepared.body),
+                        headers: googleInteractionsHeaders(request.headers),
+                        abortSignal: request.abortSignal
+                    ))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
 
+                    if !prepared.warnings.isEmpty {
+                        continuation.yield(.streamStart(warnings: prepared.warnings))
+                    }
                     var toolCalls = GoogleInteractionsStreamingToolCalls()
                     var hasFunctionCall = false
                     var sourceCounter = 0
@@ -660,7 +664,15 @@ private func googleInteractionsHeaders(_ requestHeaders: [String: String]) -> [S
     ["Api-Revision": "2026-05-20"].mergingHeaders(requestHeaders)
 }
 
-private func googleInteractionsBody(for request: LanguageModelRequest, modelID: String, agent: String?, stream: Bool) throws -> [String: JSONValue] {
+private struct GoogleInteractionsPreparedCall {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
+
+private func googleInteractionsPreparedCall(for request: LanguageModelRequest, modelID: String, agent: String?, stream: Bool) throws -> GoogleInteractionsPreparedCall {
+    var options = googleGenerateContentOptions(from: request.extraBody)
+    let callResponseFormat = googleInteractionsResolvedCallResponseFormat(request: request, options: &options)
+    let providerResponseFormat = options.removeValue(forKey: "responseFormat")
     let systemInstruction = request.messages
         .filter { $0.role == .system }
         .map(\.combinedText)
@@ -691,8 +703,11 @@ private func googleInteractionsBody(for request: LanguageModelRequest, modelID: 
             body["generation_config"] = .object(generationConfig)
         }
     }
-    body.merge(googleInteractionsOptions(from: request.extraBody, isAgent: agent != nil)) { _, new in new }
-    return body
+    body.merge(googleInteractionsOptions(from: options, callResponseFormat: callResponseFormat, providerResponseFormat: providerResponseFormat, isAgent: agent != nil)) { _, new in new }
+    return GoogleInteractionsPreparedCall(
+        body: body,
+        warnings: googleInteractionsWarnings(callResponseFormat: callResponseFormat, isAgent: agent != nil)
+    )
 }
 
 private func googleInteractionsStep(_ message: AIMessage) throws -> JSONValue? {
@@ -751,22 +766,84 @@ private func googleToolArguments(_ arguments: String) -> JSONValue {
     (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
 
-private func googleInteractionsOptions(from extraBody: [String: JSONValue], isAgent: Bool) -> [String: JSONValue] {
+private func googleInteractionsOptions(from extraBody: [String: JSONValue], callResponseFormat: JSONValue?, providerResponseFormat: JSONValue?, isAgent: Bool) -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
     if let previousInteractionId = extraBody["previousInteractionId"] { output["previous_interaction_id"] = previousInteractionId }
     if let serviceTier = extraBody["serviceTier"] { output["service_tier"] = serviceTier }
     if let store = extraBody["store"] { output["store"] = store }
     if let background = extraBody["background"] { output["background"] = background }
     if let responseModalities = extraBody["responseModalities"] { output["response_modalities"] = responseModalities }
-    if let responseFormat = extraBody["responseFormat"] { output["response_format"] = googleInteractionsResponseFormat(responseFormat) }
+    let responseFormat = googleInteractionsResponseFormat(callResponseFormat: callResponseFormat, providerResponseFormat: providerResponseFormat, isAgent: isAgent)
+    if !responseFormat.isEmpty {
+        output["response_format"] = .array(responseFormat)
+    }
     if isAgent, let agentConfig = extraBody["agentConfig"] { output["agent_config"] = googleInteractionsSnakeCaseObject(agentConfig) }
     if isAgent, let environment = extraBody["environment"] { output["environment"] = googleInteractionsSnakeCaseObject(environment) }
     return output
 }
 
-private func googleInteractionsResponseFormat(_ value: JSONValue) -> JSONValue {
-    guard let entries = value.arrayValue else { return googleInteractionsSnakeCaseObject(value) }
-    return .array(entries.map(googleInteractionsSnakeCaseObject))
+private func googleInteractionsResolvedCallResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        if googleInteractionsIsCallResponseFormat(options["responseFormat"]) {
+            options.removeValue(forKey: "responseFormat")
+        }
+        return googleInteractionsResponseFormatJSON(responseFormat)
+    }
+    guard googleInteractionsIsCallResponseFormat(options["responseFormat"]) else {
+        return nil
+    }
+    return options.removeValue(forKey: "responseFormat")
+}
+
+private func googleInteractionsIsCallResponseFormat(_ value: JSONValue?) -> Bool {
+    guard let type = value?.objectValue?["type"]?.stringValue else { return false }
+    return type == "json" || type == "text"
+}
+
+private func googleInteractionsResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
+}
+
+private func googleInteractionsResponseFormat(callResponseFormat: JSONValue?, providerResponseFormat: JSONValue?, isAgent: Bool) -> [JSONValue] {
+    var entries: [JSONValue] = []
+    if !isAgent, callResponseFormat?["type"]?.stringValue == "json" {
+        var entry: [String: JSONValue] = [
+            "type": .string("text"),
+            "mime_type": .string("application/json")
+        ]
+        if let schema = callResponseFormat?["schema"] {
+            entry["schema"] = schema
+        }
+        entries.append(.object(entry))
+    }
+    if let providerResponseFormat {
+        if let providerEntries = providerResponseFormat.arrayValue {
+            entries.append(contentsOf: providerEntries.map(googleInteractionsSnakeCaseObject))
+        } else {
+            entries.append(googleInteractionsSnakeCaseObject(providerResponseFormat))
+        }
+    }
+    return entries
+}
+
+private func googleInteractionsWarnings(callResponseFormat: JSONValue?, isAgent: Bool) -> [AIWarning] {
+    guard isAgent, callResponseFormat?["type"]?.stringValue == "json" else { return [] }
+    return [
+        AIWarning(
+            type: "other",
+            message: "google.interactions: structured output (responseFormat) is not supported when an agent is set; responseFormat will be ignored."
+        )
+    ]
 }
 
 private func googleInteractionsSnakeCaseObject(_ value: JSONValue) -> JSONValue {
