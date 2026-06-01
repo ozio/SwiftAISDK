@@ -138,7 +138,8 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = humeProviderOptions(from: request.extraBody)
+        let options = humeProviderOptions(from: request)
+        let warnings = humeSpeechWarnings(for: request)
         let voice = request.voice ?? "d8ab67c6-953d-4bd8-9370-8fa53a0f1453"
         var utterance: [String: JSONValue] = [
             "text": .string(request.text),
@@ -163,7 +164,8 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
             path: "/v0/tts/file",
             modelID: modelID,
             body: .object(body),
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -171,6 +173,7 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            warnings: warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
@@ -1014,6 +1017,30 @@ private func humeProviderOptions(from extraBody: [String: JSONValue]) -> [String
         output.merge(nested) { _, nested in nested }
     }
     return output
+}
+
+private func humeProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+    humeProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func humeProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = humeProviderOptions(from: extraBody)
+    output.merge(humeProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    return output
+}
+
+private func humeSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
+    guard let format = request.format,
+          !["mp3", "pcm", "wav"].contains(format.lowercased()) else {
+        return []
+    }
+    return [
+        AIWarning(
+            type: "unsupported",
+            feature: "outputFormat",
+            message: "Unsupported output format: \(format). Using mp3 instead."
+        )
+    ]
 }
 
 private func humeContext(_ value: JSONValue) -> JSONValue {

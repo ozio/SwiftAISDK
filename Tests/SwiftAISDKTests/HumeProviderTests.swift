@@ -1,0 +1,136 @@
+import Foundation
+import Testing
+@testable import SwiftAISDK
+
+@Test func humeSpeechUsesTTSFileEndpointWithUtterances() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Hello",
+        voice: "voice-id",
+        format: "wav",
+        extraBody: [
+            "context": .object([
+                "utterances": .array([
+                    .object([
+                        "text": .string("Earlier line"),
+                        "description": .string("warm"),
+                        "speed": .number(0.9),
+                        "trailingSilence": .number(0.25),
+                        "voice": .object(["id": .string("prior-voice"), "provider": .string("HUME_AI")])
+                    ])
+                ])
+            ])
+        ]
+    ))
+
+    #expect(result.audio == Data("hume".utf8))
+    #expect(result.warnings == [])
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.hume.ai/v0/tts/file")
+    #expect(request.headers["X-Hume-Api-Key"] == "hume-key")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["utterances"]?[0]?["text"]?.stringValue == "Hello")
+    #expect(body["utterances"]?[0]?["voice"]?["id"]?.stringValue == "voice-id")
+    #expect(body["utterances"]?[0]?["voice"]?["provider"]?.stringValue == "HUME_AI")
+    #expect(body["format"]?["type"]?.stringValue == "wav")
+    #expect(body["context"]?["utterances"]?[0]?["trailing_silence"]?.doubleValue == 0.25)
+    #expect(body["context"]?["utterances"]?[0]?["trailingSilence"] == nil)
+    #expect(body["context"]?["utterances"]?[0]?["voice"]?["id"]?.stringValue == "prior-voice")
+}
+
+@Test func humeSpeechMapsNestedExtraBodyOptionsAndUtteranceFields() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        voice: "voice-id",
+        format: "mp3",
+        extraBody: [
+            "hume": .object([
+                "speed": 0.8,
+                "description": "calm",
+                "context": [
+                    "generationId": "gen-123"
+                ]
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["utterances"]?[0]?["text"]?.stringValue == "Hello")
+    #expect(body["utterances"]?[0]?["speed"]?.doubleValue == 0.8)
+    #expect(body["utterances"]?[0]?["description"]?.stringValue == "calm")
+    #expect(body["context"]?["generation_id"]?.stringValue == "gen-123")
+    #expect(body["hume"] == nil)
+    #expect(body["speed"] == nil)
+    #expect(body["description"] == nil)
+    #expect(body["context"]?["generationId"] == nil)
+}
+
+@Test func humeSpeechMapsProviderOptionsNamespaceAndOverridesExtraBody() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/pcm"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        voice: "voice-id",
+        format: "pcm",
+        providerOptions: [
+            "hume": .object([
+                "speed": 1.1,
+                "description": "bright",
+                "context": [
+                    "utterances": [
+                        [
+                            "text": "Provider line",
+                            "description": "firm",
+                            "speed": 1.2,
+                            "trailingSilence": 0.35,
+                            "voice": ["name": "Ivy", "provider": "CUSTOM_VOICE"]
+                        ]
+                    ]
+                ]
+            ])
+        ],
+        extraBody: [
+            "hume": .object([
+                "speed": 0.6,
+                "description": "ignored",
+                "context": ["generationId": "ignored-generation"]
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["utterances"]?[0]?["speed"]?.doubleValue == 1.1)
+    #expect(body["utterances"]?[0]?["description"]?.stringValue == "bright")
+    #expect(body["format"]?["type"]?.stringValue == "pcm")
+    #expect(body["context"]?["utterances"]?[0]?["text"]?.stringValue == "Provider line")
+    #expect(body["context"]?["utterances"]?[0]?["description"]?.stringValue == "firm")
+    #expect(body["context"]?["utterances"]?[0]?["speed"]?.doubleValue == 1.2)
+    #expect(body["context"]?["utterances"]?[0]?["trailing_silence"]?.doubleValue == 0.35)
+    #expect(body["context"]?["utterances"]?[0]?["voice"]?["name"]?.stringValue == "Ivy")
+    #expect(body["context"]?["generation_id"] == nil)
+    #expect(body["context"]?["generationId"] == nil)
+    #expect(body["hume"] == nil)
+}
+
+@Test func humeSpeechWarnsAndFallsBackForUnsupportedOutputFormat() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    let result = try await model.speak(SpeechRequest(text: "Hello", format: "aac"))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "outputFormat", message: "Unsupported output format: aac. Using mp3 instead.")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["format"]?["type"]?.stringValue == "mp3")
+}
