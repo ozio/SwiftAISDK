@@ -300,7 +300,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         }
         let audioResponse = try await config.transport.send(AIHTTPRequest(
             method: "GET",
-            url: try requireURL(audioURL),
+            url: try validateDownloadURL(audioURL),
             headers: [:],
             abortSignal: request.abortSignal
         ))
@@ -595,7 +595,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
-                url: try requireURL(url),
+                url: try validateDownloadURL(url),
                 headers: config.headers.mergingHeaders(request.headers),
                 abortSignal: request.abortSignal
             ))

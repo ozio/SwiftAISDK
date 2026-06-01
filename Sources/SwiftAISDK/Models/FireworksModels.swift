@@ -70,7 +70,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
         let imageURL = try await pollAsyncImage(requestID: requestID, headers: requestHeaders, abortSignal: abortSignal)
         let imageResponse = try await config.transport.send(AIHTTPRequest(
             method: "GET",
-            url: try requireURL(imageURL),
+            url: try validateDownloadURL(imageURL),
             headers: config.headers.mergingHeaders(requestHeaders),
             abortSignal: abortSignal
         ))

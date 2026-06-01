@@ -40,6 +40,22 @@ import Testing
     #expect(requests[1].url.absoluteString == "https://replicate.example.com/image.png")
 }
 
+@Test func replicateImageRejectsUnsafeOutputDownloadURL() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"pred-1","status":"succeeded","output":["http://127.0.0.1/image.png"]}
+    """))
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 1)
+    #expect(requests[0].url.absoluteString == "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions")
+}
+
 @Test func replicateImageMapsEditingInputsAndNestedOptions() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

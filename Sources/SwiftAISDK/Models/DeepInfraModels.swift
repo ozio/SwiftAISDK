@@ -123,7 +123,7 @@ private func deepInfraResolveImageFile(_ file: ImageInputFile, transport: AITran
     guard let url = file.url else {
         throw AIError.invalidResponse(provider: "deepinfra.image", message: "Image file must contain data or a URL.")
     }
-    let response = try await transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url)))
+    let response = try await transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(url)))
     guard (200..<300).contains(response.statusCode) else {
         throw httpStatusError(provider: "deepinfra.image", response: response)
     }

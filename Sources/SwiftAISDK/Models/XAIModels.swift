@@ -110,7 +110,7 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         body.merge(xaiImageOptions(from: options)) { _, new in new }
         body.merge(xaiImageEditInputs(from: request.files)) { _, new in new }
 
-        let raw = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let data = raw["data"]?.arrayValue ?? []
         let urls = data.compactMap { $0["url"]?.stringValue }
         let base64Images: [String]
@@ -118,7 +118,7 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         if inlineImages.count == data.count {
             base64Images = inlineImages
         } else {
-            base64Images = try await downloadXAIImages(urls: urls)
+            base64Images = try await downloadXAIImages(urls: urls, abortSignal: request.abortSignal)
         }
         return ImageGenerationResult(
             urls: urls,
@@ -127,10 +127,10 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         )
     }
 
-    private func downloadXAIImages(urls: [String]) async throws -> [String] {
+    private func downloadXAIImages(urls: [String], abortSignal: AIAbortSignal?) async throws -> [String] {
         var images: [String] = []
         for url in urls {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:]))
+            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(url), headers: [:], abortSignal: abortSignal))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }

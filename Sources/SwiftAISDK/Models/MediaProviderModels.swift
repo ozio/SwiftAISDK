@@ -38,7 +38,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         for url in urls {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
-                url: try requireURL(url),
+                url: try validateDownloadURL(url),
                 headers: config.headers.mergingHeaders(headers),
                 abortSignal: abortSignal
             ))
@@ -115,7 +115,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
-                url: try requireURL(getURL),
+                url: try validateDownloadURL(getURL),
                 headers: config.headers.mergingHeaders(headers),
                 abortSignal: abortSignal
             ))
@@ -269,7 +269,7 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
     private func downloadFalImages(urls: [String], abortSignal: AIAbortSignal?) async throws -> [String] {
         var images: [String] = []
         for url in urls {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:], abortSignal: abortSignal))
+            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(url), headers: [:], abortSignal: abortSignal))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
@@ -330,7 +330,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
     private func pollFalResponse(url: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal))
+            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(url), headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal))
             if (200..<300).contains(response.statusCode) {
                 return try response.jsonValue()
             }
@@ -390,7 +390,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         }
         let image = try await config.transport.send(AIHTTPRequest(
             method: "GET",
-            url: try requireURL(url),
+            url: try validateDownloadURL(url),
             headers: config.headers.mergingHeaders(request.headers),
             abortSignal: request.abortSignal
         ))
@@ -404,7 +404,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         let pollURL = appendQueryItemIfMissing(url: url, name: "id", value: id)
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(pollURL), headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal))
+            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(pollURL), headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
@@ -552,7 +552,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
         guard let url = raw["assets"]?["image"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Luma completed response did not contain assets.image.")
         }
-        let image = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:], abortSignal: request.abortSignal))
+        let image = try await config.transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(url), headers: [:], abortSignal: request.abortSignal))
         guard (200..<300).contains(image.statusCode) else {
             throw httpStatusError(provider: providerID, response: image)
         }
@@ -1682,7 +1682,7 @@ private func prodiaInputImage(from messages: [AIMessage], transport: AITransport
              let .file(mimeType, data, _) where mimeType.hasPrefix("image/"):
             return (data, mimeType)
         case let .imageURL(urlString):
-            let response = try await transport.send(AIHTTPRequest(method: "GET", url: try requireURL(urlString)))
+            let response = try await transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(urlString)))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: "prodia.language", response: response)
             }

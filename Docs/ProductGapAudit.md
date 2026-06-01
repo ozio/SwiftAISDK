@@ -71,9 +71,13 @@ Impact:
   upstream request `abortSignal`, with facade retry sleeps, stream wrappers,
   `AIHTTPRequest`, `URLSessionTransport`, OpenAI-compatible model calls, Google
   Generative AI, Google Vertex, Amazon Bedrock, file upload polling, media
-  polling/download helpers, and the native audio polling flows honoring it. A
-  remaining audit should focus on non-provider surfaces such as MCP/OAuth
-  transports and any newly added provider helpers.
+  polling/download helpers, native audio polling flows, MCP dynamic tool calls,
+  and MCP HTTP requests honoring it. SDK-managed media/file URL downloads now
+  validate through `validateDownloadURL(...)`, matching upstream
+  provider-utils protection against localhost, private IP, link-local/cloud
+  metadata, unsafe schemes, and IPv4-mapped private IPv6 targets. Remaining
+  hardening should add final redirected-URL validation and configurable
+  download size limits if/when a higher-level Swift download function lands.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -358,8 +362,12 @@ Progress:
    core request structs and `AIHTTPRequest`; OpenAI-compatible providers, Google
    Generative AI, Google Vertex, Amazon Bedrock, file clients, media
    polling/download flows, native audio polling flows, MCP dynamic tool calls,
-   and MCP HTTP requests forward them to transport. Next passes should keep new
-   provider and transport helpers covered by propagation tests.
+   and MCP HTTP requests forward them to transport. Provider-returned and
+   user-provided URLs fetched by SDK download fallbacks now pass through
+   `validateDownloadURL(...)` before transport execution. Next passes should keep
+   new provider and transport helpers covered by propagation tests and should
+   add redirect-target validation when response metadata can expose the final
+   URL.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,

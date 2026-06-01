@@ -191,6 +191,134 @@ func requireURL(_ string: String) throws -> URL {
     return url
 }
 
+/// Mirrors upstream provider-utils download URL validation before fetching
+/// provider-returned or user-provided remote assets.
+public func validateDownloadURL(_ string: String) throws -> URL {
+    guard let url = URL(string: string),
+          let scheme = url.scheme?.lowercased(),
+          !scheme.isEmpty else {
+        throw AIError.invalidURL(string)
+    }
+
+    if scheme == "data" {
+        return url
+    }
+
+    guard scheme == "http" || scheme == "https" else {
+        throw AIError.invalidArgument(argument: "url", message: "URL scheme must be http, https, or data, got \(scheme):")
+    }
+
+    guard let rawHost = url.host, !rawHost.isEmpty else {
+        throw AIError.invalidArgument(argument: "url", message: "URL must have a hostname.")
+    }
+
+    let host = rawHost.lowercased()
+    if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".localhost") {
+        throw AIError.invalidArgument(argument: "url", message: "URL with hostname \(host) is not allowed.")
+    }
+
+    if let ipv4 = ipv4Bytes(host) {
+        if isPrivateIPv4(ipv4) {
+            throw AIError.invalidArgument(argument: "url", message: "URL with IP address \(host) is not allowed.")
+        }
+        return url
+    }
+
+    if let ipv6 = ipv6Bytes(host), isPrivateIPv6(ipv6) {
+        throw AIError.invalidArgument(argument: "url", message: "URL with IPv6 address \(host) is not allowed.")
+    }
+
+    return url
+}
+
+private func ipv4Bytes(_ host: String) -> [UInt8]? {
+    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 4 else { return nil }
+    var bytes: [UInt8] = []
+    bytes.reserveCapacity(4)
+    for part in parts {
+        guard let value = UInt8(part), String(value) == part else { return nil }
+        bytes.append(value)
+    }
+    return bytes
+}
+
+private func isPrivateIPv4(_ bytes: [UInt8]) -> Bool {
+    guard bytes.count == 4 else { return false }
+    let first = bytes[0]
+    let second = bytes[1]
+    if first == 0 { return true }
+    if first == 10 { return true }
+    if first == 127 { return true }
+    if first == 169 && second == 254 { return true }
+    if first == 172 && (16...31).contains(second) { return true }
+    if first == 192 && second == 168 { return true }
+    return false
+}
+
+private func ipv6Bytes(_ host: String) -> [UInt8]? {
+    let normalized = host.lowercased()
+    guard normalized.contains(":") else { return nil }
+    let sides = normalized.components(separatedBy: "::")
+    guard sides.count <= 2 else { return nil }
+
+    let left = parseIPv6Hextets(sides[0])
+    guard let left else { return nil }
+    let right = sides.count == 2 ? parseIPv6Hextets(sides[1]) : []
+    guard let right else { return nil }
+
+    let hextetCount = left.count + right.count
+    let missingCount: Int
+    if sides.count == 2 {
+        guard hextetCount < 8 else { return nil }
+        missingCount = 8 - hextetCount
+    } else {
+        guard hextetCount == 8 else { return nil }
+        missingCount = 0
+    }
+
+    let hextets = left + Array(repeating: UInt16(0), count: missingCount) + right
+    guard hextets.count == 8 else { return nil }
+    return hextets.flatMap { [UInt8($0 >> 8), UInt8($0 & 0xff)] }
+}
+
+private func parseIPv6Hextets(_ value: String) -> [UInt16]? {
+    guard !value.isEmpty else { return [] }
+    var parts = value.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+    if let last = parts.last, last.contains(".") {
+        guard let ipv4 = ipv4Bytes(last) else { return nil }
+        parts.removeLast()
+        parts.append(String(format: "%02x%02x", ipv4[0], ipv4[1]))
+        parts.append(String(format: "%02x%02x", ipv4[2], ipv4[3]))
+    }
+
+    var hextets: [UInt16] = []
+    hextets.reserveCapacity(parts.count)
+    for part in parts {
+        guard !part.isEmpty,
+              part.count <= 4,
+              let value = UInt16(part, radix: 16) else {
+            return nil
+        }
+        hextets.append(value)
+    }
+    return hextets
+}
+
+private func isPrivateIPv6(_ bytes: [UInt8]) -> Bool {
+    guard bytes.count == 16 else { return false }
+    if bytes.allSatisfy({ $0 == 0 }) { return true }
+    if bytes.prefix(15).allSatisfy({ $0 == 0 }) && bytes[15] == 1 { return true }
+    if (bytes[0] & 0xfe) == 0xfc { return true }
+    if bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80 { return true }
+    if bytes.prefix(10).allSatisfy({ $0 == 0 }),
+       bytes[10] == 0xff,
+       bytes[11] == 0xff {
+        return isPrivateIPv4(Array(bytes[12...15]))
+    }
+    return false
+}
+
 func httpStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     httpStatusError(
         provider: provider,
