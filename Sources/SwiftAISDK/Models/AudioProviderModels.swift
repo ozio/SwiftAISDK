@@ -185,7 +185,7 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = elevenLabsProviderOptions(from: request.extraBody)
+        let options = elevenLabsProviderOptions(from: request)
         let voice = request.voice ?? "21m00Tcm4TlvDq8ikWAM"
         var query: [String: String] = [
             "output_format": elevenLabsOutputFormat(request.format)
@@ -239,7 +239,8 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
             path: "/v1/text-to-speech/\(voice)?\(queryString(query))",
             modelID: modelID,
             body: .object(body),
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -264,7 +265,7 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = elevenLabsProviderOptions(from: request.extraBody)
+        let options = elevenLabsProviderOptions(from: request)
         var form = MultipartFormData()
         form.appendField(name: "model_id", value: modelID)
         form.appendFile(name: "file", fileName: request.fileName, mimeType: request.mimeType, data: request.audio)
@@ -1284,6 +1285,20 @@ private func elevenLabsProviderOptions(from extraBody: [String: JSONValue]) -> [
     if let nested = output.removeValue(forKey: "elevenlabs")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
+    return output
+}
+
+private func elevenLabsProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+    elevenLabsProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func elevenLabsProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+    elevenLabsProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func elevenLabsProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = elevenLabsProviderOptions(from: extraBody)
+    output.merge(elevenLabsProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     return output
 }
 

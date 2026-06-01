@@ -346,6 +346,33 @@ import Testing
     #expect(speechRequest.abortSignal === speechController.signal)
 }
 
+@Test func elevenLabsForwardsAbortSignalToTranscriptionAndSpeechRequests() async throws {
+    let transcriptionTransport = RecordingTransport(response: jsonResponse(#"{"language_code":"en","language_probability":0.99,"text":"eleven transcript","words":[]}"#))
+    let transcriptionProvider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transcriptionTransport))
+    let transcriptionModel = try transcriptionProvider.transcriptionModel("scribe_v1")
+    let transcriptionController = AIAbortController()
+
+    _ = try await transcriptionModel.transcribe(AudioTranscriptionRequest(
+        audio: Data("mp3".utf8),
+        fileName: "clip.mp3",
+        mimeType: "audio/mpeg",
+        abortSignal: transcriptionController.signal
+    ))
+
+    let transcriptionRequest = try #require(await transcriptionTransport.requests().first)
+    #expect(transcriptionRequest.abortSignal === transcriptionController.signal)
+
+    let speechTransport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("audio".utf8)))
+    let speechProvider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: speechTransport))
+    let speechModel = try speechProvider.speechModel("eleven_multilingual_v2")
+    let speechController = AIAbortController()
+
+    _ = try await speechModel.speak(SpeechRequest(text: "hello", abortSignal: speechController.signal))
+
+    let speechRequest = try #require(await speechTransport.requests().first)
+    #expect(speechRequest.abortSignal === speechController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
