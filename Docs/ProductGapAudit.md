@@ -61,8 +61,9 @@ Impact:
   and error events for non-streaming facade calls plus `generateObject`,
   `streamText`, and `streamObject`, and step/tool execution events for
   `generateText` and `streamText` tool loops, with per-call or globally
-  registered integrations. Richer cancellation controls, wrapper-style execute
-  hooks, and warning logging still need follow-up work.
+  registered integrations. `AIObjectGenerationCallbacks` now mirrors upstream's
+  non-streaming object lifecycle callbacks. Richer cancellation controls,
+  stream-object execute hooks, and warning logging still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -331,8 +332,9 @@ Progress:
    wrapper schemas for both non-streaming and streaming calls, and
    `AIObjectGenerationError` exposes typed parse/schema/decode failures.
    `AIObjectSchema` and `AIJSONSchema` add a first reusable schema-adapter
-   surface. Next passes should add provider-specific structured output parity
-   and richer adapter integrations.
+   surface, and `AIObjectGenerationCallbacks` covers non-streaming object
+   lifecycle hooks. Next passes should add streaming object callbacks,
+   provider-specific structured output parity, and richer adapter integrations.
 
 7. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first

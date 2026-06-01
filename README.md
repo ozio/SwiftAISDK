@@ -179,6 +179,25 @@ let fallback = try await AI.generateObject(
 )
 ```
 
+Use `callbacks` to mirror upstream's object-generation lifecycle hooks for
+operation start, the single model step, raw step output, and final parsed output:
+
+```swift
+let observed = try await AI.generateObject(
+    model: model,
+    prompt: "Summarize this changelog.",
+    schema: summarySchema,
+    callbacks: AIObjectGenerationCallbacks(
+        onStepFinish: { event in
+            print(event.text)
+        },
+        onFinish: { event in
+            print(event.object.title)
+        }
+    )
+)
+```
+
 When a schema is supplied, the final decoded JSON is also checked against that
 schema; `repairText` can repair parsing or schema-validation failures. Failed
 object parsing throws `AIObjectGenerationError`, including the output strategy,

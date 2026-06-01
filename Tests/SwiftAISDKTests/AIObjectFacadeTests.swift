@@ -45,6 +45,57 @@ import Testing
     #expect(events[1].responseMetadata == responseMetadata)
 }
 
+@Test func aiGenerateObjectInvokesObjectCallbacksInOrder() async throws {
+    let recorder = ObjectCallbackRecorder<ObjectFacadeAnswer>()
+    let telemetry = ObjectTelemetryRecorder()
+    let schema = objectFacadeAnswerSchema()
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"value":"callbacks","count":7}"#,
+        reasoning: "because",
+        finishReason: "stop",
+        usage: TokenUsage(totalTokens: 14),
+        providerMetadata: ["trace": .string("callbacks")],
+        rawValue: .object(["id": .string("raw-callbacks")]),
+        responseMetadata: AIResponseMetadata(id: "callback-response")
+    ))
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return callback object.",
+        as: ObjectFacadeAnswer.self,
+        schema: schema,
+        schemaName: "answer",
+        telemetry: AITelemetryOptions(integrations: [telemetry]),
+        callbacks: AIObjectGenerationCallbacks(
+            onStart: { event in await recorder.recordStart(event) },
+            onStepStart: { event in await recorder.recordStepStart(event) },
+            onStepFinish: { event in await recorder.recordStepFinish(event) },
+            onFinish: { event in await recorder.recordFinish(event) }
+        )
+    )
+
+    let events = await recorder.events()
+    let telemetryEvents = await telemetry.events()
+    #expect(result.object == ObjectFacadeAnswer(value: "callbacks", count: 7))
+    #expect(events.names == ["start", "step-start", "step-finish", "finish"])
+    #expect(events.callIDs.count == 4)
+    #expect(Set(events.callIDs).count == 1)
+    #expect(events.callIDs.first == telemetryEvents.first?.callID)
+    #expect(events.start?.operationID == "ai.generateObject")
+    #expect(events.start?.outputKind == "object")
+    #expect(events.start?.schemaName == "answer")
+    #expect(events.start?.request.messages == [.user("Return callback object.")])
+    #expect(events.stepStart?.stepNumber == 0)
+    #expect(events.stepStart?.request.responseFormat == .json(schema: schema, name: "answer"))
+    #expect(events.stepFinish?.text == #"{"value":"callbacks","count":7}"#)
+    #expect(events.stepFinish?.reasoning == "because")
+    #expect(events.stepFinish?.usage?.totalTokens == 14)
+    #expect(events.finish?.object == ObjectFacadeAnswer(value: "callbacks", count: 7))
+    #expect(events.finish?.rawObject["count"]?.intValue == 7)
+    #expect(events.finish?.providerMetadata["trace"]?.stringValue == "callbacks")
+    #expect(events.finish?.responseMetadata.id == "callback-response")
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let recorder = ObjectTelemetryRecorder()
     let schema = objectFacadeAnswerSchema()
@@ -909,6 +960,59 @@ private actor ObjectTelemetryRecorder: AITelemetryIntegration {
 
     func events() -> [AITelemetryEvent] {
         recordedEvents
+    }
+}
+
+private struct ObjectCallbackEvents<Output: Sendable>: Sendable {
+    var names: [String]
+    var callIDs: [String]
+    var start: AIObjectGenerationStartEvent?
+    var stepStart: AIObjectGenerationStepStartEvent?
+    var stepFinish: AIObjectGenerationStepFinishEvent?
+    var finish: AIObjectGenerationFinishEvent<Output>?
+}
+
+private actor ObjectCallbackRecorder<Output: Sendable> {
+    private var names: [String] = []
+    private var callIDs: [String] = []
+    private var start: AIObjectGenerationStartEvent?
+    private var stepStart: AIObjectGenerationStepStartEvent?
+    private var stepFinish: AIObjectGenerationStepFinishEvent?
+    private var finish: AIObjectGenerationFinishEvent<Output>?
+
+    func recordStart(_ event: AIObjectGenerationStartEvent) {
+        names.append("start")
+        callIDs.append(event.callID)
+        start = event
+    }
+
+    func recordStepStart(_ event: AIObjectGenerationStepStartEvent) {
+        names.append("step-start")
+        callIDs.append(event.callID)
+        stepStart = event
+    }
+
+    func recordStepFinish(_ event: AIObjectGenerationStepFinishEvent) {
+        names.append("step-finish")
+        callIDs.append(event.callID)
+        stepFinish = event
+    }
+
+    func recordFinish(_ event: AIObjectGenerationFinishEvent<Output>) {
+        names.append("finish")
+        callIDs.append(event.callID)
+        finish = event
+    }
+
+    func events() -> ObjectCallbackEvents<Output> {
+        ObjectCallbackEvents(
+            names: names,
+            callIDs: callIDs,
+            start: start,
+            stepStart: stepStart,
+            stepFinish: stepFinish,
+            finish: finish
+        )
     }
 }
 

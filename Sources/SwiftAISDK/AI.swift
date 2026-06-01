@@ -243,6 +243,7 @@ public enum AI {
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Object> {
@@ -262,7 +263,8 @@ public enum AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
-            telemetry: telemetry
+            telemetry: telemetry,
+            callbacks: callbacks
         ) { text, providerID in
             try await parseObject(
                 Object.self,
@@ -295,6 +297,7 @@ public enum AI {
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Object> {
@@ -322,6 +325,7 @@ public enum AI {
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -335,6 +339,7 @@ public enum AI {
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Schema.Output> {
@@ -347,6 +352,7 @@ public enum AI {
             schemaDescription: schemaDescription ?? schema.description,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -372,6 +378,7 @@ public enum AI {
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Schema.Output> {
@@ -396,6 +403,7 @@ public enum AI {
             headers: headers,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -410,6 +418,7 @@ public enum AI {
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[Element]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[Element]> {
@@ -430,7 +439,8 @@ public enum AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
-            telemetry: telemetry
+            telemetry: telemetry,
+            callbacks: callbacks
         ) { text, providerID in
             try await parseObjectArray(
                 Element.self,
@@ -463,6 +473,7 @@ public enum AI {
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[Element]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[Element]> {
@@ -490,6 +501,7 @@ public enum AI {
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -503,6 +515,7 @@ public enum AI {
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[ElementSchema.Output]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[ElementSchema.Output]> {
@@ -515,6 +528,7 @@ public enum AI {
             schemaDescription: schemaDescription ?? elementSchema.description,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -540,6 +554,7 @@ public enum AI {
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[ElementSchema.Output]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[ElementSchema.Output]> {
@@ -564,6 +579,7 @@ public enum AI {
             headers: headers,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -575,6 +591,7 @@ public enum AI {
         values: [String],
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<String> {
@@ -598,7 +615,8 @@ public enum AI {
             schemaName: nil,
             schemaDescription: nil,
             retryPolicy: retryPolicy,
-            telemetry: telemetry
+            telemetry: telemetry,
+            callbacks: callbacks
         ) { text, providerID in
             try await parseEnum(
                 from: text,
@@ -627,6 +645,7 @@ public enum AI {
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<String> {
@@ -651,6 +670,7 @@ public enum AI {
             values: values,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -661,6 +681,7 @@ public enum AI {
         request: LanguageModelRequest,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<JSONValue> {
@@ -680,7 +701,8 @@ public enum AI {
             schemaName: nil,
             schemaDescription: nil,
             retryPolicy: retryPolicy,
-            telemetry: telemetry
+            telemetry: telemetry,
+            callbacks: callbacks
         ) { text, providerID in
             try await parseJSONValueObject(
                 from: text,
@@ -707,6 +729,7 @@ public enum AI {
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<JSONValue> {
@@ -730,6 +753,7 @@ public enum AI {
             ),
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -2129,6 +2153,7 @@ private func withTelemetry<Output: Sendable>(
     input: JSONValue?,
     telemetry: AITelemetryOptions?,
     retryPolicy: AIRetryPolicy,
+    callID providedCallID: String? = nil,
     output: @escaping @Sendable (Output) -> JSONValue?,
     usage: @escaping @Sendable (Output) -> TokenUsage?,
     warnings: @escaping @Sendable (Output) -> [AIWarning],
@@ -2141,7 +2166,7 @@ private func withTelemetry<Output: Sendable>(
         return try await withRetry(policy: retryPolicy, operation: operation)
     }
 
-    let callID = UUID().uuidString
+    let callID = providedCallID ?? UUID().uuidString
     let started = DispatchTime.now().uptimeNanoseconds
     await dispatcher.record(telemetryEvent(
         kind: .start,
@@ -2211,9 +2236,31 @@ private func generateObjectResult<Output: Sendable>(
     schemaDescription: String?,
     retryPolicy: AIRetryPolicy,
     telemetry: AITelemetryOptions?,
+    callbacks: AIObjectGenerationCallbacks<Output>?,
     parse: @escaping @Sendable (String, String) async throws -> (object: Output, rawObject: JSONValue, text: String)
 ) async throws -> ObjectGenerationResult<Output> {
-    try await withTelemetry(
+    let callID = UUID().uuidString
+    await callbacks?.onStart?(AIObjectGenerationStartEvent(
+        callID: callID,
+        operationID: "ai.generateObject",
+        providerID: model.providerID,
+        modelID: model.modelID,
+        outputKind: outputKind,
+        request: request,
+        schema: schema,
+        schemaName: schemaName,
+        schemaDescription: schemaDescription,
+        maxRetries: retryPolicy.maxRetries
+    ))
+    await callbacks?.onStepStart?(AIObjectGenerationStepStartEvent(
+        callID: callID,
+        stepNumber: 0,
+        providerID: model.providerID,
+        modelID: model.modelID,
+        request: request
+    ))
+
+    return try await withTelemetry(
         operationID: "ai.generateObject",
         providerID: model.providerID,
         modelID: model.modelID,
@@ -2226,6 +2273,7 @@ private func generateObjectResult<Output: Sendable>(
         ),
         telemetry: telemetry,
         retryPolicy: retryPolicy,
+        callID: callID,
         output: objectGenerationTelemetryOutput,
         usage: { $0.usage },
         warnings: { $0.warnings },
@@ -2233,9 +2281,22 @@ private func generateObjectResult<Output: Sendable>(
         responseMetadata: { $0.responseMetadata }
     ) {
         let textResult = try await model.generate(request)
+        await callbacks?.onStepFinish?(AIObjectGenerationStepFinishEvent(
+            callID: callID,
+            stepNumber: 0,
+            providerID: model.providerID,
+            modelID: model.modelID,
+            text: textResult.text,
+            reasoning: textResult.reasoning,
+            finishReason: textResult.finishReason,
+            usage: textResult.usage,
+            warnings: textResult.warnings,
+            providerMetadata: textResult.providerMetadata,
+            responseMetadata: textResult.responseMetadata
+        ))
         let parsed = try await parse(textResult.text, model.providerID)
 
-        return ObjectGenerationResult(
+        let result = ObjectGenerationResult(
             object: parsed.object,
             text: parsed.text,
             rawObject: parsed.rawObject,
@@ -2247,6 +2308,19 @@ private func generateObjectResult<Output: Sendable>(
             responseMetadata: textResult.responseMetadata,
             textResult: textResult
         )
+        await callbacks?.onFinish?(AIObjectGenerationFinishEvent(
+            callID: callID,
+            object: result.object,
+            text: result.text,
+            rawObject: result.rawObject,
+            reasoning: result.reasoning,
+            finishReason: result.finishReason,
+            usage: result.usage,
+            warnings: result.warnings,
+            providerMetadata: result.providerMetadata,
+            responseMetadata: result.responseMetadata
+        ))
+        return result
     }
 }
 

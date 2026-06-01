@@ -383,6 +383,155 @@ public struct ObjectGenerationResult<Object: Sendable>: Sendable {
     }
 }
 
+public struct AIObjectGenerationCallbacks<Output: Sendable>: Sendable {
+    public var onStart: (@Sendable (AIObjectGenerationStartEvent) async -> Void)?
+    public var onStepStart: (@Sendable (AIObjectGenerationStepStartEvent) async -> Void)?
+    public var onStepFinish: (@Sendable (AIObjectGenerationStepFinishEvent) async -> Void)?
+    public var onFinish: (@Sendable (AIObjectGenerationFinishEvent<Output>) async -> Void)?
+
+    public init(
+        onStart: (@Sendable (AIObjectGenerationStartEvent) async -> Void)? = nil,
+        onStepStart: (@Sendable (AIObjectGenerationStepStartEvent) async -> Void)? = nil,
+        onStepFinish: (@Sendable (AIObjectGenerationStepFinishEvent) async -> Void)? = nil,
+        onFinish: (@Sendable (AIObjectGenerationFinishEvent<Output>) async -> Void)? = nil
+    ) {
+        self.onStart = onStart
+        self.onStepStart = onStepStart
+        self.onStepFinish = onStepFinish
+        self.onFinish = onFinish
+    }
+}
+
+public struct AIObjectGenerationStartEvent: Sendable {
+    public var callID: String
+    public var operationID: String
+    public var providerID: String
+    public var modelID: String?
+    public var outputKind: String
+    public var request: LanguageModelRequest
+    public var schema: JSONValue?
+    public var schemaName: String?
+    public var schemaDescription: String?
+    public var maxRetries: Int
+
+    public init(
+        callID: String,
+        operationID: String,
+        providerID: String,
+        modelID: String?,
+        outputKind: String,
+        request: LanguageModelRequest,
+        schema: JSONValue?,
+        schemaName: String?,
+        schemaDescription: String?,
+        maxRetries: Int
+    ) {
+        self.callID = callID
+        self.operationID = operationID
+        self.providerID = providerID
+        self.modelID = modelID
+        self.outputKind = outputKind
+        self.request = request
+        self.schema = schema
+        self.schemaName = schemaName
+        self.schemaDescription = schemaDescription
+        self.maxRetries = maxRetries
+    }
+}
+
+public struct AIObjectGenerationStepStartEvent: Sendable {
+    public var callID: String
+    public var stepNumber: Int
+    public var providerID: String
+    public var modelID: String?
+    public var request: LanguageModelRequest
+
+    public init(callID: String, stepNumber: Int, providerID: String, modelID: String?, request: LanguageModelRequest) {
+        self.callID = callID
+        self.stepNumber = stepNumber
+        self.providerID = providerID
+        self.modelID = modelID
+        self.request = request
+    }
+}
+
+public struct AIObjectGenerationStepFinishEvent: Sendable {
+    public var callID: String
+    public var stepNumber: Int
+    public var providerID: String
+    public var modelID: String?
+    public var text: String
+    public var reasoning: String
+    public var finishReason: String?
+    public var usage: TokenUsage?
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
+
+    public init(
+        callID: String,
+        stepNumber: Int,
+        providerID: String,
+        modelID: String?,
+        text: String,
+        reasoning: String,
+        finishReason: String?,
+        usage: TokenUsage?,
+        warnings: [AIWarning],
+        providerMetadata: [String: JSONValue],
+        responseMetadata: AIResponseMetadata
+    ) {
+        self.callID = callID
+        self.stepNumber = stepNumber
+        self.providerID = providerID
+        self.modelID = modelID
+        self.text = text
+        self.reasoning = reasoning
+        self.finishReason = finishReason
+        self.usage = usage
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
+    }
+}
+
+public struct AIObjectGenerationFinishEvent<Output: Sendable>: Sendable {
+    public var callID: String
+    public var object: Output
+    public var text: String
+    public var rawObject: JSONValue
+    public var reasoning: String
+    public var finishReason: String?
+    public var usage: TokenUsage?
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
+
+    public init(
+        callID: String,
+        object: Output,
+        text: String,
+        rawObject: JSONValue,
+        reasoning: String,
+        finishReason: String?,
+        usage: TokenUsage?,
+        warnings: [AIWarning],
+        providerMetadata: [String: JSONValue],
+        responseMetadata: AIResponseMetadata
+    ) {
+        self.callID = callID
+        self.object = object
+        self.text = text
+        self.rawObject = rawObject
+        self.reasoning = reasoning
+        self.finishReason = finishReason
+        self.usage = usage
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
+    }
+}
+
 public enum ObjectStreamPart<Object: Sendable>: Sendable {
     case textDelta(String)
     case partialObject(JSONValue)
