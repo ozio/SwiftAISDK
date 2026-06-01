@@ -44,9 +44,15 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
-            return ImageGenerationResult(urls: [], base64Images: [response.body.base64EncodedString()], rawValue: .object([
+            let raw: JSONValue = .object([
                 "contentType": fireworksContentType(response.headers).map(JSONValue.string)
-            ]))
+            ])
+            return ImageGenerationResult(
+                urls: [],
+                base64Images: [response.body.base64EncodedString()],
+                rawValue: raw,
+                responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+            )
         }
     }
 
@@ -72,7 +78,12 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
         guard (200..<300).contains(imageResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: imageResponse)
         }
-        return ImageGenerationResult(urls: [imageURL], base64Images: [imageResponse.body.base64EncodedString()], rawValue: submitRaw)
+        return ImageGenerationResult(
+            urls: [imageURL],
+            base64Images: [imageResponse.body.base64EncodedString()],
+            rawValue: submitRaw,
+            responseMetadata: aiResponseMetadata(from: submitRaw, response: submit, modelID: modelID)
+        )
     }
 
     private func pollAsyncImage(requestID: String, headers requestHeaders: [String: String], abortSignal: AIAbortSignal?) async throws -> String {

@@ -46,7 +46,12 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
         let base64Images = raw["images"]?.arrayValue?.compactMap { image in
             image.stringValue?.replacingOccurrences(of: #"^data:image/\w+;base64,"#, with: "", options: .regularExpression)
         } ?? []
-        return ImageGenerationResult(urls: [], base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: base64Images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
     }
 
     private func editImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
@@ -95,7 +100,12 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
         }
         let raw = try response.jsonValue()
         let base64Images = raw["data"]?.arrayValue?.compactMap { $0["b64_json"]?.stringValue } ?? []
-        return ImageGenerationResult(urls: [], base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: base64Images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
     }
 }
 

@@ -21,16 +21,22 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
         let path = version == nil ? "/models/\(model)/predictions" : "/predictions"
-        let raw = try await config.sendJSON(
+        let response = try await config.sendJSONResponse(
             path: path,
             modelID: modelID,
             body: .object(body),
             headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody)),
             abortSignal: request.abortSignal
         )
+        let raw = response.json
         let urls = mediaURLs(from: raw["output"])
         let base64Images = try await downloadReplicateImages(urls: urls, headers: request.headers, abortSignal: request.abortSignal)
-        return ImageGenerationResult(urls: urls, base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: urls,
+            base64Images: base64Images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 
     private func downloadReplicateImages(urls: [String], headers: [String: String], abortSignal: AIAbortSignal?) async throws -> [String] {
@@ -79,28 +85,36 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
         let path = version == nil ? "/models/\(model)/predictions" : "/predictions"
-        var raw = try await config.sendJSON(
+        let createResponse = try await config.sendJSONResponse(
             path: path,
             modelID: modelID,
             body: .object(body),
             headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody)),
             abortSignal: request.abortSignal
         )
-        raw = try await pollReplicatePrediction(
-            raw,
+        let finalResponse = try await pollReplicatePredictionResponse(
+            createResponse.json,
+            initialResponse: createResponse.response,
             headers: request.headers,
             intervalNanoseconds: replicatePollInterval(request.extraBody),
             timeoutNanoseconds: replicatePollTimeout(request.extraBody),
             abortSignal: request.abortSignal
         )
+        let raw = finalResponse.json
         if ["failed", "canceled"].contains(raw["status"]?.stringValue ?? "") {
             throw AIError.invalidResponse(provider: providerID, message: "Replicate video generation \(raw["status"]?.stringValue ?? "failed").")
         }
-        return VideoGenerationResult(urls: mediaURLs(from: raw["output"]), operationID: raw["id"]?.stringValue, rawValue: raw)
+        return VideoGenerationResult(
+            urls: mediaURLs(from: raw["output"]),
+            operationID: raw["id"]?.stringValue,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
+        )
     }
 
-    private func pollReplicatePrediction(_ initial: JSONValue, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollReplicatePredictionResponse(_ initial: JSONValue, initialResponse: AIHTTPResponse, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         var prediction = initial
+        var metadataResponse = initialResponse
         let started = DispatchTime.now().uptimeNanoseconds
         while ["starting", "processing"].contains(prediction["status"]?.stringValue ?? "") {
             guard let getURL = prediction["urls"]?["get"]?.stringValue else { break }
@@ -113,8 +127,9 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
                 throw httpStatusError(provider: providerID, response: response)
             }
             prediction = try response.jsonValue()
+            metadataResponse = response
         }
-        return prediction
+        return (prediction, metadataResponse)
     }
 }
 
@@ -250,10 +265,16 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
         body.merge(try falImageInputs(from: request.files, mask: request.mask, useMultipleImages: options["useMultipleImages"]?.boolValue == true)) { _, new in new }
         body.merge(falImageOptions(from: request.extraBody)) { _, new in new }
 
-        let raw = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let urls = falImageURLs(from: raw)
         let base64Images = try await downloadFalImages(urls: urls, abortSignal: request.abortSignal)
-        return ImageGenerationResult(urls: urls, base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: urls,
+            base64Images: base64Images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 
     private func downloadFalImages(urls: [String], abortSignal: AIAbortSignal?) async throws -> [String] {
@@ -304,25 +325,31 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         guard let responseURL = queued["response_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal queue response did not contain response_url.")
         }
-        let raw = try await pollFalResponse(
+        let finalResponse = try await pollFalResponse(
             url: responseURL,
             headers: request.headers,
             intervalNanoseconds: falPollInterval(request.extraBody),
             timeoutNanoseconds: falPollTimeout(request.extraBody),
             abortSignal: request.abortSignal
         )
+        let raw = finalResponse.json
         guard let videoURL = raw["video"]?["url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal response did not contain video.url.")
         }
-        return VideoGenerationResult(urls: [videoURL], operationID: queued["request_id"]?.stringValue, rawValue: raw)
+        return VideoGenerationResult(
+            urls: [videoURL],
+            operationID: queued["request_id"]?.stringValue,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
+        )
     }
 
-    private func pollFalResponse(url: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollFalResponse(url: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal)
             if (200..<300).contains(response.statusCode) {
-                return try response.jsonValue()
+                return (try response.jsonValue(), response)
             }
             if !falIsInProgress(response) {
                 throw httpStatusError(provider: providerID, response: response)

@@ -22,7 +22,8 @@ public final class JSONImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count { body["n"] = .number(Double(count)) }
         body.merge(request.extraBody) { _, new in new }
 
-        let raw = try await config.sendJSON(path: path, modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let urls = raw["data"]?.arrayValue?.compactMap { $0["url"]?.stringValue }
             ?? raw["images"]?.arrayValue?.compactMap { $0["url"]?.stringValue }
             ?? raw["output"]?.arrayValue?.compactMap(\.stringValue)
@@ -30,7 +31,12 @@ public final class JSONImageModel: ImageModel, @unchecked Sendable {
         let base64Images = raw["data"]?.arrayValue?.compactMap { $0["b64_json"]?.stringValue }
             ?? raw["images"]?.arrayValue?.compactMap { $0["b64"]?.stringValue }
             ?? []
-        return ImageGenerationResult(urls: urls, base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: urls,
+            base64Images: base64Images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -139,7 +145,8 @@ public final class JSONVideoModel: VideoModel, @unchecked Sendable {
         if let durationSeconds = request.durationSeconds { body["duration"] = .number(durationSeconds) }
         body.merge(request.extraBody) { _, new in new }
 
-        let raw = try await config.sendJSON(path: path, modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let urls = raw["data"]?.arrayValue?.compactMap { $0["url"]?.stringValue }
             ?? raw["videos"]?.arrayValue?.compactMap { $0["url"]?.stringValue }
             ?? raw["output"]?.arrayValue?.compactMap(\.stringValue)
@@ -147,7 +154,8 @@ public final class JSONVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(
             urls: urls,
             operationID: raw["id"]?.stringValue ?? raw["operation"]?["name"]?.stringValue,
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 }

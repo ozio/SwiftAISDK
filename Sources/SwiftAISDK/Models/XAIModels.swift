@@ -110,7 +110,8 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         body.merge(xaiImageOptions(from: options)) { _, new in new }
         body.merge(xaiImageEditInputs(from: request.files)) { _, new in new }
 
-        let raw = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let data = raw["data"]?.arrayValue ?? []
         let urls = data.compactMap { $0["url"]?.stringValue }
         let base64Images: [String]
@@ -123,7 +124,8 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         return ImageGenerationResult(
             urls: urls,
             base64Images: base64Images,
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -196,23 +198,29 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         guard let requestID = created["request_id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "xAI video create response did not contain request_id.")
         }
-        let raw = try await pollXAI(
+        let finalResponse = try await pollXAIResponse(
             requestID: requestID,
             headers: request.headers,
             intervalNanoseconds: xaiPollInterval(options),
             timeoutNanoseconds: xaiPollTimeout(options),
             abortSignal: request.abortSignal
         )
+        let raw = finalResponse.json
         guard raw["video"]?["respect_moderation"]?.boolValue != false else {
             throw AIError.invalidResponse(provider: providerID, message: "xAI video generation was blocked by moderation.")
         }
         guard let url = raw["video"]?["url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "xAI video status response did not contain video.url.")
         }
-        return VideoGenerationResult(urls: [url], operationID: requestID, rawValue: raw)
+        return VideoGenerationResult(
+            urls: [url],
+            operationID: requestID,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
+        )
     }
 
-    private func pollXAI(requestID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollXAIResponse(requestID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
@@ -227,7 +235,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             }
             let raw = try response.jsonValue()
             if raw["status"]?.stringValue == "done" || raw["video"]?["url"]?.stringValue != nil {
-                return raw
+                return (raw, response)
             }
             if ["expired", "failed"].contains(raw["status"]?.stringValue ?? "") {
                 throw AIError.invalidResponse(provider: providerID, message: "xAI video generation \(raw["status"]?.stringValue ?? "failed").")

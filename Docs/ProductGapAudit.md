@@ -202,9 +202,13 @@ Progress:
   timestamps for responses without provider-created times. Native audio and
   transcription models for Deepgram, ElevenLabs, LMNT, Hume, fal, AssemblyAI,
   Rev.ai, Gladia, and Groq now preserve response metadata too, using the final
-  provider result response for submit/poll flows. Follow-up passes should keep
-  filling richer metadata and lifecycle fields consistently across the remaining
-  native media providers.
+  provider result response for submit/poll flows. Native image/video models for
+  Replicate, fal, Fireworks, DeepInfra, TogetherAI, xAI, QuiverAI, and generic
+  JSON media wrappers now preserve response metadata as well; submit/download
+  flows keep the provider submit response as metadata rather than the
+  SDK-managed asset download. Follow-up passes should keep filling richer
+  metadata and lifecycle fields consistently across the remaining native media
+  providers.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 

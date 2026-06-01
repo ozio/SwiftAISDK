@@ -39,9 +39,15 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
         }
         body.merge(togetherAIImageOptions(from: options)) { _, new in new }
 
-        let raw = try await config.sendJSON(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let base64Images = raw["data"]?.arrayValue?.compactMap { $0["b64_json"]?.stringValue } ?? []
-        return ImageGenerationResult(urls: [], base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: base64Images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 

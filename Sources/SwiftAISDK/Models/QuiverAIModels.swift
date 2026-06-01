@@ -16,12 +16,18 @@ public final class QuiverAIImageModel: ImageModel, @unchecked Sendable {
         let body = try quiverAIRequestBody(modelID: modelID, request: request, options: options, operation: operation)
         let path = operation == "vectorize" ? "/svgs/vectorizations" : "/svgs/generations"
 
-        let raw = try await config.sendJSON(path: path, modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let base64Images = raw["data"]?.arrayValue?.compactMap { item -> String? in
             guard let svg = item["svg"]?.stringValue else { return nil }
             return Data(svg.utf8).base64EncodedString()
         } ?? []
-        return ImageGenerationResult(urls: [], base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: base64Images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
