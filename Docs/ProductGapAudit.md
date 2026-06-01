@@ -192,7 +192,10 @@ Impact:
   values with MCP provider metadata. It also covers `resources/list`,
   `resources/read`, `resources/templates/list`, `prompts/list`, and
   `prompts/get`, plus the client-side core for incoming `elicitation/create`
-  requests through `MCPElicitationRequest` and `MCPElicitResult`.
+  requests through `MCPElicitationRequest` and `MCPElicitResult`. `AITool` now
+  has an upstream-style `toModelOutput` hook, and MCP tools use it to convert
+  MCP text/image/unknown content into model-facing output while preserving the
+  raw MCP call result.
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
@@ -206,11 +209,12 @@ Impact:
 Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
-provider-defined tool schema adapters, MCP SSE/session transports and elicitation
-transport integration, richer stream tool lifecycle events, and
-provider-executed approval response mapping for non-OpenAI providers that expose
-an equivalent native wire format. Keep provider-defined tools as specialized
-`AITool` values instead of plain JSON where possible.
+provider-defined tool schema adapters, richer provider-native handling for
+multimodal `modelOutput`, MCP SSE/session transports and elicitation transport
+integration, richer stream tool lifecycle events, and provider-executed approval
+response mapping for non-OpenAI providers that expose an equivalent native wire
+format. Keep provider-defined tools as specialized `AITool` values instead of
+plain JSON where possible.
 
 ### 4. Object generation and schema validation are partial
 
@@ -322,9 +326,10 @@ Progress:
    parts, upstream-style stop conditions, a Swift `prepareStep` hook, and tool
    argument refinement, dynamic tool marking, first-pass tool approval
    policies, and an MCP client bridge for server-discovered dynamic tools,
-   resources, resource templates, prompts, and incoming elicitation requests.
-   Next passes should add typed validation errors, provider-executed approval
-   responses, MCP SSE/session transports, and richer stream lifecycle handling.
+   resources, resource templates, prompts, incoming elicitation requests, and
+   MCP-style tool model-output conversion. Next passes should add typed
+   validation errors, provider-executed approval responses, MCP SSE/session
+   transports, and richer stream lifecycle handling.
 
 6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

@@ -325,9 +325,9 @@ let runtimeSearch = AITool.dynamic(
 
 `MCPClient` mirrors the core of official `@ai-sdk/mcp`: it performs the MCP
 initialize handshake, lists server tools, converts them into dynamic `AITool`
-values, can read MCP resources, resource templates, and prompts, and can answer
-server elicitation requests when a transport supports incoming JSON-RPC
-requests:
+values, maps MCP tool content into model output through `AITool.toModelOutput`,
+can read MCP resources, resource templates, and prompts, and can answer server
+elicitation requests when a transport supports incoming JSON-RPC requests:
 
 ```swift
 let mcp = try await MCPClient.connect(
@@ -359,6 +359,21 @@ await interactiveMCP.onElicitationRequest { request in
         action: .accept,
         content: ["choice": .string("approve")]
     )
+}
+```
+
+Swift tools can also provide a model-facing output distinct from their raw
+execution result:
+
+```swift
+let screenshotTool = AITool.dynamic(
+    name: "screenshot",
+    parameters: ["type": "object"],
+    toModelOutput: { context in
+        ["type": "content", "value": [["type": "text", "text": "captured"]]]
+    }
+) { _ in
+    ["rawPath": "/tmp/screen.png"]
 }
 ```
 

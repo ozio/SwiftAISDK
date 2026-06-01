@@ -469,7 +469,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             return .object([
                 "role": .string("tool"),
                 "tool_call_id": .string(result.toolCallID),
-                "content": .string(openAIResponsesJSONString(result.result) ?? result.result.stringValue ?? "")
+                "content": .string(openAIResponsesJSONString(result.modelOutput ?? result.result) ?? result.modelOutput?.stringValue ?? result.result.stringValue ?? "")
             ])
         }
 
@@ -989,7 +989,7 @@ private func openAIResponsesInputMessageJSON(_ message: AIMessage, store: Bool, 
                 return [.object([
                     "type": .string("function_call_output"),
                     "call_id": .string(result.toolCallID),
-                    "output": .string(openAIResponsesJSONString(result.result) ?? result.result.stringValue ?? "")
+                    "output": .string(openAIResponsesJSONString(result.modelOutput ?? result.result) ?? result.modelOutput?.stringValue ?? result.result.stringValue ?? "")
                 ])]
             default:
                 return []

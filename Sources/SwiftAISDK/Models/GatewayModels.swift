@@ -218,7 +218,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                                 "type": .string("tool-result"),
                                 "toolCallId": .string(result.toolCallID),
                                 "toolName": .string(result.toolName),
-                                "result": result.result
+                                "result": result.modelOutput ?? result.result
                             ])
                         case .toolApprovalRequest, .toolApprovalResponse:
                             return .object(["type": .string("text"), "text": .string("")])

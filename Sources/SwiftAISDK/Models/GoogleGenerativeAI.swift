@@ -111,7 +111,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                 return .object([
                     "functionResponse": .object([
                         "name": .string(result.toolName),
-                        "response": result.result
+                        "response": result.modelOutput ?? result.result
                     ])
                 ])
             case .toolApprovalRequest, .toolApprovalResponse:
@@ -688,7 +688,7 @@ private func googleInteractionsContent(_ content: [AIContentPart]) -> [JSONValue
             return .object([
                 "type": .string("function_response"),
                 "name": .string(result.toolName),
-                "response": result.result
+                "response": result.modelOutput ?? result.result
             ])
         case .toolApprovalRequest, .toolApprovalResponse:
             return .object(["type": .string("text"), "text": .string("")])

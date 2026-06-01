@@ -112,7 +112,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         return .object([
                             "toolResult": .object([
                                 "toolUseId": .string(result.toolCallID),
-                                "content": .array([.object(["json": result.result])]),
+                                "content": .array([.object(["json": result.modelOutput ?? result.result])]),
                                 "status": .string(result.isError ? "error" : "success")
                             ])
                         ])

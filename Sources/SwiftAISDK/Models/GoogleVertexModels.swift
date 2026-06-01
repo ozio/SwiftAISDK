@@ -163,7 +163,7 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
                     return .object([
                         "functionResponse": .object([
                             "name": .string(result.toolName),
-                            "response": result.result
+                            "response": result.modelOutput ?? result.result
                         ])
                     ])
                 case .toolApprovalRequest, .toolApprovalResponse:

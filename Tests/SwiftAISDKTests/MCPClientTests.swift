@@ -27,6 +27,12 @@ import Testing
     let result = try await search.execute(["query": "swift"])
     #expect(result["content"]?[0]?["text"]?.stringValue == "Result for swift")
     #expect(result["isError"]?.boolValue == false)
+    let modelOutput = try await #require(search.toModelOutput?(
+        AIToolModelOutputContext(toolCallID: "call-1", input: ["query": "swift"], output: result)
+    ))
+    #expect(modelOutput["type"]?.stringValue == "content")
+    #expect(modelOutput["value"]?[0]?["type"]?.stringValue == "text")
+    #expect(modelOutput["value"]?[0]?["text"]?.stringValue == "Result for swift")
 
     let sent = await transport.sentMessages()
     #expect(sent.map { $0["method"]?.stringValue } == [
@@ -38,6 +44,55 @@ import Testing
     #expect(sent[0]["params"]?["clientInfo"]?["name"]?.stringValue == "TestMCPClient")
     #expect(sent[3]["params"]?["name"]?.stringValue == "search")
     #expect(sent[3]["params"]?["arguments"]?["query"]?.stringValue == "swift")
+}
+
+@Test func mcpToolModelOutputConvertsImagesAndUnknownContent() async throws {
+    let transport = MockMCPTransport(
+        capabilities: fullMCPCapabilities(),
+        toolResult: [
+            "content": [
+                [
+                    "type": "image",
+                    "data": "base64-image",
+                    "mimeType": "image/png"
+                ],
+                [
+                    "type": "custom",
+                    "data": ["foo": "bar"]
+                ]
+            ]
+        ]
+    )
+    let client = try await MCPClient.connect(transport: transport)
+    let tool = try await #require(client.tools()["search"])
+    let result = try await tool.execute(["query": "image"])
+
+    let modelOutput = try await #require(tool.toModelOutput?(
+        AIToolModelOutputContext(toolCallID: "call-1", input: ["query": "image"], output: result)
+    ))
+    #expect(modelOutput["type"]?.stringValue == "content")
+    #expect(modelOutput["value"]?[0]?["type"]?.stringValue == "file")
+    #expect(modelOutput["value"]?[0]?["mediaType"]?.stringValue == "image/png")
+    #expect(modelOutput["value"]?[0]?["data"]?["type"]?.stringValue == "data")
+    #expect(modelOutput["value"]?[0]?["data"]?["data"]?.stringValue == "base64-image")
+    #expect(modelOutput["value"]?[1]?["type"]?.stringValue == "text")
+    #expect(modelOutput["value"]?[1]?["text"]?.stringValue?.contains("\"custom\"") == true)
+}
+
+@Test func mcpToolModelOutputFallsBackToJSONForNonContentResults() async throws {
+    let transport = MockMCPTransport(
+        capabilities: fullMCPCapabilities(),
+        toolResult: ["structuredContent": ["ok": true]]
+    )
+    let client = try await MCPClient.connect(transport: transport)
+    let tool = try await #require(client.tools()["search"])
+    let result = try await tool.execute(["query": "json"])
+
+    let modelOutput = try await #require(tool.toModelOutput?(
+        AIToolModelOutputContext(toolCallID: "call-1", input: ["query": "json"], output: result)
+    ))
+    #expect(modelOutput["type"]?.stringValue == "json")
+    #expect(modelOutput["value"]?["structuredContent"]?["ok"]?.boolValue == true)
 }
 
 @Test func mcpClientCreatesToolsFromCachedDefinitionsWithoutListingAgain() async throws {
@@ -278,10 +333,15 @@ import Testing
 private actor MockMCPTransport: MCPTransport {
     private var messages: [JSONValue] = []
     private let capabilities: JSONValue
+    private let toolResult: JSONValue?
     private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
 
-    init(capabilities: JSONValue = .object(["tools": .object(["listChanged": .bool(false)])])) {
+    init(
+        capabilities: JSONValue = .object(["tools": .object(["listChanged": .bool(false)])]),
+        toolResult: JSONValue? = nil
+    ) {
         self.capabilities = capabilities
+        self.toolResult = toolResult
     }
 
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {
@@ -336,7 +396,7 @@ private actor MockMCPTransport: MCPTransport {
             return [
                 "jsonrpc": "2.0",
                 "id": id,
-                "result": [
+                "result": toolResult ?? [
                     "content": [
                         [
                             "type": "text",

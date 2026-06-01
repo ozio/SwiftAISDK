@@ -885,7 +885,10 @@ public actor MCPClient {
             name: definition.name,
             description: definition.description,
             parameters: .object(inputSchema),
-            providerMetadata: ["mcp": .object(metadata)]
+            providerMetadata: ["mcp": .object(metadata)],
+            toModelOutput: { context in
+                mcpToolModelOutput(from: context.output)
+            }
         ) { [weak self] arguments in
             guard let self else {
                 throw MCPClientError(message: "MCP client has been released.")
@@ -893,6 +896,50 @@ public actor MCPClient {
             return try await self.callTool(name: definition.name, arguments: arguments).rawValue
         }
     }
+}
+
+private func mcpToolModelOutput(from result: JSONValue) -> JSONValue {
+    guard let content = result["content"]?.arrayValue else {
+        return .object([
+            "type": .string("json"),
+            "value": result
+        ])
+    }
+
+    return .object([
+        "type": .string("content"),
+        "value": .array(content.map(mcpToolModelOutputPart))
+    ])
+}
+
+private func mcpToolModelOutputPart(_ part: JSONValue) -> JSONValue {
+    if part["type"]?.stringValue == "text", let text = part["text"]?.stringValue {
+        return .object([
+            "type": .string("text"),
+            "text": .string(text)
+        ])
+    }
+    if part["type"]?.stringValue == "image",
+       let data = part["data"]?.stringValue,
+       let mimeType = part["mimeType"]?.stringValue {
+        return .object([
+            "type": .string("file"),
+            "mediaType": .string(mimeType),
+            "data": .object([
+                "type": .string("data"),
+                "data": .string(data)
+            ])
+        ])
+    }
+    return .object([
+        "type": .string("text"),
+        "text": .string(mcpJSONString(part) ?? "")
+    ])
+}
+
+private func mcpJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? JSONEncoder().encode(value) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func mcpJSONRPCResultResponse(id: JSONValue?, result: JSONValue) -> JSONValue {

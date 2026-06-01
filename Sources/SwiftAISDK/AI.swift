@@ -3119,7 +3119,13 @@ private func contentPartTelemetryJSON(_ part: AIContentPart) -> JSONValue {
     case let .toolCall(call):
         return .object(["type": .string("tool-call"), "id": .string(call.id), "name": .string(call.name), "arguments": .string(call.arguments)])
     case let .toolResult(result):
-        return .object(["type": .string("tool-result"), "toolCallID": .string(result.toolCallID), "toolName": .string(result.toolName), "result": result.result])
+        return .object([
+            "type": .string("tool-result"),
+            "toolCallID": .string(result.toolCallID),
+            "toolName": .string(result.toolName),
+            "result": result.result,
+            "modelOutput": result.modelOutput
+        ])
     case let .toolApprovalRequest(request):
         return .object(["type": .string("tool-approval-request"), "id": .string(request.id), "toolName": .string(request.toolName), "arguments": .string(request.arguments)])
     case let .toolApprovalResponse(response):
@@ -3294,6 +3300,7 @@ private func toolResultTelemetryJSON(_ result: AIToolResult) -> JSONValue {
         "toolCallID": .string(result.toolCallID),
         "toolName": .string(result.toolName),
         "result": result.result,
+        "modelOutput": result.modelOutput,
         "isError": .bool(result.isError),
         "preliminary": .bool(result.preliminary),
         "dynamic": .bool(result.dynamic),
@@ -3630,11 +3637,17 @@ private func executeToolCalls(
                 continue
             }
             let resultValue = try await tool.execute(refinedArguments)
+            let modelOutput = try await tool.toModelOutput?(AIToolModelOutputContext(
+                toolCallID: call.id,
+                input: refinedArguments,
+                output: resultValue
+            ))
             let dynamic = call.dynamic || tool.dynamic
             let result = AIToolResult(
                 toolCallID: call.id,
                 toolName: call.name,
                 result: resultValue,
+                modelOutput: modelOutput,
                 dynamic: dynamic,
                 providerMetadata: call.providerMetadata
             )

@@ -336,7 +336,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                 return .object([
                     "type": .string("tool_result"),
                     "tool_use_id": .string(result.toolCallID),
-                    "content": .string(anthropicJSONString(result.result) ?? result.result.stringValue ?? "")
+                    "content": .string(anthropicJSONString(result.modelOutput ?? result.result) ?? result.modelOutput?.stringValue ?? result.result.stringValue ?? "")
                 ])
             case .toolApprovalRequest, .toolApprovalResponse:
                 return .object(["type": .string("text"), "text": .string("")])

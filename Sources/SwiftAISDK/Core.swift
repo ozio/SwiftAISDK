@@ -825,6 +825,7 @@ public struct AIToolResult: Equatable, Hashable, Sendable {
     public var toolCallID: String
     public var toolName: String
     public var result: JSONValue
+    public var modelOutput: JSONValue?
     public var isError: Bool
     public var preliminary: Bool
     public var dynamic: Bool
@@ -834,6 +835,7 @@ public struct AIToolResult: Equatable, Hashable, Sendable {
         toolCallID: String,
         toolName: String,
         result: JSONValue,
+        modelOutput: JSONValue? = nil,
         isError: Bool = false,
         preliminary: Bool = false,
         dynamic: Bool = false,
@@ -842,6 +844,7 @@ public struct AIToolResult: Equatable, Hashable, Sendable {
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.result = result
+        self.modelOutput = modelOutput
         self.isError = isError
         self.preliminary = preliminary
         self.dynamic = dynamic
@@ -919,6 +922,18 @@ public struct AIToolApprovalContext: Sendable {
 
 public typealias AIToolApproval = @Sendable (AIToolApprovalContext) async throws -> AIToolApprovalStatus?
 
+public struct AIToolModelOutputContext: Sendable {
+    public var toolCallID: String
+    public var input: JSONValue
+    public var output: JSONValue
+
+    public init(toolCallID: String, input: JSONValue, output: JSONValue) {
+        self.toolCallID = toolCallID
+        self.input = input
+        self.output = output
+    }
+}
+
 public struct AITool: Sendable {
     public var name: String
     public var description: String?
@@ -927,6 +942,7 @@ public struct AITool: Sendable {
     public var providerMetadata: [String: JSONValue]
     public var refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)?
     public var execute: @Sendable (JSONValue) async throws -> JSONValue
+    public var toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)?
 
     public init(
         name: String,
@@ -935,6 +951,7 @@ public struct AITool: Sendable {
         dynamic: Bool = false,
         providerMetadata: [String: JSONValue] = [:],
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
+        toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
         execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
     ) {
         self.name = name
@@ -943,6 +960,7 @@ public struct AITool: Sendable {
         self.dynamic = dynamic
         self.providerMetadata = providerMetadata
         self.refineArguments = refineArguments
+        self.toModelOutput = toModelOutput
         self.execute = execute
     }
 
@@ -952,6 +970,7 @@ public struct AITool: Sendable {
         parameters: JSONValue,
         providerMetadata: [String: JSONValue] = [:],
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
+        toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
         execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
     ) -> AITool {
         AITool(
@@ -961,6 +980,7 @@ public struct AITool: Sendable {
             dynamic: true,
             providerMetadata: providerMetadata,
             refineArguments: refineArguments,
+            toModelOutput: toModelOutput,
             execute: execute
         )
     }

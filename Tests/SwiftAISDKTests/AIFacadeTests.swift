@@ -191,6 +191,48 @@ import Testing
     #expect(toolEvents[1].output?["result"]?["result"]?["forecast"]?.stringValue == "sunny")
 }
 
+@Test func aiGenerateTextStoresToolModelOutput() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Kyoto"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(
+            text: "",
+            finishReason: "tool-calls",
+            toolCalls: [toolCall],
+            rawValue: .object([:])
+        ),
+        TextGenerationResult(text: "Done", finishReason: "stop", rawValue: .object([:]))
+    ])
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": ["city": ["type": "string"]]],
+        toModelOutput: { context in
+            [
+                "type": "content",
+                "value": [
+                    [
+                        "type": "text",
+                        "text": .string("model output for \(context.input["city"]?.stringValue ?? "unknown")")
+                    ]
+                ]
+            ]
+        }
+    ) { arguments in
+        ["raw": arguments["city"] ?? .string("missing")]
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [lookup],
+        maxSteps: 2
+    )
+
+    #expect(result.toolResults.first?.result["raw"]?.stringValue == "Kyoto")
+    #expect(result.toolResults.first?.modelOutput?["type"]?.stringValue == "content")
+    #expect(result.toolResults.first?.modelOutput?["value"]?[0]?["text"]?.stringValue == "model output for Kyoto")
+    #expect(result.steps.first?.toolResults.first?.modelOutput?["value"]?[0]?["type"]?.stringValue == "text")
+}
+
 @Test func aiStreamTextEmitsStepAndToolTelemetryEvents() async throws {
     let recorder = TelemetryRecorder()
     let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Kyoto"}"#)

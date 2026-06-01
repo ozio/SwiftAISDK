@@ -154,7 +154,10 @@ import Testing
     let lookup = AITool(
         name: "lookup",
         description: "Look up a value.",
-        parameters: ["type": "object", "properties": ["query": ["type": "string"]]]
+        parameters: ["type": "object", "properties": ["query": ["type": "string"]]],
+        toModelOutput: { context in
+            ["modelForecast": context.output["forecast"] ?? .string("missing")]
+        }
     ) { arguments in
         #expect(arguments["query"]?.stringValue == "weather")
         return ["forecast": "sunny"]
@@ -170,6 +173,7 @@ import Testing
     #expect(result.text == "It is sunny.")
     #expect(result.steps.count == 2)
     #expect(result.toolResults.first?.result["forecast"]?.stringValue == "sunny")
+    #expect(result.toolResults.first?.modelOutput?["modelForecast"]?.stringValue == "sunny")
 
     let requests = await transport.requests()
     #expect(requests.count == 2)
@@ -184,7 +188,7 @@ import Testing
     #expect(secondBody["messages"]?[2]?["role"]?.stringValue == "tool")
     #expect(secondBody["messages"]?[2]?["tool_call_id"]?.stringValue == "call_1")
     let toolContent = try decodeJSONBody(Data((try #require(secondBody["messages"]?[2]?["content"]?.stringValue)).utf8))
-    #expect(toolContent["forecast"]?.stringValue == "sunny")
+    #expect(toolContent["modelForecast"]?.stringValue == "sunny")
 }
 
 @Test func openAICompatibleAIFacadeGenerateObjectSendsStructuredResponseFormat() async throws {
