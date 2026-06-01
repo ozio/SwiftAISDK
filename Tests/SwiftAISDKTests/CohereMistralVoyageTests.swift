@@ -244,8 +244,8 @@ import Testing
 
 @Test func mistralLanguageUsesNativeChatShapeAndOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"cmpl-1","object":"chat.completion","model":"mistral-large-latest","choices":[{"index":0,"message":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]},{"type":"text","text":"bonjour"}]},"finish_reason":"model_length"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}
-    """))
+    {"id":"cmpl-1","object":"chat.completion","created":1741257730,"model":"mistral-large-latest","choices":[{"index":0,"message":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]},{"type":"text","text":"bonjour"}]},"finish_reason":"model_length"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}
+    """, headers: ["x-mistral": "yes"]))
     let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
     let model = try provider.languageModel("mistral-large-latest")
 
@@ -256,7 +256,12 @@ import Testing
         ],
         temperature: 0.2,
         topP: 0.9,
+        topK: 4,
+        presencePenalty: 0.1,
+        frequencyPenalty: 0.2,
+        seed: 123,
         maxOutputTokens: 16,
+        reasoning: "high",
         tools: [
             "lookup": [
                 "type": "object",
@@ -273,11 +278,26 @@ import Testing
             "parallelToolCalls": false,
             "toolChoice": ["type": "tool", "toolName": "lookup"]
         ]
-    ))
+        ))
 
     #expect(result.text == "bonjour")
+    #expect(result.reasoning == "hmm")
     #expect(result.finishReason == "length")
     #expect(result.usage?.totalTokens == 5)
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "topK"),
+        AIWarning(type: "unsupported", feature: "frequencyPenalty"),
+        AIWarning(type: "unsupported", feature: "presencePenalty"),
+        AIWarning(
+            type: "unsupported",
+            feature: "reasoning",
+            message: "This model does not support reasoning configuration."
+        )
+    ])
+    #expect(result.responseMetadata.id == "cmpl-1")
+    #expect(result.responseMetadata.modelID == "mistral-large-latest")
+    #expect(result.responseMetadata.headers["x-mistral"] == "yes")
+    #expect(result.responseMetadata.body?["id"]?.stringValue == "cmpl-1")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.mistral.ai/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer mistral-key")
@@ -290,6 +310,10 @@ import Testing
     #expect(body["safe_prompt"]?.boolValue == true)
     #expect(body["random_seed"]?.intValue == 7)
     #expect(body["document_page_limit"]?.intValue == 2)
+    #expect(body["top_k"] == nil)
+    #expect(body["presence_penalty"] == nil)
+    #expect(body["frequency_penalty"] == nil)
+    #expect(body["reasoning_effort"] == nil)
     #expect(body["tools"]?.arrayValue?.count == 1)
     #expect(body["tools"]?[0]?["type"]?.stringValue == "function")
     #expect(body["tools"]?[0]?["function"]?["name"]?.stringValue == "lookup")
@@ -490,26 +514,51 @@ import Testing
 
 @Test func mistralLanguageStreamsNativeChunks() async throws {
     let transport = RecordingTransport(response: sseResponse("""
-    data: {"id":"cmpl-1","model":"mistral","choices":[{"index":0,"delta":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]}]},"finish_reason":null}]}
+    data: {"id":"cmpl-1","created":1741257730,"model":"mistral","choices":[{"index":0,"delta":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]}]},"finish_reason":null}]}
 
     data: {"id":"cmpl-1","model":"mistral","choices":[{"index":0,"delta":{"content":[{"type":"text","text":"bon"}]},"finish_reason":null}]}
 
     data: {"id":"cmpl-1","model":"mistral","choices":[{"index":0,"delta":{"content":"jour"},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}
 
-    """))
+    """, headers: ["x-stream": "yes"]))
     let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
     let model = try provider.languageModel("mistral-large-latest")
 
     var text: [String] = []
     var reasoning: [String] = []
+    var lifecycle: [String] = []
     var finishReason: String?
     var totalTokens: Int?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+    var streamStartWarnings: [AIWarning]?
+    var responseMetadata: AIResponseMetadata?
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        topK: 8,
+        providerOptions: ["mistral": ["documentImageLimit": 2]]
+    )) {
         switch part {
         case let .textDelta(delta):
             text.append(delta)
+        case let .textDeltaPart(id, delta, _):
+            lifecycle.append("text-delta:\(id):\(delta)")
+            text.append(delta)
+        case let .textStart(id, _):
+            lifecycle.append("text-start:\(id)")
+        case let .textEnd(id, _):
+            lifecycle.append("text-end:\(id)")
         case let .reasoningDelta(delta):
             reasoning.append(delta)
+        case let .reasoningDeltaPart(id, delta, _):
+            lifecycle.append("reasoning-delta:\(id):\(delta)")
+            reasoning.append(delta)
+        case let .reasoningStart(id, _):
+            lifecycle.append("reasoning-start:\(id)")
+        case let .reasoningEnd(id, _):
+            lifecycle.append("reasoning-end:\(id)")
+        case let .streamStart(warnings):
+            streamStartWarnings = warnings
+        case let .responseMetadata(metadata):
+            responseMetadata = metadata
         case let .finish(reason, usage):
             finishReason = reason
             totalTokens = usage?.totalTokens
@@ -520,11 +569,26 @@ import Testing
 
     #expect(reasoning == ["hmm"])
     #expect(text == ["bon", "jour"])
+    #expect(lifecycle == [
+        "reasoning-start:reasoning-0",
+        "reasoning-delta:reasoning-0:hmm",
+        "reasoning-end:reasoning-0",
+        "text-start:0",
+        "text-delta:0:bon",
+        "text-delta:0:jour",
+        "text-end:0"
+    ])
     #expect(finishReason == "tool-calls")
     #expect(totalTokens == 3)
+    #expect(streamStartWarnings == [AIWarning(type: "unsupported", feature: "topK")])
+    #expect(responseMetadata?.id == "cmpl-1")
+    #expect(responseMetadata?.modelID == "mistral")
+    #expect(responseMetadata?.headers["x-stream"] == "yes")
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
+    #expect(body["document_image_limit"]?.intValue == 2)
+    #expect(body["top_k"] == nil)
 }
 
 @Test func mistralLanguageStreamsToolCalls() async throws {

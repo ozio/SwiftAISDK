@@ -68,6 +68,33 @@ import Testing
     #expect(streamRequest.abortSignal === streamController.signal)
 }
 
+@Test func mistralLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","model":"mistral-small-latest","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+    """))
+    let generateProvider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: generateTransport))
+    let generateModel = try generateProvider.languageModel("mistral-small-latest")
+    let generateController = AIAbortController()
+
+    _ = try await generateModel.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"id":"cmpl-1","model":"mistral-small-latest","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+    """))
+    let streamProvider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("mistral-small-latest")
+    let streamController = AIAbortController()
+
+    for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}
+
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.abortSignal === streamController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

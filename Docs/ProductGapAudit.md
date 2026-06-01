@@ -108,10 +108,14 @@ Impact:
   streaming parse/schema/decode failures. Strict OpenAI-compatible and Cerebras
   structured outputs now run the upstream provider-utils
   `additionalProperties: false` normalization over object schemas unless
-  `strictJsonSchema` is explicitly disabled. Mistral now maps standard JSON
-  response formats to native `response_format` requests, including
-  `json_schema`, `json_object`, `structuredOutputs`, `strictJsonSchema`, and
-  the upstream JSON system instruction for no-schema JSON calls. Groq now maps
+  `strictJsonSchema` is explicitly disabled. Mistral now maps standard sampling,
+  seed, JSON response formats, reasoning effort, function tools, and tool choice
+  to native chat requests, returns unsupported warnings for settings the
+  provider ignores, preserves response metadata, forwards abort signals, and
+  emits stream-start plus text/reasoning lifecycle parts. Its structured output
+  pass covers native `response_format` requests, including `json_schema`,
+  `json_object`, `structuredOutputs`, `strictJsonSchema`, and the upstream JSON
+  system instruction for no-schema JSON calls. Groq now maps
   standard JSON response formats to native `json_schema`/`json_object`
   requests, keeps `structuredOutputs`/`strictJsonSchema` as control options
   instead of leaking them into the provider body, and returns the upstream
@@ -271,10 +275,10 @@ Progress:
   without storing raw audio bytes. The AI facade also fills safe fallback request
   metadata for custom embedding, media, audio, reranking, file, and skill models
   or clients that return empty metadata, keeping product-level telemetry
-  consistent across built-in and user-provided implementations. Cohere chat now
-  preserves native response metadata and stream response metadata for language
-  calls, and follows the richer v4 stream lifecycle for text and reasoning
-  chunks.
+  consistent across built-in and user-provided implementations. Mistral and
+  Cohere chat now preserve native response metadata and stream response metadata
+  for language calls, and follow the richer v4 stream lifecycle for text and
+  reasoning chunks.
   Follow-up passes should keep filling richer metadata and lifecycle fields
   consistently across the remaining native providers.
 
