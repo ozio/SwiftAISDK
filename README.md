@@ -180,7 +180,8 @@ let fallback = try await AI.generateObject(
 ```
 
 Use `callbacks` to mirror upstream's object-generation lifecycle hooks for
-operation start, the single model step, raw step output, and final parsed output:
+operation start, the single model step, raw step output, final parsed output,
+and stream errors:
 
 ```swift
 let observed = try await AI.generateObject(
@@ -213,9 +214,10 @@ without a schema and returns raw `JSONValue`.
 `AI.streamObject` is the streaming counterpart for `Decodable` output. It emits
 text deltas, best-effort `JSONValue` partial objects, typed partials when the
 current JSON can decode into your Swift type, and then the final decoded object.
-Streaming variants are also available for upstream-style array, enum, and
-no-schema JSON strategies through `streamObjectArray`, `streamEnum`, and
-`streamJSON`:
+It accepts the same object lifecycle callbacks, including `onError` for parsing,
+schema, decode, or stream failures. Streaming variants are also available for
+upstream-style array, enum, and no-schema JSON strategies through
+`streamObjectArray`, `streamEnum`, and `streamJSON`:
 
 ```swift
 for try await part in AI.streamObject(

@@ -1040,6 +1040,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
@@ -1063,6 +1064,7 @@ public enum AI {
                 operationID: "ai.streamObject",
                 providerID: model.providerID,
                 modelID: model.modelID,
+                request: streamRequest,
                 input: objectGenerationTelemetryInput(
                     streamRequest,
                     outputKind: "object",
@@ -1071,7 +1073,8 @@ public enum AI {
                     schemaDescription: schemaDescription
                 ),
                 retryPolicy: retryPolicy,
-                telemetry: telemetry
+                telemetry: telemetry,
+                callbacks: callbacks
             )
         }
 
@@ -1200,6 +1203,7 @@ public enum AI {
             operationID: "ai.streamObject",
             providerID: model.providerID,
             modelID: model.modelID,
+            request: streamRequest,
             input: objectGenerationTelemetryInput(
                 streamRequest,
                 outputKind: "object",
@@ -1208,7 +1212,8 @@ public enum AI {
                 schemaDescription: schemaDescription
             ),
             retryPolicy: retryPolicy,
-            telemetry: telemetry
+            telemetry: telemetry,
+            callbacks: callbacks
         )
     }
 
@@ -1234,6 +1239,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
@@ -1262,6 +1268,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1276,6 +1283,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Schema.Output>, Error> {
@@ -1289,6 +1297,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1315,6 +1324,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Schema.Output>, Error> {
@@ -1340,6 +1350,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1355,6 +1366,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[Element]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[Element]>, Error> {
@@ -1370,6 +1382,7 @@ public enum AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
+                callbacks: arrayEnvelopeCallbacks(callbacks),
                 jsonInstruction: jsonInstruction,
                 repairText: repairText
             ),
@@ -1399,6 +1412,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[Element]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[Element]>, Error> {
@@ -1427,6 +1441,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1441,6 +1456,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[ElementSchema.Output]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[ElementSchema.Output]>, Error> {
@@ -1454,6 +1470,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1480,6 +1497,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<[ElementSchema.Output]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[ElementSchema.Output]>, Error> {
@@ -1505,6 +1523,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1517,6 +1536,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<String>, Error> {
@@ -1533,6 +1553,7 @@ public enum AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
+                callbacks: enumEnvelopeCallbacks(callbacks),
                 jsonInstruction: jsonInstruction,
                 repairText: repairText
             ),
@@ -1559,6 +1580,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<String>, Error> {
@@ -1584,6 +1606,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1595,6 +1618,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<JSONValue>, Error> {
@@ -1605,6 +1629,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -1628,6 +1653,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<JSONValue>, Error> {
@@ -1652,6 +1678,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            callbacks: callbacks,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
@@ -2458,9 +2485,11 @@ private func objectStreamWithTelemetry<Object: Sendable>(
     operationID: String,
     providerID: String,
     modelID: String?,
+    request: LanguageModelRequest? = nil,
     input: JSONValue?,
     retryPolicy: AIRetryPolicy,
-    telemetry: AITelemetryOptions?
+    telemetry: AITelemetryOptions?,
+    callbacks: AIObjectGenerationCallbacks<Object>? = nil
 ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
 
@@ -2477,6 +2506,26 @@ private func objectStreamWithTelemetry<Object: Sendable>(
             var providerMetadata: [String: JSONValue] = [:]
             var responseMetadata = AIResponseMetadata()
             do {
+                let startInput = input?.objectValue
+                await callbacks?.onStart?(AIObjectGenerationStartEvent(
+                    callID: callID,
+                    operationID: operationID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    outputKind: startInput?["output"]?.stringValue ?? "object",
+                    request: request ?? LanguageModelRequest(messages: []),
+                    schema: startInput?["schema"],
+                    schemaName: startInput?["schemaName"]?.stringValue,
+                    schemaDescription: startInput?["schemaDescription"]?.stringValue,
+                    maxRetries: retryPolicy.maxRetries
+                ))
+                await callbacks?.onStepStart?(AIObjectGenerationStepStartEvent(
+                    callID: callID,
+                    stepNumber: 0,
+                    providerID: providerID,
+                    modelID: modelID,
+                    request: request ?? LanguageModelRequest(messages: [])
+                ))
                 await dispatcher.record(telemetryEvent(
                     kind: .start,
                     callID: callID,
@@ -2527,6 +2576,33 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                             partialCount: partialCount,
                             finishReason: objectResult?.finishReason ?? finishReason
                         )
+                        await callbacks?.onStepFinish?(AIObjectGenerationStepFinishEvent(
+                            callID: callID,
+                            stepNumber: 0,
+                            providerID: providerID,
+                            modelID: modelID,
+                            text: objectResult?.text ?? text,
+                            reasoning: objectResult?.reasoning ?? "",
+                            finishReason: objectResult?.finishReason ?? finishReason,
+                            usage: objectResult?.usage ?? usage,
+                            warnings: warnings,
+                            providerMetadata: providerMetadata,
+                            responseMetadata: responseMetadata
+                        ))
+                        if let objectResult {
+                            await callbacks?.onFinish?(AIObjectGenerationFinishEvent(
+                                callID: callID,
+                                object: objectResult.object,
+                                text: objectResult.text,
+                                rawObject: objectResult.rawObject,
+                                reasoning: objectResult.reasoning,
+                                finishReason: objectResult.finishReason,
+                                usage: objectResult.usage,
+                                warnings: objectResult.warnings,
+                                providerMetadata: objectResult.providerMetadata,
+                                responseMetadata: objectResult.responseMetadata
+                            ))
+                        }
                         await dispatcher.record(telemetryEvent(
                             kind: .end,
                             callID: callID,
@@ -2581,6 +2657,18 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                     }
                 }
             } catch {
+                await callbacks?.onError?(AIObjectGenerationErrorEvent(
+                    callID: callID,
+                    providerID: providerID,
+                    modelID: modelID,
+                    text: objectResult?.text ?? text,
+                    errorDescription: String(describing: error),
+                    finishReason: objectResult?.finishReason ?? finishReason,
+                    usage: objectResult?.usage ?? usage,
+                    warnings: warnings,
+                    providerMetadata: providerMetadata,
+                    responseMetadata: responseMetadata
+                ))
                 await dispatcher.record(telemetryEvent(
                     kind: .error,
                     callID: callID,
@@ -2623,6 +2711,84 @@ private func mapObjectStream<Input: Sendable, Output: Sendable>(
             task.cancel()
         }
     }
+}
+
+private func arrayEnvelopeCallbacks<Element: Decodable & Sendable>(
+    _ callbacks: AIObjectGenerationCallbacks<[Element]>?
+) -> AIObjectGenerationCallbacks<AIObjectArrayEnvelope<Element>>? {
+    guard let callbacks else { return nil }
+    return AIObjectGenerationCallbacks<AIObjectArrayEnvelope<Element>>(
+        onStart: { event in
+            await callbacks.onStart?(AIObjectGenerationStartEvent(
+                callID: event.callID,
+                operationID: event.operationID,
+                providerID: event.providerID,
+                modelID: event.modelID,
+                outputKind: "array",
+                request: event.request,
+                schema: event.schema,
+                schemaName: event.schemaName,
+                schemaDescription: event.schemaDescription,
+                maxRetries: event.maxRetries
+            ))
+        },
+        onStepStart: callbacks.onStepStart,
+        onStepFinish: callbacks.onStepFinish,
+        onFinish: { event in
+            await callbacks.onFinish?(AIObjectGenerationFinishEvent<[Element]>(
+                callID: event.callID,
+                object: event.object.elements,
+                text: event.text,
+                rawObject: event.rawObject,
+                reasoning: event.reasoning,
+                finishReason: event.finishReason,
+                usage: event.usage,
+                warnings: event.warnings,
+                providerMetadata: event.providerMetadata,
+                responseMetadata: event.responseMetadata
+            ))
+        },
+        onError: callbacks.onError
+    )
+}
+
+private func enumEnvelopeCallbacks(
+    _ callbacks: AIObjectGenerationCallbacks<String>?
+) -> AIObjectGenerationCallbacks<AIEnumEnvelope>? {
+    guard let callbacks else { return nil }
+    return AIObjectGenerationCallbacks<AIEnumEnvelope>(
+        onStart: { event in
+            await callbacks.onStart?(AIObjectGenerationStartEvent(
+                callID: event.callID,
+                operationID: event.operationID,
+                providerID: event.providerID,
+                modelID: event.modelID,
+                outputKind: "enum",
+                request: event.request,
+                schema: event.schema,
+                schemaName: event.schemaName,
+                schemaDescription: event.schemaDescription,
+                maxRetries: event.maxRetries
+            ))
+        },
+        onStepStart: callbacks.onStepStart,
+        onStepFinish: callbacks.onStepFinish,
+        onFinish: { event in
+            await callbacks.onFinish?(AIObjectGenerationFinishEvent<String>(
+                callID: event.callID,
+                object: event.object.result,
+                text: event.text,
+                rawObject: event.rawObject,
+                reasoning: event.reasoning,
+                finishReason: event.finishReason,
+                usage: event.usage,
+                warnings: event.warnings,
+                providerMetadata: event.providerMetadata,
+                responseMetadata: event.responseMetadata
+            ))
+        },
+        onError: callbacks.onError
+    )
 }
 
 private func telemetryEvent(

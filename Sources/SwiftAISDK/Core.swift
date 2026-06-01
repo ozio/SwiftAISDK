@@ -388,17 +388,20 @@ public struct AIObjectGenerationCallbacks<Output: Sendable>: Sendable {
     public var onStepStart: (@Sendable (AIObjectGenerationStepStartEvent) async -> Void)?
     public var onStepFinish: (@Sendable (AIObjectGenerationStepFinishEvent) async -> Void)?
     public var onFinish: (@Sendable (AIObjectGenerationFinishEvent<Output>) async -> Void)?
+    public var onError: (@Sendable (AIObjectGenerationErrorEvent) async -> Void)?
 
     public init(
         onStart: (@Sendable (AIObjectGenerationStartEvent) async -> Void)? = nil,
         onStepStart: (@Sendable (AIObjectGenerationStepStartEvent) async -> Void)? = nil,
         onStepFinish: (@Sendable (AIObjectGenerationStepFinishEvent) async -> Void)? = nil,
-        onFinish: (@Sendable (AIObjectGenerationFinishEvent<Output>) async -> Void)? = nil
+        onFinish: (@Sendable (AIObjectGenerationFinishEvent<Output>) async -> Void)? = nil,
+        onError: (@Sendable (AIObjectGenerationErrorEvent) async -> Void)? = nil
     ) {
         self.onStart = onStart
         self.onStepStart = onStepStart
         self.onStepFinish = onStepFinish
         self.onFinish = onFinish
+        self.onError = onError
     }
 }
 
@@ -524,6 +527,43 @@ public struct AIObjectGenerationFinishEvent<Output: Sendable>: Sendable {
         self.text = text
         self.rawObject = rawObject
         self.reasoning = reasoning
+        self.finishReason = finishReason
+        self.usage = usage
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
+    }
+}
+
+public struct AIObjectGenerationErrorEvent: Sendable {
+    public var callID: String
+    public var providerID: String
+    public var modelID: String?
+    public var text: String
+    public var errorDescription: String
+    public var finishReason: String?
+    public var usage: TokenUsage?
+    public var warnings: [AIWarning]
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
+
+    public init(
+        callID: String,
+        providerID: String,
+        modelID: String?,
+        text: String,
+        errorDescription: String,
+        finishReason: String?,
+        usage: TokenUsage?,
+        warnings: [AIWarning],
+        providerMetadata: [String: JSONValue],
+        responseMetadata: AIResponseMetadata
+    ) {
+        self.callID = callID
+        self.providerID = providerID
+        self.modelID = modelID
+        self.text = text
+        self.errorDescription = errorDescription
         self.finishReason = finishReason
         self.usage = usage
         self.warnings = warnings

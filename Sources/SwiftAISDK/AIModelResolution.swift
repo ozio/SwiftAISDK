@@ -354,6 +354,7 @@ public extension AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
@@ -368,6 +369,7 @@ public extension AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
+                callbacks: callbacks,
                 jsonInstruction: jsonInstruction,
                 repairText: repairText
             )

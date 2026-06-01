@@ -96,6 +96,91 @@ import Testing
     #expect(events.finish?.responseMetadata.id == "callback-response")
 }
 
+@Test func aiStreamObjectInvokesObjectCallbacksInOrder() async throws {
+    let recorder = ObjectCallbackRecorder<ObjectFacadeAnswer>()
+    let telemetry = ObjectTelemetryRecorder()
+    let schema = objectFacadeAnswerSchema()
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"value":"stream-callbacks","count":9}"#),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 18))
+        ]
+    )
+
+    var final: ObjectGenerationResult<ObjectFacadeAnswer>?
+    for try await part in AI.streamObject(
+        model: model,
+        prompt: "Stream callback object.",
+        as: ObjectFacadeAnswer.self,
+        schema: schema,
+        schemaName: "answer",
+        telemetry: AITelemetryOptions(integrations: [telemetry]),
+        callbacks: AIObjectGenerationCallbacks(
+            onStart: { event in await recorder.recordStart(event) },
+            onStepStart: { event in await recorder.recordStepStart(event) },
+            onStepFinish: { event in await recorder.recordStepFinish(event) },
+            onFinish: { event in await recorder.recordFinish(event) },
+            onError: { event in await recorder.recordError(event) }
+        )
+    ) {
+        if case let .object(result) = part {
+            final = result
+        }
+    }
+
+    let events = await recorder.events()
+    let telemetryEvents = await telemetry.events()
+    #expect(final?.object == ObjectFacadeAnswer(value: "stream-callbacks", count: 9))
+    #expect(events.names == ["start", "step-start", "step-finish", "finish"])
+    #expect(Set(events.callIDs).count == 1)
+    #expect(events.callIDs.first == telemetryEvents.first?.callID)
+    #expect(events.start?.operationID == "ai.streamObject")
+    #expect(events.start?.outputKind == "object")
+    #expect(events.start?.schemaName == "answer")
+    #expect(events.start?.request.messages == [.user("Stream callback object.")])
+    #expect(events.stepStart?.request.responseFormat == .json(schema: schema, name: "answer"))
+    #expect(events.stepFinish?.text == #"{"value":"stream-callbacks","count":9}"#)
+    #expect(events.stepFinish?.usage?.totalTokens == 18)
+    #expect(events.finish?.object == ObjectFacadeAnswer(value: "stream-callbacks", count: 9))
+    #expect(events.finish?.rawObject["value"]?.stringValue == "stream-callbacks")
+    #expect(events.error == nil)
+}
+
+@Test func aiStreamObjectInvokesErrorCallbackForParseFailure() async throws {
+    let recorder = ObjectCallbackRecorder<ObjectFacadeAnswer>()
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta("not json"),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+        ]
+    )
+
+    do {
+        for try await _ in AI.streamObject(
+            model: model,
+            prompt: "Stream broken object.",
+            as: ObjectFacadeAnswer.self,
+            schema: objectFacadeAnswerSchema(),
+            callbacks: AIObjectGenerationCallbacks(
+                onStart: { event in await recorder.recordStart(event) },
+                onStepStart: { event in await recorder.recordStepStart(event) },
+                onStepFinish: { event in await recorder.recordStepFinish(event) },
+                onFinish: { event in await recorder.recordFinish(event) },
+                onError: { event in await recorder.recordError(event) }
+            )
+        ) {}
+        Issue.record("Expected stream object parse failure.")
+    } catch {
+        let events = await recorder.events()
+        #expect(events.names == ["start", "step-start", "error"])
+        #expect(events.error?.text == "not json")
+        #expect(events.error?.errorDescription.isEmpty == false)
+        #expect(events.finish == nil)
+    }
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let recorder = ObjectTelemetryRecorder()
     let schema = objectFacadeAnswerSchema()
@@ -804,6 +889,46 @@ import Testing
     #expect(request.extraBody["responseFormat"]?["description"]?.stringValue == "Adapter element schema.")
 }
 
+@Test func aiStreamObjectArrayMapsCallbacksToArrayOutput() async throws {
+    let recorder = ObjectCallbackRecorder<[ObjectFacadeAnswer]>()
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"elements":[{"value":"array-callback","count":2}]}"#),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        ]
+    )
+
+    var object: ObjectGenerationResult<[ObjectFacadeAnswer]>?
+    for try await part in AI.streamObjectArray(
+        model: model,
+        prompt: "Stream callback answers.",
+        as: ObjectFacadeAnswer.self,
+        elementSchema: objectFacadeAnswerSchema(),
+        callbacks: AIObjectGenerationCallbacks(
+            onStart: { event in await recorder.recordStart(event) },
+            onStepStart: { event in await recorder.recordStepStart(event) },
+            onStepFinish: { event in await recorder.recordStepFinish(event) },
+            onFinish: { event in await recorder.recordFinish(event) },
+            onError: { event in await recorder.recordError(event) }
+        )
+    ) {
+        if case let .object(result) = part {
+            object = result
+        }
+    }
+
+    let events = await recorder.events()
+    #expect(object?.object == [ObjectFacadeAnswer(value: "array-callback", count: 2)])
+    #expect(events.names == ["start", "step-start", "step-finish", "finish"])
+    #expect(events.start?.operationID == "ai.streamObject")
+    #expect(events.start?.outputKind == "array")
+    #expect(events.stepFinish?.text == #"{"elements":[{"value":"array-callback","count":2}]}"#)
+    #expect(events.stepFinish?.usage?.totalTokens == 5)
+    #expect(events.finish?.object == [ObjectFacadeAnswer(value: "array-callback", count: 2)])
+    #expect(events.error == nil)
+}
+
 @Test func aiStreamObjectCanInjectJSONInstruction() async throws {
     let model = ObjectFacadeMockLanguageModel(
         result: TextGenerationResult(text: "", rawValue: .object([:])),
@@ -970,6 +1095,7 @@ private struct ObjectCallbackEvents<Output: Sendable>: Sendable {
     var stepStart: AIObjectGenerationStepStartEvent?
     var stepFinish: AIObjectGenerationStepFinishEvent?
     var finish: AIObjectGenerationFinishEvent<Output>?
+    var error: AIObjectGenerationErrorEvent?
 }
 
 private actor ObjectCallbackRecorder<Output: Sendable> {
@@ -979,6 +1105,7 @@ private actor ObjectCallbackRecorder<Output: Sendable> {
     private var stepStart: AIObjectGenerationStepStartEvent?
     private var stepFinish: AIObjectGenerationStepFinishEvent?
     private var finish: AIObjectGenerationFinishEvent<Output>?
+    private var error: AIObjectGenerationErrorEvent?
 
     func recordStart(_ event: AIObjectGenerationStartEvent) {
         names.append("start")
@@ -1004,6 +1131,12 @@ private actor ObjectCallbackRecorder<Output: Sendable> {
         finish = event
     }
 
+    func recordError(_ event: AIObjectGenerationErrorEvent) {
+        names.append("error")
+        callIDs.append(event.callID)
+        error = event
+    }
+
     func events() -> ObjectCallbackEvents<Output> {
         ObjectCallbackEvents(
             names: names,
@@ -1011,7 +1144,8 @@ private actor ObjectCallbackRecorder<Output: Sendable> {
             start: start,
             stepStart: stepStart,
             stepFinish: stepFinish,
-            finish: finish
+            finish: finish,
+            error: error
         )
     }
 }
