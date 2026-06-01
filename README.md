@@ -92,10 +92,11 @@ for try await part in AI.streamText(
 }
 ```
 
-Telemetry integrations can observe facade lifecycle events, streaming
-start/end/error events, and tool-loop step/tool execution events for
-`generateText` and `streamText`. Per-call integrations take precedence for that
-call; registered integrations are used when no per-call list is supplied:
+Telemetry integrations can observe facade lifecycle events, object-generation
+events, streaming start/end/error events, and tool-loop step/tool execution
+events for `generateText` and `streamText`. Per-call integrations take
+precedence for that call; registered integrations are used when no per-call list
+is supplied:
 
 ```swift
 struct LoggerTelemetry: AITelemetryIntegration {

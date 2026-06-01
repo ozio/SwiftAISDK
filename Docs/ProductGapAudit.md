@@ -58,11 +58,11 @@ Impact:
   `streamObject`. HTTP `Retry-After` headers are now preserved from provider
   responses and honored by facade retries, including stream retries before the
   first emitted part. A Swift telemetry surface now emits start, retry, end,
-  and error events for non-streaming facade calls plus `streamText` and
-  `streamObject`, and step/tool execution events for `generateText` and
-  `streamText` tool loops, with per-call or globally registered integrations.
-  Richer cancellation controls, object-specific event names, wrapper-style
-  execute hooks, and warning logging still need follow-up work.
+  and error events for non-streaming facade calls plus `generateObject`,
+  `streamText`, and `streamObject`, and step/tool execution events for
+  `generateText` and `streamText` tool loops, with per-call or globally
+  registered integrations. Richer cancellation controls, wrapper-style execute
+  hooks, and warning logging still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -304,12 +304,13 @@ Progress:
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,
    `AITelemetryIntegration`, `AITelemetry.register(...)`, lifecycle events for
-   non-streaming facade operations, start/end/error events for `streamText` and
-   `streamObject`, and step/tool execution events for `generateText` and
-   `streamText` tool loops. Events carry call IDs, operation IDs, provider/model
+   non-streaming facade operations including `generateObject`, start/end/error
+   events for `streamText` and `streamObject`, and step/tool execution events
+   for `generateText` and `streamText` tool loops. Events carry call IDs,
+   operation IDs, provider/model
    IDs, retry attempts, timing, usage, warnings, metadata, response metadata,
    and input/output payloads gated by record flags. Next passes should add
-   object generation event names and wrapper-style execute hooks.
+   wrapper-style execute hooks.
 
 5. **Tool loop pass.**
    First `generateText` and `streamText` slices are in place with typed

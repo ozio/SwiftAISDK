@@ -2,6 +2,49 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func aiGenerateObjectEmitsObjectTelemetry() async throws {
+    let recorder = ObjectTelemetryRecorder()
+    let schema = objectFacadeAnswerSchema()
+    let warning = AIWarning(type: "unsupported", feature: "seed")
+    let responseMetadata = AIResponseMetadata(id: "object-resp")
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"value":"telemetry","count":6}"#,
+        finishReason: "stop",
+        usage: TokenUsage(totalTokens: 12),
+        providerMetadata: ["trace": .string("object")],
+        rawValue: .object(["id": .string("raw-object")]),
+        warnings: [warning],
+        responseMetadata: responseMetadata
+    ))
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return a telemetry object.",
+        as: ObjectFacadeAnswer.self,
+        schema: schema,
+        schemaName: "answer",
+        schemaDescription: "Answer schema.",
+        telemetry: AITelemetryOptions(functionID: "unit.object", integrations: [recorder])
+    )
+    let events = await recorder.events()
+
+    #expect(result.object == ObjectFacadeAnswer(value: "telemetry", count: 6))
+    #expect(events.map(\.kind) == [.start, .end])
+    #expect(events.allSatisfy { $0.operationID == "ai.generateObject" })
+    #expect(events.allSatisfy { $0.functionID == "unit.object" })
+    #expect(events[0].input?["output"]?.stringValue == "object")
+    #expect(events[0].input?["schemaName"]?.stringValue == "answer")
+    #expect(events[0].input?["schemaDescription"]?.stringValue == "Answer schema.")
+    #expect(events[0].input?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(events[0].input?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Return a telemetry object.")
+    #expect(events[1].output?["rawObject"]?["count"]?.intValue == 6)
+    #expect(events[1].output?["text"]?.stringValue == #"{"value":"telemetry","count":6}"#)
+    #expect(events[1].usage?.totalTokens == 12)
+    #expect(events[1].warnings == [warning])
+    #expect(events[1].providerMetadata["trace"]?.stringValue == "object")
+    #expect(events[1].responseMetadata == responseMetadata)
+}
+
 @Test func aiStreamObjectRequestsSchemaAndEmitsFinalObject() async throws {
     let recorder = ObjectTelemetryRecorder()
     let schema = objectFacadeAnswerSchema()
