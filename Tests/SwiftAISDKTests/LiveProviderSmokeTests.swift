@@ -47,6 +47,14 @@ import Testing
     #expect(result.embeddings.first?.isEmpty == false)
 }
 
+@Test func liveProviderSmokeOpenAIToolLoop() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.openAIProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_OPENAI_MODEL", defaultValue: "gpt-4.1-mini"))
+    try await LiveProviderSmoke.assertToolLoop(model: model, maxOutputTokens: 64)
+}
+
 @Test func liveProviderSmokeAnthropicGenerateText() async throws {
     guard LiveProviderSmoke.isEnabled else { return }
 
@@ -79,6 +87,14 @@ import Testing
     )
 
     #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+}
+
+@Test func liveProviderSmokeAnthropicToolLoop() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.anthropicProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_ANTHROPIC_MODEL", defaultValue: "claude-haiku-4-5-20251001"))
+    try await LiveProviderSmoke.assertToolLoop(model: model, maxOutputTokens: 96)
 }
 
 @Test func liveProviderSmokeGoogleGenerateText() async throws {
@@ -126,6 +142,14 @@ import Testing
     #expect(result.embeddings.first?.isEmpty == false)
 }
 
+@Test func liveProviderSmokeGoogleToolLoop() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.googleProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_GOOGLE_MODEL", defaultValue: "gemini-flash-lite-latest"))
+    try await LiveProviderSmoke.assertToolLoop(model: model, maxOutputTokens: 96)
+}
+
 private enum LiveProviderSmoke {
     static var isEnabled: Bool {
         ProcessInfo.processInfo.environment["LIVE_AI_TESTS"] == "1"
@@ -161,6 +185,42 @@ private enum LiveProviderSmoke {
         return text
     }
 
+    static func assertToolLoop(model: any LanguageModel, maxOutputTokens: Int) async throws {
+        let tracker = LiveToolTracker()
+        let tool = AITool(
+            name: "lookup_weather",
+            description: "Looks up a deterministic weather forecast for a city.",
+            parameters: [
+                "type": "object",
+                "properties": [
+                    "city": [
+                        "type": "string",
+                        "description": "City name to look up."
+                    ]
+                ],
+                "required": ["city"]
+            ]
+        ) { arguments in
+            await tracker.record(city: arguments["city"]?.stringValue)
+        }
+
+        let result = try await AI.generateText(
+            model: model,
+            prompt: "Use the lookup_weather tool exactly once for Tokyo. Then reply with the forecast word only.",
+            temperature: 0,
+            maxOutputTokens: maxOutputTokens,
+            executableTools: [tool],
+            maxSteps: 2,
+            retryPolicy: .none
+        )
+
+        let toolCallCount = await tracker.count()
+        #expect(toolCallCount == 1)
+        #expect(result.toolResults.count == 1)
+        #expect(result.toolResults.first?.result["forecast"]?.stringValue == "sunny")
+        #expect(!result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
     static func modelID(environmentVariable: String, defaultValue: String) -> String {
         let rawValue = ProcessInfo.processInfo.environment[environmentVariable] ?? defaultValue
         return rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -190,5 +250,21 @@ private enum LiveProviderSmoke {
             url.deleteLastPathComponent()
         }
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    }
+}
+
+private actor LiveToolTracker {
+    private var toolCallCount = 0
+
+    func record(city: String?) -> JSONValue {
+        toolCallCount += 1
+        return .object([
+            "city": .string(city ?? "missing"),
+            "forecast": .string("sunny")
+        ])
+    }
+
+    func count() -> Int {
+        toolCallCount
     }
 }

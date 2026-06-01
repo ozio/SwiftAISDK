@@ -104,12 +104,16 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                     ])
                 ])
             case let .toolCall(call):
-                return .object([
+                var output: [String: JSONValue] = [
                     "functionCall": .object([
                         "name": .string(call.name),
                         "args": googleToolArguments(call.arguments)
                     ])
-                ])
+                ]
+                if let thoughtSignature = googleThoughtSignature(from: call.providerMetadata) {
+                    output["thoughtSignature"] = thoughtSignature
+                }
+                return .object(output)
             case let .toolResult(result):
                 return .object([
                     "functionResponse": .object([

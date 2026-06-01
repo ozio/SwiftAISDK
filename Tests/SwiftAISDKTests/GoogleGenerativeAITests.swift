@@ -143,7 +143,7 @@ import Testing
 
 @Test func googleLanguageParsesFunctionCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"functionCall":{"name":"weather","args":{"location":"San Francisco"}}}],"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":29,"candidatesTokenCount":15,"totalTokenCount":44}}
+    {"candidates":[{"content":{"parts":[{"functionCall":{"name":"weather","args":{"location":"San Francisco"}},"thoughtSignature":"sig-google-tool"}],"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":29,"candidatesTokenCount":15,"totalTokenCount":44}}
     """))
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
     let model = try provider.languageModel("gemini-2.5-flash")
@@ -157,6 +157,37 @@ import Testing
     #expect(result.toolCalls[0].id == "tool-call-0")
     #expect(result.toolCalls[0].name == "weather")
     #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
+    #expect(result.toolCalls[0].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-google-tool")
+}
+
+@Test func googleGenerateContentReplaysToolCallThoughtSignature() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+    let toolCall = AIToolCall(
+        id: "tool-call-0",
+        name: "weather",
+        arguments: #"{"location":"Tokyo"}"#,
+        providerMetadata: ["google": .object(["thoughtSignature": .string("sig-google-tool")])]
+    )
+    let toolResult = AIToolResult(
+        toolCallID: "tool-call-0",
+        toolName: "weather",
+        result: ["forecast": "sunny"]
+    )
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .user("Weather?"),
+        .assistant(toolCalls: [toolCall]),
+        .toolResult(toolResult)
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["contents"]?[1]?["parts"]?[0]?["functionCall"]?["name"]?.stringValue == "weather")
+    #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "sig-google-tool")
 }
 
 @Test func googleLanguageExtractsGroundingSources() async throws {

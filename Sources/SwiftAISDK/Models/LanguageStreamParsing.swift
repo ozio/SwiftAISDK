@@ -143,6 +143,7 @@ func googleGenerateContentToolCalls(from raw: JSONValue) -> [AIToolCall] {
             id: functionCall["id"]?.stringValue ?? "tool-call-\(index)",
             name: name,
             arguments: googleGenerateContentArguments(functionCall["args"]),
+            providerMetadata: googleThoughtSignatureProviderMetadata(from: part),
             rawValue: part
         )
     } ?? []
@@ -287,6 +288,7 @@ private struct GoogleGenerateContentToolCallBuffer {
     var id: String?
     var name: String?
     var arguments: [String: JSONValue] = [:]
+    var providerMetadata: [String: JSONValue] = [:]
     var rawValue: JSONValue?
 }
 
@@ -313,6 +315,9 @@ private struct GoogleGenerateContentStreamingToolCalls {
         }
         if let name = functionCall["name"]?.stringValue {
             buffer.name = name
+        }
+        if let providerMetadata = googleThoughtSignatureProviderMetadata(from: rawValue)["google"] {
+            buffer.providerMetadata["google"] = providerMetadata
         }
         buffer.rawValue = rawValue
 
@@ -343,10 +348,25 @@ private struct GoogleGenerateContentStreamingToolCalls {
                 id: buffer.id ?? "tool-call-\(index)",
                 name: name,
                 arguments: googleGenerateContentArguments(.object(buffer.arguments)),
+                providerMetadata: buffer.providerMetadata,
                 rawValue: buffer.rawValue
             )
         }
     }
+}
+
+func googleThoughtSignatureProviderMetadata(from part: JSONValue) -> [String: JSONValue] {
+    guard let thoughtSignature = part["thoughtSignature"] ?? part["thought_signature"],
+          thoughtSignature.stringValue != nil else {
+        return [:]
+    }
+    return ["google": .object(["thoughtSignature": thoughtSignature])]
+}
+
+func googleThoughtSignature(from providerMetadata: [String: JSONValue]) -> JSONValue? {
+    let value = providerMetadata["google"]?["thoughtSignature"]
+        ?? providerMetadata["google.generative-ai"]?["thoughtSignature"]
+    return value?.stringValue == nil ? nil : value
 }
 
 private func googleGenerateContentArguments(_ value: JSONValue?) -> String {

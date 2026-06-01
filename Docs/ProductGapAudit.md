@@ -252,6 +252,9 @@ Impact:
   serializes follow-up tool messages with `name`, `tool_call_id`, and
   upstream-style `modelOutput ?? result` content, so multi-step Mistral tool
   loops no longer flatten tool history to empty text.
+- Google GenerateContent now preserves `thoughtSignature` provider metadata on
+  function-call parts and replays it on assistant tool-call history, matching
+  upstream's requirement for live Gemini tool loops.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`
@@ -354,8 +357,9 @@ Impact:
 - Provider breadth is visible through `AIProviderCapabilities`, but matrix rows
   are now rendered from that source and guarded by a drift test. The remaining
   risk is that a provider pass forgets to update the source inventory itself.
-- Mock transport tests prove wire shape, but live provider health is only covered
-  by an opt-in smoke suite for representative first-party providers.
+- Mock transport tests prove wire shape, and the opt-in live smoke suite now
+  covers representative first-party text generation, text streaming, executable
+  tool loops, and embeddings.
 - A user can start from the README and generated matrix, but there is not yet a
   per-provider cookbook.
 
