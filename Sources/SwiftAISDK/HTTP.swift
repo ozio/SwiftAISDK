@@ -297,7 +297,10 @@ func encodeJSONBody(_ value: JSONValue) throws -> Data {
 }
 
 func decodeJSONBody(_ data: Data) throws -> JSONValue {
-    try JSONDecoder().decode(JSONValue.self, from: data)
+    guard let text = String(data: data, encoding: .utf8) else {
+        throw AIJSONParseError(text: "", message: "JSON body is not valid UTF-8.")
+    }
+    return try secureJSONParse(text)
 }
 
 func requireURL(_ string: String) throws -> URL {

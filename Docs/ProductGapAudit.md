@@ -85,7 +85,10 @@ Impact:
   inline media types into full IANA media types before sending requests. Shared
   header helper parity now covers normalization, combining, and user-agent
   suffix construction; broad provider header-casing migration remains staged so
-  existing Swift request assertions do not churn all at once.
+  existing Swift request assertions do not churn all at once. JSON parsing
+  parity now routes `decodeJSONBody(...)` through a secure parser that rejects
+  upstream's forbidden prototype-pollution keys and exposes parse/safe-parse
+  helpers for provider and facade code.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
