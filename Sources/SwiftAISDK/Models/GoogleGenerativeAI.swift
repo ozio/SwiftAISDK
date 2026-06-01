@@ -15,7 +15,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         let raw = try await config.sendJSON(
             path: "/models/\(modelID):generateContent",
             modelID: modelID,
-            body: Self.generateContentBody(for: request, modelID: modelID),
+            body: try Self.generateContentBody(for: request, modelID: modelID),
             headers: request.headers
         )
         let text = googleGenerateContentText(from: raw)
@@ -40,7 +40,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                     let response = try await config.transport.send(config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         modelID: modelID,
-                        body: Self.generateContentBody(for: request, modelID: modelID),
+                        body: try Self.generateContentBody(for: request, modelID: modelID),
                         headers: request.headers
                     ))
                     let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response)
@@ -55,14 +55,14 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
     }
 
-    private static func generateContentBody(for request: LanguageModelRequest, modelID: String) -> JSONValue {
+    private static func generateContentBody(for request: LanguageModelRequest, modelID: String) throws -> JSONValue {
         let systemText = request.messages
             .filter { $0.role == .system }
             .map(\.combinedText)
             .joined(separator: "\n")
-        let contents = request.messages
+        let contents = try request.messages
             .filter { $0.role != .system }
-            .map(Self.contentJSON)
+            .map { try Self.contentJSON($0) }
 
         var generationConfig: [String: JSONValue] = [:]
         if let temperature = request.temperature { generationConfig["temperature"] = .number(temperature) }
@@ -85,18 +85,19 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         return .object(body)
     }
 
-    private static func contentJSON(_ message: AIMessage) -> JSONValue {
+    private static func contentJSON(_ message: AIMessage) throws -> JSONValue {
         let role = message.role == .assistant ? "model" : "user"
-        let parts = message.content.map { part -> JSONValue in
+        let parts = try message.content.map { part -> JSONValue in
             switch part {
             case let .text(text):
                 return .object(["text": .string(text)])
             case let .imageURL(url):
                 return .object(["fileData": .object(["fileUri": .string(url)])])
             case let .data(mimeType, data), let .file(mimeType, data, _):
+                let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
                 return .object([
                     "inlineData": .object([
-                        "mimeType": .string(mimeType),
+                        "mimeType": .string(resolvedMimeType),
                         "data": .string(data.base64EncodedString())
                     ])
                 ])
@@ -344,7 +345,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let body = googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: false)
+        let body = try googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: false)
         let raw = try await sendInteractions(body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let final = try await resolvedInteraction(raw, requestHeaders: request.headers, abortSignal: request.abortSignal)
         let text = googleInteractionsText(from: final)
@@ -367,7 +368,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let body = googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: true)
+                    let body = try googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: true)
 	                    let response = try await config.transport.send(config.request(
 	                        path: "/interactions",
 	                        modelID: modelID,
@@ -613,14 +614,14 @@ private func googleInteractionsHeaders(_ requestHeaders: [String: String]) -> [S
     ["Api-Revision": "2026-05-20"].mergingHeaders(requestHeaders)
 }
 
-private func googleInteractionsBody(for request: LanguageModelRequest, modelID: String, agent: String?, stream: Bool) -> [String: JSONValue] {
+private func googleInteractionsBody(for request: LanguageModelRequest, modelID: String, agent: String?, stream: Bool) throws -> [String: JSONValue] {
     let systemInstruction = request.messages
         .filter { $0.role == .system }
         .map(\.combinedText)
         .joined(separator: "\n\n")
-    let input = request.messages
+    let input = try request.messages
         .filter { $0.role != .system }
-        .compactMap(googleInteractionsStep)
+        .compactMap { try googleInteractionsStep($0) }
 
     var body: [String: JSONValue] = [
         agent == nil ? "model" : "agent": .string(agent ?? modelID),
@@ -648,13 +649,13 @@ private func googleInteractionsBody(for request: LanguageModelRequest, modelID: 
     return body
 }
 
-private func googleInteractionsStep(_ message: AIMessage) -> JSONValue? {
+private func googleInteractionsStep(_ message: AIMessage) throws -> JSONValue? {
     switch message.role {
     case .user:
-        let content = googleInteractionsContent(message.content)
+        let content = try googleInteractionsContent(message.content)
         return content.isEmpty ? nil : .object(["type": .string("user_input"), "content": .array(content)])
     case .assistant:
-        let content = googleInteractionsContent(message.content)
+        let content = try googleInteractionsContent(message.content)
         return content.isEmpty ? nil : .object(["type": .string("model_output"), "content": .array(content)])
     case .tool:
         return message.combinedText.isEmpty ? nil : .object([
@@ -666,19 +667,20 @@ private func googleInteractionsStep(_ message: AIMessage) -> JSONValue? {
     }
 }
 
-private func googleInteractionsContent(_ content: [AIContentPart]) -> [JSONValue] {
-    content.map { part in
+private func googleInteractionsContent(_ content: [AIContentPart]) throws -> [JSONValue] {
+    try content.map { part in
         switch part {
         case let .text(text):
             return .object(["type": .string("text"), "text": .string(text)])
         case let .imageURL(url):
             return .object(["type": .string("image"), "uri": .string(url)])
         case let .data(mimeType, data), let .file(mimeType, data, _):
-            let topLevel = mimeType.split(separator: "/").first.map(String.init) ?? "document"
+            let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
+            let topLevel = resolvedMimeType.split(separator: "/").first.map(String.init) ?? "document"
             let type = ["image", "audio", "video"].contains(topLevel) ? topLevel : "document"
             return .object([
                 "type": .string(type),
-                "mime_type": .string(mimeType),
+                "mime_type": .string(resolvedMimeType),
                 "data": .string(data.base64EncodedString())
             ])
         case let .toolCall(call):

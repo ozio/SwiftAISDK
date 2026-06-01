@@ -21,6 +21,22 @@ import Testing
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
 }
 
+@Test func googleGenerateContentResolvesTopLevelInlineMediaType() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"saw image"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+    let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [.data(mimeType: "image/*", data: png)])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["contents"]?[0]?["parts"]?[0]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
+}
+
 @Test func googleLanguageMapsFunctionToolsAndToolChoice() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"tool-ready"}]},"finishReason":"STOP"}]}
@@ -301,6 +317,23 @@ import Testing
     #expect(body["response_format"]?[0]?["mime_type"]?.stringValue == "image/png")
     #expect(body["response_format"]?[0]?["aspect_ratio"]?.stringValue == "1:1")
     #expect(body["response_format"]?[0]?["image_size"]?.stringValue == "1K")
+}
+
+@Test func googleInteractionsResolvesTopLevelInlineMediaType() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"saw image"}]}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = provider.interactionsModel("gemini-2.5-flash")
+    let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [.data(mimeType: "image", data: png)])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "image")
+    #expect(body["input"]?[0]?["content"]?[0]?["mime_type"]?.stringValue == "image/png")
 }
 
 @Test func googleInteractionsExtractsSourcesAndProviderMetadata() async throws {

@@ -79,7 +79,10 @@ Impact:
   download helper also validates `AIHTTPResponse.url` so URLSession redirects
   cannot bypass the guard, and `AIHTTPRequest.maxResponseBytes` lets
   URLSession-backed downloads enforce upstream's default 2 GiB ceiling while
-  reading bytes incrementally.
+  reading bytes incrementally. Media type helper parity now covers
+  provider-utils signature detection, extension mapping, and full media type
+  resolution; Google GenerateContent and Interactions use it to turn top-level
+  inline media types into full IANA media types before sending requests.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
