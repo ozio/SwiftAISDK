@@ -251,7 +251,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
     private func generateGeminiImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         var body = GoogleGenerativeLanguageModel.imageGenerationContentBody(prompt: request.prompt, aspectRatio: googleAspectRatio(from: request))
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/models/\(modelID):generateContent", modelID: modelID, body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/models/\(modelID):generateContent", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let parts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
         let images = parts.compactMap { part in
             part["inlineData"]?["data"]?.stringValue
@@ -279,12 +279,12 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
             "instances": .array([.object(googleVideoInstance(for: request))]),
             "parameters": .object(googleVideoParameters(for: request))
         ])
-        let operation = try await config.sendJSON(path: "/models/\(modelID):predictLongRunning", modelID: modelID, body: body, headers: request.headers)
+        let operation = try await config.sendJSON(path: "/models/\(modelID):predictLongRunning", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
         guard let operationName = operation["name"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Google video create response did not contain an operation name.")
         }
 
-        let finalOperation = try await pollOperation(named: operationName, headers: request.headers, timeoutNanoseconds: googlePollTimeout(request.extraBody), intervalNanoseconds: googlePollInterval(request.extraBody))
+        let finalOperation = try await pollOperation(named: operationName, headers: request.headers, timeoutNanoseconds: googlePollTimeout(request.extraBody), intervalNanoseconds: googlePollInterval(request.extraBody), abortSignal: request.abortSignal)
         let samples = finalOperation["response"]?["generateVideoResponse"]?["generatedSamples"]?.arrayValue ?? []
         let urls = samples.compactMap { sample in
             sample["video"]?["uri"]?.stringValue.map(googleVideoURLWithAPIKey)
@@ -295,14 +295,15 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(urls: urls, operationID: operationName, rawValue: finalOperation)
     }
 
-    private func pollOperation(named operationName: String, headers: [String: String], timeoutNanoseconds: UInt64, intervalNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollOperation(named operationName: String, headers: [String: String], timeoutNanoseconds: UInt64, intervalNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         var latest: JSONValue?
         repeat {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(config.baseURL)/\(operationName)"),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -316,7 +317,7 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
                 return raw
             }
             if intervalNanoseconds > 0 {
-                try await Task.sleep(nanoseconds: intervalNanoseconds)
+                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
         } while DispatchTime.now().uptimeNanoseconds - started < timeoutNanoseconds
 
@@ -344,8 +345,8 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let body = googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: false)
-        let raw = try await sendInteractions(body: .object(body), headers: request.headers)
-        let final = try await resolvedInteraction(raw, requestHeaders: request.headers)
+        let raw = try await sendInteractions(body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let final = try await resolvedInteraction(raw, requestHeaders: request.headers, abortSignal: request.abortSignal)
         let text = googleInteractionsText(from: final)
         let toolCalls = googleInteractionsToolCalls(from: final)
         guard !text.isEmpty || !toolCalls.isEmpty else {
@@ -367,12 +368,13 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
             Task {
                 do {
                     let body = googleInteractionsBody(for: request, modelID: modelID, agent: agent, stream: true)
-                    let response = try await config.transport.send(config.request(
-                        path: "/interactions",
-                        modelID: modelID,
-                        body: .object(body),
-                        headers: googleInteractionsHeaders(request.headers)
-                    ))
+	                    let response = try await config.transport.send(config.request(
+	                        path: "/interactions",
+	                        modelID: modelID,
+	                        body: .object(body),
+	                        headers: googleInteractionsHeaders(request.headers),
+	                        abortSignal: request.abortSignal
+	                    ))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
@@ -435,30 +437,31 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
         }
     }
 
-    private func sendInteractions(body: JSONValue, headers: [String: String]) async throws -> JSONValue {
-        let response = try await config.transport.send(config.request(path: "/interactions", modelID: modelID, body: body, headers: googleInteractionsHeaders(headers)))
+    private func sendInteractions(body: JSONValue, headers: [String: String], abortSignal: AIAbortSignal?) async throws -> JSONValue {
+        let response = try await config.transport.send(config.request(path: "/interactions", modelID: modelID, body: body, headers: googleInteractionsHeaders(headers), abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
         return try response.jsonValue()
     }
 
-    private func resolvedInteraction(_ raw: JSONValue, requestHeaders: [String: String]) async throws -> JSONValue {
+    private func resolvedInteraction(_ raw: JSONValue, requestHeaders: [String: String], abortSignal: AIAbortSignal?) async throws -> JSONValue {
         guard agent != nil,
               !googleInteractionsIsTerminal(raw["status"]?.stringValue),
               let id = raw["id"]?.stringValue else {
             return raw
         }
-        return try await pollInteraction(id: id, requestHeaders: requestHeaders, timeoutNanoseconds: googleInteractionsPollTimeout(raw: raw))
+        return try await pollInteraction(id: id, requestHeaders: requestHeaders, timeoutNanoseconds: googleInteractionsPollTimeout(raw: raw), abortSignal: abortSignal)
     }
 
-    private func pollInteraction(id: String, requestHeaders: [String: String], timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollInteraction(id: String, requestHeaders: [String: String], timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         repeat {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(config.baseURL)/interactions/\(id)"),
-                headers: config.headers.mergingHeaders(googleInteractionsHeaders(requestHeaders))
+                headers: config.headers.mergingHeaders(googleInteractionsHeaders(requestHeaders)),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -467,7 +470,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
             if googleInteractionsIsTerminal(raw["status"]?.stringValue) {
                 return raw
             }
-            try await Task.sleep(nanoseconds: 10_000_000)
+            try await sleepWithAbortSignal(nanoseconds: 10_000_000, abortSignal: abortSignal)
         } while DispatchTime.now().uptimeNanoseconds - started < timeoutNanoseconds
 
         throw AIError.invalidResponse(provider: providerID, message: "Google Interactions polling timed out.")

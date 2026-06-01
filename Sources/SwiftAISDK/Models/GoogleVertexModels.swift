@@ -12,7 +12,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/models/\(modelID):generateContent", body: googleGenerateContentBody(request, modelID: modelID), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/models/\(modelID):generateContent", body: googleGenerateContentBody(request, modelID: modelID), headers: request.headers, abortSignal: request.abortSignal)
         let text = googleGenerateContentText(from: raw)
         let toolCalls = googleGenerateContentToolCalls(from: raw)
         guard text != nil || !toolCalls.isEmpty else {
@@ -35,7 +35,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
                     let httpRequest = try await config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         body: googleGenerateContentBody(request, modelID: modelID),
-                        headers: request.headers
+                        headers: request.headers,
+                        abortSignal: request.abortSignal
                     )
                     let response = try await config.transport.send(httpRequest)
                     let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response)
@@ -72,7 +73,7 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
         ]
         if !parameters.isEmpty { body["parameters"] = .object(parameters) }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let embeddings = raw["predictions"]?.arrayValue?.compactMap { prediction in
             prediction["embeddings"]?["values"]?.arrayValue?.compactMap(\.doubleValue)
         } ?? []
@@ -93,7 +94,7 @@ public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         if modelID.starts(with: "gemini-") {
-            let languageResult = try await GoogleVertexLanguageModel(modelID: modelID, config: config).generate(LanguageModelRequest(messages: [.user(request.prompt)], extraBody: request.extraBody, headers: request.headers))
+            let languageResult = try await GoogleVertexLanguageModel(modelID: modelID, config: config).generate(LanguageModelRequest(messages: [.user(request.prompt)], extraBody: request.extraBody, headers: request.headers, abortSignal: request.abortSignal))
             let images = languageResult.rawValue["candidates"]?[0]?["content"]?["parts"]?.arrayValue?.compactMap { part in
                 part["inlineData"]?["data"]?.stringValue
             } ?? []
@@ -101,7 +102,7 @@ public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
         }
 
         let body = try googleVertexImageBody(for: request)
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let images = raw["predictions"]?.arrayValue?.compactMap { prediction in
             prediction["bytesBase64Encoded"]?.stringValue
         } ?? []
@@ -129,7 +130,7 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
         ]
         if !parameters.isEmpty { body["parameters"] = .object(parameters) }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predictLongRunning", body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/models/\(modelID):predictLongRunning", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let videos = raw["response"]?["videos"]?.arrayValue ?? raw["videos"]?.arrayValue ?? []
         return VideoGenerationResult(
             urls: videos.compactMap { $0["gcsUri"]?.stringValue ?? $0["url"]?.stringValue },

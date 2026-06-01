@@ -386,6 +386,89 @@ public final class AIAbortHandlerRegistration: @unchecked Sendable {
     }
 }
 
+private final class AIAbortableSleepState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var registration: AIAbortHandlerRegistration?
+    private var task: Task<Void, Never>?
+
+    init(continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
+    }
+
+    func setRegistration(_ registration: AIAbortHandlerRegistration) {
+        lock.lock()
+        guard continuation != nil else {
+            lock.unlock()
+            registration.cancel()
+            return
+        }
+        self.registration = registration
+        lock.unlock()
+    }
+
+    func setTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        guard continuation != nil else {
+            lock.unlock()
+            task.cancel()
+            return
+        }
+        self.task = task
+        lock.unlock()
+    }
+
+    func resume() {
+        complete(.success(()))
+    }
+
+    func resume(throwing error: Error) {
+        complete(.failure(error))
+    }
+
+    private func complete(_ result: Result<Void, Error>) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        let registration = self.registration
+        self.registration = nil
+        let task = self.task
+        self.task = nil
+        lock.unlock()
+
+        registration?.cancel()
+        task?.cancel()
+        continuation.resume(with: result)
+    }
+}
+
+func sleepWithAbortSignal(nanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws {
+    guard let abortSignal else {
+        try await Task.sleep(nanoseconds: nanoseconds)
+        return
+    }
+    try abortSignal.throwIfAborted()
+    try await withCheckedThrowingContinuation { continuation in
+        let state = AIAbortableSleepState(continuation: continuation)
+        let registration = abortSignal.addAbortHandler { reason in
+            state.resume(throwing: AIAbortError(reason: reason))
+        }
+        state.setRegistration(registration)
+        let task = Task {
+            do {
+                try await Task.sleep(nanoseconds: nanoseconds)
+                state.resume()
+            } catch {
+                state.resume(throwing: error)
+            }
+        }
+        state.setTask(task)
+    }
+}
+
 public struct AIJSONInstruction: Equatable, Hashable, Sendable {
     public var isEnabled: Bool
     public var schemaPrefix: String?

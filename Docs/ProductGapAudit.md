@@ -69,8 +69,11 @@ Impact:
   language model calls and tool execution with upstream-style execute hooks.
   `AIAbortController`/`AIAbortSignal` now provide a Swift-native equivalent of
   upstream request `abortSignal`, with facade retry sleeps, stream wrappers,
-  `AIHTTPRequest`, `URLSessionTransport`, and OpenAI-compatible model calls
-  honoring it. Broader provider-by-provider propagation still needs follow-up work.
+  `AIHTTPRequest`, `URLSessionTransport`, OpenAI-compatible model calls, Google
+  Generative AI, Google Vertex, Amazon Bedrock, file upload polling, media
+  polling/download helpers, and the native audio polling flows honoring it. A
+  remaining audit should focus on non-provider surfaces such as MCP/OAuth
+  transports and any newly added provider helpers.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -348,9 +351,12 @@ Progress:
    facade retries honor `Retry-After` on retryable status codes. `streamText`
    and `streamObject` now record consumer cancellation as telemetry `abort`
    instead of `error`. `AIAbortController`/`AIAbortSignal` are now available on
-   core request structs and `AIHTTPRequest`, and the OpenAI-compatible path
-   forwards them to transport. Next passes should propagate abort signals through
-   the remaining provider-specific HTTP helpers and long-polling media flows.
+   core request structs and `AIHTTPRequest`; OpenAI-compatible providers, Google
+   Generative AI, Google Vertex, Amazon Bedrock, file clients, media
+   polling/download flows, and native audio polling flows forward them to
+   transport. Next passes should audit
+   non-provider transports such as MCP/OAuth and keep new provider helpers covered
+   by propagation tests.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,

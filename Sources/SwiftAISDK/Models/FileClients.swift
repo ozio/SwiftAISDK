@@ -77,7 +77,8 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             method: "POST",
             url: try requireURL("\(origin)/upload/v1beta/files"),
             headers: startHeaders,
-            body: try encodeJSONBody(initBody)
+            body: try encodeJSONBody(initBody),
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(startResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: startResponse)
@@ -94,7 +95,8 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
                 "X-Goog-Upload-Offset": "0",
                 "X-Goog-Upload-Command": "upload, finalize"
             ],
-            body: request.data
+            body: request.data,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: uploadResponse)
@@ -107,12 +109,13 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             if DispatchTime.now().uptimeNanoseconds - started > request.pollTimeoutNanoseconds {
                 throw AIError.invalidResponse(provider: providerID, message: "Google file processing timed out for \(file["name"]?.stringValue ?? "unknown file").")
             }
-            try await Task.sleep(nanoseconds: request.pollIntervalNanoseconds)
+            try await sleepWithAbortSignal(nanoseconds: request.pollIntervalNanoseconds, abortSignal: request.abortSignal)
             guard let name = file["name"]?.stringValue else { break }
             let statusResponse = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(config.baseURL)/\(name)"),
-                headers: config.headers.mergingHeaders(request.headers)
+                headers: config.headers.mergingHeaders(request.headers),
+                abortSignal: request.abortSignal
             ))
             guard (200..<300).contains(statusResponse.statusCode) else {
                 throw httpStatusError(provider: providerID, response: statusResponse)

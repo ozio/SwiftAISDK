@@ -136,15 +136,15 @@ struct GoogleVertexConfig: @unchecked Sendable {
     var transport: any AITransport
     var date: @Sendable () -> Date
 
-    func sendJSON(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:]) async throws -> JSONValue {
-        let response = try await transport.send(try await request(path: path, body: body, headers: requestHeaders))
+    func sendJSON(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> JSONValue {
+        let response = try await transport.send(try await request(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
         return try response.jsonValue()
     }
 
-    func request(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:]) async throws -> AIHTTPRequest {
+    func request(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> AIHTTPRequest {
         var mergedHeaders = headers.mergingHeaders(requestHeaders)
         mergedHeaders["content-type"] = mergedHeaders["content-type"] ?? "application/json"
         switch auth {
@@ -156,7 +156,7 @@ struct GoogleVertexConfig: @unchecked Sendable {
             let token = try await GoogleServiceAccountTokenGenerator.generateAccessToken(credentials: credentials, now: date())
             mergedHeaders["Authorization"] = mergedHeaders["Authorization"] ?? "Bearer \(token)"
         }
-        return AIHTTPRequest(method: "POST", url: try requireURL("\(withoutTrailingSlash(baseURL))\(path)"), headers: mergedHeaders, body: try encodeJSONBody(body))
+        return AIHTTPRequest(method: "POST", url: try requireURL("\(withoutTrailingSlash(baseURL))\(path)"), headers: mergedHeaders, body: try encodeJSONBody(body), abortSignal: abortSignal)
     }
 
     func withProviderID(_ providerID: String) -> GoogleVertexConfig {

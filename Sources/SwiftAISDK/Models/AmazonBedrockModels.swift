@@ -11,7 +11,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/converse", body: try converseBody(for: request), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/converse", body: try converseBody(for: request), headers: request.headers, abortSignal: request.abortSignal)
         let text = raw["output"]?["message"]?["content"]?.arrayValue?.compactMap { $0["text"]?.stringValue }.joined()
         let reasoning = bedrockReasoningText(from: raw["output"]?["message"]?["content"])
         let toolCalls = bedrockToolCalls(from: raw["output"]?["message"]?["content"])
@@ -36,7 +36,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                     let httpRequest = try config.request(
                         path: "/model/\(encodedModelID)/converse-stream",
                         body: try converseBody(for: request),
-                        headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"])
+                        headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"]),
+                        abortSignal: request.abortSignal
                     )
                     let response = try await config.transport.send(httpRequest)
                     let parts = try streamFromBedrockResponse(providerID: providerID, response: response)
@@ -176,7 +177,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
             if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
         }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let embedding = raw["embedding"]?.arrayValue?.compactMap(\.doubleValue)
             ?? raw["embeddings"]?[0]?.arrayValue?.compactMap(\.doubleValue)
             ?? raw["embeddings"]?[0]?["embedding"]?.arrayValue?.compactMap(\.doubleValue)
@@ -225,7 +226,7 @@ public final class AmazonBedrockImageModel: ImageModel, @unchecked Sendable {
             providerOptions: providerOptions,
             imageGenerationConfig: imageGenerationConfig
         )
-        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let base64Images = raw["images"]?.arrayValue?.compactMap(\.stringValue)
             ?? raw["artifacts"]?.arrayValue?.compactMap { $0["base64"]?.stringValue }
             ?? []
@@ -596,7 +597,7 @@ public final class AmazonBedrockRerankingModel: RerankingModel, @unchecked Senda
             body["nextToken"] = nextToken
         }
         body.merge(bedrockPassthroughExtraBody(request.extraBody)) { _, new in new }
-        let raw = try await config.sendJSON(path: "/rerank", body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/rerank", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let results = raw["results"]?.arrayValue?.compactMap { item -> RerankedDocument? in
             guard let index = item["index"]?.intValue,
                   let score = item["relevanceScore"]?.doubleValue ?? item["score"]?.doubleValue else { return nil }

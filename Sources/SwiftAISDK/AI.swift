@@ -3128,22 +3128,7 @@ private func withRetry<Output: Sendable>(
 }
 
 private func sleep(nanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws {
-    guard let abortSignal else {
-        try await Task.sleep(nanoseconds: nanoseconds)
-        return
-    }
-    try abortSignal.throwIfAborted()
-    try await withThrowingTaskGroup(of: Void.self) { group in
-        defer { group.cancelAll() }
-        group.addTask {
-            try await Task.sleep(nanoseconds: nanoseconds)
-        }
-        group.addTask {
-            let reason = await abortSignal.waitUntilAborted()
-            throw AIAbortError(reason: reason)
-        }
-        _ = try await group.next()
-    }
+    try await sleepWithAbortSignal(nanoseconds: nanoseconds, abortSignal: abortSignal)
 }
 
 private func validateRetryPolicy(_ policy: AIRetryPolicy) throws {

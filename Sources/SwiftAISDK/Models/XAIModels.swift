@@ -192,7 +192,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             body["image"] = .object(["url": image])
         }
 
-        let created = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers)
+        let created = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let requestID = created["request_id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "xAI video create response did not contain request_id.")
         }
@@ -200,7 +200,8 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             requestID: requestID,
             headers: request.headers,
             intervalNanoseconds: xaiPollInterval(options),
-            timeoutNanoseconds: xaiPollTimeout(options)
+            timeoutNanoseconds: xaiPollTimeout(options),
+            abortSignal: request.abortSignal
         )
         guard raw["video"]?["respect_moderation"]?.boolValue != false else {
             throw AIError.invalidResponse(provider: providerID, message: "xAI video generation was blocked by moderation.")
@@ -211,14 +212,15 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(urls: [url], operationID: requestID, rawValue: raw)
     }
 
-    private func pollXAI(requestID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollXAI(requestID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            try await Task.sleep(nanoseconds: intervalNanoseconds)
+            try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(withoutTrailingSlash(config.baseURL))/videos/\(requestID)"),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)

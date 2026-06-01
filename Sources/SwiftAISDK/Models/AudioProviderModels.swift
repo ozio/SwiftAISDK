@@ -25,7 +25,8 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
             modelID: modelID,
             body: request.audio,
             contentType: request.mimeType,
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -263,7 +264,8 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             modelID: modelID,
             body: form.finalize(),
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -292,14 +294,15 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         if let voice = request.voice { body["voice"] = .string(voice) }
         body.merge(options) { _, new in new }
 
-        let raw = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let audioURL = raw["audio"]?["url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal speech response did not contain audio.url.")
         }
         let audioResponse = try await config.transport.send(AIHTTPRequest(
             method: "GET",
             url: try requireURL(audioURL),
-            headers: [:]
+            headers: [:],
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(audioResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: audioResponse)
@@ -346,7 +349,8 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
             headers: config.headers
                 .mergingHeaders(request.headers)
                 .mergingHeaders(["content-type": "application/json"]),
-            body: try encodeJSONBody(.object(body))
+            body: try encodeJSONBody(.object(body)),
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(queueResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: queueResponse)
@@ -355,17 +359,18 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
         guard let requestID = queued["request_id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal transcription queue response did not contain request_id.")
         }
-        let raw = try await pollFalTranscription(modelPath: normalized, requestID: requestID, headers: request.headers)
+        let raw = try await pollFalTranscription(modelPath: normalized, requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
         return TranscriptionResult(text: raw["text"]?.stringValue ?? "", rawValue: raw)
     }
 
-    private func pollFalTranscription(modelPath: String, requestID: String, headers: [String: String]) async throws -> JSONValue {
+    private func pollFalTranscription(modelPath: String, requestID: String, headers: [String: String], abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("https://queue.fal.run/fal-ai/\(modelPath)/requests/\(requestID)"),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             if (200..<300).contains(response.statusCode) {
                 return try response.jsonValue()
@@ -373,7 +378,7 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                 throw AIError.invalidResponse(provider: providerID, message: "Fal transcription request timed out.")
             }
-            try await Task.sleep(nanoseconds: 1_000_000_000)
+            try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: abortSignal)
         }
     }
 }
@@ -396,7 +401,8 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
             modelID: modelID,
             body: request.audio,
             contentType: "application/octet-stream",
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: uploadResponse)
@@ -413,7 +419,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         if let language = request.language { body["language_code"] = .string(language) }
         body.merge(assemblyAITranscriptionOptions(from: options)) { _, new in new }
 
-        let submitRaw = try await config.sendJSON(path: "/v2/transcript", modelID: modelID, body: .object(body), headers: request.headers)
+        let submitRaw = try await config.sendJSON(path: "/v2/transcript", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let transcriptID = submitRaw["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI submit response did not contain id.")
         }
@@ -429,7 +435,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
     private func pollAssemblyAITranscript(id: String, request: AudioTranscriptionRequest) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await config.transport.send(try getRequest(path: "/v2/transcript/\(id)", headers: request.headers))
+            let response = try await config.transport.send(try getRequest(path: "/v2/transcript/\(id)", headers: request.headers, abortSignal: request.abortSignal))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
@@ -441,16 +447,17 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
                 if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                     throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription polling timed out.")
                 }
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
             }
         }
     }
 
-    private func getRequest(path: String, headers requestHeaders: [String: String]) throws -> AIHTTPRequest {
+    private func getRequest(path: String, headers requestHeaders: [String: String], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {
         AIHTTPRequest(
             method: "GET",
             url: try requireURL("\(withoutTrailingSlash(config.baseURL))\(path)"),
-            headers: config.headers.mergingHeaders(requestHeaders)
+            headers: config.headers.mergingHeaders(requestHeaders),
+            abortSignal: abortSignal
         )
     }
 }
@@ -480,7 +487,8 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             modelID: modelID,
             body: form.finalize(),
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(submitResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: submitResponse)
@@ -490,7 +498,11 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             throw AIError.invalidResponse(provider: providerID, message: "Rev.ai job response did not contain id.")
         }
         job = try await pollRevAIJob(id: jobID, initial: job, request: request)
-        let transcriptResponse = try await config.transport.send(try getRequest(path: "/speechtotext/v1/jobs/\(jobID)/transcript", headers: request.headers))
+        let transcriptResponse = try await config.transport.send(try getRequest(
+            path: "/speechtotext/v1/jobs/\(jobID)/transcript",
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
         guard (200..<300).contains(transcriptResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: transcriptResponse)
         }
@@ -508,8 +520,12 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                 throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription polling timed out.")
             }
-            try await Task.sleep(nanoseconds: 1_000_000_000)
-            let response = try await config.transport.send(try getRequest(path: "/speechtotext/v1/jobs/\(id)", headers: request.headers))
+            try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
+            let response = try await config.transport.send(try getRequest(
+                path: "/speechtotext/v1/jobs/\(id)",
+                headers: request.headers,
+                abortSignal: request.abortSignal
+            ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
@@ -518,11 +534,12 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
         return job
     }
 
-    private func getRequest(path: String, headers requestHeaders: [String: String]) throws -> AIHTTPRequest {
+    private func getRequest(path: String, headers requestHeaders: [String: String], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {
         AIHTTPRequest(
             method: "GET",
             url: try requireURL("\(withoutTrailingSlash(config.baseURL))\(path)"),
-            headers: config.headers.mergingHeaders(requestHeaders)
+            headers: config.headers.mergingHeaders(requestHeaders),
+            abortSignal: abortSignal
         )
     }
 }
@@ -560,7 +577,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
         var body: [String: JSONValue] = ["audio_url": .string(audioURL)]
         if let language = request.language { body["language"] = .string(language) }
         body.merge(gladiaTranscriptionOptions(from: options)) { _, new in new }
-        let initRaw = try await config.sendJSON(path: "/v2/pre-recorded", modelID: modelID, body: .object(body), headers: request.headers)
+        let initRaw = try await config.sendJSON(path: "/v2/pre-recorded", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let resultURL = initRaw["result_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Gladia initiation response did not contain result_url.")
         }
@@ -579,7 +596,8 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL(url),
-                headers: config.headers.mergingHeaders(request.headers)
+                headers: config.headers.mergingHeaders(request.headers),
+                abortSignal: request.abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -592,7 +610,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
                 if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                     throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription polling timed out.")
                 }
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
             }
         }
     }

@@ -25,20 +25,22 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
             path: path,
             modelID: modelID,
             body: .object(body),
-            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody))
+            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody)),
+            abortSignal: request.abortSignal
         )
         let urls = mediaURLs(from: raw["output"])
-        let base64Images = try await downloadReplicateImages(urls: urls, headers: request.headers)
+        let base64Images = try await downloadReplicateImages(urls: urls, headers: request.headers, abortSignal: request.abortSignal)
         return ImageGenerationResult(urls: urls, base64Images: base64Images, rawValue: raw)
     }
 
-    private func downloadReplicateImages(urls: [String], headers: [String: String]) async throws -> [String] {
+    private func downloadReplicateImages(urls: [String], headers: [String: String], abortSignal: AIAbortSignal?) async throws -> [String] {
         var images: [String] = []
         for url in urls {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL(url),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -86,13 +88,15 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             path: path,
             modelID: modelID,
             body: .object(body),
-            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody))
+            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody)),
+            abortSignal: request.abortSignal
         )
         raw = try await pollReplicatePrediction(
             raw,
             headers: request.headers,
             intervalNanoseconds: replicatePollInterval(request.extraBody),
-            timeoutNanoseconds: replicatePollTimeout(request.extraBody)
+            timeoutNanoseconds: replicatePollTimeout(request.extraBody),
+            abortSignal: request.abortSignal
         )
         if ["failed", "canceled"].contains(raw["status"]?.stringValue ?? "") {
             throw AIError.invalidResponse(provider: providerID, message: "Replicate video generation \(raw["status"]?.stringValue ?? "failed").")
@@ -100,7 +104,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(urls: mediaURLs(from: raw["output"]), operationID: raw["id"]?.stringValue, rawValue: raw)
     }
 
-    private func pollReplicatePrediction(_ initial: JSONValue, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollReplicatePrediction(_ initial: JSONValue, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         var prediction = initial
         let started = DispatchTime.now().uptimeNanoseconds
         while ["starting", "processing"].contains(prediction["status"]?.stringValue ?? "") {
@@ -108,11 +112,12 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                 throw AIError.invalidResponse(provider: providerID, message: "Replicate video generation timed out.")
             }
-            try await Task.sleep(nanoseconds: intervalNanoseconds)
+            try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL(getURL),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -255,16 +260,16 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
         body.merge(try falImageInputs(from: request.files, mask: request.mask, useMultipleImages: options["useMultipleImages"]?.boolValue == true)) { _, new in new }
         body.merge(falImageOptions(from: request.extraBody)) { _, new in new }
 
-        let raw = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let urls = falImageURLs(from: raw)
-        let base64Images = try await downloadFalImages(urls: urls)
+        let base64Images = try await downloadFalImages(urls: urls, abortSignal: request.abortSignal)
         return ImageGenerationResult(urls: urls, base64Images: base64Images, rawValue: raw)
     }
 
-    private func downloadFalImages(urls: [String]) async throws -> [String] {
+    private func downloadFalImages(urls: [String], abortSignal: AIAbortSignal?) async throws -> [String] {
         var images: [String] = []
         for url in urls {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:]))
+            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:], abortSignal: abortSignal))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
@@ -299,7 +304,8 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
             path: "/fal-ai/\(normalized)",
             modelID: modelID,
             body: .object(body),
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ).withURL(try requireURL("https://queue.fal.run/fal-ai/\(normalized)")))
         guard (200..<300).contains(queueResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: queueResponse)
@@ -312,7 +318,8 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
             url: responseURL,
             headers: request.headers,
             intervalNanoseconds: falPollInterval(request.extraBody),
-            timeoutNanoseconds: falPollTimeout(request.extraBody)
+            timeoutNanoseconds: falPollTimeout(request.extraBody),
+            abortSignal: request.abortSignal
         )
         guard let videoURL = raw["video"]?["url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal response did not contain video.url.")
@@ -320,10 +327,10 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(urls: [videoURL], operationID: queued["request_id"]?.stringValue, rawValue: raw)
     }
 
-    private func pollFalResponse(url: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollFalResponse(url: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: config.headers.mergingHeaders(headers)))
+            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal))
             if (200..<300).contains(response.statusCode) {
                 return try response.jsonValue()
             }
@@ -333,7 +340,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
             if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                 throw AIError.invalidResponse(provider: providerID, message: "Fal video generation timed out.")
             }
-            try await Task.sleep(nanoseconds: intervalNanoseconds)
+            try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
         }
     }
 }
@@ -365,7 +372,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         }
         body.merge(blackForestLabsOptions(from: options)) { _, new in new }
         body.merge(try blackForestLabsImageInputs(files: request.files, mask: request.mask, modelID: modelID)) { _, new in new }
-        let submitted = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers)
+        let submitted = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let pollURL = submitted["polling_url"]?.stringValue,
               let requestID = submitted["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs submit response did not contain id and polling_url.")
@@ -375,7 +382,8 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             id: requestID,
             headers: request.headers,
             intervalNanoseconds: bflPollInterval(options),
-            timeoutNanoseconds: bflPollTimeout(options)
+            timeoutNanoseconds: bflPollTimeout(options),
+            abortSignal: request.abortSignal
         )
         guard let url = raw["result"]?["sample"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs poll response did not contain result.sample.")
@@ -383,7 +391,8 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         let image = try await config.transport.send(AIHTTPRequest(
             method: "GET",
             url: try requireURL(url),
-            headers: config.headers.mergingHeaders(request.headers)
+            headers: config.headers.mergingHeaders(request.headers),
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(image.statusCode) else {
             throw httpStatusError(provider: providerID, response: image)
@@ -391,11 +400,11 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         return ImageGenerationResult(urls: [url], base64Images: [image.body.base64EncodedString()], rawValue: raw)
     }
 
-    private func pollBFL(url: String, id: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollBFL(url: String, id: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let pollURL = appendQueryItemIfMissing(url: url, name: "id", value: id)
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(pollURL), headers: config.headers.mergingHeaders(headers)))
+            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(pollURL), headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
@@ -408,7 +417,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                 throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation timed out.")
             }
-            try await Task.sleep(nanoseconds: intervalNanoseconds)
+            try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
         }
     }
 }
@@ -529,7 +538,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
             body["aspect_ratio"] = .string(aspectRatio)
         }
         body.merge(try lumaOptions(from: request.extraBody, files: request.files, mask: request.mask)) { _, new in new }
-        let submitted = try await config.sendJSON(path: "/dream-machine/v1/generations/image", modelID: modelID, body: .object(body), headers: request.headers)
+        let submitted = try await config.sendJSON(path: "/dream-machine/v1/generations/image", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let id = submitted["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Luma submit response did not contain id.")
         }
@@ -537,24 +546,26 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
             id: id,
             headers: request.headers,
             intervalNanoseconds: lumaPollInterval(request.extraBody),
-            maxAttempts: lumaMaxPollAttempts(request.extraBody)
+            maxAttempts: lumaMaxPollAttempts(request.extraBody),
+            abortSignal: request.abortSignal
         )
         guard let url = raw["assets"]?["image"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Luma completed response did not contain assets.image.")
         }
-        let image = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:]))
+        let image = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL(url), headers: [:], abortSignal: request.abortSignal))
         guard (200..<300).contains(image.statusCode) else {
             throw httpStatusError(provider: providerID, response: image)
         }
         return ImageGenerationResult(urls: [url], base64Images: [image.body.base64EncodedString()], rawValue: raw)
     }
 
-    private func pollLuma(id: String, headers: [String: String], intervalNanoseconds: UInt64, maxAttempts: Int) async throws -> JSONValue {
+    private func pollLuma(id: String, headers: [String: String], intervalNanoseconds: UInt64, maxAttempts: Int, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         for _ in 0..<maxAttempts {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(withoutTrailingSlash(config.baseURL))/dream-machine/v1/generations/\(id)"),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -566,7 +577,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
             case "failed":
                 throw AIError.invalidResponse(provider: providerID, message: raw["failure_reason"]?.stringValue ?? "Luma image generation failed.")
             default:
-                try await Task.sleep(nanoseconds: intervalNanoseconds)
+                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
         }
         throw AIError.invalidResponse(provider: providerID, message: "Luma image generation timed out.")
@@ -686,7 +697,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         }
         body.merge(try klingAIOptions(from: options, mode: mode)) { _, new in new }
 
-        let created = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers)
+        let created = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let taskID = created["data"]?["task_id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "KlingAI create response did not contain data.task_id.")
         }
@@ -695,7 +706,8 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             taskID: taskID,
             headers: request.headers,
             intervalNanoseconds: klingAIPollInterval(options),
-            timeoutNanoseconds: klingAIPollTimeout(options)
+            timeoutNanoseconds: klingAIPollTimeout(options),
+            abortSignal: request.abortSignal
         )
         let videos = raw["data"]?["task_result"]?["videos"]?.arrayValue ?? []
         let urls = videos.compactMap { $0["url"]?.stringValue }
@@ -705,13 +717,14 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(urls: urls, operationID: taskID, rawValue: raw)
     }
 
-    private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(withoutTrailingSlash(config.baseURL))\(endpoint)/\(taskID)"),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -726,7 +739,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
                 if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                     throw AIError.invalidResponse(provider: providerID, message: "KlingAI video generation timed out.")
                 }
-                try await Task.sleep(nanoseconds: intervalNanoseconds)
+                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
         }
     }
@@ -881,7 +894,7 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         if let duration = request.durationSeconds { body["duration"] = .number(duration) }
         body.merge(byteDanceOptions(from: options)) { _, new in new }
 
-        let created = try await config.sendJSON(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers)
+        let created = try await config.sendJSON(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let taskID = created["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "ByteDance create response did not contain id.")
         }
@@ -889,7 +902,8 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
             taskID: taskID,
             headers: request.headers,
             intervalNanoseconds: byteDancePollInterval(options),
-            timeoutNanoseconds: byteDancePollTimeout(options)
+            timeoutNanoseconds: byteDancePollTimeout(options),
+            abortSignal: request.abortSignal
         )
         guard let url = raw["content"]?["video_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "ByteDance status response did not contain content.video_url.")
@@ -897,13 +911,14 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(urls: [url], operationID: taskID, rawValue: raw)
     }
 
-    private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)"),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -918,7 +933,7 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
                 if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                     throw AIError.invalidResponse(provider: providerID, message: "ByteDance video generation timed out.")
                 }
-                try await Task.sleep(nanoseconds: intervalNanoseconds)
+                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
         }
     }
@@ -1108,7 +1123,8 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
             path: "/api/v1/services/aigc/video-generation/video-synthesis",
             modelID: modelID,
             body: body,
-            headers: request.headers.mergingHeaders(["X-DashScope-Async": "enable"])
+            headers: request.headers.mergingHeaders(["X-DashScope-Async": "enable"]),
+            abortSignal: request.abortSignal
         ).withURL(try requireURL("\(base)/api/v1/services/aigc/video-generation/video-synthesis")))
         guard (200..<300).contains(createResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: createResponse)
@@ -1122,7 +1138,8 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
             base: base,
             headers: request.headers,
             intervalNanoseconds: alibabaPollInterval(options),
-            timeoutNanoseconds: alibabaPollTimeout(options)
+            timeoutNanoseconds: alibabaPollTimeout(options),
+            abortSignal: request.abortSignal
         )
         guard let url = raw["output"]?["video_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Alibaba video status response did not contain output.video_url.")
@@ -1130,13 +1147,14 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(urls: [url], operationID: taskID, rawValue: raw)
     }
 
-    private func pollAlibaba(taskID: String, base: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) async throws -> JSONValue {
+    private func pollAlibaba(taskID: String, base: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(base)/api/v1/tasks/\(taskID)"),
-                headers: config.headers.mergingHeaders(headers)
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -1151,7 +1169,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
                 if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                     throw AIError.invalidResponse(provider: providerID, message: "Alibaba video generation timed out.")
                 }
-                try await Task.sleep(nanoseconds: intervalNanoseconds)
+                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
         }
     }
@@ -1721,6 +1739,6 @@ private func multipartRawValue(_ parts: [MultipartResponsePart]) -> JSONValue {
 
 private extension AIHTTPRequest {
     func withURL(_ url: URL) -> AIHTTPRequest {
-        AIHTTPRequest(method: method, url: url, headers: headers, body: body)
+        AIHTTPRequest(method: method, url: url, headers: headers, body: body, abortSignal: abortSignal)
     }
 }
