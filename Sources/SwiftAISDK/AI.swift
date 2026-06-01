@@ -242,14 +242,16 @@ public enum AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Object> {
-        var objectRequest = request
-        let responseFormat = AIResponseFormat.json(schema: schema, name: schemaName, description: schemaDescription)
-        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
-        if objectRequest.extraBody["responseFormat"] == nil {
-            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
-        }
+        let objectRequest = objectRequest(
+            from: request,
+            schema: schema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            jsonInstruction: jsonInstruction
+        )
 
         let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
         let parsed = try await parseObject(
@@ -294,6 +296,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Object> {
         try await generateObject(
@@ -319,6 +322,7 @@ public enum AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -330,6 +334,7 @@ public enum AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Schema.Output> {
         try await generateObject(
@@ -340,6 +345,7 @@ public enum AI {
             schemaName: schemaName ?? schema.name,
             schemaDescription: schemaDescription ?? schema.description,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -363,6 +369,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Schema.Output> {
         try await generateObject(
@@ -385,6 +392,7 @@ public enum AI {
             extraBody: extraBody,
             headers: headers,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -397,15 +405,17 @@ public enum AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[Element]> {
         let schema = arrayOutputSchema(elementSchema: elementSchema)
-        var objectRequest = request
-        let responseFormat = AIResponseFormat.json(schema: schema, name: schemaName, description: schemaDescription)
-        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
-        if objectRequest.extraBody["responseFormat"] == nil {
-            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
-        }
+        let objectRequest = objectRequest(
+            from: request,
+            schema: schema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            jsonInstruction: jsonInstruction
+        )
 
         let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
         let parsed = try await parseObjectArray(
@@ -450,6 +460,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[Element]> {
         try await generateObjectArray(
@@ -475,6 +486,7 @@ public enum AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -486,6 +498,7 @@ public enum AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[ElementSchema.Output]> {
         try await generateObjectArray(
@@ -496,6 +509,7 @@ public enum AI {
             schemaName: schemaName ?? elementSchema.name,
             schemaDescription: schemaDescription ?? elementSchema.description,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -519,6 +533,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[ElementSchema.Output]> {
         try await generateObjectArray(
@@ -541,6 +556,7 @@ public enum AI {
             extraBody: extraBody,
             headers: headers,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -550,18 +566,20 @@ public enum AI {
         request: LanguageModelRequest,
         values: [String],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<String> {
         guard !values.isEmpty else {
             throw AIError.invalidArgument(argument: "values", message: "Enum values are required.")
         }
         let schema = enumOutputSchema(values: values)
-        var objectRequest = request
-        let responseFormat = AIResponseFormat.json(schema: schema)
-        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
-        if objectRequest.extraBody["responseFormat"] == nil {
-            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: nil, description: nil)
-        }
+        let objectRequest = objectRequest(
+            from: request,
+            schema: schema,
+            schemaName: nil,
+            schemaDescription: nil,
+            jsonInstruction: jsonInstruction
+        )
 
         let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
         let parsed = try await parseEnum(
@@ -602,6 +620,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<String> {
         try await generateEnum(
@@ -624,6 +643,7 @@ public enum AI {
             ),
             values: values,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -632,14 +652,16 @@ public enum AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<JSONValue> {
-        var objectRequest = request
-        let responseFormat = AIResponseFormat.json()
-        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
-        if objectRequest.extraBody["responseFormat"] == nil {
-            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: nil, name: nil, description: nil)
-        }
+        let objectRequest = objectRequest(
+            from: request,
+            schema: nil,
+            schemaName: nil,
+            schemaDescription: nil,
+            jsonInstruction: jsonInstruction
+        )
 
         let textResult = try await generateText(model: model, request: objectRequest, retryPolicy: retryPolicy)
         let parsed = try await parseJSONValueObject(
@@ -678,6 +700,7 @@ public enum AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<JSONValue> {
         try await generateJSON(
@@ -699,6 +722,7 @@ public enum AI {
                 headers: headers
             ),
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -984,14 +1008,16 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
-        var objectRequest = request
-        let responseFormat = AIResponseFormat.json(schema: schema, name: schemaName, description: schemaDescription)
-        objectRequest.responseFormat = objectRequest.responseFormat ?? responseFormat
-        if objectRequest.extraBody["responseFormat"] == nil {
-            objectRequest.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
-        }
+        let objectRequest = objectRequest(
+            from: request,
+            schema: schema,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
+            jsonInstruction: jsonInstruction
+        )
         let streamRequest = objectRequest
 
         if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
@@ -1164,6 +1190,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
         streamObject(
@@ -1191,6 +1218,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1204,6 +1232,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Schema.Output>, Error> {
         streamObject(
@@ -1216,6 +1245,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1241,6 +1271,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Schema.Output>, Error> {
         streamObject(
@@ -1265,6 +1296,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1279,6 +1311,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[Element]>, Error> {
         let schema = arrayOutputSchema(elementSchema: elementSchema)
@@ -1293,6 +1326,7 @@ public enum AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
+                jsonInstruction: jsonInstruction,
                 repairText: repairText
             ),
             transform: arrayStreamPart
@@ -1321,6 +1355,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[Element]>, Error> {
         streamObjectArray(
@@ -1348,6 +1383,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1361,6 +1397,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[ElementSchema.Output]>, Error> {
         streamObjectArray(
@@ -1373,6 +1410,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1398,6 +1436,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[ElementSchema.Output]>, Error> {
         streamObjectArray(
@@ -1422,6 +1461,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1433,6 +1473,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<String>, Error> {
         guard !values.isEmpty else {
@@ -1448,6 +1489,7 @@ public enum AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
+                jsonInstruction: jsonInstruction,
                 repairText: repairText
             ),
             transform: enumStreamPart
@@ -1473,6 +1515,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<String>, Error> {
         streamEnum(
@@ -1497,6 +1540,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1507,6 +1551,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<JSONValue>, Error> {
         streamObject(
@@ -1516,6 +1561,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -1538,6 +1584,7 @@ public enum AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<JSONValue>, Error> {
         streamJSON(
@@ -1561,6 +1608,7 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -3303,6 +3351,29 @@ private func validateToolArguments(_ arguments: JSONValue, schema: JSONValue, to
     }
 }
 
+private func objectRequest(
+    from request: LanguageModelRequest,
+    schema: JSONValue?,
+    schemaName: String?,
+    schemaDescription: String?,
+    jsonInstruction: AIJSONInstruction?
+) -> LanguageModelRequest {
+    var output = request
+    let responseFormat = AIResponseFormat.json(schema: schema, name: schemaName, description: schemaDescription)
+    output.responseFormat = output.responseFormat ?? responseFormat
+    if output.extraBody["responseFormat"] == nil {
+        output.extraBody["responseFormat"] = responseFormatJSON(schema: schema, name: schemaName, description: schemaDescription)
+    }
+    if let jsonInstruction, jsonInstruction.isEnabled {
+        output.messages = injectJSONInstruction(
+            into: output.messages,
+            schema: schema,
+            instruction: jsonInstruction
+        )
+    }
+    return output
+}
+
 private func responseFormatJSON(schema: JSONValue?, name: String?, description: String?) -> JSONValue {
     .object([
         "type": .string("json"),
@@ -3310,6 +3381,52 @@ private func responseFormatJSON(schema: JSONValue?, name: String?, description: 
         "name": name.map(JSONValue.string),
         "description": description.map(JSONValue.string)
     ])
+}
+
+private func injectJSONInstruction(
+    into messages: [AIMessage],
+    schema: JSONValue?,
+    instruction: AIJSONInstruction
+) -> [AIMessage] {
+    let existingSystemText: String?
+    let tail: ArraySlice<AIMessage>
+    if let first = messages.first, first.role == .system {
+        existingSystemText = first.combinedText
+        tail = messages.dropFirst()
+    } else {
+        existingSystemText = nil
+        tail = messages[...]
+    }
+
+    let injected = jsonInstructionText(
+        prompt: existingSystemText,
+        schema: schema,
+        instruction: instruction
+    )
+    return [AIMessage.system(injected)] + Array(tail)
+}
+
+private func jsonInstructionText(
+    prompt: String?,
+    schema: JSONValue?,
+    instruction: AIJSONInstruction
+) -> String {
+    let schemaPrefix = instruction.schemaPrefix ?? (schema == nil ? nil : "JSON schema:")
+    let schemaSuffix = instruction.schemaSuffix ?? (schema == nil
+        ? "You MUST answer with JSON."
+        : "You MUST answer with a JSON object that matches the JSON schema above.")
+    let promptValue = prompt?.isEmpty == false ? prompt : nil
+    let schemaText = schema.flatMap(canonicalJSONText)
+
+    return [
+        promptValue,
+        promptValue == nil ? nil : "",
+        schemaPrefix,
+        schemaText,
+        schemaSuffix
+    ]
+    .compactMap { $0 }
+    .joined(separator: "\n")
 }
 
 private struct AIObjectArrayEnvelope<Element: Decodable & Sendable>: Decodable, Sendable {

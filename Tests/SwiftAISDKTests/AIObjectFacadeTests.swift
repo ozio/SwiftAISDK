@@ -482,6 +482,58 @@ import Testing
     #expect(request.extraBody["responseFormat"]?["description"]?.stringValue == "Schema supplied through an adapter.")
 }
 
+@Test func aiGenerateObjectCanInjectJSONInstruction() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"value":"instructed","count":8}"#,
+        rawValue: .object([:])
+    ))
+
+    let result = try await AI.generateObject(
+        model: model,
+        prompt: "Return an object.",
+        as: ObjectFacadeAnswer.self,
+        schema: objectFacadeAnswerSchema(),
+        jsonInstruction: .automatic
+    )
+
+    #expect(result.object == ObjectFacadeAnswer(value: "instructed", count: 8))
+
+    let request = try #require(model.requests.first)
+    #expect(request.messages.count == 2)
+    #expect(request.messages[0].role == .system)
+    let instruction = request.messages[0].combinedText
+    #expect(instruction.contains("JSON schema:"))
+    #expect(instruction.contains(#""required":["value","count"]"#))
+    #expect(instruction.contains("You MUST answer with a JSON object that matches the JSON schema above."))
+    #expect(request.messages[1] == .user("Return an object."))
+    #expect(request.responseFormat == .json(schema: objectFacadeAnswerSchema()))
+}
+
+@Test func aiGenerateJSONCanInjectGenericJSONInstructionIntoExistingSystemMessage() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"ok":true}"#,
+        rawValue: .object([:])
+    ))
+
+    let result = try await AI.generateJSON(
+        model: model,
+        request: LanguageModelRequest(messages: [
+            .system("Be terse."),
+            .user("Return JSON.")
+        ]),
+        jsonInstruction: AIJSONInstruction(schemaSuffix: "Reply with strict JSON only.")
+    )
+
+    #expect(result.object["ok"]?.boolValue == true)
+
+    let request = try #require(model.requests.first)
+    #expect(request.messages.count == 2)
+    #expect(request.messages[0].role == .system)
+    #expect(request.messages[0].combinedText == "Be terse.\n\nReply with strict JSON only.")
+    #expect(request.messages[1] == .user("Return JSON."))
+    #expect(request.responseFormat == .json())
+}
+
 @Test func aiGenerateObjectCanRepairInvalidJSONText() async throws {
     let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(text: "value: repaired", rawValue: .object([:])))
 
@@ -656,6 +708,37 @@ import Testing
     #expect(request.extraBody["responseFormat"]?["schema"]?["properties"]?["elements"]?["items"]?["properties"]?["value"]?["type"]?.stringValue == "string")
     #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "adapterAnswers")
     #expect(request.extraBody["responseFormat"]?["description"]?.stringValue == "Adapter element schema.")
+}
+
+@Test func aiStreamObjectCanInjectJSONInstruction() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"value":"stream-instructed","count":11}"#),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+
+    var object: ObjectGenerationResult<ObjectFacadeAnswer>?
+    for try await part in AI.streamObject(
+        model: model,
+        prompt: "Stream an object.",
+        as: ObjectFacadeAnswer.self,
+        schema: objectFacadeAnswerSchema(),
+        jsonInstruction: .automatic
+    ) {
+        if case let .object(result) = part {
+            object = result
+        }
+    }
+
+    #expect(object?.object == ObjectFacadeAnswer(value: "stream-instructed", count: 11))
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.messages.count == 2)
+    #expect(request.messages[0].combinedText.contains("JSON schema:"))
+    #expect(request.messages[0].combinedText.contains("You MUST answer with a JSON object that matches the JSON schema above."))
+    #expect(request.messages[1] == .user("Stream an object."))
 }
 
 @Test func aiGenerateEnumWrapsEnumValuesAndReturnsSelectedValue() async throws {

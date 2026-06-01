@@ -54,6 +54,37 @@ import Testing
     #expect(AIDefaultProvider.current() == nil)
 }
 
+@Test func aiStringModelObjectFacadeForwardsJSONInstruction() async throws {
+    let language = ResolutionLanguageModel(resultText: #"{"value":"resolved","count":4}"#)
+    let registry = createProviderRegistry([
+        "app": customProvider(languageModels: ["chat": language])
+    ])
+
+    let result = try await AI.generateObject(
+        model: "app:chat",
+        provider: registry,
+        request: LanguageModelRequest(messages: [.user("Return an object.")]),
+        as: ResolutionObject.self,
+        schema: [
+            "type": "object",
+            "properties": [
+                "value": ["type": "string"],
+                "count": ["type": "integer"]
+            ],
+            "required": ["value", "count"]
+        ],
+        jsonInstruction: .automatic
+    )
+
+    #expect(result.object == ResolutionObject(value: "resolved", count: 4))
+    let request = try #require(language.requests.first)
+    #expect(request.messages.count == 2)
+    #expect(request.messages[0].role == .system)
+    #expect(request.messages[0].combinedText.contains("JSON schema:"))
+    #expect(request.messages[0].combinedText.contains("You MUST answer with a JSON object that matches the JSON schema above."))
+    #expect(request.messages[1] == .user("Return an object."))
+}
+
 @Test func aiStreamTextReturnsResolutionErrorsAsFailingStreams() async throws {
     let registry = createProviderRegistry([:])
     var iterator = AI.streamText(
@@ -70,20 +101,30 @@ import Testing
     }
 }
 
+private struct ResolutionObject: Decodable, Equatable, Sendable {
+    var value: String
+    var count: Int
+}
+
 private final class ResolutionLanguageModel: LanguageModel, @unchecked Sendable {
     let providerID = "resolution"
     let modelID = "language"
     var requests: [LanguageModelRequest] = []
+    var resultText: String
+
+    init(resultText: String = "resolved") {
+        self.resultText = resultText
+    }
 
     func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         requests.append(request)
-        return TextGenerationResult(text: "resolved", rawValue: .object([:]))
+        return TextGenerationResult(text: resultText, rawValue: .object([:]))
     }
 
     func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         requests.append(request)
         return AsyncThrowingStream { continuation in
-            continuation.yield(.textDelta("resolved"))
+            continuation.yield(.textDelta(resultText))
             continuation.yield(.finish(reason: "stop", usage: nil))
             continuation.finish()
         }

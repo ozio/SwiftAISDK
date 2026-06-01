@@ -165,6 +165,19 @@ let adapted = try await AI.generateObject(
 )
 ```
 
+For providers that do not honor native structured-output hints, pass
+`jsonInstruction: .automatic` to inject upstream-style JSON instructions into
+the system message while keeping the normal response-format metadata:
+
+```swift
+let fallback = try await AI.generateObject(
+    model: model,
+    prompt: "Summarize this changelog.",
+    schema: summarySchema,
+    jsonInstruction: .automatic
+)
+```
+
 When a schema is supplied, the final decoded JSON is also checked against that
 schema; `repairText` can repair parsing or schema-validation failures. Failed
 object parsing throws `AIObjectGenerationError`, including the output strategy,

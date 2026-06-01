@@ -73,7 +73,9 @@ Impact:
   Non-streaming and streaming array, enum, and no-schema JSON strategies are
   also available. Object parse/schema/decode failures now throw
   `AIObjectGenerationError`, and `AIObjectSchema`/`AIJSONSchema` provide a
-  reusable schema-adapter surface for object and array outputs. Richer
+  reusable schema-adapter surface for object and array outputs.
+  `AIJSONInstruction` can inject upstream-style JSON instructions as an opt-in
+  fallback for providers without native structured-output support. Richer
   provider-specific structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
@@ -217,7 +219,9 @@ provider JSON response-format hints. Array, enum, and no-schema JSON strategies
 are exposed as both non-streaming and streaming variants:
 `generateObjectArray`, `streamObjectArray`, `generateEnum`, `streamEnum`,
 `generateJSON`, and `streamJSON`. `AIObjectSchema` and `AIJSONSchema` now let
-callers pass reusable schema adapters instead of raw `JSONValue` schemas.
+callers pass reusable schema adapters instead of raw `JSONValue` schemas, and
+`AIJSONInstruction` can inject upstream-style JSON instructions for fallback
+providers that ignore native response-format hints.
 
 Impact:
 
@@ -226,14 +230,15 @@ Impact:
   object-generation failures are available at product level.
 - Streaming array/enum/no-schema strategies and first-pass schema adapter
   protocols are now available.
+- Upstream-style JSON instruction injection is available as an opt-in fallback.
 - Provider-specific schema support has first end-to-end coverage, but needs
   broader provider passes.
 
 Recommendation:
 
 Extend object generation beyond the first Swift-native slices: add
-provider-specific structured-output parity, richer schema adapter integrations,
-and JSON instruction injection for providers without native response formats.
+provider-specific structured-output parity and richer schema adapter
+integrations.
 
 ### 5. Product reality is not fully gated yet
 

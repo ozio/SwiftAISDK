@@ -250,6 +250,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<Object> {
         try await generateObject(
@@ -260,6 +261,7 @@ public extension AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -273,6 +275,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<[Element]> {
         try await generateObjectArray(
@@ -283,6 +286,7 @@ public extension AI {
             schemaName: schemaName,
             schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -293,6 +297,7 @@ public extension AI {
         request: LanguageModelRequest,
         values: [String],
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<String> {
         try await generateEnum(
@@ -300,6 +305,7 @@ public extension AI {
             request: request,
             values: values,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -309,12 +315,14 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: LanguageModelRequest,
         retryPolicy: AIRetryPolicy = .default,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> ObjectGenerationResult<JSONValue> {
         try await generateJSON(
             model: resolveLanguageModel(modelID, provider: provider),
             request: request,
             retryPolicy: retryPolicy,
+            jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
@@ -330,6 +338,7 @@ public extension AI {
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
         do {
@@ -343,6 +352,7 @@ public extension AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
+                jsonInstruction: jsonInstruction,
                 repairText: repairText
             )
         } catch {
