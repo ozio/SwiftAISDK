@@ -420,6 +420,29 @@ import Testing
     #expect(requests[2].abortSignal === controller.signal)
 }
 
+@Test func revAIForwardsAbortSignalToSubmitPollAndTranscriptRequests() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"rev-job","status":"in_progress"}"#),
+        jsonResponse(#"{"id":"rev-job","status":"transcribed","language":"en"}"#),
+        jsonResponse(#"{"monologues":[{"elements":[{"type":"text","value":"rev","ts":0,"end_ts":0.3}]}]}"#)
+    ])
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
+    let model = try provider.transcriptionModel("machine")
+    let controller = AIAbortController()
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        mimeType: "audio/wav",
+        abortSignal: controller.signal
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests[0].abortSignal === controller.signal)
+    #expect(requests[1].abortSignal === controller.signal)
+    #expect(requests[2].abortSignal === controller.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

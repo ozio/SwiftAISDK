@@ -545,7 +545,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = revAIProviderOptions(from: request.extraBody)
+        let options = revAIProviderOptions(from: request)
         var form = MultipartFormData()
         form.appendFile(name: "media", fileName: request.fileName, mimeType: request.mimeType, data: request.audio)
         var configBody: [String: JSONValue] = ["transcriber": .string(modelID)]
@@ -857,6 +857,16 @@ private func revAIProviderOptions(from extraBody: [String: JSONValue]) -> [Strin
     if let nested = output.removeValue(forKey: "revai")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
+    return output
+}
+
+private func revAIProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+    revAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func revAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = revAIProviderOptions(from: extraBody)
+    output.merge(revAIProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     return output
 }
 
