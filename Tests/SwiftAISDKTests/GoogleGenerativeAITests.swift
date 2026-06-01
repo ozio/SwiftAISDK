@@ -37,6 +37,57 @@ import Testing
     #expect(body["contents"]?[0]?["parts"]?[0]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
 }
 
+@Test func googleLanguageMapsStandardStructuredResponseFormat() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"{\\"location\\":\\"Tokyo\\"}"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Where?")],
+        responseFormat: .json(schema: [
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": ["location": ["type": "string"]],
+            "required": ["location"],
+            "additionalProperties": false
+        ])
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generationConfig"]?["responseMimeType"]?.stringValue == "application/json")
+    #expect(body["generationConfig"]?["responseSchema"]?["type"]?.stringValue == "object")
+    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["location"]?["type"]?.stringValue == "string")
+    #expect(body["generationConfig"]?["responseSchema"]?["required"]?[0]?.stringValue == "location")
+    #expect(body["generationConfig"]?["responseSchema"]?["additionalProperties"] == nil)
+    #expect(body["generationConfig"]?["responseSchema"]?["$schema"] == nil)
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func googleLanguageOmitsResponseSchemaWhenStructuredOutputsDisabled() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"{\\"location\\":\\"Tokyo\\"}"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Where?")],
+        responseFormat: .json(schema: [
+            "type": "object",
+            "properties": ["location": ["type": "string"]]
+        ]),
+        extraBody: ["google": ["structuredOutputs": false]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generationConfig"]?["responseMimeType"]?.stringValue == "application/json")
+    #expect(body["generationConfig"]?["responseSchema"] == nil)
+    #expect(body["structuredOutputs"] == nil)
+    #expect(body["google"] == nil)
+}
+
 @Test func googleEmbeddingPreservesRequestMetadata() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"embedding":{"values":[0.1,0.2]}}

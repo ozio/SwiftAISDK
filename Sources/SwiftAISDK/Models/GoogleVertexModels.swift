@@ -165,6 +165,8 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
 }
 
 private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID: String) -> JSONValue {
+    var options = googleGenerateContentOptions(from: request.extraBody)
+    let responseFormat = googleResolvedResponseFormat(request: request, options: &options)
     let systemText = request.messages.filter { $0.role == .system }.map(\.combinedText).joined(separator: "\n")
     let contents = request.messages.filter { $0.role != .system }.map { message in
         JSONValue.object([
@@ -206,14 +208,15 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     if let topP = request.topP { generationConfig["topP"] = .number(topP) }
     if let maxOutputTokens = request.maxOutputTokens { generationConfig["maxOutputTokens"] = .number(Double(maxOutputTokens)) }
     if !request.stopSequences.isEmpty { generationConfig["stopSequences"] = .array(request.stopSequences) }
+    googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
     if !generationConfig.isEmpty { body["generationConfig"] = .object(generationConfig) }
-    if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: request.extraBody["toolChoice"], modelID: modelID, isVertexProvider: true) {
+    if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: true) {
         body["tools"] = .array(preparedTools.tools)
         if let toolConfig = preparedTools.toolConfig {
             body["toolConfig"] = toolConfig
         }
     }
-    body.merge(googleExtraBodyWithoutToolChoice(request.extraBody)) { _, new in new }
+    body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
     return .object(body)
 }
 

@@ -58,6 +58,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
     }
 
     private static func generateContentBody(for request: LanguageModelRequest, modelID: String) throws -> JSONValue {
+        var options = googleGenerateContentOptions(from: request.extraBody)
+        let responseFormat = googleResolvedResponseFormat(request: request, options: &options)
         let systemText = request.messages
             .filter { $0.role == .system }
             .map(\.combinedText)
@@ -71,19 +73,20 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         if let topP = request.topP { generationConfig["topP"] = .number(topP) }
         if let maxOutputTokens = request.maxOutputTokens { generationConfig["maxOutputTokens"] = .number(Double(maxOutputTokens)) }
         if !request.stopSequences.isEmpty { generationConfig["stopSequences"] = .array(request.stopSequences) }
+        googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
 
         var body: [String: JSONValue] = ["contents": .array(contents)]
         if !systemText.isEmpty {
             body["systemInstruction"] = .object(["parts": .array([.object(["text": .string(systemText)])])])
         }
         if !generationConfig.isEmpty { body["generationConfig"] = .object(generationConfig) }
-        if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: request.extraBody["toolChoice"], modelID: modelID, isVertexProvider: false) {
+        if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: false) {
             body["tools"] = .array(preparedTools.tools)
             if let toolConfig = preparedTools.toolConfig {
                 body["toolConfig"] = toolConfig
             }
         }
-        body.merge(googleExtraBodyWithoutToolChoice(request.extraBody)) { _, new in new }
+        body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
         return .object(body)
     }
 

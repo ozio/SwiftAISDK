@@ -119,7 +119,11 @@ Impact:
   disabled. DeepSeek now requests `json_object`, injects the upstream JSON
   system instruction or schema instruction, returns the compatibility warning
   for schema injection, maps nested `deepseek` provider options, and sends
-  OpenAI-style function tools/tool choice. Richer provider-specific
+  OpenAI-style function tools/tool choice. Google GenerateContent and Google
+  Vertex now map standard JSON response formats into
+  `generationConfig.responseMimeType` and `generationConfig.responseSchema`,
+  using the same JSON-Schema-to-OpenAPI conversion path as Google function
+  tools and honoring `structuredOutputs: false`. Richer provider-specific
   structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.

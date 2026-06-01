@@ -127,7 +127,51 @@ func googlePrepareTools(
 func googleExtraBodyWithoutToolChoice(_ extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
     output.removeValue(forKey: "toolChoice")
+    output.removeValue(forKey: "responseFormat")
+    output.removeValue(forKey: "structuredOutputs")
+    output.removeValue(forKey: "google")
     return output
+}
+
+func googleGenerateContentOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
+    var output = extraBody
+    if let nested = output.removeValue(forKey: "google")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    return output
+}
+
+func googleResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        options.removeValue(forKey: "responseFormat")
+        return googleResponseFormatJSON(responseFormat)
+    }
+    return options.removeValue(forKey: "responseFormat")
+}
+
+func googleApplyResponseFormat(_ responseFormat: JSONValue?, options: [String: JSONValue], to generationConfig: inout [String: JSONValue]) {
+    guard responseFormat?["type"]?.stringValue == "json" else { return }
+    generationConfig["responseMimeType"] = .string("application/json")
+    guard options["structuredOutputs"]?.boolValue != false,
+          let schema = responseFormat?["schema"],
+          let openAPISchema = googleOpenAPISchema(from: schema, isRoot: true) else {
+        return
+    }
+    generationConfig["responseSchema"] = openAPISchema
+}
+
+private func googleResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
 }
 
 private func googleFunctionDeclarations(from tools: [String: JSONValue]) -> [JSONValue] {
@@ -244,7 +288,7 @@ private func googleIsGemini3OrNewer(_ modelID: String) -> Bool {
     modelID.contains("gemini-3")
 }
 
-private func googleOpenAPISchema(from schema: JSONValue, isRoot: Bool) -> JSONValue? {
+func googleOpenAPISchema(from schema: JSONValue, isRoot: Bool) -> JSONValue? {
     if case let .bool(value) = schema {
         return value ? .object(["type": .string("boolean"), "properties": .object([:])]) : nil
     }

@@ -83,6 +83,41 @@ import Testing
     #expect(result.sources[1].filename == "notes.md")
 }
 
+@Test func googleVertexLanguageMapsStandardStructuredResponseFormat() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"{\\"answer\\":\\"vertex\\"}"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-2.5-pro")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        responseFormat: .json(schema: [
+            "type": "object",
+            "properties": [
+                "answer": ["type": "string"],
+                "count": ["type": "integer"]
+            ],
+            "required": ["answer"],
+            "additionalProperties": false
+        ])
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generationConfig"]?["responseMimeType"]?.stringValue == "application/json")
+    #expect(body["generationConfig"]?["responseSchema"]?["type"]?.stringValue == "object")
+    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["answer"]?["type"]?.stringValue == "string")
+    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["count"]?["type"]?.stringValue == "integer")
+    #expect(body["generationConfig"]?["responseSchema"]?["required"]?[0]?.stringValue == "answer")
+    #expect(body["generationConfig"]?["responseSchema"]?["additionalProperties"] == nil)
+    #expect(body["responseFormat"] == nil)
+}
+
 @Test func googleVertexLanguageMapsFunctionToolsAndToolChoice() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"vertex tools"}]},"finishReason":"STOP"}]}
