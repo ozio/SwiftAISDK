@@ -58,14 +58,19 @@ public final class JSONTranscriptionModel: TranscriptionModel, @unchecked Sendab
         if let prompt = request.prompt { body["prompt"] = .string(prompt) }
         body.merge(request.extraBody) { _, new in new }
 
-        let raw = try await config.sendJSON(path: path, modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let text = raw["text"]?.stringValue
             ?? raw["transcript"]?.stringValue
             ?? raw["results"]?["channels"]?[0]?["alternatives"]?[0]?["transcript"]?.stringValue
         guard let text else {
             throw AIError.invalidResponse(provider: providerID, message: "No transcription text found.")
         }
-        return TranscriptionResult(text: text, rawValue: raw)
+        return TranscriptionResult(
+            text: text,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -98,9 +103,17 @@ public final class JSONSpeechModel: SpeechModel, @unchecked Sendable {
         if let raw = try? response.jsonValue(),
            let base64 = raw["audio"]?.stringValue ?? raw["audio_base64"]?.stringValue,
            let data = Data(base64Encoded: base64) {
-            return SpeechResult(audio: data, contentType: raw["mime_type"]?.stringValue)
+            return SpeechResult(
+                audio: data,
+                contentType: raw["mime_type"]?.stringValue,
+                responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+            )
         }
-        return SpeechResult(audio: response.body, contentType: response.headers["content-type"] ?? response.headers["Content-Type"])
+        return SpeechResult(
+            audio: response.body,
+            contentType: response.headers["content-type"] ?? response.headers["Content-Type"],
+            responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+        )
     }
 }
 

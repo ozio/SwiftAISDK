@@ -179,7 +179,11 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
         guard let text = raw["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No transcription text found.")
         }
-        return TranscriptionResult(text: text, rawValue: raw)
+        return TranscriptionResult(
+            text: text,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
     }
 }
 

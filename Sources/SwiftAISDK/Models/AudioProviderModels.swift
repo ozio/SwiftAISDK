@@ -33,7 +33,11 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
         }
         let raw = try response.jsonValue()
         let text = raw["results"]?["channels"]?[0]?["alternatives"]?[0]?["transcript"]?.stringValue ?? ""
-        return TranscriptionResult(text: text, rawValue: raw)
+        return TranscriptionResult(
+            text: text,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
     }
 }
 
@@ -64,7 +68,11 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
-        return SpeechResult(audio: response.body, contentType: response.headers.contentType)
+        return SpeechResult(
+            audio: response.body,
+            contentType: response.headers.contentType,
+            responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+        )
     }
 }
 
@@ -98,7 +106,11 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
-        return SpeechResult(audio: response.body, contentType: response.headers.contentType)
+        return SpeechResult(
+            audio: response.body,
+            contentType: response.headers.contentType,
+            responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+        )
     }
 }
 
@@ -144,7 +156,11 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
-        return SpeechResult(audio: response.body, contentType: response.headers.contentType)
+        return SpeechResult(
+            audio: response.body,
+            contentType: response.headers.contentType,
+            responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+        )
     }
 }
 
@@ -218,7 +234,11 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
-        return SpeechResult(audio: response.body, contentType: response.headers.contentType)
+        return SpeechResult(
+            audio: response.body,
+            contentType: response.headers.contentType,
+            responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+        )
     }
 }
 
@@ -271,7 +291,11 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
-        return TranscriptionResult(text: raw["text"]?.stringValue ?? "", rawValue: raw)
+        return TranscriptionResult(
+            text: raw["text"]?.stringValue ?? "",
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
     }
 }
 
@@ -294,7 +318,8 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         if let voice = request.voice { body["voice"] = .string(voice) }
         body.merge(options) { _, new in new }
 
-        let raw = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let submit = try await config.sendJSONResponse(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = submit.json
         guard let audioURL = raw["audio"]?["url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal speech response did not contain audio.url.")
         }
@@ -302,7 +327,11 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         guard (200..<300).contains(audioResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: audioResponse)
         }
-        return SpeechResult(audio: audioResponse.body, contentType: audioResponse.headers.contentType)
+        return SpeechResult(
+            audio: audioResponse.body,
+            contentType: audioResponse.headers.contentType,
+            responseMetadata: aiResponseMetadata(from: raw, response: submit.response, modelID: modelID)
+        )
     }
 }
 
@@ -354,11 +383,16 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
         guard let requestID = queued["request_id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal transcription queue response did not contain request_id.")
         }
-        let raw = try await pollFalTranscription(modelPath: normalized, requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
-        return TranscriptionResult(text: raw["text"]?.stringValue ?? "", rawValue: raw)
+        let finalResponse = try await pollFalTranscriptionResponse(modelPath: normalized, requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
+        let raw = finalResponse.json
+        return TranscriptionResult(
+            text: raw["text"]?.stringValue ?? "",
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
+        )
     }
 
-    private func pollFalTranscription(modelPath: String, requestID: String, headers: [String: String], abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollFalTranscriptionResponse(modelPath: String, requestID: String, headers: [String: String], abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
@@ -368,7 +402,7 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
                 abortSignal: abortSignal
             ))
             if (200..<300).contains(response.statusCode) {
-                return try response.jsonValue()
+                return (try response.jsonValue(), response)
             }
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                 throw AIError.invalidResponse(provider: providerID, message: "Fal transcription request timed out.")
@@ -419,15 +453,20 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
             throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI submit response did not contain id.")
         }
 
-        let raw = try await pollAssemblyAITranscript(id: transcriptID, request: request)
+        let finalResponse = try await pollAssemblyAITranscriptResponse(id: transcriptID, request: request)
+        let raw = finalResponse.json
         let status = raw["status"]?.stringValue
         if status == "error" {
             throw AIError.invalidResponse(provider: providerID, message: raw["error"]?.stringValue ?? "AssemblyAI transcription failed.")
         }
-        return TranscriptionResult(text: raw["text"]?.stringValue ?? "", rawValue: raw)
+        return TranscriptionResult(
+            text: raw["text"]?.stringValue ?? "",
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
+        )
     }
 
-    private func pollAssemblyAITranscript(id: String, request: AudioTranscriptionRequest) async throws -> JSONValue {
+    private func pollAssemblyAITranscriptResponse(id: String, request: AudioTranscriptionRequest) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(try getRequest(path: "/v2/transcript/\(id)", headers: request.headers, abortSignal: request.abortSignal))
@@ -437,7 +476,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {
             case "completed", "error":
-                return raw
+                return (raw, response)
             default:
                 if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                     throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription polling timed out.")
@@ -502,7 +541,11 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             throw httpStatusError(provider: providerID, response: transcriptResponse)
         }
         let raw = try transcriptResponse.jsonValue()
-        return TranscriptionResult(text: revAITranscriptText(from: raw), rawValue: raw)
+        return TranscriptionResult(
+            text: revAITranscriptText(from: raw),
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: transcriptResponse, modelID: modelID)
+        )
     }
 
     private func pollRevAIJob(id: String, initial: JSONValue, request: AudioTranscriptionRequest) async throws -> JSONValue {
@@ -577,15 +620,20 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             throw AIError.invalidResponse(provider: providerID, message: "Gladia initiation response did not contain result_url.")
         }
 
-        let raw = try await pollGladiaResult(url: resultURL, request: request)
+        let finalResponse = try await pollGladiaResultResponse(url: resultURL, request: request)
+        let raw = finalResponse.json
         guard raw["status"]?.stringValue != "error" else {
             throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription failed.")
         }
         let text = raw["result"]?["transcription"]?["full_transcript"]?.stringValue ?? ""
-        return TranscriptionResult(text: text, rawValue: raw)
+        return TranscriptionResult(
+            text: text,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
+        )
     }
 
-    private func pollGladiaResult(url: String, request: AudioTranscriptionRequest) async throws -> JSONValue {
+    private func pollGladiaResultResponse(url: String, request: AudioTranscriptionRequest) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
@@ -595,7 +643,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {
             case "done", "error":
-                return raw
+                return (raw, response)
             default:
                 if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                     throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription polling timed out.")
