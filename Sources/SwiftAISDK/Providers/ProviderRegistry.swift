@@ -153,7 +153,7 @@ public enum AIProviders {
     }
 
     public static func togetherAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "togetherai", defaultBaseURL: "https://api.together.xyz/v1", authorization: .bearer(environmentVariables: ["TOGETHER_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .reranking], settings: settings)
+        try OpenAICompatibleProvider(providerID: "togetherai", defaultBaseURL: "https://api.together.xyz/v1", authorization: .bearer(environmentVariables: ["TOGETHER_API_KEY", "TOGETHER_AI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .reranking], settings: settings)
     }
 
     public static func togetherai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {

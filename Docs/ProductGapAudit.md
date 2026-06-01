@@ -274,7 +274,9 @@ Progress:
   Google Generative AI, Google Vertex, Cohere, Voyage, Mistral, Baseten,
   Gateway, Amazon Bedrock, TogetherAI, and generic JSON reranking wrappers now
   preserve safe request metadata for their provider JSON bodies alongside
-  provider response headers and raw JSON bodies. Native image/video models now
+  provider response headers and raw JSON bodies. TogetherAI reranking now also
+  preserves upstream-style JSON object documents so `rankFields` can target
+  object keys instead of only plain text documents. Native image/video models now
   also preserve safe request metadata for provider JSON bodies or safe request
   snapshots, omitting inline/base64 media payloads while retaining prompt,
   size/aspect, count, duration, URL, and option fields. Native transcription

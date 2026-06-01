@@ -298,6 +298,28 @@ import Testing
     #expect(embeddingRequest.abortSignal === embeddingController.signal)
 }
 
+@Test func togetherAIForwardsAbortSignalToImageAndRerankingRequests() async throws {
+    let imageTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image"}]}"#))
+    let imageProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: imageTransport))
+    let imageModel = try imageProvider.imageModel("black-forest-labs/FLUX.1-schnell-Free")
+    let imageController = AIAbortController()
+
+    _ = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: imageController.signal))
+
+    let imageRequest = try #require(await imageTransport.requests().first)
+    #expect(imageRequest.abortSignal === imageController.signal)
+
+    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}]}"#))
+    let rerankProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: rerankTransport))
+    let rerankModel = try rerankProvider.rerankingModel("Salesforce/Llama-Rank-v1")
+    let rerankController = AIAbortController()
+
+    _ = try await rerankModel.rerank(RerankingRequest(query: "q", documents: ["a"], abortSignal: rerankController.signal))
+
+    let rerankRequest = try #require(await rerankTransport.requests().first)
+    #expect(rerankRequest.abortSignal === rerankController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

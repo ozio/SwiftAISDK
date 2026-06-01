@@ -10,6 +10,7 @@ import Testing
     let image = try await imageModel.generateImage(ImageGenerationRequest(
         prompt: "cat",
         size: "1024x768",
+        seed: 42,
         count: 2,
         files: [ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png")],
         extraBody: [
@@ -29,6 +30,7 @@ import Testing
     #expect(imageBody["prompt"]?.stringValue == "cat")
     #expect(imageBody["width"]?.intValue == 1024)
     #expect(imageBody["height"]?.intValue == 768)
+    #expect(imageBody["seed"]?.intValue == 42)
     #expect(imageBody["n"]?.intValue == 2)
     #expect(imageBody["response_format"]?.stringValue == "base64")
     #expect(imageBody["steps"]?.intValue == 4)
@@ -60,6 +62,12 @@ import Testing
     _ = try await imageModel.generateImage(ImageGenerationRequest(
         prompt: "cat",
         files: [ImageInputFile(url: "https://example.com/input.png")],
+        providerOptions: [
+            "togetherai": .object([
+                "guidance": 4.5,
+                "provider_only": "option"
+            ])
+        ],
         extraBody: [
             "togetherai": .object([
                 "steps": 3,
@@ -73,10 +81,11 @@ import Testing
 
     let imageBody = try decodeJSONBody(try #require((await imageTransport.requests()).first?.body))
     #expect(imageBody["steps"]?.intValue == 3)
-    #expect(imageBody["guidance"]?.doubleValue == 2.5)
+    #expect(imageBody["guidance"]?.doubleValue == 4.5)
     #expect(imageBody["negative_prompt"]?.stringValue == "blur")
     #expect(imageBody["disable_safety_checker"]?.boolValue == true)
     #expect(imageBody["custom"]?.stringValue == "value")
+    #expect(imageBody["provider_only"]?.stringValue == "option")
     #expect(imageBody["image_url"]?.stringValue == "https://example.com/input.png")
     #expect(imageBody["togetherai"] == nil)
 
@@ -94,6 +103,61 @@ import Testing
     let rerankBody = try decodeJSONBody(try #require((await rerankTransport.requests()).first?.body))
     #expect(rerankBody["rank_fields"]?[0]?.stringValue == "title")
     #expect(rerankBody["togetherai"] == nil)
+}
+
+@Test func togetherAIImageWarningsAndMaskErrorMirrorUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"warned-image"}]}"#))
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/FLUX.1-kontext-pro")
+
+    let image = try await model.generateImage(ImageGenerationRequest(
+        prompt: "edit",
+        aspectRatio: "1:1",
+        files: [
+            ImageInputFile(url: "https://example.com/input-1.png"),
+            ImageInputFile(url: "https://example.com/input-2.png")
+        ]
+    ))
+
+    #expect(image.warnings == [
+        AIWarning(type: "unsupported", feature: "aspectRatio", message: "This model does not support the `aspectRatio` option. Use `size` instead."),
+        AIWarning(type: "other", message: "Together AI only supports a single input image. Additional images are ignored.")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image_url"]?.stringValue == "https://example.com/input-1.png")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "inpaint",
+            files: [ImageInputFile(url: "https://example.com/input.png")],
+            mask: ImageInputFile(url: "https://example.com/mask.png")
+        ))
+    }
+}
+
+@Test func togetherAIRerankingSendsJSONDocumentsAndProviderOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"rank-1","model":"Salesforce/Llama-Rank-v1","results":[{"index":0,"relevance_score":0.7},{"index":1,"relevance_score":0.3}]}
+    """))
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: transport))
+    let model = try provider.rerankingModel("Salesforce/Llama-Rank-v1")
+
+    let ranking = try await model.rerank(RerankingRequest(
+        query: "rainy day",
+        documents: [
+            ["example": "sunny day at the beach"],
+            ["example": "rainy day in the city"]
+        ],
+        topK: 2,
+        providerOptions: ["togetherai": .object(["rankFields": ["example"]])]
+    ))
+
+    #expect(ranking.results.map(\.score) == [0.7, 0.3])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["documents"]?[0]?["example"]?.stringValue == "sunny day at the beach")
+    #expect(body["documents"]?[1]?["example"]?.stringValue == "rainy day in the city")
+    #expect(body["rank_fields"]?[0]?.stringValue == "example")
+    #expect(body["return_documents"]?.boolValue == false)
 }
 
 @Test func xAIImageAndVideoUseNativeEndpoints() async throws {

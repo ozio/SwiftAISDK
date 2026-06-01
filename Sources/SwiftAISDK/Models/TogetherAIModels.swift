@@ -11,12 +11,26 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = togetherAIProviderOptions(from: request.extraBody)
+        let options = togetherAIProviderOptions(from: request)
+        var warnings: [AIWarning] = []
         if request.mask != nil {
             throw AIError.invalidResponse(
                 provider: providerID,
-                message: "Together AI does not support mask-based image editing. Use a reference image and descriptive prompt instead."
+                message: "Together AI does not support mask-based image editing. Use FLUX Kontext models (e.g., black-forest-labs/FLUX.1-kontext-pro) with a reference image and descriptive prompt instead."
             )
+        }
+        if request.aspectRatio != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "aspectRatio",
+                message: "This model does not support the `aspectRatio` option. Use `size` instead."
+            ))
+        }
+        if request.files.count > 1 {
+            warnings.append(AIWarning(
+                type: "other",
+                message: "Together AI only supports a single input image. Additional images are ignored."
+            ))
         }
 
         var body: [String: JSONValue] = [
@@ -24,6 +38,9 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
             "prompt": .string(request.prompt),
             "response_format": .string("base64")
         ]
+        if let seed = request.seed {
+            body["seed"] = .number(Double(seed))
+        }
         if let count = request.count, count > 1 {
             body["n"] = .number(Double(count))
         }
@@ -46,6 +63,7 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: base64Images,
             rawValue: raw,
+            warnings: warnings,
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -62,6 +80,20 @@ private func togetherAIProviderOptions(from extraBody: [String: JSONValue]) -> [
     var output = extraBody
     output.removeValue(forKey: "togetherai")
     output.removeValue(forKey: "togetherAI")
+    return output
+}
+
+private func togetherAIProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    togetherAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func togetherAIProviderOptions(from request: RerankingRequest) -> [String: JSONValue] {
+    togetherAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func togetherAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = togetherAIProviderOptions(from: extraBody)
+    output.merge(togetherAIProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     return output
 }
 
@@ -102,11 +134,11 @@ public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
-        let options = togetherAIProviderOptions(from: request.extraBody)
+        let options = togetherAIProviderOptions(from: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "query": .string(request.query),
-            "documents": .array(request.documents),
+            "documents": .array(request.documentsJSON),
             "return_documents": .bool(false)
         ]
         if let topK = request.topK {

@@ -3562,7 +3562,7 @@ private func videoRequestTelemetryInput(_ request: VideoGenerationRequest) -> JS
 private func rerankingRequestTelemetryInput(_ request: RerankingRequest) -> JSONValue {
     .object([
         "query": .string(request.query),
-        "documents": .array(request.documents.map(JSONValue.string)),
+        "documents": .array(request.documentsJSON),
         "topK": request.topK.map { .number(Double($0)) },
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
@@ -3573,7 +3573,7 @@ private func rerankingRequestTelemetryInput(_ request: RerankingRequest) -> JSON
 private func rerankingRequestMetadataBody(_ request: RerankingRequest) -> JSONValue {
     .object([
         "query": .string(request.query),
-        "documents": .array(request.documents.map(JSONValue.string)),
+        "documents": .array(request.documentsJSON),
         "topK": request.topK.map { .number(Double($0)) },
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)

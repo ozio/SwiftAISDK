@@ -1661,6 +1661,7 @@ public struct VideoGenerationResult: Sendable {
 public struct RerankingRequest: Sendable {
     public var query: String
     public var documents: [String]
+    public var documentObjects: [[String: JSONValue]]?
     public var topK: Int?
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
@@ -1678,11 +1679,38 @@ public struct RerankingRequest: Sendable {
     ) {
         self.query = query
         self.documents = documents
+        self.documentObjects = nil
         self.topK = topK
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
         self.abortSignal = abortSignal
+    }
+
+    public init(
+        query: String,
+        documents: [[String: JSONValue]],
+        topK: Int? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
+    ) {
+        self.query = query
+        self.documents = []
+        self.documentObjects = documents
+        self.topK = topK
+        self.providerOptions = providerOptions
+        self.extraBody = extraBody
+        self.headers = headers
+        self.abortSignal = abortSignal
+    }
+
+    var documentsJSON: [JSONValue] {
+        if let documentObjects {
+            return documentObjects.map(JSONValue.object)
+        }
+        return documents.map(JSONValue.string)
     }
 }
 
