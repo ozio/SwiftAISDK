@@ -362,7 +362,13 @@ Impact:
   top-level reasoning, `frequencyPenalty`, `presencePenalty`, unsupported
   `topK`/`seed` warnings, JSON response-format injection, function tools/tool
   choice, response/provider metadata, abort signals, and text/reasoning stream
-  lifecycle parts are covered in a dedicated provider test file.
+  lifecycle parts are covered in a dedicated provider test file. Its message
+  conversion now matches upstream's text-only DeepSeek prompt path by warning
+  about unsupported file/image user parts instead of sending OpenAI-style
+  `image_url` content, provider-defined tools and unsupported tool choices
+  return warnings instead of disappearing silently, `providerOptions.deepseek`
+  `reasoningEffort` passes through as upstream expects, and cache/read plus
+  reasoning token usage is preserved in rich `TokenUsage` fields.
 - Perplexity language now follows the upstream native model path more closely:
   mapped finish reasons, response/provider metadata for usage, cost, and
   images, first-chunk response metadata and citations, abort signals, and
