@@ -186,6 +186,10 @@ Impact:
 - `AITool.dynamic(...)` marks runtime-discovered tools while keeping provider
   request schemas in function-tool form, matching upstream `dynamicTool(...)`
   behavior for tool calls, stream parts, results, and follow-up messages.
+- Mistral chat message conversion now preserves assistant `tool_calls` and
+  serializes follow-up tool messages with `name`, `tool_call_id`, and
+  upstream-style `modelOutput ?? result` content, so multi-step Mistral tool
+  loops no longer flatten tool history to empty text.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

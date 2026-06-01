@@ -75,7 +75,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         let options = mistralProviderOptions(from: request.extraBody)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "messages": .array(request.messages.map(mistralMessageJSON))
+            "messages": .array(mistralMessagesJSON(request.messages))
         ]
         if stream { body["stream"] = true }
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
@@ -152,20 +152,80 @@ private func mistralProviderOptions(from extraBody: [String: JSONValue]) -> [Str
     return output
 }
 
-private func mistralMessageJSON(_ message: AIMessage) -> JSONValue {
+private func mistralMessagesJSON(_ messages: [AIMessage]) -> [JSONValue] {
+    messages.flatMap(mistralMessageJSONs)
+}
+
+private func mistralMessageJSONs(_ message: AIMessage) -> [JSONValue] {
     switch message.role {
     case .system:
-        return .object(["role": .string("system"), "content": .string(message.combinedText)])
+        return [.object(["role": .string("system"), "content": .string(message.combinedText)])]
     case .assistant:
-        return .object(["role": .string("assistant"), "content": .string(message.combinedText)])
+        var output: [String: JSONValue] = [
+            "role": .string("assistant"),
+            "content": .string(message.combinedText)
+        ]
+        let toolCalls = message.content.compactMap(mistralAssistantToolCallJSON)
+        if !toolCalls.isEmpty {
+            output["tool_calls"] = .array(toolCalls)
+        }
+        return [.object(output)]
     case .tool:
-        return .object(["role": .string("tool"), "content": .string(message.combinedText)])
+        let toolMessages = message.content.compactMap(mistralToolMessageJSON)
+        if !toolMessages.isEmpty {
+            return toolMessages
+        }
+        return [.object(["role": .string("tool"), "content": .string(message.combinedText)])]
     case .user:
-        return .object([
+        return [.object([
             "role": .string("user"),
             "content": .array(message.content.compactMap(mistralContentPartJSON))
-        ])
+        ])]
     }
+}
+
+private func mistralAssistantToolCallJSON(_ part: AIContentPart) -> JSONValue? {
+    guard case let .toolCall(call) = part else { return nil }
+    return .object([
+        "id": .string(call.id),
+        "type": .string("function"),
+        "function": .object([
+            "name": .string(call.name),
+            "arguments": .string(call.arguments)
+        ])
+    ])
+}
+
+private func mistralToolMessageJSON(_ part: AIContentPart) -> JSONValue? {
+    guard case let .toolResult(result) = part else { return nil }
+    return .object([
+        "role": .string("tool"),
+        "name": .string(result.toolName),
+        "tool_call_id": .string(result.toolCallID),
+        "content": .string(mistralToolResultContent(result))
+    ])
+}
+
+private func mistralToolResultContent(_ result: AIToolResult) -> String {
+    let output = result.modelOutput ?? result.result
+    switch output["type"]?.stringValue {
+    case "text", "error-text":
+        return output["value"]?.stringValue ?? ""
+    case "execution-denied":
+        return output["reason"]?.stringValue ?? "Tool call execution denied."
+    case "content", "json", "error-json":
+        if let value = output["value"] {
+            return mistralJSONString(value) ?? value.stringValue ?? ""
+        }
+        return mistralJSONString(output) ?? output.stringValue ?? ""
+    default:
+        return mistralJSONString(output) ?? output.stringValue ?? ""
+    }
+}
+
+private func mistralJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? JSONEncoder().encode(value) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func mistralContentPartJSON(_ part: AIContentPart) -> JSONValue? {

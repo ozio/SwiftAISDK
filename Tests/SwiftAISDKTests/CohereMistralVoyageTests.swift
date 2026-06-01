@@ -222,6 +222,75 @@ import Testing
     #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
 }
 
+@Test func mistralLanguageSerializesToolCallsAndModelOutputResults() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-2","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .user("Weather?"),
+        .assistant(
+            toolCalls: [
+                AIToolCall(
+                    id: "call_weather",
+                    name: "weather",
+                    arguments: #"{"location":"Paris"}"#
+                ),
+                AIToolCall(
+                    id: "call_air",
+                    name: "airQuality",
+                    arguments: #"{"location":"Paris"}"#
+                )
+            ]
+        ),
+        .toolResponses(toolResults: [
+            AIToolResult(
+                toolCallID: "call_weather",
+                toolName: "weather",
+                result: ["raw": "do not send"],
+                modelOutput: [
+                    "type": "content",
+                    "value": [
+                        ["type": "text", "text": "Sunny in Paris"]
+                    ]
+                ]
+            ),
+            AIToolResult(
+                toolCallID: "call_air",
+                toolName: "airQuality",
+                result: ["raw": "fallback"],
+                modelOutput: [
+                    "type": "text",
+                    "value": "Good"
+                ]
+            )
+        ])
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    let messages = try #require(body["messages"]?.arrayValue)
+    #expect(messages[1]["role"]?.stringValue == "assistant")
+    #expect(messages[1]["tool_calls"]?[0]?["id"]?.stringValue == "call_weather")
+    #expect(messages[1]["tool_calls"]?[0]?["function"]?["name"]?.stringValue == "weather")
+    #expect(messages[1]["tool_calls"]?[0]?["function"]?["arguments"]?.stringValue == #"{"location":"Paris"}"#)
+    #expect(messages[1]["tool_calls"]?[1]?["id"]?.stringValue == "call_air")
+    #expect(messages[2]["role"]?.stringValue == "tool")
+    #expect(messages[2]["name"]?.stringValue == "weather")
+    #expect(messages[2]["tool_call_id"]?.stringValue == "call_weather")
+    #expect(messages[3]["role"]?.stringValue == "tool")
+    #expect(messages[3]["name"]?.stringValue == "airQuality")
+    #expect(messages[3]["tool_call_id"]?.stringValue == "call_air")
+    #expect(messages[3]["content"]?.stringValue == "Good")
+
+    let content = try #require(messages[2]["content"]?.stringValue)
+    let contentJSON = try decodeJSONBody(Data(content.utf8))
+    #expect(contentJSON[0]?["text"]?.stringValue == "Sunny in Paris")
+    #expect(contentJSON[0]?["raw"] == nil)
+}
+
 @Test func mistralLanguageStreamsNativeChunks() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"id":"cmpl-1","model":"mistral","choices":[{"index":0,"delta":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]}]},"finish_reason":null}]}
