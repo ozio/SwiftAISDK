@@ -155,3 +155,238 @@ import Testing
         "https://auth.example.com/.well-known/openid-configuration"
     ])
 }
+
+@Test func mcpOAuthStartAuthorizationBuildsPKCEURL() throws {
+    let metadata = MCPOAuthAuthorizationServerMetadata(
+        issuer: "https://auth.example.com",
+        authorizationEndpoint: try requireURL("https://auth.example.com/auth?existing=1"),
+        tokenEndpoint: try requireURL("https://auth.example.com/token"),
+        responseTypesSupported: ["code"],
+        codeChallengeMethodsSupported: ["S256"]
+    )
+
+    let result = try MCPOAuth.startAuthorization(
+        authorizationServerURL: "https://auth.example.com",
+        metadata: metadata,
+        clientInformation: MCPOAuthClientInformation(clientID: "client123"),
+        redirectURL: "http://localhost:3000/callback",
+        scope: "read offline_access",
+        state: "state123",
+        resource: "https://api.example.com/mcp-server",
+        codeVerifier: "test_verifier"
+    )
+
+    let query = try queryItems(result.authorizationURL)
+    #expect(result.codeVerifier == "test_verifier")
+    #expect(result.authorizationURL.absoluteString.hasPrefix("https://auth.example.com/auth?"))
+    #expect(query["existing"] == "1")
+    #expect(query["response_type"] == "code")
+    #expect(query["client_id"] == "client123")
+    #expect(query["code_challenge"] == "0Ku4rR8EgR1w3HyHLBCxVLtPsAAks5HOlpmTEt0XhVA")
+    #expect(query["code_challenge_method"] == "S256")
+    #expect(query["redirect_uri"] == "http://localhost:3000/callback")
+    #expect(query["scope"] == "read offline_access")
+    #expect(query["state"] == "state123")
+    #expect(query["prompt"] == "consent")
+    #expect(query["resource"] == "https://api.example.com/mcp-server")
+}
+
+@Test func mcpOAuthStartAuthorizationValidatesMetadataCapabilities() throws {
+    let metadata = MCPOAuthAuthorizationServerMetadata(
+        issuer: "https://auth.example.com",
+        authorizationEndpoint: try requireURL("https://auth.example.com/auth"),
+        tokenEndpoint: try requireURL("https://auth.example.com/token"),
+        responseTypesSupported: ["token"],
+        codeChallengeMethodsSupported: ["S256"]
+    )
+
+    do {
+        _ = try MCPOAuth.startAuthorization(
+            authorizationServerURL: "https://auth.example.com",
+            metadata: metadata,
+            clientInformation: MCPOAuthClientInformation(clientID: "client123"),
+            redirectURL: "http://localhost:3000/callback"
+        )
+        Issue.record("Expected authorization metadata validation to throw.")
+    } catch let error as MCPClientError {
+        #expect(error.message == "Incompatible auth server: does not support response type code")
+    }
+}
+
+@Test func mcpOAuthExchangeAuthorizationPostsFormWithBasicClientAuth() async throws {
+    let metadata = MCPOAuthAuthorizationServerMetadata(
+        issuer: "https://auth.example.com",
+        authorizationEndpoint: try requireURL("https://auth.example.com/auth"),
+        tokenEndpoint: try requireURL("https://auth.example.com/token"),
+        responseTypesSupported: ["code"],
+        codeChallengeMethodsSupported: ["S256"],
+        grantTypesSupported: ["authorization_code"],
+        tokenEndpointAuthMethodsSupported: ["client_secret_basic"]
+    )
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "access_token": "access-123",
+      "token_type": "Bearer",
+      "expires_in": 3600,
+      "refresh_token": "refresh-123"
+    }
+    """))
+
+    let tokens = try await MCPOAuth.exchangeAuthorization(
+        authorizationServerURL: try requireURL("https://auth.example.com"),
+        metadata: metadata,
+        clientInformation: MCPOAuthClientInformation(clientID: "client123", clientSecret: "secret123"),
+        authorizationCode: "code123",
+        codeVerifier: "verifier123",
+        redirectURI: try requireURL("http://localhost:3000/callback"),
+        resource: try requireURL("https://api.example.com"),
+        transport: transport
+    )
+
+    #expect(tokens.accessToken == "access-123")
+    #expect(tokens.refreshToken == "refresh-123")
+    let request = try await #require(transport.requests().first)
+    #expect(request.method == "POST")
+    #expect(request.url.absoluteString == "https://auth.example.com/token")
+    #expect(request.headers["Content-Type"] == "application/x-www-form-urlencoded")
+    #expect(request.headers["Accept"] == "application/json")
+    #expect(request.headers["Authorization"] == "Basic Y2xpZW50MTIzOnNlY3JldDEyMw==")
+    let form = try formItems(request)
+    #expect(form["grant_type"] == "authorization_code")
+    #expect(form["code"] == "code123")
+    #expect(form["code_verifier"] == "verifier123")
+    #expect(form["redirect_uri"] == "http://localhost:3000/callback")
+    #expect(form["resource"] == "https://api.example.com")
+    #expect(form["client_id"] == nil)
+}
+
+@Test func mcpOAuthRefreshAuthorizationPreservesRefreshTokenAndUsesPublicClientAuth() async throws {
+    let metadata = MCPOAuthAuthorizationServerMetadata(
+        issuer: "https://auth.example.com",
+        authorizationEndpoint: try requireURL("https://auth.example.com/auth"),
+        tokenEndpoint: try requireURL("https://auth.example.com/token"),
+        responseTypesSupported: ["code"],
+        codeChallengeMethodsSupported: ["S256"],
+        grantTypesSupported: ["refresh_token"],
+        tokenEndpointAuthMethodsSupported: ["none"]
+    )
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "access_token": "new-access",
+      "token_type": "Bearer"
+    }
+    """))
+
+    let tokens = try await MCPOAuth.refreshAuthorization(
+        authorizationServerURL: try requireURL("https://auth.example.com"),
+        metadata: metadata,
+        clientInformation: MCPOAuthClientInformation(clientID: "public-client"),
+        refreshToken: "old-refresh",
+        resource: try requireURL("https://api.example.com/"),
+        transport: transport
+    )
+
+    #expect(tokens.accessToken == "new-access")
+    #expect(tokens.refreshToken == "old-refresh")
+    let request = try await #require(transport.requests().first)
+    let form = try formItems(request)
+    #expect(form["grant_type"] == "refresh_token")
+    #expect(form["refresh_token"] == "old-refresh")
+    #expect(form["client_id"] == "public-client")
+    #expect(form["resource"] == "https://api.example.com")
+}
+
+@Test func mcpOAuthRegisterClientPostsMetadataAndParsesFullInformation() async throws {
+    let metadata = MCPOAuthAuthorizationServerMetadata(
+        issuer: "https://auth.example.com",
+        authorizationEndpoint: try requireURL("https://auth.example.com/auth"),
+        tokenEndpoint: try requireURL("https://auth.example.com/token"),
+        registrationEndpoint: try requireURL("https://auth.example.com/register"),
+        responseTypesSupported: ["code"],
+        codeChallengeMethodsSupported: ["S256"]
+    )
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "client_id": "registered-client",
+      "client_secret": "registered-secret",
+      "redirect_uris": ["http://localhost:3000/callback"],
+      "client_name": "Swift MCP Client",
+      "token_endpoint_auth_method": "client_secret_post"
+    }
+    """))
+
+    let information = try await MCPOAuth.registerClient(
+        authorizationServerURL: try requireURL("https://auth.example.com"),
+        metadata: metadata,
+        clientMetadata: MCPOAuthClientMetadata(
+            redirectURIs: [try requireURL("http://localhost:3000/callback")],
+            tokenEndpointAuthMethod: "client_secret_post",
+            grantTypes: ["authorization_code", "refresh_token"],
+            responseTypes: ["code"],
+            clientName: "Swift MCP Client",
+            scope: "read write"
+        ),
+        transport: transport
+    )
+
+    #expect(information.clientInformation.clientID == "registered-client")
+    #expect(information.clientInformation.clientSecret == "registered-secret")
+    #expect(information.clientMetadata.clientName == "Swift MCP Client")
+    let request = try await #require(transport.requests().first)
+    #expect(request.method == "POST")
+    #expect(request.url.absoluteString == "https://auth.example.com/register")
+    #expect(request.headers["Content-Type"] == "application/json")
+    let body = try JSONDecoder().decode(JSONValue.self, from: try #require(request.body))
+    #expect(body["redirect_uris"]?.arrayValue?.compactMap(\.stringValue) == ["http://localhost:3000/callback"])
+    #expect(body["grant_types"]?.arrayValue?.compactMap(\.stringValue) == ["authorization_code", "refresh_token"])
+    #expect(body["client_name"]?.stringValue == "Swift MCP Client")
+    #expect(body["scope"]?.stringValue == "read write")
+}
+
+@Test func mcpOAuthTokenEndpointThrowsParsedServerErrors() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 400,
+        headers: ["content-type": "application/json"],
+        body: Data("""
+        {
+          "error": "invalid_grant",
+          "error_description": "Bad code",
+          "error_uri": "https://auth.example.com/errors/invalid_grant"
+        }
+        """.utf8)
+    ))
+
+    do {
+        _ = try await MCPOAuth.exchangeAuthorization(
+            authorizationServerURL: try requireURL("https://auth.example.com"),
+            clientInformation: MCPOAuthClientInformation(clientID: "public-client"),
+            authorizationCode: "bad-code",
+            codeVerifier: "verifier",
+            redirectURI: try requireURL("http://localhost:3000/callback"),
+            transport: transport
+        )
+        Issue.record("Expected token exchange error response to throw.")
+    } catch let error as MCPOAuthServerError {
+        #expect(error.statusCode == 400)
+        #expect(error.code == "invalid_grant")
+        #expect(error.message == "Bad code")
+        #expect(error.uri == "https://auth.example.com/errors/invalid_grant")
+    }
+}
+
+private func queryItems(_ url: URL) throws -> [String: String] {
+    let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+    return Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
+        item.value.map { (item.name, $0) }
+    })
+}
+
+private func formItems(_ request: AIHTTPRequest) throws -> [String: String] {
+    let body = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    return Dictionary(uniqueKeysWithValues: body.split(separator: "&").map { pair in
+        let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+        let name = parts[0].removingPercentEncoding ?? parts[0]
+        let value = parts.count > 1 ? (parts[1].removingPercentEncoding ?? parts[1]) : ""
+        return (name, value)
+    })
+}

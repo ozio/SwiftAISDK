@@ -381,6 +381,31 @@ let authServer = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata
 )
 ```
 
+`MCPOAuth` contains the lower-level OAuth helpers used by the upstream MCP
+flow: PKCE authorization URL creation, authorization-code token exchange,
+refresh-token exchange, and dynamic client registration.
+
+```swift
+let started = try MCPOAuth.startAuthorization(
+    authorizationServerURL: resource.authorizationServers[0],
+    metadata: authServer,
+    clientInformation: MCPOAuthClientInformation(clientID: "client-id"),
+    redirectURL: URL(string: "http://localhost:3000/callback")!,
+    scope: "read offline_access",
+    resource: resource.resource
+)
+
+let tokens = try await MCPOAuth.exchangeAuthorization(
+    authorizationServerURL: resource.authorizationServers[0],
+    metadata: authServer,
+    clientInformation: MCPOAuthClientInformation(clientID: "client-id"),
+    authorizationCode: "callback-code",
+    codeVerifier: started.codeVerifier,
+    redirectURI: URL(string: "http://localhost:3000/callback")!,
+    resource: resource.resource
+)
+```
+
 ```swift
 let interactiveMCP = try await MCPClient.connect(
     transport: transport,
