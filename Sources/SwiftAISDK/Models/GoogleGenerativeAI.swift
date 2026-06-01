@@ -12,12 +12,13 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(
+        let response = try await config.sendJSONResponse(
             path: "/models/\(modelID):generateContent",
             modelID: modelID,
             body: try Self.generateContentBody(for: request, modelID: modelID),
             headers: request.headers
         )
+        let raw = response.json
         let text = googleGenerateContentText(from: raw)
         let toolCalls = googleGenerateContentToolCalls(from: raw)
         guard text != nil || !toolCalls.isEmpty else {
@@ -29,7 +30,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
             sources: googleGenerateContentSources(from: raw),
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -43,7 +45,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         body: try Self.generateContentBody(for: request, modelID: modelID),
                         headers: request.headers
                     ))
-                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks)
+                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks, modelID: modelID)
                     for part in parts {
                         continuation.yield(part)
                     }
@@ -155,7 +157,8 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             ])
         }
 
-        let raw = try await config.sendJSON(path: path, modelID: modelID, body: body, headers: request.headers)
+        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: body, headers: request.headers)
+        let raw = response.json
         let embeddings: [[Double]]
         if let values = raw["embedding"]?["values"]?.arrayValue {
             embeddings = [values.compactMap(\.doubleValue)]
@@ -164,7 +167,11 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
                 item["values"]?.arrayValue?.compactMap(\.doubleValue)
             } ?? []
         }
-        return EmbeddingResult(embeddings: embeddings, rawValue: raw)
+        return EmbeddingResult(
+            embeddings: embeddings,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 

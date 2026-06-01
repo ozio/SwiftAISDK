@@ -170,12 +170,13 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         } else {
             path = "/messages"
         }
-        let raw = try await config.sendJSON(
+        let response = try await config.sendJSONResponse(
             path: path,
             modelID: modelID,
             body: .object(body),
             headers: anthropicHeaders(request.headers, configHeaders: config.headers, betas: preparedRequest.betas)
         )
+        let raw = response.json
         let toolCalls = anthropicToolCalls(from: raw["content"])
         let sources = anthropicSources(from: raw["content"], citationDocuments: anthropicCitationDocuments(from: request.messages))
         let text = raw["content"]?.arrayValue?.compactMap { part in
@@ -193,7 +194,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             ),
             toolCalls: toolCalls,
             sources: sources,
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -220,6 +222,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
                     var toolCalls = AnthropicStreamingToolCalls()
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0

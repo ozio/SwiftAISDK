@@ -195,8 +195,10 @@ Progress:
   default-no-raw behavior. The shared OpenAI-compatible layer now carries
   upstream-style response headers and raw JSON bodies through
   `AIResponseMetadata` for text, stream, embedding, image, transcription, and
-  speech calls. Follow-up passes should keep filling richer metadata and
-  lifecycle fields consistently across the other native providers.
+  speech calls; Anthropic language and Google/Vertex language plus embedding
+  models now do the same for their native response headers/bodies and stream
+  response metadata. Follow-up passes should keep filling richer metadata and
+  lifecycle fields consistently across the remaining native media providers.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 

@@ -12,7 +12,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/models/\(modelID):generateContent", body: googleGenerateContentBody(request, modelID: modelID), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: googleGenerateContentBody(request, modelID: modelID), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let text = googleGenerateContentText(from: raw)
         let toolCalls = googleGenerateContentToolCalls(from: raw)
         guard text != nil || !toolCalls.isEmpty else {
@@ -24,7 +25,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
             sources: googleGenerateContentSources(from: raw),
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -39,7 +41,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
                         abortSignal: request.abortSignal
                     )
                     let response = try await config.transport.send(httpRequest)
-                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks)
+                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks, modelID: modelID)
                     for part in parts {
                         continuation.yield(part)
                     }
@@ -73,11 +75,16 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
         ]
         if !parameters.isEmpty { body["parameters"] = .object(parameters) }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let embeddings = raw["predictions"]?.arrayValue?.compactMap { prediction in
             prediction["embeddings"]?["values"]?.arrayValue?.compactMap(\.doubleValue)
         } ?? []
-        return EmbeddingResult(embeddings: embeddings, rawValue: raw)
+        return EmbeddingResult(
+            embeddings: embeddings,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
