@@ -307,6 +307,11 @@ public struct MCPOAuthStartAuthorizationResult: Equatable, Sendable {
     }
 }
 
+public enum MCPOAuthAuthResult: String, Equatable, Sendable {
+    case authorized
+    case redirect
+}
+
 public enum MCPOAuthClientAuthMethod: String, Equatable, Sendable {
     case clientSecretBasic = "client_secret_basic"
     case clientSecretPost = "client_secret_post"
@@ -334,7 +339,127 @@ public struct MCPOAuthServerError: Error, Equatable, CustomStringConvertible, Se
     }
 }
 
+public protocol MCPOAuthClientProvider: Sendable {
+    var redirectURL: URL { get }
+    var clientMetadata: MCPOAuthClientMetadata { get }
+
+    func tokens() async throws -> MCPOAuthTokens?
+    func saveTokens(_ tokens: MCPOAuthTokens) async throws
+    func redirectToAuthorization(_ authorizationURL: URL) async throws
+    func saveCodeVerifier(_ codeVerifier: String) async throws
+    func codeVerifier() async throws -> String
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async
+
+    func clientInformation() async throws -> MCPOAuthClientInformation?
+    func saveClientInformation(_ clientInformation: MCPOAuthClientInformation) async throws
+    var supportsDynamicClientRegistration: Bool { get }
+
+    func state() async throws -> String?
+    func saveState(_ state: String) async throws
+    func storedState() async throws -> String?
+    func validateResourceURL(serverURL: URL, resource: URL?) async throws -> URL?
+}
+
+public extension MCPOAuthClientProvider {
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async {}
+
+    func clientInformation() async throws -> MCPOAuthClientInformation? { nil }
+    func saveClientInformation(_ clientInformation: MCPOAuthClientInformation) async throws {}
+    var supportsDynamicClientRegistration: Bool { false }
+
+    func state() async throws -> String? { nil }
+    func saveState(_ state: String) async throws {}
+    func storedState() async throws -> String? { nil }
+    func validateResourceURL(serverURL: URL, resource: URL?) async throws -> URL? { nil }
+}
+
 public enum MCPOAuth {
+    public static func auth(
+        provider: any MCPOAuthClientProvider,
+        serverURL: URL,
+        authorizationCode: String? = nil,
+        callbackState: String? = nil,
+        scope: String? = nil,
+        resourceMetadataURL: URL? = nil,
+        protocolVersion: String = MCPClient.latestProtocolVersion,
+        transport: any AITransport = URLSessionTransport.shared
+    ) async throws -> MCPOAuthAuthResult {
+        do {
+            return try await authInternal(
+                provider: provider,
+                serverURL: serverURL,
+                authorizationCode: authorizationCode,
+                callbackState: callbackState,
+                scope: scope,
+                resourceMetadataURL: resourceMetadataURL,
+                protocolVersion: protocolVersion,
+                transport: transport
+            )
+        } catch let error as MCPOAuthServerError {
+            switch error.code {
+            case "invalid_client", "unauthorized_client":
+                await provider.invalidateCredentials(.all)
+            case "invalid_grant":
+                await provider.invalidateCredentials(.tokens)
+            default:
+                throw error
+            }
+            return try await authInternal(
+                provider: provider,
+                serverURL: serverURL,
+                authorizationCode: authorizationCode,
+                callbackState: callbackState,
+                scope: scope,
+                resourceMetadataURL: resourceMetadataURL,
+                protocolVersion: protocolVersion,
+                transport: transport
+            )
+        }
+    }
+
+    public static func auth(
+        provider: any MCPOAuthClientProvider,
+        serverURL: String,
+        authorizationCode: String? = nil,
+        callbackState: String? = nil,
+        scope: String? = nil,
+        resourceMetadataURL: String? = nil,
+        protocolVersion: String = MCPClient.latestProtocolVersion,
+        transport: any AITransport = URLSessionTransport.shared
+    ) async throws -> MCPOAuthAuthResult {
+        try await auth(
+            provider: provider,
+            serverURL: requireURL(serverURL),
+            authorizationCode: authorizationCode,
+            callbackState: callbackState,
+            scope: scope,
+            resourceMetadataURL: try resourceMetadataURL.map(requireURL),
+            protocolVersion: protocolVersion,
+            transport: transport
+        )
+    }
+
+    public static func selectResourceURL(
+        serverURL: URL,
+        provider: any MCPOAuthClientProvider,
+        resourceMetadata: MCPOAuthProtectedResourceMetadata?
+    ) async throws -> URL? {
+        let defaultResource = resourceURLFromServerURL(serverURL)
+        if let validated = try await provider.validateResourceURL(
+            serverURL: defaultResource,
+            resource: resourceMetadata?.resource
+        ) {
+            return validated
+        }
+        guard let resourceMetadata else { return nil }
+        guard checkResourceAllowed(requestedResource: defaultResource, configuredResource: resourceMetadata.resource) else {
+            throw MCPClientError(
+                message: "Protected resource \(resourceMetadata.resource.absoluteString) does not match expected \(defaultResource.absoluteString) (or origin)"
+            )
+        }
+        return resourceMetadata.resource
+    }
+
     public static func startAuthorization(
         authorizationServerURL: URL,
         metadata: MCPOAuthAuthorizationServerMetadata? = nil,
@@ -501,6 +626,117 @@ public enum MCPOAuth {
         try throwOAuthServerErrorIfNeeded(response)
         return try MCPOAuthClientInformationFull(json: response.jsonValue())
     }
+}
+
+private func authInternal(
+    provider: any MCPOAuthClientProvider,
+    serverURL: URL,
+    authorizationCode: String?,
+    callbackState: String?,
+    scope: String?,
+    resourceMetadataURL: URL?,
+    protocolVersion: String,
+    transport: any AITransport
+) async throws -> MCPOAuthAuthResult {
+    var resourceMetadata: MCPOAuthProtectedResourceMetadata?
+    var authorizationServerURL: URL?
+    do {
+        resourceMetadata = try await MCPOAuthDiscovery.discoverProtectedResourceMetadata(
+            serverURL: serverURL,
+            protocolVersion: protocolVersion,
+            resourceMetadataURL: resourceMetadataURL,
+            transport: transport
+        )
+        authorizationServerURL = resourceMetadata?.authorizationServers.first
+    } catch {}
+
+    let resolvedAuthorizationServerURL = authorizationServerURL ?? serverURL
+    let resource = try await MCPOAuth.selectResourceURL(
+        serverURL: serverURL,
+        provider: provider,
+        resourceMetadata: resourceMetadata
+    )
+    let metadata = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata(
+        authorizationServerURL: resolvedAuthorizationServerURL,
+        protocolVersion: protocolVersion,
+        transport: transport
+    )
+
+    var clientInformation = try await provider.clientInformation()
+    if clientInformation == nil {
+        if authorizationCode != nil {
+            throw MCPClientError(message: "Existing OAuth client information is required when exchanging an authorization code")
+        }
+        guard provider.supportsDynamicClientRegistration else {
+            throw MCPClientError(message: "OAuth client information must be saveable for dynamic registration")
+        }
+        let fullInformation = try await MCPOAuth.registerClient(
+            authorizationServerURL: resolvedAuthorizationServerURL,
+            metadata: metadata,
+            clientMetadata: provider.clientMetadata,
+            transport: transport
+        )
+        try await provider.saveClientInformation(fullInformation.clientInformation)
+        clientInformation = fullInformation.clientInformation
+    }
+    guard let clientInformation else {
+        throw MCPClientError(message: "OAuth client information is unavailable.")
+    }
+
+    if let authorizationCode {
+        let expectedState = try await provider.storedState()
+        if expectedState != nil, expectedState != callbackState {
+            throw MCPClientError(message: "OAuth state parameter mismatch - possible CSRF attack")
+        }
+        let tokens = try await MCPOAuth.exchangeAuthorization(
+            authorizationServerURL: resolvedAuthorizationServerURL,
+            metadata: metadata,
+            clientInformation: clientInformation,
+            authorizationCode: authorizationCode,
+            codeVerifier: try await provider.codeVerifier(),
+            redirectURI: provider.redirectURL,
+            resource: resource,
+            transport: transport
+        )
+        try await provider.saveTokens(tokens)
+        return .authorized
+    }
+
+    if let refreshToken = try await provider.tokens()?.refreshToken {
+        do {
+            let tokens = try await MCPOAuth.refreshAuthorization(
+                authorizationServerURL: resolvedAuthorizationServerURL,
+                metadata: metadata,
+                clientInformation: clientInformation,
+                refreshToken: refreshToken,
+                resource: resource,
+                transport: transport
+            )
+            try await provider.saveTokens(tokens)
+            return .authorized
+        } catch let error as MCPOAuthServerError {
+            if let code = error.code, code != "server_error" {
+                throw error
+            }
+        } catch {}
+    }
+
+    let state = try await provider.state()
+    if let state {
+        try await provider.saveState(state)
+    }
+    let started = try MCPOAuth.startAuthorization(
+        authorizationServerURL: resolvedAuthorizationServerURL,
+        metadata: metadata,
+        clientInformation: clientInformation,
+        redirectURL: provider.redirectURL,
+        scope: scope ?? provider.clientMetadata.scope,
+        state: state,
+        resource: resource
+    )
+    try await provider.saveCodeVerifier(started.codeVerifier)
+    try await provider.redirectToAuthorization(started.authorizationURL)
+    return .redirect
 }
 
 public struct MCPOAuthDiscovery {
@@ -732,6 +968,24 @@ private func resourceURLStripSlash(_ resource: URL) -> String {
         return String(href.dropLast())
     }
     return href
+}
+
+private func resourceURLFromServerURL(_ url: URL) -> URL {
+    var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    components?.fragment = nil
+    return components?.url ?? url
+}
+
+private func checkResourceAllowed(requestedResource: URL, configuredResource: URL) -> Bool {
+    guard requestedResource.scheme == configuredResource.scheme,
+          requestedResource.host == configuredResource.host,
+          requestedResource.port == configuredResource.port else {
+        return false
+    }
+    let requestedPath = requestedResource.path.hasSuffix("/") ? requestedResource.path : "\(requestedResource.path)/"
+    let configuredPath = configuredResource.path.hasSuffix("/") ? configuredResource.path : "\(configuredResource.path)/"
+    guard requestedPath.count >= configuredPath.count else { return false }
+    return requestedPath.hasPrefix(configuredPath)
 }
 
 private func formEncoded(_ items: [URLQueryItem]) -> String {

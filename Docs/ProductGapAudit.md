@@ -212,7 +212,10 @@ Impact:
   `MCPOAuth` now covers the next helper layer: PKCE authorization URL creation,
   authorization-code exchange, refresh-token exchange with refresh-token
   preservation, OAuth server error parsing, client authentication method
-  selection, and dynamic client registration.
+  selection, dynamic client registration, and full provider-flow orchestration
+  through `MCPOAuthClientProvider`, including resource selection, callback state
+  validation, redirect start, token refresh, credential invalidation/retry for
+  OAuth errors, and authorization-code exchange.
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
@@ -227,11 +230,12 @@ Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
 provider-defined tool schema adapters, richer provider-native handling for
-multimodal `modelOutput`, full MCP OAuth provider-flow orchestration with state
-validation and resource selection, richer stream tool lifecycle events, and
-provider-executed approval response mapping for non-OpenAI providers that expose
-an equivalent native wire format. Keep provider-defined tools as specialized
-`AITool` values instead of plain JSON where possible.
+multimodal `modelOutput`, finer MCP OAuth parity such as custom client
+authentication hooks and browser-specific CORS retry behavior, richer stream
+tool lifecycle events, and provider-executed approval response mapping for
+non-OpenAI providers that expose an equivalent native wire format. Keep
+provider-defined tools as specialized `AITool` values instead of plain JSON
+where possible.
 
 ### 4. Object generation and schema validation are partial
 
@@ -346,9 +350,9 @@ Progress:
    resources, resource templates, prompts, incoming elicitation requests, and
    MCP-style tool model-output conversion and first-pass Streamable HTTP
    session plus streaming semantics. Next passes should add typed validation
-   errors, provider-executed approval responses, full MCP OAuth provider-flow
-   orchestration with state validation and resource selection, and richer
-   stream lifecycle handling.
+   errors, provider-executed approval responses, finer MCP OAuth parity such
+   as custom client authentication hooks and browser-specific CORS retry
+   behavior, and richer stream lifecycle handling.
 
 6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

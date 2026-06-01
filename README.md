@@ -381,9 +381,21 @@ let authServer = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata
 )
 ```
 
-`MCPOAuth` contains the lower-level OAuth helpers used by the upstream MCP
-flow: PKCE authorization URL creation, authorization-code token exchange,
-refresh-token exchange, and dynamic client registration.
+`MCPOAuth` contains the OAuth client flow used by upstream MCP. Implement
+`MCPOAuthClientProvider` to persist tokens, client registration, PKCE verifier,
+state, and redirects; `MCPOAuth.auth(...)` handles discovery, resource
+selection, dynamic registration, refresh, callback exchange, and redirect:
+
+```swift
+let authResult = try await MCPOAuth.auth(
+    provider: oauthClientProvider,
+    serverURL: "https://mcp.example.com/rpc",
+    scope: "read offline_access"
+)
+```
+
+The lower-level helpers are public too, so apps can drive custom UX around
+PKCE authorization URLs, token exchange, refresh, and dynamic registration:
 
 ```swift
 let started = try MCPOAuth.startAuthorization(
@@ -391,17 +403,6 @@ let started = try MCPOAuth.startAuthorization(
     metadata: authServer,
     clientInformation: MCPOAuthClientInformation(clientID: "client-id"),
     redirectURL: URL(string: "http://localhost:3000/callback")!,
-    scope: "read offline_access",
-    resource: resource.resource
-)
-
-let tokens = try await MCPOAuth.exchangeAuthorization(
-    authorizationServerURL: resource.authorizationServers[0],
-    metadata: authServer,
-    clientInformation: MCPOAuthClientInformation(clientID: "client-id"),
-    authorizationCode: "callback-code",
-    codeVerifier: started.codeVerifier,
-    redirectURI: URL(string: "http://localhost:3000/callback")!,
     resource: resource.resource
 )
 ```
