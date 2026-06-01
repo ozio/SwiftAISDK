@@ -79,8 +79,10 @@ Impact:
   `AIObjectGenerationError`, and `AIObjectSchema`/`AIJSONSchema` provide a
   reusable schema-adapter surface for object and array outputs.
   `AIJSONInstruction` can inject upstream-style JSON instructions as an opt-in
-  fallback for providers without native structured-output support. Richer
-  provider-specific structured-output passes still need follow-up work.
+  fallback for providers without native structured-output support.
+  `AIObjectGenerationCallbacks.onError` now fires for both non-streaming and
+  streaming parse/schema/decode failures. Richer provider-specific
+  structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as
@@ -384,8 +386,9 @@ Progress:
    `AIObjectGenerationError` exposes typed parse/schema/decode failures.
    `AIObjectSchema` and `AIJSONSchema` add a first reusable schema-adapter
    surface, and `AIObjectGenerationCallbacks` covers non-streaming and streaming
-   object lifecycle hooks. Next passes should add provider-specific structured
-   output parity, richer repair telemetry, and deeper adapter integrations.
+   object lifecycle hooks including error callbacks. Next passes should add
+   provider-specific structured output parity, richer repair telemetry, and
+   deeper adapter integrations.
 
 8. **README and capability matrix.**
    README now has a quick-start and facade/tool/object examples. A first

@@ -96,6 +96,55 @@ import Testing
     #expect(events.finish?.responseMetadata.id == "callback-response")
 }
 
+@Test func aiGenerateObjectInvokesErrorCallbackForParseFailure() async throws {
+    let recorder = ObjectCallbackRecorder<ObjectFacadeAnswer>()
+    let telemetry = ObjectTelemetryRecorder()
+    let warning = AIWarning(type: "unsupported", feature: "json")
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: "not json",
+        finishReason: "stop",
+        usage: TokenUsage(totalTokens: 4),
+        providerMetadata: ["trace": .string("broken")],
+        rawValue: .object([:]),
+        warnings: [warning],
+        responseMetadata: AIResponseMetadata(id: "broken-response")
+    ))
+
+    do {
+        _ = try await AI.generateObject(
+            model: model,
+            prompt: "Return broken object.",
+            as: ObjectFacadeAnswer.self,
+            schema: objectFacadeAnswerSchema(),
+            telemetry: AITelemetryOptions(integrations: [telemetry]),
+            callbacks: AIObjectGenerationCallbacks(
+                onStart: { event in await recorder.recordStart(event) },
+                onStepStart: { event in await recorder.recordStepStart(event) },
+                onStepFinish: { event in await recorder.recordStepFinish(event) },
+                onFinish: { event in await recorder.recordFinish(event) },
+                onError: { event in await recorder.recordError(event) }
+            )
+        )
+        Issue.record("Expected generateObject parse failure.")
+    } catch let error as AIObjectGenerationError {
+        let events = await recorder.events()
+        let telemetryEvents = await telemetry.events()
+        #expect(error.kind == .noJSON)
+        #expect(events.names == ["start", "step-start", "step-finish", "error"])
+        #expect(Set(events.callIDs).count == 1)
+        #expect(events.callIDs.first == telemetryEvents.first?.callID)
+        #expect(events.error?.text == "not json")
+        #expect(events.error?.finishReason == "stop")
+        #expect(events.error?.usage?.totalTokens == 4)
+        #expect(events.error?.warnings == [warning])
+        #expect(events.error?.providerMetadata["trace"]?.stringValue == "broken")
+        #expect(events.error?.responseMetadata.id == "broken-response")
+        #expect(events.error?.errorDescription.isEmpty == false)
+        #expect(events.finish == nil)
+        #expect(telemetryEvents.map(\.kind) == [.start, .error])
+    }
+}
+
 @Test func aiStreamObjectInvokesObjectCallbacksInOrder() async throws {
     let recorder = ObjectCallbackRecorder<ObjectFacadeAnswer>()
     let telemetry = ObjectTelemetryRecorder()

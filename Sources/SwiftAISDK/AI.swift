@@ -2388,54 +2388,72 @@ private func generateObjectResult<Output: Sendable>(
         providerMetadata: { $0.providerMetadata },
         responseMetadata: { $0.responseMetadata }
     ) {
-        let textResult = try await AITelemetryDispatcher(options: telemetry).executeLanguageModelCall(
-            callID: callID,
-            operationID: "ai.generateObject",
-            providerID: model.providerID,
-            modelID: model.modelID
-        ) {
-            try await model.generate(request)
-        }
-        await callbacks?.onStepFinish?(AIObjectGenerationStepFinishEvent(
-            callID: callID,
-            stepNumber: 0,
-            providerID: model.providerID,
-            modelID: model.modelID,
-            text: textResult.text,
-            reasoning: textResult.reasoning,
-            finishReason: textResult.finishReason,
-            usage: textResult.usage,
-            warnings: textResult.warnings,
-            providerMetadata: textResult.providerMetadata,
-            responseMetadata: textResult.responseMetadata
-        ))
-        let parsed = try await parse(textResult.text, model.providerID)
+        var textResult: TextGenerationResult?
+        do {
+            let generatedResult = try await AITelemetryDispatcher(options: telemetry).executeLanguageModelCall(
+                callID: callID,
+                operationID: "ai.generateObject",
+                providerID: model.providerID,
+                modelID: model.modelID
+            ) {
+                try await model.generate(request)
+            }
+            textResult = generatedResult
+            await callbacks?.onStepFinish?(AIObjectGenerationStepFinishEvent(
+                callID: callID,
+                stepNumber: 0,
+                providerID: model.providerID,
+                modelID: model.modelID,
+                text: generatedResult.text,
+                reasoning: generatedResult.reasoning,
+                finishReason: generatedResult.finishReason,
+                usage: generatedResult.usage,
+                warnings: generatedResult.warnings,
+                providerMetadata: generatedResult.providerMetadata,
+                responseMetadata: generatedResult.responseMetadata
+            ))
+            let parsed = try await parse(generatedResult.text, model.providerID)
 
-        let result = ObjectGenerationResult(
-            object: parsed.object,
-            text: parsed.text,
-            rawObject: parsed.rawObject,
-            reasoning: textResult.reasoning,
-            finishReason: textResult.finishReason,
-            usage: textResult.usage,
-            warnings: textResult.warnings,
-            providerMetadata: textResult.providerMetadata,
-            responseMetadata: textResult.responseMetadata,
-            textResult: textResult
-        )
-        await callbacks?.onFinish?(AIObjectGenerationFinishEvent(
-            callID: callID,
-            object: result.object,
-            text: result.text,
-            rawObject: result.rawObject,
-            reasoning: result.reasoning,
-            finishReason: result.finishReason,
-            usage: result.usage,
-            warnings: result.warnings,
-            providerMetadata: result.providerMetadata,
-            responseMetadata: result.responseMetadata
-        ))
-        return result
+            let result = ObjectGenerationResult(
+                object: parsed.object,
+                text: parsed.text,
+                rawObject: parsed.rawObject,
+                reasoning: generatedResult.reasoning,
+                finishReason: generatedResult.finishReason,
+                usage: generatedResult.usage,
+                warnings: generatedResult.warnings,
+                providerMetadata: generatedResult.providerMetadata,
+                responseMetadata: generatedResult.responseMetadata,
+                textResult: generatedResult
+            )
+            await callbacks?.onFinish?(AIObjectGenerationFinishEvent(
+                callID: callID,
+                object: result.object,
+                text: result.text,
+                rawObject: result.rawObject,
+                reasoning: result.reasoning,
+                finishReason: result.finishReason,
+                usage: result.usage,
+                warnings: result.warnings,
+                providerMetadata: result.providerMetadata,
+                responseMetadata: result.responseMetadata
+            ))
+            return result
+        } catch {
+            await callbacks?.onError?(AIObjectGenerationErrorEvent(
+                callID: callID,
+                providerID: model.providerID,
+                modelID: model.modelID,
+                text: textResult?.text ?? "",
+                errorDescription: String(describing: error),
+                finishReason: textResult?.finishReason,
+                usage: textResult?.usage,
+                warnings: textResult?.warnings ?? [],
+                providerMetadata: textResult?.providerMetadata ?? [:],
+                responseMetadata: textResult?.responseMetadata ?? AIResponseMetadata()
+            ))
+            throw error
+        }
     }
 }
 
