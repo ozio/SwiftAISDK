@@ -353,6 +353,19 @@ let answer = try await AI.generateText(
 )
 ```
 
+For protected MCP servers, pass an `MCPOAuthProvider`; the transport adds bearer
+tokens, invalidates stale tokens on 401, parses `resource_metadata`, runs the
+authorization hook, and retries once:
+
+```swift
+let protectedMCP = try await MCPClient.connect(
+    transport: try MCPHTTPTransport(
+        url: "https://mcp.example.com/rpc",
+        authProvider: oauthProvider
+    )
+)
+```
+
 ```swift
 let interactiveMCP = try await MCPClient.connect(
     transport: transport,

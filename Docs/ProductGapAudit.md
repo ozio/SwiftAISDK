@@ -201,7 +201,10 @@ Impact:
   fallback parsing, and true streaming SSE request/response handling when the
   underlying transport conforms to `AIStreamingTransport`. `URLSessionTransport`
   now provides that streaming transport path. Inbound SSE also tracks event IDs
-  and reconnects with `last-event-id` after stream failures.
+  and reconnects with `last-event-id` after stream failures. MCP transports can
+  now take an `MCPOAuthProvider`, attach bearer tokens, invalidate stale tokens
+  on 401 responses, parse `resource_metadata` from `WWW-Authenticate`, run an
+  authorization recovery hook, and retry the original request once.
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
@@ -216,10 +219,11 @@ Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
 provider-defined tool schema adapters, richer provider-native handling for
-multimodal `modelOutput`, OAuth parity for MCP, richer stream tool lifecycle
-events, and provider-executed approval response mapping for non-OpenAI providers
-that expose an equivalent native wire format. Keep provider-defined tools as
-specialized `AITool` values instead of plain JSON where possible.
+multimodal `modelOutput`, full MCP OAuth discovery/PKCE/dynamic registration,
+richer stream tool lifecycle events, and provider-executed approval response
+mapping for non-OpenAI providers that expose an equivalent native wire format.
+Keep provider-defined tools as specialized `AITool` values instead of plain JSON
+where possible.
 
 ### 4. Object generation and schema validation are partial
 
@@ -334,8 +338,8 @@ Progress:
    resources, resource templates, prompts, incoming elicitation requests, and
    MCP-style tool model-output conversion and first-pass Streamable HTTP
    session plus streaming semantics. Next passes should add typed validation
-   errors, provider-executed approval responses, MCP OAuth parity, and richer
-   stream lifecycle handling.
+   errors, provider-executed approval responses, full MCP OAuth
+   discovery/PKCE/dynamic registration, and richer stream lifecycle handling.
 
 6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

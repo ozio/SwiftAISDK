@@ -332,6 +332,70 @@ import Testing
     #expect(requests.count == 2)
 }
 
+@Test func mcpHTTPTransportAuthorizesAndRetriesAfter401() async throws {
+    let auth = MockMCPOAuthProvider(initialToken: "old-token", authorizedToken: "new-token")
+    let http = RecordingTransport(responses: [
+        AIHTTPResponse(
+            statusCode: 401,
+            headers: ["WWW-Authenticate": #"Bearer resource_metadata="https://auth.example.com/.well-known/oauth-protected-resource""#],
+            body: Data("Unauthorized".utf8)
+        ),
+        jsonResponse(#"{"jsonrpc":"2.0","id":12,"result":{"ok":true}}"#)
+    ])
+    let transport = try MCPHTTPTransport(
+        url: "https://mcp.example.com/rpc",
+        transport: http,
+        authProvider: auth
+    )
+
+    let response = try await transport.request([
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "ping"
+    ])
+
+    #expect(response["result"]?["ok"]?.boolValue == true)
+    let requests = await http.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].headers["authorization"] == "Bearer old-token")
+    #expect(requests[1].headers["authorization"] == "Bearer new-token")
+    #expect(await auth.invalidatedScopes() == [.tokens])
+    #expect(await auth.resourceMetadataURLs().map(\.absoluteString) == ["https://auth.example.com/.well-known/oauth-protected-resource"])
+}
+
+@Test func mcpHTTPTransportStreamingAuthorizesAndRetriesAfter401() async throws {
+    let auth = MockMCPOAuthProvider(initialToken: "old-stream-token", authorizedToken: "new-stream-token")
+    let http = StreamingRecordingTransport(responses: [
+        streamResponse(
+            statusCode: 401,
+            headers: ["www-authenticate": #"Bearer resource_metadata="https://auth.example.com/resource""#],
+            chunks: ["Unauthorized"]
+        ),
+        streamResponse(
+            headers: ["content-type": "application/json"],
+            chunks: [#"{"jsonrpc":"2.0","id":13,"result":{"ok":true}}"#]
+        )
+    ])
+    let transport = try MCPHTTPTransport(
+        url: "https://mcp.example.com/rpc",
+        transport: http,
+        authProvider: auth
+    )
+
+    let response = try await transport.request([
+        "jsonrpc": "2.0",
+        "id": 13,
+        "method": "ping"
+    ])
+
+    #expect(response["result"]?["ok"]?.boolValue == true)
+    let requests = await http.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].headers["authorization"] == "Bearer old-stream-token")
+    #expect(requests[1].headers["authorization"] == "Bearer new-stream-token")
+    #expect(await auth.resourceMetadataURLs().map(\.absoluteString) == ["https://auth.example.com/resource"])
+}
+
 @Test func mcpHTTPTransportParsesSSEResponsesAndTerminatesSession() async throws {
     let http = RecordingTransport(responses: [
         AIHTTPResponse(
@@ -707,6 +771,42 @@ private actor MCPElicitationRecorder {
 
     func request() -> MCPElicitationRequest? {
         recordedRequest
+    }
+}
+
+private actor MockMCPOAuthProvider: MCPOAuthProvider {
+    private var token: String?
+    private let authorizedToken: String?
+    private var metadataURLs: [URL] = []
+    private var invalidations: [MCPOAuthCredentialScope] = []
+
+    init(initialToken: String?, authorizedToken: String?) {
+        self.token = initialToken
+        self.authorizedToken = authorizedToken
+    }
+
+    func accessToken() async throws -> String? {
+        token
+    }
+
+    func authorize(resourceMetadataURL: URL?) async throws -> Bool {
+        if let resourceMetadataURL {
+            metadataURLs.append(resourceMetadataURL)
+        }
+        token = authorizedToken
+        return authorizedToken != nil
+    }
+
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async {
+        invalidations.append(scope)
+    }
+
+    func resourceMetadataURLs() -> [URL] {
+        metadataURLs
+    }
+
+    func invalidatedScopes() -> [MCPOAuthCredentialScope] {
+        invalidations
     }
 }
 

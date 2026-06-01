@@ -530,6 +530,23 @@ public struct MCPElicitResult: Equatable, Hashable, Sendable {
 
 public typealias MCPElicitationHandler = @Sendable (MCPElicitationRequest) async throws -> MCPElicitResult
 
+public enum MCPOAuthCredentialScope: String, Sendable {
+    case all
+    case client
+    case tokens
+    case verifier
+}
+
+public protocol MCPOAuthProvider: Sendable {
+    func accessToken() async throws -> String?
+    func authorize(resourceMetadataURL: URL?) async throws -> Bool
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async
+}
+
+public extension MCPOAuthProvider {
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async {}
+}
+
 public protocol MCPTransport: Sendable {
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async
     func setProtocolVersion(_ protocolVersion: String?) async
@@ -549,6 +566,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private let headers: [String: String]
     private let transport: any AITransport
     private let streamingTransport: (any AIStreamingTransport)?
+    private let authProvider: (any MCPOAuthProvider)?
     private var protocolVersion: String?
     private var sessionID: String?
     private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
@@ -561,6 +579,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         url: URL,
         headers: [String: String] = [:],
         transport: any AITransport = URLSessionTransport.shared,
+        authProvider: (any MCPOAuthProvider)? = nil,
         maxInboundReconnectAttempts: Int = 2,
         inboundReconnectDelayNanoseconds: UInt64 = 1_000_000_000
     ) {
@@ -568,6 +587,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         self.headers = headers
         self.transport = transport
         self.streamingTransport = transport as? any AIStreamingTransport
+        self.authProvider = authProvider
         self.maxInboundReconnectAttempts = maxInboundReconnectAttempts
         self.inboundReconnectDelayNanoseconds = inboundReconnectDelayNanoseconds
     }
@@ -576,6 +596,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         url: String,
         headers: [String: String] = [:],
         transport: any AITransport = URLSessionTransport.shared,
+        authProvider: (any MCPOAuthProvider)? = nil,
         maxInboundReconnectAttempts: Int = 2,
         inboundReconnectDelayNanoseconds: UInt64 = 1_000_000_000
     ) throws {
@@ -583,6 +604,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             url: requireURL(url),
             headers: headers,
             transport: transport,
+            authProvider: authProvider,
             maxInboundReconnectAttempts: maxInboundReconnectAttempts,
             inboundReconnectDelayNanoseconds: inboundReconnectDelayNanoseconds
         )
@@ -729,19 +751,14 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         )
     }
 
-    private func sendRaw(method: String, accept: String, body: Data?, extraHeaders: [String: String] = [:]) async throws -> AIHTTPResponse {
-        var requestHeaders = [
-            "accept": accept,
-            "mcp-protocol-version": protocolVersion ?? MCPClient.latestProtocolVersion
-        ]
-        if body != nil {
-            requestHeaders["content-type"] = "application/json"
-        }
-        if let sessionID {
-            requestHeaders["mcp-session-id"] = sessionID
-        }
-        requestHeaders.merge(extraHeaders) { _, new in new }
-        requestHeaders.merge(headers) { _, new in new }
+    private func sendRaw(
+        method: String,
+        accept: String,
+        body: Data?,
+        extraHeaders: [String: String] = [:],
+        triedAuth: Bool = false
+    ) async throws -> AIHTTPResponse {
+        let requestHeaders = try await commonHeaders(accept: accept, hasBody: body != nil, extraHeaders: extraHeaders)
         let response = try await transport.send(AIHTTPRequest(
             method: method,
             url: url,
@@ -753,6 +770,25 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         }
         if method == "GET", response.statusCode == 405 {
             return response
+        }
+        if response.statusCode == 401, let authProvider, !triedAuth {
+            await authProvider.invalidateCredentials(.tokens)
+            let authorized = try await authProvider.authorize(resourceMetadataURL: mcpOAuthResourceMetadataURL(from: response.headers))
+            guard authorized else {
+                throw MCPClientError(
+                    message: "MCP HTTP Transport Error: Unauthorized",
+                    statusCode: response.statusCode,
+                    url: url.absoluteString,
+                    responseBody: response.bodyText
+                )
+            }
+            return try await sendRaw(
+                method: method,
+                accept: accept,
+                body: body,
+                extraHeaders: extraHeaders,
+                triedAuth: true
+            )
         }
         guard (200..<300).contains(response.statusCode) else {
             var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode): \(response.bodyText)"
@@ -774,20 +810,10 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         accept: String,
         body: Data?,
         extraHeaders: [String: String] = [:],
+        triedAuth: Bool = false,
         transport: any AIStreamingTransport
     ) async throws -> AIHTTPStreamResponse {
-        var requestHeaders = [
-            "accept": accept,
-            "mcp-protocol-version": protocolVersion ?? MCPClient.latestProtocolVersion
-        ]
-        if body != nil {
-            requestHeaders["content-type"] = "application/json"
-        }
-        if let sessionID {
-            requestHeaders["mcp-session-id"] = sessionID
-        }
-        requestHeaders.merge(extraHeaders) { _, new in new }
-        requestHeaders.merge(headers) { _, new in new }
+        let requestHeaders = try await commonHeaders(accept: accept, hasBody: body != nil, extraHeaders: extraHeaders)
         let response = try await transport.stream(AIHTTPRequest(
             method: method,
             url: url,
@@ -799,6 +825,25 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         }
         if method == "GET", response.statusCode == 405 {
             return response
+        }
+        if response.statusCode == 401, let authProvider, !triedAuth {
+            await authProvider.invalidateCredentials(.tokens)
+            let authorized = try await authProvider.authorize(resourceMetadataURL: mcpOAuthResourceMetadataURL(from: response.headers))
+            guard authorized else {
+                throw MCPClientError(
+                    message: "MCP HTTP Transport Error: Unauthorized",
+                    statusCode: response.statusCode,
+                    url: url.absoluteString
+                )
+            }
+            return try await sendRawStream(
+                method: method,
+                accept: accept,
+                body: body,
+                extraHeaders: extraHeaders,
+                triedAuth: true,
+                transport: transport
+            )
         }
         guard (200..<300).contains(response.statusCode) else {
             var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode)"
@@ -812,6 +857,23 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             )
         }
         return response
+    }
+
+    private func commonHeaders(accept: String, hasBody: Bool, extraHeaders: [String: String]) async throws -> [String: String] {
+        var requestHeaders = headers
+        requestHeaders["accept"] = accept
+        requestHeaders["mcp-protocol-version"] = protocolVersion ?? MCPClient.latestProtocolVersion
+        if hasBody {
+            requestHeaders["content-type"] = "application/json"
+        }
+        if let sessionID {
+            requestHeaders["mcp-session-id"] = sessionID
+        }
+        requestHeaders.merge(extraHeaders) { _, new in new }
+        if let token = try await authProvider?.accessToken(), !token.isEmpty {
+            requestHeaders["authorization"] = "Bearer \(token)"
+        }
+        return requestHeaders
     }
 
     private func handleBufferedResponse(_ response: AIHTTPResponse, expectedID: Int?) async throws -> JSONValue {
@@ -1325,6 +1387,23 @@ private func mcpToolModelOutputPart(_ part: JSONValue) -> JSONValue {
 private func mcpJSONString(_ value: JSONValue) -> String? {
     guard let data = try? JSONEncoder().encode(value) else { return nil }
     return String(data: data, encoding: .utf8)
+}
+
+private func mcpOAuthResourceMetadataURL(from headers: [String: String]) -> URL? {
+    guard let header = headers.first(where: { $0.key.caseInsensitiveCompare("www-authenticate") == .orderedSame })?.value else {
+        return nil
+    }
+    let parts = header.split(separator: " ", maxSplits: 1).map(String.init)
+    guard parts.first?.lowercased() == "bearer", parts.count == 2 else {
+        return nil
+    }
+    guard let range = parts[1].range(of: #"resource_metadata="([^"]*)""#, options: .regularExpression) else {
+        return nil
+    }
+    let value = parts[1][range]
+        .dropFirst("resource_metadata=\"".count)
+        .dropLast()
+    return URL(string: String(value))
 }
 
 private func mcpJSONRPCResultResponse(id: JSONValue?, result: JSONValue) -> JSONValue {
