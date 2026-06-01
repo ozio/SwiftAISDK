@@ -5,7 +5,7 @@ import Testing
 @Test func cohereLanguageUsesChatEndpointAndCohereShape() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"co"},{"type":"text","text":"here"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":3,"output_tokens":2},"billed_units":{"input_tokens":3,"output_tokens":2}}}
-    """))
+    """, headers: ["x-cohere": "yes"]))
     let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
     let model = try provider.languageModel("command-a-03-2025")
 
@@ -14,6 +14,10 @@ import Testing
     #expect(result.text == "cohere")
     #expect(result.finishReason == "stop")
     #expect(result.usage?.totalTokens == 5)
+    #expect(result.responseMetadata.id == "gen-1")
+    #expect(result.responseMetadata.modelID == "command-a-03-2025")
+    #expect(result.responseMetadata.headers["x-cohere"] == "yes")
+    #expect(result.responseMetadata.body?["generation_id"]?.stringValue == "gen-1")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.cohere.com/v2/chat")
     #expect(request.headers["Authorization"] == "Bearer cohere-key")
@@ -24,6 +28,91 @@ import Testing
     #expect(body["p"]?.doubleValue == 0.8)
     #expect(body["max_tokens"]?.intValue == 12)
     #expect(body["documents"] == nil)
+}
+
+@Test func cohereLanguageMapsStandardOptionsResponseFormatAndToolChoice() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"plan"},{"type":"text","text":"{\\"answer\\":\\"ok\\"}"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":5,"output_tokens":6}}}
+    """))
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
+    let model = try provider.languageModel("command-a-03-2025")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Return JSON.")],
+        temperature: 0.2,
+        topP: 0.7,
+        topK: 9,
+        presencePenalty: 0.1,
+        frequencyPenalty: 0.2,
+        seed: 42,
+        maxOutputTokens: 32,
+        stopSequences: ["END"],
+        responseFormat: .json(
+            schema: [
+                "type": "object",
+                "properties": ["answer": ["type": "string"]],
+                "required": ["answer"]
+            ],
+            name: "ignored-by-cohere",
+            description: "Ignored by Cohere"
+        ),
+        reasoning: "128",
+        tools: [
+            "lookup": [
+                "type": "object",
+                "description": "Look up a value.",
+                "properties": ["value": ["type": "string"]],
+                "required": ["value"]
+            ],
+            "unused": ["type": "object"]
+        ],
+        toolChoice: ["type": "tool", "toolName": "lookup"],
+        providerOptions: [
+            "cohere": [
+                "safetyMode": "STRICT"
+            ]
+        ],
+        extraBody: [
+            "cohere": [
+                "responseFormat": [
+                    "type": "json_object",
+                    "json_schema": ["type": "string"]
+                ],
+                "thinking": [
+                    "type": "enabled",
+                    "tokenBudget": 64
+                ]
+            ]
+        ]
+    ))
+
+    #expect(result.text == #"{"answer":"ok"}"#)
+    #expect(result.reasoning == "plan")
+    #expect(result.usage?.totalTokens == 11)
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["temperature"]?.doubleValue == 0.2)
+    #expect(body["p"]?.doubleValue == 0.7)
+    #expect(body["k"]?.intValue == 9)
+    #expect(body["presence_penalty"]?.doubleValue == 0.1)
+    #expect(body["frequency_penalty"]?.doubleValue == 0.2)
+    #expect(body["seed"]?.intValue == 42)
+    #expect(body["max_tokens"]?.intValue == 32)
+    #expect(body["stop_sequences"]?[0]?.stringValue == "END")
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["response_format"]?["json_schema"]?["type"]?.stringValue == "object")
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["thinking"]?["token_budget"]?.intValue == 64)
+    #expect(body["tools"]?.arrayValue?.count == 1)
+    #expect(body["tools"]?[0]?["type"]?.stringValue == "function")
+    #expect(body["tools"]?[0]?["function"]?["name"]?.stringValue == "lookup")
+    #expect(body["tools"]?[0]?["function"]?["description"]?.stringValue == "Look up a value.")
+    #expect(body["tools"]?[0]?["function"]?["parameters"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(body["tool_choice"]?.stringValue == "REQUIRED")
+    #expect(body["safetyMode"]?.stringValue == "STRICT")
+    #expect(body["cohere"] == nil)
+    #expect(body["responseFormat"] == nil)
+    #expect(body["toolChoice"] == nil)
 }
 
 @Test func cohereLanguageExtractsUserFilesIntoDocuments() async throws {
@@ -99,6 +188,35 @@ import Testing
     #expect(result.toolCalls[0].id == "currentTime_tf4dywn8wgnk")
     #expect(result.toolCalls[0].name == "currentTime")
     #expect(result.toolCalls[0].arguments == "{}")
+}
+
+@Test func cohereLanguageSerializesToolCallsAndToolResultMessages() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"generation_id":"gen-2","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":4,"output_tokens":1}}}
+    """))
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
+    let model = try provider.languageModel("command-a-03-2025")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .assistant(toolCalls: [
+            AIToolCall(id: "call_weather", name: "weather", arguments: #"{"city":"Tokyo"}"#)
+        ]),
+        .toolResult(AIToolResult(
+            toolCallID: "call_weather",
+            toolName: "weather",
+            result: ["forecast": "sunny"]
+        ))
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "assistant")
+    #expect(body["messages"]?[0]?["content"] == nil)
+    #expect(body["messages"]?[0]?["tool_calls"]?[0]?["id"]?.stringValue == "call_weather")
+    #expect(body["messages"]?[0]?["tool_calls"]?[0]?["function"]?["name"]?.stringValue == "weather")
+    #expect(body["messages"]?[0]?["tool_calls"]?[0]?["function"]?["arguments"]?.stringValue == #"{"city":"Tokyo"}"#)
+    #expect(body["messages"]?[1]?["role"]?.stringValue == "tool")
+    #expect(body["messages"]?[1]?["tool_call_id"]?.stringValue == "call_weather")
+    #expect(body["messages"]?[1]?["content"]?.stringValue == #"{"forecast":"sunny"}"#)
 }
 
 @Test func cohereLanguageMapsCitationSources() async throws {
@@ -523,22 +641,48 @@ import Testing
 
 @Test func cohereLanguageStreamsChatEvents() async throws {
     let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"message-start","id":"msg-1"}
+
+    data: {"type":"content-start","index":0,"delta":{"message":{"content":{"type":"text"}}}}
+
     data: {"type":"content-delta","index":0,"delta":{"message":{"content":{"text":"co"}}}}
 
     data: {"type":"content-delta","index":0,"delta":{"message":{"content":{"text":"here"}}}}
 
+    data: {"type":"content-end","index":0}
+
     data: {"type":"message-end","delta":{"finish_reason":"MAX_TOKENS","usage":{"tokens":{"input_tokens":1,"output_tokens":2}}}}
 
-    """))
+    """, headers: ["x-stream": "yes"]))
     let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
     let model = try provider.languageModel("command-a-03-2025")
 
     var deltas: [String] = []
+    var lifecycle: [String] = []
     var finishReason: String?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+    var streamStartWarnings: [AIWarning]?
+    var responseMetadata: AIResponseMetadata?
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        topK: 5,
+        providerOptions: ["cohere": ["priority": 1]]
+    )) {
         switch part {
         case let .textDelta(delta):
             deltas.append(delta)
+        case let .textDeltaPart(id, delta, _):
+            lifecycle.append("delta:\(id):\(delta)")
+            deltas.append(delta)
+        case let .textStart(id, _):
+            lifecycle.append("start:\(id)")
+        case let .textEnd(id, _):
+            lifecycle.append("end:\(id)")
+        case let .streamStart(warnings):
+            streamStartWarnings = warnings
+        case let .responseMetadata(metadata):
+            if metadata.id == "msg-1" {
+                responseMetadata = metadata
+            }
         case let .finish(reason, _):
             finishReason = reason
         default:
@@ -547,10 +691,16 @@ import Testing
     }
 
     #expect(deltas == ["co", "here"])
+    #expect(lifecycle == ["start:0", "delta:0:co", "delta:0:here", "end:0"])
     #expect(finishReason == "length")
+    #expect(streamStartWarnings == [])
+    #expect(responseMetadata?.id == "msg-1")
+    #expect(responseMetadata?.headers["x-stream"] == "yes")
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
+    #expect(body["k"]?.intValue == 5)
+    #expect(body["priority"]?.intValue == 1)
 }
 
 @Test func cohereLanguageStreamsToolCallEvents() async throws {
@@ -662,7 +812,7 @@ import Testing
     let chatBody = try decodeJSONBody(try #require(chatRequest.body))
     #expect(chatBody["cohere"] == nil)
     #expect(chatBody["thinking"]?["type"]?.stringValue == "enabled")
-    #expect(chatBody["thinking"]?["tokenBudget"]?.intValue == 128)
+    #expect(chatBody["thinking"]?["token_budget"]?.intValue == 128)
 
     let embeddingTransport = RecordingTransport(response: jsonResponse(#"{"embeddings":{"float":[[0.1,0.2]]},"meta":{"billed_units":{"input_tokens":3}}}"#))
     let embeddingProvider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: embeddingTransport))

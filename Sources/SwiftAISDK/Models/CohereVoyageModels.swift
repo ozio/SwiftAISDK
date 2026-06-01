@@ -11,21 +11,35 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/chat", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers)
+        let prepared = body(for: request, stream: false)
+        let response = try await config.sendJSONResponse(
+            path: "/chat",
+            modelID: modelID,
+            body: .object(prepared.body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        )
+        let raw = response.json
         let text = raw["message"]?["content"]?.arrayValue?.compactMap { item in
             item["type"]?.stringValue == "text" ? item["text"]?.stringValue : nil
         }.joined() ?? ""
+        let reasoning = raw["message"]?["content"]?.arrayValue?.compactMap { item in
+            item["type"]?.stringValue == "thinking" ? item["thinking"]?.stringValue : nil
+        }.joined() ?? ""
         let toolCalls = cohereToolCalls(from: raw["message"]?["tool_calls"])
-        guard !text.isEmpty || raw["message"] != nil else {
+        guard !text.isEmpty || !reasoning.isEmpty || raw["message"] != nil else {
             throw AIError.invalidResponse(provider: providerID, message: "No Cohere message content found.")
         }
         return TextGenerationResult(
             text: text,
+            reasoning: reasoning,
             finishReason: mapCohereFinishReason(raw["finish_reason"]?.stringValue),
             usage: cohereTokenUsage(from: raw),
             toolCalls: toolCalls,
             sources: cohereSources(from: raw["message"]?["citations"]),
-            rawValue: raw
+            rawValue: raw,
+            warnings: prepared.warnings,
+            responseMetadata: cohereResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -33,26 +47,56 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let httpRequest = try config.request(path: "/chat", modelID: modelID, body: .object(body(for: request, stream: true)), headers: request.headers)
+                    let prepared = body(for: request, stream: true)
+                    let httpRequest = try config.request(
+                        path: "/chat",
+                        modelID: modelID,
+                        body: .object(prepared.body),
+                        headers: request.headers,
+                        abortSignal: request.abortSignal
+                    )
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.streamStart(warnings: prepared.warnings))
+                    continuation.yield(.responseMetadata(cohereResponseMetadata(response: response, modelID: modelID)))
                     var finishReason: String?
                     var usage: TokenUsage?
                     var pendingToolCall: CoherePendingToolCall?
+                    var activeReasoningID: String?
                     for event in parseServerSentEvents(response.body) {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
                         switch raw["type"]?.stringValue {
+                        case "message-start":
+                            let metadataRaw: JSONValue? = raw["id"].map { .object(["id": $0]) }
+                            continuation.yield(.responseMetadata(cohereResponseMetadata(from: metadataRaw, response: response, modelID: modelID)))
+                        case "content-start":
+                            let id = String(raw["index"]?.intValue ?? 0)
+                            if raw["delta"]?["message"]?["content"]?["type"]?.stringValue == "thinking" {
+                                activeReasoningID = id
+                                continuation.yield(.reasoningStart(id: id))
+                            } else {
+                                continuation.yield(.textStart(id: id))
+                            }
                         case "content-delta":
+                            let id = String(raw["index"]?.intValue ?? 0)
                             if let text = raw["delta"]?["message"]?["content"]?["text"]?.stringValue {
-                                continuation.yield(.textDelta(text))
+                                continuation.yield(.textDeltaPart(id: id, delta: text))
                             }
                             if let thinking = raw["delta"]?["message"]?["content"]?["thinking"]?.stringValue {
-                                continuation.yield(.reasoningDelta(thinking))
+                                continuation.yield(.reasoningDeltaPart(id: id, delta: thinking))
+                            }
+                        case "content-end":
+                            let id = String(raw["index"]?.intValue ?? 0)
+                            if activeReasoningID == id {
+                                continuation.yield(.reasoningEnd(id: id))
+                                activeReasoningID = nil
+                            } else {
+                                continuation.yield(.textEnd(id: id))
                             }
                         case "tool-call-start":
                             let toolCall = raw["delta"]?["message"]?["tool_calls"]
@@ -104,8 +148,10 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) -> [String: JSONValue] {
-        let options = cohereProviderOptions(from: request.extraBody)
+    private func body(for request: LanguageModelRequest, stream: Bool) -> CoherePreparedCall {
+        var options = cohereProviderOptions(from: request)
+        let responseFormat = cohereResolvedResponseFormat(request: request, options: &options)
+        let toolChoice = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
         let prompt = coherePromptJSON(from: request.messages)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -116,12 +162,34 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
         if let topP = request.topP { body["p"] = .number(topP) }
+        if let topK = request.topK { body["k"] = .number(Double(topK)) }
+        if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
+        if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         if !request.stopSequences.isEmpty { body["stop_sequences"] = .array(request.stopSequences) }
-        if let thinking = options["thinking"] { body["thinking"] = thinking }
-        if !request.tools.isEmpty { body["tools"] = .object(request.tools) }
-        body.merge(options.filter { $0.key != "thinking" }) { _, new in new }
-        return body
+        if let responseFormat {
+            body["response_format"] = responseFormat
+        }
+        if let thinking = cohereThinking(reasoning: request.reasoning, options: &options) {
+            body["thinking"] = thinking
+        }
+        let tools = cohereTools(from: request.tools, only: cohereForcedToolName(from: toolChoice))
+        if !tools.isEmpty {
+            body["tools"] = .array(tools)
+            if let toolChoice = cohereToolChoice(from: toolChoice) {
+                body["tool_choice"] = toolChoice
+            }
+        }
+        for (key, value) in options where !["thinking", "responseFormat", "toolChoice"].contains(key) {
+            body[key] = value
+        }
+        return CoherePreparedCall(body: body, warnings: prompt.warnings)
     }
+}
+
+private struct CoherePreparedCall {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
 }
 
 private struct CoherePendingToolCall {
@@ -301,6 +369,14 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
     }
 }
 
+private func cohereProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+    var output = cohereProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["cohere"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    return output
+}
+
 private func cohereProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
     if let nested = output.removeValue(forKey: "cohere")?.objectValue {
@@ -317,27 +393,131 @@ private func voyageProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
     return output
 }
 
-private func coherePromptJSON(from messages: [AIMessage]) -> (messages: [JSONValue], documents: [JSONValue]) {
+private func cohereResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        options.removeValue(forKey: "responseFormat")
+        return cohereResponseFormatJSON(responseFormat)
+    }
+    return cohereResponseFormat(from: options.removeValue(forKey: "responseFormat"))
+}
+
+private func cohereResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, _, _):
+        return .object([
+            "type": .string("json_object"),
+            "json_schema": schema
+        ])
+    }
+}
+
+private func cohereResponseFormat(from value: JSONValue?) -> JSONValue? {
+    guard let value else { return nil }
+    if value["type"]?.stringValue == "json" {
+        return .object([
+            "type": .string("json_object"),
+            "json_schema": value["schema"]
+        ])
+    }
+    return value
+}
+
+private func cohereThinking(reasoning: String?, options: inout [String: JSONValue]) -> JSONValue? {
+    if let thinking = options.removeValue(forKey: "thinking") {
+        return cohereThinking(from: thinking)
+    }
+    guard let reasoning else { return nil }
+    if reasoning == "none" {
+        return .object(["type": .string("disabled")])
+    }
+    if let tokenBudget = Int(reasoning) {
+        return .object([
+            "type": .string("enabled"),
+            "token_budget": .number(Double(tokenBudget))
+        ])
+    }
+    return .object(["type": .string(reasoning)])
+}
+
+private func cohereThinking(from value: JSONValue) -> JSONValue {
+    guard var object = value.objectValue else { return value }
+    if let tokenBudget = object.removeValue(forKey: "tokenBudget") {
+        object["token_budget"] = tokenBudget
+    }
+    if object["type"] == nil {
+        object["type"] = .string("enabled")
+    }
+    return .object(object)
+}
+
+private func cohereTools(from tools: [String: JSONValue], only forcedToolName: String? = nil) -> [JSONValue] {
+    tools.sorted { $0.key < $1.key }.compactMap { name, schema in
+        guard forcedToolName == nil || forcedToolName == name else { return nil }
+        return .object([
+            "type": .string("function"),
+            "function": .object([
+                "name": .string(name),
+                "description": schema["description"],
+                "parameters": schema
+            ])
+        ])
+    }
+}
+
+private func cohereForcedToolName(from value: JSONValue?) -> String? {
+    guard value?["type"]?.stringValue == "tool" else { return nil }
+    return value?["toolName"]?.stringValue ?? value?["name"]?.stringValue
+}
+
+private func cohereToolChoice(from value: JSONValue?) -> JSONValue? {
+    switch value?["type"]?.stringValue ?? value?.stringValue {
+    case "none":
+        return .string("NONE")
+    case "required", "tool":
+        return .string("REQUIRED")
+    case "auto", nil:
+        return nil
+    default:
+        return value
+    }
+}
+
+private func coherePromptJSON(from messages: [AIMessage]) -> (messages: [JSONValue], documents: [JSONValue], warnings: [AIWarning]) {
     var cohereMessages: [JSONValue] = []
     var documents: [JSONValue] = []
+    var warnings: [AIWarning] = []
 
     for message in messages {
         let converted = cohereMessageJSON(message)
-        cohereMessages.append(converted.message)
+        cohereMessages.append(contentsOf: converted.messages)
         documents.append(contentsOf: converted.documents)
+        warnings.append(contentsOf: converted.warnings)
     }
 
-    return (cohereMessages, documents)
+    return (cohereMessages, documents, warnings)
 }
 
-private func cohereMessageJSON(_ message: AIMessage) -> (message: JSONValue, documents: [JSONValue]) {
+private func cohereMessageJSON(_ message: AIMessage) -> (messages: [JSONValue], documents: [JSONValue], warnings: [AIWarning]) {
     switch message.role {
     case .system:
-        return (.object(["role": .string("system"), "content": .string(message.combinedText)]), [])
+        return ([.object(["role": .string("system"), "content": .string(message.combinedText)])], [], [])
     case .assistant:
-        return (.object(["role": .string("assistant"), "content": .string(message.combinedText)]), [])
+        var output: [String: JSONValue] = ["role": .string("assistant")]
+        let toolCalls = message.content.compactMap(cohereAssistantToolCallJSON)
+        if !toolCalls.isEmpty {
+            output["tool_calls"] = .array(toolCalls)
+        } else {
+            output["content"] = .string(message.combinedText)
+        }
+        return ([.object(output)], [], [])
     case .tool:
-        return (.object(["role": .string("tool"), "content": .string(message.combinedText)]), [])
+        let toolResults = message.content.compactMap(cohereToolResultMessageJSON)
+        if !toolResults.isEmpty {
+            return (toolResults, [], [])
+        }
+        return ([.object(["role": .string("tool"), "content": .string(message.combinedText)])], [], [])
     case .user:
         let hasImage = message.content.contains {
             if let payload = $0.filePayload { return payload.mimeType.hasPrefix("image/") }
@@ -345,15 +525,63 @@ private func cohereMessageJSON(_ message: AIMessage) -> (message: JSONValue, doc
             return false
         }
         let documents = message.content.compactMap(cohereDocumentJSON)
+        let unsupportedFiles = message.content.filter { part in
+            guard let payload = part.filePayload else { return false }
+            return !payload.mimeType.hasPrefix("image/") && String(data: payload.data, encoding: .utf8) == nil
+        }
+        let warnings = unsupportedFiles.map { _ in AIWarning(type: "unsupported", feature: "non-text document content") }
         guard hasImage else {
             let text = message.content.compactMap(\.text).joined()
-            return (.object(["role": .string("user"), "content": .string(text)]), documents)
+            return ([.object(["role": .string("user"), "content": .string(text)])], documents, warnings)
         }
-        return (.object([
+        return ([.object([
             "role": .string("user"),
             "content": .array(message.content.compactMap(cohereContentPartJSON))
-        ]), documents)
+        ])], documents, warnings)
     }
+}
+
+private func cohereAssistantToolCallJSON(_ part: AIContentPart) -> JSONValue? {
+    guard case let .toolCall(call) = part else { return nil }
+    return .object([
+        "id": .string(call.id),
+        "type": .string("function"),
+        "function": .object([
+            "name": .string(call.name),
+            "arguments": .string(call.arguments)
+        ])
+    ])
+}
+
+private func cohereToolResultMessageJSON(_ part: AIContentPart) -> JSONValue? {
+    guard case let .toolResult(result) = part else { return nil }
+    return .object([
+        "role": .string("tool"),
+        "content": .string(cohereToolResultContent(result)),
+        "tool_call_id": .string(result.toolCallID)
+    ])
+}
+
+private func cohereToolResultContent(_ result: AIToolResult) -> String {
+    let output = result.modelOutput ?? result.result
+    switch output["type"]?.stringValue {
+    case "text", "error-text":
+        return output["value"]?.stringValue ?? ""
+    case "execution-denied":
+        return output["reason"]?.stringValue ?? "Tool call execution denied."
+    case "content", "json", "error-json":
+        if let value = output["value"] {
+            return cohereJSONString(value) ?? value.stringValue ?? ""
+        }
+        return cohereJSONString(output) ?? output.stringValue ?? ""
+    default:
+        return cohereJSONString(output) ?? output.stringValue ?? ""
+    }
+}
+
+private func cohereJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? JSONEncoder().encode(value) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func cohereContentPartJSON(_ part: AIContentPart) -> JSONValue? {
@@ -447,6 +675,16 @@ private func cohereTokenUsage(from raw: JSONValue) -> TokenUsage? {
         totalTokens: (tokens["input_tokens"]?.intValue).flatMap { input in
             (tokens["output_tokens"]?.intValue).map { input + $0 }
         }
+    )
+}
+
+private func cohereResponseMetadata(from raw: JSONValue? = nil, response: AIHTTPResponse, modelID: String) -> AIResponseMetadata {
+    AIResponseMetadata(
+        id: raw?["id"]?.stringValue ?? raw?["generation_id"]?.stringValue,
+        timestamp: Date(),
+        modelID: raw?["model"]?.stringValue ?? modelID,
+        headers: response.headers,
+        body: raw
     )
 }
 

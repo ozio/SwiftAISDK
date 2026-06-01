@@ -134,6 +134,11 @@ Impact:
   `text.format.type=json_schema`, honors `strictJsonSchema`, returns upstream
   unsupported-setting warnings, preserves response metadata, and emits
   v4-shaped stream lifecycle parts for text, reasoning, and tool inputs.
+  Cohere chat now maps v4 sampling settings, `response_format.type=json_object`,
+  provider-scoped thinking options, function tools, and tool choice into the
+  native `/v2/chat` request, returns reasoning text, preserves response
+  metadata, forwards abort signals, and emits stream-start plus text/reasoning
+  lifecycle parts.
   Richer provider-specific structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
@@ -266,7 +271,10 @@ Progress:
   without storing raw audio bytes. The AI facade also fills safe fallback request
   metadata for custom embedding, media, audio, reranking, file, and skill models
   or clients that return empty metadata, keeping product-level telemetry
-  consistent across built-in and user-provided implementations.
+  consistent across built-in and user-provided implementations. Cohere chat now
+  preserves native response metadata and stream response metadata for language
+  calls, and follows the richer v4 stream lifecycle for text and reasoning
+  chunks.
   Follow-up passes should keep filling richer metadata and lifecycle fields
   consistently across the remaining native providers.
 
