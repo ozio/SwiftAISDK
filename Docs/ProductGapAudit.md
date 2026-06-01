@@ -121,9 +121,12 @@ Impact:
   instead of leaking them into the provider body, and returns the upstream
   unsupported warning when schema output is requested with structured outputs
   disabled. DeepSeek now requests `json_object`, injects the upstream JSON
-  system instruction or schema instruction, returns the compatibility warning
-  for schema injection, maps nested `deepseek` provider options, and sends
-  OpenAI-style function tools/tool choice. Google GenerateContent and Google
+  system instruction or schema instruction, returns compatibility and
+  unsupported-setting warnings, maps nested `deepseek` provider options plus
+  top-level reasoning/frequency/presence settings, preserves
+  response/provider metadata, forwards abort signals, emits text/reasoning
+  stream lifecycle parts, and sends OpenAI-style function tools/tool choice.
+  Google GenerateContent and Google
   Vertex now map standard JSON response formats into
   `generationConfig.responseMimeType` and `generationConfig.responseSchema`,
   using the same JSON-Schema-to-OpenAPI conversion path as Google function
@@ -192,9 +195,11 @@ The Swift contract keeps only a compact subset. For example:
   is still uneven: OpenAI-compatible chat/responses, Anthropic, Google
   GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere,
   Groq, DeepSeek, Cerebras, and Alibaba streams now emit tool input
-  start/delta/end parts alongside final tool calls. Remaining native language
-  stream parsers should get the same treatment where upstream exposes
-  equivalent events.
+  start/delta/end parts alongside final tool calls. Mistral, Cohere,
+  DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit
+  text/reasoning start/delta/end parts. Remaining native language stream
+  parsers should get the same treatment where upstream exposes equivalent
+  events.
 - `TranscriptionResult` now has text, raw JSON, segments, language, duration,
   warnings, request/response info, and provider metadata, but provider passes
   still need to keep filling those fields wherever upstream exposes them.
@@ -326,6 +331,11 @@ Impact:
   forwards abort signals, preserves response/provider metadata, and emits
   text/reasoning stream lifecycle parts while keeping the upstream mixed
   structured-output/tool-call normalization.
+- DeepSeek chat now mirrors the upstream native model path more closely:
+  top-level reasoning, `frequencyPenalty`, `presencePenalty`, unsupported
+  `topK`/`seed` warnings, JSON response-format injection, function tools/tool
+  choice, response/provider metadata, abort signals, and text/reasoning stream
+  lifecycle parts are covered in a dedicated provider test file.
 - Alibaba chat now follows its native upstream model more closely: top-level
   sampling, seed, reasoning budget, JSON response format, function tools/tool
   choice, assistant tool-call history, tool-result messages, response metadata,

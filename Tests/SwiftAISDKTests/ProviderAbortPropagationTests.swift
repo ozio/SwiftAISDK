@@ -149,6 +149,33 @@ import Testing
     #expect(streamRequest.abortSignal === streamController.signal)
 }
 
+@Test func deepSeekLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"id":"deepseek-1","model":"deepseek-chat","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}
+    """))
+    let generateProvider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: generateTransport))
+    let generateModel = try generateProvider.languageModel("deepseek-chat")
+    let generateController = AIAbortController()
+
+    _ = try await generateModel.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"id":"deepseek-1","model":"deepseek-chat","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+    """))
+    let streamProvider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("deepseek-chat")
+    let streamController = AIAbortController()
+
+    for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}
+
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.abortSignal === streamController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

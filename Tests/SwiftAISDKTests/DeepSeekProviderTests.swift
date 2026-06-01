@@ -1,0 +1,283 @@
+import Foundation
+import Testing
+@testable import SwiftAISDK
+
+@Test func deepSeekLanguageStreamsReasoningAndIncludesUsageOptions() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"id":"ds-1","created":1780326500,"model":"deepseek-reasoner","choices":[{"index":0,"delta":{"reasoning_content":"think"},"finish_reason":null}]}
+
+    data: {"id":"ds-1","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"prompt_cache_hit_tokens":1,"prompt_cache_miss_tokens":1}}
+
+    data: [DONE]
+
+    """, headers: ["x-deepseek": "stream"]))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    var streamStartWarnings: [AIWarning]?
+    var responseMetadata: AIResponseMetadata?
+    var reasoningLifecycle: [String] = []
+    var textLifecycle: [String] = []
+    var finishReason: String?
+    var totalTokens: Int?
+    var providerMetadata: [String: JSONValue] = [:]
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: ["thinking": .object(["type": "enabled"]), "reasoningEffort": "xhigh"]
+    )) {
+        switch part {
+        case let .streamStart(warnings):
+            streamStartWarnings = warnings
+        case let .responseMetadata(metadata):
+            responseMetadata = metadata
+        case let .reasoningStart(id, _):
+            reasoningLifecycle.append("start:\(id)")
+        case let .reasoningDeltaPart(id, delta, _):
+            reasoningLifecycle.append("delta:\(id):\(delta)")
+        case let .reasoningEnd(id, _):
+            reasoningLifecycle.append("end:\(id)")
+        case let .textStart(id, _):
+            textLifecycle.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            textLifecycle.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            textLifecycle.append("end:\(id)")
+        case let .finishMetadata(reason, usage, metadata):
+            finishReason = reason
+            totalTokens = usage?.totalTokens
+            providerMetadata = metadata
+        default:
+            break
+        }
+    }
+
+    #expect(streamStartWarnings == [])
+    #expect(responseMetadata?.id == "ds-1")
+    #expect(responseMetadata?.modelID == "deepseek-reasoner")
+    #expect(responseMetadata?.headers["x-deepseek"] == "stream")
+    #expect(reasoningLifecycle == ["start:reasoning-0", "delta:reasoning-0:think", "end:reasoning-0"])
+    #expect(textLifecycle == ["start:txt-0", "delta:txt-0:answer", "end:txt-0"])
+    #expect(finishReason == "stop")
+    #expect(totalTokens == 5)
+    #expect(providerMetadata["deepseek"]?["promptCacheHitTokens"]?.intValue == 1)
+    #expect(providerMetadata["deepseek"]?["promptCacheMissTokens"]?.intValue == 1)
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.deepseek.com/chat/completions")
+    #expect(request.headers["Authorization"] == "Bearer deepseek-key")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["stream"] == true)
+    #expect(body["stream_options"]?["include_usage"]?.boolValue == true)
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["reasoning_effort"]?.stringValue == "max")
+}
+
+@Test func deepSeekLanguageParsesToolCallsMetadataAndReasoning() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"ds-generate","created":1780326500,"model":"deepseek-reasoner","choices":[{"message":{"role":"assistant","content":"","reasoning_content":"I should call weather.","tool_calls":[{"id":"call_weather","index":0,"type":"function","function":{"name":"weather","arguments":"{\"location\":\"San Francisco\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13,"prompt_cache_hit_tokens":2,"prompt_cache_miss_tokens":7}}"#, headers: ["x-deepseek": "generate"]))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Weather?")]))
+
+    #expect(result.text == "")
+    #expect(result.reasoning == "I should call weather.")
+    #expect(result.finishReason == "tool-calls")
+    #expect(result.usage?.totalTokens == 13)
+    #expect(result.responseMetadata.id == "ds-generate")
+    #expect(result.responseMetadata.modelID == "deepseek-reasoner")
+    #expect(result.responseMetadata.headers["x-deepseek"] == "generate")
+    #expect(result.providerMetadata["deepseek"]?["promptCacheHitTokens"]?.intValue == 2)
+    #expect(result.providerMetadata["deepseek"]?["promptCacheMissTokens"]?.intValue == 7)
+    #expect(result.toolCalls.count == 1)
+    #expect(result.toolCalls[0].id == "call_weather")
+    #expect(result.toolCalls[0].name == "weather")
+    #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
+}
+
+@Test func deepSeekChatModelUsesNativeReasoningMapping() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.chatModel("deepseek-chat")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        reasoning: "xhigh"
+    ))
+
+    #expect(model.providerID == "deepseek.chat")
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["reasoning_effort"]?.stringValue == "max")
+}
+
+@Test func deepSeekReasoningNoneDisablesThinkingAndDropsEffort() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-chat")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        reasoning: "none",
+        providerOptions: ["deepseek": ["reasoningEffort": "xhigh"]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["thinking"]?["type"]?.stringValue == "disabled")
+    #expect(body["reasoning_effort"] == nil)
+    #expect(body["reasoningEffort"] == nil)
+}
+
+@Test func deepSeekLanguageMapsJsonResponseFormatNativeOptionsAndFunctionTools() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"{\"forecast\":\"sunny\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Weather?")],
+        topK: 10,
+        presencePenalty: 0.1,
+        frequencyPenalty: 0.2,
+        seed: 123,
+        responseFormat: .json(),
+        tools: [
+            "weather": [
+                "type": "object",
+                "description": "Look up weather.",
+                "properties": ["location": ["type": "string"]],
+                "required": ["location"]
+            ]
+        ],
+        providerOptions: [
+            "deepseek": ["thinking": ["type": "enabled"]]
+        ],
+        extraBody: [
+            "toolChoice": ["type": "tool", "toolName": "weather"]
+        ]
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "topK"),
+        AIWarning(type: "unsupported", feature: "seed")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
+    #expect(body["messages"]?[0]?["content"]?.stringValue == "Return JSON.")
+    #expect(body["messages"]?[1]?["role"]?.stringValue == "user")
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["presence_penalty"]?.doubleValue == 0.1)
+    #expect(body["frequency_penalty"]?.doubleValue == 0.2)
+    #expect(body["topK"] == nil)
+    #expect(body["seed"] == nil)
+    #expect(body["deepseek"] == nil)
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools[0]["type"]?.stringValue == "function")
+    #expect(tools[0]["function"]?["name"]?.stringValue == "weather")
+    #expect(tools[0]["function"]?["description"]?.stringValue == "Look up weather.")
+    #expect(tools[0]["function"]?["parameters"]?["properties"]?["location"]?["type"]?.stringValue == "string")
+    #expect(body["tool_choice"]?["type"]?.stringValue == "function")
+    #expect(body["tool_choice"]?["function"]?["name"]?.stringValue == "weather")
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func deepSeekLanguageInjectsSchemaInstructionAndWarning() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        responseFormat: .json(schema: [
+            "type": "object",
+            "properties": ["value": ["type": "string"]],
+            "required": ["value"]
+        ])
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "responseFormat JSON schema",
+            message: "JSON response schema is injected into the system message."
+        )
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let instruction = try #require(body["messages"]?[0]?["content"]?.stringValue)
+    #expect(instruction.hasPrefix("Return JSON that conforms to the following schema: "))
+    #expect(instruction.contains("\"type\":\"object\""))
+    #expect(instruction.contains("\"value\""))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func deepSeekLanguageStreamsFragmentedToolCalls() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"id":"ds-1","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"reasoning_content":"think"},"finish_reason":null}]}
+
+    data: {"id":"ds-1","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_weather","type":"function","function":{"name":"weather","arguments":"{\"location\":"}}]},"finish_reason":null}]}
+
+    data: {"id":"ds-1","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"San Francisco\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    var reasoning: [String] = []
+    var deltas: [String] = []
+    var inputLifecycle: [String] = []
+    var finalCall: AIToolCall?
+    var finishReason: String?
+    var totalTokens: Int?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
+        switch part {
+        case let .reasoningDeltaPart(_, delta, _):
+            reasoning.append(delta)
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
+        case let .toolCallDelta(_, _, argumentsDelta, _):
+            deltas.append(argumentsDelta)
+        case let .toolCall(call):
+            finalCall = call
+        case let .finish(reason, usage):
+            finishReason = reason
+            totalTokens = usage?.totalTokens
+        default:
+            break
+        }
+    }
+
+    let call = try #require(finalCall)
+    #expect(reasoning == ["think"])
+    #expect(deltas == ["{\"location\":", "\"San Francisco\"}"])
+    #expect(inputLifecycle == [
+        "start:call_weather:weather",
+        "delta:call_weather:{\"location\":",
+        "delta:call_weather:\"San Francisco\"}",
+        "end:call_weather"
+    ])
+    #expect(call.id == "call_weather")
+    #expect(call.name == "weather")
+    #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")
+    #expect(finishReason == "tool-calls")
+    #expect(totalTokens == 13)
+}
+
+@Test func deepSeekV4AssistantMessagesIncludeEmptyReasoningContent() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok","reasoning_content":"r"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-v4")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.assistant("Previous answer"), .user("Continue")]))
+
+    #expect(result.text == "ok")
+    #expect(result.reasoning == "r")
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "assistant")
+    #expect(body["messages"]?[0]?["reasoning_content"]?.stringValue == "")
+}
