@@ -81,7 +81,8 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let body = gatewayLanguageBody(for: request)
-        let raw = try await config.sendJSON(path: "/language-model", modelID: modelID, body: body, headers: request.headers.mergingHeaders(modelHeaders(streaming: false)))
+        let response = try await config.sendJSONResponse(path: "/language-model", modelID: modelID, body: body, headers: request.headers.mergingHeaders(modelHeaders(streaming: false)))
+        let raw = response.json
         let text = parseGatewayText(from: raw)
         let toolCalls = gatewayToolCalls(from: raw["content"])
         let sources = gatewaySources(from: raw["content"])
@@ -94,7 +95,8 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
             sources: sources,
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -108,6 +110,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
                     var toolBuffers: [String: GatewayStreamingToolCall] = [:]
                     var sawToolCalls = false
                     for event in parseServerSentEvents(response.body) {
@@ -317,15 +320,17 @@ public final class GatewayImageModel: ImageModel, @unchecked Sendable {
         if let mask = request.mask {
             body["mask"] = gatewayImageFile(mask)
         }
-        let raw = try await config.sendJSON(path: "/image-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
+        let response = try await config.sendJSONResponse(path: "/image-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-image-model-specification-version": "4",
             "ai-model-id": modelID
         ]))
+        let raw = response.json
         let images = raw["images"]?.arrayValue ?? raw["data"]?.arrayValue ?? []
         return ImageGenerationResult(
             urls: images.compactMap { $0["url"]?.stringValue },
             base64Images: images.compactMap { $0["data"]?.stringValue ?? $0.stringValue ?? $0["b64_json"]?.stringValue },
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 }
@@ -442,14 +447,18 @@ public final class GatewaySpeechModel: SpeechModel, @unchecked Sendable {
         if let voice = request.voice { body["voice"] = .string(voice) }
         if let format = request.format { body["outputFormat"] = .string(format) }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/speech-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
+        let response = try await config.sendJSONResponse(path: "/speech-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-speech-model-specification-version": "4",
             "ai-model-id": modelID
         ]))
+        let raw = response.json
         guard let audio = raw["audio"]?.stringValue, let data = Data(base64Encoded: audio) else {
             throw AIError.invalidResponse(provider: providerID, message: "No base64 audio found in Gateway speech response.")
         }
-        return SpeechResult(audio: data)
+        return SpeechResult(
+            audio: data,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -470,14 +479,23 @@ public final class GatewayTranscriptionModel: TranscriptionModel, @unchecked Sen
             "mediaType": .string(request.mimeType)
         ]
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/transcription-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
+        let response = try await config.sendJSONResponse(path: "/transcription-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-transcription-model-specification-version": "4",
             "ai-model-id": modelID
         ]))
+        let raw = response.json
         guard let text = raw["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No text found in Gateway transcription response.")
         }
-        return TranscriptionResult(text: text, rawValue: raw)
+        let segments = standardTranscriptionSegments(from: raw)
+        return TranscriptionResult(
+            text: text,
+            rawValue: raw,
+            segments: segments,
+            language: raw["language"]?.stringValue,
+            durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 

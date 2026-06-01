@@ -179,9 +179,13 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
         guard let text = raw["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No transcription text found.")
         }
+        let segments = standardTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: text,
             rawValue: raw,
+            segments: segments,
+            language: raw["language"]?.stringValue,
+            durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }

@@ -2059,9 +2059,13 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
         guard let text = raw["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No transcription text found.")
         }
+        let segments = standardTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: text,
             rawValue: raw,
+            segments: segments,
+            language: raw["language"]?.stringValue,
+            durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }

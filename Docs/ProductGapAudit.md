@@ -158,8 +158,9 @@ The Swift contract keeps only a compact subset. For example:
   source, metadata, raw, and finish, but no stream-start warnings, response
   metadata event, tool input lifecycle, tool results, approval requests, files,
   streamed errors, or per-part provider metadata.
-- `TranscriptionResult` only returns text and raw JSON; upstream has segments,
-  language, duration, warnings, request/response info, and provider metadata.
+- `TranscriptionResult` now has text, raw JSON, segments, language, duration,
+  warnings, request/response info, and provider metadata, but provider passes
+  still need to keep filling those fields wherever upstream exposes them.
 - `SpeechResult`, `VideoGenerationResult`, `RerankingResult`, and
   `FileUploadResult` expose much less provider metadata than upstream.
 
@@ -209,8 +210,11 @@ Progress:
   SDK-managed asset download. Native embedding and reranking models for Cohere,
   Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic
   JSON reranking wrappers also preserve provider response headers and raw JSON
-  bodies. Follow-up passes should keep filling richer metadata and lifecycle
-  fields consistently across the remaining native providers.
+  bodies. Native transcription models now map upstream-style segments,
+  language, and duration for Deepgram, ElevenLabs, Groq/OpenAI-compatible
+  verbose JSON, AssemblyAI, Rev.ai, Gladia, fal, Gateway, and generic JSON
+  transcription wrappers. Follow-up passes should keep filling richer metadata
+  and lifecycle fields consistently across the remaining native providers.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 

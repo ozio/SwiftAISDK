@@ -33,9 +33,13 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
         }
         let raw = try response.jsonValue()
         let text = raw["results"]?["channels"]?[0]?["alternatives"]?[0]?["transcript"]?.stringValue ?? ""
+        let segments = deepgramTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: text,
             rawValue: raw,
+            segments: segments,
+            language: raw["results"]?["channels"]?[0]?["detected_language"]?.stringValue,
+            durationInSeconds: raw["metadata"]?["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
@@ -291,9 +295,13 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
+        let segments = elevenLabsTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: raw["text"]?.stringValue ?? "",
             rawValue: raw,
+            segments: segments,
+            language: raw["language_code"]?.stringValue,
+            durationInSeconds: transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
@@ -385,9 +393,13 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
         }
         let finalResponse = try await pollFalTranscriptionResponse(modelPath: normalized, requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
         let raw = finalResponse.json
+        let segments = standardTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: raw["text"]?.stringValue ?? "",
             rawValue: raw,
+            segments: segments,
+            language: raw["language"]?.stringValue,
+            durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
@@ -459,9 +471,13 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         if status == "error" {
             throw AIError.invalidResponse(provider: providerID, message: raw["error"]?.stringValue ?? "AssemblyAI transcription failed.")
         }
+        let segments = assemblyAITranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: raw["text"]?.stringValue ?? "",
             rawValue: raw,
+            segments: segments,
+            language: raw["language_code"]?.stringValue,
+            durationInSeconds: raw["audio_duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
@@ -541,9 +557,13 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             throw httpStatusError(provider: providerID, response: transcriptResponse)
         }
         let raw = try transcriptResponse.jsonValue()
+        let segments = revAITranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: revAITranscriptText(from: raw),
             rawValue: raw,
+            segments: segments,
+            language: job["language"]?.stringValue,
+            durationInSeconds: transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: transcriptResponse, modelID: modelID)
         )
     }
@@ -626,9 +646,13 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription failed.")
         }
         let text = raw["result"]?["transcription"]?["full_transcript"]?.stringValue ?? ""
+        let segments = gladiaTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: text,
             rawValue: raw,
+            segments: segments,
+            language: raw["result"]?["transcription"]?["languages"]?[0]?.stringValue,
+            durationInSeconds: raw["result"]?["metadata"]?["audio_duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
