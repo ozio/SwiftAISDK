@@ -420,6 +420,13 @@ Impact:
   files map to `image`, `style`, `character`, and `modify_image` references with
   per-image config, and submit/poll/download requests preserve response
   metadata and abort signals.
+- KlingAI video generation now follows the upstream provider more closely:
+  model suffixes route explicitly to text-to-video, image-to-video, or
+  motion-control endpoints; standard image, aspect ratio, and duration handling
+  is mode-specific with upstream-style warnings; `providerOptions.klingai`
+  covers polling, generation mode, negative prompts, camera, multi-shot, voice,
+  element, mask, watermark, and passthrough fields; results preserve task/video
+  provider metadata, final poll response metadata, JWT auth, and abort signals.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

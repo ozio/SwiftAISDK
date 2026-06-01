@@ -800,9 +800,10 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let mode = klingMode(modelID)
+        let mode = try klingMode(modelID)
         let endpoint = klingEndpoint(mode)
-        let options = klingAIProviderOptions(from: request.extraBody)
+        let options = klingAIProviderOptions(from: request)
+        let warnings = klingAIWarnings(for: request, mode: mode)
         var body: [String: JSONValue] = [
             "model_name": .string(klingAPIModelName(modelID, mode: mode))
         ]
@@ -810,16 +811,16 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         if let aspectRatio = request.aspectRatio, mode == "t2v" {
             body["aspect_ratio"] = .string(aspectRatio)
         }
-        if let duration = request.durationSeconds {
+        if let duration = request.durationSeconds, mode != "motion-control" {
             body["duration"] = .string(formatDuration(duration))
         }
-        body.merge(try klingAIOptions(from: options, mode: mode)) { _, new in new }
+        body.merge(try klingAIOptions(from: options, mode: mode, requestImage: request.image)) { _, new in new }
 
-        let created = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
-        guard let taskID = created["data"]?["task_id"]?.stringValue else {
+        let created = try await config.sendJSONResponse(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        guard let taskID = created.json["data"]?["task_id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "KlingAI create response did not contain data.task_id.")
         }
-        let raw = try await pollKling(
+        let finalResponse = try await pollKling(
             endpoint: endpoint,
             taskID: taskID,
             headers: request.headers,
@@ -827,6 +828,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             timeoutNanoseconds: klingAIPollTimeout(options),
             abortSignal: request.abortSignal
         )
+        let raw = finalResponse.raw
         let videos = raw["data"]?["task_result"]?["videos"]?.arrayValue ?? []
         let urls = videos.compactMap { $0["url"]?.stringValue }
         guard !urls.isEmpty else {
@@ -836,11 +838,19 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             urls: urls,
             operationID: taskID,
             rawValue: raw,
-            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body))
+            warnings: warnings,
+            providerMetadata: [
+                "klingai": .object([
+                    "taskId": .string(taskID),
+                    "videos": .array(klingAIVideoMetadata(from: videos))
+                ])
+            ],
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
 
-    private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
@@ -855,7 +865,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             let raw = try response.jsonValue()
             switch raw["data"]?["task_status"]?.stringValue {
             case "succeed":
-                return raw
+                return (raw, response)
             case "failed":
                 throw AIError.invalidResponse(provider: providerID, message: raw["data"]?["task_status_msg"]?.stringValue ?? "KlingAI task failed.")
             default:
@@ -868,6 +878,14 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
+private func klingAIProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    var output = klingAIProviderOptions(from: request.extraBody)
+    if let providerOptions = request.providerOptions["klingai"]?.objectValue {
+        output.merge(providerOptions) { _, providerValue in providerValue }
+    }
+    return output
+}
+
 private func klingAIProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     if let nested = extraBody["klingai"]?.objectValue {
         return nested
@@ -877,7 +895,7 @@ private func klingAIProviderOptions(from extraBody: [String: JSONValue]) -> [Str
     return output
 }
 
-private func klingAIOptions(from options: [String: JSONValue], mode: String) throws -> [String: JSONValue] {
+private func klingAIOptions(from options: [String: JSONValue], mode: String, requestImage: ImageInputFile?) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
     if mode == "motion-control" {
         guard let videoURL = options["videoUrl"] ?? options["video_url"],
@@ -888,7 +906,7 @@ private func klingAIOptions(from options: [String: JSONValue], mode: String) thr
         output["video_url"] = videoURL
         output["character_orientation"] = characterOrientation
         output["mode"] = generationMode
-        if let image = klingAIImageInput(from: options) {
+        if let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: options) {
             output["image_url"] = image
         }
         if let keepOriginalSound = options["keepOriginalSound"] ?? options["keep_original_sound"] {
@@ -903,7 +921,7 @@ private func klingAIOptions(from options: [String: JSONValue], mode: String) thr
             output["element_list"] = elementList
         }
     } else {
-        if mode == "i2v", let image = klingAIImageInput(from: options) {
+        if mode == "i2v", let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: options) {
             output["image"] = image
         }
         klingAIMoveSharedOptions(options, to: &output)
@@ -919,6 +937,60 @@ private func klingAIOptions(from options: [String: JSONValue], mode: String) thr
         output[key] = value
     }
     return output
+}
+
+private func klingAIWarnings(for request: VideoGenerationRequest, mode: String) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if mode == "t2v", request.image != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "image",
+            message: "KlingAI text-to-video does not support image input. Use an image-to-video model instead."
+        ))
+    }
+    if request.aspectRatio != nil, mode == "i2v" {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "aspectRatio",
+            message: "KlingAI image-to-video does not support aspectRatio. The output dimensions are determined by the input image."
+        ))
+    }
+    if request.aspectRatio != nil, mode == "motion-control" {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "aspectRatio",
+            message: "KlingAI Motion Control does not support aspectRatio. The output dimensions are determined by the reference image/video."
+        ))
+    }
+    if request.durationSeconds != nil, mode == "motion-control" {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "duration",
+            message: "KlingAI Motion Control does not support custom duration. The output duration matches the reference video duration."
+        ))
+    }
+    if request.resolution != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "resolution",
+            message: "KlingAI video models do not support the resolution option."
+        ))
+    }
+    if request.seed != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "seed",
+            message: "KlingAI video models do not support seed for deterministic generation."
+        ))
+    }
+    if request.fps != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "fps",
+            message: "KlingAI video models do not support custom FPS."
+        ))
+    }
+    return warnings
 }
 
 private let klingAIHandledOptionKeys: Set<String> = [
@@ -962,6 +1034,17 @@ private let klingAIHandledOptionKeys: Set<String> = [
     "watermark_info"
 ]
 
+private func klingAIVideoMetadata(from videos: [JSONValue]) -> [JSONValue] {
+    videos.map { video in
+        .object([
+            "id": video["id"]?.stringValue.map(JSONValue.string),
+            "url": video["url"]?.stringValue.map(JSONValue.string),
+            "watermarkUrl": video["watermark_url"]?.stringValue.map(JSONValue.string),
+            "duration": video["duration"]?.stringValue.map(JSONValue.string)
+        ])
+    }
+}
+
 private func klingAIMoveSharedOptions(_ options: [String: JSONValue], to output: inout [String: JSONValue]) {
     if let negativePrompt = options["negativePrompt"] ?? options["negative_prompt"] { output["negative_prompt"] = negativePrompt }
     if let sound = options["sound"] { output["sound"] = sound }
@@ -985,6 +1068,17 @@ private func klingAIImageInput(from options: [String: JSONValue]) -> JSONValue? 
         return object["url"] ?? object["data"]
     }
     return value
+}
+
+private func klingAIImageInput(from image: ImageInputFile?) throws -> JSONValue? {
+    guard let image else { return nil }
+    if let url = image.url {
+        return .string(url)
+    }
+    if let data = image.data {
+        return .string(data.base64EncodedString())
+    }
+    throw AIError.invalidArgument(argument: "image", message: "KlingAI video image input requires data or URL.")
 }
 
 private func klingAIPollInterval(_ options: [String: JSONValue]) -> UInt64 {
@@ -1674,10 +1768,11 @@ private func splitVersionedModelID(_ modelID: String) -> (model: String, version
     return (parts[0], parts.count > 1 ? parts[1] : nil)
 }
 
-private func klingMode(_ modelID: String) -> String {
+private func klingMode(_ modelID: String) throws -> String {
     if modelID.hasSuffix("-motion-control") { return "motion-control" }
     if modelID.hasSuffix("-i2v") { return "i2v" }
-    return "t2v"
+    if modelID.hasSuffix("-t2v") { return "t2v" }
+    throw AIError.unsupportedModel(provider: "klingai", capability: .video, modelID: modelID)
 }
 
 private func klingEndpoint(_ mode: String) -> String {
@@ -1694,7 +1789,8 @@ private func klingEndpoint(_ mode: String) -> String {
 private func klingAPIModelName(_ modelID: String, mode: String) -> String {
     let suffix = mode == "motion-control" ? "-motion-control" : "-\(mode)"
     let base = modelID.hasSuffix(suffix) ? String(modelID.dropLast(suffix.count)) : modelID
-    return base.replacingOccurrences(of: ".0", with: "").replacingOccurrences(of: ".", with: "-")
+    let normalized = base.hasSuffix(".0") ? String(base.dropLast(2)) : base
+    return normalized.replacingOccurrences(of: ".", with: "-")
 }
 
 private func mediaURLs(from value: JSONValue?) -> [String] {

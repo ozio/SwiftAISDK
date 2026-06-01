@@ -612,6 +612,27 @@ import Testing
     #expect(requests[2].abortSignal === controller.signal)
 }
 
+@Test func klingAIForwardsAbortSignalToCreateAndPollRequests() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"kling-task","task_status":"submitted"}}"#),
+        jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"kling-task","task_status":"succeed","task_result":{"videos":[{"url":"https://kling.example.com/video.mp4"}]}}}"#)
+    ])
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-t2v")
+    let controller = AIAbortController()
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["klingai": .object(["pollIntervalMs": .number(1)])],
+        abortSignal: controller.signal
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].abortSignal === controller.signal)
+    #expect(requests[1].abortSignal === controller.signal)
+}
+
 @Test func falForwardsAbortSignalToImageVideoAndTranscriptionRequests() async throws {
     let imageTransport = RecordingTransport(responses: [
         jsonResponse(#"{"image":{"url":"https://fal.example.com/image.png"}}"#),
