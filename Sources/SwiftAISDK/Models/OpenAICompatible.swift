@@ -254,17 +254,18 @@ struct ModelHTTPConfig: @unchecked Sendable {
         }
     }
 
-    func request(path: String, modelID: String, body: JSONValue, headers requestHeaders: [String: String] = [:]) throws -> AIHTTPRequest {
+    func request(path: String, modelID: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {
         try rawRequest(
             path: path,
             modelID: modelID,
             body: try encodeJSONBody(body),
             contentType: "application/json",
-            headers: requestHeaders
+            headers: requestHeaders,
+            abortSignal: abortSignal
         )
     }
 
-    func rawRequest(path: String, modelID: String, body: Data, contentType: String?, headers requestHeaders: [String: String] = [:]) throws -> AIHTTPRequest {
+    func rawRequest(path: String, modelID: String, body: Data, contentType: String?, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {
         var headers = self.headers.mergingHeaders(requestHeaders)
         if let contentType {
             headers["content-type"] = headers["content-type"] ?? contentType
@@ -274,12 +275,13 @@ struct ModelHTTPConfig: @unchecked Sendable {
             method: "POST",
             url: try url(modelID, path),
             headers: headers,
-            body: body
+            body: body,
+            abortSignal: abortSignal
         )
     }
 
-    func sendJSON(path: String, modelID: String, body: JSONValue, headers: [String: String] = [:]) async throws -> JSONValue {
-        let response = try await transport.send(request(path: path, modelID: modelID, body: body, headers: headers))
+    func sendJSON(path: String, modelID: String, body: JSONValue, headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> JSONValue {
+        let response = try await transport.send(request(path: path, modelID: modelID, body: body, headers: headers, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
@@ -329,7 +331,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         let warnings = isOpenAIBackedProvider(providerID)
             ? []
             : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
-        let raw = try await config.sendJSON(path: "/chat/completions", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/chat/completions", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
         let choice = raw["choices"]?[0]
         let toolCalls = openAICompatibleChatToolCalls(from: choice?["message"]?["tool_calls"])
         let text = choice?["message"]?["content"]?.stringValue
@@ -354,7 +356,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             Task {
                 do {
                     let body = JSONValue.object(body(for: request, stream: true))
-                    let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers)
+                    let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
@@ -789,7 +791,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
             ? []
             : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
         let body = body(for: request, stream: false)
-        let raw = try await config.sendJSON(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let text = raw["choices"]?[0]?["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No text found in completion response.")
         }
@@ -801,7 +803,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
             Task {
                 do {
                     let body = JSONValue.object(body(for: request, stream: true))
-                    let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers)
+                    let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
@@ -854,7 +856,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
         let toolCalls = openAIResponsesToolCalls(from: raw)
         let toolApprovalRequests = openAIResponsesToolApprovalRequests(from: raw)
         let text = raw["output_text"]?.stringValue
@@ -881,7 +883,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             Task {
                 do {
                     let body = body(for: request, stream: true)
-                    let response = try await config.transport.send(config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers))
+                    let response = try await config.transport.send(config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
@@ -1751,7 +1753,7 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         body.merge(extraBody) { _, new in new }
 
-        let raw = try await config.sendJSON(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard case let .array(data) = raw["data"] else {
             throw AIError.invalidResponse(provider: providerID, message: "No embedding data found.")
         }
@@ -1800,7 +1802,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             body["response_format"] = .string("b64_json")
         }
 
-        let raw = try await config.sendJSON(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers)
+        let raw = try await config.sendJSON(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard case let .array(data) = raw["data"] else {
             throw AIError.invalidResponse(provider: providerID, message: "No image data found.")
         }
@@ -1945,7 +1947,7 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
         let extraBody = isOpenAIBackedProvider(providerID) ? openAIProviderOptions(from: request.extraBody, providerID: providerID) : request.extraBody
         body.merge(extraBody) { _, new in new }
 
-        let response = try await config.transport.send(config.request(path: "/audio/speech", modelID: modelID, body: .object(body), headers: request.headers))
+        let response = try await config.transport.send(config.request(path: "/audio/speech", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }

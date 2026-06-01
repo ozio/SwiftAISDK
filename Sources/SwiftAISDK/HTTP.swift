@@ -5,12 +5,14 @@ public struct AIHTTPRequest: Sendable {
     public var url: URL
     public var headers: [String: String]
     public var body: Data?
+    public var abortSignal: AIAbortSignal?
 
-    public init(method: String = "POST", url: URL, headers: [String: String] = [:], body: Data? = nil) {
+    public init(method: String = "POST", url: URL, headers: [String: String] = [:], body: Data? = nil, abortSignal: AIAbortSignal? = nil) {
         self.method = method
         self.url = url
         self.headers = headers
         self.body = body
+        self.abortSignal = abortSignal
     }
 }
 
@@ -71,14 +73,23 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
     }
 
     public func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        try request.abortSignal?.throwIfAborted()
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
         for (key, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
+        let preparedRequest = urlRequest
 
-        let (data, response) = try await session.data(for: urlRequest)
+        let (data, response): (Data, URLResponse)
+        if let abortSignal = request.abortSignal {
+            (data, response) = try await raceAbortSignal(abortSignal) {
+                try await self.session.data(for: preparedRequest)
+            }
+        } else {
+            (data, response) = try await session.data(for: preparedRequest)
+        }
         let httpResponse = response as? HTTPURLResponse
         let headers = httpResponse?.allHeaderFields.reduce(into: [String: String]()) { partial, element in
             guard let key = element.key as? String else { return }
@@ -88,14 +99,23 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
     }
 
     public func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        try request.abortSignal?.throwIfAborted()
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
         for (key, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
+        let preparedRequest = urlRequest
 
-        let (bytes, response) = try await session.bytes(for: urlRequest)
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        if let abortSignal = request.abortSignal {
+            (bytes, response) = try await raceAbortSignal(abortSignal) {
+                try await self.session.bytes(for: preparedRequest)
+            }
+        } else {
+            (bytes, response) = try await session.bytes(for: preparedRequest)
+        }
         let httpResponse = response as? HTTPURLResponse
         let headers = httpResponse?.allHeaderFields.reduce(into: [String: String]()) { partial, element in
             guard let key = element.key as? String else { return }
@@ -112,13 +132,43 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
                             continuation.yield(Data([byte]))
                         }
                         continuation.finish()
+                    } catch is CancellationError where request.abortSignal?.isAborted == true {
+                        continuation.finish(throwing: AIAbortError(reason: request.abortSignal?.reason))
                     } catch {
                         continuation.finish(throwing: error)
                     }
                 }
-                continuation.onTermination = { _ in task.cancel() }
+                let registration = request.abortSignal?.addAbortHandler { _ in
+                    task.cancel()
+                }
+                continuation.onTermination = { _ in
+                    registration?.cancel()
+                    task.cancel()
+                }
             }
         )
+    }
+}
+
+private func raceAbortSignal<Output: Sendable>(
+    _ abortSignal: AIAbortSignal,
+    operation: @escaping @Sendable () async throws -> Output
+) async throws -> Output {
+    try abortSignal.throwIfAborted()
+    return try await withThrowingTaskGroup(of: Output.self) { group in
+        defer { group.cancelAll() }
+        group.addTask {
+            try await operation()
+        }
+        group.addTask {
+            let reason = await abortSignal.waitUntilAborted()
+            throw AIAbortError(reason: reason)
+        }
+
+        guard let result = try await group.next() else {
+            throw CancellationError()
+        }
+        return result
     }
 }
 

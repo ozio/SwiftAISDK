@@ -203,6 +203,7 @@ public struct LanguageModelRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         messages: [AIMessage],
@@ -221,7 +222,8 @@ public struct LanguageModelRequest: Sendable {
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.messages = messages
         self.temperature = temperature
@@ -240,12 +242,148 @@ public struct LanguageModelRequest: Sendable {
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
 public enum AIResponseFormat: Equatable, Hashable, Sendable {
     case text
     case json(schema: JSONValue? = nil, name: String? = nil, description: String? = nil)
+}
+
+public struct AIAbortError: Error, Equatable, Sendable, CustomStringConvertible {
+    public var reason: String?
+
+    public init(reason: String? = nil) {
+        self.reason = reason
+    }
+
+    public var description: String {
+        if let reason, !reason.isEmpty {
+            return "Operation aborted: \(reason)"
+        }
+        return "Operation aborted."
+    }
+}
+
+public final class AIAbortController: @unchecked Sendable {
+    public let signal: AIAbortSignal
+
+    public init() {
+        self.signal = AIAbortSignal()
+    }
+
+    public func abort(reason: String? = nil) {
+        signal.abort(reason: reason)
+    }
+}
+
+public final class AIAbortSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var aborted = false
+    private var abortReason: String?
+    private var handlers: [UUID: @Sendable (String?) -> Void] = [:]
+    private var continuations: [UUID: CheckedContinuation<String?, Never>] = [:]
+
+    public var isAborted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return aborted
+    }
+
+    public var reason: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return abortReason
+    }
+
+    public func throwIfAborted() throws {
+        if isAborted {
+            throw AIAbortError(reason: reason)
+        }
+    }
+
+    @discardableResult
+    public func addAbortHandler(_ handler: @escaping @Sendable (String?) -> Void) -> AIAbortHandlerRegistration {
+        lock.lock()
+        if aborted {
+            let reason = abortReason
+            lock.unlock()
+            handler(reason)
+            return AIAbortHandlerRegistration {}
+        }
+        let id = UUID()
+        handlers[id] = handler
+        lock.unlock()
+
+        return AIAbortHandlerRegistration { [weak self] in
+            self?.removeHandler(id)
+        }
+    }
+
+    public func waitUntilAborted() async -> String? {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if aborted {
+                let reason = abortReason
+                lock.unlock()
+                continuation.resume(returning: reason)
+                return
+            }
+            let id = UUID()
+            continuations[id] = continuation
+            lock.unlock()
+        }
+    }
+
+    fileprivate func abort(reason: String?) {
+        lock.lock()
+        guard !aborted else {
+            lock.unlock()
+            return
+        }
+        aborted = true
+        abortReason = reason
+        let handlers = Array(handlers.values)
+        self.handlers.removeAll()
+        let continuations = Array(continuations.values)
+        self.continuations.removeAll()
+        lock.unlock()
+
+        for continuation in continuations {
+            continuation.resume(returning: reason)
+        }
+        for handler in handlers {
+            handler(reason)
+        }
+    }
+
+    private func removeHandler(_ id: UUID) {
+        lock.lock()
+        handlers[id] = nil
+        lock.unlock()
+    }
+}
+
+public final class AIAbortHandlerRegistration: @unchecked Sendable {
+    private let lock = NSLock()
+    private var onCancel: (@Sendable () -> Void)?
+
+    fileprivate init(_ onCancel: @escaping @Sendable () -> Void) {
+        self.onCancel = onCancel
+    }
+
+    public func cancel() {
+        lock.lock()
+        let onCancel = self.onCancel
+        self.onCancel = nil
+        lock.unlock()
+        onCancel?()
+    }
+
+    deinit {
+        cancel()
+    }
 }
 
 public struct AIJSONInstruction: Equatable, Hashable, Sendable {
@@ -1083,19 +1221,22 @@ public struct EmbeddingRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         values: [String],
         dimensions: Int? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.values = values
         self.dimensions = dimensions
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
@@ -1135,6 +1276,7 @@ public struct ImageGenerationRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         prompt: String,
@@ -1146,7 +1288,8 @@ public struct ImageGenerationRequest: Sendable {
         mask: ImageInputFile? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.prompt = prompt
         self.size = size
@@ -1158,6 +1301,7 @@ public struct ImageGenerationRequest: Sendable {
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
@@ -1219,6 +1363,7 @@ public struct AudioTranscriptionRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         audio: Data,
@@ -1228,7 +1373,8 @@ public struct AudioTranscriptionRequest: Sendable {
         prompt: String? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.audio = audio
         self.fileName = fileName
@@ -1238,6 +1384,7 @@ public struct AudioTranscriptionRequest: Sendable {
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
@@ -1294,6 +1441,7 @@ public struct SpeechRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         text: String,
@@ -1301,7 +1449,8 @@ public struct SpeechRequest: Sendable {
         format: String? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.text = text
         self.voice = voice
@@ -1309,6 +1458,7 @@ public struct SpeechRequest: Sendable {
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
@@ -1344,6 +1494,7 @@ public struct VideoGenerationRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         prompt: String,
@@ -1351,7 +1502,8 @@ public struct VideoGenerationRequest: Sendable {
         durationSeconds: Double? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.prompt = prompt
         self.aspectRatio = aspectRatio
@@ -1359,6 +1511,7 @@ public struct VideoGenerationRequest: Sendable {
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
@@ -1394,6 +1547,7 @@ public struct RerankingRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         query: String,
@@ -1401,7 +1555,8 @@ public struct RerankingRequest: Sendable {
         topK: Int? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.query = query
         self.documents = documents
@@ -1409,6 +1564,7 @@ public struct RerankingRequest: Sendable {
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
@@ -1457,6 +1613,7 @@ public struct FileUploadRequest: Sendable {
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
     public init(
         data: Data,
@@ -1468,7 +1625,8 @@ public struct FileUploadRequest: Sendable {
         pollTimeoutNanoseconds: UInt64 = 300_000_000_000,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
     ) {
         self.data = data
         self.mediaType = mediaType
@@ -1480,6 +1638,7 @@ public struct FileUploadRequest: Sendable {
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 
@@ -1527,11 +1686,13 @@ public struct SkillUploadRequest: Sendable {
     public var files: [SkillUploadFile]
     public var displayTitle: String?
     public var headers: [String: String]
+    public var abortSignal: AIAbortSignal?
 
-    public init(files: [SkillUploadFile], displayTitle: String? = nil, headers: [String: String] = [:]) {
+    public init(files: [SkillUploadFile], displayTitle: String? = nil, headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil) {
         self.files = files
         self.displayTitle = displayTitle
         self.headers = headers
+        self.abortSignal = abortSignal
     }
 }
 

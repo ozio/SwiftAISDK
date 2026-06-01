@@ -131,6 +131,31 @@ import Testing
     }
 }
 
+@Test func aiGenerateTextAbortsBeforeModelCallWhenSignalIsAborted() async throws {
+    let recorder = TelemetryRecorder()
+    let controller = AIAbortController()
+    controller.abort(reason: "user cancelled")
+    let model = MockLanguageModel(result: TextGenerationResult(text: "unused", rawValue: .object([:])))
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Abort me",
+            abortSignal: controller.signal,
+            telemetry: AITelemetryOptions(integrations: [recorder])
+        )
+        Issue.record("Expected aborted generateText call.")
+    } catch let error as AIAbortError {
+        let events = await recorder.events()
+
+        #expect(error.reason == "user cancelled")
+        #expect(model.requests.isEmpty)
+        #expect(events.map(\.kind) == [.start, .abort])
+        #expect(events[1].operationID == "ai.generateText")
+        #expect(events[1].errorDescription?.contains("user cancelled") == true)
+    }
+}
+
 @Test func aiTelemetryExecuteLanguageModelCallWrapsModelCallsInIntegrationOrder() async throws {
     let log = ExecutionWrapperLog()
     let model = MockLanguageModel(result: TextGenerationResult(text: "wrapped", rawValue: .object([:])))

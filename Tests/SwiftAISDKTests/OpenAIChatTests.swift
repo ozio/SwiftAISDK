@@ -21,6 +21,20 @@ import Testing
     #expect(body["messages"]?[1]?["content"]?.stringValue == "Hi")
 }
 
+@Test func openAICompatibleChatForwardsAbortSignalToHTTPTransport() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.chatModel("gpt-4.1-mini")
+    let controller = AIAbortController()
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: controller.signal))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.abortSignal === controller.signal)
+}
+
 @Test func openAIChatMapsNestedProviderOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}

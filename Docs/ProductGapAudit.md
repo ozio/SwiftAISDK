@@ -67,7 +67,10 @@ Impact:
   `AIWarningLogging` now mirrors upstream warning logging controls with default,
   custom, and disabled logger modes. Telemetry integrations can now wrap
   language model calls and tool execution with upstream-style execute hooks.
-  Richer explicit cancellation controls still need follow-up work.
+  `AIAbortController`/`AIAbortSignal` now provide a Swift-native equivalent of
+  upstream request `abortSignal`, with facade retry sleeps, stream wrappers,
+  `AIHTTPRequest`, `URLSessionTransport`, and OpenAI-compatible model calls
+  honoring it. Broader provider-by-provider propagation still needs follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -344,8 +347,10 @@ Progress:
    have been yielded. Provider HTTP errors now preserve response headers, and
    facade retries honor `Retry-After` on retryable status codes. `streamText`
    and `streamObject` now record consumer cancellation as telemetry `abort`
-   instead of `error`.
-   Next passes should add richer explicit cancellation controls.
+   instead of `error`. `AIAbortController`/`AIAbortSignal` are now available on
+   core request structs and `AIHTTPRequest`, and the OpenAI-compatible path
+   forwards them to transport. Next passes should propagate abort signals through
+   the remaining provider-specific HTTP helpers and long-polling media flows.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,

@@ -14,6 +14,7 @@ public enum AI {
             input: languageRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: textGenerationTelemetryOutput,
             usage: { $0.usage },
             warnings: { $0.warnings },
@@ -196,6 +197,7 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
         telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
         let request = LanguageModelRequest(
@@ -215,7 +217,8 @@ public enum AI {
             includeRawChunks: includeRawChunks,
             providerOptions: providerOptions,
             extraBody: extraBody,
-            headers: headers
+            headers: headers,
+            abortSignal: abortSignal
         )
 
         if executableTools.isEmpty && prepareStep == nil {
@@ -780,13 +783,14 @@ public enum AI {
                 modelID: model.modelID,
                 input: languageRequestTelemetryInput(request),
                 retryPolicy: retryPolicy,
-                telemetry: telemetry
+                telemetry: telemetry,
+                abortSignal: request.abortSignal
             )
         }
         return streamTextWithTelemetry(
             makeStream: {
                 streamWithTimeout(
-                    model.stream(request),
+                    streamWithAbortSignal(model.stream(request), abortSignal: request.abortSignal),
                     timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
                 )
             },
@@ -795,7 +799,8 @@ public enum AI {
             modelID: model.modelID,
             input: languageRequestTelemetryInput(request),
             retryPolicy: retryPolicy,
-            telemetry: telemetry
+            telemetry: telemetry,
+            abortSignal: request.abortSignal
         )
     }
 
@@ -955,7 +960,8 @@ public enum AI {
             modelID: model.modelID,
             input: languageRequestTelemetryInput(request),
             retryPolicy: .none,
-            telemetry: telemetry
+            telemetry: telemetry,
+            abortSignal: request.abortSignal
         )
     }
 
@@ -983,6 +989,7 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
@@ -1004,7 +1011,8 @@ public enum AI {
             includeRawChunks: includeRawChunks,
             providerOptions: providerOptions,
             extraBody: extraBody,
-            headers: headers
+            headers: headers,
+            abortSignal: abortSignal
         )
 
         if executableTools.isEmpty && prepareStep == nil {
@@ -1197,7 +1205,7 @@ public enum AI {
         return objectStreamWithTelemetry(
             makeStream: {
                 streamWithTimeout(
-                    makeStream(),
+                    streamWithAbortSignal(makeStream(), abortSignal: streamRequest.abortSignal),
                     timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
                 )
             },
@@ -1685,8 +1693,8 @@ public enum AI {
         )
     }
 
-    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
-        try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy, telemetry: telemetry)
+    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
+        try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
     public static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
@@ -1697,6 +1705,7 @@ public enum AI {
             input: embeddingRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: embeddingTelemetryOutput,
             usage: { $0.usage },
             warnings: { $0.warnings },
@@ -1715,14 +1724,15 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
     ) async throws -> EmbeddingResult {
         guard let chunkSize, chunkSize > 0, values.count > chunkSize else {
-            return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy, telemetry: telemetry)
+            return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
         }
 
-        let request = EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers)
+        let request = EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal)
         return try await withTelemetry(
             operationID: "ai.embedMany",
             providerID: model.providerID,
@@ -1730,6 +1740,7 @@ public enum AI {
             input: embeddingRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: embeddingTelemetryOutput,
             usage: { $0.usage },
             warnings: { $0.warnings },
@@ -1745,7 +1756,7 @@ public enum AI {
 
             for chunk in values.chunked(size: chunkSize) {
                 let result = try await withRetry(policy: retryPolicy) {
-                    try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers))
+                    try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal))
                 }
                 embeddings.append(contentsOf: result.embeddings)
                 usage = sumTokenUsage(usage, result.usage)
@@ -1776,6 +1787,7 @@ public enum AI {
             input: imageRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: imageTelemetryOutput,
             usage: { $0.usage },
             warnings: { $0.warnings },
@@ -1786,8 +1798,8 @@ public enum AI {
         }
     }
 
-    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> ImageGenerationResult {
-        try await generateImage(model: model, request: ImageGenerationRequest(prompt: prompt, size: size, aspectRatio: aspectRatio, seed: seed, count: count, files: files, mask: mask, providerOptions: providerOptions, extraBody: extraBody, headers: headers), retryPolicy: retryPolicy, telemetry: telemetry)
+    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> ImageGenerationResult {
+        try await generateImage(model: model, request: ImageGenerationRequest(prompt: prompt, size: size, aspectRatio: aspectRatio, seed: seed, count: count, files: files, mask: mask, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
     public static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> TranscriptionResult {
@@ -1798,6 +1810,7 @@ public enum AI {
             input: transcriptionRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: transcriptionTelemetryOutput,
             usage: { _ in nil },
             warnings: { $0.warnings },
@@ -1816,6 +1829,7 @@ public enum AI {
             input: speechRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: speechTelemetryOutput,
             usage: { _ in nil },
             warnings: { $0.warnings },
@@ -1834,6 +1848,7 @@ public enum AI {
             input: videoRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: videoTelemetryOutput,
             usage: { _ in nil },
             warnings: { $0.warnings },
@@ -1852,6 +1867,7 @@ public enum AI {
             input: rerankingRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: rerankingTelemetryOutput,
             usage: { _ in nil },
             warnings: { $0.warnings },
@@ -1870,6 +1886,7 @@ public enum AI {
             input: fileUploadRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: fileUploadTelemetryOutput,
             usage: { _ in nil },
             warnings: { _ in [] },
@@ -1888,6 +1905,7 @@ public enum AI {
             input: skillUploadRequestTelemetryInput(request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
             output: skillUploadTelemetryOutput,
             usage: { _ in nil },
             warnings: { $0.warnings },
@@ -1923,6 +1941,9 @@ private func optionalSum(_ lhs: Int?, _ rhs: Int?) -> Int? {
 
 private func isCancellationTelemetryError(_ error: Error) -> Bool {
     if error is CancellationError {
+        return true
+    }
+    if error is AIAbortError {
         return true
     }
     if let retryError = error as? AIRetryError, retryError.reason == .cancelled {
@@ -2265,6 +2286,7 @@ private func withTelemetry<Output: Sendable>(
     input: JSONValue?,
     telemetry: AITelemetryOptions?,
     retryPolicy: AIRetryPolicy,
+    abortSignal: AIAbortSignal? = nil,
     callID providedCallID: String? = nil,
     output: @escaping @Sendable (Output) -> JSONValue?,
     usage: @escaping @Sendable (Output) -> TokenUsage?,
@@ -2276,7 +2298,7 @@ private func withTelemetry<Output: Sendable>(
 ) async throws -> Output {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
     guard dispatcher.isEnabled else {
-        let result = try await withRetry(policy: retryPolicy, operation: operation)
+        let result = try await withRetry(policy: retryPolicy, abortSignal: abortSignal, operation: operation)
         await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
         return result
     }
@@ -2307,7 +2329,7 @@ private func withTelemetry<Output: Sendable>(
             }
             return try await operation()
         }
-        let result = try await withRetry(policy: retryPolicy, onRetry: { retry in
+        let result = try await withRetry(policy: retryPolicy, abortSignal: abortSignal, onRetry: { retry in
             await dispatcher.record(telemetryEvent(
                 kind: .retry,
                 callID: callID,
@@ -2340,8 +2362,9 @@ private func withTelemetry<Output: Sendable>(
         await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
         return result
     } catch {
+        let eventKind: AITelemetryEventKind = isCancellationTelemetryError(error) ? .abort : .error
         await dispatcher.record(telemetryEvent(
-            kind: .error,
+            kind: eventKind,
             callID: callID,
             operationID: operationID,
             providerID: providerID,
@@ -2401,6 +2424,7 @@ private func generateObjectResult<Output: Sendable>(
         ),
         telemetry: telemetry,
         retryPolicy: retryPolicy,
+        abortSignal: request.abortSignal,
         callID: callID,
         output: objectGenerationTelemetryOutput,
         usage: { $0.usage },
@@ -2484,7 +2508,8 @@ private func streamTextWithTelemetry(
     modelID: String?,
     input: JSONValue?,
     retryPolicy: AIRetryPolicy,
-    telemetry: AITelemetryOptions?
+    telemetry: AITelemetryOptions?,
+    abortSignal: AIAbortSignal? = nil
 ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
     let callID = UUID().uuidString
@@ -2590,7 +2615,7 @@ private func streamTextWithTelemetry(
                             errorDescription: String(describing: error)
                         ))
                         if sleepDelay > 0 {
-                            try await Task.sleep(nanoseconds: sleepDelay)
+                            try await sleep(nanoseconds: sleepDelay, abortSignal: abortSignal)
                         }
                         delay = nextDelay(current: delay, policy: retryPolicy)
                     }
@@ -2835,7 +2860,7 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                             errorDescription: String(describing: error)
                         ))
                         if sleepDelay > 0 {
-                            try await Task.sleep(nanoseconds: sleepDelay)
+                            try await sleep(nanoseconds: sleepDelay, abortSignal: request?.abortSignal)
                         }
                         delay = nextDelay(current: delay, policy: retryPolicy)
                     }
@@ -3058,6 +3083,7 @@ private func telemetryEvent(
 
 private func withRetry<Output: Sendable>(
     policy: AIRetryPolicy,
+    abortSignal: AIAbortSignal? = nil,
     onRetry: @escaping @Sendable (AIRetryAttemptTelemetry) async -> Void = { _ in },
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
@@ -3068,10 +3094,13 @@ private func withRetry<Output: Sendable>(
 
     while true {
         try Task.checkCancellation()
+        try abortSignal?.throwIfAborted()
         do {
             return try await withTimeout(policy.timeoutNanoseconds, operation: operation)
         } catch is CancellationError {
             throw AIRetryError(reason: .cancelled, attempts: errors.count + 1, errors: errors)
+        } catch let error as AIAbortError {
+            throw error
         } catch {
             errors.append(String(describing: error))
             let attempts = errors.count
@@ -3091,10 +3120,29 @@ private func withRetry<Output: Sendable>(
                 delayNanoseconds: sleepDelay
             ))
             if sleepDelay > 0 {
-                try await Task.sleep(nanoseconds: sleepDelay)
+                try await sleep(nanoseconds: sleepDelay, abortSignal: abortSignal)
             }
             delay = nextDelay(current: delay, policy: policy)
         }
+    }
+}
+
+private func sleep(nanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws {
+    guard let abortSignal else {
+        try await Task.sleep(nanoseconds: nanoseconds)
+        return
+    }
+    try abortSignal.throwIfAborted()
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        defer { group.cancelAll() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
+        group.addTask {
+            let reason = await abortSignal.waitUntilAborted()
+            throw AIAbortError(reason: reason)
+        }
+        _ = try await group.next()
     }
 }
 
@@ -3135,6 +3183,35 @@ private func withTimeout<Output: Sendable>(
             throw CancellationError()
         }
         return result
+    }
+}
+
+private func streamWithAbortSignal<Part: Sendable>(
+    _ stream: AsyncThrowingStream<Part, Error>,
+    abortSignal: AIAbortSignal?
+) -> AsyncThrowingStream<Part, Error> {
+    guard let abortSignal else { return stream }
+    return AsyncThrowingStream { continuation in
+        let task = Task {
+            do {
+                try abortSignal.throwIfAborted()
+                for try await part in stream {
+                    try Task.checkCancellation()
+                    try abortSignal.throwIfAborted()
+                    continuation.yield(part)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        let registration = abortSignal.addAbortHandler { _ in
+            task.cancel()
+        }
+        continuation.onTermination = { _ in
+            registration.cancel()
+            task.cancel()
+        }
     }
 }
 

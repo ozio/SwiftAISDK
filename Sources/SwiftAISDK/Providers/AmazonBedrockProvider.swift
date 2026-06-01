@@ -370,7 +370,7 @@ enum AWSSigV4 {
         let signature = hmacHex(key: signingKey(secret: credentials.secretAccessKey, date: shortDate, region: region, service: service), data: Data(stringToSign.utf8))
 
         headers["authorization"] = "AWS4-HMAC-SHA256 Credential=\(credentials.accessKeyID)/\(credentialScope), SignedHeaders=\(signedHeaders), Signature=\(signature)"
-        return AIHTTPRequest(method: request.method, url: request.url, headers: headers, body: request.body)
+        return AIHTTPRequest(method: request.method, url: request.url, headers: headers, body: request.body, abortSignal: request.abortSignal)
     }
 
     private static let timestampFormatter: DateFormatter = {

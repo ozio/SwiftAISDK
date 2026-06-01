@@ -95,6 +95,7 @@ public extension AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
         telemetry: AITelemetryOptions? = nil
     ) async throws -> TextGenerationResult {
         try await generateText(
@@ -122,6 +123,7 @@ public extension AI {
             providerOptions: providerOptions,
             extraBody: extraBody,
             headers: headers,
+            abortSignal: abortSignal,
             telemetry: telemetry
         )
     }
@@ -203,6 +205,7 @@ public extension AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil
@@ -232,6 +235,7 @@ public extension AI {
                 providerOptions: providerOptions,
                 extraBody: extraBody,
                 headers: headers,
+                abortSignal: abortSignal,
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry
