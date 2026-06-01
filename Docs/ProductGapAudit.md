@@ -130,6 +130,10 @@ Impact:
   JSON response formats into native `response_format.type=json_schema`
   requests, keeps Perplexity-specific options scoped, returns upstream-style
   warnings for unsupported call settings, and preserves response metadata.
+  Hugging Face Responses now maps standard JSON response formats into
+  `text.format.type=json_schema`, honors `strictJsonSchema`, returns upstream
+  unsupported-setting warnings, preserves response metadata, and emits
+  v4-shaped stream lifecycle parts for text, reasoning, and tool inputs.
   Richer provider-specific structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.

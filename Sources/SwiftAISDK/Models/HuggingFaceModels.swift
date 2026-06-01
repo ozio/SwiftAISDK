@@ -11,7 +11,15 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers)
+        let prepared = huggingFacePreparedCall(for: request, modelID: modelID, stream: false)
+        let response = try await config.sendJSONResponse(
+            path: "/responses",
+            modelID: modelID,
+            body: .object(prepared.body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        )
+        let raw = response.json
         if let message = raw["error"]?["message"]?.stringValue {
             throw AIError.invalidResponse(provider: providerID, message: message)
         }
@@ -27,9 +35,12 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
             finishReason: huggingFaceFinishReason(raw["incomplete_details"]?["reason"]?.stringValue ?? "stop"),
             usage: tokenUsage(from: raw),
             toolCalls: parsed.toolCalls,
+            toolResults: parsed.toolResults,
             sources: parsed.sources,
             providerMetadata: ["huggingface": .object(["responseId": raw["id"] ?? .null])],
-            rawValue: raw
+            rawValue: raw,
+            warnings: prepared.warnings,
+            responseMetadata: huggingFaceResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -37,10 +48,22 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let httpRequest = try config.request(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: true)), headers: request.headers)
+                    let prepared = huggingFacePreparedCall(for: request, modelID: modelID, stream: true)
+                    let httpRequest = try config.request(
+                        path: "/responses",
+                        modelID: modelID,
+                        body: .object(prepared.body),
+                        headers: request.headers,
+                        abortSignal: request.abortSignal
+                    )
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
+                    }
+
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    if !prepared.warnings.isEmpty {
+                        continuation.yield(.streamStart(warnings: prepared.warnings))
                     }
 
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -50,23 +73,44 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                         }
 
                         switch raw["type"]?.stringValue {
+                        case "response.created":
+                            let metadataRaw = raw["response"] ?? raw
+                            continuation.yield(.responseMetadata(huggingFaceResponseMetadata(from: metadataRaw, response: response, modelID: modelID)))
+                        case "response.output_item.added":
+                            for part in huggingFaceOutputItemAddedParts(from: raw["item"]) {
+                                continuation.yield(part)
+                            }
                         case "response.output_text.delta":
-                            if let delta = raw["delta"]?.stringValue {
-                                continuation.yield(.textDelta(delta))
+                            if let delta = raw["delta"]?.stringValue, !delta.isEmpty {
+                                continuation.yield(.textDeltaPart(
+                                    id: raw["item_id"]?.stringValue ?? "text",
+                                    delta: delta,
+                                    providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
+                                ))
                             }
                         case "response.reasoning_text.delta":
-                            if let delta = raw["delta"]?.stringValue {
-                                continuation.yield(.reasoningDelta(delta))
+                            if let delta = raw["delta"]?.stringValue, !delta.isEmpty {
+                                continuation.yield(.reasoningDeltaPart(
+                                    id: raw["item_id"]?.stringValue ?? "reasoning",
+                                    delta: delta,
+                                    providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
+                                ))
                             }
+                        case "response.reasoning_text.done":
+                            continuation.yield(.reasoningEnd(
+                                id: raw["item_id"]?.stringValue ?? "reasoning",
+                                providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
+                            ))
                         case "response.output_item.done":
-                            if let toolCall = huggingFaceToolCall(from: raw["item"]) {
-                                continuation.yield(.toolCall(toolCall))
+                            for part in huggingFaceOutputItemDoneParts(from: raw["item"]) {
+                                continuation.yield(part)
                             }
                         case "response.completed", "response.incomplete":
                             let response = raw["response"] ?? raw
-                            continuation.yield(.finish(
+                            continuation.yield(.finishMetadata(
                                 reason: huggingFaceFinishReason(response["incomplete_details"]?["reason"]?.stringValue ?? "stop"),
-                                usage: tokenUsage(from: response)
+                                usage: tokenUsage(from: response),
+                                providerMetadata: ["huggingface": .object(["responseId": response["id"] ?? .null])]
                             ))
                         default:
                             break
@@ -79,42 +123,113 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
             }
         }
     }
-
-    private func body(for request: LanguageModelRequest, stream: Bool) -> [String: JSONValue] {
-        let options = huggingFaceProviderOptions(from: request.extraBody)
-        var body: [String: JSONValue] = [
-            "model": .string(modelID),
-            "input": .array(request.messages.compactMap(huggingFaceInputMessage))
-        ]
-        if stream { body["stream"] = true }
-        if let temperature = request.temperature { body["temperature"] = .number(temperature) }
-        if let topP = request.topP { body["top_p"] = .number(topP) }
-        if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
-        if let metadata = options["metadata"] { body["metadata"] = metadata }
-        if let instructions = options["instructions"] { body["instructions"] = instructions }
-        if let reasoningEffort = options["reasoningEffort"] ?? options["reasoning_effort"] {
-            body["reasoning"] = .object(["effort": reasoningEffort])
-        }
-        let tools = huggingFaceTools(from: request.tools)
-        if !tools.isEmpty {
-            body["tools"] = .array(tools)
-            if let toolChoice = huggingFaceToolChoice(from: options["toolChoice"] ?? options["tool_choice"]) {
-                body["tool_choice"] = toolChoice
-            }
-        }
-        for (key, value) in options where !["metadata", "instructions", "reasoningEffort", "reasoning_effort", "toolChoice", "tool_choice", "strictJsonSchema"].contains(key) {
-            body[key] = value
-        }
-        return body
-    }
 }
 
-private func huggingFaceProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = extraBody
+private struct HuggingFacePreparedCall {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
+
+private func huggingFacePreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> HuggingFacePreparedCall {
+    var options = huggingFaceProviderOptions(from: request)
+    let responseFormat = huggingFaceResolvedResponseFormat(request: request, options: &options)
+    var body: [String: JSONValue] = [
+        "model": .string(modelID),
+        "input": .array(request.messages.compactMap(huggingFaceInputMessage))
+    ]
+    if stream { body["stream"] = true }
+    if let temperature = request.temperature { body["temperature"] = .number(temperature) }
+    if let topP = request.topP { body["top_p"] = .number(topP) }
+    if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
+    if let textFormat = huggingFaceTextFormat(from: responseFormat, strictJsonSchema: options["strictJsonSchema"]) {
+        body["text"] = .object(["format": textFormat])
+    }
+    if let metadata = options["metadata"] { body["metadata"] = metadata }
+    if let instructions = options["instructions"] { body["instructions"] = instructions }
+    if let reasoningEffort = options["reasoningEffort"] ?? options["reasoning_effort"] {
+        body["reasoning"] = .object(["effort": reasoningEffort])
+    }
+    let tools = huggingFaceTools(from: request.tools)
+    if !tools.isEmpty {
+        body["tools"] = .array(tools)
+        if let toolChoice = huggingFaceToolChoice(from: request.toolChoice ?? options["toolChoice"] ?? options["tool_choice"]) {
+            body["tool_choice"] = toolChoice
+        }
+    }
+    for (key, value) in options where !["metadata", "instructions", "reasoningEffort", "reasoning_effort", "toolChoice", "tool_choice", "responseFormat", "strictJsonSchema"].contains(key) {
+        body[key] = value
+    }
+    return HuggingFacePreparedCall(body: body, warnings: huggingFaceWarnings(for: request))
+}
+
+private func huggingFaceProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+    var output = request.extraBody
     if let nested = output.removeValue(forKey: "huggingface")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
+    if let nested = request.providerOptions["huggingface"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     return output
+}
+
+private func huggingFaceResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        options.removeValue(forKey: "responseFormat")
+        return huggingFaceResponseFormatJSON(responseFormat)
+    }
+    return options.removeValue(forKey: "responseFormat")
+}
+
+private func huggingFaceResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
+}
+
+private func huggingFaceTextFormat(from responseFormat: JSONValue?, strictJsonSchema: JSONValue?) -> JSONValue? {
+    guard responseFormat?["type"]?.stringValue == "json",
+          let schema = responseFormat?["schema"] else {
+        return nil
+    }
+    var format: [String: JSONValue] = [
+        "type": .string("json_schema"),
+        "strict": strictJsonSchema ?? .bool(false),
+        "name": responseFormat?["name"] ?? .string("response"),
+        "schema": schema
+    ]
+    if let description = responseFormat?["description"] {
+        format["description"] = description
+    }
+    return .object(format)
+}
+
+private func huggingFaceWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.topK != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "topK"))
+    }
+    if request.seed != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "seed"))
+    }
+    if request.presencePenalty != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty"))
+    }
+    if request.frequencyPenalty != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
+    }
+    if !request.stopSequences.isEmpty {
+        warnings.append(AIWarning(type: "unsupported", feature: "stopSequences"))
+    }
+    return warnings
 }
 
 private func huggingFaceInputMessage(_ message: AIMessage) -> JSONValue? {
@@ -175,10 +290,11 @@ private func huggingFaceToolChoice(from value: JSONValue?) -> JSONValue? {
     return value
 }
 
-private func huggingFaceResponseContent(from raw: JSONValue) -> (text: String, reasoning: String, toolCalls: [AIToolCall], sources: [AISource]) {
+private func huggingFaceResponseContent(from raw: JSONValue) -> (text: String, reasoning: String, toolCalls: [AIToolCall], toolResults: [AIToolResult], sources: [AISource]) {
     var textParts: [String] = []
     var reasoningParts: [String] = []
     var toolCalls: [AIToolCall] = []
+    var toolResults: [AIToolResult] = []
     var sources: [AISource] = []
 
     for item in raw["output"]?.arrayValue ?? [] {
@@ -205,6 +321,9 @@ private func huggingFaceResponseContent(from raw: JSONValue) -> (text: String, r
             if let toolCall = huggingFaceToolCall(from: item) {
                 toolCalls.append(toolCall)
             }
+            if let toolResult = huggingFaceToolResult(from: item) {
+                toolResults.append(toolResult)
+            }
         }
     }
 
@@ -212,7 +331,7 @@ private func huggingFaceResponseContent(from raw: JSONValue) -> (text: String, r
         textParts.append(outputText)
     }
 
-    return (textParts.joined(), reasoningParts.joined(), toolCalls, sources)
+    return (textParts.joined(), reasoningParts.joined(), toolCalls, toolResults, sources)
 }
 
 private func huggingFaceToolCall(from item: JSONValue?) -> AIToolCall? {
@@ -247,6 +366,110 @@ private func huggingFaceToolCall(from item: JSONValue?) -> AIToolCall? {
     default:
         return nil
     }
+}
+
+private func huggingFaceToolResult(from item: JSONValue?) -> AIToolResult? {
+    guard let item, let type = item["type"]?.stringValue else { return nil }
+    switch type {
+    case "function_call":
+        guard let output = item["output"], let name = item["name"]?.stringValue else { return nil }
+        return AIToolResult(
+            toolCallID: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "function-call",
+            toolName: name,
+            result: output,
+            modelOutput: output,
+            providerMetadata: huggingFaceItemMetadata(id: item["id"]?.stringValue)
+        )
+    case "mcp_call":
+        guard let output = item["output"], let name = item["name"]?.stringValue else { return nil }
+        return AIToolResult(
+            toolCallID: item["id"]?.stringValue ?? "mcp-call",
+            toolName: name,
+            result: output,
+            modelOutput: output,
+            providerMetadata: huggingFaceItemMetadata(id: item["id"]?.stringValue)
+        )
+    case "mcp_list_tools":
+        guard let tools = item["tools"] else { return nil }
+        let result: JSONValue = .object(["tools": tools])
+        return AIToolResult(
+            toolCallID: item["id"]?.stringValue ?? "mcp-list-tools",
+            toolName: "list_tools",
+            result: result,
+            modelOutput: result,
+            providerMetadata: huggingFaceItemMetadata(id: item["id"]?.stringValue)
+        )
+    default:
+        return nil
+    }
+}
+
+private func huggingFaceOutputItemAddedParts(from item: JSONValue?) -> [LanguageStreamPart] {
+    guard let item, let type = item["type"]?.stringValue else { return [] }
+    switch type {
+    case "message" where item["role"]?.stringValue == "assistant":
+        let id = item["id"]?.stringValue ?? "message"
+        return [.textStart(id: id, providerMetadata: huggingFaceItemMetadata(id: id))]
+    case "reasoning":
+        let id = item["id"]?.stringValue ?? "reasoning"
+        return [.reasoningStart(id: id, providerMetadata: huggingFaceItemMetadata(id: id))]
+    case "function_call":
+        guard let name = item["name"]?.stringValue else { return [] }
+        return [.toolInputStart(id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "function-call", name: name)]
+    case "mcp_call":
+        guard let name = item["name"]?.stringValue else { return [] }
+        return [.toolInputStart(id: item["id"]?.stringValue ?? "mcp-call", name: name, providerExecuted: true)]
+    case "mcp_list_tools":
+        return [.toolInputStart(id: item["id"]?.stringValue ?? "mcp-list-tools", name: "list_tools", providerExecuted: true)]
+    default:
+        return []
+    }
+}
+
+private func huggingFaceOutputItemDoneParts(from item: JSONValue?) -> [LanguageStreamPart] {
+    guard let item, let type = item["type"]?.stringValue else { return [] }
+    switch type {
+    case "message" where item["role"]?.stringValue == "assistant":
+        let id = item["id"]?.stringValue ?? "message"
+        return [.textEnd(id: id, providerMetadata: huggingFaceItemMetadata(id: id))]
+    case "reasoning":
+        let id = item["id"]?.stringValue ?? "reasoning"
+        return [.reasoningEnd(id: id, providerMetadata: huggingFaceItemMetadata(id: id))]
+    case "function_call", "mcp_call", "mcp_list_tools":
+        var parts: [LanguageStreamPart] = []
+        if type == "function_call" {
+            parts.append(.toolInputEnd(id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "function-call"))
+        } else {
+            parts.append(.toolInputEnd(id: item["id"]?.stringValue ?? type))
+        }
+        if let toolCall = huggingFaceToolCall(from: item) {
+            parts.append(.toolCall(toolCall))
+        }
+        if let toolResult = huggingFaceToolResult(from: item) {
+            parts.append(.toolResult(toolResult))
+        }
+        return parts
+    default:
+        if let toolCall = huggingFaceToolCall(from: item) {
+            return [.toolCall(toolCall)]
+        }
+        return []
+    }
+}
+
+private func huggingFaceItemMetadata(id: String?) -> [String: JSONValue] {
+    guard let id else { return [:] }
+    return ["huggingface": .object(["itemId": .string(id)])]
+}
+
+private func huggingFaceResponseMetadata(from raw: JSONValue? = nil, response: AIHTTPResponse, modelID: String) -> AIResponseMetadata {
+    AIResponseMetadata(
+        id: raw?["id"]?.stringValue,
+        timestamp: raw?["created_at"]?.doubleValue.map { Date(timeIntervalSince1970: $0) } ?? Date(),
+        modelID: raw?["model"]?.stringValue ?? modelID,
+        headers: response.headers,
+        body: raw
+    )
 }
 
 private func huggingFaceFinishReason(_ reason: String?) -> String? {
