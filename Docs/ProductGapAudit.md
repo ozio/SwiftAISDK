@@ -205,6 +205,10 @@ Impact:
   now take an `MCPOAuthProvider`, attach bearer tokens, invalidate stale tokens
   on 401 responses, parse `resource_metadata` from `WWW-Authenticate`, run an
   authorization recovery hook, and retry the original request once.
+  `MCPOAuthDiscovery` now mirrors upstream OAuth metadata discovery for MCP
+  resources: it discovers protected-resource metadata, tries path-aware URLs
+  before root fallback, resolves OAuth/OIDC authorization-server metadata, and
+  rejects OIDC metadata that cannot support S256 PKCE.
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
@@ -219,7 +223,7 @@ Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
 provider-defined tool schema adapters, richer provider-native handling for
-multimodal `modelOutput`, full MCP OAuth discovery/PKCE/dynamic registration,
+multimodal `modelOutput`, full MCP OAuth PKCE/token exchange/refresh/dynamic registration,
 richer stream tool lifecycle events, and provider-executed approval response
 mapping for non-OpenAI providers that expose an equivalent native wire format.
 Keep provider-defined tools as specialized `AITool` values instead of plain JSON
@@ -339,7 +343,8 @@ Progress:
    MCP-style tool model-output conversion and first-pass Streamable HTTP
    session plus streaming semantics. Next passes should add typed validation
    errors, provider-executed approval responses, full MCP OAuth
-   discovery/PKCE/dynamic registration, and richer stream lifecycle handling.
+   PKCE/token exchange/refresh/dynamic registration, and richer stream
+   lifecycle handling.
 
 6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON
