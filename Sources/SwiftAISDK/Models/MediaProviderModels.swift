@@ -1300,7 +1300,38 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let options = prodiaProviderOptions(from: request.extraBody)
+        try await prodiaGenerate(request).result
+    }
+
+    public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let generated = try await prodiaGenerate(request)
+                    let result = generated.result
+                    continuation.yield(.streamStart(warnings: result.warnings))
+                    continuation.yield(.responseMetadata(result.responseMetadata))
+                    if !result.text.isEmpty {
+                        let id = UUID().uuidString
+                        continuation.yield(.textStart(id: id))
+                        continuation.yield(.textDeltaPart(id: id, delta: result.text))
+                        continuation.yield(.textEnd(id: id))
+                    }
+                    for file in generated.files {
+                        continuation.yield(.file(file))
+                    }
+                    continuation.yield(.finishMetadata(reason: result.finishReason, usage: result.usage, providerMetadata: result.providerMetadata))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func prodiaGenerate(_ request: LanguageModelRequest) async throws -> ProdiaLanguageGeneration {
+        let options = prodiaProviderOptions(from: request)
+        let warnings = prodiaLanguageWarnings(for: request)
         var jobConfig: [String: JSONValue] = [
             "prompt": .string(prodiaPrompt(from: request.messages)),
             "include_messages": .bool(true)
@@ -1315,7 +1346,7 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
         ])
         var form = MultipartFormData()
         form.appendFile(name: "job", fileName: "job.json", mimeType: "application/json", data: try encodeJSONBody(body))
-        if let input = try await prodiaInputImage(from: request.messages, transport: config.transport) {
+        if let input = try await prodiaInputImage(from: request.messages, transport: config.transport, abortSignal: request.abortSignal) {
             form.appendFile(name: "input", fileName: "input\(mediaExtension(input.mimeType))", mimeType: input.mimeType, data: input.data)
         }
         let payload = form.finalize()
@@ -1328,7 +1359,8 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
             method: "POST",
             url: try requireURL("\(withoutTrailingSlash(config.baseURL))/job?price=true"),
             headers: headers,
-            body: payload
+            body: payload,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -1341,7 +1373,21 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
             ($0.name == "output" && ($0.contentType?.hasPrefix("text/") == true || $0.fileName?.hasSuffix(".txt") == true))
                 || $0.contentType?.hasPrefix("text/") == true
         }.flatMap { String(data: $0.body, encoding: .utf8) } ?? ""
-        return TextGenerationResult(text: text, finishReason: "stop", rawValue: multipartRawValue(multipart))
+        let job = prodiaJobResult(from: multipart)
+        let files = prodiaLanguageFiles(from: multipart)
+        let rawValue = multipartRawValue(multipart)
+        return ProdiaLanguageGeneration(
+            result: TextGenerationResult(
+                text: text,
+                finishReason: "stop",
+                usage: TokenUsage(),
+                providerMetadata: ["prodia": prodiaProviderMetadata(from: job)],
+                rawValue: rawValue,
+                warnings: warnings,
+                responseMetadata: aiResponseMetadata(from: job, response: response, modelID: modelID)
+            ),
+            files: files
+        )
     }
 }
 
@@ -1356,14 +1402,24 @@ public final class ProdiaImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = prodiaProviderOptions(from: request.extraBody)
+        let options = prodiaProviderOptions(from: request)
+        var warnings: [AIWarning] = []
         var jobConfig: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let size = request.size {
-            let dimensions = size.split(separator: "x").compactMap { Int($0) }
-            if dimensions.count == 2 {
-                jobConfig["width"] = .number(Double(dimensions[0]))
-                jobConfig["height"] = .number(Double(dimensions[1]))
+            let parts = size.split(separator: "x", omittingEmptySubsequences: false).map(String.init)
+            if parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]) {
+                jobConfig["width"] = .number(Double(width))
+                jobConfig["height"] = .number(Double(height))
+            } else {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "size",
+                    message: "Invalid size format: \(size). Expected format: WIDTHxHEIGHT (e.g., 1024x1024)"
+                ))
             }
+        }
+        if let seed = request.seed {
+            jobConfig["seed"] = .number(Double(seed))
         }
         jobConfig.merge(prodiaImageOptions(from: options)) { _, new in new }
         let body: JSONValue = .object([
@@ -1374,7 +1430,8 @@ public final class ProdiaImageModel: ImageModel, @unchecked Sendable {
             path: "/job?price=true",
             modelID: modelID,
             body: body,
-            headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; image/png"])
+            headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; image/png"]),
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -1384,11 +1441,15 @@ public final class ProdiaImageModel: ImageModel, @unchecked Sendable {
         guard let output else {
             throw AIError.invalidResponse(provider: providerID, message: "Prodia image response did not contain output image part.")
         }
+        let job = prodiaJobResult(from: multipart)
         return ImageGenerationResult(
             urls: [],
             base64Images: [output.body.base64EncodedString()],
             rawValue: multipartRawValue(multipart),
-            requestMetadata: imageGenerationRequestMetadata(request, body: body)
+            warnings: warnings,
+            providerMetadata: ["prodia": .object(["images": .array([prodiaProviderMetadata(from: job)])])],
+            requestMetadata: imageGenerationRequestMetadata(request, body: body),
+            responseMetadata: aiResponseMetadata(from: job, response: response, modelID: modelID)
         )
     }
 }
@@ -1404,34 +1465,86 @@ public final class ProdiaVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = prodiaProviderOptions(from: request.extraBody)
+        let options = prodiaProviderOptions(from: request)
         var jobConfig: [String: JSONValue] = ["prompt": .string(request.prompt)]
-        if let seed = options["seed"] { jobConfig["seed"] = seed }
+        if let seed = request.seed {
+            jobConfig["seed"] = .number(Double(seed))
+        } else if let seed = options["seed"] {
+            jobConfig["seed"] = seed
+        }
         if let resolution = options["resolution"] { jobConfig["resolution"] = resolution }
         let body: JSONValue = .object([
             "type": .string(modelID),
             "config": .object(jobConfig)
         ])
-        let response = try await config.transport.send(config.request(
-            path: "/job?price=true",
-            modelID: modelID,
-            body: body,
-            headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; video/mp4"])
-        ))
+        let response: AIHTTPResponse
+        if let image = request.image {
+            let input = try await prodiaVideoInputImage(from: image, transport: config.transport, abortSignal: request.abortSignal)
+            var form = MultipartFormData()
+            form.appendFile(name: "job", fileName: "job.json", mimeType: "application/json", data: try encodeJSONBody(body))
+            form.appendFile(name: "input", fileName: "input\(mediaExtension(input.mimeType))", mimeType: input.mimeType, data: input.data)
+            let payload = form.finalize()
+            let headers = config.headers.mergingHeaders(request.headers).mergingHeaders([
+                "Accept": "multipart/form-data; video/mp4",
+                "Content-Type": "multipart/form-data; boundary=\(form.boundary)"
+            ])
+            response = try await config.transport.send(AIHTTPRequest(
+                method: "POST",
+                url: try requireURL("\(withoutTrailingSlash(config.baseURL))/job?price=true"),
+                headers: headers,
+                body: payload,
+                abortSignal: request.abortSignal
+            ))
+        } else {
+            response = try await config.transport.send(config.request(
+                path: "/job?price=true",
+                modelID: modelID,
+                body: body,
+                headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; video/mp4"]),
+                abortSignal: request.abortSignal
+            ))
+        }
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
         let multipart = try parseMultipartResponse(response)
-        guard multipart.contains(where: { $0.name == "output" || $0.contentType?.hasPrefix("video/") == true }) else {
+        let output = multipart.first { $0.name == "output" || $0.contentType?.hasPrefix("video/") == true }
+        guard output != nil else {
             throw AIError.invalidResponse(provider: providerID, message: "Prodia video response did not contain output video part.")
         }
+        let job = prodiaJobResult(from: multipart)
         return VideoGenerationResult(
             urls: [],
-            operationID: multipart.compactMap { $0.json?["id"]?.stringValue }.first,
+            operationID: job?["id"]?.stringValue,
             rawValue: multipartRawValue(multipart),
-            requestMetadata: videoGenerationRequestMetadata(request, body: body)
+            providerMetadata: ["prodia": .object(["videos": .array([prodiaProviderMetadata(from: job)])])],
+            requestMetadata: videoGenerationRequestMetadata(request, body: body),
+            responseMetadata: aiResponseMetadata(from: job, response: response, modelID: modelID)
         )
     }
+}
+
+private struct ProdiaLanguageGeneration {
+    var result: TextGenerationResult
+    var files: [AIStreamFile]
+}
+
+private func prodiaProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func prodiaProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func prodiaProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func prodiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = prodiaProviderOptions(from: extraBody)
+    output.merge(prodiaProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    return output
 }
 
 private func prodiaProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
@@ -1453,6 +1566,80 @@ private func prodiaImageOptions(from options: [String: JSONValue]) -> [String: J
     if let loras = options["loras"] { output["loras"] = loras }
     if let progressive = options["progressive"] { output["progressive"] = progressive }
     return output
+}
+
+private func prodiaLanguageWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.temperature != nil { warnings.append(AIWarning(type: "unsupported", feature: "temperature")) }
+    if request.topP != nil { warnings.append(AIWarning(type: "unsupported", feature: "topP")) }
+    if request.topK != nil { warnings.append(AIWarning(type: "unsupported", feature: "topK")) }
+    if request.maxOutputTokens != nil { warnings.append(AIWarning(type: "unsupported", feature: "maxOutputTokens")) }
+    if !request.stopSequences.isEmpty { warnings.append(AIWarning(type: "unsupported", feature: "stopSequences")) }
+    if request.presencePenalty != nil { warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty")) }
+    if request.frequencyPenalty != nil { warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty")) }
+    if !request.tools.isEmpty { warnings.append(AIWarning(type: "unsupported", feature: "tools")) }
+    if request.toolChoice != nil { warnings.append(AIWarning(type: "unsupported", feature: "toolChoice")) }
+    if case .json = request.responseFormat {
+        warnings.append(AIWarning(type: "unsupported", feature: "responseFormat"))
+    }
+    if request.reasoning != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "reasoning",
+            message: "This provider does not support reasoning configuration."
+        ))
+    }
+    return warnings
+}
+
+private func prodiaJobResult(from parts: [MultipartResponsePart]) -> JSONValue? {
+    parts.first { $0.name == "job" }?.json
+}
+
+private func prodiaProviderMetadata(from jobResult: JSONValue?) -> JSONValue {
+    guard let jobResult else { return .object([:]) }
+    var metadata: [String: JSONValue] = [:]
+    if let jobID = jobResult["id"]?.stringValue {
+        metadata["jobId"] = .string(jobID)
+    }
+    if let seed = jobResult["config"]?["seed"] {
+        metadata["seed"] = seed
+    }
+    if let elapsed = jobResult["metrics"]?["elapsed"] {
+        metadata["elapsed"] = elapsed
+    }
+    if let ips = jobResult["metrics"]?["ips"] {
+        metadata["iterationsPerSecond"] = ips
+    }
+    if let createdAt = jobResult["created_at"]?.stringValue {
+        metadata["createdAt"] = .string(createdAt)
+    }
+    if let updatedAt = jobResult["updated_at"]?.stringValue {
+        metadata["updatedAt"] = .string(updatedAt)
+    }
+    if let dollars = jobResult["price"]?["dollars"] {
+        metadata["dollars"] = dollars
+    }
+    return .object(metadata)
+}
+
+private func prodiaLanguageFiles(from parts: [MultipartResponsePart]) -> [AIStreamFile] {
+    parts.compactMap { part in
+        guard part.name == "output", let contentType = part.contentType, contentType.hasPrefix("image/") else {
+            return nil
+        }
+        return AIStreamFile(
+            mediaType: contentType,
+            data: part.body,
+            filename: part.fileName,
+            rawValue: .object([
+                "name": part.name.map(JSONValue.string),
+                "fileName": part.fileName.map(JSONValue.string),
+                "contentType": .string(contentType),
+                "base64": .string(part.body.base64EncodedString())
+            ])
+        )
+    }
 }
 
 private func splitVersionedModelID(_ modelID: String) -> (model: String, version: String?) {
@@ -1975,24 +2162,51 @@ private func prodiaPrompt(from messages: [AIMessage]) -> String {
     return "\(system)\n\(user)"
 }
 
-private func prodiaInputImage(from messages: [AIMessage], transport: AITransport) async throws -> (data: Data, mimeType: String)? {
+private func prodiaInputImage(from messages: [AIMessage], transport: AITransport, abortSignal: AIAbortSignal?) async throws -> (data: Data, mimeType: String)? {
     guard let user = messages.reversed().first(where: { $0.role == .user }) else { return nil }
     for part in user.content {
         switch part {
-        case let .data(mimeType, data) where mimeType.hasPrefix("image/"),
-             let .file(mimeType, data, _) where mimeType.hasPrefix("image/"):
-            return (data, mimeType)
+        case let .data(mimeType, data) where topLevelMediaType(mimeType) == "image",
+             let .file(mimeType, data, _) where topLevelMediaType(mimeType) == "image":
+            return (data, prodiaResolvedImageMediaType(mediaType: mimeType, data: data))
         case let .imageURL(urlString):
-            let response = try await downloadURL(urlString, transport: transport)
+            let response = try await downloadURL(urlString, transport: transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: "prodia.language", response: response)
             }
-            return (response.body, response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value ?? "image/png")
+            let mediaType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value ?? "image/png"
+            return (response.body, prodiaResolvedImageMediaType(mediaType: mediaType, data: response.body))
         case .text, .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             continue
         }
     }
     return nil
+}
+
+private func prodiaVideoInputImage(from image: ImageInputFile, transport: AITransport, abortSignal: AIAbortSignal?) async throws -> (data: Data, mimeType: String) {
+    if let data = image.data {
+        let mediaType = image.mediaType ?? detectMediaType(data: data, topLevelType: "image") ?? "image/png"
+        return (data, prodiaResolvedImageMediaType(mediaType: mediaType, data: data))
+    }
+    guard let url = image.url else {
+        throw AIError.invalidArgument(argument: "image", message: "Prodia video image input requires data or URL.")
+    }
+    let response = try await downloadURL(url, transport: transport, abortSignal: abortSignal)
+    guard (200..<300).contains(response.statusCode) else {
+        throw httpStatusError(provider: "prodia.video", response: response)
+    }
+    let mediaType = image.mediaType
+        ?? response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value
+        ?? detectMediaType(data: response.body, topLevelType: "image")
+        ?? "image/png"
+    return (response.body, prodiaResolvedImageMediaType(mediaType: mediaType, data: response.body))
+}
+
+private func prodiaResolvedImageMediaType(mediaType: String, data: Data) -> String {
+    if isFullMediaType(mediaType) {
+        return mediaType
+    }
+    return detectMediaType(data: data, topLevelType: topLevelMediaType(mediaType)) ?? "image/png"
 }
 
 private func mediaExtension(_ mimeType: String) -> String {

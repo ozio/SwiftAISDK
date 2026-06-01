@@ -149,6 +149,79 @@ import Testing
     #expect(streamRequest.abortSignal === streamController.signal)
 }
 
+@Test func prodiaLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
+    let generateTransport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"prodia-language"}"#.utf8)),
+        (name: "output", contentType: "text/plain", body: Data("ok".utf8))
+    ]))
+    let generateProvider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-key", transport: generateTransport))
+    let generateModel = try generateProvider.languageModel("inference.nano-banana.img2img.v2")
+    let generateController = AIAbortController()
+
+    _ = try await generateModel.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let streamTransport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"prodia-stream"}"#.utf8)),
+        (name: "output", contentType: "text/plain", body: Data("ok".utf8))
+    ]))
+    let streamProvider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("inference.nano-banana.img2img.v2")
+    let streamController = AIAbortController()
+
+    for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}
+
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.abortSignal === streamController.signal)
+}
+
+@Test func prodiaMediaModelsForwardAbortSignalToJobRequests() async throws {
+    let imageTransport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"prodia-image"}"#.utf8)),
+        (name: "output", contentType: "image/png", body: Data("png".utf8))
+    ]))
+    let imageProvider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-key", transport: imageTransport))
+    let imageModel = try imageProvider.imageModel("inference.flux-fast.schnell.txt2img.v2")
+    let imageController = AIAbortController()
+
+    _ = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: imageController.signal))
+
+    let imageRequest = try #require(await imageTransport.requests().first)
+    #expect(imageRequest.abortSignal === imageController.signal)
+
+    let videoTransport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"prodia-video"}"#.utf8)),
+        (name: "output", contentType: "video/mp4", body: Data("mp4".utf8))
+    ]))
+    let videoProvider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-key", transport: videoTransport))
+    let videoModel = try videoProvider.videoModel("inference.wan2-2.lightning.txt2vid.v0")
+    let videoController = AIAbortController()
+
+    _ = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat", abortSignal: videoController.signal))
+
+    let videoRequest = try #require(await videoTransport.requests().first)
+    #expect(videoRequest.abortSignal === videoController.signal)
+
+    let img2vidTransport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"prodia-img2vid"}"#.utf8)),
+        (name: "output", contentType: "video/mp4", body: Data("mp4".utf8))
+    ]))
+    let img2vidProvider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-key", transport: img2vidTransport))
+    let img2vidModel = try img2vidProvider.videoModel("inference.wan2-2.lightning.img2vid.v0")
+    let img2vidController = AIAbortController()
+
+    _ = try await img2vidModel.generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        image: ImageInputFile(data: Data("png".utf8), mediaType: "image/png"),
+        abortSignal: img2vidController.signal
+    ))
+
+    let img2vidRequest = try #require(await img2vidTransport.requests().first)
+    #expect(img2vidRequest.abortSignal === img2vidController.signal)
+}
+
 @Test func deepSeekLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
     {"id":"deepseek-1","model":"deepseek-chat","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}

@@ -400,6 +400,13 @@ Impact:
   token usage, and video parity for standard image/resolution/seed inputs,
   provider options, unsupported standard warnings, final task provider metadata,
   and response metadata.
+- Prodia now follows its upstream multipart job models more closely:
+  language/image/video all use `/job?price=true`, map `providerOptions.prodia`,
+  preserve job provider metadata and response metadata, and forward abort
+  signals. Language now returns upstream unsupported-feature warnings and wraps
+  generated image file parts in streams. Image maps standard size/seed plus
+  width/height/steps/style/LoRA/progressive options with invalid-size warnings.
+  Video now covers both txt2vid JSON jobs and img2vid multipart image jobs.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`
