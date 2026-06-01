@@ -329,8 +329,9 @@ values, maps MCP tool content into model output through `AITool.toModelOutput`,
 can read MCP resources, resource templates, and prompts, and can answer server
 elicitation requests when a transport supports incoming JSON-RPC requests.
 `MCPHTTPTransport` sends the upstream protocol/session headers, accepts JSON or
-buffered SSE responses, persists `mcp-session-id`, and terminates sessions with
-DELETE on close:
+SSE responses, persists `mcp-session-id`, and terminates sessions with DELETE
+on close. When the underlying transport conforms to `AIStreamingTransport`
+(`URLSessionTransport` does), inbound SSE stays open for server requests:
 
 ```swift
 let mcp = try await MCPClient.connect(

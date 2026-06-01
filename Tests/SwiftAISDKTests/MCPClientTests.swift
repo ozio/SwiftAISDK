@@ -391,6 +391,61 @@ import Testing
     #expect(body["result"]?.objectValue?.isEmpty == true)
 }
 
+@Test func mcpHTTPTransportStreamsPOSTSSEResponseBeforeStreamEnds() async throws {
+    let http = StreamingRecordingTransport(responses: [
+        streamResponse(
+            headers: ["content-type": "text/event-stream"],
+            chunks: ["event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"ok\":true}}\n\n"],
+            finishes: false
+        )
+    ])
+    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
+
+    let response = try await transport.request([
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "initialize",
+        "params": [:]
+    ])
+
+    #expect(response["result"]?["ok"]?.boolValue == true)
+    let requests = await http.requests()
+    #expect(requests.count == 1)
+    #expect(requests[0].method == "POST")
+    #expect(requests[0].headers["accept"] == "application/json, text/event-stream")
+}
+
+@Test func mcpHTTPTransportUsesStreamingInboundSSEWithoutBlockingStart() async throws {
+    let http = StreamingRecordingTransport(responses: [
+        streamResponse(
+            headers: ["content-type": "text/event-stream"],
+            chunks: ["event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"ping\"}\n\n"],
+            finishes: false
+        ),
+        streamResponse(statusCode: 202)
+    ])
+    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
+    await transport.setRequestHandler { request in
+        [
+            "jsonrpc": "2.0",
+            "id": request["id"] ?? .null,
+            "result": [:]
+        ]
+    }
+
+    try await transport.start()
+
+    let requests = try await waitForStreamingRequests(http, count: 2)
+    #expect(requests[0].method == "GET")
+    #expect(requests[0].headers["accept"] == "text/event-stream")
+    #expect(requests[1].method == "POST")
+    let body = try #require(requests[1].body).jsonValueForTest()
+    #expect(body["id"]?.intValue == 21)
+    #expect(body["result"]?.objectValue?.isEmpty == true)
+
+    try await transport.close()
+}
+
 private actor MockMCPTransport: MCPTransport {
     private var messages: [JSONValue] = []
     private let capabilities: JSONValue
@@ -617,6 +672,64 @@ private actor MCPElicitationRecorder {
     }
 }
 
+private actor StreamingRecordingTransport: AIStreamingTransport {
+    private var recordedRequests: [AIHTTPRequest] = []
+    private var responses: [AIHTTPStreamResponse]
+
+    init(responses: [AIHTTPStreamResponse]) {
+        self.responses = responses
+    }
+
+    func requests() -> [AIHTTPRequest] {
+        recordedRequests
+    }
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        let response = try await stream(request)
+        var body = Data()
+        for try await chunk in response.body {
+            body.append(chunk)
+        }
+        return AIHTTPResponse(statusCode: response.statusCode, headers: response.headers, body: body)
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        recordedRequests.append(request)
+        guard !responses.isEmpty else {
+            return streamResponse(statusCode: 202)
+        }
+        return responses.removeFirst()
+    }
+}
+
+private func streamResponse(
+    statusCode: Int = 200,
+    headers: [String: String] = [:],
+    chunks: [String] = [],
+    finishes: Bool = true
+) -> AIHTTPStreamResponse {
+    AIHTTPStreamResponse(
+        statusCode: statusCode,
+        headers: headers,
+        body: AsyncThrowingStream { continuation in
+            let task = Task {
+                for chunk in chunks {
+                    try Task.checkCancellation()
+                    continuation.yield(Data(chunk.utf8))
+                }
+                if finishes {
+                    continuation.finish()
+                } else {
+                    while !Task.isCancelled {
+                        try await Task.sleep(nanoseconds: 1_000_000_000)
+                    }
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    )
+}
+
 private extension Data {
     func jsonValueForTest() throws -> JSONValue {
         try JSONDecoder().decode(JSONValue.self, from: self)
@@ -624,6 +737,17 @@ private extension Data {
 }
 
 private func waitForRecordedRequests(_ transport: RecordingTransport, count: Int) async throws -> [AIHTTPRequest] {
+    for _ in 0..<50 {
+        let requests = await transport.requests()
+        if requests.count >= count {
+            return requests
+        }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return await transport.requests()
+}
+
+private func waitForStreamingRequests(_ transport: StreamingRecordingTransport, count: Int) async throws -> [AIHTTPRequest] {
     for _ in 0..<50 {
         let requests = await transport.requests()
         if requests.count >= count {

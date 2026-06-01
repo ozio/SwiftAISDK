@@ -548,6 +548,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private let url: URL
     private let headers: [String: String]
     private let transport: any AITransport
+    private let streamingTransport: (any AIStreamingTransport)?
     private var protocolVersion: String?
     private var sessionID: String?
     private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
@@ -557,6 +558,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         self.url = url
         self.headers = headers
         self.transport = transport
+        self.streamingTransport = transport as? any AIStreamingTransport
     }
 
     public convenience init(url: String, headers: [String: String] = [:], transport: any AITransport = URLSessionTransport.shared) throws {
@@ -584,6 +586,27 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     }
 
     private func openInboundSSEOnce() async throws {
+        if let streamingTransport {
+            let response = try await sendRawStream(
+                method: "GET",
+                accept: "text/event-stream",
+                body: nil,
+                transport: streamingTransport
+            )
+            if response.statusCode == 405 {
+                return
+            }
+            guard (200..<300).contains(response.statusCode) else {
+                throw MCPClientError(
+                    message: "MCP HTTP Transport Error: GET SSE failed: \(response.statusCode)",
+                    statusCode: response.statusCode,
+                    url: url.absoluteString
+                )
+            }
+            _ = try await handleStreamingResponse(response, expectedID: nil)
+            return
+        }
+
         let response = try await sendRaw(
             method: "GET",
             accept: "text/event-stream",
@@ -631,6 +654,16 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     }
 
     private func send(_ message: JSONValue) async throws -> JSONValue {
+        if let streamingTransport {
+            let response = try await sendRawStream(
+                method: "POST",
+                accept: "application/json, text/event-stream",
+                body: try encodeJSONBody(message),
+                transport: streamingTransport
+            )
+            return try await handleStreamingResponse(response, expectedID: message["id"]?.intValue)
+        }
+
         let response = try await sendRaw(
             method: "POST",
             accept: "application/json, text/event-stream",
@@ -640,6 +673,16 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     }
 
     private func sendNotification(_ message: JSONValue) async throws {
+        if let streamingTransport {
+            _ = try await sendRawStream(
+                method: "POST",
+                accept: "application/json, text/event-stream",
+                body: try encodeJSONBody(message),
+                transport: streamingTransport
+            )
+            return
+        }
+
         _ = try await sendRaw(
             method: "POST",
             accept: "application/json, text/event-stream",
@@ -681,6 +724,49 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                 statusCode: response.statusCode,
                 url: url.absoluteString,
                 responseBody: response.bodyText
+            )
+        }
+        return response
+    }
+
+    private func sendRawStream(
+        method: String,
+        accept: String,
+        body: Data?,
+        transport: any AIStreamingTransport
+    ) async throws -> AIHTTPStreamResponse {
+        var requestHeaders = [
+            "accept": accept,
+            "mcp-protocol-version": protocolVersion ?? MCPClient.latestProtocolVersion
+        ]
+        if body != nil {
+            requestHeaders["content-type"] = "application/json"
+        }
+        if let sessionID {
+            requestHeaders["mcp-session-id"] = sessionID
+        }
+        requestHeaders.merge(headers) { _, new in new }
+        let response = try await transport.stream(AIHTTPRequest(
+            method: method,
+            url: url,
+            headers: requestHeaders,
+            body: body
+        ))
+        if let sessionID = response.headerValue("mcp-session-id") {
+            self.sessionID = sessionID
+        }
+        if method == "GET", response.statusCode == 405 {
+            return response
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode)"
+            if method == "POST", response.statusCode == 404 {
+                message += ". This server does not support HTTP transport. Try using `sse` transport instead"
+            }
+            throw MCPClientError(
+                message: message,
+                statusCode: response.statusCode,
+                url: url.absoluteString
             )
         }
         return response
@@ -731,6 +817,102 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             }
         }
         return messages
+    }
+
+    private func handleStreamingResponse(_ response: AIHTTPStreamResponse, expectedID: Int?) async throws -> JSONValue {
+        if response.statusCode == 202 {
+            return .object([:])
+        }
+
+        let contentType = response.headerValue("content-type") ?? ""
+        if contentType.localizedCaseInsensitiveContains("text/event-stream") {
+            return try await processSSEStream(response.body, expectedID: expectedID)
+        }
+
+        let body = try await collectStreamData(response.body)
+        if contentType.isEmpty || contentType.localizedCaseInsensitiveContains("application/json") {
+            return try decodeJSONBody(body)
+        }
+
+        throw MCPClientError(
+            message: "MCP HTTP Transport Error: Unexpected content type: \(contentType)",
+            statusCode: response.statusCode,
+            url: url.absoluteString,
+            responseBody: String(data: body, encoding: .utf8)
+        )
+    }
+
+    private func collectStreamData(_ stream: AsyncThrowingStream<Data, Error>) async throws -> Data {
+        var body = Data()
+        for try await chunk in stream {
+            body.append(chunk)
+        }
+        return body
+    }
+
+    private func processSSEStream(_ stream: AsyncThrowingStream<Data, Error>, expectedID: Int?) async throws -> JSONValue {
+        var buffer = Data()
+        var eventName: String?
+        var dataLines: [String] = []
+
+        func resetEvent() {
+            eventName = nil
+            dataLines.removeAll()
+        }
+
+        func handleEvent() async throws -> JSONValue? {
+            defer { resetEvent() }
+            guard !dataLines.isEmpty else { return nil }
+            guard eventName == nil || eventName == "message" else { return nil }
+            let data = dataLines.joined(separator: "\n")
+            let message: JSONValue
+            do {
+                message = try decodeJSONBody(Data(data.utf8))
+            } catch {
+                throw MCPClientError(message: "MCP HTTP Transport Error: Failed to parse message")
+            }
+
+            if message["method"]?.stringValue != nil, message["id"] != nil, let requestHandler {
+                let response = await requestHandler(message)
+                try await sendNotification(response)
+                return nil
+            }
+
+            if let expectedID {
+                return message["id"]?.intValue == expectedID ? message : nil
+            }
+            return nil
+        }
+
+        for try await chunk in stream {
+            try Task.checkCancellation()
+            buffer.append(chunk)
+            while let newlineIndex = buffer.firstIndex(of: 10) {
+                var lineData = Data(buffer[..<newlineIndex])
+                buffer.removeSubrange(...newlineIndex)
+                if lineData.last == 13 {
+                    lineData.removeLast()
+                }
+                let line = String(decoding: lineData, as: UTF8.self)
+                if line.isEmpty {
+                    if let message = try await handleEvent() {
+                        return message
+                    }
+                } else if line.hasPrefix("event:") {
+                    eventName = String(line.dropFirst("event:".count)).trimmingCharacters(in: .whitespaces)
+                } else if line.hasPrefix("data:") {
+                    dataLines.append(String(line.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces))
+                }
+            }
+        }
+
+        if !buffer.isEmpty {
+            dataLines.append(String(decoding: buffer, as: UTF8.self))
+        }
+        if let message = try await handleEvent() {
+            return message
+        }
+        return .array([])
     }
 }
 

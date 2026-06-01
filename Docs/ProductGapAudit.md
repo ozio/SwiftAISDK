@@ -197,9 +197,10 @@ Impact:
   MCP text/image/unknown content into model-facing output while preserving the
   raw MCP call result. `MCPHTTPTransport` now also follows the upstream
   Streamable HTTP shape for protocol-version headers, `mcp-session-id`
-  persistence, DELETE session termination, JSON or buffered SSE response
-  parsing, and buffered inbound SSE requests that can be answered through the
-  client request handler.
+  persistence, DELETE session termination, JSON response parsing, buffered SSE
+  fallback parsing, and true streaming SSE request/response handling when the
+  underlying transport conforms to `AIStreamingTransport`. `URLSessionTransport`
+  now provides that streaming transport path.
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
@@ -214,11 +215,11 @@ Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
 provider-defined tool schema adapters, richer provider-native handling for
-multimodal `modelOutput`, true long-lived MCP SSE/session streaming on top of a
-streaming HTTP transport, richer stream tool lifecycle events, and
-provider-executed approval response mapping for non-OpenAI providers that expose
-an equivalent native wire format. Keep provider-defined tools as specialized
-`AITool` values instead of plain JSON where possible.
+multimodal `modelOutput`, SSE reconnection/resumption and OAuth parity for MCP,
+richer stream tool lifecycle events, and provider-executed approval response
+mapping for non-OpenAI providers that expose an equivalent native wire format.
+Keep provider-defined tools as specialized `AITool` values instead of plain JSON
+where possible.
 
 ### 4. Object generation and schema validation are partial
 
@@ -332,9 +333,9 @@ Progress:
    policies, and an MCP client bridge for server-discovered dynamic tools,
    resources, resource templates, prompts, incoming elicitation requests, and
    MCP-style tool model-output conversion and first-pass Streamable HTTP
-   session semantics. Next passes should add typed validation errors,
-   provider-executed approval responses, true long-lived MCP SSE transport
-   parity, and richer stream lifecycle handling.
+   session plus streaming semantics. Next passes should add typed validation
+   errors, provider-executed approval responses, MCP SSE reconnection/resumption
+   and OAuth parity, and richer stream lifecycle handling.
 
 6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

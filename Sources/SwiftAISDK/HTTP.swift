@@ -42,7 +42,27 @@ public protocol AITransport: Sendable {
     func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse
 }
 
-public final class URLSessionTransport: AITransport, @unchecked Sendable {
+public struct AIHTTPStreamResponse: Sendable {
+    public var statusCode: Int
+    public var headers: [String: String]
+    public var body: AsyncThrowingStream<Data, Error>
+
+    public init(statusCode: Int, headers: [String: String] = [:], body: AsyncThrowingStream<Data, Error>) {
+        self.statusCode = statusCode
+        self.headers = headers
+        self.body = body
+    }
+
+    public func headerValue(_ name: String) -> String? {
+        headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+}
+
+public protocol AIStreamingTransport: AITransport {
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse
+}
+
+public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendable {
     public static let shared = URLSessionTransport()
     private let session: URLSession
 
@@ -65,6 +85,40 @@ public final class URLSessionTransport: AITransport, @unchecked Sendable {
             partial[key] = String(describing: element.value)
         } ?? [:]
         return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data)
+    }
+
+    public func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = request.method
+        urlRequest.httpBody = request.body
+        for (key, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: key)
+        }
+
+        let (bytes, response) = try await session.bytes(for: urlRequest)
+        let httpResponse = response as? HTTPURLResponse
+        let headers = httpResponse?.allHeaderFields.reduce(into: [String: String]()) { partial, element in
+            guard let key = element.key as? String else { return }
+            partial[key] = String(describing: element.value)
+        } ?? [:]
+        return AIHTTPStreamResponse(
+            statusCode: httpResponse?.statusCode ?? 0,
+            headers: headers,
+            body: AsyncThrowingStream { continuation in
+                let task = Task {
+                    do {
+                        for try await byte in bytes {
+                            try Task.checkCancellation()
+                            continuation.yield(Data([byte]))
+                        }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+                continuation.onTermination = { _ in task.cancel() }
+            }
+        )
     }
 }
 
