@@ -244,8 +244,52 @@ private func raceAbortSignal<Output: Sendable>(
 
 extension Dictionary where Key == String, Value == String {
     func mergingHeaders(_ other: [String: String]) -> [String: String] {
-        merging(other) { _, new in new }
+        combineHeaders(self, other)
     }
+}
+
+public func normalizeHeaders(_ headers: [String: String?]?) -> [String: String] {
+    guard let headers else { return [:] }
+    return headers.reduce(into: [String: String]()) { normalized, element in
+        guard let value = element.value else { return }
+        normalized[element.key.lowercased()] = value
+    }
+}
+
+public func normalizeHeaders(_ headers: [String: String]) -> [String: String] {
+    headers.reduce(into: [String: String]()) { normalized, element in
+        normalized[element.key.lowercased()] = element.value
+    }
+}
+
+public func normalizeHeaderEntries(_ entries: [(String, String?)]) -> [String: String] {
+    entries.reduce(into: [String: String]()) { normalized, element in
+        guard let value = element.1 else { return }
+        normalized[element.0.lowercased()] = value
+    }
+}
+
+public func combineHeaders(_ headers: [String: String]...) -> [String: String] {
+    headers.reduce(into: [String: String]()) { combined, current in
+        combined.merge(current) { _, new in new }
+    }
+}
+
+public func withUserAgentSuffix(_ headers: [String: String?]? = nil, _ userAgentSuffixParts: String...) -> [String: String] {
+    headersWithUserAgentSuffix(normalizeHeaders(headers), userAgentSuffixParts)
+}
+
+public func withUserAgentSuffix(_ headers: [String: String], _ userAgentSuffixParts: String...) -> [String: String] {
+    headersWithUserAgentSuffix(normalizeHeaders(headers), userAgentSuffixParts)
+}
+
+private func headersWithUserAgentSuffix(_ headers: [String: String], _ userAgentSuffixParts: [String]) -> [String: String] {
+    var output = headers
+    let currentUserAgent = output["user-agent"] ?? ""
+    output["user-agent"] = ([currentUserAgent] + userAgentSuffixParts)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+    return output
 }
 
 func encodeJSONBody(_ value: JSONValue) throws -> Data {

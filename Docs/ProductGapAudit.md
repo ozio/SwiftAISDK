@@ -82,7 +82,10 @@ Impact:
   reading bytes incrementally. Media type helper parity now covers
   provider-utils signature detection, extension mapping, and full media type
   resolution; Google GenerateContent and Interactions use it to turn top-level
-  inline media types into full IANA media types before sending requests.
+  inline media types into full IANA media types before sending requests. Shared
+  header helper parity now covers normalization, combining, and user-agent
+  suffix construction; broad provider header-casing migration remains staged so
+  existing Swift request assertions do not churn all at once.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
