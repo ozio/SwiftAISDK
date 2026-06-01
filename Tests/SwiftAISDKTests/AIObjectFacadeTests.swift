@@ -308,6 +308,47 @@ import Testing
     #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "answer")
 }
 
+@Test func aiStreamObjectEmitsAbortTelemetryWhenConsumerCancels() async throws {
+    let telemetry = ObjectTelemetryRecorder()
+    let callbacks = ObjectCallbackRecorder<ObjectFacadeAnswer>()
+    let model = HangingObjectFacadeLanguageModel()
+    var firstPart: ObjectStreamPart<ObjectFacadeAnswer>?
+
+    for try await part in AI.streamObject(
+        model: model,
+        prompt: "Cancel object stream.",
+        as: ObjectFacadeAnswer.self,
+        schema: objectFacadeAnswerSchema(),
+        telemetry: AITelemetryOptions(integrations: [telemetry]),
+        callbacks: AIObjectGenerationCallbacks(
+            onStart: { event in await callbacks.recordStart(event) },
+            onStepStart: { event in await callbacks.recordStepStart(event) },
+            onStepFinish: { event in await callbacks.recordStepFinish(event) },
+            onFinish: { event in await callbacks.recordFinish(event) },
+            onError: { event in await callbacks.recordError(event) }
+        )
+    ) {
+        firstPart = part
+        break
+    }
+
+    try await Task.sleep(nanoseconds: 20_000_000)
+    let telemetryEvents = await telemetry.events()
+    let callbackEvents = await callbacks.events()
+
+    if case let .textDelta(delta) = firstPart {
+        #expect(delta == #"{"value":"first""#)
+    } else {
+        Issue.record("Expected the first streamed object part to be a text delta.")
+    }
+    #expect(telemetryEvents.map(\.kind) == [.start, .abort])
+    #expect(telemetryEvents.allSatisfy { $0.operationID == "ai.streamObject" })
+    #expect(telemetryEvents[1].errorDescription?.contains("cancelled") == true)
+    #expect(callbackEvents.names == ["start", "step-start"])
+    #expect(callbackEvents.finish == nil)
+    #expect(callbackEvents.error == nil)
+}
+
 @Test func aiStreamObjectRetriesRetryableStartErrors() async throws {
     let recorder = ObjectTelemetryRecorder()
     let model = ObjectFacadeFlakyStreamingLanguageModel(outcomes: [
@@ -1290,6 +1331,37 @@ private final class SlowObjectFacadeLanguageModel: LanguageModel, @unchecked Sen
                 do {
                     try await Task.sleep(nanoseconds: delayNanoseconds)
                     continuation.yield(.textDelta(#"{"value":"late","count":1}"#))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+}
+
+private final class HangingObjectFacadeLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "hanging-object-language"
+    var requests: [LanguageModelRequest] = []
+    var streamRequests: [LanguageModelRequest] = []
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        requests.append(request)
+        return TextGenerationResult(text: "", rawValue: .object([:]))
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamRequests.append(request)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                continuation.yield(.textDelta(#"{"value":"first""#))
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    continuation.yield(.textDelta(#","count":1}"#))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

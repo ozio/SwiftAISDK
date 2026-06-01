@@ -2665,11 +2665,12 @@ private func objectStreamWithTelemetry<Object: Sendable>(
     callbacks: AIObjectGenerationCallbacks<Object>? = nil
 ) -> AsyncThrowingStream<ObjectStreamPart<Object>, Error> {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
+    let callID = UUID().uuidString
+    let started = DispatchTime.now().uptimeNanoseconds
+    let terminalState = AIStreamTerminalState()
 
     return AsyncThrowingStream { continuation in
         let task = Task {
-            let callID = UUID().uuidString
-            let started = DispatchTime.now().uptimeNanoseconds
             var text = ""
             var partialCount = 0
             var objectResult: ObjectGenerationResult<Object>?
@@ -2756,49 +2757,51 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                             partialCount: partialCount,
                             finishReason: objectResult?.finishReason ?? finishReason
                         )
-                        await callbacks?.onStepFinish?(AIObjectGenerationStepFinishEvent(
-                            callID: callID,
-                            stepNumber: 0,
-                            providerID: providerID,
-                            modelID: modelID,
-                            text: objectResult?.text ?? text,
-                            reasoning: objectResult?.reasoning ?? "",
-                            finishReason: objectResult?.finishReason ?? finishReason,
-                            usage: objectResult?.usage ?? usage,
-                            warnings: warnings,
-                            providerMetadata: providerMetadata,
-                            responseMetadata: responseMetadata
-                        ))
-                        if let objectResult {
-                            await callbacks?.onFinish?(AIObjectGenerationFinishEvent(
+                        if await terminalState.claimTerminalEvent() {
+                            await callbacks?.onStepFinish?(AIObjectGenerationStepFinishEvent(
                                 callID: callID,
-                                object: objectResult.object,
-                                text: objectResult.text,
-                                rawObject: objectResult.rawObject,
-                                reasoning: objectResult.reasoning,
-                                finishReason: objectResult.finishReason,
-                                usage: objectResult.usage,
-                                warnings: objectResult.warnings,
-                                providerMetadata: objectResult.providerMetadata,
-                                responseMetadata: objectResult.responseMetadata
+                                stepNumber: 0,
+                                providerID: providerID,
+                                modelID: modelID,
+                                text: objectResult?.text ?? text,
+                                reasoning: objectResult?.reasoning ?? "",
+                                finishReason: objectResult?.finishReason ?? finishReason,
+                                usage: objectResult?.usage ?? usage,
+                                warnings: warnings,
+                                providerMetadata: providerMetadata,
+                                responseMetadata: responseMetadata
                             ))
+                            if let objectResult {
+                                await callbacks?.onFinish?(AIObjectGenerationFinishEvent(
+                                    callID: callID,
+                                    object: objectResult.object,
+                                    text: objectResult.text,
+                                    rawObject: objectResult.rawObject,
+                                    reasoning: objectResult.reasoning,
+                                    finishReason: objectResult.finishReason,
+                                    usage: objectResult.usage,
+                                    warnings: objectResult.warnings,
+                                    providerMetadata: objectResult.providerMetadata,
+                                    responseMetadata: objectResult.responseMetadata
+                                ))
+                            }
+                            await dispatcher.record(telemetryEvent(
+                                kind: .end,
+                                callID: callID,
+                                operationID: operationID,
+                                providerID: providerID,
+                                modelID: modelID,
+                                options: telemetry,
+                                maxRetries: retryPolicy.maxRetries,
+                                durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                                output: output,
+                                usage: objectResult?.usage ?? usage,
+                                warnings: warnings,
+                                providerMetadata: providerMetadata,
+                                responseMetadata: responseMetadata
+                            ))
+                            await AIWarningLogging.logWarnings(warnings, providerID: providerID, modelID: modelID)
                         }
-                        await dispatcher.record(telemetryEvent(
-                            kind: .end,
-                            callID: callID,
-                            operationID: operationID,
-                            providerID: providerID,
-                            modelID: modelID,
-                            options: telemetry,
-                            maxRetries: retryPolicy.maxRetries,
-                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                            output: output,
-                            usage: objectResult?.usage ?? usage,
-                            warnings: warnings,
-                            providerMetadata: providerMetadata,
-                            responseMetadata: responseMetadata
-                        ))
-                        await AIWarningLogging.logWarnings(warnings, providerID: providerID, modelID: modelID)
                         continuation.finish()
                         return
                     } catch is CancellationError {
@@ -2838,34 +2841,70 @@ private func objectStreamWithTelemetry<Object: Sendable>(
                     }
                 }
             } catch {
-                await callbacks?.onError?(AIObjectGenerationErrorEvent(
-                    callID: callID,
-                    providerID: providerID,
-                    modelID: modelID,
-                    text: objectResult?.text ?? text,
-                    errorDescription: String(describing: error),
-                    finishReason: objectResult?.finishReason ?? finishReason,
-                    usage: objectResult?.usage ?? usage,
-                    warnings: warnings,
-                    providerMetadata: providerMetadata,
-                    responseMetadata: responseMetadata
-                ))
-                await dispatcher.record(telemetryEvent(
-                    kind: .error,
-                    callID: callID,
-                    operationID: operationID,
-                    providerID: providerID,
-                    modelID: modelID,
-                    options: telemetry,
-                    maxRetries: retryPolicy.maxRetries,
-                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                    errorDescription: String(describing: error)
-                ))
-                continuation.finish(throwing: error)
+                if isCancellationTelemetryError(error) {
+                    if await terminalState.claimTerminalEvent() {
+                        await dispatcher.record(telemetryEvent(
+                            kind: .abort,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: String(describing: error)
+                        ))
+                    }
+                    continuation.finish()
+                } else {
+                    if await terminalState.claimTerminalEvent() {
+                        await callbacks?.onError?(AIObjectGenerationErrorEvent(
+                            callID: callID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            text: objectResult?.text ?? text,
+                            errorDescription: String(describing: error),
+                            finishReason: objectResult?.finishReason ?? finishReason,
+                            usage: objectResult?.usage ?? usage,
+                            warnings: warnings,
+                            providerMetadata: providerMetadata,
+                            responseMetadata: responseMetadata
+                        ))
+                        await dispatcher.record(telemetryEvent(
+                            kind: .error,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: String(describing: error)
+                        ))
+                    }
+                    continuation.finish(throwing: error)
+                }
             }
         }
 
-        continuation.onTermination = { _ in
+        continuation.onTermination = { termination in
+            if case .cancelled = termination {
+                Task {
+                    if await terminalState.claimTerminalEvent() {
+                        await dispatcher.record(telemetryEvent(
+                            kind: .abort,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: "Stream cancelled."
+                        ))
+                    }
+                }
+            }
             task.cancel()
         }
     }

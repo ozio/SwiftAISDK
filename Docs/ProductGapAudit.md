@@ -59,9 +59,9 @@ Impact:
   responses and honored by facade retries, including stream retries before the
   first emitted part. A Swift telemetry surface now emits start, retry, end,
   and error events for non-streaming facade calls plus `generateObject`,
-  `streamText`, and `streamObject`; `streamText` also emits an abort event when
-  the consumer cancels the stream. Step/tool execution events exist for
-  `generateText` and `streamText` tool loops, with per-call or globally
+  `streamText`, and `streamObject`; `streamText` and `streamObject` also emit
+  abort events when the consumer cancels the stream. Step/tool execution events
+  exist for `generateText` and `streamText` tool loops, with per-call or globally
   registered integrations. `AIObjectGenerationCallbacks` now mirrors upstream's
   object lifecycle callbacks for `generateObject` and `streamObject`.
   `AIWarningLogging` now mirrors upstream warning logging controls with default,
@@ -343,15 +343,16 @@ Progress:
    start failures before the first emitted part and do not retry after chunks
    have been yielded. Provider HTTP errors now preserve response headers, and
    facade retries honor `Retry-After` on retryable status codes. `streamText`
-   now records consumer cancellation as telemetry `abort` instead of `error`.
+   and `streamObject` now record consumer cancellation as telemetry `abort`
+   instead of `error`.
    Next passes should add richer explicit cancellation controls.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,
    `AITelemetryIntegration`, `AITelemetry.register(...)`, lifecycle events for
-   non-streaming facade operations including `generateObject`, start/end/error
-   events for `streamObject`, start/end/error/abort events for `streamText`,
-   and step/tool execution events for `generateText` and `streamText` tool loops.
+   non-streaming facade operations including `generateObject`,
+   start/end/error/abort events for `streamText` and `streamObject`, and
+   step/tool execution events for `generateText` and `streamText` tool loops.
    Events carry call IDs,
    operation IDs, provider/model
    IDs, retry attempts, timing, usage, warnings, metadata, response metadata,
