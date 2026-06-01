@@ -49,6 +49,7 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
             mediaType: raw["mime_type"]?.stringValue ?? request.mediaType,
             metadata: fileMetadata(from: raw),
             rawValue: raw,
+            warnings: multipartFileUploadWarnings(request, includePurpose: includePurpose),
             requestMetadata: multipartFileUploadRequestMetadata(request, includePurpose: includePurpose),
             responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
@@ -182,6 +183,7 @@ public final class XAIFileClient: AIFileClient, @unchecked Sendable {
             mediaType: request.mediaType,
             metadata: ["xai": .object(metadata)],
             rawValue: raw,
+            warnings: xaiFileUploadWarnings(request),
             requestMetadata: xaiFileUploadRequestMetadata(request, options: options),
             responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
@@ -219,6 +221,17 @@ private func multipartFileUploadRequestMetadata(_ request: FileUploadRequest, in
     return AIRequestMetadata(body: .object(body), headers: request.headers)
 }
 
+private func multipartFileUploadWarnings(_ request: FileUploadRequest, includePurpose: Bool) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.displayName != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "displayName"))
+    }
+    if !includePurpose, request.purpose != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "purpose"))
+    }
+    return warnings
+}
+
 private func googleFileUploadRequestMetadata(_ request: FileUploadRequest) -> AIRequestMetadata {
     var file: [String: JSONValue] = fileUploadMetadata(request, defaultFilename: "file")
     if let displayName = request.displayName {
@@ -236,6 +249,17 @@ private func xaiFileUploadRequestMetadata(_ request: FileUploadRequest, options:
         body["teamId"] = .string(teamID)
     }
     return AIRequestMetadata(body: .object(body), headers: request.headers)
+}
+
+private func xaiFileUploadWarnings(_ request: FileUploadRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.displayName != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "displayName"))
+    }
+    if request.purpose != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "purpose"))
+    }
+    return warnings
 }
 
 private func fileUploadMetadata(_ request: FileUploadRequest, defaultFilename: String) -> [String: JSONValue] {

@@ -138,8 +138,9 @@ import Testing
     let reranking = RerankingResult(results: [], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, responseMetadata: response)
     #expect(reranking.responseMetadata == response)
 
-    let file = FileUploadResult(providerReference: ["file": "file-1"], rawValue: .object([:]), providerMetadata: providerMetadata, requestMetadata: request, responseMetadata: response)
+    let file = FileUploadResult(providerReference: ["file": "file-1"], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, requestMetadata: request, responseMetadata: response)
     #expect(file.providerMetadata == providerMetadata)
+    #expect(file.warnings == [warning])
     #expect(file.requestMetadata == request)
 
     let skill = SkillUploadResult(providerReference: ["skill": "skill-1"], providerMetadata: providerMetadata, requestMetadata: request, responseMetadata: response, warnings: [warning], rawValue: .object([:]))

@@ -1889,7 +1889,7 @@ public enum AI {
             abortSignal: request.abortSignal,
             output: fileUploadTelemetryOutput,
             usage: { _ in nil },
-            warnings: { _ in [] },
+            warnings: { $0.warnings },
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
@@ -3735,6 +3735,7 @@ private func fileUploadTelemetryOutput(_ result: FileUploadResult) -> JSONValue 
         "mediaType": result.mediaType.map(JSONValue.string),
         "metadata": result.metadata.isEmpty ? nil : .object(result.metadata),
         "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
+        "warnings": result.warnings.isEmpty ? nil : .array(result.warnings.map(aiWarningJSON)),
         "rawValue": result.rawValue
     ])
 }
@@ -3758,6 +3759,15 @@ private func aiRequestMetadataJSON(_ metadata: AIRequestMetadata) -> JSONValue? 
     return .object([
         "body": metadata.body,
         "headers": metadata.headers.isEmpty ? nil : .object(metadata.headers.mapValues(JSONValue.string))
+    ])
+}
+
+private func aiWarningJSON(_ warning: AIWarning) -> JSONValue {
+    .object([
+        "type": .string(warning.type),
+        "feature": warning.feature.map(JSONValue.string),
+        "setting": warning.setting.map(JSONValue.string),
+        "message": warning.message.map(JSONValue.string)
     ])
 }
 

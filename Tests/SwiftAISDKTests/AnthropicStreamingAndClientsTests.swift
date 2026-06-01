@@ -9,7 +9,13 @@ import Testing
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
     let files = provider.files()
     #expect(files.providerID == "anthropic.messages")
-    let result = try await files.uploadFile(FileUploadRequest(data: Data([1, 2, 3]), mediaType: "application/pdf", filename: "data.pdf"))
+    let result = try await files.uploadFile(FileUploadRequest(
+        data: Data([1, 2, 3]),
+        mediaType: "application/pdf",
+        filename: "data.pdf",
+        purpose: "assistants",
+        displayName: "Data"
+    ))
 
     #expect(result.providerReference["anthropic"] == "file_abc")
     #expect(result.mediaType == "application/pdf")
@@ -19,10 +25,18 @@ import Testing
     #expect(result.requestMetadata.body?["file"]?["mediaType"]?.stringValue == "application/pdf")
     #expect(result.requestMetadata.body?["file"]?["byteLength"]?.intValue == 3)
     #expect(result.requestMetadata.body?["file"]?["data"] == nil)
+    #expect(result.requestMetadata.body?["displayName"]?.stringValue == "Data")
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "displayName"),
+        AIWarning(type: "unsupported", feature: "purpose")
+    ])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/files")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-beta"] == "files-api-2025-04-14")
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(!bodyText.contains("Data"))
+    #expect(!bodyText.contains("assistants"))
 }
 
 @Test func anthropicSkillsUploadAddsBetaHeaderAndFetchesVersionMetadata() async throws {

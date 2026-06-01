@@ -216,7 +216,10 @@ Progress:
   metadata for OpenAI-compatible multipart files, Google resumable files, xAI
   files, and OpenAI/Anthropic skill uploads; those upload results also preserve
   safe request metadata for file paths, media types, byte lengths, display
-  titles, and scalar options without storing raw uploaded bytes. Native
+  titles, and scalar options without storing raw uploaded bytes. File uploads
+  now also return upstream-style unsupported warnings when a provider ignores
+  options such as `displayName` or `purpose`, instead of dropping them
+  silently. Native
   embedding and reranking
   models for Cohere,
   Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic

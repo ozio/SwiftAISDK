@@ -1441,10 +1441,12 @@ private actor PrepareStepCapture {
     let fileClient = MockFileClient(result: FileUploadResult(
         providerReference: ["file": "file-1"],
         rawValue: .object([:]),
+        warnings: [AIWarning(type: "unsupported", feature: "displayName")],
         requestMetadata: AIRequestMetadata(body: .object(["file": .string("metadata")]))
     ))
     let file = try await AI.uploadFile(client: fileClient, request: FileUploadRequest(data: Data("file".utf8), mediaType: "text/plain", filename: "a.txt"))
     #expect(file.providerReference["file"] == "file-1")
+    #expect(file.warnings == [AIWarning(type: "unsupported", feature: "displayName")])
     #expect(file.requestMetadata.body?["file"]?.stringValue == "metadata")
     #expect(fileClient.requests.first?.filename == "a.txt")
 

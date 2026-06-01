@@ -7,7 +7,12 @@ import Testing
     {"id":"file_123","filename":"notes.txt","purpose":"assistants","bytes":3,"created_at":1710000000,"status":"processed"}
     """, headers: ["openai-request-id": "file-request"]))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
-    let result = try await provider.files().uploadFile(FileUploadRequest(data: Data("hey".utf8), mediaType: "text/plain", filename: "notes.txt"))
+    let result = try await provider.files().uploadFile(FileUploadRequest(
+        data: Data("hey".utf8),
+        mediaType: "text/plain",
+        filename: "notes.txt",
+        displayName: "Notes"
+    ))
 
     #expect(result.providerReference["openai"] == "file_123")
     #expect(result.filename == "notes.txt")
@@ -19,6 +24,8 @@ import Testing
     #expect(result.requestMetadata.body?["file"]?["byteLength"]?.intValue == 3)
     #expect(result.requestMetadata.body?["file"]?["data"] == nil)
     #expect(result.requestMetadata.body?["purpose"]?.stringValue == "assistants")
+    #expect(result.requestMetadata.body?["displayName"]?.stringValue == "Notes")
+    #expect(result.warnings == [AIWarning(type: "unsupported", feature: "displayName")])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/files")
     #expect(request.headers["Authorization"] == "Bearer test-key")
@@ -27,6 +34,8 @@ import Testing
     #expect(bodyText.contains("name=\"file\"; filename=\"notes.txt\""))
     #expect(bodyText.contains("name=\"purpose\""))
     #expect(bodyText.contains("assistants"))
+    #expect(!bodyText.contains("name=\"display_name\""))
+    #expect(!bodyText.contains("Notes"))
 }
 
 @Test func xAIFilesUploadUsesFilesEndpointTeamIDAndMetadata() async throws {
@@ -37,6 +46,8 @@ import Testing
     let result = try await provider.files().uploadFile(FileUploadRequest(
         data: Data("a,b\n1,2".utf8),
         mediaType: "text/csv",
+        purpose: "fine-tune",
+        displayName: "Upload",
         extraBody: ["xai": .object(["teamId": .string("team-123")])]
     ))
 
@@ -53,6 +64,10 @@ import Testing
     #expect(result.requestMetadata.body?["file"]?["byteLength"]?.intValue == 7)
     #expect(result.requestMetadata.body?["file"]?["data"] == nil)
     #expect(result.requestMetadata.body?["teamId"]?.stringValue == "team-123")
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "displayName"),
+        AIWarning(type: "unsupported", feature: "purpose")
+    ])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/files")
     #expect(request.headers["Authorization"] == "Bearer xai-key")
@@ -61,6 +76,7 @@ import Testing
     #expect(bodyText.contains("name=\"team_id\""))
     #expect(bodyText.contains("team-123"))
     #expect(!bodyText.contains("name=\"purpose\""))
+    #expect(!bodyText.contains("Upload"))
 }
 
 @Test func openAISkillsUploadUsesMultipartSkillsEndpoint() async throws {

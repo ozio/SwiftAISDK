@@ -1757,6 +1757,7 @@ public struct FileUploadResult: Sendable {
     public var mediaType: String?
     public var metadata: [String: JSONValue]
     public var rawValue: JSONValue
+    public var warnings: [AIWarning]
     public var providerMetadata: [String: JSONValue]
     public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
@@ -1767,6 +1768,7 @@ public struct FileUploadResult: Sendable {
         mediaType: String? = nil,
         metadata: [String: JSONValue] = [:],
         rawValue: JSONValue,
+        warnings: [AIWarning] = [],
         providerMetadata: [String: JSONValue] = [:],
         requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
@@ -1776,6 +1778,7 @@ public struct FileUploadResult: Sendable {
         self.mediaType = mediaType
         self.metadata = metadata
         self.rawValue = rawValue
+        self.warnings = warnings
         self.providerMetadata = providerMetadata
         self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
