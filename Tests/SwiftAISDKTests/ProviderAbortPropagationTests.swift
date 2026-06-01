@@ -320,6 +320,32 @@ import Testing
     #expect(rerankRequest.abortSignal === rerankController.signal)
 }
 
+@Test func deepgramForwardsAbortSignalToTranscriptionAndSpeechRequests() async throws {
+    let transcriptionTransport = RecordingTransport(response: jsonResponse(#"{"results":{"channels":[{"alternatives":[{"transcript":"deepgram"}]}]}}"#))
+    let transcriptionProvider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transcriptionTransport))
+    let transcriptionModel = try transcriptionProvider.transcriptionModel("nova-3")
+    let transcriptionController = AIAbortController()
+
+    _ = try await transcriptionModel.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        mimeType: "audio/wav",
+        abortSignal: transcriptionController.signal
+    ))
+
+    let transcriptionRequest = try #require(await transcriptionTransport.requests().first)
+    #expect(transcriptionRequest.abortSignal === transcriptionController.signal)
+
+    let speechTransport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("audio".utf8)))
+    let speechProvider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: speechTransport))
+    let speechModel = try speechProvider.speechModel("aura-2-helena-en")
+    let speechController = AIAbortController()
+
+    _ = try await speechModel.speak(SpeechRequest(text: "hello", abortSignal: speechController.signal))
+
+    let speechRequest = try #require(await speechTransport.requests().first)
+    #expect(speechRequest.abortSignal === speechController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

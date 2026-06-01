@@ -12,7 +12,7 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = deepgramProviderOptions(from: request.extraBody)
+        let options = deepgramProviderOptions(from: request)
         var query: [String: String] = [
             "model": modelID,
             "diarize": "true"
@@ -57,17 +57,19 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = deepgramProviderOptions(from: request.extraBody)
+        let options = deepgramProviderOptions(from: request)
         var query = deepgramSpeechQuery(for: request.format)
         query["model"] = modelID
-        query = deepgramSpeechOptions(from: options, current: query)
+        let prepared = deepgramSpeechOptions(from: options, current: query, request: request, modelID: modelID)
+        query = prepared.query
         query["model"] = modelID
 
         let response = try await config.transport.send(config.request(
             path: "/v1/speak?\(queryString(query))",
             modelID: modelID,
             body: .object(["text": .string(request.text)]),
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -75,6 +77,7 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            warnings: prepared.warnings,
             requestMetadata: AIRequestMetadata(body: .object(["text": .string(request.text)]), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
@@ -722,6 +725,20 @@ private func deepgramProviderOptions(from extraBody: [String: JSONValue]) -> [St
     return output
 }
 
+private func deepgramProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+    deepgramProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func deepgramProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+    deepgramProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func deepgramProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = deepgramProviderOptions(from: extraBody)
+    output.merge(deepgramProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    return output
+}
+
 private func falProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
     if let nested = output.removeValue(forKey: "fal")?.objectValue {
@@ -989,62 +1006,183 @@ private func humeContextUtterance(_ value: JSONValue) -> JSONValue {
     return .object(mapKeys(object, ["trailingSilence": "trailing_silence"]))
 }
 
-private func deepgramSpeechOptions(from extraBody: [String: JSONValue], current: [String: String]) -> [String: String] {
+private struct DeepgramPreparedSpeechOptions {
+    var query: [String: String]
+    var warnings: [AIWarning]
+}
+
+private func deepgramSpeechOptions(from extraBody: [String: JSONValue], current: [String: String], request: SpeechRequest, modelID: String) -> DeepgramPreparedSpeechOptions {
     var query = current
+    var warnings: [AIWarning] = []
     for (key, value) in extraBody {
         switch key {
         case "bitRate":
-            if let scalar = deepgramQueryValue(value) { query["bit_rate"] = scalar }
+            continue
         case "callbackMethod":
             if let scalar = deepgramQueryValue(value) { query["callback_method"] = scalar }
         case "mipOptOut":
             if let scalar = deepgramQueryValue(value) { query["mip_opt_out"] = scalar }
         case "sampleRate":
-            if let scalar = deepgramQueryValue(value) { query["sample_rate"] = scalar }
+            continue
         case "container":
-            if let container = deepgramQueryValue(value)?.lowercased() {
-                query["container"] = container
-                if query["encoding"] == nil {
-                    if container == "wav" || container == "none" {
-                        query["encoding"] = "linear16"
-                    } else if container == "ogg" {
-                        query["encoding"] = "opus"
-                    }
-                }
-            }
+            continue
         case "encoding":
-            if let encoding = deepgramQueryValue(value)?.lowercased() {
-                query["encoding"] = encoding
-                if encoding == "opus" {
-                    query["container"] = "ogg"
-                    query.removeValue(forKey: "sample_rate")
-                } else if encoding == "mp3" || encoding == "flac" || encoding == "aac" {
-                    query.removeValue(forKey: "container")
-                    if encoding == "mp3" || encoding == "aac" {
-                        query.removeValue(forKey: "sample_rate")
-                    }
-                } else if ["linear16", "mulaw", "alaw"].contains(encoding), query["container"] == nil {
-                    query["container"] = "wav"
-                }
-            }
+            continue
         case "tag":
             if let scalar = deepgramQueryValue(value) { query["tag"] = scalar }
         default:
             if let scalar = deepgramQueryValue(value) { query[key] = scalar }
         }
     }
-    switch query["encoding"]?.lowercased() {
-    case "mp3", "opus", "aac":
-        query.removeValue(forKey: "sample_rate")
-    case "linear16", "mulaw", "alaw", "flac":
-        query.removeValue(forKey: "bit_rate")
-    default:
-        break
+
+    if let encodingValue = extraBody["encoding"],
+       let encoding = deepgramQueryValue(encodingValue)?.lowercased() {
+        query["encoding"] = encoding
+        if let containerValue = extraBody["container"],
+           let container = deepgramQueryValue(containerValue)?.lowercased() {
+            deepgramApplyContainer(container, for: encoding, query: &query, warnings: &warnings)
+        } else if ["mp3", "flac", "aac"].contains(encoding) {
+            query.removeValue(forKey: "container")
+        } else if ["linear16", "mulaw", "alaw"].contains(encoding), query["container"] == nil {
+            query["container"] = "wav"
+        } else if encoding == "opus" {
+            query["container"] = "ogg"
+        }
+
+        if ["mp3", "opus", "aac"].contains(encoding) {
+            query.removeValue(forKey: "sample_rate")
+        }
+        if ["linear16", "mulaw", "alaw", "flac"].contains(encoding) {
+            query.removeValue(forKey: "bit_rate")
+        }
+    } else if let containerValue = extraBody["container"],
+              let container = deepgramQueryValue(containerValue)?.lowercased() {
+        let oldEncoding = query["encoding"]?.lowercased()
+        var newEncoding: String?
+        if container == "wav" {
+            query["container"] = "wav"
+            newEncoding = "linear16"
+        } else if container == "ogg" {
+            query["container"] = "ogg"
+            newEncoding = "opus"
+        } else if container == "none" {
+            query["container"] = "none"
+            newEncoding = "linear16"
+        }
+        if let newEncoding, newEncoding != oldEncoding {
+            query["encoding"] = newEncoding
+            if ["mp3", "opus", "aac"].contains(newEncoding) {
+                query.removeValue(forKey: "sample_rate")
+            }
+            if ["linear16", "mulaw", "alaw", "flac"].contains(newEncoding) {
+                query.removeValue(forKey: "bit_rate")
+            }
+        }
     }
-    if query["encoding"]?.lowercased() == "opus" {
+
+    if let sampleRate = extraBody["sampleRate"]?.intValue {
+        deepgramApplySampleRate(sampleRate, query: &query, warnings: &warnings)
+    }
+    if let bitRateValue = extraBody["bitRate"],
+       let bitRate = deepgramQueryValue(bitRateValue) {
+        deepgramApplyBitRate(bitRate, query: &query, warnings: &warnings)
+    }
+
+    if let voice = request.voice, voice != modelID {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "voice",
+            message: "Deepgram TTS models embed the voice in the model ID. The voice parameter \"\(voice)\" was ignored. Use the model ID to select a voice (e.g., \"aura-2-helena-en\")."
+        ))
+    }
+
+    return DeepgramPreparedSpeechOptions(query: query.filter { $0.key != "model" }, warnings: warnings)
+}
+
+private func deepgramApplyContainer(_ container: String, for encoding: String, query: inout [String: String], warnings: inout [AIWarning]) {
+    if ["linear16", "mulaw", "alaw"].contains(encoding) {
+        guard container == "wav" || container == "none" else {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "providerOptions",
+                message: "Encoding \"\(encoding)\" only supports containers \"wav\" or \"none\". Container \"\(container)\" was ignored."
+            ))
+            return
+        }
+        query["container"] = container
+    } else if encoding == "opus" {
         query["container"] = "ogg"
+    } else if ["mp3", "flac", "aac"].contains(encoding) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "providerOptions",
+            message: "Encoding \"\(encoding)\" does not support container parameter. Container \"\(container)\" was ignored."
+        ))
+        query.removeValue(forKey: "container")
     }
-    return query.filter { $0.key != "model" }
+}
+
+private func deepgramApplySampleRate(_ sampleRate: Int, query: inout [String: String], warnings: inout [AIWarning]) {
+    let encoding = query["encoding"]?.lowercased() ?? ""
+    if encoding == "linear16" {
+        guard [8000, 16000, 24000, 32000, 48000].contains(sampleRate) else {
+            warnings.append(AIWarning(type: "unsupported", feature: "providerOptions", message: "Encoding \"linear16\" only supports sample rates: 8000, 16000, 24000, 32000, 48000. Sample rate \(sampleRate) was ignored."))
+            return
+        }
+        query["sample_rate"] = String(sampleRate)
+    } else if encoding == "mulaw" || encoding == "alaw" {
+        guard [8000, 16000].contains(sampleRate) else {
+            warnings.append(AIWarning(type: "unsupported", feature: "providerOptions", message: "Encoding \"\(encoding)\" only supports sample rates: 8000, 16000. Sample rate \(sampleRate) was ignored."))
+            return
+        }
+        query["sample_rate"] = String(sampleRate)
+    } else if encoding == "flac" {
+        guard [8000, 16000, 22050, 32000, 48000].contains(sampleRate) else {
+            warnings.append(AIWarning(type: "unsupported", feature: "providerOptions", message: "Encoding \"flac\" only supports sample rates: 8000, 16000, 22050, 32000, 48000. Sample rate \(sampleRate) was ignored."))
+            return
+        }
+        query["sample_rate"] = String(sampleRate)
+    } else if ["mp3", "opus", "aac"].contains(encoding) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "providerOptions",
+            message: "Encoding \"\(encoding)\" has a fixed sample rate and does not support sample_rate parameter. Sample rate \(sampleRate) was ignored."
+        ))
+    } else {
+        query["sample_rate"] = String(sampleRate)
+    }
+}
+
+private func deepgramApplyBitRate(_ bitRate: String, query: inout [String: String], warnings: inout [AIWarning]) {
+    let encoding = query["encoding"]?.lowercased() ?? ""
+    let bitRateNumber = Int(bitRate) ?? 0
+    if encoding == "mp3" {
+        guard [32000, 48000].contains(bitRateNumber) else {
+            warnings.append(AIWarning(type: "unsupported", feature: "providerOptions", message: "Encoding \"mp3\" only supports bit rates: 32000, 48000. Bit rate \(bitRate) was ignored."))
+            return
+        }
+        query["bit_rate"] = bitRate
+    } else if encoding == "opus" {
+        guard bitRateNumber >= 4000 && bitRateNumber <= 650000 else {
+            warnings.append(AIWarning(type: "unsupported", feature: "providerOptions", message: "Encoding \"opus\" supports bit rates between 4000 and 650000. Bit rate \(bitRate) was ignored."))
+            return
+        }
+        query["bit_rate"] = bitRate
+    } else if encoding == "aac" {
+        guard bitRateNumber >= 4000 && bitRateNumber <= 192000 else {
+            warnings.append(AIWarning(type: "unsupported", feature: "providerOptions", message: "Encoding \"aac\" supports bit rates between 4000 and 192000. Bit rate \(bitRate) was ignored."))
+            return
+        }
+        query["bit_rate"] = bitRate
+    } else if ["linear16", "mulaw", "alaw", "flac"].contains(encoding) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "providerOptions",
+            message: "Encoding \"\(encoding)\" does not support bit_rate parameter. Bit rate \(bitRate) was ignored."
+        ))
+    } else {
+        query["bit_rate"] = bitRate
+    }
 }
 
 private func deepgramQueryValue(_ value: JSONValue) -> String? {
