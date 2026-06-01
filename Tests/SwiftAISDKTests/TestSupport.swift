@@ -27,12 +27,12 @@ actor RecordingTransport: AITransport {
     }
 }
 
-func jsonResponse(_ json: String) -> AIHTTPResponse {
-    AIHTTPResponse(statusCode: 200, headers: ["content-type": "application/json"], body: Data(json.utf8))
+func jsonResponse(_ json: String, headers: [String: String] = [:]) -> AIHTTPResponse {
+    AIHTTPResponse(statusCode: 200, headers: ["content-type": "application/json"].mergingHeaders(headers), body: Data(json.utf8))
 }
 
-func sseResponse(_ text: String) -> AIHTTPResponse {
-    AIHTTPResponse(statusCode: 200, headers: ["content-type": "text/event-stream"], body: Data(text.utf8))
+func sseResponse(_ text: String, headers: [String: String] = [:]) -> AIHTTPResponse {
+    AIHTTPResponse(statusCode: 200, headers: ["content-type": "text/event-stream"].mergingHeaders(headers), body: Data(text.utf8))
 }
 
 func multipartResponse(parts: [(name: String, contentType: String, body: Data)]) -> AIHTTPResponse {

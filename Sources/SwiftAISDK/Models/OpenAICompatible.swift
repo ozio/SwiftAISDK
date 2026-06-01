@@ -281,11 +281,15 @@ struct ModelHTTPConfig: @unchecked Sendable {
     }
 
     func sendJSON(path: String, modelID: String, body: JSONValue, headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> JSONValue {
+        try await sendJSONResponse(path: path, modelID: modelID, body: body, headers: headers, abortSignal: abortSignal).json
+    }
+
+    func sendJSONResponse(path: String, modelID: String, body: JSONValue, headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let response = try await transport.send(request(path: path, modelID: modelID, body: body, headers: headers, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
-        return try response.jsonValue()
+        return (try response.jsonValue(), response)
     }
 
     func withProviderID(_ providerID: String) -> ModelHTTPConfig {
@@ -302,6 +306,16 @@ struct ModelHTTPConfig: @unchecked Sendable {
             url: url
         )
     }
+}
+
+private func openAICompatibleResponseMetadata(from raw: JSONValue? = nil, response: AIHTTPResponse, modelID: String? = nil) -> AIResponseMetadata {
+    AIResponseMetadata(
+        id: raw?["id"]?.stringValue,
+        timestamp: raw?["created"]?.doubleValue.map { Date(timeIntervalSince1970: $0) },
+        modelID: raw?["model"]?.stringValue ?? modelID,
+        headers: response.headers,
+        body: raw
+    )
 }
 
 private func openAICompatibleURL(_ string: String, queryParams: [String: String]) throws -> URL {
@@ -331,7 +345,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         let warnings = isOpenAIBackedProvider(providerID)
             ? []
             : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
-        let raw = try await config.sendJSON(path: "/chat/completions", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/chat/completions", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let choice = raw["choices"]?[0]
         let toolCalls = openAICompatibleChatToolCalls(from: choice?["message"]?["tool_calls"])
         let text = choice?["message"]?["content"]?.stringValue
@@ -347,7 +362,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             usage: usage(from: raw),
             toolCalls: toolCalls,
             rawValue: raw,
-            warnings: warnings
+            warnings: warnings,
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -361,6 +377,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
                     var toolCalls = OpenAICompatibleStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -795,11 +812,19 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
             ? []
             : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
         let body = body(for: request, stream: false)
-        let raw = try await config.sendJSON(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         guard let text = raw["choices"]?[0]?["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No text found in completion response.")
         }
-        return TextGenerationResult(text: text, finishReason: raw["choices"]?[0]?["finish_reason"]?.stringValue, usage: tokenUsage(from: raw), rawValue: raw, warnings: warnings)
+        return TextGenerationResult(
+            text: text,
+            finishReason: raw["choices"]?[0]?["finish_reason"]?.stringValue,
+            usage: tokenUsage(from: raw),
+            rawValue: raw,
+            warnings: warnings,
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
@@ -812,6 +837,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
@@ -862,7 +888,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let toolCalls = openAIResponsesToolCalls(from: raw)
         let toolApprovalRequests = openAIResponsesToolApprovalRequests(from: raw)
         let text = raw["output_text"]?.stringValue
@@ -880,7 +907,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
             toolApprovalRequests: toolApprovalRequests,
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -893,6 +921,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
                     var toolCallBuffers = OpenAIResponsesStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -1761,7 +1790,8 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         body.merge(extraBody) { _, new in new }
 
-        let raw = try await config.sendJSON(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         guard case let .array(data) = raw["data"] else {
             throw AIError.invalidResponse(provider: providerID, message: "No embedding data found.")
         }
@@ -1770,7 +1800,13 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             guard case let .array(values) = item["embedding"] else { return nil }
             return values.compactMap(\.doubleValue)
         }
-        return EmbeddingResult(embeddings: embeddings, usage: tokenUsage(from: raw), rawValue: raw, warnings: warnings)
+        return EmbeddingResult(
+            embeddings: embeddings,
+            usage: tokenUsage(from: raw),
+            rawValue: raw,
+            warnings: warnings,
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -1810,7 +1846,8 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             body["response_format"] = .string("b64_json")
         }
 
-        let raw = try await config.sendJSON(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         guard case let .array(data) = raw["data"] else {
             throw AIError.invalidResponse(provider: providerID, message: "No image data found.")
         }
@@ -1818,7 +1855,8 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             urls: data.compactMap { $0["url"]?.stringValue },
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
             rawValue: raw,
-            warnings: warnings
+            warnings: warnings,
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -1874,7 +1912,8 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             urls: data.compactMap { $0["url"]?.stringValue },
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
             rawValue: raw,
-            warnings: warnings
+            warnings: warnings,
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
 }
@@ -1959,7 +1998,11 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
-        return SpeechResult(audio: response.body, contentType: response.headers["content-type"] ?? response.headers["Content-Type"])
+        return SpeechResult(
+            audio: response.body,
+            contentType: response.headers["content-type"] ?? response.headers["Content-Type"],
+            responseMetadata: openAICompatibleResponseMetadata(response: response, modelID: modelID)
+        )
     }
 }
 
@@ -2016,6 +2059,10 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
         guard let text = raw["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No transcription text found.")
         }
-        return TranscriptionResult(text: text, rawValue: raw)
+        return TranscriptionResult(
+            text: text,
+            rawValue: raw,
+            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
     }
 }

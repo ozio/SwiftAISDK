@@ -192,8 +192,11 @@ Progress:
   warnings, tool results, tool approval requests, files, custom parts, response
   metadata, streamed errors, and opt-in raw chunks. Provider implementations
   now gate raw stream chunks behind `includeRawChunks`, matching upstream's
-  default-no-raw behavior. Follow-up passes should keep filling richer metadata
-  and lifecycle fields consistently.
+  default-no-raw behavior. The shared OpenAI-compatible layer now carries
+  upstream-style response headers and raw JSON bodies through
+  `AIResponseMetadata` for text, stream, embedding, image, transcription, and
+  speech calls. Follow-up passes should keep filling richer metadata and
+  lifecycle fields consistently across the other native providers.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 
