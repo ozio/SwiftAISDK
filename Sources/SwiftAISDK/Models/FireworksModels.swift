@@ -30,7 +30,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
 
         switch fireworksURLFormat(modelID) {
         case "workflows_async":
-            return try await generateAsync(body: body, headers: request.headers, abortSignal: request.abortSignal)
+            return try await generateAsync(request: request, body: body)
         default:
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "POST",
@@ -51,20 +51,21 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
                 urls: [],
                 base64Images: [response.body.base64EncodedString()],
                 rawValue: raw,
+                requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
                 responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
             )
         }
     }
 
-    private func generateAsync(body: [String: JSONValue], headers requestHeaders: [String: String], abortSignal: AIAbortSignal?) async throws -> ImageGenerationResult {
+    private func generateAsync(request: ImageGenerationRequest, body: [String: JSONValue]) async throws -> ImageGenerationResult {
         let submit = try await config.transport.send(AIHTTPRequest(
             method: "POST",
             url: try requireURL(fireworksURL(modelID: modelID, baseURL: config.baseURL)),
             headers: config.headers
-                .mergingHeaders(requestHeaders)
+                .mergingHeaders(request.headers)
                 .mergingHeaders(["content-type": "application/json"]),
             body: try encodeJSONBody(.object(body)),
-            abortSignal: abortSignal
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(submit.statusCode) else {
             throw httpStatusError(provider: providerID, response: submit)
@@ -73,8 +74,8 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
         guard let requestID = submitRaw["request_id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fireworks async image response did not contain request_id.")
         }
-        let imageURL = try await pollAsyncImage(requestID: requestID, headers: requestHeaders, abortSignal: abortSignal)
-        let imageResponse = try await downloadURL(imageURL, transport: config.transport, headers: config.headers.mergingHeaders(requestHeaders), abortSignal: abortSignal)
+        let imageURL = try await pollAsyncImage(requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
+        let imageResponse = try await downloadURL(imageURL, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
         guard (200..<300).contains(imageResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: imageResponse)
         }
@@ -82,6 +83,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             urls: [imageURL],
             base64Images: [imageResponse.body.base64EncodedString()],
             rawValue: submitRaw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: submitRaw, response: submit, modelID: modelID)
         )
     }

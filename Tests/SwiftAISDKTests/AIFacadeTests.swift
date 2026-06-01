@@ -1415,6 +1415,9 @@ private actor PrepareStepCapture {
     let imageModel = MockImageModel(result: ImageGenerationResult(urls: ["https://example.com/image.png"], rawValue: .object([:])))
     let image = try await AI.generateImage(model: imageModel, prompt: "cat", size: "1024x1024", providerOptions: ["image": .object(["quality": .string("high")])])
     #expect(image.urls == ["https://example.com/image.png"])
+    #expect(image.requestMetadata.body?["prompt"]?.stringValue == "cat")
+    #expect(image.requestMetadata.body?["size"]?.stringValue == "1024x1024")
+    #expect(image.requestMetadata.body?["providerOptions"]?["image"]?["quality"]?.stringValue == "high")
     #expect(imageModel.requests.first?.prompt == "cat")
     #expect(imageModel.requests.first?.providerOptions["image"]?["quality"]?.stringValue == "high")
 
@@ -1431,6 +1434,7 @@ private actor PrepareStepCapture {
     let videoModel = MockVideoModel(result: VideoGenerationResult(urls: ["https://example.com/video.mp4"], rawValue: .object([:])))
     let video = try await AI.generateVideo(model: videoModel, request: VideoGenerationRequest(prompt: "clip"))
     #expect(video.urls == ["https://example.com/video.mp4"])
+    #expect(video.requestMetadata.body?["prompt"]?.stringValue == "clip")
     #expect(videoModel.requests.first?.prompt == "clip")
 
     let rerankingModel = MockRerankingModel(result: RerankingResult(results: [RerankedDocument(index: 1, score: 0.9)], rawValue: .object([:])))

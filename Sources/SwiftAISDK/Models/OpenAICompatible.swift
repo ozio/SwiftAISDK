@@ -1992,6 +1992,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
             rawValue: raw,
             warnings: warnings,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -2049,6 +2050,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
             rawValue: raw,
             warnings: warnings,
+            requestMetadata: imageGenerationRequestMetadata(request),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }

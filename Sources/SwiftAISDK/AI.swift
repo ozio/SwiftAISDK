@@ -1803,7 +1803,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await model.generateImage(request)
+            var result = try await model.generateImage(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = imageGenerationRequestMetadata(request)
+            }
+            return result
         }
     }
 
@@ -1864,7 +1868,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await model.generateVideo(request)
+            var result = try await model.generateVideo(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = videoGenerationRequestMetadata(request)
+            }
+            return result
         }
     }
 
@@ -3719,6 +3727,7 @@ private func imageTelemetryOutput(_ result: ImageGenerationResult) -> JSONValue 
     .object([
         "urls": .array(result.urls.map(JSONValue.string)),
         "base64ImageCount": .number(Double(result.base64Images.count)),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
 }
@@ -3744,6 +3753,7 @@ private func videoTelemetryOutput(_ result: VideoGenerationResult) -> JSONValue 
     .object([
         "urls": .array(result.urls.map(JSONValue.string)),
         "operationID": result.operationID.map(JSONValue.string),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
 }

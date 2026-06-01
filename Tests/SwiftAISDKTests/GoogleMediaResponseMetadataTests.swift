@@ -14,6 +14,7 @@ import Testing
     let imagen = try await imagenModel.generateImage(ImageGenerationRequest(prompt: "cat"))
     let afterImagen = Date()
 
+    #expect(imagen.requestMetadata.body?["instances"]?[0]?["prompt"]?.stringValue == "cat")
     #expect(imagen.responseMetadata.modelID == "imagen-4.0-generate-001")
     #expect(imagen.responseMetadata.headers["google-header"] == "imagen")
     #expect(imagen.responseMetadata.body?["predictions"]?[0]?["bytesBase64Encoded"]?.stringValue == "image-1")
@@ -29,6 +30,7 @@ import Testing
 
     let gemini = try await geminiModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(gemini.requestMetadata.body?["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "cat")
     #expect(gemini.responseMetadata.modelID == "gemini-2.5-flash-image")
     #expect(gemini.responseMetadata.headers["google-header"] == "gemini-image")
     #expect(gemini.responseMetadata.body?["candidates"]?[0]?["content"]?["parts"]?[0]?["inlineData"]?["data"]?.stringValue == "gemini-image")
@@ -47,6 +49,7 @@ import Testing
         extraBody: ["pollIntervalMs": 0]
     ))
 
+    #expect(video.requestMetadata.body?["instances"]?[0]?["prompt"]?.stringValue == "cat running")
     #expect(video.responseMetadata.modelID == "veo-3.1-generate-preview")
     #expect(video.responseMetadata.headers["google-header"] == "poll")
     #expect(video.responseMetadata.body?["name"]?.stringValue == "operations/video-1")
@@ -78,6 +81,7 @@ import Testing
 
     let image = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(image.requestMetadata.body?["instances"]?[0]?["prompt"]?.stringValue == "cat")
     #expect(image.responseMetadata.modelID == "imagen-3.0-generate-002")
     #expect(image.responseMetadata.headers["vertex-header"] == "image")
     #expect(image.responseMetadata.body?["predictions"]?[0]?["bytesBase64Encoded"]?.stringValue == "vertex-image")
@@ -91,6 +95,7 @@ import Testing
 
     let geminiImage = try await geminiModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(geminiImage.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(geminiImage.responseMetadata.modelID == "gemini-2.5-flash-image")
     #expect(geminiImage.responseMetadata.headers["vertex-header"] == "gemini-image")
 
@@ -103,6 +108,7 @@ import Testing
 
     let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat running"))
 
+    #expect(video.requestMetadata.body?["instances"]?[0]?["prompt"]?.stringValue == "cat running")
     #expect(video.responseMetadata.modelID == "veo-2.0-generate-001")
     #expect(video.responseMetadata.headers["vertex-header"] == "video")
     #expect(video.responseMetadata.body?["name"]?.stringValue == "operations/vertex-video")

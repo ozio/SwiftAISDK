@@ -35,6 +35,7 @@ public final class JSONImageModel: ImageModel, @unchecked Sendable {
             urls: urls,
             base64Images: base64Images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -162,6 +163,7 @@ public final class JSONVideoModel: VideoModel, @unchecked Sendable {
             urls: urls,
             operationID: raw["id"]?.stringValue ?? raw["operation"]?["name"]?.stringValue,
             rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

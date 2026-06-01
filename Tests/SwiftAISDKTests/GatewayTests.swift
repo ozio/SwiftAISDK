@@ -355,6 +355,11 @@ import Testing
     ))
 
     #expect(result.base64Images == ["base64-image"])
+    #expect(result.requestMetadata.body?["prompt"]?.stringValue == "Edit these images")
+    #expect(result.requestMetadata.body?["files"]?[0]?["data"]?["type"]?.stringValue == "omitted-media")
+    #expect(result.requestMetadata.body?["files"]?[0]?["data"]?["encodedByteLength"]?.intValue == Data([1, 2, 3]).base64EncodedString().utf8.count)
+    #expect(result.requestMetadata.body?["files"]?[1]?["url"]?.stringValue == "https://example.com/reference.png")
+    #expect(result.requestMetadata.body?["mask"]?["data"]?["type"]?.stringValue == "omitted-media")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/image-model")
     #expect(request.headers["ai-image-model-specification-version"] == "4")

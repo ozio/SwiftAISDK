@@ -125,6 +125,7 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
             urls: urls,
             base64Images: base64Images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -216,6 +217,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             urls: [url],
             operationID: requestID,
             rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }

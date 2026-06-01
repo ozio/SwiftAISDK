@@ -110,10 +110,12 @@ import Testing
         warnings: [warning],
         usage: TokenUsage(inputTokens: 2),
         providerMetadata: providerMetadata,
+        requestMetadata: request,
         responseMetadata: response
     )
     #expect(image.usage?.inputTokens == 2)
     #expect(image.providerMetadata == providerMetadata)
+    #expect(image.requestMetadata == request)
 
     let transcription = TranscriptionResult(
         text: "hello",
@@ -134,8 +136,9 @@ import Testing
     #expect(speech.warnings == [warning])
     #expect(speech.requestMetadata == request)
 
-    let video = VideoGenerationResult(urls: [], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, responseMetadata: response)
+    let video = VideoGenerationResult(urls: [], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, requestMetadata: request, responseMetadata: response)
     #expect(video.providerMetadata == providerMetadata)
+    #expect(video.requestMetadata == request)
 
     let reranking = RerankingResult(results: [], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, requestMetadata: request, responseMetadata: response)
     #expect(reranking.requestMetadata == request)

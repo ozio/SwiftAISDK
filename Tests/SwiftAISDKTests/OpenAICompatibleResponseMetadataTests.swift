@@ -172,6 +172,8 @@ import Testing
 
     let image = try await imageModel.generateImage(ImageGenerationRequest(prompt: "logo"))
 
+    #expect(image.requestMetadata.body?["prompt"]?.stringValue == "logo")
+    #expect(image.requestMetadata.body?["model"]?.stringValue == "gpt-image-1")
     #expect(image.responseMetadata.modelID == "gpt-image-1")
     #expect(image.responseMetadata.timestamp == Date(timeIntervalSince1970: 1_710_000_001))
     #expect(image.responseMetadata.headers["image-header"] == "value")

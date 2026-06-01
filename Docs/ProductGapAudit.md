@@ -165,9 +165,10 @@ The Swift contract keeps only a compact subset. For example:
   warnings, request/response info, and provider metadata, but provider passes
   still need to keep filling those fields wherever upstream exposes them.
 - `SpeechResult`, `VideoGenerationResult`, `RerankingResult`,
-  `FileUploadResult`, and `SkillUploadResult` still need provider-by-provider
-  population passes where upstream exposes additional metadata beyond the
-  shared slots.
+  `FileUploadResult`, and `SkillUploadResult` now have the shared slots needed
+  for upstream parity, but still need provider-by-provider population passes
+  where upstream exposes additional provider-specific details beyond the shared
+  request/response metadata.
 
 Impact:
 
@@ -223,7 +224,11 @@ Progress:
   Google Generative AI, Google Vertex, Cohere, Voyage, Mistral, Baseten,
   Gateway, Amazon Bedrock, TogetherAI, and generic JSON reranking wrappers now
   preserve safe request metadata for their provider JSON bodies alongside
-  provider response headers and raw JSON bodies. Native transcription models now
+  provider response headers and raw JSON bodies. Native image/video models now
+  also preserve safe request metadata for provider JSON bodies or safe request
+  snapshots, omitting inline/base64 media payloads while retaining prompt,
+  size/aspect, count, duration, URL, and option fields. Native transcription
+  models now
   map upstream-style segments,
   language, and duration for Deepgram, ElevenLabs, Groq/OpenAI-compatible
   verbose JSON, AssemblyAI, Rev.ai, Gladia, fal, Gateway, and generic JSON

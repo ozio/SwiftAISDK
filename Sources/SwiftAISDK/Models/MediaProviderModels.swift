@@ -35,6 +35,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
             urls: urls,
             base64Images: base64Images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -108,6 +109,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             urls: mediaURLs(from: raw["output"]),
             operationID: raw["id"]?.stringValue,
             rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
@@ -273,6 +275,7 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
             urls: urls,
             base64Images: base64Images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -340,6 +343,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
             urls: [videoURL],
             operationID: queued["request_id"]?.stringValue,
             rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
@@ -409,7 +413,12 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         guard (200..<300).contains(image.statusCode) else {
             throw httpStatusError(provider: providerID, response: image)
         }
-        return ImageGenerationResult(urls: [url], base64Images: [image.body.base64EncodedString()], rawValue: raw)
+        return ImageGenerationResult(
+            urls: [url],
+            base64Images: [image.body.base64EncodedString()],
+            rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body))
+        )
     }
 
     private func pollBFL(url: String, id: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
@@ -568,7 +577,12 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
         guard (200..<300).contains(image.statusCode) else {
             throw httpStatusError(provider: providerID, response: image)
         }
-        return ImageGenerationResult(urls: [url], base64Images: [image.body.base64EncodedString()], rawValue: raw)
+        return ImageGenerationResult(
+            urls: [url],
+            base64Images: [image.body.base64EncodedString()],
+            rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body))
+        )
     }
 
     private func pollLuma(id: String, headers: [String: String], intervalNanoseconds: UInt64, maxAttempts: Int, abortSignal: AIAbortSignal?) async throws -> JSONValue {
@@ -726,7 +740,12 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         guard !urls.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "KlingAI task response did not contain video URLs.")
         }
-        return VideoGenerationResult(urls: urls, operationID: taskID, rawValue: raw)
+        return VideoGenerationResult(
+            urls: urls,
+            operationID: taskID,
+            rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body))
+        )
     }
 
     private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
@@ -920,7 +939,12 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         guard let url = raw["content"]?["video_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "ByteDance status response did not contain content.video_url.")
         }
-        return VideoGenerationResult(urls: [url], operationID: taskID, rawValue: raw)
+        return VideoGenerationResult(
+            urls: [url],
+            operationID: taskID,
+            rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body))
+        )
     }
 
     private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
@@ -1156,7 +1180,12 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
         guard let url = raw["output"]?["video_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Alibaba video status response did not contain output.video_url.")
         }
-        return VideoGenerationResult(urls: [url], operationID: taskID, rawValue: raw)
+        return VideoGenerationResult(
+            urls: [url],
+            operationID: taskID,
+            rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: body)
+        )
     }
 
     private func pollAlibaba(taskID: String, base: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
@@ -1282,7 +1311,12 @@ public final class ProdiaImageModel: ImageModel, @unchecked Sendable {
         guard let output else {
             throw AIError.invalidResponse(provider: providerID, message: "Prodia image response did not contain output image part.")
         }
-        return ImageGenerationResult(urls: [], base64Images: [output.body.base64EncodedString()], rawValue: multipartRawValue(multipart))
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: [output.body.base64EncodedString()],
+            rawValue: multipartRawValue(multipart),
+            requestMetadata: imageGenerationRequestMetadata(request, body: body)
+        )
     }
 }
 
@@ -1318,7 +1352,12 @@ public final class ProdiaVideoModel: VideoModel, @unchecked Sendable {
         guard multipart.contains(where: { $0.name == "output" || $0.contentType?.hasPrefix("video/") == true }) else {
             throw AIError.invalidResponse(provider: providerID, message: "Prodia video response did not contain output video part.")
         }
-        return VideoGenerationResult(urls: [], operationID: multipart.compactMap { $0.json?["id"]?.stringValue }.first, rawValue: multipartRawValue(multipart))
+        return VideoGenerationResult(
+            urls: [],
+            operationID: multipart.compactMap { $0.json?["id"]?.stringValue }.first,
+            rawValue: multipartRawValue(multipart),
+            requestMetadata: videoGenerationRequestMetadata(request, body: body)
+        )
     }
 }
 

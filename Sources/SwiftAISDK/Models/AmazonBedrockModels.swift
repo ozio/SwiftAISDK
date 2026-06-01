@@ -232,11 +232,18 @@ public final class AmazonBedrockImageModel: ImageModel, @unchecked Sendable {
             providerOptions: providerOptions,
             imageGenerationConfig: imageGenerationConfig
         )
-        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let base64Images = raw["images"]?.arrayValue?.compactMap(\.stringValue)
             ?? raw["artifacts"]?.arrayValue?.compactMap { $0["base64"]?.stringValue }
             ?? []
-        return ImageGenerationResult(urls: [], base64Images: base64Images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: base64Images,
+            rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 
     private var encodedModelID: String {

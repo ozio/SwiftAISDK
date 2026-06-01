@@ -50,6 +50,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: base64Images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
@@ -104,6 +105,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: base64Images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }

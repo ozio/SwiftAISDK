@@ -1445,6 +1445,7 @@ public struct ImageGenerationResult: Sendable {
     public var warnings: [AIWarning]
     public var usage: TokenUsage?
     public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
 
     public init(
@@ -1454,6 +1455,7 @@ public struct ImageGenerationResult: Sendable {
         warnings: [AIWarning] = [],
         usage: TokenUsage? = nil,
         providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.urls = urls
@@ -1462,6 +1464,7 @@ public struct ImageGenerationResult: Sendable {
         self.warnings = warnings
         self.usage = usage
         self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
     }
 }
@@ -1633,6 +1636,7 @@ public struct VideoGenerationResult: Sendable {
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
     public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
 
     public init(
@@ -1641,6 +1645,7 @@ public struct VideoGenerationResult: Sendable {
         rawValue: JSONValue,
         warnings: [AIWarning] = [],
         providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.urls = urls
@@ -1648,6 +1653,7 @@ public struct VideoGenerationResult: Sendable {
         self.rawValue = rawValue
         self.warnings = warnings
         self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
     }
 }

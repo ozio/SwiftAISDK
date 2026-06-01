@@ -12,6 +12,7 @@ import Testing
 
     let replicateImage = try await replicateImageModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(replicateImage.requestMetadata.body?["input"]?["prompt"]?.stringValue == "cat")
     #expect(replicateImage.responseMetadata.id == "pred-image")
     #expect(replicateImage.responseMetadata.modelID == "black-forest-labs/flux-schnell")
     #expect(replicateImage.responseMetadata.headers["replicate-header"] == "image")
@@ -26,6 +27,7 @@ import Testing
 
     let replicateVideo = try await replicateVideoModel.generateVideo(VideoGenerationRequest(prompt: "cat", extraBody: ["pollIntervalMs": 1]))
 
+    #expect(replicateVideo.requestMetadata.body?["input"]?["prompt"]?.stringValue == "cat")
     #expect(replicateVideo.responseMetadata.id == "pred-video")
     #expect(replicateVideo.responseMetadata.modelID == "owner/video-model")
     #expect(replicateVideo.responseMetadata.headers["replicate-header"] == "poll")
@@ -40,6 +42,7 @@ import Testing
 
     let falImage = try await falImageModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(falImage.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(falImage.responseMetadata.modelID == "fal-ai/flux/schnell")
     #expect(falImage.responseMetadata.headers["fal-header"] == "image")
     #expect(falImage.responseMetadata.body?["images"]?[0]?["url"]?.stringValue == "https://fal.example.com/image.png")
@@ -53,6 +56,7 @@ import Testing
 
     let falVideo = try await falVideoModel.generateVideo(VideoGenerationRequest(prompt: "cat", extraBody: ["pollIntervalMs": 1]))
 
+    #expect(falVideo.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(falVideo.responseMetadata.modelID == "fal-ai/video")
     #expect(falVideo.responseMetadata.headers["fal-header"] == "result")
     #expect(falVideo.responseMetadata.body?["video"]?["url"]?.stringValue == "https://fal.example.com/video.mp4")
@@ -68,6 +72,7 @@ import Testing
 
     let deepInfra = try await deepInfraModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(deepInfra.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(deepInfra.responseMetadata.modelID == "black-forest-labs/FLUX-1-schnell")
     #expect(deepInfra.responseMetadata.headers["deepinfra-header"] == "image")
     #expect(deepInfra.responseMetadata.body?["images"]?[0]?.stringValue == "data:image/png;base64,deepinfra-image")
@@ -81,6 +86,8 @@ import Testing
 
     let together = try await togetherModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(together.requestMetadata.body?["prompt"]?.stringValue == "cat")
+    #expect(together.requestMetadata.body?["response_format"]?.stringValue == "base64")
     #expect(together.responseMetadata.modelID == "black-forest-labs/FLUX.1-schnell-Free")
     #expect(together.responseMetadata.headers["together-header"] == "image")
     #expect(together.responseMetadata.body?["data"]?[0]?["b64_json"]?.stringValue == "together-image")
@@ -94,6 +101,7 @@ import Testing
 
     let quiver = try await quiverModel.generateImage(ImageGenerationRequest(prompt: "logo"))
 
+    #expect(quiver.requestMetadata.body?["prompt"]?.stringValue == "logo")
     #expect(quiver.responseMetadata.modelID == "arrow-1.1")
     #expect(quiver.responseMetadata.headers["quiver-header"] == "image")
     #expect(quiver.responseMetadata.body?["data"]?[0]?["svg"]?.stringValue == "<svg/>")
@@ -107,6 +115,7 @@ import Testing
 
     let xai = try await xaiModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(xai.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(xai.responseMetadata.modelID == "grok-2-image")
     #expect(xai.responseMetadata.headers["xai-header"] == "image")
     #expect(xai.responseMetadata.body?["data"]?[0]?["revised_prompt"]?.stringValue == "cat!")
@@ -123,6 +132,7 @@ import Testing
 
     let fireworksSync = try await fireworksSyncModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(fireworksSync.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(fireworksSync.responseMetadata.modelID == "accounts/fireworks/models/playground-v2-5-1024px-aesthetic")
     #expect(fireworksSync.responseMetadata.headers["fireworks-header"] == "sync")
     #expect(fireworksSync.responseMetadata.body == nil)
@@ -137,6 +147,7 @@ import Testing
 
     let fireworksAsync = try await fireworksAsyncModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(fireworksAsync.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(fireworksAsync.responseMetadata.modelID == "accounts/fireworks/models/flux-kontext-pro")
     #expect(fireworksAsync.responseMetadata.headers["fireworks-header"] == "submit")
     #expect(fireworksAsync.responseMetadata.body?["request_id"]?.stringValue == "fw-job")
@@ -150,6 +161,7 @@ import Testing
 
     let xaiVideo = try await xaiVideoModel.generateVideo(VideoGenerationRequest(prompt: "cat", extraBody: ["pollIntervalMs": 1]))
 
+    #expect(xaiVideo.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(xaiVideo.responseMetadata.modelID == "grok-video")
     #expect(xaiVideo.responseMetadata.headers["xai-header"] == "poll")
     #expect(xaiVideo.responseMetadata.body?["video"]?["url"]?.stringValue == "https://x.ai/video.mp4")
@@ -170,6 +182,7 @@ import Testing
 
     let image = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat"))
 
+    #expect(image.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(image.responseMetadata.id == "image-1")
     #expect(image.responseMetadata.modelID == "image-model")
     #expect(image.responseMetadata.headers["generic-header"] == "image")
@@ -188,6 +201,7 @@ import Testing
 
     let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat"))
 
+    #expect(video.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(video.responseMetadata.id == "video-1")
     #expect(video.responseMetadata.modelID == "video-model")
     #expect(video.responseMetadata.headers["generic-header"] == "video")

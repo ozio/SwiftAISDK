@@ -216,6 +216,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: body),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -269,6 +270,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: body),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -289,6 +291,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -328,6 +331,7 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
             urls: urls,
             operationID: operationName,
             rawValue: finalOperation,
+            requestMetadata: videoGenerationRequestMetadata(request, body: body),
             responseMetadata: aiResponseMetadata(from: finalOperation, response: finalResponse.response, modelID: modelID)
         )
     }

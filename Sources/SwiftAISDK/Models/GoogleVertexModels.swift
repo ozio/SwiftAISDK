@@ -110,6 +110,7 @@ public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
                 urls: [],
                 base64Images: images,
                 rawValue: languageResult.rawValue,
+                requestMetadata: imageGenerationRequestMetadata(request),
                 responseMetadata: languageResult.responseMetadata
             )
         }
@@ -124,6 +125,7 @@ public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -156,6 +158,7 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
             urls: videos.compactMap { $0["gcsUri"]?.stringValue ?? $0["url"]?.stringValue },
             operationID: raw["name"]?.stringValue,
             rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

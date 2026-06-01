@@ -26,6 +26,7 @@ public final class QuiverAIImageModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: base64Images,
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

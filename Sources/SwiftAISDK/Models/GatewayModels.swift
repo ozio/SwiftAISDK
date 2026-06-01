@@ -347,6 +347,7 @@ public final class GatewayImageModel: ImageModel, @unchecked Sendable {
             urls: images.compactMap { $0["url"]?.stringValue },
             base64Images: images.compactMap { $0["data"]?.stringValue ?? $0.stringValue ?? $0["b64_json"]?.stringValue },
             rawValue: raw,
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -409,7 +410,9 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(
             urls: videos.compactMap { $0["url"]?.stringValue ?? $0.stringValue },
             operationID: raw["id"]?.stringValue,
-            rawValue: raw
+            rawValue: raw,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
 }
