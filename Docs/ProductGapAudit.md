@@ -205,6 +205,10 @@ Impact:
   now take an `MCPOAuthProvider`, attach bearer tokens, invalidate stale tokens
   on 401 responses, parse `resource_metadata` from `WWW-Authenticate`, run an
   authorization recovery hook, and retry the original request once.
+  `MCPStdioTransport` now covers the local-server `@ai-sdk/mcp/mcp-stdio`
+  path on macOS/Linux with command/args/env/cwd process spawning,
+  newline-delimited JSON-RPC over stdin/stdout, response matching, and incoming
+  server requests answered through `MCPClient`.
   `MCPOAuthDiscovery` now mirrors upstream OAuth metadata discovery for MCP
   resources: it discovers protected-resource metadata, tries path-aware URLs
   before root fallback, resolves OAuth/OIDC authorization-server metadata, and

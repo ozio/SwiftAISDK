@@ -353,6 +353,23 @@ let answer = try await AI.generateText(
 )
 ```
 
+For local MCP servers on macOS/Linux, use `MCPStdioTransport`. It mirrors the
+official `@ai-sdk/mcp/mcp-stdio` transport shape with `command`, `args`, `env`,
+and `cwd`, sends newline-delimited JSON-RPC over stdin/stdout, matches responses
+by JSON-RPC `id`, and answers incoming server requests through
+`MCPClient`'s request handler:
+
+```swift
+let localMCP = try await MCPClient.connect(
+    transport: MCPStdioTransport(
+        command: "node",
+        args: ["server.js"],
+        cwd: "/path/to/mcp-server"
+    )
+)
+let localTools = try await localMCP.tools()
+```
+
 For protected MCP servers, pass an `MCPOAuthProvider`; the transport adds bearer
 tokens, invalidates stale tokens on 401, parses `resource_metadata`, runs the
 authorization hook, and retries once:
