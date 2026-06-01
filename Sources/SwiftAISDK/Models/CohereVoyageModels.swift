@@ -157,12 +157,14 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
                 body[key] = value
             }
         }
-        let raw = try await config.sendJSON(path: "/embed", modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/embed", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let embeddings = raw["embeddings"]?["float"]?.arrayValue?.map { $0.arrayValue?.compactMap(\.doubleValue) ?? [] } ?? []
         return EmbeddingResult(
             embeddings: embeddings,
             usage: TokenUsage(totalTokens: raw["meta"]?["billed_units"]?["input_tokens"]?.intValue),
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 }
@@ -193,8 +195,13 @@ public final class CohereRerankingModel: RerankingModel, @unchecked Sendable {
                 body[key] = value
             }
         }
-        let raw = try await config.sendJSON(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers)
-        return RerankingResult(results: rerankingResults(from: raw["results"]), rawValue: raw)
+        let response = try await config.sendJSONResponse(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
+        return RerankingResult(
+            results: rerankingResults(from: raw["results"]),
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -232,11 +239,17 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
                 body[key] = value
             }
         }
-        let raw = try await config.sendJSON(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let items = raw["data"]?.arrayValue ?? []
         let embeddings = items.sorted { ($0["index"]?.intValue ?? 0) < ($1["index"]?.intValue ?? 0) }
             .map { $0["embedding"]?.arrayValue?.compactMap(\.doubleValue) ?? [] }
-        return EmbeddingResult(embeddings: embeddings, usage: TokenUsage(totalTokens: raw["usage"]?["total_tokens"]?.intValue), rawValue: raw)
+        return EmbeddingResult(
+            embeddings: embeddings,
+            usage: TokenUsage(totalTokens: raw["usage"]?["total_tokens"]?.intValue),
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -266,8 +279,13 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
                 body[key] = value
             }
         }
-        let raw = try await config.sendJSON(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers)
-        return RerankingResult(results: rerankingResults(from: raw["data"]), rawValue: raw)
+        let response = try await config.sendJSONResponse(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
+        return RerankingResult(
+            results: rerankingResults(from: raw["data"]),
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 

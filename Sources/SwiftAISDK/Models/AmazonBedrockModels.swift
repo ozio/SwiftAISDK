@@ -177,12 +177,17 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
             if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
         }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let embedding = raw["embedding"]?.arrayValue?.compactMap(\.doubleValue)
             ?? raw["embeddings"]?[0]?.arrayValue?.compactMap(\.doubleValue)
             ?? raw["embeddings"]?[0]?["embedding"]?.arrayValue?.compactMap(\.doubleValue)
             ?? []
-        return EmbeddingResult(embeddings: [embedding], rawValue: raw)
+        return EmbeddingResult(
+            embeddings: [embedding],
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 
     private var encodedModelID: String {
@@ -597,12 +602,17 @@ public final class AmazonBedrockRerankingModel: RerankingModel, @unchecked Senda
             body["nextToken"] = nextToken
         }
         body.merge(bedrockPassthroughExtraBody(request.extraBody)) { _, new in new }
-        let raw = try await config.sendJSON(path: "/rerank", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/rerank", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let results = raw["results"]?.arrayValue?.compactMap { item -> RerankedDocument? in
             guard let index = item["index"]?.intValue,
                   let score = item["relevanceScore"]?.doubleValue ?? item["score"]?.doubleValue else { return nil }
             return RerankedDocument(index: index, score: score)
         } ?? []
-        return RerankingResult(results: results, rawValue: raw)
+        return RerankingResult(
+            results: results,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }

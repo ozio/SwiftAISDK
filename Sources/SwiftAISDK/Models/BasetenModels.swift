@@ -18,19 +18,25 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
         if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
         body.merge(request.extraBody) { _, new in new }
 
-        let raw = try await config.sendJSON(
+        let response = try await config.sendJSONResponse(
             path: "/embeddings",
             modelID: modelID,
             body: .object(body),
             headers: request.headers
         )
+        let raw = response.json
         guard let data = raw["data"]?.arrayValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No embedding data found.")
         }
         let embeddings = data.compactMap { item -> [Double]? in
             item["embedding"]?.arrayValue?.compactMap(\.doubleValue)
         }
-        return EmbeddingResult(embeddings: embeddings, usage: tokenUsage(from: raw), rawValue: raw)
+        return EmbeddingResult(
+            embeddings: embeddings,
+            usage: tokenUsage(from: raw),
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 

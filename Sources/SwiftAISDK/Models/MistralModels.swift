@@ -138,11 +138,17 @@ public final class MistralEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             "encoding_format": .string("float")
         ]
         body.merge(mistralProviderOptions(from: request.extraBody)) { _, new in new }
-        let raw = try await config.sendJSON(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let embeddings = raw["data"]?.arrayValue?.compactMap { item in
             item["embedding"]?.arrayValue?.compactMap(\.doubleValue)
         } ?? []
-        return EmbeddingResult(embeddings: embeddings, usage: tokenUsage(from: raw), rawValue: raw)
+        return EmbeddingResult(
+            embeddings: embeddings,
+            usage: tokenUsage(from: raw),
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 

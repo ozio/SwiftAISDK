@@ -120,7 +120,8 @@ public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable
             }
         }
 
-        let raw = try await config.sendJSON(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let results = raw["results"]?.arrayValue?.compactMap { item -> RerankedDocument? in
             guard let index = item["index"]?.intValue,
                   let score = item["relevance_score"]?.doubleValue ?? item["score"]?.doubleValue else {
@@ -128,6 +129,10 @@ public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable
             }
             return RerankedDocument(index: index, score: score, document: item["document"]?.stringValue)
         } ?? []
-        return RerankingResult(results: results, rawValue: raw)
+        return RerankingResult(
+            results: results,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }

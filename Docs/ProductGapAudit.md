@@ -206,9 +206,11 @@ Progress:
   Replicate, fal, Fireworks, DeepInfra, TogetherAI, xAI, QuiverAI, and generic
   JSON media wrappers now preserve response metadata as well; submit/download
   flows keep the provider submit response as metadata rather than the
-  SDK-managed asset download. Follow-up passes should keep filling richer
-  metadata and lifecycle fields consistently across the remaining native media
-  providers.
+  SDK-managed asset download. Native embedding and reranking models for Cohere,
+  Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic
+  JSON reranking wrappers also preserve provider response headers and raw JSON
+  bodies. Follow-up passes should keep filling richer metadata and lifecycle
+  fields consistently across the remaining native providers.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 

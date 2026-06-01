@@ -271,14 +271,20 @@ public final class GatewayEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         var body: [String: JSONValue] = ["values": .array(request.values)]
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/embedding-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
+        let response = try await config.sendJSONResponse(path: "/embedding-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-embedding-model-specification-version": "4",
             "ai-model-id": modelID
-        ]))
+        ]), abortSignal: request.abortSignal)
+        let raw = response.json
         guard let embeddings = raw["embeddings"]?.arrayValue?.map({ item in item.arrayValue?.compactMap(\.doubleValue) ?? [] }) else {
             throw AIError.invalidResponse(provider: providerID, message: "No embeddings found in Gateway response.")
         }
-        return EmbeddingResult(embeddings: embeddings, usage: gatewayEmbeddingUsage(from: raw), rawValue: raw)
+        return EmbeddingResult(
+            embeddings: embeddings,
+            usage: gatewayEmbeddingUsage(from: raw),
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -404,10 +410,11 @@ public final class GatewayRerankingModel: RerankingModel, @unchecked Sendable {
         ]
         if let topK = request.topK { body["topN"] = .number(Double(topK)) }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/reranking-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
+        let response = try await config.sendJSONResponse(path: "/reranking-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-reranking-model-specification-version": "4",
             "ai-model-id": modelID
-        ]))
+        ]), abortSignal: request.abortSignal)
+        let raw = response.json
         let ranking = raw["ranking"]?.arrayValue ?? raw["results"]?.arrayValue ?? []
         return RerankingResult(results: ranking.compactMap { item in
             guard let index = item["index"]?.intValue,
@@ -415,7 +422,7 @@ public final class GatewayRerankingModel: RerankingModel, @unchecked Sendable {
                 return nil
             }
             return RerankedDocument(index: index, score: score)
-        }, rawValue: raw)
+        }, rawValue: raw, responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID))
     }
 }
 

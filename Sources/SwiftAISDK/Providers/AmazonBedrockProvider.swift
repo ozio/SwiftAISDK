@@ -308,11 +308,15 @@ struct BedrockRuntimeConfig: @unchecked Sendable {
     var date: @Sendable () -> Date
 
     func sendJSON(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> JSONValue {
+        try await sendJSONResponse(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal).json
+    }
+
+    func sendJSONResponse(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let response = try await transport.send(try request(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
-        return try response.jsonValue()
+        return (try response.jsonValue(), response)
     }
 
     func request(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {

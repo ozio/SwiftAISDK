@@ -182,7 +182,8 @@ public final class JSONRerankingModel: RerankingModel, @unchecked Sendable {
         if let topK = request.topK { body["top_k"] = .number(Double(topK)) }
         body.merge(request.extraBody) { _, new in new }
 
-        let raw = try await config.sendJSON(path: path, modelID: modelID, body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let results = raw["results"]?.arrayValue?.compactMap { item -> RerankedDocument? in
             guard let index = item["index"]?.intValue ?? item["document_index"]?.intValue,
                   let score = item["relevance_score"]?.doubleValue ?? item["score"]?.doubleValue else {
@@ -190,6 +191,10 @@ public final class JSONRerankingModel: RerankingModel, @unchecked Sendable {
             }
             return RerankedDocument(index: index, score: score, document: item["document"]?.stringValue)
         } ?? []
-        return RerankingResult(results: results, rawValue: raw)
+        return RerankingResult(
+            results: results,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
