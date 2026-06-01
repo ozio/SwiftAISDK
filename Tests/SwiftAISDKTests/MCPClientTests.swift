@@ -123,6 +123,118 @@ import Testing
     #expect(sent[3]["params"]?["arguments"]?["topic"]?.stringValue == "Swift")
 }
 
+@Test func mcpClientHandlesElicitationRequests() async throws {
+    let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
+    let client = try await MCPClient.connect(
+        transport: transport,
+        clientCapabilities: .object(["elicitation": .object(["applyDefaults": .bool(true)])])
+    )
+    let recorder = MCPElicitationRecorder()
+    await client.onElicitationRequest { request in
+        await recorder.record(request)
+        return MCPElicitResult(
+            action: .accept,
+            content: ["city": .string("Tokyo"), "days": .number(3)]
+        )
+    }
+
+    let response = await transport.simulateIncomingRequest([
+        "jsonrpc": "2.0",
+        "id": 99,
+        "method": "elicitation/create",
+        "params": [
+            "message": "Choose travel settings.",
+            "requestedSchema": [
+                "type": "object",
+                "properties": [
+                    "city": ["type": "string"],
+                    "days": ["type": "integer"]
+                ],
+                "required": ["city"]
+            ],
+            "_meta": ["trace": "elicitation"]
+        ]
+    ])
+
+    let request = try await #require(recorder.request())
+    #expect(request.message == "Choose travel settings.")
+    #expect(request.requestedSchema["properties"]?["city"]?["type"]?.stringValue == "string")
+    #expect(request.metadata?["trace"]?.stringValue == "elicitation")
+    #expect(response["id"]?.intValue == 99)
+    #expect(response["result"]?["action"]?.stringValue == "accept")
+    #expect(response["result"]?["content"]?["city"]?.stringValue == "Tokyo")
+    #expect(response["result"]?["content"]?["days"]?.intValue == 3)
+
+    let sent = await transport.sentMessages()
+    #expect(sent[0]["params"]?["capabilities"]?["elicitation"]?["applyDefaults"]?.boolValue == true)
+}
+
+@Test func mcpClientRejectsElicitationWithoutHandler() async throws {
+    let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
+    let client = try await MCPClient.connect(
+        transport: transport,
+        clientCapabilities: .object(["elicitation": .object([:])])
+    )
+    _ = await client.serverInfo
+
+    let response = await transport.simulateIncomingRequest([
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "elicitation/create",
+        "params": [
+            "message": "Need input.",
+            "requestedSchema": ["type": "object"]
+        ]
+    ])
+
+    #expect(response["error"]?["code"]?.intValue == -32601)
+    #expect(response["error"]?["message"]?.stringValue == "No elicitation handler registered on client")
+}
+
+@Test func mcpClientHandlesPingAndUnsupportedIncomingRequests() async throws {
+    let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
+    let client = try await MCPClient.connect(transport: transport)
+    _ = await client.serverInfo
+
+    let ping = await transport.simulateIncomingRequest([
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "ping"
+    ])
+    #expect(ping["result"]?.objectValue?.isEmpty == true)
+
+    let unsupported = await transport.simulateIncomingRequest([
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "sampling/createMessage"
+    ])
+    #expect(unsupported["error"]?["code"]?.intValue == -32601)
+    #expect(unsupported["error"]?["message"]?.stringValue == "Unsupported request method: sampling/createMessage")
+}
+
+@Test func mcpClientRejectsInvalidElicitationRequest() async throws {
+    let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
+    let client = try await MCPClient.connect(
+        transport: transport,
+        clientCapabilities: .object(["elicitation": .object([:])])
+    )
+    await client.onElicitationRequest { _ in
+        MCPElicitResult(action: .decline)
+    }
+
+    let response = await transport.simulateIncomingRequest([
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "elicitation/create",
+        "params": [
+            "requestedSchema": ["type": "object"]
+        ]
+    ])
+
+    #expect(response["error"]?["code"]?.intValue == -32602)
+    #expect(response["error"]?["message"]?.stringValue?.contains("message and requestedSchema") == true)
+}
+
 @Test func mcpClientRejectsResourcesWhenServerHasNoResourceCapability() async throws {
     let transport = MockMCPTransport(capabilities: .object(["tools": .object([:])]))
     let client = try await MCPClient.connect(transport: transport)
@@ -166,9 +278,14 @@ import Testing
 private actor MockMCPTransport: MCPTransport {
     private var messages: [JSONValue] = []
     private let capabilities: JSONValue
+    private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
 
     init(capabilities: JSONValue = .object(["tools": .object(["listChanged": .bool(false)])])) {
         self.capabilities = capabilities
+    }
+
+    func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {
+        requestHandler = handler
     }
 
     func start() async throws {}
@@ -342,14 +459,41 @@ private actor MockMCPTransport: MCPTransport {
     func reset() {
         messages = []
     }
+
+    func simulateIncomingRequest(_ request: JSONValue) async -> JSONValue {
+        guard let requestHandler else {
+            return [
+                "jsonrpc": "2.0",
+                "id": request["id"] ?? .null,
+                "error": [
+                    "code": -32603,
+                    "message": "No request handler registered."
+                ]
+            ]
+        }
+        return await requestHandler(request)
+    }
 }
 
 private func fullMCPCapabilities() -> JSONValue {
     .object([
         "tools": .object(["listChanged": .bool(false)]),
         "resources": .object(["listChanged": .bool(false)]),
-        "prompts": .object(["listChanged": .bool(false)])
+        "prompts": .object(["listChanged": .bool(false)]),
+        "elicitation": .object(["applyDefaults": .bool(true)])
     ])
+}
+
+private actor MCPElicitationRecorder {
+    private var recordedRequest: MCPElicitationRequest?
+
+    func record(_ request: MCPElicitationRequest) {
+        recordedRequest = request
+    }
+
+    func request() -> MCPElicitationRequest? {
+        recordedRequest
+    }
 }
 
 private extension Data {

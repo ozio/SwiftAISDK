@@ -325,7 +325,9 @@ let runtimeSearch = AITool.dynamic(
 
 `MCPClient` mirrors the core of official `@ai-sdk/mcp`: it performs the MCP
 initialize handshake, lists server tools, converts them into dynamic `AITool`
-values, and can also read MCP resources, resource templates, and prompts:
+values, can read MCP resources, resource templates, and prompts, and can answer
+server elicitation requests when a transport supports incoming JSON-RPC
+requests:
 
 ```swift
 let mcp = try await MCPClient.connect(
@@ -344,6 +346,20 @@ let answer = try await AI.generateText(
     prompt: summarize.messages.first?.content["text"]?.stringValue ?? "Search the docs.",
     executableTools: Array(mcpTools.values)
 )
+```
+
+```swift
+let interactiveMCP = try await MCPClient.connect(
+    transport: transport,
+    clientCapabilities: ["elicitation": ["applyDefaults": true]]
+)
+
+await interactiveMCP.onElicitationRequest { request in
+    MCPElicitResult(
+        action: .accept,
+        content: ["choice": .string("approve")]
+    )
+}
 ```
 
 Use `toolApproval` when a tool call needs a policy decision before execution.

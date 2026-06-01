@@ -464,11 +464,69 @@ public struct MCPGetPromptResult: Equatable, Hashable, Sendable {
     }
 }
 
+public struct MCPElicitationRequest: Equatable, Hashable, Sendable {
+    public var message: String
+    public var requestedSchema: JSONValue
+    public var metadata: JSONValue?
+    public var rawValue: JSONValue
+
+    public init(message: String, requestedSchema: JSONValue, metadata: JSONValue? = nil, rawValue: JSONValue? = nil) {
+        self.message = message
+        self.requestedSchema = requestedSchema
+        self.metadata = metadata
+        self.rawValue = rawValue ?? .object([
+            "message": .string(message),
+            "requestedSchema": requestedSchema,
+            "_meta": metadata
+        ])
+    }
+
+    init(params: JSONValue) throws {
+        guard let message = params["message"]?.stringValue, let requestedSchema = params["requestedSchema"] else {
+            throw MCPClientError(message: "Expected MCP elicitation request with message and requestedSchema.")
+        }
+        self.init(
+            message: message,
+            requestedSchema: requestedSchema,
+            metadata: params["_meta"],
+            rawValue: params
+        )
+    }
+}
+
+public enum MCPElicitAction: String, Sendable {
+    case accept
+    case decline
+    case cancel
+}
+
+public struct MCPElicitResult: Equatable, Hashable, Sendable {
+    public var action: MCPElicitAction
+    public var content: [String: JSONValue]?
+    public var rawValue: JSONValue
+
+    public init(action: MCPElicitAction, content: [String: JSONValue]? = nil, rawValue: JSONValue? = nil) {
+        self.action = action
+        self.content = content
+        self.rawValue = rawValue ?? .object([
+            "action": .string(action.rawValue),
+            "content": content.map(JSONValue.object)
+        ])
+    }
+}
+
+public typealias MCPElicitationHandler = @Sendable (MCPElicitationRequest) async throws -> MCPElicitResult
+
 public protocol MCPTransport: Sendable {
+    func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async
     func start() async throws
     func request(_ message: JSONValue) async throws -> JSONValue
     func notify(_ message: JSONValue) async throws
     func close() async throws
+}
+
+public extension MCPTransport {
+    func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {}
 }
 
 public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
@@ -544,6 +602,7 @@ public actor MCPClient {
     private let clientCapabilities: JSONValue
     private var requestID = 0
     private var isClosed = true
+    private var elicitationRequestHandler: MCPElicitationHandler?
 
     private init(
         transport: any MCPTransport,
@@ -573,6 +632,7 @@ public actor MCPClient {
     }
 
     public func close() async throws {
+        await transport.setRequestHandler(nil)
         guard !isClosed else { return }
         try await transport.close()
         isClosed = true
@@ -650,8 +710,22 @@ public actor MCPClient {
         return try MCPGetPromptResult(json: result)
     }
 
+    public func onElicitationRequest(_ handler: MCPElicitationHandler?) {
+        elicitationRequestHandler = handler
+    }
+
     private func initialize() async throws {
         do {
+            await transport.setRequestHandler { [weak self] request in
+                guard let self else {
+                    return mcpJSONRPCErrorResponse(
+                        id: request["id"],
+                        code: -32603,
+                        message: "MCP client has been released."
+                    )
+                }
+                return await self.handleIncomingRequest(request)
+            }
             try await transport.start()
             isClosed = false
 
@@ -678,6 +752,52 @@ public actor MCPClient {
         } catch {
             try? await close()
             throw error
+        }
+    }
+
+    private func handleIncomingRequest(_ message: JSONValue) async -> JSONValue {
+        let id = message["id"]
+        guard let method = message["method"]?.stringValue else {
+            return mcpJSONRPCErrorResponse(id: id, code: -32600, message: "Invalid MCP request.")
+        }
+
+        if method == "ping" {
+            return mcpJSONRPCResultResponse(id: id, result: .object([:]))
+        }
+
+        guard method == "elicitation/create" else {
+            return mcpJSONRPCErrorResponse(
+                id: id,
+                code: -32601,
+                message: "Unsupported request method: \(method)"
+            )
+        }
+
+        guard let elicitationRequestHandler else {
+            return mcpJSONRPCErrorResponse(
+                id: id,
+                code: -32601,
+                message: "No elicitation handler registered on client"
+            )
+        }
+
+        do {
+            let request = try MCPElicitationRequest(params: message["params"] ?? .object([:]))
+            let result = try await elicitationRequestHandler(request)
+            return mcpJSONRPCResultResponse(id: id, result: result.rawValue)
+        } catch let error as MCPClientError {
+            return mcpJSONRPCErrorResponse(
+                id: id,
+                code: -32602,
+                message: "Invalid elicitation request: \(error.message)",
+                data: error.data
+            )
+        } catch {
+            return mcpJSONRPCErrorResponse(
+                id: id,
+                code: -32603,
+                message: String(describing: error)
+            )
         }
     }
 
@@ -773,6 +893,26 @@ public actor MCPClient {
             return try await self.callTool(name: definition.name, arguments: arguments).rawValue
         }
     }
+}
+
+private func mcpJSONRPCResultResponse(id: JSONValue?, result: JSONValue) -> JSONValue {
+    .object([
+        "jsonrpc": .string("2.0"),
+        "id": id,
+        "result": result
+    ])
+}
+
+private func mcpJSONRPCErrorResponse(id: JSONValue?, code: Int, message: String, data: JSONValue? = nil) -> JSONValue {
+    .object([
+        "jsonrpc": .string("2.0"),
+        "id": id,
+        "error": .object([
+            "code": .number(Double(code)),
+            "message": .string(message),
+            "data": data
+        ])
+    ])
 }
 
 private extension MCPToolDefinition {
