@@ -553,16 +553,39 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private var sessionID: String?
     private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
     private var inboundTask: Task<Void, Never>?
+    private var lastInboundEventID: String?
+    private let maxInboundReconnectAttempts: Int
+    private let inboundReconnectDelayNanoseconds: UInt64
 
-    public init(url: URL, headers: [String: String] = [:], transport: any AITransport = URLSessionTransport.shared) {
+    public init(
+        url: URL,
+        headers: [String: String] = [:],
+        transport: any AITransport = URLSessionTransport.shared,
+        maxInboundReconnectAttempts: Int = 2,
+        inboundReconnectDelayNanoseconds: UInt64 = 1_000_000_000
+    ) {
         self.url = url
         self.headers = headers
         self.transport = transport
         self.streamingTransport = transport as? any AIStreamingTransport
+        self.maxInboundReconnectAttempts = maxInboundReconnectAttempts
+        self.inboundReconnectDelayNanoseconds = inboundReconnectDelayNanoseconds
     }
 
-    public convenience init(url: String, headers: [String: String] = [:], transport: any AITransport = URLSessionTransport.shared) throws {
-        try self.init(url: requireURL(url), headers: headers, transport: transport)
+    public convenience init(
+        url: String,
+        headers: [String: String] = [:],
+        transport: any AITransport = URLSessionTransport.shared,
+        maxInboundReconnectAttempts: Int = 2,
+        inboundReconnectDelayNanoseconds: UInt64 = 1_000_000_000
+    ) throws {
+        try self.init(
+            url: requireURL(url),
+            headers: headers,
+            transport: transport,
+            maxInboundReconnectAttempts: maxInboundReconnectAttempts,
+            inboundReconnectDelayNanoseconds: inboundReconnectDelayNanoseconds
+        )
     }
 
     public func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {
@@ -576,25 +599,39 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     public func start() async throws {
         guard inboundTask == nil else { return }
         inboundTask = Task { [weak self] in
+            await self?.openInboundSSELoop()
+        }
+    }
+
+    private func openInboundSSELoop() async {
+        var attempts = 0
+        while !Task.isCancelled {
             do {
-                try await self?.openInboundSSEOnce()
+                let shouldReconnectAfterError = try await openInboundSSEOnce()
+                if !shouldReconnectAfterError { return }
+                return
+            } catch is CancellationError {
+                return
             } catch {
-                // The streamable-HTTP inbound SSE channel is optional. Request/response
-                // POSTs remain usable when servers respond 405 or the stream fails.
+                attempts += 1
+                guard attempts <= maxInboundReconnectAttempts else { return }
+                try? await Task.sleep(nanoseconds: inboundReconnectDelayNanoseconds)
             }
         }
     }
 
-    private func openInboundSSEOnce() async throws {
+    @discardableResult
+    private func openInboundSSEOnce() async throws -> Bool {
         if let streamingTransport {
             let response = try await sendRawStream(
                 method: "GET",
                 accept: "text/event-stream",
                 body: nil,
+                extraHeaders: lastInboundEventID.map { ["last-event-id": $0] } ?? [:],
                 transport: streamingTransport
             )
             if response.statusCode == 405 {
-                return
+                return false
             }
             guard (200..<300).contains(response.statusCode) else {
                 throw MCPClientError(
@@ -604,16 +641,17 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                 )
             }
             _ = try await handleStreamingResponse(response, expectedID: nil)
-            return
+            return true
         }
 
         let response = try await sendRaw(
             method: "GET",
             accept: "text/event-stream",
-            body: nil
+            body: nil,
+            extraHeaders: lastInboundEventID.map { ["last-event-id": $0] } ?? [:]
         )
         if response.statusCode == 405 {
-            return
+            return false
         }
         guard (200..<300).contains(response.statusCode) else {
             throw MCPClientError(
@@ -624,6 +662,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             )
         }
         _ = try await handleBufferedResponse(response, expectedID: nil)
+        return true
     }
 
     public func request(_ message: JSONValue) async throws -> JSONValue {
@@ -690,7 +729,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         )
     }
 
-    private func sendRaw(method: String, accept: String, body: Data?) async throws -> AIHTTPResponse {
+    private func sendRaw(method: String, accept: String, body: Data?, extraHeaders: [String: String] = [:]) async throws -> AIHTTPResponse {
         var requestHeaders = [
             "accept": accept,
             "mcp-protocol-version": protocolVersion ?? MCPClient.latestProtocolVersion
@@ -701,6 +740,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         if let sessionID {
             requestHeaders["mcp-session-id"] = sessionID
         }
+        requestHeaders.merge(extraHeaders) { _, new in new }
         requestHeaders.merge(headers) { _, new in new }
         let response = try await transport.send(AIHTTPRequest(
             method: method,
@@ -733,6 +773,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         method: String,
         accept: String,
         body: Data?,
+        extraHeaders: [String: String] = [:],
         transport: any AIStreamingTransport
     ) async throws -> AIHTTPStreamResponse {
         var requestHeaders = [
@@ -745,6 +786,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         if let sessionID {
             requestHeaders["mcp-session-id"] = sessionID
         }
+        requestHeaders.merge(extraHeaders) { _, new in new }
         requestHeaders.merge(headers) { _, new in new }
         let response = try await transport.stream(AIHTTPRequest(
             method: method,
@@ -804,6 +846,9 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private func parseBufferedSSEMessages(_ data: Data) async throws -> [JSONValue] {
         var messages: [JSONValue] = []
         for event in parseServerSentEvents(data) where event.event == nil || event.event == "message" {
+            if let id = event.id {
+                lastInboundEventID = id
+            }
             do {
                 let message = try decodeJSONBody(Data(event.data.utf8))
                 if message["method"]?.stringValue != nil, message["id"] != nil, let requestHandler {
@@ -853,10 +898,12 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private func processSSEStream(_ stream: AsyncThrowingStream<Data, Error>, expectedID: Int?) async throws -> JSONValue {
         var buffer = Data()
         var eventName: String?
+        var eventID: String?
         var dataLines: [String] = []
 
         func resetEvent() {
             eventName = nil
+            eventID = nil
             dataLines.removeAll()
         }
 
@@ -864,6 +911,9 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             defer { resetEvent() }
             guard !dataLines.isEmpty else { return nil }
             guard eventName == nil || eventName == "message" else { return nil }
+            if let eventID {
+                lastInboundEventID = eventID
+            }
             let data = dataLines.joined(separator: "\n")
             let message: JSONValue
             do {
@@ -900,6 +950,8 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                     }
                 } else if line.hasPrefix("event:") {
                     eventName = String(line.dropFirst("event:".count)).trimmingCharacters(in: .whitespaces)
+                } else if line.hasPrefix("id:") {
+                    eventID = String(line.dropFirst("id:".count)).trimmingCharacters(in: .whitespaces)
                 } else if line.hasPrefix("data:") {
                     dataLines.append(String(line.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces))
                 }

@@ -331,7 +331,8 @@ elicitation requests when a transport supports incoming JSON-RPC requests.
 `MCPHTTPTransport` sends the upstream protocol/session headers, accepts JSON or
 SSE responses, persists `mcp-session-id`, and terminates sessions with DELETE
 on close. When the underlying transport conforms to `AIStreamingTransport`
-(`URLSessionTransport` does), inbound SSE stays open for server requests:
+(`URLSessionTransport` does), inbound SSE stays open for server requests and
+reconnects with `last-event-id` after stream failures:
 
 ```swift
 let mcp = try await MCPClient.connect(

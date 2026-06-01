@@ -446,6 +446,44 @@ import Testing
     try await transport.close()
 }
 
+@Test func mcpHTTPTransportReconnectsInboundSSEWithLastEventID() async throws {
+    let http = StreamingRecordingTransport(responses: [
+        streamResponse(
+            headers: ["content-type": "text/event-stream"],
+            chunks: ["id: cursor-1\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"ping\"}\n\n"],
+            errorAfterChunks: TestStreamFailure()
+        ),
+        streamResponse(statusCode: 202),
+        streamResponse(
+            headers: ["content-type": "text/event-stream"],
+            chunks: [],
+            finishes: false
+        )
+    ])
+    let transport = try MCPHTTPTransport(
+        url: "https://mcp.example.com/rpc",
+        transport: http,
+        inboundReconnectDelayNanoseconds: 1_000_000
+    )
+    await transport.setRequestHandler { request in
+        [
+            "jsonrpc": "2.0",
+            "id": request["id"] ?? .null,
+            "result": [:]
+        ]
+    }
+
+    try await transport.start()
+
+    let requests = try await waitForStreamingRequests(http, count: 3)
+    #expect(requests[0].method == "GET")
+    #expect(requests[1].method == "POST")
+    #expect(requests[2].method == "GET")
+    #expect(requests[2].headers["last-event-id"] == "cursor-1")
+
+    try await transport.close()
+}
+
 private actor MockMCPTransport: MCPTransport {
     private var messages: [JSONValue] = []
     private let capabilities: JSONValue
@@ -706,7 +744,8 @@ private func streamResponse(
     statusCode: Int = 200,
     headers: [String: String] = [:],
     chunks: [String] = [],
-    finishes: Bool = true
+    finishes: Bool = true,
+    errorAfterChunks: Error? = nil
 ) -> AIHTTPStreamResponse {
     AIHTTPStreamResponse(
         statusCode: statusCode,
@@ -716,6 +755,10 @@ private func streamResponse(
                 for chunk in chunks {
                     try Task.checkCancellation()
                     continuation.yield(Data(chunk.utf8))
+                }
+                if let errorAfterChunks {
+                    continuation.finish(throwing: errorAfterChunks)
+                    return
                 }
                 if finishes {
                     continuation.finish()
@@ -729,6 +772,8 @@ private func streamResponse(
         }
     )
 }
+
+private struct TestStreamFailure: Error {}
 
 private extension Data {
     func jsonValueForTest() throws -> JSONValue {
