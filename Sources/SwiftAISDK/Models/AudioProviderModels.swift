@@ -298,12 +298,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         guard let audioURL = raw["audio"]?["url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal speech response did not contain audio.url.")
         }
-        let audioResponse = try await config.transport.send(AIHTTPRequest(
-            method: "GET",
-            url: try validateDownloadURL(audioURL),
-            headers: [:],
-            abortSignal: request.abortSignal
-        ))
+        let audioResponse = try await downloadURL(audioURL, transport: config.transport, abortSignal: request.abortSignal)
         guard (200..<300).contains(audioResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: audioResponse)
         }
@@ -593,12 +588,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
     private func pollGladiaResult(url: String, request: AudioTranscriptionRequest) async throws -> JSONValue {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await config.transport.send(AIHTTPRequest(
-                method: "GET",
-                url: try validateDownloadURL(url),
-                headers: config.headers.mergingHeaders(request.headers),
-                abortSignal: request.abortSignal
-            ))
+            let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }

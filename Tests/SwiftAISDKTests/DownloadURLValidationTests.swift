@@ -88,3 +88,20 @@ import Testing
         }
     }
 }
+
+@Test func downloadURLRejectsUnsafeFinalRedirectURL() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "image/png"],
+        body: Data("png".utf8),
+        url: URL(string: "http://127.0.0.1/private.png")!
+    ))
+
+    await #expect(throws: AIError.self) {
+        _ = try await downloadURL("https://example.com/image.png", transport: transport)
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 1)
+    #expect(requests[0].url.absoluteString == "https://example.com/image.png")
+}

@@ -20,11 +20,13 @@ public struct AIHTTPResponse: Sendable {
     public var statusCode: Int
     public var headers: [String: String]
     public var body: Data
+    public var url: URL?
 
-    public init(statusCode: Int, headers: [String: String] = [:], body: Data = Data()) {
+    public init(statusCode: Int, headers: [String: String] = [:], body: Data = Data(), url: URL? = nil) {
         self.statusCode = statusCode
         self.headers = headers
         self.body = body
+        self.url = url
     }
 
     public func jsonValue() throws -> JSONValue {
@@ -95,7 +97,7 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
             guard let key = element.key as? String else { return }
             partial[key] = String(describing: element.value)
         } ?? [:]
-        return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data)
+        return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data, url: response.url)
     }
 
     public func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
@@ -229,6 +231,20 @@ public func validateDownloadURL(_ string: String) throws -> URL {
     }
 
     return url
+}
+
+func downloadURL(
+    _ string: String,
+    transport: AITransport,
+    headers: [String: String] = [:],
+    abortSignal: AIAbortSignal? = nil
+) async throws -> AIHTTPResponse {
+    let url = try validateDownloadURL(string)
+    let response = try await transport.send(AIHTTPRequest(method: "GET", url: url, headers: headers, abortSignal: abortSignal))
+    if let finalURL = response.url, finalURL != url {
+        _ = try validateDownloadURL(finalURL.absoluteString)
+    }
+    return response
 }
 
 private func ipv4Bytes(_ host: String) -> [UInt8]? {

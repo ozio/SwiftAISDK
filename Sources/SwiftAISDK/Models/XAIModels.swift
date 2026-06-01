@@ -130,7 +130,7 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
     private func downloadXAIImages(urls: [String], abortSignal: AIAbortSignal?) async throws -> [String] {
         var images: [String] = []
         for url in urls {
-            let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try validateDownloadURL(url), headers: [:], abortSignal: abortSignal))
+            let response = try await downloadURL(url, transport: config.transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
