@@ -79,16 +79,21 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     private func body(for request: LanguageModelRequest, stream: Bool) -> [String: JSONValue] {
-        let options = mistralProviderOptions(from: request.extraBody)
+        var options = mistralProviderOptions(from: request.extraBody)
+        let responseFormat = mistralResolvedResponseFormat(request: request, options: &options)
+        let messages = mistralMessages(request.messages, responseFormat: responseFormat)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "messages": .array(mistralMessagesJSON(request.messages))
+            "messages": .array(mistralMessagesJSON(messages))
         ]
         if stream { body["stream"] = true }
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
+        if let responseFormat = responseFormat {
+            body["response_format"] = mistralResponseFormat(from: responseFormat, options: options)
+        }
         let toolChoice = mistralToolChoice(from: request.extraBody["toolChoice"])
         let tools = mistralTools(from: request.tools, only: mistralForcedToolName(from: request.extraBody["toolChoice"]))
         if !tools.isEmpty {
@@ -111,6 +116,8 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                 body["document_page_limit"] = value
             case "parallelToolCalls":
                 if !tools.isEmpty { body["parallel_tool_calls"] = value }
+            case "responseFormat", "structuredOutputs", "strictJsonSchema":
+                continue
             case "toolChoice":
                 continue
             case "mistral":
@@ -121,6 +128,65 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         }
         return body
     }
+}
+
+private func mistralResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        options.removeValue(forKey: "responseFormat")
+        return mistralResponseFormatJSON(responseFormat)
+    }
+    return options.removeValue(forKey: "responseFormat")
+}
+
+private func mistralResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
+}
+
+private func mistralMessages(_ messages: [AIMessage], responseFormat: JSONValue?) -> [AIMessage] {
+    guard responseFormat?["type"]?.stringValue == "json",
+          responseFormat?["schema"] == nil else {
+        return messages
+    }
+    if let first = messages.first, first.role == .system {
+        let system = [first.combinedText, "", "You MUST answer with JSON."]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return [AIMessage.system(system)] + Array(messages.dropFirst())
+    }
+    return [AIMessage.system("You MUST answer with JSON.")] + messages
+}
+
+private func mistralResponseFormat(from value: JSONValue, options: [String: JSONValue]) -> JSONValue {
+    guard let object = value.objectValue, object["type"]?.stringValue == "json" else {
+        return value
+    }
+    let structuredOutputs = options["structuredOutputs"]?.boolValue ?? true
+    guard structuredOutputs, let schema = object["schema"] else {
+        return .object(["type": .string("json_object")])
+    }
+    let strict = options["strictJsonSchema"] ?? .bool(false)
+    var jsonSchema: [String: JSONValue] = [
+        "schema": schema,
+        "strict": strict,
+        "name": object["name"] ?? .string("response")
+    ]
+    if let description = object["description"] {
+        jsonSchema["description"] = description
+    }
+    return .object([
+        "type": .string("json_schema"),
+        "json_schema": .object(jsonSchema)
+    ])
 }
 
 public final class MistralEmbeddingModel: EmbeddingModel, @unchecked Sendable {

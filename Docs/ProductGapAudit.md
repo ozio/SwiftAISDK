@@ -1,6 +1,6 @@
 # Product Gap Audit
 
-Snapshot date: 2026-05-31
+Snapshot date: 2026-06-01
 Upstream commit: `ab6d66482d31afe15f4973a51c5f7cfa09c92ea6`
 
 This audit looks at the package from the top down. The provider ports are broad,
@@ -108,8 +108,11 @@ Impact:
   streaming parse/schema/decode failures. Strict OpenAI-compatible and Cerebras
   structured outputs now run the upstream provider-utils
   `additionalProperties: false` normalization over object schemas unless
-  `strictJsonSchema` is explicitly disabled. Richer provider-specific
-  structured-output passes still need follow-up work.
+  `strictJsonSchema` is explicitly disabled. Mistral now maps standard JSON
+  response formats to native `response_format` requests, including
+  `json_schema`, `json_object`, `structuredOutputs`, `strictJsonSchema`, and
+  the upstream JSON system instruction for no-schema JSON calls. Richer
+  provider-specific structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as

@@ -181,6 +181,85 @@ import Testing
     #expect(body["parallel_tool_calls"]?.boolValue == false)
 }
 
+@Test func mistralLanguageMapsStandardJsonResponseFormat() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"{\\"ok\\":true}"},"finish_reason":"stop"}],"usage":{"total_tokens":4}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Return JSON.")],
+        responseFormat: .json()
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
+    #expect(body["messages"]?[0]?["content"]?.stringValue == "You MUST answer with JSON.")
+    #expect(body["messages"]?[1]?["role"]?.stringValue == "user")
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func mistralLanguageMapsStandardStructuredResponseFormat() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"{\\"value\\":\\"ok\\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        responseFormat: .json(
+            schema: [
+                "type": "object",
+                "properties": ["value": ["type": "string"]],
+                "required": ["value"]
+            ],
+            name: "answer",
+            description: "Answer schema"
+        )
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
+    #expect(body["response_format"]?["json_schema"]?["description"]?.stringValue == "Answer schema")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["type"]?.stringValue == "object")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(body["response_format"]?["json_schema"]?["strict"]?.boolValue == false)
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "user")
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func mistralLanguageAllowsStructuredOutputsOverride() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"{\\"value\\":\\"ok\\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        extraBody: [
+            "responseFormat": [
+                "type": "json",
+                "schema": ["type": "object"],
+                "name": "answer"
+            ],
+            "structuredOutputs": false,
+            "strictJsonSchema": true
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["response_format"]?["json_schema"] == nil)
+    #expect(body["responseFormat"] == nil)
+    #expect(body["structuredOutputs"] == nil)
+    #expect(body["strictJsonSchema"] == nil)
+}
+
 @Test func mistralUnknownFinishReasonMapsToOtherAndParallelToolsNeedTools() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"cmpl-1","object":"chat.completion","model":"mistral-large-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"unexpected"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
