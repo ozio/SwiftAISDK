@@ -325,9 +325,70 @@ import Testing
     #expect(request.method == "POST")
     #expect(request.url.absoluteString == "https://mcp.example.com/rpc")
     #expect(request.headers["authorization"] == "Bearer token")
+    #expect(request.headers["accept"] == "application/json, text/event-stream")
+    #expect(request.headers["mcp-protocol-version"] == MCPClient.latestProtocolVersion)
     let body = try #require(request.body).jsonValueForTest()
     #expect(body["method"]?.stringValue == "ping")
     #expect(requests.count == 2)
+}
+
+@Test func mcpHTTPTransportParsesSSEResponsesAndTerminatesSession() async throws {
+    let http = RecordingTransport(responses: [
+        AIHTTPResponse(
+            statusCode: 200,
+            headers: [
+                "content-type": "text/event-stream",
+                "mcp-session-id": "session-1"
+            ],
+            body: Data("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"ok\":true}}\n\n".utf8)
+        ),
+        AIHTTPResponse(statusCode: 200)
+    ])
+    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
+
+    let response = try await transport.request([
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "initialize",
+        "params": [:]
+    ])
+    try await transport.close()
+
+    #expect(response["result"]?["ok"]?.boolValue == true)
+    let requests = await http.requests()
+    #expect(requests.count == 2)
+    #expect(requests[1].method == "DELETE")
+    #expect(requests[1].headers["mcp-session-id"] == "session-1")
+}
+
+@Test func mcpHTTPTransportStartHandlesBufferedInboundSSERequests() async throws {
+    let http = RecordingTransport(responses: [
+        AIHTTPResponse(
+            statusCode: 200,
+            headers: ["content-type": "text/event-stream"],
+            body: Data("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"ping\"}\n\n".utf8)
+        ),
+        AIHTTPResponse(statusCode: 202)
+    ])
+    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
+    await transport.setRequestHandler { request in
+        [
+            "jsonrpc": "2.0",
+            "id": request["id"] ?? .null,
+            "result": [:]
+        ]
+    }
+
+    try await transport.start()
+
+    let requests = try await waitForRecordedRequests(http, count: 2)
+    #expect(requests.count == 2)
+    #expect(requests[0].method == "GET")
+    #expect(requests[0].headers["accept"] == "text/event-stream")
+    #expect(requests[1].method == "POST")
+    let body = try #require(requests[1].body).jsonValueForTest()
+    #expect(body["id"]?.intValue == 11)
+    #expect(body["result"]?.objectValue?.isEmpty == true)
 }
 
 private actor MockMCPTransport: MCPTransport {
@@ -560,4 +621,15 @@ private extension Data {
     func jsonValueForTest() throws -> JSONValue {
         try JSONDecoder().decode(JSONValue.self, from: self)
     }
+}
+
+private func waitForRecordedRequests(_ transport: RecordingTransport, count: Int) async throws -> [AIHTTPRequest] {
+    for _ in 0..<50 {
+        let requests = await transport.requests()
+        if requests.count >= count {
+            return requests
+        }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return await transport.requests()
 }

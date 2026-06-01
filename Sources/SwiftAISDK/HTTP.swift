@@ -32,6 +32,10 @@ public struct AIHTTPResponse: Sendable {
     public var bodyText: String {
         String(data: body, encoding: .utf8) ?? ""
     }
+
+    public func headerValue(_ name: String) -> String? {
+        headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
 }
 
 public protocol AITransport: Sendable {
@@ -137,6 +141,7 @@ func tokenUsage(from raw: JSONValue) -> TokenUsage? {
 
 struct ServerSentEvent: Equatable {
     var event: String?
+    var id: String?
     var data: String
 }
 
@@ -144,15 +149,18 @@ func parseServerSentEvents(_ data: Data) -> [ServerSentEvent] {
     let text = String(data: data, encoding: .utf8) ?? ""
     var events: [ServerSentEvent] = []
     var eventName: String?
+    var eventID: String?
     var dataLines: [String] = []
 
     func flush() {
         guard !dataLines.isEmpty else {
             eventName = nil
+            eventID = nil
             return
         }
-        events.append(ServerSentEvent(event: eventName, data: dataLines.joined(separator: "\n")))
+        events.append(ServerSentEvent(event: eventName, id: eventID, data: dataLines.joined(separator: "\n")))
         eventName = nil
+        eventID = nil
         dataLines.removeAll()
     }
 
@@ -162,6 +170,8 @@ func parseServerSentEvents(_ data: Data) -> [ServerSentEvent] {
             flush()
         } else if line.hasPrefix("event:") {
             eventName = String(line.dropFirst("event:".count)).trimmingCharacters(in: .whitespaces)
+        } else if line.hasPrefix("id:") {
+            eventID = String(line.dropFirst("id:".count)).trimmingCharacters(in: .whitespaces)
         } else if line.hasPrefix("data:") {
             dataLines.append(String(line.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces))
         }

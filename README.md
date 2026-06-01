@@ -327,7 +327,10 @@ let runtimeSearch = AITool.dynamic(
 initialize handshake, lists server tools, converts them into dynamic `AITool`
 values, maps MCP tool content into model output through `AITool.toModelOutput`,
 can read MCP resources, resource templates, and prompts, and can answer server
-elicitation requests when a transport supports incoming JSON-RPC requests:
+elicitation requests when a transport supports incoming JSON-RPC requests.
+`MCPHTTPTransport` sends the upstream protocol/session headers, accepts JSON or
+buffered SSE responses, persists `mcp-session-id`, and terminates sessions with
+DELETE on close:
 
 ```swift
 let mcp = try await MCPClient.connect(

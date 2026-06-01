@@ -4,11 +4,24 @@ public struct MCPClientError: Error, CustomStringConvertible, Sendable {
     public var message: String
     public var code: Int?
     public var data: JSONValue?
+    public var statusCode: Int?
+    public var url: String?
+    public var responseBody: String?
 
-    public init(message: String, code: Int? = nil, data: JSONValue? = nil) {
+    public init(
+        message: String,
+        code: Int? = nil,
+        data: JSONValue? = nil,
+        statusCode: Int? = nil,
+        url: String? = nil,
+        responseBody: String? = nil
+    ) {
         self.message = message
         self.code = code
         self.data = data
+        self.statusCode = statusCode
+        self.url = url
+        self.responseBody = responseBody
     }
 
     public var description: String {
@@ -519,6 +532,7 @@ public typealias MCPElicitationHandler = @Sendable (MCPElicitationRequest) async
 
 public protocol MCPTransport: Sendable {
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async
+    func setProtocolVersion(_ protocolVersion: String?) async
     func start() async throws
     func request(_ message: JSONValue) async throws -> JSONValue
     func notify(_ message: JSONValue) async throws
@@ -527,12 +541,17 @@ public protocol MCPTransport: Sendable {
 
 public extension MCPTransport {
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {}
+    func setProtocolVersion(_ protocolVersion: String?) async {}
 }
 
 public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private let url: URL
     private let headers: [String: String]
     private let transport: any AITransport
+    private var protocolVersion: String?
+    private var sessionID: String?
+    private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
+    private var inboundTask: Task<Void, Never>?
 
     public init(url: URL, headers: [String: String] = [:], transport: any AITransport = URLSessionTransport.shared) {
         self.url = url
@@ -544,43 +563,174 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         try self.init(url: requireURL(url), headers: headers, transport: transport)
     }
 
-    public func start() async throws {}
+    public func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {
+        requestHandler = handler
+    }
+
+    public func setProtocolVersion(_ protocolVersion: String?) async {
+        self.protocolVersion = protocolVersion
+    }
+
+    public func start() async throws {
+        guard inboundTask == nil else { return }
+        inboundTask = Task { [weak self] in
+            do {
+                try await self?.openInboundSSEOnce()
+            } catch {
+                // The streamable-HTTP inbound SSE channel is optional. Request/response
+                // POSTs remain usable when servers respond 405 or the stream fails.
+            }
+        }
+    }
+
+    private func openInboundSSEOnce() async throws {
+        let response = try await sendRaw(
+            method: "GET",
+            accept: "text/event-stream",
+            body: nil
+        )
+        if response.statusCode == 405 {
+            return
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw MCPClientError(
+                message: "MCP HTTP Transport Error: GET SSE failed: \(response.statusCode)",
+                statusCode: response.statusCode,
+                url: url.absoluteString,
+                responseBody: response.bodyText
+            )
+        }
+        _ = try await handleBufferedResponse(response, expectedID: nil)
+    }
 
     public func request(_ message: JSONValue) async throws -> JSONValue {
-        try await send(message)
+        let response = try await send(message)
+        let expectedID = message["id"]?.intValue
+        if let responseID = expectedID, let array = response.arrayValue {
+            guard let match = array.first(where: { $0["id"]?.intValue == responseID }) else {
+                throw MCPClientError(message: "MCP HTTP Transport Error: response batch did not include id \(responseID).")
+            }
+            return match
+        }
+        return response
     }
 
     public func notify(_ message: JSONValue) async throws {
         try await sendNotification(message)
     }
 
-    public func close() async throws {}
+    public func close() async throws {
+        inboundTask?.cancel()
+        inboundTask = nil
+        guard sessionID != nil else { return }
+        _ = try? await sendRaw(
+            method: "DELETE",
+            accept: "application/json",
+            body: nil
+        )
+    }
 
     private func send(_ message: JSONValue) async throws -> JSONValue {
-        let response = try await sendRaw(message)
-        return try response.jsonValue()
+        let response = try await sendRaw(
+            method: "POST",
+            accept: "application/json, text/event-stream",
+            body: try encodeJSONBody(message)
+        )
+        return try await handleBufferedResponse(response, expectedID: message["id"]?.intValue)
     }
 
     private func sendNotification(_ message: JSONValue) async throws {
-        _ = try await sendRaw(message)
+        _ = try await sendRaw(
+            method: "POST",
+            accept: "application/json, text/event-stream",
+            body: try encodeJSONBody(message)
+        )
     }
 
-    private func sendRaw(_ message: JSONValue) async throws -> AIHTTPResponse {
+    private func sendRaw(method: String, accept: String, body: Data?) async throws -> AIHTTPResponse {
         var requestHeaders = [
-            "content-type": "application/json",
-            "accept": "application/json"
+            "accept": accept,
+            "mcp-protocol-version": protocolVersion ?? MCPClient.latestProtocolVersion
         ]
+        if body != nil {
+            requestHeaders["content-type"] = "application/json"
+        }
+        if let sessionID {
+            requestHeaders["mcp-session-id"] = sessionID
+        }
         requestHeaders.merge(headers) { _, new in new }
         let response = try await transport.send(AIHTTPRequest(
-            method: "POST",
+            method: method,
             url: url,
             headers: requestHeaders,
-            body: try encodeJSONBody(message)
+            body: body
         ))
+        if let sessionID = response.headerValue("mcp-session-id") {
+            self.sessionID = sessionID
+        }
+        if method == "GET", response.statusCode == 405 {
+            return response
+        }
         guard (200..<300).contains(response.statusCode) else {
-            throw MCPClientError(message: "HTTP \(response.statusCode): \(response.bodyText)")
+            var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode): \(response.bodyText)"
+            if method == "POST", response.statusCode == 404 {
+                message += ". This server does not support HTTP transport. Try using `sse` transport instead"
+            }
+            throw MCPClientError(
+                message: message,
+                statusCode: response.statusCode,
+                url: url.absoluteString,
+                responseBody: response.bodyText
+            )
         }
         return response
+    }
+
+    private func handleBufferedResponse(_ response: AIHTTPResponse, expectedID: Int?) async throws -> JSONValue {
+        if response.statusCode == 202 {
+            return .object([:])
+        }
+
+        let contentType = response.headerValue("content-type") ?? ""
+        if contentType.localizedCaseInsensitiveContains("text/event-stream") {
+            let messages = try await parseBufferedSSEMessages(response.body)
+            if let expectedID {
+                guard let match = messages.first(where: { $0["id"]?.intValue == expectedID }) else {
+                    throw MCPClientError(message: "MCP HTTP Transport Error: SSE response did not include id \(expectedID).")
+                }
+                return match
+            }
+            return .array(messages)
+        }
+
+        if contentType.isEmpty || contentType.localizedCaseInsensitiveContains("application/json") {
+            return try response.jsonValue()
+        }
+
+        throw MCPClientError(
+            message: "MCP HTTP Transport Error: Unexpected content type: \(contentType)",
+            statusCode: response.statusCode,
+            url: url.absoluteString,
+            responseBody: response.bodyText
+        )
+    }
+
+    private func parseBufferedSSEMessages(_ data: Data) async throws -> [JSONValue] {
+        var messages: [JSONValue] = []
+        for event in parseServerSentEvents(data) where event.event == nil || event.event == "message" {
+            do {
+                let message = try decodeJSONBody(Data(event.data.utf8))
+                if message["method"]?.stringValue != nil, message["id"] != nil, let requestHandler {
+                    let response = await requestHandler(message)
+                    try await sendNotification(response)
+                } else {
+                    messages.append(message)
+                }
+            } catch {
+                throw MCPClientError(message: "MCP HTTP Transport Error: Failed to parse message")
+            }
+        }
+        return messages
     }
 }
 
@@ -747,6 +897,7 @@ public actor MCPClient {
             serverCapabilities = result["capabilities"] ?? .object([:])
             serverInfo = try MCPImplementation(json: result["serverInfo"] ?? .object([:]))
             instructions = result["instructions"]?.stringValue
+            await transport.setProtocolVersion(protocolVersion)
 
             try await notify(method: "notifications/initialized")
         } catch {
