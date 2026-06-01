@@ -155,10 +155,11 @@ The Swift contract keeps only a compact subset. For example:
 - `LanguageModelRequest` has temperature, topP, maxOutputTokens, stopSequences,
   tools as raw `JSONValue`, `extraBody`, and headers.
 - `LanguageStreamPart` has v4-shaped lifecycle cases, but provider population
-  is still uneven: OpenAI-compatible chat/responses, Google GenerateContent,
-  Google Interactions, and native Bedrock streams now emit tool input
-  start/delta/end parts alongside final tool calls, while the remaining native
-  language stream parsers still need the same treatment where upstream exposes
+  is still uneven: OpenAI-compatible chat/responses, Anthropic, Google
+  GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere,
+  Groq, DeepSeek, Cerebras, and Alibaba streams now emit tool input
+  start/delta/end parts alongside final tool calls. Remaining native language
+  stream parsers should get the same treatment where upstream exposes
   equivalent events.
 - `TranscriptionResult` now has text, raw JSON, segments, language, duration,
   warnings, request/response info, and provider metadata, but provider passes
@@ -257,8 +258,9 @@ Impact:
 - Google GenerateContent now preserves `thoughtSignature` provider metadata on
   function-call parts and replays it on assistant tool-call history, matching
   upstream's requirement for live Gemini tool loops.
-- Tool streams for OpenAI-compatible chat/responses, Google GenerateContent,
-  Google Interactions, and native Bedrock now emit upstream-style
+- Tool streams for OpenAI-compatible chat/responses, Anthropic, Google
+  GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere,
+  Groq, DeepSeek, Cerebras, and Alibaba now emit upstream-style
   `LanguageStreamPart.toolInputStart`, `.toolInputDelta`, and `.toolInputEnd`
   parts in addition to legacy `.toolCallDelta` and final `.toolCall` parts, so
   consumers can observe argument assembly without waiting for the final tool

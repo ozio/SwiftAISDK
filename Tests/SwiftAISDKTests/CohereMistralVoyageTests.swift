@@ -341,6 +341,7 @@ import Testing
     let model = try provider.languageModel("mistral-small-latest")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var toolCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
@@ -349,6 +350,12 @@ import Testing
         tools: ["weather": ["type": "object", "properties": ["location": ["type": "string"]]]]
     )) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -363,6 +370,11 @@ import Testing
 
     let finalToolCall = try #require(toolCall)
     #expect(deltas == [#"{"location": "San Francisco"}"#])
+    #expect(inputLifecycle == [
+        "start:gSIMJiOkT:weather",
+        #"delta:gSIMJiOkT:{"location": "San Francisco"}"#,
+        "end:gSIMJiOkT"
+    ])
     #expect(finalToolCall.id == "gSIMJiOkT")
     #expect(finalToolCall.name == "weather")
     #expect(try decodeJSONBody(Data(finalToolCall.arguments.utf8))["location"]?.stringValue == "San Francisco")
@@ -477,11 +489,18 @@ import Testing
     let model = try provider.languageModel("command-a-03-2025")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var finalCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -496,6 +515,12 @@ import Testing
 
     let call = try #require(finalCall)
     #expect(deltas == ["{\"location\":", "\"San Francisco\"}"])
+    #expect(inputLifecycle == [
+        "start:weather_dqgshstja6p9:weather",
+        "delta:weather_dqgshstja6p9:{\"location\":",
+        "delta:weather_dqgshstja6p9:\"San Francisco\"}",
+        "end:weather_dqgshstja6p9"
+    ])
     #expect(call.id == "weather_dqgshstja6p9")
     #expect(call.name == "weather")
     #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")

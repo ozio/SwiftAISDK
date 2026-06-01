@@ -60,7 +60,11 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                                let name = toolCall?["function"]?["name"]?.stringValue {
                                 let arguments = toolCall?["function"]?["arguments"]?.stringValue ?? ""
                                 pendingToolCall = CoherePendingToolCall(id: id, name: name, arguments: arguments, rawValue: toolCall)
+                                continuation.yield(.toolInputStart(id: id, name: name))
                                 continuation.yield(.toolCallDelta(id: id, name: name, argumentsDelta: arguments, index: nil))
+                                if !arguments.isEmpty {
+                                    continuation.yield(.toolInputDelta(id: id, delta: arguments))
+                                }
                             }
                         case "tool-call-delta":
                             let arguments = raw["delta"]?["message"]?["tool_calls"]?["function"]?["arguments"]?.stringValue ?? ""
@@ -69,9 +73,13 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                                 pending.rawValue = raw["delta"]?["message"]?["tool_calls"] ?? pending.rawValue
                                 pendingToolCall = pending
                                 continuation.yield(.toolCallDelta(id: pending.id, name: pending.name, argumentsDelta: arguments, index: nil))
+                                if !arguments.isEmpty {
+                                    continuation.yield(.toolInputDelta(id: pending.id, delta: arguments))
+                                }
                             }
                         case "tool-call-end":
                             if let pending = pendingToolCall {
+                                continuation.yield(.toolInputEnd(id: pending.id))
                                 continuation.yield(.toolCall(AIToolCall(
                                     id: pending.id,
                                     name: pending.name,

@@ -175,6 +175,7 @@ import Testing
     var textDeltas: [String] = []
     var reasoningDeltas: [String] = []
     var argumentDeltas: [String] = []
+    var inputLifecycle: [String] = []
     var sources: [AISource] = []
     var toolCall: AIToolCall?
     var finishReason: String?
@@ -187,6 +188,12 @@ import Testing
             reasoningDeltas.append(delta)
         case let .source(source):
             sources.append(source)
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             argumentDeltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -209,6 +216,12 @@ import Testing
     #expect(sources[0].filename == "report.pdf")
     #expect(sources[0].providerMetadata["gateway"]?["page"]?.intValue == 2)
     #expect(argumentDeltas == [#"{"query":"#, #""weather"}"#])
+    #expect(inputLifecycle == [
+        "start:call_1:lookup",
+        #"delta:call_1:{"query":"#,
+        #"delta:call_1:"weather"}"#,
+        "end:call_1"
+    ])
     #expect(toolCall?.id == "call_1")
     #expect(toolCall?.name == "lookup")
     #expect(toolCall?.arguments == #"{"query":"weather"}"#)

@@ -454,7 +454,14 @@ private struct AnthropicStreamingToolCalls {
                 providerExecuted: toolCall.providerExecuted,
                 rawValue: block
             )
-            return [.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: initialArguments, index: index)]
+            var parts: [LanguageStreamPart] = [
+                .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted)
+            ]
+            parts.append(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: initialArguments, index: index))
+            if !initialArguments.isEmpty {
+                parts.append(.toolInputDelta(id: toolCall.id, delta: initialArguments))
+            }
+            return parts
         case "content_block_delta":
             guard raw["delta"]?["type"]?.stringValue == "input_json_delta",
                   let index = raw["index"]?.intValue,
@@ -464,18 +471,25 @@ private struct AnthropicStreamingToolCalls {
             let delta = raw["delta"]?["partial_json"]?.stringValue ?? ""
             buffer.arguments += delta
             buffers[index] = buffer
-            return [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: delta, index: index)]
+            var parts: [LanguageStreamPart] = [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: delta, index: index)]
+            if !delta.isEmpty {
+                parts.append(.toolInputDelta(id: buffer.id, delta: delta))
+            }
+            return parts
         case "content_block_stop":
             guard let index = raw["index"]?.intValue, let buffer = buffers.removeValue(forKey: index) else {
                 return []
             }
-            return [.toolCall(AIToolCall(
-                id: buffer.id,
-                name: buffer.name,
-                arguments: buffer.arguments.isEmpty ? "{}" : buffer.arguments,
-                providerExecuted: buffer.providerExecuted,
-                rawValue: buffer.rawValue
-            ))]
+            return [
+                .toolInputEnd(id: buffer.id),
+                .toolCall(AIToolCall(
+                    id: buffer.id,
+                    name: buffer.name,
+                    arguments: buffer.arguments.isEmpty ? "{}" : buffer.arguments,
+                    providerExecuted: buffer.providerExecuted,
+                    rawValue: buffer.rawValue
+                ))
+            ]
         default:
             return []
         }

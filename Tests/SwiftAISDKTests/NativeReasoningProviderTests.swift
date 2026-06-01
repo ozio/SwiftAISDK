@@ -159,6 +159,7 @@ import Testing
     let model = try provider.languageModel("llama-3.3-70b-versatile")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var toolCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
@@ -167,6 +168,12 @@ import Testing
         tools: ["test_tool": ["type": "object", "properties": ["value": ["type": "string"]]]]
     )) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -181,6 +188,13 @@ import Testing
 
     let finalToolCall = try #require(toolCall)
     #expect(deltas == ["{\"", "value", "\":\"Sparkle Day\"}"])
+    #expect(inputLifecycle == [
+        "start:call_1:test_tool",
+        "delta:call_1:{\"",
+        "delta:call_1:value",
+        "delta:call_1:\":\"Sparkle Day\"}",
+        "end:call_1"
+    ])
     #expect(finalToolCall.id == "call_1")
     #expect(finalToolCall.name == "test_tool")
     #expect(try decodeJSONBody(Data(finalToolCall.arguments.utf8))["value"]?.stringValue == "Sparkle Day")
@@ -368,6 +382,7 @@ import Testing
 
     var reasoning: [String] = []
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var finalCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
@@ -375,6 +390,12 @@ import Testing
         switch part {
         case let .reasoningDelta(delta):
             reasoning.append(delta)
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -390,6 +411,12 @@ import Testing
     let call = try #require(finalCall)
     #expect(reasoning == ["think"])
     #expect(deltas == ["{\"location\":", "\"San Francisco\"}"])
+    #expect(inputLifecycle == [
+        "start:call_weather:weather",
+        "delta:call_weather:{\"location\":",
+        "delta:call_weather:\"San Francisco\"}",
+        "end:call_weather"
+    ])
     #expect(call.id == "call_weather")
     #expect(call.name == "weather")
     #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")
@@ -638,6 +665,7 @@ import Testing
     let model = try provider.languageModel("zai-glm-4.7")
 
     var text: [String] = []
+    var inputLifecycle: [String] = []
     var finalCalls: [AIToolCall] = []
     var finishReason: String?
     var totalTokens: Int?
@@ -648,6 +676,12 @@ import Testing
         switch part {
         case let .textDelta(delta):
             text.append(delta)
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCall(call):
             finalCalls.append(call)
         case let .finish(reason, usage):
@@ -659,6 +693,11 @@ import Testing
     }
 
     #expect(text == ["{\"result\":\"2026\"}"])
+    #expect(inputLifecycle == [
+        "start:call_magic:nonUsefulTool",
+        "delta:call_magic:{}",
+        "end:call_magic"
+    ])
     #expect(finalCalls.map(\.id) == ["call_magic"])
     #expect(finalCalls.first?.name == "nonUsefulTool")
     #expect(finalCalls.first?.arguments == "{}")

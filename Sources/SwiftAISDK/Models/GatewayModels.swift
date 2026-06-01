@@ -143,6 +143,12 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                                 providerExecuted: raw["providerExecuted"]?.boolValue ?? false,
                                 rawValue: raw
                             )
+                            continuation.yield(.toolInputStart(
+                                id: id,
+                                name: name,
+                                providerExecuted: raw["providerExecuted"]?.boolValue ?? false,
+                                providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])
+                            ))
                         } else if type == "tool-input-delta" {
                             let id = raw["id"]?.stringValue ?? raw["toolCallId"]?.stringValue
                             let delta = raw["delta"]?.stringValue ?? raw["inputDelta"]?.stringValue ?? ""
@@ -155,20 +161,30 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                                 }
                             }
                             continuation.yield(.toolCallDelta(id: id, name: toolBuffers[id ?? ""]?.name, argumentsDelta: delta, index: nil))
+                            if let id, !delta.isEmpty {
+                                continuation.yield(.toolInputDelta(id: id, delta: delta, providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])))
+                            }
                         } else if type == "tool-input-end" {
                             let id = raw["id"]?.stringValue ?? raw["toolCallId"]?.stringValue
                             if let id, let buffer = toolBuffers.removeValue(forKey: id), !buffer.name.isEmpty {
                                 sawToolCalls = true
+                                continuation.yield(.toolInputEnd(id: id, providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])))
                                 continuation.yield(.toolCall(buffer.toolCall))
                             }
                         } else if type == "tool-call", let toolCall = gatewayToolCall(from: raw, fallbackIndex: toolBuffers.count) {
                             sawToolCalls = true
+                            continuation.yield(.toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted, providerMetadata: toolCall.providerMetadata))
                             continuation.yield(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: toolCall.arguments, index: nil))
+                            if !toolCall.arguments.isEmpty {
+                                continuation.yield(.toolInputDelta(id: toolCall.id, delta: toolCall.arguments, providerMetadata: toolCall.providerMetadata))
+                            }
+                            continuation.yield(.toolInputEnd(id: toolCall.id, providerMetadata: toolCall.providerMetadata))
                             continuation.yield(.toolCall(toolCall))
                         }
                         if type == "finish" || type == "finish-step" {
                             let hasToolCalls = sawToolCalls || !toolBuffers.isEmpty
                             for buffer in toolBuffers.values where !buffer.name.isEmpty {
+                                continuation.yield(.toolInputEnd(id: buffer.id))
                                 continuation.yield(.toolCall(buffer.toolCall))
                             }
                             toolBuffers.removeAll()
@@ -620,8 +636,13 @@ private func gatewayToolCall(from value: JSONValue, fallbackIndex: Int) -> AIToo
         name: name,
         arguments: gatewayToolArguments(value["input"] ?? value["arguments"]),
         providerExecuted: value["providerExecuted"]?.boolValue ?? false,
+        providerMetadata: gatewayProviderMetadata(value["providerMetadata"] ?? value["provider_metadata"]),
         rawValue: value
     )
+}
+
+private func gatewayProviderMetadata(_ value: JSONValue?) -> [String: JSONValue] {
+    value?.objectValue ?? [:]
 }
 
 private func gatewayToolArguments(_ value: JSONValue?) -> String {

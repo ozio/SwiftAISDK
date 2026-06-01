@@ -110,7 +110,7 @@ import Testing
 
     let provider = try LiveProviderSmoke.anthropicProvider()
     let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_ANTHROPIC_MODEL", defaultValue: "claude-haiku-4-5-20251001"))
-    try await LiveProviderSmoke.assertStreamToolLoop(model: model, maxOutputTokens: 96, expectsToolInputLifecycle: false)
+    try await LiveProviderSmoke.assertStreamToolLoop(model: model, maxOutputTokens: 96, expectsToolInputLifecycle: true)
 }
 
 @Test func liveProviderSmokeGoogleGenerateText() async throws {

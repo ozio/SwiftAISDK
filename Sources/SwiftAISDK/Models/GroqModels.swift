@@ -71,18 +71,14 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                         }
                         if let toolCallDeltas = raw["choices"]?[0]?["delta"]?["tool_calls"]?.arrayValue {
                             for toolCallDelta in toolCallDeltas {
-                                let update = toolCalls.apply(delta: toolCallDelta)
-                                continuation.yield(.toolCallDelta(
-                                    id: update.id,
-                                    name: update.name,
-                                    argumentsDelta: update.argumentsDelta,
-                                    index: update.index
-                                ))
+                                for part in toolCalls.apply(delta: toolCallDelta) {
+                                    continuation.yield(part)
+                                }
                             }
                         }
                         if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
-                            for toolCall in toolCalls.finishedCalls() {
-                                continuation.yield(.toolCall(toolCall))
+                            for part in toolCalls.finishedParts() {
+                                continuation.yield(part)
                             }
                             continuation.yield(.finish(reason: groqFinishReason(reason), usage: latestUsage))
                         }
@@ -96,44 +92,7 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
     }
 }
 
-private struct GroqToolCallBuffer {
-    var id: String?
-    var name: String?
-    var arguments: String = ""
-    var rawValue: JSONValue?
-}
-
-private struct GroqStreamingToolCalls {
-    private var buffers: [Int: GroqToolCallBuffer] = [:]
-
-    mutating func apply(delta: JSONValue) -> (id: String?, name: String?, argumentsDelta: String, index: Int?) {
-        let index = delta["index"]?.intValue ?? 0
-        var buffer = buffers[index] ?? GroqToolCallBuffer()
-        if let id = delta["id"]?.stringValue {
-            buffer.id = id
-        }
-        if let name = delta["function"]?["name"]?.stringValue {
-            buffer.name = name
-        }
-        let argumentsDelta = delta["function"]?["arguments"]?.stringValue ?? ""
-        buffer.arguments += argumentsDelta
-        buffer.rawValue = delta
-        buffers[index] = buffer
-        return (buffer.id, buffer.name, argumentsDelta, index)
-    }
-
-    func finishedCalls() -> [AIToolCall] {
-        buffers.keys.sorted().compactMap { index in
-            guard let buffer = buffers[index], let name = buffer.name else { return nil }
-            return AIToolCall(
-                id: buffer.id ?? "tool-call-\(index)",
-                name: name,
-                arguments: buffer.arguments,
-                rawValue: buffer.rawValue
-            )
-        }
-    }
-}
+private typealias GroqStreamingToolCalls = OpenAIStyleStreamingToolCalls
 
 public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendable {
     public let providerID = "groq.transcription"

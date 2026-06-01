@@ -219,11 +219,18 @@ import Testing
     let model = try provider.languageModel("qwen3-max")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var finalCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -237,6 +244,12 @@ import Testing
     }
 
     #expect(deltas == ["{\"location\":", "\"San Francisco\"}"])
+    #expect(inputLifecycle == [
+        "start:call_weather:weather",
+        "delta:call_weather:{\"location\":",
+        "delta:call_weather:\"San Francisco\"}",
+        "end:call_weather"
+    ])
     #expect(finalCall?.id == "call_weather")
     #expect(finalCall?.name == "weather")
     #expect(try decodeJSONBody(Data((try #require(finalCall)).arguments.utf8))["location"]?.stringValue == "San Francisco")

@@ -215,6 +215,7 @@ import Testing
     let model = try provider.languageModel("claude-3-5-haiku-latest")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var toolCall: AIToolCall?
     var finishReason: String?
     for try await part in model.stream(LanguageModelRequest(
@@ -222,6 +223,12 @@ import Testing
         tools: ["lookup": ["type": "object", "properties": ["query": ["type": "string"]]]]
     )) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -235,6 +242,12 @@ import Testing
 
     let finalToolCall = try #require(toolCall)
     #expect(deltas == ["", "{\"query\":", "\"weather\"}"])
+    #expect(inputLifecycle == [
+        "start:toolu_1:lookup",
+        "delta:toolu_1:{\"query\":",
+        "delta:toolu_1:\"weather\"}",
+        "end:toolu_1"
+    ])
     #expect(finalToolCall.id == "toolu_1")
     #expect(finalToolCall.name == "lookup")
     #expect(finalToolCall.providerExecuted == false)

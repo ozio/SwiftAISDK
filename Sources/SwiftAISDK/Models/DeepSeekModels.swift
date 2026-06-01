@@ -62,21 +62,17 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
                         }
                         if let toolCallDeltas = raw["choices"]?[0]?["delta"]?["tool_calls"]?.arrayValue {
                             for toolCallDelta in toolCallDeltas {
-                                let update = toolCalls.apply(delta: toolCallDelta)
-                                continuation.yield(.toolCallDelta(
-                                    id: update.id,
-                                    name: update.name,
-                                    argumentsDelta: update.argumentsDelta,
-                                    index: update.index
-                                ))
+                                for part in toolCalls.apply(delta: toolCallDelta) {
+                                    continuation.yield(part)
+                                }
                             }
                         }
                         if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
                             finishReason = deepSeekFinishReason(reason)
                         }
                     }
-                    for toolCall in toolCalls.finishedCalls() {
-                        continuation.yield(.toolCall(toolCall))
+                    for part in toolCalls.finishedParts() {
+                        continuation.yield(part)
                     }
                     continuation.yield(.finish(reason: finishReason, usage: latestUsage))
                     continuation.finish()
@@ -88,46 +84,7 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
     }
 }
 
-private struct DeepSeekToolCallBuffer {
-    var id: String?
-    var name: String?
-    var arguments: String = ""
-    var rawValue: JSONValue?
-}
-
-private struct DeepSeekStreamingToolCalls {
-    private var buffers: [Int: DeepSeekToolCallBuffer] = [:]
-
-    mutating func apply(delta: JSONValue) -> (id: String?, name: String?, argumentsDelta: String, index: Int?) {
-        let index = delta["index"]?.intValue ?? 0
-        var buffer = buffers[index] ?? DeepSeekToolCallBuffer()
-        if let id = delta["id"]?.stringValue {
-            buffer.id = id
-        }
-        if let name = delta["function"]?["name"]?.stringValue {
-            buffer.name = name
-        }
-        let argumentsDelta = delta["function"]?["arguments"]?.stringValue ?? ""
-        if !argumentsDelta.isEmpty {
-            buffer.arguments += argumentsDelta
-        }
-        buffer.rawValue = delta
-        buffers[index] = buffer
-        return (buffer.id, buffer.name, argumentsDelta, index)
-    }
-
-    func finishedCalls() -> [AIToolCall] {
-        buffers.keys.sorted().compactMap { index in
-            guard let buffer = buffers[index], let name = buffer.name else { return nil }
-            return AIToolCall(
-                id: buffer.id ?? "tool-call-\(index)",
-                name: name,
-                arguments: buffer.arguments,
-                rawValue: buffer.rawValue
-            )
-        }
-    }
-}
+private typealias DeepSeekStreamingToolCalls = OpenAIStyleStreamingToolCalls
 
 private func deepSeekBody(for request: LanguageModelRequest, modelID: String, stream: Bool) -> [String: JSONValue] {
     var body: [String: JSONValue] = [
