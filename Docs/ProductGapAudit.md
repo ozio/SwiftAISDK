@@ -196,13 +196,16 @@ The Swift contract keeps only a compact subset. For example:
 
 - `LanguageModelRequest` has temperature, topP, maxOutputTokens, stopSequences,
   tools as raw `JSONValue`, `extraBody`, and headers.
+- `TokenUsage` now keeps richer upstream-style cache/read, text/reasoning, and
+  raw usage slots in addition to the compact input/output/total counters, but
+  providers still need to fill those fields where upstream exposes them.
 - `LanguageStreamPart` has v4-shaped lifecycle cases, but provider population
   is still uneven: OpenAI-compatible chat/responses, Anthropic, Google
   GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere,
   Groq, DeepSeek, Cerebras, and Alibaba streams now emit tool input
-  start/delta/end parts alongside final tool calls. Perplexity emits text
-  lifecycle parts; Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and
-  Hugging Face Responses also emit
+  start/delta/end parts alongside final tool calls. OpenAI-compatible chat and
+  Perplexity emit text lifecycle parts; OpenAI-compatible chat, Mistral,
+  Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit
   text/reasoning start/delta/end parts. Remaining native language stream
   parsers should get the same treatment where upstream exposes equivalent
   events.
@@ -249,7 +252,9 @@ Progress:
   `AIResponseMetadata` for text, stream, embedding, image, transcription, and
   speech calls; Anthropic language and Google/Vertex language plus embedding
   models now do the same for their native response headers/bodies and stream
-  response metadata. Google Generative AI image/video/files and Google Vertex
+  response metadata. OpenAI-compatible chat streams now also emit v4-shaped
+  text/reasoning lifecycle parts while retaining legacy deltas for existing
+  consumers. Google Generative AI image/video/files and Google Vertex
   image/video now also preserve native response metadata, including fallback
   timestamps for responses without provider-created times. Native audio and
   transcription models for Deepgram, ElevenLabs, LMNT, Hume, fal, AssemblyAI,
@@ -352,6 +357,12 @@ Impact:
   mapped finish reasons, response/provider metadata for usage, cost, and
   images, first-chunk response metadata and citations, abort signals, and
   text stream lifecycle parts are covered by focused tests.
+- MoonshotAI chat now follows its upstream OpenAI-compatible subclass more
+  closely: provider-scoped thinking and reasoning-history options are
+  transformed, streaming usage is requested by default, Moonshot cache and
+  reasoning usage details populate rich `TokenUsage` fields with raw usage
+  retained, streams emit text lifecycle parts, and generate/stream abort
+  propagation is covered by focused tests.
 - Alibaba chat now follows its native upstream model more closely: top-level
   sampling, seed, reasoning budget, JSON response format, function tools/tool
   choice, assistant tool-call history, tool-result messages, response metadata,

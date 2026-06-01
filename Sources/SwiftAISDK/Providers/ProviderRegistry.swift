@@ -217,7 +217,9 @@ public enum AIProviders {
     }
 
     public static func moonshotAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "moonshotai", defaultBaseURL: "https://api.moonshot.ai/v1", authorization: .bearer(environmentVariables: ["MOONSHOT_API_KEY"]), supportedCapabilities: [.language], settings: settings)
+        var moonshotSettings = settings
+        moonshotSettings.includeUsage = true
+        return try OpenAICompatibleProvider(providerID: "moonshotai", defaultBaseURL: "https://api.moonshot.ai/v1", authorization: .bearer(environmentVariables: ["MOONSHOT_API_KEY"]), supportedCapabilities: [.language], settings: moonshotSettings)
     }
 
     public static func moonshotai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {

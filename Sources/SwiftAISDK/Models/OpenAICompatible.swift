@@ -437,19 +437,31 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    let warnings = isOpenAIBackedProvider(providerID)
+                        ? []
+                        : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
                     let body = JSONValue.object(body(for: request, stream: true))
                     let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
-                    continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
+                    continuation.yield(.streamStart(warnings: warnings))
                     var toolCalls = OpenAICompatibleStreamingToolCalls()
                     var providerMetadata: [String: JSONValue] = [:]
+                    var didEmitResponseMetadata = false
+                    var activeReasoningID: String?
+                    var activeTextID: String?
+                    var finishReason: String?
+                    var finishUsage: TokenUsage?
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
+                        }
+                        if !didEmitResponseMetadata {
+                            didEmitResponseMetadata = true
+                            continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)))
                         }
                         let choice = raw["choices"]?[0]
                         openAICompatibleMergeProviderMetadata(
@@ -458,12 +470,32 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                         )
                         let delta = choice?["delta"]
                         if let reasoning = delta?["reasoning_content"]?.stringValue ?? delta?["reasoning"]?.stringValue {
+                            let id = activeReasoningID ?? "reasoning-0"
+                            if activeReasoningID == nil {
+                                activeReasoningID = id
+                                continuation.yield(.reasoningStart(id: id))
+                            }
                             continuation.yield(.reasoningDelta(reasoning))
+                            continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning))
                         }
                         if let delta = delta?["content"]?.stringValue {
+                            if let reasoningID = activeReasoningID {
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                                activeReasoningID = nil
+                            }
+                            let id = activeTextID ?? "txt-0"
+                            if activeTextID == nil {
+                                activeTextID = id
+                                continuation.yield(.textStart(id: id))
+                            }
                             continuation.yield(.textDelta(delta))
+                            continuation.yield(.textDeltaPart(id: id, delta: delta))
                         }
                         if let toolCallDeltas = delta?["tool_calls"]?.arrayValue {
+                            if let reasoningID = activeReasoningID {
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                                activeReasoningID = nil
+                            }
                             for toolCallDelta in toolCallDeltas {
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)
@@ -471,17 +503,23 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                             }
                         }
                         if let reason = choice?["finish_reason"]?.stringValue {
-                            for part in toolCalls.finishedParts() {
-                                continuation.yield(part)
-                            }
-                            let finishReason = openAICompatibleFinishReason(reason)
-                            let finishUsage = usage(from: raw)
-                            if providerMetadata.isEmpty {
-                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
-                            } else {
-                                continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
-                            }
+                            finishReason = openAICompatibleFinishReason(reason)
+                            finishUsage = usage(from: raw)
                         }
+                    }
+                    if let reasoningID = activeReasoningID {
+                        continuation.yield(.reasoningEnd(id: reasoningID))
+                    }
+                    if let textID = activeTextID {
+                        continuation.yield(.textEnd(id: textID))
+                    }
+                    for part in toolCalls.finishedParts() {
+                        continuation.yield(part)
+                    }
+                    if providerMetadata.isEmpty {
+                        continuation.yield(.finish(reason: finishReason, usage: finishUsage))
+                    } else {
+                        continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
                     }
                     continuation.finish()
                 } catch {
@@ -691,13 +729,25 @@ private func moonshotChatBody(from input: [String: JSONValue]) -> [String: JSONV
 
 private func moonshotChatUsage(from raw: JSONValue) -> TokenUsage? {
     guard let usage = raw["usage"] else { return nil }
-    let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue
-    let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue
+    let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue ?? 0
+    let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue ?? 0
+    let cacheReadTokens = usage["cached_tokens"]?.intValue
+        ?? usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
+        ?? 0
+    let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue ?? 0
     let totalTokens = usage["total_tokens"]?.intValue ?? {
-        guard let inputTokens, let outputTokens else { return nil }
         return inputTokens + outputTokens
     }()
-    return TokenUsage(inputTokens: inputTokens, outputTokens: outputTokens, totalTokens: totalTokens)
+    return TokenUsage(
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: totalTokens,
+        inputTokensNoCache: inputTokens - cacheReadTokens,
+        inputTokensCacheRead: cacheReadTokens,
+        outputTextTokens: outputTokens - reasoningTokens,
+        outputReasoningTokens: reasoningTokens,
+        rawValue: usage
+    )
 }
 
 private func openAICompatibleChatTools(from tools: [String: JSONValue]) -> [JSONValue] {

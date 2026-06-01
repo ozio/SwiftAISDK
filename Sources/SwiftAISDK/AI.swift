@@ -1959,7 +1959,13 @@ private func sumTokenUsage(_ lhs: TokenUsage?, _ rhs: TokenUsage?) -> TokenUsage
     return TokenUsage(
         inputTokens: optionalSum(lhs?.inputTokens, rhs?.inputTokens),
         outputTokens: optionalSum(lhs?.outputTokens, rhs?.outputTokens),
-        totalTokens: optionalSum(lhs?.totalTokens, rhs?.totalTokens)
+        totalTokens: optionalSum(lhs?.totalTokens, rhs?.totalTokens),
+        inputTokensNoCache: optionalSum(lhs?.inputTokensNoCache, rhs?.inputTokensNoCache),
+        inputTokensCacheRead: optionalSum(lhs?.inputTokensCacheRead, rhs?.inputTokensCacheRead),
+        inputTokensCacheWrite: optionalSum(lhs?.inputTokensCacheWrite, rhs?.inputTokensCacheWrite),
+        outputTextTokens: optionalSum(lhs?.outputTextTokens, rhs?.outputTextTokens),
+        outputReasoningTokens: optionalSum(lhs?.outputReasoningTokens, rhs?.outputReasoningTokens),
+        rawValue: rhs?.rawValue ?? lhs?.rawValue
     )
 }
 

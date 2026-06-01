@@ -1878,11 +1878,33 @@ public struct TokenUsage: Equatable, Codable, Sendable {
     public var inputTokens: Int?
     public var outputTokens: Int?
     public var totalTokens: Int?
+    public var inputTokensNoCache: Int?
+    public var inputTokensCacheRead: Int?
+    public var inputTokensCacheWrite: Int?
+    public var outputTextTokens: Int?
+    public var outputReasoningTokens: Int?
+    public var rawValue: JSONValue?
 
-    public init(inputTokens: Int? = nil, outputTokens: Int? = nil, totalTokens: Int? = nil) {
+    public init(
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        totalTokens: Int? = nil,
+        inputTokensNoCache: Int? = nil,
+        inputTokensCacheRead: Int? = nil,
+        inputTokensCacheWrite: Int? = nil,
+        outputTextTokens: Int? = nil,
+        outputReasoningTokens: Int? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
         self.totalTokens = totalTokens
+        self.inputTokensNoCache = inputTokensNoCache
+        self.inputTokensCacheRead = inputTokensCacheRead
+        self.inputTokensCacheWrite = inputTokensCacheWrite
+        self.outputTextTokens = outputTextTokens
+        self.outputReasoningTokens = outputReasoningTokens
+        self.rawValue = rawValue
     }
 }
 
