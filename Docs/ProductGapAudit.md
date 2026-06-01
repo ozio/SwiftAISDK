@@ -59,14 +59,15 @@ Impact:
   responses and honored by facade retries, including stream retries before the
   first emitted part. A Swift telemetry surface now emits start, retry, end,
   and error events for non-streaming facade calls plus `generateObject`,
-  `streamText`, and `streamObject`, and step/tool execution events for
+  `streamText`, and `streamObject`; `streamText` also emits an abort event when
+  the consumer cancels the stream. Step/tool execution events exist for
   `generateText` and `streamText` tool loops, with per-call or globally
   registered integrations. `AIObjectGenerationCallbacks` now mirrors upstream's
   object lifecycle callbacks for `generateObject` and `streamObject`.
   `AIWarningLogging` now mirrors upstream warning logging controls with default,
   custom, and disabled logger modes. Telemetry integrations can now wrap
   language model calls and tool execution with upstream-style execute hooks.
-  Richer cancellation controls still need follow-up work.
+  Richer explicit cancellation controls still need follow-up work.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -341,15 +342,17 @@ Progress:
    plus `streamObject` accept direct stream timeouts. Streams retry retryable
    start failures before the first emitted part and do not retry after chunks
    have been yielded. Provider HTTP errors now preserve response headers, and
-   facade retries honor `Retry-After` on retryable status codes. Next passes
-   should add richer cancellation controls.
+   facade retries honor `Retry-After` on retryable status codes. `streamText`
+   now records consumer cancellation as telemetry `abort` instead of `error`.
+   Next passes should add richer explicit cancellation controls.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,
    `AITelemetryIntegration`, `AITelemetry.register(...)`, lifecycle events for
    non-streaming facade operations including `generateObject`, start/end/error
-   events for `streamText` and `streamObject`, and step/tool execution events
-   for `generateText` and `streamText` tool loops. Events carry call IDs,
+   events for `streamObject`, start/end/error/abort events for `streamText`,
+   and step/tool execution events for `generateText` and `streamText` tool loops.
+   Events carry call IDs,
    operation IDs, provider/model
    IDs, retry attempts, timing, usage, warnings, metadata, response metadata,
    object lifecycle callbacks for `generateObject` and `streamObject`,

@@ -484,6 +484,29 @@ import Testing
     #expect(model.streamRequests.first?.includeRawChunks == true)
 }
 
+@Test func aiStreamTextEmitsAbortTelemetryWhenConsumerCancels() async throws {
+    let recorder = TelemetryRecorder()
+    let model = HangingStreamingLanguageModel()
+    var streamed: [LanguageStreamPart] = []
+
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Cancel stream",
+        telemetry: AITelemetryOptions(integrations: [recorder])
+    ) {
+        streamed.append(part)
+        break
+    }
+
+    try await Task.sleep(nanoseconds: 20_000_000)
+    let events = await recorder.events()
+
+    #expect(streamed == [.textDelta("first")])
+    #expect(events.map(\.kind) == [.start, .abort])
+    #expect(events.allSatisfy { $0.operationID == "ai.streamText" })
+    #expect(events[1].errorDescription?.contains("cancelled") == true)
+}
+
 @Test func aiStreamTextRetriesRetryableStartErrors() async throws {
     let recorder = TelemetryRecorder()
     let model = FlakyStreamingLanguageModel(outcomes: [
@@ -1496,6 +1519,35 @@ private final class SlowStreamingLanguageModel: LanguageModel, @unchecked Sendab
             let task = Task {
                 do {
                     try await Task.sleep(nanoseconds: delayNanoseconds)
+                    continuation.yield(.textDelta("late"))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+}
+
+private final class HangingStreamingLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "hanging-stream-language"
+    var streamRequests: [LanguageModelRequest] = []
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        TextGenerationResult(text: "", rawValue: .object([:]))
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamRequests.append(request)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                continuation.yield(.textDelta("first"))
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
                     continuation.yield(.textDelta("late"))
                     continuation.finish()
                 } catch {

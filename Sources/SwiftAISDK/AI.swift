@@ -1921,6 +1921,16 @@ private func optionalSum(_ lhs: Int?, _ rhs: Int?) -> Int? {
     }
 }
 
+private func isCancellationTelemetryError(_ error: Error) -> Bool {
+    if error is CancellationError {
+        return true
+    }
+    if let retryError = error as? AIRetryError, retryError.reason == .cancelled {
+        return true
+    }
+    return false
+}
+
 private struct LanguageStreamToolStep {
     var text = ""
     var reasoning = ""
@@ -2095,6 +2105,16 @@ private struct AITelemetryDispatcher: Sendable {
             }
         }
         return try await execute()
+    }
+}
+
+private actor AIStreamTerminalState {
+    private var didRecordTerminalEvent = false
+
+    func claimTerminalEvent() -> Bool {
+        guard !didRecordTerminalEvent else { return false }
+        didRecordTerminalEvent = true
+        return true
     }
 }
 
@@ -2467,11 +2487,12 @@ private func streamTextWithTelemetry(
     telemetry: AITelemetryOptions?
 ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
     let dispatcher = AITelemetryDispatcher(options: telemetry)
+    let callID = UUID().uuidString
+    let started = DispatchTime.now().uptimeNanoseconds
+    let terminalState = AIStreamTerminalState()
 
     return AsyncThrowingStream { continuation in
         let task = Task {
-            let callID = UUID().uuidString
-            let started = DispatchTime.now().uptimeNanoseconds
             var step = LanguageStreamToolStep()
 
             do {
@@ -2518,22 +2539,24 @@ private func streamTextWithTelemetry(
                             warnings: step.warnings,
                             responseMetadata: step.responseMetadata
                         )
-                        await dispatcher.record(telemetryEvent(
-                            kind: .end,
-                            callID: callID,
-                            operationID: operationID,
-                            providerID: providerID,
-                            modelID: modelID,
-                            options: telemetry,
-                            maxRetries: retryPolicy.maxRetries,
-                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                            output: textGenerationTelemetryOutput(result),
-                            usage: result.usage,
-                            warnings: result.warnings,
-                            providerMetadata: result.providerMetadata,
-                            responseMetadata: result.responseMetadata
-                        ))
-                        await AIWarningLogging.logWarnings(result.warnings, providerID: providerID, modelID: modelID)
+                        if await terminalState.claimTerminalEvent() {
+                            await dispatcher.record(telemetryEvent(
+                                kind: .end,
+                                callID: callID,
+                                operationID: operationID,
+                                providerID: providerID,
+                                modelID: modelID,
+                                options: telemetry,
+                                maxRetries: retryPolicy.maxRetries,
+                                durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                                output: textGenerationTelemetryOutput(result),
+                                usage: result.usage,
+                                warnings: result.warnings,
+                                providerMetadata: result.providerMetadata,
+                                responseMetadata: result.responseMetadata
+                            ))
+                            await AIWarningLogging.logWarnings(result.warnings, providerID: providerID, modelID: modelID)
+                        }
                         continuation.finish()
                         return
                     } catch is CancellationError {
@@ -2573,22 +2596,58 @@ private func streamTextWithTelemetry(
                     }
                 }
             } catch {
-                await dispatcher.record(telemetryEvent(
-                    kind: .error,
-                    callID: callID,
-                    operationID: operationID,
-                    providerID: providerID,
-                    modelID: modelID,
-                    options: telemetry,
-                    maxRetries: retryPolicy.maxRetries,
-                    durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                    errorDescription: String(describing: error)
-                ))
-                continuation.finish(throwing: error)
+                if isCancellationTelemetryError(error) {
+                    if await terminalState.claimTerminalEvent() {
+                        await dispatcher.record(telemetryEvent(
+                            kind: .abort,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: String(describing: error)
+                        ))
+                    }
+                    continuation.finish()
+                } else {
+                    if await terminalState.claimTerminalEvent() {
+                        await dispatcher.record(telemetryEvent(
+                            kind: .error,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: String(describing: error)
+                        ))
+                    }
+                    continuation.finish(throwing: error)
+                }
             }
         }
 
-        continuation.onTermination = { _ in
+        continuation.onTermination = { termination in
+            if case .cancelled = termination {
+                Task {
+                    if await terminalState.claimTerminalEvent() {
+                        await dispatcher.record(telemetryEvent(
+                            kind: .abort,
+                            callID: callID,
+                            operationID: operationID,
+                            providerID: providerID,
+                            modelID: modelID,
+                            options: telemetry,
+                            maxRetries: retryPolicy.maxRetries,
+                            durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
+                            errorDescription: "Stream cancelled."
+                        ))
+                    }
+                }
+            }
             task.cancel()
         }
     }

@@ -4,6 +4,7 @@ public enum AITelemetryEventKind: String, Equatable, Sendable {
     case start
     case retry
     case end
+    case abort
     case error
     case stepStart
     case stepEnd
