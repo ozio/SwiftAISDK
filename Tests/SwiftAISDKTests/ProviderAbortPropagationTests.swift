@@ -373,6 +373,18 @@ import Testing
     #expect(speechRequest.abortSignal === speechController.signal)
 }
 
+@Test func lmntForwardsAbortSignalToSpeechRequests() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("audio".utf8)))
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
+    let model = try provider.speechModel("aurora")
+    let controller = AIAbortController()
+
+    _ = try await model.speak(SpeechRequest(text: "hello", abortSignal: controller.signal))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.abortSignal === controller.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

@@ -96,7 +96,8 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = lmntProviderOptions(from: request.extraBody)
+        let options = lmntProviderOptions(from: request)
+        let warnings = lmntSpeechWarnings(for: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "text": .string(request.text),
@@ -109,7 +110,8 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
             path: "/v1/ai/speech/bytes",
             modelID: modelID,
             body: .object(body),
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -117,6 +119,7 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            warnings: warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
@@ -968,6 +971,30 @@ private func lmntProviderOptions(from extraBody: [String: JSONValue]) -> [String
         output.merge(nested) { _, nested in nested }
     }
     return output
+}
+
+private func lmntProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+    lmntProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func lmntProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = lmntProviderOptions(from: extraBody)
+    output.merge(lmntProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    return output
+}
+
+private func lmntSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
+    guard let format = request.format,
+          !["mp3", "aac", "mulaw", "raw", "wav"].contains(format.lowercased()) else {
+        return []
+    }
+    return [
+        AIWarning(
+            type: "unsupported",
+            feature: "outputFormat",
+            message: "Unsupported output format: \(format). Using mp3 instead."
+        )
+    ]
 }
 
 private func humeSpeechOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
