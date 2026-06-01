@@ -542,6 +542,7 @@ import Testing
     #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
     #expect(body["response_format"]?["json_schema"]?["description"]?.stringValue == "Answer schema")
     #expect(body["response_format"]?["json_schema"]?["schema"]?["type"]?.stringValue == "object")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["additionalProperties"] == nil)
     #expect(body["response_format"]?["json_schema"]?["strict"]?.boolValue == false)
     #expect(body["responseFormat"] == nil)
     #expect(body["strictJsonSchema"] == nil)
@@ -566,6 +567,7 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
     #expect(body["response_format"]?["json_schema"]?["schema"]?["type"]?.stringValue == "object")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["additionalProperties"]?.boolValue == false)
     #expect(body["responseFormat"] == nil)
 }
 

@@ -94,7 +94,10 @@ Impact:
   `AIJSONInstruction` can inject upstream-style JSON instructions as an opt-in
   fallback for providers without native structured-output support.
   `AIObjectGenerationCallbacks.onError` now fires for both non-streaming and
-  streaming parse/schema/decode failures. Richer provider-specific
+  streaming parse/schema/decode failures. Strict OpenAI-compatible and Cerebras
+  structured outputs now run the upstream provider-utils
+  `additionalProperties: false` normalization over object schemas unless
+  `strictJsonSchema` is explicitly disabled. Richer provider-specific
   structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.

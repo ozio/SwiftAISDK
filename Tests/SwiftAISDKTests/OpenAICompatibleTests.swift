@@ -180,6 +180,7 @@ import Testing
     #expect(structuredBody["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
     #expect(structuredBody["response_format"]?["json_schema"]?["description"]?.stringValue == "Answer schema")
     #expect(structuredBody["response_format"]?["json_schema"]?["schema"]?["type"]?.stringValue == "object")
+    #expect(structuredBody["response_format"]?["json_schema"]?["schema"]?["additionalProperties"] == nil)
     #expect(structuredBody["response_format"]?["json_schema"]?["strict"]?.boolValue == false)
     #expect(structuredBody["responseFormat"] == nil)
     #expect(structuredBody["strictJsonSchema"] == nil)

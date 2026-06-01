@@ -240,6 +240,8 @@ import Testing
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
     #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
     #expect(body["response_format"]?["json_schema"]?["description"]?.stringValue == "A typed answer.")
+    #expect(body["response_format"]?["json_schema"]?["strict"]?.boolValue == true)
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["additionalProperties"]?.boolValue == false)
     #expect(body["response_format"]?["json_schema"]?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
     #expect(body["responseFormat"] == nil)
 }

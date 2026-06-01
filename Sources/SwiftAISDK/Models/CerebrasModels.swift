@@ -171,9 +171,11 @@ private func cerebrasResponseFormat(from value: JSONValue, strictJsonSchema: JSO
     guard let schema = object["schema"] else {
         return .object(["type": .string("json_object")])
     }
+    let strict = strictJsonSchema ?? .bool(true)
+    let normalizedSchema = strict.boolValue == false ? schema : addAdditionalPropertiesToJSONSchema(schema)
     var jsonSchema: [String: JSONValue] = [
-        "schema": schema,
-        "strict": strictJsonSchema ?? .bool(true),
+        "schema": normalizedSchema,
+        "strict": strict,
         "name": object["name"] ?? .string("response")
     ]
     if let description = object["description"] {

@@ -1,5 +1,45 @@
 import Foundation
 
+public func addAdditionalPropertiesToJSONSchema(_ schema: JSONValue) -> JSONValue {
+    guard case var .object(object) = schema else {
+        return schema
+    }
+
+    if jsonSchemaTypeIncludesObject(object["type"]) {
+        object["additionalProperties"] = .bool(false)
+        if let properties = object["properties"]?.objectValue {
+            object["properties"] = .object(properties.mapValues(addAdditionalPropertiesToJSONSchema))
+        }
+    }
+
+    if let items = object["items"] {
+        if let tupleItems = items.arrayValue {
+            object["items"] = .array(tupleItems.map(addAdditionalPropertiesToJSONSchema))
+        } else {
+            object["items"] = addAdditionalPropertiesToJSONSchema(items)
+        }
+    }
+
+    for key in ["anyOf", "allOf", "oneOf"] {
+        if let schemas = object[key]?.arrayValue {
+            object[key] = .array(schemas.map(addAdditionalPropertiesToJSONSchema))
+        }
+    }
+
+    if let definitions = object["definitions"]?.objectValue {
+        object["definitions"] = .object(definitions.mapValues(addAdditionalPropertiesToJSONSchema))
+    }
+
+    return .object(object)
+}
+
+private func jsonSchemaTypeIncludesObject(_ type: JSONValue?) -> Bool {
+    if type?.stringValue == "object" {
+        return true
+    }
+    return type?.arrayValue?.contains(where: { $0.stringValue == "object" }) == true
+}
+
 struct AIJSONSchemaValidationIssue: Error, CustomStringConvertible, Sendable {
     var path: String
     var message: String
