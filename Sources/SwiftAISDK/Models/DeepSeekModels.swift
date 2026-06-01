@@ -11,10 +11,11 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        let prepared = deepSeekPreparedCall(for: request, modelID: modelID, stream: false)
         let raw = try await config.sendJSON(
             path: "/chat/completions",
             modelID: modelID,
-            body: .object(deepSeekBody(for: request, modelID: modelID, stream: false)),
+            body: .object(prepared.body),
             headers: request.headers
         )
         let choice = raw["choices"]?[0]
@@ -27,7 +28,8 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
             finishReason: deepSeekFinishReason(choice?["finish_reason"]?.stringValue),
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
-            rawValue: raw
+            rawValue: raw,
+            warnings: prepared.warnings
         )
     }
 
@@ -35,16 +37,20 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    let prepared = deepSeekPreparedCall(for: request, modelID: modelID, stream: true)
                     let response = try await config.transport.send(config.request(
                         path: "/chat/completions",
                         modelID: modelID,
-                        body: .object(deepSeekBody(for: request, modelID: modelID, stream: true)),
+                        body: .object(prepared.body),
                         headers: request.headers
                     ))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
 
+                    if !prepared.warnings.isEmpty {
+                        continuation.yield(.streamStart(warnings: prepared.warnings))
+                    }
                     var latestUsage: TokenUsage?
                     var finishReason: String?
                     var toolCalls = DeepSeekStreamingToolCalls()
@@ -86,10 +92,18 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
 
 private typealias DeepSeekStreamingToolCalls = OpenAIStyleStreamingToolCalls
 
-private func deepSeekBody(for request: LanguageModelRequest, modelID: String, stream: Bool) -> [String: JSONValue] {
+private struct DeepSeekPreparedCall {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
+
+private func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> DeepSeekPreparedCall {
+    var options = deepSeekOptions(from: request.extraBody)
+    let responseFormat = deepSeekResolvedResponseFormat(request: request, options: &options)
+    let toolChoice = options.removeValue(forKey: "toolChoice")
     var body: [String: JSONValue] = [
         "model": .string(modelID),
-        "messages": .array(request.messages.map { deepSeekMessageJSON($0, modelID: modelID) })
+        "messages": .array(deepSeekMessages(request.messages, responseFormat: responseFormat).map { deepSeekMessageJSON($0, modelID: modelID) })
     ]
     if stream {
         body["stream"] = true
@@ -99,13 +113,25 @@ private func deepSeekBody(for request: LanguageModelRequest, modelID: String, st
     if let topP = request.topP { body["top_p"] = .number(topP) }
     if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
     if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
-    if !request.tools.isEmpty { body["tools"] = .object(request.tools) }
-    body.merge(deepSeekOptions(from: request.extraBody)) { _, new in new }
+    let tools = deepSeekTools(from: request.tools)
+    if !tools.isEmpty {
+        body["tools"] = .array(tools)
+        if let toolChoice = deepSeekToolChoice(from: toolChoice) {
+            body["tool_choice"] = toolChoice
+        }
+    }
+    body.merge(options) { _, new in new }
+    if let responseFormat, responseFormat["type"]?.stringValue == "json" {
+        body["response_format"] = .object(["type": .string("json_object")])
+    }
 
     if body["thinking"]?["type"]?.stringValue == "disabled" {
         body.removeValue(forKey: "reasoning_effort")
     }
-    return body
+    return DeepSeekPreparedCall(
+        body: body,
+        warnings: deepSeekWarnings(responseFormat: responseFormat)
+    )
 }
 
 private func deepSeekMessageJSON(_ message: AIMessage, modelID: String) -> JSONValue {
@@ -121,13 +147,63 @@ private func deepSeekMessageJSON(_ message: AIMessage, modelID: String) -> JSONV
     return value
 }
 
+private func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue?) -> [AIMessage] {
+    guard responseFormat?["type"]?.stringValue == "json" else {
+        return messages
+    }
+    if let schema = responseFormat?["schema"] {
+        let schemaText = deepSeekJSONString(schema) ?? schema.stringValue ?? ""
+        return [AIMessage.system("Return JSON that conforms to the following schema: \(schemaText)")] + messages
+    }
+    return [AIMessage.system("Return JSON.")] + messages
+}
+
 private func deepSeekOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
+    if let nested = output.removeValue(forKey: "deepseek")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     deepSeekMoveKey("reasoningEffort", to: "reasoning_effort", in: &output)
     if let effort = output["reasoning_effort"]?.stringValue {
         output["reasoning_effort"] = .string(deepSeekReasoningEffort(effort))
     }
     return output
+}
+
+private func deepSeekResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        options.removeValue(forKey: "responseFormat")
+        return deepSeekResponseFormatJSON(responseFormat)
+    }
+    return options.removeValue(forKey: "responseFormat")
+}
+
+private func deepSeekResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
+}
+
+private func deepSeekWarnings(responseFormat: JSONValue?) -> [AIWarning] {
+    guard responseFormat?["type"]?.stringValue == "json",
+          responseFormat?["schema"] != nil else {
+        return []
+    }
+    return [
+        AIWarning(
+            type: "compatibility",
+            feature: "responseFormat JSON schema",
+            message: "JSON response schema is injected into the system message."
+        )
+    ]
 }
 
 private func deepSeekMoveKey(_ source: String, to destination: String, in values: inout [String: JSONValue]) {
@@ -145,6 +221,65 @@ private func deepSeekReasoningEffort(_ value: String) -> String {
     default:
         return value
     }
+}
+
+private func deepSeekTools(from tools: [String: JSONValue]) -> [JSONValue] {
+    tools.compactMap { name, schema in
+        let object = schema.objectValue
+        if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil {
+            return nil
+        }
+        var parameters = schema
+        var function: [String: JSONValue] = [
+            "name": .string(name),
+            "parameters": parameters
+        ]
+        if var parameterObject = parameters.objectValue {
+            if let description = parameterObject["description"]?.stringValue {
+                function["description"] = .string(description)
+            }
+            if let strict = parameterObject.removeValue(forKey: "strict") {
+                function["strict"] = strict
+                parameters = .object(parameterObject)
+                function["parameters"] = parameters
+            }
+        }
+        return .object([
+            "type": .string("function"),
+            "function": .object(function)
+        ])
+    }
+}
+
+private func deepSeekToolChoice(from value: JSONValue?) -> JSONValue? {
+    if let string = value?.stringValue {
+        switch string {
+        case "auto", "none", "required":
+            return .string(string)
+        default:
+            return nil
+        }
+    }
+    guard let object = value?.objectValue else { return nil }
+    switch object["type"]?.stringValue {
+    case "auto", "none", "required":
+        return object["type"]
+    case "tool":
+        guard let toolName = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue else {
+            return nil
+        }
+        return .object([
+            "type": .string("function"),
+            "function": .object(["name": .string(toolName)])
+        ])
+    default:
+        return nil
+    }
+}
+
+private func deepSeekJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? encodeJSONBody(value) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func deepSeekToolCalls(from value: JSONValue?) -> [AIToolCall] {

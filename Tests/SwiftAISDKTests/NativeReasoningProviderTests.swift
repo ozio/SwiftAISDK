@@ -80,7 +80,61 @@ import Testing
     #expect(body["reasoning_effort"]?.stringValue == "low")
     #expect(body["parallel_tool_calls"]?.boolValue == false)
     #expect(body["service_tier"]?.stringValue == "performance")
-    #expect(body["strict_json_schema"]?.boolValue == true)
+    #expect(body["strictJsonSchema"] == nil)
+    #expect(body["strict_json_schema"] == nil)
+}
+
+@Test func groqLanguageMapsStandardStructuredResponseFormat() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":4}}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.languageModel("gemma2-9b-it")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        responseFormat: .json(
+            schema: [
+                "type": "object",
+                "properties": ["value": ["type": "string"]],
+                "required": ["value"],
+                "additionalProperties": false
+            ],
+            name: "answer",
+            description: "Answer schema"
+        )
+    ))
+
+    #expect(result.warnings.isEmpty)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
+    #expect(body["response_format"]?["json_schema"]?["description"]?.stringValue == "Answer schema")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["properties"]?["value"]?["type"]?.stringValue == "string")
+    #expect(body["response_format"]?["json_schema"]?["strict"]?.boolValue == true)
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func groqLanguageWarnsWhenStructuredOutputsDisabledWithSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":4}}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.languageModel("gemma2-9b-it")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        responseFormat: .json(schema: ["type": "object"], name: "answer"),
+        extraBody: ["structuredOutputs": false]
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "responseFormat",
+            message: "JSON response format schema is only supported with structuredOutputs"
+        )
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["response_format"]?["json_schema"] == nil)
+    #expect(body["structuredOutputs"] == nil)
 }
 
 @Test func groqLanguageMapsFunctionToolsAndBrowserSearchTool() async throws {
@@ -364,6 +418,75 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["reasoning_effort"]?.stringValue == "max")
     #expect(body["reasoningEffort"] == nil)
+}
+
+@Test func deepSeekLanguageMapsJsonResponseFormatAndFunctionTools() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"{\"forecast\":\"sunny\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Weather?")],
+        responseFormat: .json(),
+        tools: [
+            "weather": [
+                "type": "object",
+                "description": "Look up weather.",
+                "properties": ["location": ["type": "string"]],
+                "required": ["location"]
+            ]
+        ],
+        extraBody: [
+            "deepseek": ["thinking": ["type": "enabled"]],
+            "toolChoice": ["type": "tool", "toolName": "weather"]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
+    #expect(body["messages"]?[0]?["content"]?.stringValue == "Return JSON.")
+    #expect(body["messages"]?[1]?["role"]?.stringValue == "user")
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["deepseek"] == nil)
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools[0]["type"]?.stringValue == "function")
+    #expect(tools[0]["function"]?["name"]?.stringValue == "weather")
+    #expect(tools[0]["function"]?["description"]?.stringValue == "Look up weather.")
+    #expect(tools[0]["function"]?["parameters"]?["properties"]?["location"]?["type"]?.stringValue == "string")
+    #expect(body["tool_choice"]?["type"]?.stringValue == "function")
+    #expect(body["tool_choice"]?["function"]?["name"]?.stringValue == "weather")
+    #expect(body["responseFormat"] == nil)
+}
+
+@Test func deepSeekLanguageInjectsSchemaInstructionAndWarning() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        responseFormat: .json(schema: [
+            "type": "object",
+            "properties": ["value": ["type": "string"]],
+            "required": ["value"]
+        ])
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "responseFormat JSON schema",
+            message: "JSON response schema is injected into the system message."
+        )
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let instruction = try #require(body["messages"]?[0]?["content"]?.stringValue)
+    #expect(instruction.hasPrefix("Return JSON that conforms to the following schema: "))
+    #expect(instruction.contains("\"type\":\"object\""))
+    #expect(instruction.contains("\"value\""))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+    #expect(body["responseFormat"] == nil)
 }
 
 @Test func deepSeekLanguageStreamsFragmentedToolCalls() async throws {

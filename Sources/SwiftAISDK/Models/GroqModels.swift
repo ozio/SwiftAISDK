@@ -22,10 +22,11 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        let prepared = groqPreparedCall(for: request, modelID: modelID, stream: false)
         let raw = try await config.sendJSON(
             path: "/chat/completions",
             modelID: modelID,
-            body: .object(groqBody(for: request, modelID: modelID, stream: false)),
+            body: .object(prepared.body),
             headers: request.headers
         )
         let choice = raw["choices"]?[0]
@@ -38,7 +39,8 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
             finishReason: groqFinishReason(choice?["finish_reason"]?.stringValue),
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
-            rawValue: raw
+            rawValue: raw,
+            warnings: prepared.warnings
         )
     }
 
@@ -46,14 +48,18 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    let prepared = groqPreparedCall(for: request, modelID: modelID, stream: true)
                     let response = try await config.transport.send(config.request(
                         path: "/chat/completions",
                         modelID: modelID,
-                        body: .object(groqBody(for: request, modelID: modelID, stream: true)),
+                        body: .object(prepared.body),
                         headers: request.headers
                     ))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
+                    }
+                    if !prepared.warnings.isEmpty {
+                        continuation.yield(.streamStart(warnings: prepared.warnings))
                     }
                     var latestUsage: TokenUsage?
                     var toolCalls = GroqStreamingToolCalls()
@@ -93,6 +99,11 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
 }
 
 private typealias GroqStreamingToolCalls = OpenAIStyleStreamingToolCalls
+
+private struct GroqPreparedCall {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
 
 public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendable {
     public let providerID = "groq.transcription"
@@ -164,7 +175,9 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
     }
 }
 
-private func groqBody(for request: LanguageModelRequest, modelID: String, stream: Bool) -> [String: JSONValue] {
+private func groqPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> GroqPreparedCall {
+    var options = groqProviderOptions(from: request.extraBody)
+    let responseFormat = groqResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
         "messages": .array(request.messages.map(OpenAICompatibleChatModel.messageJSON))
@@ -181,23 +194,90 @@ private func groqBody(for request: LanguageModelRequest, modelID: String, stream
             body["tool_choice"] = toolChoice
         }
     }
-    body.merge(groqLanguageOptions(from: request.extraBody)) { _, new in new }
-    return body
+    if let responseFormat {
+        body["response_format"] = groqResponseFormat(from: responseFormat, options: options)
+    }
+    body.merge(groqLanguageOptions(from: options)) { _, new in new }
+    return GroqPreparedCall(
+        body: body,
+        warnings: groqWarnings(responseFormat: responseFormat, options: options)
+    )
 }
 
-private func groqLanguageOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = groqProviderOptions(from: extraBody)
+private func groqLanguageOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
+    var output = options
     moveKey("reasoningFormat", to: "reasoning_format", in: &output)
     moveKey("reasoningEffort", to: "reasoning_effort", in: &output)
     moveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
     moveKey("serviceTier", to: "service_tier", in: &output)
-    moveKey("structuredOutputs", to: "structured_outputs", in: &output)
-    moveKey("strictJsonSchema", to: "strict_json_schema", in: &output)
+    output.removeValue(forKey: "responseFormat")
+    output.removeValue(forKey: "structuredOutputs")
+    output.removeValue(forKey: "strictJsonSchema")
     output.removeValue(forKey: "toolChoice")
     if let effort = output["reasoning_effort"]?.stringValue {
         output["reasoning_effort"] = .string(groqReasoningEffort(effort))
     }
     return output
+}
+
+private func groqResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        options.removeValue(forKey: "responseFormat")
+        return groqResponseFormatJSON(responseFormat)
+    }
+    return options.removeValue(forKey: "responseFormat")
+}
+
+private func groqResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
+}
+
+private func groqResponseFormat(from value: JSONValue, options: [String: JSONValue]) -> JSONValue {
+    guard let object = value.objectValue, object["type"]?.stringValue == "json" else {
+        return value
+    }
+    let structuredOutputs = options["structuredOutputs"]?.boolValue ?? true
+    guard structuredOutputs, let schema = object["schema"] else {
+        return .object(["type": .string("json_object")])
+    }
+    let strict = options["strictJsonSchema"] ?? .bool(true)
+    var jsonSchema: [String: JSONValue] = [
+        "schema": schema,
+        "strict": strict,
+        "name": object["name"] ?? .string("response")
+    ]
+    if let description = object["description"] {
+        jsonSchema["description"] = description
+    }
+    return .object([
+        "type": .string("json_schema"),
+        "json_schema": .object(jsonSchema)
+    ])
+}
+
+private func groqWarnings(responseFormat: JSONValue?, options: [String: JSONValue]) -> [AIWarning] {
+    guard responseFormat?["type"]?.stringValue == "json",
+          responseFormat?["schema"] != nil,
+          options["structuredOutputs"]?.boolValue == false else {
+        return []
+    }
+    return [
+        AIWarning(
+            type: "unsupported",
+            feature: "responseFormat",
+            message: "JSON response format schema is only supported with structuredOutputs"
+        )
+    ]
 }
 
 private func groqTranscriptionOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {

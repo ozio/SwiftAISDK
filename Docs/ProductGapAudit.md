@@ -111,8 +111,16 @@ Impact:
   `strictJsonSchema` is explicitly disabled. Mistral now maps standard JSON
   response formats to native `response_format` requests, including
   `json_schema`, `json_object`, `structuredOutputs`, `strictJsonSchema`, and
-  the upstream JSON system instruction for no-schema JSON calls. Richer
-  provider-specific structured-output passes still need follow-up work.
+  the upstream JSON system instruction for no-schema JSON calls. Groq now maps
+  standard JSON response formats to native `json_schema`/`json_object`
+  requests, keeps `structuredOutputs`/`strictJsonSchema` as control options
+  instead of leaking them into the provider body, and returns the upstream
+  unsupported warning when schema output is requested with structured outputs
+  disabled. DeepSeek now requests `json_object`, injects the upstream JSON
+  system instruction or schema instruction, returns the compatibility warning
+  for schema injection, maps nested `deepseek` provider options, and sends
+  OpenAI-style function tools/tool choice. Richer provider-specific
+  structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as
