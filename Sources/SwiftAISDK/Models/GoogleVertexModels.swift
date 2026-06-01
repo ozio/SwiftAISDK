@@ -105,15 +105,26 @@ public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
             let images = languageResult.rawValue["candidates"]?[0]?["content"]?["parts"]?.arrayValue?.compactMap { part in
                 part["inlineData"]?["data"]?.stringValue
             } ?? []
-            return ImageGenerationResult(urls: [], base64Images: images, rawValue: languageResult.rawValue)
+            return ImageGenerationResult(
+                urls: [],
+                base64Images: images,
+                rawValue: languageResult.rawValue,
+                responseMetadata: languageResult.responseMetadata
+            )
         }
 
         let body = try googleVertexImageBody(for: request)
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):predict", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let images = raw["predictions"]?.arrayValue?.compactMap { prediction in
             prediction["bytesBase64Encoded"]?.stringValue
         } ?? []
-        return ImageGenerationResult(urls: [], base64Images: images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -137,12 +148,14 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
         ]
         if !parameters.isEmpty { body["parameters"] = .object(parameters) }
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predictLongRunning", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):predictLongRunning", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let videos = raw["response"]?["videos"]?.arrayValue ?? raw["videos"]?.arrayValue ?? []
         return VideoGenerationResult(
             urls: videos.compactMap { $0["gcsUri"]?.stringValue ?? $0["url"]?.stringValue },
             operationID: raw["name"]?.stringValue,
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 }

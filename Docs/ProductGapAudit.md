@@ -197,8 +197,11 @@ Progress:
   `AIResponseMetadata` for text, stream, embedding, image, transcription, and
   speech calls; Anthropic language and Google/Vertex language plus embedding
   models now do the same for their native response headers/bodies and stream
-  response metadata. Follow-up passes should keep filling richer metadata and
-  lifecycle fields consistently across the remaining native media providers.
+  response metadata. Google Generative AI image/video/files and Google Vertex
+  image/video now also preserve native response metadata, including fallback
+  timestamps for responses without provider-created times. Follow-up passes
+  should keep filling richer metadata and lifecycle fields consistently across
+  the remaining native media providers.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 

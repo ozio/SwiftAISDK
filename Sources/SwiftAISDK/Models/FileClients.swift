@@ -103,6 +103,7 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
         }
         var raw = try uploadResponse.jsonValue()
         var file = raw["file"] ?? raw
+        var metadataResponse = uploadResponse
 
         let started = DispatchTime.now().uptimeNanoseconds
         while file["state"]?.stringValue == "PROCESSING" {
@@ -122,6 +123,7 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             }
             file = try statusResponse.jsonValue()
             raw = file
+            metadataResponse = statusResponse
         }
         if file["state"]?.stringValue == "FAILED" {
             throw AIError.invalidResponse(provider: providerID, message: "Google file processing failed for \(file["name"]?.stringValue ?? "unknown file").")
@@ -132,7 +134,8 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             filename: request.filename,
             mediaType: file["mimeType"]?.stringValue ?? request.mediaType,
             metadata: fileMetadata(from: file),
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: metadataResponse)
         )
     }
 }

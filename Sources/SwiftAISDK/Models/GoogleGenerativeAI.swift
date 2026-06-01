@@ -201,12 +201,18 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             "instances": .array([.object(["prompt": .string(request.prompt)])]),
             "parameters": .object(googleImagenParameters(for: request))
         ])
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", modelID: modelID, body: body, headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):predict", modelID: modelID, body: body, headers: request.headers)
+        let raw = response.json
         let images = raw["predictions"]?.arrayValue?.compactMap { $0["bytesBase64Encoded"]?.stringValue } ?? []
         guard !images.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No Imagen predictions found.")
         }
-        return ImageGenerationResult(urls: [], base64Images: images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 
     private func editImagen(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
@@ -248,18 +254,25 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             ])]),
             "parameters": .object(googleImagenEditParameters(for: request, options: options, edit: edit))
         ])
-        let raw = try await config.sendJSON(path: "/models/\(modelID):predict", modelID: modelID, body: body, headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):predict", modelID: modelID, body: body, headers: request.headers)
+        let raw = response.json
         let images = raw["predictions"]?.arrayValue?.compactMap { $0["bytesBase64Encoded"]?.stringValue } ?? []
         guard !images.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No Imagen edit predictions found.")
         }
-        return ImageGenerationResult(urls: [], base64Images: images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 
     private func generateGeminiImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         var body = GoogleGenerativeLanguageModel.imageGenerationContentBody(prompt: request.prompt, aspectRatio: googleAspectRatio(from: request))
         body.merge(request.extraBody) { _, new in new }
-        let raw = try await config.sendJSON(path: "/models/\(modelID):generateContent", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let parts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
         let images = parts.compactMap { part in
             part["inlineData"]?["data"]?.stringValue
@@ -267,7 +280,12 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
         guard !images.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No Gemini image inlineData found.")
         }
-        return ImageGenerationResult(urls: [], base64Images: images, rawValue: raw)
+        return ImageGenerationResult(
+            urls: [],
+            base64Images: images,
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
     }
 }
 
@@ -292,7 +310,8 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
             throw AIError.invalidResponse(provider: providerID, message: "Google video create response did not contain an operation name.")
         }
 
-        let finalOperation = try await pollOperation(named: operationName, headers: request.headers, timeoutNanoseconds: googlePollTimeout(request.extraBody), intervalNanoseconds: googlePollInterval(request.extraBody), abortSignal: request.abortSignal)
+        let finalResponse = try await pollOperationResponse(named: operationName, headers: request.headers, timeoutNanoseconds: googlePollTimeout(request.extraBody), intervalNanoseconds: googlePollInterval(request.extraBody), abortSignal: request.abortSignal)
+        let finalOperation = finalResponse.json
         let samples = finalOperation["response"]?["generateVideoResponse"]?["generatedSamples"]?.arrayValue ?? []
         let urls = samples.compactMap { sample in
             sample["video"]?["uri"]?.stringValue.map(googleVideoURLWithAPIKey)
@@ -300,10 +319,15 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
         guard !urls.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "Google video response did not contain generatedSamples video URIs.")
         }
-        return VideoGenerationResult(urls: urls, operationID: operationName, rawValue: finalOperation)
+        return VideoGenerationResult(
+            urls: urls,
+            operationID: operationName,
+            rawValue: finalOperation,
+            responseMetadata: aiResponseMetadata(from: finalOperation, response: finalResponse.response, modelID: modelID)
+        )
     }
 
-    private func pollOperation(named operationName: String, headers: [String: String], timeoutNanoseconds: UInt64, intervalNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollOperationResponse(named operationName: String, headers: [String: String], timeoutNanoseconds: UInt64, intervalNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         var latest: JSONValue?
         repeat {
@@ -322,7 +346,7 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
                 throw AIError.invalidResponse(provider: providerID, message: raw["error"]?["message"]?.stringValue ?? "Google video generation failed.")
             }
             if raw["done"]?.boolValue == true {
-                return raw
+                return (raw, response)
             }
             if intervalNanoseconds > 0 {
                 try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
