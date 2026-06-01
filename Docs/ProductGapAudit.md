@@ -77,8 +77,9 @@ Impact:
   provider-utils protection against localhost, private IP, link-local/cloud
   metadata, unsafe schemes, and IPv4-mapped private IPv6 targets. The shared
   download helper also validates `AIHTTPResponse.url` so URLSession redirects
-  cannot bypass the guard. Remaining hardening should add configurable download
-  size limits if/when a higher-level Swift download function lands.
+  cannot bypass the guard, and `AIHTTPRequest.maxResponseBytes` lets
+  URLSession-backed downloads enforce upstream's default 2 GiB ceiling while
+  reading bytes incrementally.
 - Tool execution exists for `generateText` and `streamText`, including
   upstream-style stop conditions and per-step request/model/tool preparation,
   but richer schema validation, provider-defined tool wrapping, and UI-facing
@@ -366,8 +367,10 @@ Progress:
    and MCP HTTP requests forward them to transport. Provider-returned and
    user-provided URLs fetched by SDK download fallbacks now pass through
    `validateDownloadURL(...)` before transport execution and validate the final
-   response URL after redirects when the transport exposes it. Next passes
-   should keep new provider and transport helpers covered by propagation tests.
+   response URL after redirects when the transport exposes it. `downloadURL(...)`
+   also sets `maxResponseBytes`, with URLSession checking `Content-Length` early
+   and aborting incremental reads that exceed the limit. Next passes should keep
+   new provider and transport helpers covered by propagation tests.
 
 4. **Facade pass 3: telemetry.**
    First telemetry slices are in place with `AITelemetryOptions`,

@@ -6,13 +6,31 @@ public struct AIHTTPRequest: Sendable {
     public var headers: [String: String]
     public var body: Data?
     public var abortSignal: AIAbortSignal?
+    public var maxResponseBytes: Int?
 
-    public init(method: String = "POST", url: URL, headers: [String: String] = [:], body: Data? = nil, abortSignal: AIAbortSignal? = nil) {
+    public init(method: String = "POST", url: URL, headers: [String: String] = [:], body: Data? = nil, abortSignal: AIAbortSignal? = nil, maxResponseBytes: Int? = nil) {
         self.method = method
         self.url = url
         self.headers = headers
         self.body = body
         self.abortSignal = abortSignal
+        self.maxResponseBytes = maxResponseBytes
+    }
+}
+
+public let AIDefaultMaxDownloadSize = 2 * 1024 * 1024 * 1024
+
+public struct AIDownloadError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var url: String
+    public var message: String
+
+    public init(url: String, message: String) {
+        self.url = url
+        self.message = message
+    }
+
+    public var description: String {
+        "Failed to download \(url): \(message)"
     }
 }
 
@@ -84,6 +102,18 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
         }
         let preparedRequest = urlRequest
 
+        if let maxResponseBytes = request.maxResponseBytes {
+            let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+            if let abortSignal = request.abortSignal {
+                (bytes, response) = try await raceAbortSignal(abortSignal) {
+                    try await self.session.bytes(for: preparedRequest)
+                }
+            } else {
+                (bytes, response) = try await session.bytes(for: preparedRequest)
+            }
+            return try await limitedHTTPResponse(bytes: bytes, response: response, request: request, maxResponseBytes: maxResponseBytes)
+        }
+
         let (data, response): (Data, URLResponse)
         if let abortSignal = request.abortSignal {
             (data, response) = try await raceAbortSignal(abortSignal) {
@@ -93,10 +123,7 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
             (data, response) = try await session.data(for: preparedRequest)
         }
         let httpResponse = response as? HTTPURLResponse
-        let headers = httpResponse?.allHeaderFields.reduce(into: [String: String]()) { partial, element in
-            guard let key = element.key as? String else { return }
-            partial[key] = String(describing: element.value)
-        } ?? [:]
+        let headers = httpHeaders(from: httpResponse)
         return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data, url: response.url)
     }
 
@@ -119,10 +146,7 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
             (bytes, response) = try await session.bytes(for: preparedRequest)
         }
         let httpResponse = response as? HTTPURLResponse
-        let headers = httpResponse?.allHeaderFields.reduce(into: [String: String]()) { partial, element in
-            guard let key = element.key as? String else { return }
-            partial[key] = String(describing: element.value)
-        } ?? [:]
+        let headers = httpHeaders(from: httpResponse)
         return AIHTTPStreamResponse(
             statusCode: httpResponse?.statusCode ?? 0,
             headers: headers,
@@ -150,6 +174,50 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
             }
         )
     }
+}
+
+private func limitedHTTPResponse(
+    bytes: URLSession.AsyncBytes,
+    response: URLResponse,
+    request: AIHTTPRequest,
+    maxResponseBytes: Int
+) async throws -> AIHTTPResponse {
+    let httpResponse = response as? HTTPURLResponse
+    let headers = httpHeaders(from: httpResponse)
+    let urlText = request.url.absoluteString
+    if let contentLength = httpResponse?.value(forHTTPHeaderField: "content-length"),
+       let length = Int(contentLength.trimmingCharacters(in: .whitespacesAndNewlines)),
+       length > maxResponseBytes {
+        throw AIDownloadError(
+            url: urlText,
+            message: "Download exceeded maximum size of \(maxResponseBytes) bytes (Content-Length: \(length))."
+        )
+    }
+
+    var data = Data()
+    let expectedLength = response.expectedContentLength > 0 ? Int(response.expectedContentLength) : 0
+    data.reserveCapacity(min(maxResponseBytes, expectedLength))
+    var totalBytes = 0
+    for try await byte in bytes {
+        try Task.checkCancellation()
+        totalBytes += 1
+        if totalBytes > maxResponseBytes {
+            throw AIDownloadError(
+                url: urlText,
+                message: "Download exceeded maximum size of \(maxResponseBytes) bytes."
+            )
+        }
+        data.append(byte)
+    }
+
+    return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data, url: response.url)
+}
+
+private func httpHeaders(from response: HTTPURLResponse?) -> [String: String] {
+    response?.allHeaderFields.reduce(into: [String: String]()) { partial, element in
+        guard let key = element.key as? String else { return }
+        partial[key] = String(describing: element.value)
+    } ?? [:]
 }
 
 private func raceAbortSignal<Output: Sendable>(
@@ -237,12 +305,19 @@ func downloadURL(
     _ string: String,
     transport: AITransport,
     headers: [String: String] = [:],
-    abortSignal: AIAbortSignal? = nil
+    abortSignal: AIAbortSignal? = nil,
+    maxBytes: Int = AIDefaultMaxDownloadSize
 ) async throws -> AIHTTPResponse {
     let url = try validateDownloadURL(string)
-    let response = try await transport.send(AIHTTPRequest(method: "GET", url: url, headers: headers, abortSignal: abortSignal))
+    let response = try await transport.send(AIHTTPRequest(method: "GET", url: url, headers: headers, abortSignal: abortSignal, maxResponseBytes: maxBytes))
     if let finalURL = response.url, finalURL != url {
         _ = try validateDownloadURL(finalURL.absoluteString)
+    }
+    if response.body.count > maxBytes {
+        throw AIDownloadError(
+            url: string,
+            message: "Download exceeded maximum size of \(maxBytes) bytes."
+        )
     }
     return response
 }

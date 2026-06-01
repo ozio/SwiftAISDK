@@ -104,4 +104,22 @@ import Testing
     let requests = await transport.requests()
     #expect(requests.count == 1)
     #expect(requests[0].url.absoluteString == "https://example.com/image.png")
+    #expect(requests[0].maxResponseBytes == AIDefaultMaxDownloadSize)
+}
+
+@Test func downloadURLRejectsBodiesOverCustomSizeLimit() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "image/png"],
+        body: Data("too-large".utf8),
+        url: URL(string: "https://example.com/image.png")!
+    ))
+
+    await #expect(throws: AIDownloadError.self) {
+        _ = try await downloadURL("https://example.com/image.png", transport: transport, maxBytes: 3)
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 1)
+    #expect(requests[0].maxResponseBytes == 3)
 }
