@@ -326,6 +326,11 @@ Impact:
   forwards abort signals, preserves response/provider metadata, and emits
   text/reasoning stream lifecycle parts while keeping the upstream mixed
   structured-output/tool-call normalization.
+- Alibaba chat now follows its native upstream model more closely: top-level
+  sampling, seed, reasoning budget, JSON response format, function tools/tool
+  choice, assistant tool-call history, tool-result messages, response metadata,
+  abort signals, unsupported `frequencyPenalty` warnings, and text/reasoning
+  stream lifecycle parts are covered by focused tests.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

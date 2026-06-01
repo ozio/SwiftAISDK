@@ -106,7 +106,7 @@ import Testing
 }
 
 @Test func alibabaLanguageUsesNativeMessageShapeAndThinkingOptions() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"role":"assistant","content":"dashscope text","reasoning_content":"thoughts"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}"#))
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"chatcmpl-alibaba-1","created":1710000000,"model":"qwen3-max","choices":[{"message":{"role":"assistant","content":"dashscope text","reasoning_content":"thoughts"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}"#, headers: ["x-dashscope": "yes"]))
     let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
     let model = try provider.languageModel("qwen3-max")
 
@@ -117,13 +117,21 @@ import Testing
         ],
         temperature: 0.2,
         topP: 0.8,
+        topK: 10,
+        frequencyPenalty: 0.5,
+        seed: 123,
         maxOutputTokens: 128,
         extraBody: ["enableThinking": true, "thinkingBudget": 512, "topK": 20, "presencePenalty": 0.1]
     ))
 
     #expect(result.text == "dashscope text")
+    #expect(result.reasoning == "thoughts")
     #expect(result.finishReason == "stop")
     #expect(result.usage?.totalTokens == 5)
+    #expect(result.warnings == [AIWarning(type: "unsupported", feature: "frequencyPenalty")])
+    #expect(result.responseMetadata.id == "chatcmpl-alibaba-1")
+    #expect(result.responseMetadata.modelID == "qwen3-max")
+    #expect(result.responseMetadata.headers["x-dashscope"] == "yes")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer dashscope-key")
@@ -143,11 +151,75 @@ import Testing
     #expect(body["thinking_budget"]?.intValue == 512)
     #expect(body["top_k"]?.intValue == 20)
     #expect(body["presence_penalty"]?.doubleValue == 0.1)
+    #expect(body["seed"]?.intValue == 123)
+    #expect(body["frequency_penalty"] == nil)
+}
+
+@Test func alibabaLanguageMapsStandardResponseFormatToolsAndToolHistory() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}"#))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.languageModel("qwen3-max")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            .user("Weather?"),
+            .assistant(toolCalls: [
+                AIToolCall(id: "call_weather", name: "weather", arguments: "{\"location\":\"Paris\"}")
+            ]),
+            .toolResult(AIToolResult(
+                toolCallID: "call_weather",
+                toolName: "weather",
+                result: ["ignored": true],
+                modelOutput: ["type": "json", "value": ["forecast": "sunny"]]
+            ))
+        ],
+        responseFormat: .json(
+            schema: [
+                "type": "object",
+                "properties": ["forecast": ["type": "string"]],
+                "required": ["forecast"]
+            ],
+            name: "weather_answer",
+            description: "Weather answer"
+        ),
+        reasoning: "medium",
+        tools: [
+            "weather": [
+                "type": "object",
+                "description": "Gets the weather",
+                "properties": ["location": ["type": "string"]],
+                "required": ["location"],
+                "strict": true
+            ]
+        ],
+        toolChoice: ["type": "tool", "toolName": "weather"],
+        extraBody: ["parallelToolCalls": false]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "weather_answer")
+    #expect(body["response_format"]?["json_schema"]?["description"]?.stringValue == "Weather answer")
+    #expect(body["tools"]?[0]?["type"]?.stringValue == "function")
+    #expect(body["tools"]?[0]?["function"]?["name"]?.stringValue == "weather")
+    #expect(body["tools"]?[0]?["function"]?["description"]?.stringValue == "Gets the weather")
+    #expect(body["tools"]?[0]?["function"]?["strict"]?.boolValue == true)
+    #expect(body["tools"]?[0]?["function"]?["parameters"]?["strict"] == nil)
+    #expect(body["tool_choice"]?["type"]?.stringValue == "function")
+    #expect(body["tool_choice"]?["function"]?["name"]?.stringValue == "weather")
+    #expect(body["parallel_tool_calls"]?.boolValue == false)
+    #expect(body["enable_thinking"]?.boolValue == true)
+    #expect(body["thinking_budget"]?.intValue == 4915)
+    #expect(body["messages"]?[1]?["tool_calls"]?[0]?["id"]?.stringValue == "call_weather")
+    #expect(body["messages"]?[1]?["tool_calls"]?[0]?["function"]?["name"]?.stringValue == "weather")
+    #expect(body["messages"]?[2]?["role"]?.stringValue == "tool")
+    #expect(body["messages"]?[2]?["tool_call_id"]?.stringValue == "call_weather")
+    #expect(body["messages"]?[2]?["content"]?.stringValue == "{\"forecast\":\"sunny\"}")
 }
 
 @Test func alibabaLanguageStreamsReasoningAndUsageOnlyChunk() async throws {
     let transport = RecordingTransport(response: sseResponse("""
-    data: {"choices":[{"delta":{"reasoning_content":"think"},"finish_reason":null}]}
+    data: {"id":"chatcmpl-alibaba-stream","created":1710000000,"model":"qwen3-max","choices":[{"delta":{"reasoning_content":"think"},"finish_reason":null}]}
 
     data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}
 
@@ -159,16 +231,30 @@ import Testing
     let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
     let model = try provider.languageModel("qwen3-max")
 
-    var text: [String] = []
-    var reasoning: [String] = []
+    var streamStartWarnings: [AIWarning]?
+    var responseMetadata: AIResponseMetadata?
+    var textLifecycle: [String] = []
+    var reasoningLifecycle: [String] = []
     var finishReason: String?
     var totalTokens: Int?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")], frequencyPenalty: 0.5)) {
         switch part {
-        case let .textDelta(delta):
-            text.append(delta)
-        case let .reasoningDelta(delta):
-            reasoning.append(delta)
+        case let .streamStart(warnings):
+            streamStartWarnings = warnings
+        case let .responseMetadata(metadata):
+            responseMetadata = metadata
+        case let .textStart(id, _):
+            textLifecycle.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            textLifecycle.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            textLifecycle.append("end:\(id)")
+        case let .reasoningStart(id, _):
+            reasoningLifecycle.append("start:\(id)")
+        case let .reasoningDeltaPart(id, delta, _):
+            reasoningLifecycle.append("delta:\(id):\(delta)")
+        case let .reasoningEnd(id, _):
+            reasoningLifecycle.append("end:\(id)")
         case let .finish(reason, usage):
             finishReason = reason
             totalTokens = usage?.totalTokens
@@ -177,8 +263,19 @@ import Testing
         }
     }
 
-    #expect(reasoning == ["think"])
-    #expect(text == ["answer"])
+    #expect(streamStartWarnings == [AIWarning(type: "unsupported", feature: "frequencyPenalty")])
+    #expect(responseMetadata?.id == "chatcmpl-alibaba-stream")
+    #expect(responseMetadata?.modelID == "qwen3-max")
+    #expect(reasoningLifecycle == [
+        "start:reasoning-0",
+        "delta:reasoning-0:think",
+        "end:reasoning-0"
+    ])
+    #expect(textLifecycle == [
+        "start:0",
+        "delta:0:answer",
+        "end:0"
+    ])
     #expect(finishReason == "stop")
     #expect(totalTokens == 3)
     let request = try #require(await transport.requests().first)
@@ -186,6 +283,7 @@ import Testing
     #expect(body["stream"] == true)
     #expect(body["stream_options"]?["include_usage"] == true)
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
+    #expect(body["frequency_penalty"] == nil)
 }
 
 @Test func alibabaLanguageParsesToolCalls() async throws {

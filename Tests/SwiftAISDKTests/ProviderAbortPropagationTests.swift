@@ -122,6 +122,33 @@ import Testing
     #expect(streamRequest.abortSignal === streamController.signal)
 }
 
+@Test func alibabaLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"id":"alibaba-1","model":"qwen3-max","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}
+    """))
+    let generateProvider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: generateTransport))
+    let generateModel = try generateProvider.languageModel("qwen3-max")
+    let generateController = AIAbortController()
+
+    _ = try await generateModel.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"id":"alibaba-1","model":"qwen3-max","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+    """))
+    let streamProvider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("qwen3-max")
+    let streamController = AIAbortController()
+
+    for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}
+
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.abortSignal === streamController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
