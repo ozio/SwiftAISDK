@@ -50,6 +50,61 @@ import Testing
     ])
 }
 
+@Test func mcpOAuthProtectedResourceDiscoveryRetriesWithoutProtocolHeaderAfterTransportError() async throws {
+    let transport = FailingDiscoveryTransport(actions: [
+        .fail,
+        .respond(jsonResponse("""
+        {
+          "resource": "https://resource.example.com",
+          "authorization_servers": ["https://auth.example.com"]
+        }
+        """))
+    ])
+
+    let metadata = try await MCPOAuthDiscovery.discoverProtectedResourceMetadata(
+        serverURL: "https://resource.example.com",
+        transport: transport
+    )
+
+    #expect(metadata.resource.absoluteString == "https://resource.example.com")
+    let requests = await transport.requests()
+    #expect(requests.map { $0.url.absoluteString } == [
+        "https://resource.example.com/.well-known/oauth-protected-resource",
+        "https://resource.example.com/.well-known/oauth-protected-resource"
+    ])
+    #expect(requests[0].headers["MCP-Protocol-Version"] == MCPClient.latestProtocolVersion)
+    #expect(requests[1].headers["MCP-Protocol-Version"] == nil)
+}
+
+@Test func mcpOAuthProtectedResourceDiscoveryFallsBackToRootAfterCORSRetry404() async throws {
+    let transport = FailingDiscoveryTransport(actions: [
+        .fail,
+        .respond(AIHTTPResponse(statusCode: 404)),
+        .respond(jsonResponse("""
+        {
+          "resource": "https://resource.example.com",
+          "authorization_servers": ["https://auth.example.com"]
+        }
+        """))
+    ])
+
+    let metadata = try await MCPOAuthDiscovery.discoverProtectedResourceMetadata(
+        serverURL: "https://resource.example.com/path/name",
+        transport: transport
+    )
+
+    #expect(metadata.authorizationServers.map(\.absoluteString) == ["https://auth.example.com"])
+    let requests = await transport.requests()
+    #expect(requests.map { $0.url.absoluteString } == [
+        "https://resource.example.com/.well-known/oauth-protected-resource/path/name",
+        "https://resource.example.com/.well-known/oauth-protected-resource/path/name",
+        "https://resource.example.com/.well-known/oauth-protected-resource"
+    ])
+    #expect(requests[0].headers["MCP-Protocol-Version"] != nil)
+    #expect(requests[1].headers["MCP-Protocol-Version"] == nil)
+    #expect(requests[2].headers["MCP-Protocol-Version"] != nil)
+}
+
 @Test func mcpOAuthProtectedResourceDiscoveryThrowsForMissingMetadata() async throws {
     let transport = RecordingTransport(responses: [
         AIHTTPResponse(statusCode: 404),
@@ -94,6 +149,64 @@ import Testing
     #expect(requests.map { $0.url.absoluteString } == [
         "https://auth.example.com/.well-known/oauth-authorization-server/tenant1",
         "https://auth.example.com/.well-known/oauth-authorization-server"
+    ])
+}
+
+@Test func mcpOAuthAuthorizationServerDiscoveryRetriesWithoutProtocolHeaderAfterTransportError() async throws {
+    let transport = FailingDiscoveryTransport(actions: [
+        .fail,
+        .respond(jsonResponse("""
+        {
+          "issuer": "https://auth.example.com",
+          "authorization_endpoint": "https://auth.example.com/authorize",
+          "token_endpoint": "https://auth.example.com/token",
+          "response_types_supported": ["code"],
+          "code_challenge_methods_supported": ["S256"]
+        }
+        """))
+    ])
+
+    let metadata = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata(
+        authorizationServerURL: "https://auth.example.com",
+        transport: transport
+    )
+
+    #expect(metadata?.issuer == "https://auth.example.com")
+    let requests = await transport.requests()
+    #expect(requests.map { $0.url.absoluteString } == [
+        "https://auth.example.com/.well-known/oauth-authorization-server",
+        "https://auth.example.com/.well-known/oauth-authorization-server"
+    ])
+    #expect(requests[0].headers["MCP-Protocol-Version"] != nil)
+    #expect(requests[1].headers["MCP-Protocol-Version"] == nil)
+}
+
+@Test func mcpOAuthAuthorizationServerDiscoveryReturnsNilWhenAllCORSRetriesFail() async throws {
+    let transport = FailingDiscoveryTransport(actions: Array(repeating: .fail, count: 8))
+
+    let metadata = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata(
+        authorizationServerURL: "https://auth.example.com/tenant1",
+        transport: transport
+    )
+
+    #expect(metadata == nil)
+    let requests = await transport.requests()
+    #expect(requests.count == 8)
+    #expect(requests.map { $0.headers["MCP-Protocol-Version"] != nil } == [
+        true, false,
+        true, false,
+        true, false,
+        true, false
+    ])
+    #expect(requests.map { $0.url.absoluteString } == [
+        "https://auth.example.com/.well-known/oauth-authorization-server/tenant1",
+        "https://auth.example.com/.well-known/oauth-authorization-server/tenant1",
+        "https://auth.example.com/.well-known/oauth-authorization-server",
+        "https://auth.example.com/.well-known/oauth-authorization-server",
+        "https://auth.example.com/.well-known/openid-configuration/tenant1",
+        "https://auth.example.com/.well-known/openid-configuration/tenant1",
+        "https://auth.example.com/tenant1/.well-known/openid-configuration",
+        "https://auth.example.com/tenant1/.well-known/openid-configuration"
     ])
 }
 
@@ -828,6 +941,39 @@ private actor TestOAuthClientProvider: MCPOAuthClientProvider {
 
     func invalidations() -> [MCPOAuthCredentialScope] {
         invalidationValues
+    }
+}
+
+private enum DiscoveryTransportAction: Sendable {
+    case fail
+    case respond(AIHTTPResponse)
+}
+
+private struct DiscoveryTransportError: Error {}
+
+private actor FailingDiscoveryTransport: AITransport {
+    private var recordedRequests: [AIHTTPRequest] = []
+    private var actions: [DiscoveryTransportAction]
+
+    init(actions: [DiscoveryTransportAction]) {
+        self.actions = actions
+    }
+
+    func requests() -> [AIHTTPRequest] {
+        recordedRequests
+    }
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        recordedRequests.append(request)
+        guard !actions.isEmpty else {
+            throw DiscoveryTransportError()
+        }
+        switch actions.removeFirst() {
+        case .fail:
+            throw DiscoveryTransportError()
+        case let .respond(response):
+            return response
+        }
     }
 }
 

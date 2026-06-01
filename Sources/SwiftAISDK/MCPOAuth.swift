@@ -789,17 +789,20 @@ public struct MCPOAuthDiscovery {
             wellKnownName: "oauth-protected-resource",
             includePath: true
         )
-        var response = try await discoveryGET(url: discoveryURL, protocolVersion: protocolVersion, transport: transport)
+        var response = try await discoveryGETWithHeaderRetry(url: discoveryURL, protocolVersion: protocolVersion, transport: transport)
 
         if resourceMetadataURL == nil,
            shouldFallbackToRoot(response: response, originalURL: serverURL) {
-            response = try await discoveryGET(
+            response = try await discoveryGETWithHeaderRetry(
                 url: mcpWellKnownURL(for: serverURL, wellKnownName: "oauth-protected-resource", includePath: false),
                 protocolVersion: protocolVersion,
                 transport: transport
             )
         }
 
+        guard let response else {
+            throw MCPClientError(message: "Resource server does not implement OAuth 2.0 Protected Resource Metadata.")
+        }
         if response.statusCode == 404 {
             throw MCPClientError(message: "Resource server does not implement OAuth 2.0 Protected Resource Metadata.")
         }
@@ -833,7 +836,13 @@ public struct MCPOAuthDiscovery {
         transport: any AITransport = URLSessionTransport.shared
     ) async throws -> MCPOAuthAuthorizationServerMetadata? {
         for discoveryURL in mcpAuthorizationServerDiscoveryURLs(authorizationServerURL) {
-            let response = try await discoveryGET(url: discoveryURL.url, protocolVersion: protocolVersion, transport: transport)
+            guard let response = try await discoveryGETWithHeaderRetry(
+                url: discoveryURL.url,
+                protocolVersion: protocolVersion,
+                transport: transport
+            ) else {
+                continue
+            }
             guard (200..<300).contains(response.statusCode) else {
                 if (400..<500).contains(response.statusCode) {
                     continue
@@ -878,8 +887,24 @@ private func discoveryGET(url: URL, protocolVersion: String, transport: any AITr
     try await transport.send(AIHTTPRequest(
         method: "GET",
         url: url,
-        headers: ["MCP-Protocol-Version": protocolVersion]
+        headers: protocolVersion.isEmpty ? [:] : ["MCP-Protocol-Version": protocolVersion]
     ))
+}
+
+private func discoveryGETWithHeaderRetry(
+    url: URL,
+    protocolVersion: String,
+    transport: any AITransport
+) async throws -> AIHTTPResponse? {
+    do {
+        return try await discoveryGET(url: url, protocolVersion: protocolVersion, transport: transport)
+    } catch {
+        do {
+            return try await discoveryGET(url: url, protocolVersion: "", transport: transport)
+        } catch {
+            return nil
+        }
+    }
 }
 
 private func tokenRequest(
@@ -1051,8 +1076,9 @@ private func urlFormEncode(_ value: String) -> String {
     return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
 }
 
-private func shouldFallbackToRoot(response: AIHTTPResponse, originalURL: URL) -> Bool {
+private func shouldFallbackToRoot(response: AIHTTPResponse?, originalURL: URL) -> Bool {
     guard originalURL.path != "" && originalURL.path != "/" else { return false }
+    guard let response else { return true }
     return (400..<500).contains(response.statusCode)
 }
 

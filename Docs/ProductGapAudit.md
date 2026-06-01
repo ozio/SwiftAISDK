@@ -208,7 +208,9 @@ Impact:
   `MCPOAuthDiscovery` now mirrors upstream OAuth metadata discovery for MCP
   resources: it discovers protected-resource metadata, tries path-aware URLs
   before root fallback, resolves OAuth/OIDC authorization-server metadata, and
-  rejects OIDC metadata that cannot support S256 PKCE.
+  rejects OIDC metadata that cannot support S256 PKCE. It also retries metadata
+  discovery without the MCP protocol header after transport failures, matching
+  upstream's browser/CORS fallback behavior.
   `MCPOAuth` now covers the next helper layer: PKCE authorization URL creation,
   authorization-code exchange, refresh-token exchange with refresh-token
   preservation, OAuth server error parsing, client authentication method
@@ -231,10 +233,9 @@ Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
 provider-defined tool schema adapters, richer provider-native handling for
-multimodal `modelOutput`, finer MCP OAuth parity such as browser-specific CORS
-retry behavior, richer stream tool lifecycle events, and provider-executed
-approval response mapping for non-OpenAI providers that expose an equivalent
-native wire format. Keep
+multimodal `modelOutput`, richer stream tool lifecycle events, and
+provider-executed approval response mapping for non-OpenAI providers that expose
+an equivalent native wire format. Keep
 provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -351,8 +352,7 @@ Progress:
    resources, resource templates, prompts, incoming elicitation requests, and
    MCP-style tool model-output conversion and first-pass Streamable HTTP
    session plus streaming semantics. Next passes should add typed validation
-   errors, provider-executed approval responses, finer MCP OAuth parity such
-   as browser-specific CORS retry behavior, and richer stream lifecycle
+   errors, provider-executed approval responses, and richer stream lifecycle
    handling.
 
 6. **Object generation pass.**

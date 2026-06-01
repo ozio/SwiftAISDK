@@ -369,7 +369,9 @@ let protectedMCP = try await MCPClient.connect(
 Use `MCPOAuthDiscovery` when an MCP resource advertises OAuth metadata. It
 tries upstream-compatible protected-resource metadata URLs, falls back from
 path-aware discovery to root discovery on 4xx responses, and can resolve OAuth
-or OIDC authorization-server metadata:
+or OIDC authorization-server metadata. Metadata discovery retries without the
+MCP protocol header after transport failures, matching upstream's browser/CORS
+fallback:
 
 ```swift
 let resource = try await MCPOAuthDiscovery.discoverProtectedResourceMetadata(
