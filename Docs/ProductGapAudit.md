@@ -126,8 +126,11 @@ Impact:
   tools and honoring `structuredOutputs: false`. Google Interactions now maps
   standard JSON response formats into `response_format` text entries, appends
   provider-defined response-format entries, and warns while dropping call-level
-  structured output when an agent is selected. Richer provider-specific
-  structured-output passes still need follow-up work.
+  structured output when an agent is selected. Perplexity now maps standard
+  JSON response formats into native `response_format.type=json_schema`
+  requests, keeps Perplexity-specific options scoped, returns upstream-style
+  warnings for unsupported call settings, and preserves response metadata.
+  Richer provider-specific structured-output passes still need follow-up work.
 - `customProvider(...)` exists as a Swift-native composition layer for local
   model maps, fallback providers, and files/skills clients.
   `createProviderRegistry(...)` also routes combined IDs such as

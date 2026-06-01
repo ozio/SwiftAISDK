@@ -360,6 +360,72 @@ import Testing
     #expect(content?[2]?["file_name"]?.stringValue == "document-2.pdf")
 }
 
+@Test func perplexityLanguageMapsStructuredFormatWarningsAndMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"ppl-structured","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"{\\"ok\\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":6,"total_tokens":11}}
+    """, headers: ["pplx-header": "structured"]))
+    let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
+    let model = try provider.languageModel("sonar")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("JSON")],
+        topK: 3,
+        presencePenalty: 0.2,
+        frequencyPenalty: 0.4,
+        seed: 42,
+        maxOutputTokens: 32,
+        stopSequences: ["###"],
+        responseFormat: .json(schema: [
+            "type": "object",
+            "properties": ["ok": ["type": "boolean"]],
+            "required": ["ok"]
+        ]),
+        reasoning: "custom",
+        providerOptions: [
+            "perplexity": [
+                "search_recency_filter": "month"
+            ]
+        ],
+        extraBody: [
+            "perplexity": [
+                "return_images": true
+            ],
+            "responseFormat": [
+                "type": "json",
+                "schema": ["type": "string"]
+            ]
+        ]
+    ))
+
+    #expect(result.text == "{\"ok\":true}")
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "topK"),
+        AIWarning(type: "unsupported", feature: "stopSequences"),
+        AIWarning(type: "unsupported", feature: "seed"),
+        AIWarning(type: "unsupported", feature: "reasoning", message: "This provider does not support reasoning configuration.")
+    ])
+    #expect(result.responseMetadata.id == "ppl-structured")
+    #expect(result.responseMetadata.modelID == "sonar")
+    #expect(result.responseMetadata.headers["pplx-header"] == "structured")
+    #expect(result.responseMetadata.body?["usage"]?["total_tokens"]?.intValue == 11)
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["type"]?.stringValue == "object")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["properties"]?["ok"]?["type"]?.stringValue == "boolean")
+    #expect(body["responseFormat"] == nil)
+    #expect(body["top_k"]?.intValue == 3)
+    #expect(body["presence_penalty"]?.doubleValue == 0.2)
+    #expect(body["frequency_penalty"]?.doubleValue == 0.4)
+    #expect(body["max_tokens"]?.intValue == 32)
+    #expect(body["stop"] == nil)
+    #expect(body["seed"] == nil)
+    #expect(body["reasoning"] == nil)
+    #expect(body["return_images"]?.boolValue == true)
+    #expect(body["search_recency_filter"]?.stringValue == "month")
+    #expect(body["perplexity"] == nil)
+}
+
 @Test func perplexityLanguageStreamsNativeChunksWithUsage() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"hel"},"finish_reason":null}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3},"citations":["https://example.com/a"]}
@@ -375,6 +441,7 @@ import Testing
     var deltas: [String] = []
     var sources: [AISource] = []
     var totalTokens: Int?
+    var metadata: AIResponseMetadata?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
         case let .textDelta(delta):
@@ -383,6 +450,8 @@ import Testing
             sources.append(source)
         case let .finish(_, usage):
             totalTokens = usage?.totalTokens
+        case let .responseMetadata(value):
+            metadata = value
         default:
             break
         }
@@ -394,6 +463,7 @@ import Testing
     #expect(sources[0].url == "https://example.com/a")
     #expect(sources[0].providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
     #expect(totalTokens == 4)
+    #expect(metadata?.modelID == "sonar")
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)

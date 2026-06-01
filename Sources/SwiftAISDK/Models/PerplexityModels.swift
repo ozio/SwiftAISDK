@@ -11,12 +11,15 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(
+        let prepared = perplexityPreparedCall(for: request, modelID: modelID, stream: false)
+        let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
-            body: .object(perplexityBody(for: request, modelID: modelID, stream: false)),
-            headers: request.headers
+            body: .object(prepared.body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
         )
+        let raw = response.json
         let choice = raw["choices"]?[0]
         guard let text = choice?["message"]?["content"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Perplexity response.")
@@ -26,7 +29,9 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
             finishReason: choice?["finish_reason"]?.stringValue,
             usage: tokenUsage(from: raw),
             sources: perplexitySources(from: raw["citations"]),
-            rawValue: raw
+            rawValue: raw,
+            warnings: prepared.warnings,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -34,12 +39,17 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let body = JSONValue.object(perplexityBody(for: request, modelID: modelID, stream: true))
-                    let response = try await config.transport.send(config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers))
+                    let prepared = perplexityPreparedCall(for: request, modelID: modelID, stream: true)
+                    let body = JSONValue.object(prepared.body)
+                    let response = try await config.transport.send(config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
 
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    if !prepared.warnings.isEmpty {
+                        continuation.yield(.streamStart(warnings: prepared.warnings))
+                    }
                     var latestUsage: TokenUsage?
                     var emittedSourceURLs: Set<String> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -70,7 +80,14 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
     }
 }
 
-private func perplexityBody(for request: LanguageModelRequest, modelID: String, stream: Bool) -> [String: JSONValue] {
+private struct PerplexityPreparedCall {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
+
+private func perplexityPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> PerplexityPreparedCall {
+    var options = perplexityProviderOptions(from: request)
+    let responseFormat = perplexityResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
         "messages": .array(request.messages.map(perplexityMessageJSON))
@@ -78,9 +95,81 @@ private func perplexityBody(for request: LanguageModelRequest, modelID: String, 
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
     if let topP = request.topP { body["top_p"] = .number(topP) }
+    if let topK = request.topK { body["top_k"] = .number(Double(topK)) }
+    if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
+    if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
     if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
-    body.merge(request.extraBody) { _, new in new }
-    return body
+    if let responseFormat = perplexityResponseFormat(from: responseFormat) {
+        body["response_format"] = responseFormat
+    }
+    body.merge(options) { _, new in new }
+    return PerplexityPreparedCall(body: body, warnings: perplexityWarnings(for: request))
+}
+
+private func perplexityProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+    var output = request.extraBody
+    if let nested = output.removeValue(forKey: "perplexity")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    if let nested = request.providerOptions["perplexity"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    return output
+}
+
+private func perplexityResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
+    if let responseFormat = request.responseFormat {
+        options.removeValue(forKey: "responseFormat")
+        return perplexityResponseFormatJSON(responseFormat)
+    }
+    return options.removeValue(forKey: "responseFormat")
+}
+
+private func perplexityResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
+}
+
+private func perplexityResponseFormat(from value: JSONValue?) -> JSONValue? {
+    guard value?["type"]?.stringValue == "json" else { return nil }
+    var jsonSchema: [String: JSONValue] = [:]
+    if let schema = value?["schema"] {
+        jsonSchema["schema"] = schema
+    }
+    return .object([
+        "type": .string("json_schema"),
+        "json_schema": .object(jsonSchema)
+    ])
+}
+
+private func perplexityWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.topK != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "topK"))
+    }
+    if !request.stopSequences.isEmpty {
+        warnings.append(AIWarning(type: "unsupported", feature: "stopSequences"))
+    }
+    if request.seed != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "seed"))
+    }
+    if request.reasoning != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "reasoning",
+            message: "This provider does not support reasoning configuration."
+        ))
+    }
+    return warnings
 }
 
 private func perplexitySources(from citations: JSONValue?) -> [AISource] {
