@@ -455,9 +455,10 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                                 }
                             }
                         }
-                        if eventType == "step.stop",
-                           let finalCall = toolCalls.stop(index: raw["index"]?.intValue) {
-                            continuation.yield(.toolCall(finalCall))
+                        if eventType == "step.stop" {
+                            for part in toolCalls.stop(index: raw["index"]?.intValue) {
+                                continuation.yield(part)
+                            }
                         }
                         if eventType == "interaction.completed" || eventType == "interaction.failed" || eventType == "interaction.incomplete" || eventType == "interaction.cancelled" {
                             let interaction = raw["interaction"] ?? raw
@@ -987,6 +988,7 @@ private struct GoogleInteractionsToolCallBuffer {
     var id: String
     var name: String
     var arguments: String
+    var inputStarted: Bool
     var rawValue: JSONValue?
 }
 
@@ -1001,8 +1003,19 @@ private struct GoogleInteractionsStreamingToolCalls {
         }
         let id = step["id"]?.stringValue ?? "tool-call-\(key)"
         let arguments = googleInteractionsArguments(step["arguments"])
-        buffers[key] = GoogleInteractionsToolCallBuffer(id: id, name: name, arguments: arguments == "{}" ? "" : arguments, rawValue: step)
-        return arguments == "{}" ? [] : [.toolCallDelta(id: id, name: name, argumentsDelta: arguments, index: key)]
+        buffers[key] = GoogleInteractionsToolCallBuffer(
+            id: id,
+            name: name,
+            arguments: arguments == "{}" ? "" : arguments,
+            inputStarted: true,
+            rawValue: step
+        )
+        var parts: [LanguageStreamPart] = [.toolInputStart(id: id, name: name)]
+        if arguments != "{}" {
+            parts.append(.toolCallDelta(id: id, name: name, argumentsDelta: arguments, index: key))
+            parts.append(.toolInputDelta(id: id, delta: arguments))
+        }
+        return parts
     }
 
     mutating func delta(_ delta: JSONValue, index: Int?) -> [LanguageStreamPart] {
@@ -1014,20 +1027,27 @@ private struct GoogleInteractionsStreamingToolCalls {
         buffer.arguments += argumentsDelta
         buffer.rawValue = delta
         buffers[key] = buffer
-        return [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: argumentsDelta, index: key)]
+        var parts: [LanguageStreamPart] = [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: argumentsDelta, index: key)]
+        if !argumentsDelta.isEmpty {
+            parts.append(.toolInputDelta(id: buffer.id, delta: argumentsDelta))
+        }
+        return parts
     }
 
-    mutating func stop(index: Int?) -> AIToolCall? {
+    mutating func stop(index: Int?) -> [LanguageStreamPart] {
         let key = index ?? 0
         guard let buffer = buffers[key] else {
-            return nil
+            return []
         }
-        return AIToolCall(
+        return [
+            .toolInputEnd(id: buffer.id),
+            .toolCall(AIToolCall(
             id: buffer.id,
             name: buffer.name,
             arguments: buffer.arguments.isEmpty ? "{}" : buffer.arguments,
             rawValue: buffer.rawValue
-        )
+            ))
+        ]
     }
 }
 

@@ -281,10 +281,17 @@ private struct OpenAIObjectAnswer: Codable, Equatable, Sendable {
     let model = try provider.chatModel("gpt-4.1-mini")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var finalCall: AIToolCall?
     var finishReason: String?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Use a tool.")])) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -297,6 +304,12 @@ private struct OpenAIObjectAnswer: Codable, Equatable, Sendable {
     }
 
     #expect(deltas == ["{\"query\":", "\"weather\"}"])
+    #expect(inputLifecycle == [
+        "start:call_1:lookup",
+        "delta:call_1:{\"query\":",
+        "delta:call_1:\"weather\"}",
+        "end:call_1"
+    ])
     #expect(finalCall?.id == "call_1")
     #expect(finalCall?.name == "lookup")
     #expect(finalCall?.arguments == #"{"query":"weather"}"#)

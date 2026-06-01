@@ -421,10 +421,17 @@ import Testing
     let model = try provider.languageModel("gpt-5.1")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var toolCall: AIToolCall?
     var finishReason: String?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Use a tool.")])) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -437,6 +444,12 @@ import Testing
     }
 
     #expect(deltas == ["", "{\"query\":", "\"weather\"}"])
+    #expect(inputLifecycle == [
+        "start:call_1:lookup",
+        "delta:call_1:{\"query\":",
+        "delta:call_1:\"weather\"}",
+        "end:call_1"
+    ])
     #expect(toolCall?.id == "call_1")
     #expect(toolCall?.name == "lookup")
     #expect(toolCall?.arguments == #"{"query":"weather"}"#)

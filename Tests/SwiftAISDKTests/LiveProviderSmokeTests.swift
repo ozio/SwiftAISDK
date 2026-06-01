@@ -55,6 +55,14 @@ import Testing
     try await LiveProviderSmoke.assertToolLoop(model: model, maxOutputTokens: 64)
 }
 
+@Test func liveProviderSmokeOpenAIStreamToolLoop() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.openAIProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_OPENAI_MODEL", defaultValue: "gpt-4.1-mini"))
+    try await LiveProviderSmoke.assertStreamToolLoop(model: model, maxOutputTokens: 64, expectsToolInputLifecycle: true)
+}
+
 @Test func liveProviderSmokeAnthropicGenerateText() async throws {
     guard LiveProviderSmoke.isEnabled else { return }
 
@@ -95,6 +103,14 @@ import Testing
     let provider = try LiveProviderSmoke.anthropicProvider()
     let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_ANTHROPIC_MODEL", defaultValue: "claude-haiku-4-5-20251001"))
     try await LiveProviderSmoke.assertToolLoop(model: model, maxOutputTokens: 96)
+}
+
+@Test func liveProviderSmokeAnthropicStreamToolLoop() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.anthropicProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_ANTHROPIC_MODEL", defaultValue: "claude-haiku-4-5-20251001"))
+    try await LiveProviderSmoke.assertStreamToolLoop(model: model, maxOutputTokens: 96, expectsToolInputLifecycle: false)
 }
 
 @Test func liveProviderSmokeGoogleGenerateText() async throws {
@@ -150,6 +166,14 @@ import Testing
     try await LiveProviderSmoke.assertToolLoop(model: model, maxOutputTokens: 96)
 }
 
+@Test func liveProviderSmokeGoogleStreamToolLoop() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.googleProvider()
+    let model = try provider.languageModel(LiveProviderSmoke.modelID(environmentVariable: "LIVE_GOOGLE_MODEL", defaultValue: "gemini-flash-lite-latest"))
+    try await LiveProviderSmoke.assertStreamToolLoop(model: model, maxOutputTokens: 96, expectsToolInputLifecycle: true)
+}
+
 private enum LiveProviderSmoke {
     static var isEnabled: Bool {
         ProcessInfo.processInfo.environment["LIVE_AI_TESTS"] == "1"
@@ -187,22 +211,7 @@ private enum LiveProviderSmoke {
 
     static func assertToolLoop(model: any LanguageModel, maxOutputTokens: Int) async throws {
         let tracker = LiveToolTracker()
-        let tool = AITool(
-            name: "lookup_weather",
-            description: "Looks up a deterministic weather forecast for a city.",
-            parameters: [
-                "type": "object",
-                "properties": [
-                    "city": [
-                        "type": "string",
-                        "description": "City name to look up."
-                    ]
-                ],
-                "required": ["city"]
-            ]
-        ) { arguments in
-            await tracker.record(city: arguments["city"]?.stringValue)
-        }
+        let tool = weatherTool(tracker: tracker)
 
         let result = try await AI.generateText(
             model: model,
@@ -219,6 +228,69 @@ private enum LiveProviderSmoke {
         #expect(result.toolResults.count == 1)
         #expect(result.toolResults.first?.result["forecast"]?.stringValue == "sunny")
         #expect(!result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    static func assertStreamToolLoop(model: any LanguageModel, maxOutputTokens: Int, expectsToolInputLifecycle: Bool) async throws {
+        let tracker = LiveToolTracker()
+        let tool = weatherTool(tracker: tracker)
+
+        var text = ""
+        var toolResults: [AIToolResult] = []
+        var toolInputStarts = 0
+        var toolInputEnds = 0
+        for try await part in AI.streamText(
+            model: model,
+            prompt: "Use the lookup_weather tool exactly once for Tokyo. Then reply with the forecast word only.",
+            temperature: 0,
+            maxOutputTokens: maxOutputTokens,
+            executableTools: [tool],
+            maxSteps: 2,
+            retryPolicy: .none
+        ) {
+            switch part {
+            case let .textDelta(delta):
+                text += delta
+            case let .textDeltaPart(_, delta, _):
+                text += delta
+            case let .toolResult(result):
+                toolResults.append(result)
+            case .toolInputStart(_, _, _, _, _, _):
+                toolInputStarts += 1
+            case .toolInputEnd(_, _):
+                toolInputEnds += 1
+            default:
+                break
+            }
+        }
+
+        let toolCallCount = await tracker.count()
+        #expect(toolCallCount == 1)
+        #expect(toolResults.count == 1)
+        #expect(toolResults.first?.result["forecast"]?.stringValue == "sunny")
+        #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if expectsToolInputLifecycle {
+            #expect(toolInputStarts >= 1)
+            #expect(toolInputEnds >= 1)
+        }
+    }
+
+    static func weatherTool(tracker: LiveToolTracker) -> AITool {
+        AITool(
+            name: "lookup_weather",
+            description: "Looks up a deterministic weather forecast for a city.",
+            parameters: [
+                "type": "object",
+                "properties": [
+                    "city": [
+                        "type": "string",
+                        "description": "City name to look up."
+                    ]
+                ],
+                "required": ["city"]
+            ]
+        ) { arguments in
+            await tracker.record(city: arguments["city"]?.stringValue)
+        }
     }
 
     static func modelID(environmentVariable: String, defaultValue: String) -> String {

@@ -603,7 +603,7 @@ LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
 ```
 
 The live suite covers first-party text generation, text streaming, executable
-tool loops, and representative embeddings. Override model IDs with
+generate/stream tool loops, and representative embeddings. Override model IDs with
 `LIVE_OPENAI_MODEL`, `LIVE_ANTHROPIC_MODEL`, `LIVE_GOOGLE_MODEL`,
 `LIVE_OPENAI_EMBEDDING_MODEL`, and `LIVE_GOOGLE_EMBEDDING_MODEL`.
 

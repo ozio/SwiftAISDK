@@ -154,10 +154,12 @@ The Swift contract keeps only a compact subset. For example:
 
 - `LanguageModelRequest` has temperature, topP, maxOutputTokens, stopSequences,
   tools as raw `JSONValue`, `extraBody`, and headers.
-- `LanguageStreamPart` has text/reasoning deltas, tool-call deltas/final calls,
-  source, metadata, raw, and finish, but no stream-start warnings, response
-  metadata event, tool input lifecycle, tool results, approval requests, files,
-  streamed errors, or per-part provider metadata.
+- `LanguageStreamPart` has v4-shaped lifecycle cases, but provider population
+  is still uneven: OpenAI-compatible chat/responses, Google GenerateContent,
+  Google Interactions, and native Bedrock streams now emit tool input
+  start/delta/end parts alongside final tool calls, while the remaining native
+  language stream parsers still need the same treatment where upstream exposes
+  equivalent events.
 - `TranscriptionResult` now has text, raw JSON, segments, language, duration,
   warnings, request/response info, and provider metadata, but provider passes
   still need to keep filling those fields wherever upstream exposes them.
@@ -255,6 +257,12 @@ Impact:
 - Google GenerateContent now preserves `thoughtSignature` provider metadata on
   function-call parts and replays it on assistant tool-call history, matching
   upstream's requirement for live Gemini tool loops.
+- Tool streams for OpenAI-compatible chat/responses, Google GenerateContent,
+  Google Interactions, and native Bedrock now emit upstream-style
+  `LanguageStreamPart.toolInputStart`, `.toolInputDelta`, and `.toolInputEnd`
+  parts in addition to legacy `.toolCallDelta` and final `.toolCall` parts, so
+  consumers can observe argument assembly without waiting for the final tool
+  call.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`
@@ -359,7 +367,7 @@ Impact:
   risk is that a provider pass forgets to update the source inventory itself.
 - Mock transport tests prove wire shape, and the opt-in live smoke suite now
   covers representative first-party text generation, text streaming, executable
-  tool loops, and embeddings.
+  generate/stream tool loops, and embeddings.
 - A user can start from the README and generated matrix, but there is not yet a
   per-provider cookbook.
 

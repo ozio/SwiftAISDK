@@ -465,18 +465,14 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                         }
                         if let toolCallDeltas = delta?["tool_calls"]?.arrayValue {
                             for toolCallDelta in toolCallDeltas {
-                                let update = toolCalls.apply(delta: toolCallDelta)
-                                continuation.yield(.toolCallDelta(
-                                    id: update.id,
-                                    name: update.name,
-                                    argumentsDelta: update.argumentsDelta,
-                                    index: update.index
-                                ))
+                                for part in toolCalls.apply(delta: toolCallDelta) {
+                                    continuation.yield(part)
+                                }
                             }
                         }
                         if let reason = choice?["finish_reason"]?.stringValue {
-                            for toolCall in toolCalls.finishedCalls() {
-                                continuation.yield(.toolCall(toolCall))
+                            for part in toolCalls.finishedParts() {
+                                continuation.yield(part)
                             }
                             let finishReason = openAICompatibleFinishReason(reason)
                             let finishUsage = usage(from: raw)
@@ -807,13 +803,14 @@ private struct OpenAICompatibleToolCallBuffer {
     var id: String?
     var name: String?
     var arguments: String = ""
+    var inputStarted = false
     var rawValue: JSONValue?
 }
 
 private struct OpenAICompatibleStreamingToolCalls {
     private var buffers: [Int: OpenAICompatibleToolCallBuffer] = [:]
 
-    mutating func apply(delta: JSONValue) -> (id: String?, name: String?, argumentsDelta: String, index: Int?) {
+    mutating func apply(delta: JSONValue) -> [LanguageStreamPart] {
         let index = delta["index"]?.intValue ?? 0
         var buffer = buffers[index] ?? OpenAICompatibleToolCallBuffer()
         if let id = delta["id"]?.stringValue {
@@ -827,19 +824,43 @@ private struct OpenAICompatibleStreamingToolCalls {
             buffer.arguments += argumentsDelta
         }
         buffer.rawValue = delta
+        let id = buffer.id ?? "tool-call-\(index)"
+        var parts: [LanguageStreamPart] = []
+        if !buffer.inputStarted, let name = buffer.name {
+            parts.append(.toolInputStart(id: id, name: name))
+            buffer.inputStarted = true
+        }
+        parts.append(.toolCallDelta(
+            id: buffer.id,
+            name: buffer.name,
+            argumentsDelta: argumentsDelta,
+            index: index
+        ))
+        if !argumentsDelta.isEmpty, buffer.inputStarted {
+            parts.append(.toolInputDelta(id: id, delta: argumentsDelta))
+        }
         buffers[index] = buffer
-        return (buffer.id, buffer.name, argumentsDelta, index)
+        return parts
     }
 
-    func finishedCalls() -> [AIToolCall] {
-        buffers.keys.sorted().compactMap { index in
-            guard let buffer = buffers[index], let name = buffer.name else { return nil }
-            return AIToolCall(
+    mutating func finishedParts() -> [LanguageStreamPart] {
+        buffers.keys.sorted().flatMap { index -> [LanguageStreamPart] in
+            guard var buffer = buffers[index], let name = buffer.name else { return [] }
+            let id = buffer.id ?? "tool-call-\(index)"
+            var parts: [LanguageStreamPart] = []
+            if !buffer.inputStarted {
+                parts.append(.toolInputStart(id: id, name: name))
+                buffer.inputStarted = true
+                buffers[index] = buffer
+            }
+            parts.append(.toolInputEnd(id: id))
+            parts.append(.toolCall(AIToolCall(
                 id: buffer.id ?? "tool-call-\(index)",
                 name: name,
                 arguments: buffer.arguments,
                 rawValue: buffer.rawValue
-            )
+            )))
+            return parts
         }
     }
 }
@@ -1517,21 +1538,33 @@ private struct OpenAIResponsesStreamingToolCalls {
                 id: toolCall.id,
                 name: toolCall.name,
                 arguments: "",
+                inputStarted: true,
                 rawValue: item
             )
-            return [.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: "", index: index)]
+            return [
+                .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted, dynamic: toolCall.dynamic, providerMetadata: toolCall.providerMetadata),
+                .toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: "", index: index)
+            ]
         case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
             guard let index = raw["output_index"]?.intValue else { return [] }
             var buffer = buffers[index] ?? OpenAICompatibleToolCallBuffer()
             let delta = raw["delta"]?.stringValue ?? ""
             buffer.arguments += delta
             buffers[index] = buffer
-            return [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: delta, index: index)]
+            let id = buffer.id ?? "tool-call-\(index)"
+            var parts: [LanguageStreamPart] = [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: delta, index: index)]
+            if !delta.isEmpty {
+                parts.append(.toolInputDelta(id: id, delta: delta))
+            }
+            return parts
         case "response.output_item.done":
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
             buffers[index] = nil
             guard let toolCall = openAIResponsesToolCall(from: item) else { return [] }
-            var parts: [LanguageStreamPart] = [.toolCall(toolCall)]
+            var parts: [LanguageStreamPart] = [
+                .toolInputEnd(id: toolCall.id),
+                .toolCall(toolCall)
+            ]
             if let approvalRequest = openAIResponsesToolApprovalRequest(from: item) {
                 parts.append(.toolApprovalRequest(approvalRequest))
             }

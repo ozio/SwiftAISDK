@@ -103,10 +103,7 @@ func streamFromGoogleGenerateContent(providerID: String, response: AIHTTPRespons
                 }
             }
             if let functionCall = contentPart["functionCall"] {
-                let updates = toolCalls.apply(functionCall: functionCall, rawValue: contentPart)
-                parts.append(contentsOf: updates.map {
-                    .toolCallDelta(id: $0.id, name: $0.name, argumentsDelta: $0.argumentsDelta, index: $0.index)
-                })
+                parts.append(contentsOf: toolCalls.apply(functionCall: functionCall, rawValue: contentPart))
             }
         }
 
@@ -115,8 +112,8 @@ func streamFromGoogleGenerateContent(providerID: String, response: AIHTTPRespons
         }
     }
 
-    let finalToolCalls = toolCalls.finishedCalls()
-    parts.append(contentsOf: finalToolCalls.map(LanguageStreamPart.toolCall))
+    let finalToolCalls = toolCalls.finishedParts()
+    parts.append(contentsOf: finalToolCalls)
     if latestFinishReason != nil || latestUsage != nil {
         parts.append(.finish(
             reason: googleGenerateContentFinishReason(latestFinishReason, hasToolCalls: !finalToolCalls.isEmpty),
@@ -288,6 +285,7 @@ private struct GoogleGenerateContentToolCallBuffer {
     var id: String?
     var name: String?
     var arguments: [String: JSONValue] = [:]
+    var inputStarted = false
     var providerMetadata: [String: JSONValue] = [:]
     var rawValue: JSONValue?
 }
@@ -296,7 +294,7 @@ private struct GoogleGenerateContentStreamingToolCalls {
     private var buffers: [Int: GoogleGenerateContentToolCallBuffer] = [:]
     private var activeIndex: Int = 0
 
-    mutating func apply(functionCall: JSONValue, rawValue: JSONValue) -> [(id: String?, name: String?, argumentsDelta: String, index: Int?)] {
+    mutating func apply(functionCall: JSONValue, rawValue: JSONValue) -> [LanguageStreamPart] {
         if functionCall.objectValue?.isEmpty == true {
             return []
         }
@@ -321,11 +319,19 @@ private struct GoogleGenerateContentStreamingToolCalls {
         }
         buffer.rawValue = rawValue
 
-        var emitted: [(id: String?, name: String?, argumentsDelta: String, index: Int?)] = []
+        var emitted: [LanguageStreamPart] = []
+        let id = buffer.id ?? "tool-call-\(index)"
+        if !buffer.inputStarted, let name = buffer.name {
+            emitted.append(.toolInputStart(id: id, name: name, providerMetadata: buffer.providerMetadata))
+            buffer.inputStarted = true
+        }
         if let args = functionCall["args"] {
             let arguments = googleGenerateContentArguments(args)
             buffer.arguments = args.objectValue ?? [:]
-            emitted.append((buffer.id, buffer.name, arguments, index))
+            emitted.append(.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: arguments, index: index))
+            if buffer.inputStarted {
+                emitted.append(.toolInputDelta(id: id, delta: arguments, providerMetadata: buffer.providerMetadata))
+            }
         }
         if let partialArgs = functionCall["partialArgs"]?.arrayValue {
             for partialArg in partialArgs {
@@ -333,7 +339,10 @@ private struct GoogleGenerateContentStreamingToolCalls {
                 let value = googlePartialArgValue(partialArg)
                 googleSetPartialArgument(path: path, value: value, in: &buffer.arguments)
                 let argumentsDelta = googleGenerateContentArguments(.object(buffer.arguments))
-                emitted.append((buffer.id, buffer.name, argumentsDelta, index))
+                emitted.append(.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: argumentsDelta, index: index))
+                if buffer.inputStarted {
+                    emitted.append(.toolInputDelta(id: id, delta: argumentsDelta, providerMetadata: buffer.providerMetadata))
+                }
             }
         }
 
@@ -341,17 +350,26 @@ private struct GoogleGenerateContentStreamingToolCalls {
         return emitted
     }
 
-    func finishedCalls() -> [AIToolCall] {
-        buffers.keys.sorted().compactMap { index in
-            guard let buffer = buffers[index], let name = buffer.name else { return nil }
-            return AIToolCall(
+    mutating func finishedParts() -> [LanguageStreamPart] {
+        var parts: [LanguageStreamPart] = []
+        for index in buffers.keys.sorted() {
+            guard var buffer = buffers[index], let name = buffer.name else { continue }
+            let id = buffer.id ?? "tool-call-\(index)"
+            if !buffer.inputStarted {
+                parts.append(.toolInputStart(id: id, name: name, providerMetadata: buffer.providerMetadata))
+                buffer.inputStarted = true
+                buffers[index] = buffer
+            }
+            parts.append(.toolInputEnd(id: id, providerMetadata: buffer.providerMetadata))
+            parts.append(.toolCall(AIToolCall(
                 id: buffer.id ?? "tool-call-\(index)",
                 name: name,
                 arguments: googleGenerateContentArguments(.object(buffer.arguments)),
                 providerMetadata: buffer.providerMetadata,
                 rawValue: buffer.rawValue
-            )
+            )))
         }
+        return parts
     }
 }
 
@@ -462,6 +480,7 @@ private struct BedrockStreamState {
             let id = toolUse["toolUseId"]?.stringValue ?? "tool-call-\(index)"
             let name = toolUse["name"]?.stringValue ?? "tool-\(index)"
             toolCalls[index] = BedrockStreamingToolCall(id: id, name: name, rawValue: toolUse)
+            parts.append(.toolInputStart(id: id, name: name))
         }
         if let delta = raw["contentBlockDelta"],
            let toolUse = delta["delta"]?["toolUse"] {
@@ -472,10 +491,14 @@ private struct BedrockStreamState {
             toolCall.rawValue = toolUse
             toolCalls[index] = toolCall
             parts.append(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: argumentsDelta, index: index))
+            if !argumentsDelta.isEmpty {
+                parts.append(.toolInputDelta(id: toolCall.id, delta: argumentsDelta))
+            }
         }
         if let stop = raw["contentBlockStop"],
            let index = stop["contentBlockIndex"]?.intValue,
            let toolCall = toolCalls[index] {
+            parts.append(.toolInputEnd(id: toolCall.id))
             parts.append(.toolCall(AIToolCall(
                 id: toolCall.id,
                 name: toolCall.name,

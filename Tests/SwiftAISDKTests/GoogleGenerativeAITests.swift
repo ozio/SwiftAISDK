@@ -540,11 +540,18 @@ import Testing
     let model = provider.interactionsModel("gemini-2.5-flash")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var finalCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -559,6 +566,11 @@ import Testing
 
     let call = try #require(finalCall)
     #expect(deltas == [#"{"location":"San Francisco"}"#])
+    #expect(inputLifecycle == [
+        "start:61nzpsv4:getWeather",
+        #"delta:61nzpsv4:{"location":"San Francisco"}"#,
+        "end:61nzpsv4"
+    ])
     #expect(call.id == "61nzpsv4")
     #expect(call.name == "getWeather")
     #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")
@@ -675,11 +687,18 @@ import Testing
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
     let model = try provider.languageModel("gemini-2.5-flash")
 
+    var inputLifecycle: [String] = []
     var finalCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCall(call):
             finalCall = call
         case let .finish(reason, usage):
@@ -691,6 +710,12 @@ import Testing
     }
 
     let call = try #require(finalCall)
+    #expect(inputLifecycle == [
+        "start:tool-call-0:weather",
+        #"delta:tool-call-0:{"location":"San "}"#,
+        #"delta:tool-call-0:{"location":"San Francisco"}"#,
+        "end:tool-call-0"
+    ])
     #expect(call.id == "tool-call-0")
     #expect(call.name == "weather")
     #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")

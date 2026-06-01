@@ -444,11 +444,18 @@ import Testing
     let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
 
     var deltas: [String] = []
+    var inputLifecycle: [String] = []
     var finalCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Use a tool.")])) {
         switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputLifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            inputLifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            inputLifecycle.append("end:\(id)")
         case let .toolCallDelta(_, _, argumentsDelta, _):
             deltas.append(argumentsDelta)
         case let .toolCall(call):
@@ -463,6 +470,12 @@ import Testing
 
     let call = try #require(finalCall)
     #expect(deltas == ["{\"value\":", "\"Sparkle Day\"}"])
+    #expect(inputLifecycle == [
+        "start:tool-use-id:test-tool",
+        "delta:tool-use-id:{\"value\":",
+        "delta:tool-use-id:\"Sparkle Day\"}",
+        "end:tool-use-id"
+    ])
     #expect(call.id == "tool-use-id")
     #expect(call.name == "test-tool")
     #expect(try decodeJSONBody(Data(call.arguments.utf8))["value"]?.stringValue == "Sparkle Day")
