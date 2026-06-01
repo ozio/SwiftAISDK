@@ -14,9 +14,12 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         let (model, version) = splitVersionedModelID(modelID)
         var input: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let size = request.size { input["size"] = .string(size) }
+        if let aspectRatio = request.aspectRatio { input["aspect_ratio"] = .string(aspectRatio) }
+        if let seed = request.seed { input["seed"] = .number(Double(seed)) }
         if let count = request.count { input["num_outputs"] = .number(Double(count)) }
-        input.merge(try replicateImageInputs(from: request.files, mask: request.mask, modelID: modelID)) { _, new in new }
-        input.merge(replicateImageOptions(from: request.extraBody)) { _, new in new }
+        let preparedInputs = try replicateImageInputs(from: request.files, mask: request.mask, modelID: modelID)
+        input.merge(preparedInputs.input) { _, new in new }
+        input.merge(replicateImageOptions(from: request)) { _, new in new }
 
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
@@ -25,7 +28,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
             path: path,
             modelID: modelID,
             body: .object(body),
-            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody)),
+            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request)),
             abortSignal: request.abortSignal
         )
         let raw = response.json
@@ -35,6 +38,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
             urls: urls,
             base64Images: base64Images,
             rawValue: raw,
+            warnings: preparedInputs.warnings,
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -65,23 +69,29 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let (model, version) = splitVersionedModelID(modelID)
-        let options = replicateProviderOptions(from: request.extraBody)
+        let options = replicateProviderOptions(from: request)
         var input: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let aspectRatio = request.aspectRatio { input["aspect_ratio"] = .string(aspectRatio) }
         if let durationSeconds = request.durationSeconds { input["duration"] = .number(durationSeconds) }
-        if let resolution = request.extraBody["resolution"] ?? options["resolution"] {
+        if let resolution = request.resolution {
+            input["size"] = .string(resolution)
+        } else if let resolution = options["resolution"] {
             input["size"] = resolution
         }
-        if let fps = request.extraBody["fps"] ?? options["fps"] {
+        if let fps = request.fps {
+            input["fps"] = .number(fps)
+        } else if let fps = options["fps"] {
             input["fps"] = fps
         }
-        if let seed = request.extraBody["seed"] ?? options["seed"] {
+        if let seed = request.seed {
+            input["seed"] = .number(Double(seed))
+        } else if let seed = options["seed"] {
             input["seed"] = seed
         }
-        if let image = replicateVideoImageInput(from: request.extraBody, options: options) {
+        if let image = try replicateVideoImageInput(from: request, options: options) {
             input["image"] = image
         }
-        input.merge(replicateVideoOptions(from: request.extraBody)) { _, new in new }
+        input.merge(replicateVideoOptions(from: request)) { _, new in new }
 
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
@@ -90,15 +100,15 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             path: path,
             modelID: modelID,
             body: .object(body),
-            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request.extraBody)),
+            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request)),
             abortSignal: request.abortSignal
         )
         let finalResponse = try await pollReplicatePredictionResponse(
             createResponse.json,
             initialResponse: createResponse.response,
             headers: request.headers,
-            intervalNanoseconds: replicatePollInterval(request.extraBody),
-            timeoutNanoseconds: replicatePollTimeout(request.extraBody),
+            intervalNanoseconds: replicatePollInterval(from: request),
+            timeoutNanoseconds: replicatePollTimeout(from: request),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.json
@@ -109,6 +119,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             urls: mediaURLs(from: raw["output"]),
             operationID: raw["id"]?.stringValue,
             rawValue: raw,
+            providerMetadata: replicateVideoProviderMetadata(from: raw),
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
@@ -135,16 +146,23 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
-private func replicatePreferHeaders(from extraBody: [String: JSONValue]) -> [String: String] {
-    let options = replicateProviderOptions(from: extraBody)
+private func replicatePreferHeaders(from request: ImageGenerationRequest) -> [String: String] {
+    replicatePreferHeaders(from: replicateProviderOptions(from: request))
+}
+
+private func replicatePreferHeaders(from request: VideoGenerationRequest) -> [String: String] {
+    replicatePreferHeaders(from: replicateProviderOptions(from: request))
+}
+
+private func replicatePreferHeaders(from options: [String: JSONValue]) -> [String: String] {
     if let wait = options["maxWaitTimeInSeconds"]?.intValue ?? options["max_wait_time_in_seconds"]?.intValue {
         return ["prefer": "wait=\(wait)"]
     }
     return ["prefer": "wait"]
 }
 
-private func replicateImageOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = replicateProviderOptions(from: extraBody)
+private func replicateImageOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    var output = replicateProviderOptions(from: request)
     if let aspectRatio = output.removeValue(forKey: "aspectRatio") {
         output["aspect_ratio"] = aspectRatio
     }
@@ -153,8 +171,8 @@ private func replicateImageOptions(from extraBody: [String: JSONValue]) -> [Stri
     return output
 }
 
-private func replicateVideoOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = replicateProviderOptions(from: extraBody)
+private func replicateVideoOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    var output = replicateProviderOptions(from: request)
     output.removeValue(forKey: "maxWaitTimeInSeconds")
     output.removeValue(forKey: "max_wait_time_in_seconds")
     output.removeValue(forKey: "pollIntervalMs")
@@ -170,14 +188,14 @@ private func replicateVideoOptions(from extraBody: [String: JSONValue]) -> [Stri
     return output
 }
 
-private func replicatePollInterval(_ extraBody: [String: JSONValue]) -> UInt64 {
-    let options = replicateProviderOptions(from: extraBody)
+private func replicatePollInterval(from request: VideoGenerationRequest) -> UInt64 {
+    let options = replicateProviderOptions(from: request)
     let milliseconds = options["pollIntervalMs"]?.intValue ?? options["poll_interval_ms"]?.intValue ?? 2_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
 
-private func replicatePollTimeout(_ extraBody: [String: JSONValue]) -> UInt64 {
-    let options = replicateProviderOptions(from: extraBody)
+private func replicatePollTimeout(from request: VideoGenerationRequest) -> UInt64 {
+    let options = replicateProviderOptions(from: request)
     let milliseconds = options["pollTimeoutMs"]?.intValue ?? options["poll_timeout_ms"]?.intValue ?? 300_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
@@ -186,23 +204,47 @@ private func replicateProviderOptions(from extraBody: [String: JSONValue]) -> [S
     extraBody["replicate"]?.objectValue ?? extraBody.filter { key, _ in key != "replicate" }
 }
 
-private func replicateImageInputs(from files: [ImageInputFile], mask: ImageInputFile?, modelID: String) throws -> [String: JSONValue] {
+private func replicateProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    replicateProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func replicateProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    replicateProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func replicateProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = replicateProviderOptions(from: extraBody)
+    output.merge(replicateProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    return output
+}
+
+private func replicateImageInputs(from files: [ImageInputFile], mask: ImageInputFile?, modelID: String) throws -> (input: [String: JSONValue], warnings: [AIWarning]) {
     let isFlux2 = modelID.range(of: #"^black-forest-labs/flux-2-"#, options: .regularExpression) != nil
     var input: [String: JSONValue] = [:]
+    var warnings: [AIWarning] = []
 
     if isFlux2 {
         for (index, file) in files.prefix(8).enumerated() {
             let key = index == 0 ? "input_image" : "input_image_\(index + 1)"
             input[key] = .string(try replicateImageFileInput(file))
         }
+        if files.count > 8 {
+            warnings.append(AIWarning(type: "other", message: "Flux-2 models support up to 8 input images. Additional images are ignored."))
+        }
+        if mask != nil {
+            warnings.append(AIWarning(type: "other", message: "Flux-2 models do not support mask input. The mask will be ignored."))
+        }
     } else if let file = files.first {
         input["image"] = .string(try replicateImageFileInput(file))
+        if files.count > 1 {
+            warnings.append(AIWarning(type: "other", message: "This Replicate model only supports a single input image. Additional images are ignored."))
+        }
         if let mask {
             input["mask"] = .string(try replicateImageFileInput(mask))
         }
     }
 
-    return input
+    return (input, warnings)
 }
 
 private func replicateImageFileInput(_ file: ImageInputFile) throws -> String {
@@ -216,11 +258,14 @@ private func replicateImageFileInput(_ file: ImageInputFile) throws -> String {
     return "data:\(mediaType);base64,\(data.base64EncodedString())"
 }
 
-private func replicateVideoImageInput(from extraBody: [String: JSONValue], options: [String: JSONValue]) -> JSONValue? {
-    if let image = extraBody["image"] ?? options["image"] {
+private func replicateVideoImageInput(from request: VideoGenerationRequest, options: [String: JSONValue]) throws -> JSONValue? {
+    if let image = request.image {
+        return .string(try replicateImageFileInput(image))
+    }
+    if let image = options["image"] {
         return replicateVideoImageValue(image)
     }
-    if let imageURL = extraBody["imageUrl"] ?? extraBody["image_url"] ?? options["imageUrl"] ?? options["image_url"] {
+    if let imageURL = options["imageUrl"] ?? options["image_url"] {
         return imageURL
     }
     return nil
@@ -240,6 +285,20 @@ private func replicateVideoImageValue(_ value: JSONValue) -> JSONValue {
         }
     }
     return value
+}
+
+private func replicateVideoProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
+    var replicate: [String: JSONValue] = [:]
+    if let url = raw["output"]?.stringValue {
+        replicate["videos"] = .array([.object(["url": .string(url)])])
+    }
+    if let id = raw["id"] {
+        replicate["predictionId"] = id
+    }
+    if let metrics = raw["metrics"] {
+        replicate["metrics"] = metrics
+    }
+    return replicate.isEmpty ? [:] : ["replicate": .object(replicate)]
 }
 
 public final class FalImageModel: ImageModel, @unchecked Sendable {

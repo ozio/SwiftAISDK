@@ -254,7 +254,10 @@ Progress:
   models now do the same for their native response headers/bodies and stream
   response metadata. OpenAI-compatible chat streams now also emit v4-shaped
   text/reasoning lifecycle parts while retaining legacy deltas for existing
-  consumers. Google Generative AI image/video/files and Google Vertex
+  consumers. Core video requests now expose upstream-style optional `image`,
+  `resolution`, `fps`, and `seed` fields so provider ports do not have to hide
+  standard video call settings inside `extraBody`. Google Generative AI
+  image/video/files and Google Vertex
   image/video now also preserve native response metadata, including fallback
   timestamps for responses without provider-created times. Native audio and
   transcription models for Deepgram, ElevenLabs, LMNT, Hume, fal, AssemblyAI,

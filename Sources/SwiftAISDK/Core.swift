@@ -1606,6 +1606,10 @@ public struct VideoGenerationRequest: Sendable {
     public var prompt: String
     public var aspectRatio: String?
     public var durationSeconds: Double?
+    public var image: ImageInputFile?
+    public var resolution: String?
+    public var fps: Double?
+    public var seed: Int?
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
@@ -1615,6 +1619,10 @@ public struct VideoGenerationRequest: Sendable {
         prompt: String,
         aspectRatio: String? = nil,
         durationSeconds: Double? = nil,
+        image: ImageInputFile? = nil,
+        resolution: String? = nil,
+        fps: Double? = nil,
+        seed: Int? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
@@ -1623,6 +1631,10 @@ public struct VideoGenerationRequest: Sendable {
         self.prompt = prompt
         self.aspectRatio = aspectRatio
         self.durationSeconds = durationSeconds
+        self.image = image
+        self.resolution = resolution
+        self.fps = fps
+        self.seed = seed
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers

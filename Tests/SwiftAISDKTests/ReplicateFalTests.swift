@@ -40,6 +40,50 @@ import Testing
     #expect(requests[1].url.absoluteString == "https://replicate.example.com/image.png")
 }
 
+@Test func replicateImageUsesStandardOptionsProviderOptionsAndWarnings() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}
+        """),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("replicate-png".utf8))
+    ])
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+    let result = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        aspectRatio: "3:4",
+        seed: 123,
+        count: 1,
+        files: [
+            ImageInputFile(url: "https://example.com/input-1.jpg"),
+            ImageInputFile(url: "https://example.com/input-2.jpg")
+        ],
+        providerOptions: [
+            "replicate": .object([
+                "guidance_scale": 7.5,
+                "num_inference_steps": 30,
+                "maxWaitTimeInSeconds": 15
+            ])
+        ]
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(type: "other", message: "This Replicate model only supports a single input image. Additional images are ignored.")
+    ])
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["prefer"] == "wait=15")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["input"]?["aspect_ratio"]?.stringValue == "3:4")
+    #expect(body["input"]?["seed"]?.intValue == 123)
+    #expect(body["input"]?["num_outputs"]?.intValue == 1)
+    #expect(body["input"]?["image"]?.stringValue == "https://example.com/input-1.jpg")
+    #expect(body["input"]?["guidance_scale"]?.doubleValue == 7.5)
+    #expect(body["input"]?["num_inference_steps"]?.intValue == 30)
+    #expect(body["input"]?["maxWaitTimeInSeconds"] == nil)
+    #expect(body["input"]?["replicate"] == nil)
+}
+
 @Test func replicateImageRejectsUnsafeOutputDownloadURL() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"pred-1","status":"succeeded","output":["http://127.0.0.1/image.png"]}
@@ -122,6 +166,32 @@ import Testing
     #expect(body["input"]?["input_image_3"]?.stringValue == "https://example.com/reference-3.jpg")
     #expect(body["input"]?["mask"] == nil)
     #expect(body["input"]?["image"] == nil)
+}
+
+@Test func replicateFlux2ImageWarningsMirrorUpstreamLimits() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/flux.webp"]}
+        """),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/webp"], body: Data("flux-webp".utf8))
+    ])
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/flux-2-pro")
+
+    let result = try await model.generateImage(ImageGenerationRequest(
+        prompt: "Use many references",
+        files: (1...9).map { ImageInputFile(url: "https://example.com/reference-\($0).jpg") },
+        mask: ImageInputFile(url: "https://example.com/mask.png")
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(type: "other", message: "Flux-2 models support up to 8 input images. Additional images are ignored."),
+        AIWarning(type: "other", message: "Flux-2 models do not support mask input. The mask will be ignored.")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?["input_image_8"]?.stringValue == "https://example.com/reference-8.jpg")
+    #expect(body["input"]?["input_image_9"] == nil)
+    #expect(body["input"]?["mask"] == nil)
 }
 
 @Test func replicateVideoUsesPredictionEndpointAndReturnsOutputURL() async throws {
@@ -218,6 +288,52 @@ import Testing
     #expect(body["input"]?["pollIntervalMs"] == nil)
     #expect(body["input"]?["pollTimeoutMs"] == nil)
     #expect(body["input"]?["maxWaitTimeInSeconds"] == nil)
+    #expect(body["input"]?["replicate"] == nil)
+}
+
+@Test func replicateVideoUsesStandardFieldsProviderOptionsAndMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"pred-video","status":"succeeded","output":"https://replicate.example.com/video.mp4","urls":{"get":"https://api.replicate.com/v1/predictions/pred-video"},"metrics":{"predict_time":25.5}}
+    """))
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.videoModel("owner/video-model")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "Animate this",
+        aspectRatio: "1:1",
+        durationSeconds: 6,
+        image: ImageInputFile(data: Data([1, 2, 3]), mediaType: "image/png"),
+        resolution: "1920x1080",
+        fps: 30,
+        seed: 42,
+        providerOptions: [
+            "replicate": .object([
+                "guidance_scale": 7.5,
+                "num_inference_steps": 50,
+                "maxWaitTimeInSeconds": 20,
+                "pollIntervalMs": 1
+            ])
+        ]
+    ))
+
+    #expect(result.urls == ["https://replicate.example.com/video.mp4"])
+    #expect(result.providerMetadata["replicate"]?["predictionId"]?.stringValue == "pred-video")
+    #expect(result.providerMetadata["replicate"]?["videos"]?[0]?["url"]?.stringValue == "https://replicate.example.com/video.mp4")
+    #expect(result.providerMetadata["replicate"]?["metrics"]?["predict_time"]?.doubleValue == 25.5)
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["prefer"] == "wait=20")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["input"]?["prompt"]?.stringValue == "Animate this")
+    #expect(body["input"]?["aspect_ratio"]?.stringValue == "1:1")
+    #expect(body["input"]?["duration"]?.intValue == 6)
+    #expect(body["input"]?["image"]?.stringValue == "data:image/png;base64,\(Data([1, 2, 3]).base64EncodedString())")
+    #expect(body["input"]?["size"]?.stringValue == "1920x1080")
+    #expect(body["input"]?["fps"]?.intValue == 30)
+    #expect(body["input"]?["seed"]?.intValue == 42)
+    #expect(body["input"]?["guidance_scale"]?.doubleValue == 7.5)
+    #expect(body["input"]?["num_inference_steps"]?.intValue == 50)
+    #expect(body["input"]?["maxWaitTimeInSeconds"] == nil)
+    #expect(body["input"]?["pollIntervalMs"] == nil)
     #expect(body["input"]?["replicate"] == nil)
 }
 

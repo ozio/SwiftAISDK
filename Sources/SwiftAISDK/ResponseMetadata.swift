@@ -37,6 +37,10 @@ func videoGenerationRequestMetadata(_ request: VideoGenerationRequest, body: JSO
             "prompt": .string(request.prompt),
             "aspectRatio": request.aspectRatio.map(JSONValue.string),
             "durationSeconds": request.durationSeconds.map(JSONValue.number),
+            "image": request.image.map(imageInputFileRequestMetadata),
+            "resolution": request.resolution.map(JSONValue.string),
+            "fps": request.fps.map(JSONValue.number),
+            "seed": request.seed.map { .number(Double($0)) },
             "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
             "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
         ]),
