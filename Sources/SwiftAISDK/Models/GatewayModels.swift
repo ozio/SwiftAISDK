@@ -457,6 +457,7 @@ public final class GatewaySpeechModel: SpeechModel, @unchecked Sendable {
         }
         return SpeechResult(
             audio: data,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -494,6 +495,7 @@ public final class GatewayTranscriptionModel: TranscriptionModel, @unchecked Sen
             segments: segments,
             language: raw["language"]?.stringValue,
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

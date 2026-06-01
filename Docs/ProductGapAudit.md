@@ -213,8 +213,11 @@ Progress:
   bodies. Native transcription models now map upstream-style segments,
   language, and duration for Deepgram, ElevenLabs, Groq/OpenAI-compatible
   verbose JSON, AssemblyAI, Rev.ai, Gladia, fal, Gateway, and generic JSON
-  transcription wrappers. Follow-up passes should keep filling richer metadata
-  and lifecycle fields consistently across the remaining native providers.
+  transcription wrappers. Native speech models now populate request metadata
+  for their provider JSON bodies, and OpenAI-compatible/Groq multipart
+  transcription preserves safe form metadata without storing raw audio bytes.
+  Follow-up passes should keep filling richer metadata and lifecycle fields
+  consistently across the remaining native providers.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 

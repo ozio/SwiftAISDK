@@ -75,6 +75,7 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            requestMetadata: AIRequestMetadata(body: .object(["text": .string(request.text)]), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
     }
@@ -113,6 +114,7 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
     }
@@ -163,6 +165,7 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
     }
@@ -241,6 +244,7 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
     }
@@ -338,6 +342,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: audioResponse.body,
             contentType: audioResponse.headers.contentType,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: submit.response, modelID: modelID)
         )
     }

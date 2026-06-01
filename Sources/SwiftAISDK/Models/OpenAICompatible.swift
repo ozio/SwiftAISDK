@@ -2001,6 +2001,7 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
         return SpeechResult(
             audio: response.body,
             contentType: response.headers["content-type"] ?? response.headers["Content-Type"],
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(response: response, modelID: modelID)
         )
     }
@@ -2021,18 +2022,27 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
         var form = MultipartFormData()
         form.appendField(name: "model", value: modelID)
         form.appendFile(name: "file", fileName: request.fileName, mimeType: request.mimeType, data: request.audio)
+        var metadataBody: [String: JSONValue] = [
+            "model": .string(modelID),
+            "filename": .string(request.fileName),
+            "mime_type": .string(request.mimeType)
+        ]
         if modelID == "whisper-1" {
             form.appendField(name: "response_format", value: "verbose_json")
+            metadataBody["response_format"] = .string("verbose_json")
         }
         if let language = request.language {
             form.appendField(name: "language", value: language)
+            metadataBody["language"] = .string(language)
         }
         if let prompt = request.prompt {
             form.appendField(name: "prompt", value: prompt)
+            metadataBody["prompt"] = .string(prompt)
         }
         let extraBody = isOpenAIBackedProvider(providerID) ? openAITranscriptionOptions(from: request.extraBody, providerID: providerID, modelID: modelID) : request.extraBody
         for (key, value) in extraBody {
             if case let .array(items) = value {
+                metadataBody[key] = value
                 for item in items {
                     if let scalar = jsonScalarString(item) {
                         form.appendField(name: "\(key)[]", value: scalar)
@@ -2040,6 +2050,7 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
                 }
             } else if let scalar = jsonScalarString(value) {
                 form.appendField(name: key, value: scalar)
+                metadataBody[key] = value
             }
         }
         let body = form.finalize()
@@ -2066,6 +2077,7 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
             segments: segments,
             language: raw["language"]?.stringValue,
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }

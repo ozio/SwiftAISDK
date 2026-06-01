@@ -79,6 +79,7 @@ public final class JSONTranscriptionModel: TranscriptionModel, @unchecked Sendab
             segments: segments,
             language: raw["language"]?.stringValue,
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -116,12 +117,14 @@ public final class JSONSpeechModel: SpeechModel, @unchecked Sendable {
             return SpeechResult(
                 audio: data,
                 contentType: raw["mime_type"]?.stringValue,
+                requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
                 responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
             )
         }
         return SpeechResult(
             audio: response.body,
             contentType: response.headers["content-type"] ?? response.headers["Content-Type"],
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
     }

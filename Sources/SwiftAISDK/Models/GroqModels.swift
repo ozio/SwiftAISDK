@@ -149,11 +149,23 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
         var form = MultipartFormData()
         form.appendField(name: "model", value: modelID)
         form.appendFile(name: "file", fileName: request.fileName, mimeType: request.mimeType, data: request.audio)
-        if let language = request.language { form.appendField(name: "language", value: language) }
-        if let prompt = request.prompt { form.appendField(name: "prompt", value: prompt) }
+        var metadataBody: [String: JSONValue] = [
+            "model": .string(modelID),
+            "filename": .string(request.fileName),
+            "mime_type": .string(request.mimeType)
+        ]
+        if let language = request.language {
+            form.appendField(name: "language", value: language)
+            metadataBody["language"] = .string(language)
+        }
+        if let prompt = request.prompt {
+            form.appendField(name: "prompt", value: prompt)
+            metadataBody["prompt"] = .string(prompt)
+        }
 
         for (key, value) in groqTranscriptionOptions(from: request.extraBody) {
             if case let .array(items) = value {
+                metadataBody[key] = value
                 for item in items {
                     if let scalar = jsonScalarString(item) {
                         form.appendField(name: "\(key)[]", value: scalar)
@@ -161,6 +173,7 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
                 }
             } else if let scalar = jsonScalarString(value) {
                 form.appendField(name: key, value: scalar)
+                metadataBody[key] = value
             }
         }
 
@@ -186,6 +199,7 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
             segments: segments,
             language: raw["language"]?.stringValue,
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
