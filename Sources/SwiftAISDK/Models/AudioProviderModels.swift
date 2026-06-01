@@ -635,15 +635,16 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = gladiaProviderOptions(from: request.extraBody)
+        let options = gladiaProviderOptions(from: request)
         var form = MultipartFormData()
-        form.appendFile(name: "audio", fileName: request.fileName, mimeType: request.mimeType, data: request.audio)
+        form.appendFile(name: "audio", fileName: "audio.\(mediaTypeToExtension(request.mimeType))", mimeType: request.mimeType, data: request.audio)
         let uploadResponse = try await config.transport.send(config.rawRequest(
             path: "/v2/upload",
             modelID: modelID,
             body: form.finalize(),
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
             throw httpStatusError(provider: providerID, response: uploadResponse)
@@ -875,6 +876,16 @@ private func gladiaProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
     if let nested = output.removeValue(forKey: "gladia")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
+    return output
+}
+
+private func gladiaProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+    gladiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func gladiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = gladiaProviderOptions(from: extraBody)
+    output.merge(gladiaProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     return output
 }
 

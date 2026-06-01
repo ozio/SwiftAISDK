@@ -443,6 +443,31 @@ import Testing
     #expect(requests[2].abortSignal === controller.signal)
 }
 
+@Test func gladiaForwardsAbortSignalToUploadInitiateAndPollRequests() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"processing"}"#),
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":0.3},"transcription":{"full_transcript":"gladia","languages":["en"],"utterances":[{"start":0,"end":0.3,"text":"gladia"}]}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
+    let model = try provider.transcriptionModel("default")
+    let controller = AIAbortController()
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        mimeType: "audio/wav",
+        abortSignal: controller.signal
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 4)
+    #expect(requests[0].abortSignal === controller.signal)
+    #expect(requests[1].abortSignal === controller.signal)
+    #expect(requests[2].abortSignal === controller.signal)
+    #expect(requests[3].abortSignal === controller.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
