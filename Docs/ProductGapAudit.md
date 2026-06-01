@@ -164,8 +164,10 @@ The Swift contract keeps only a compact subset. For example:
 - `TranscriptionResult` now has text, raw JSON, segments, language, duration,
   warnings, request/response info, and provider metadata, but provider passes
   still need to keep filling those fields wherever upstream exposes them.
-- `SpeechResult`, `VideoGenerationResult`, `RerankingResult`, and
-  `FileUploadResult` expose much less provider metadata than upstream.
+- `SpeechResult`, `VideoGenerationResult`, `RerankingResult`,
+  `FileUploadResult`, and `SkillUploadResult` still need provider-by-provider
+  population passes where upstream exposes additional metadata beyond the
+  shared slots.
 
 Impact:
 
@@ -210,7 +212,10 @@ Progress:
   Replicate, fal, Fireworks, DeepInfra, TogetherAI, xAI, QuiverAI, and generic
   JSON media wrappers now preserve response metadata as well; submit/download
   flows keep the provider submit response as metadata rather than the
-  SDK-managed asset download. Native embedding and reranking models for Cohere,
+  SDK-managed asset download. File and skill clients now preserve response
+  metadata for OpenAI-compatible multipart files, Google resumable files, xAI
+  files, and OpenAI/Anthropic skill uploads. Native embedding and reranking
+  models for Cohere,
   Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic
   JSON reranking wrappers also preserve provider response headers and raw JSON
   bodies. Native transcription models now map upstream-style segments,

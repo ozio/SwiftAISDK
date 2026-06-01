@@ -1910,7 +1910,7 @@ public enum AI {
             usage: { _ in nil },
             warnings: { $0.warnings },
             providerMetadata: { $0.providerMetadata },
-            responseMetadata: { _ in AIResponseMetadata() }
+            responseMetadata: { $0.responseMetadata }
         ) {
             try await client.uploadSkill(request)
         }

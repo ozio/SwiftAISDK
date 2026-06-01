@@ -1826,6 +1826,7 @@ public struct SkillUploadResult: Sendable {
     public var description: String?
     public var latestVersion: String?
     public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
     public var warnings: [AIWarning]
     public var rawValue: JSONValue
 
@@ -1836,6 +1837,7 @@ public struct SkillUploadResult: Sendable {
         description: String? = nil,
         latestVersion: String? = nil,
         providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata(),
         warnings: [AIWarning] = [],
         rawValue: JSONValue
     ) {
@@ -1845,6 +1847,7 @@ public struct SkillUploadResult: Sendable {
         self.description = description
         self.latestVersion = latestVersion
         self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
         self.warnings = warnings
         self.rawValue = rawValue
     }

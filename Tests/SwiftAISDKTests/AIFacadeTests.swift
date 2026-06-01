@@ -1443,9 +1443,10 @@ private actor PrepareStepCapture {
     #expect(file.providerReference["file"] == "file-1")
     #expect(fileClient.requests.first?.filename == "a.txt")
 
-    let skillClient = MockSkillsClient(result: SkillUploadResult(providerReference: ["skill": "skill-1"], rawValue: .object([:])))
+    let skillClient = MockSkillsClient(result: SkillUploadResult(providerReference: ["skill": "skill-1"], responseMetadata: AIResponseMetadata(id: "skill-response"), rawValue: .object([:])))
     let skill = try await AI.uploadSkill(client: skillClient, request: SkillUploadRequest(files: [SkillUploadFile(path: "skill.md", data: Data("skill".utf8))]))
     #expect(skill.providerReference["skill"] == "skill-1")
+    #expect(skill.responseMetadata.id == "skill-response")
     #expect(skillClient.requests.first?.files.first?.path == "skill.md")
 }
 

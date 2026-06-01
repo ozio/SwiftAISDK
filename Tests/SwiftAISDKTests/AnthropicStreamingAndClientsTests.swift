@@ -5,7 +5,7 @@ import Testing
 @Test func anthropicFilesUploadAddsBetaHeader() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"file_abc","type":"file","filename":"data.pdf","mime_type":"application/pdf","size_bytes":10,"created_at":"2026-01-01T00:00:00Z","downloadable":true}
-    """))
+    """, headers: ["anthropic-request-id": "file-request"]))
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
     let files = provider.files()
     #expect(files.providerID == "anthropic.messages")
@@ -13,6 +13,8 @@ import Testing
 
     #expect(result.providerReference["anthropic"] == "file_abc")
     #expect(result.mediaType == "application/pdf")
+    #expect(result.responseMetadata.id == "file_abc")
+    #expect(result.responseMetadata.headers["anthropic-request-id"] == "file-request")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/files")
     #expect(request.headers["x-api-key"] == "claude-key")
@@ -23,7 +25,7 @@ import Testing
     let transport = RecordingTransport(responses: [
         jsonResponse("""
         {"id":"skill_01","display_title":"Test Capture Skill","latest_version":"1772078378207930","source":"custom","created_at":"2026-02-26T03:59:39.314772Z","updated_at":"2026-02-26T03:59:39.314772Z"}
-        """),
+        """, headers: ["anthropic-request-id": "skill-request"]),
         jsonResponse("""
         {"type":"skill_version","skill_id":"skill_01","name":"test-capture-skill","description":"An updated test skill for fixture capture"}
         """)
@@ -46,6 +48,9 @@ import Testing
     #expect(result.providerMetadata["anthropic"]?["source"]?.stringValue == "custom")
     #expect(result.providerMetadata["anthropic"]?["createdAt"]?.stringValue == "2026-02-26T03:59:39.314772Z")
     #expect(result.providerMetadata["anthropic"]?["updatedAt"]?.stringValue == "2026-02-26T03:59:39.314772Z")
+    #expect(result.responseMetadata.id == "skill_01")
+    #expect(result.responseMetadata.headers["anthropic-request-id"] == "skill-request")
+    #expect(result.responseMetadata.body?["latest_version"]?.stringValue == "1772078378207930")
     #expect(result.warnings.isEmpty)
 
     let requests = await transport.requests()

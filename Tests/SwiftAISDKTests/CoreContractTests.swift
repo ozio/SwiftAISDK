@@ -140,4 +140,9 @@ import Testing
 
     let file = FileUploadResult(providerReference: ["file": "file-1"], rawValue: .object([:]), providerMetadata: providerMetadata, responseMetadata: response)
     #expect(file.providerMetadata == providerMetadata)
+
+    let skill = SkillUploadResult(providerReference: ["skill": "skill-1"], providerMetadata: providerMetadata, responseMetadata: response, warnings: [warning], rawValue: .object([:]))
+    #expect(skill.providerMetadata == providerMetadata)
+    #expect(skill.responseMetadata == response)
+    #expect(skill.warnings == [warning])
 }

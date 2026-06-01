@@ -35,7 +35,8 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
             modelID: "",
             body: form.finalize(),
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: headers
+            headers: headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -47,7 +48,8 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
             filename: raw["filename"]?.stringValue ?? request.filename,
             mediaType: raw["mime_type"]?.stringValue ?? request.mediaType,
             metadata: fileMetadata(from: raw),
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
     }
 }
@@ -161,7 +163,8 @@ public final class XAIFileClient: AIFileClient, @unchecked Sendable {
             modelID: "",
             body: form.finalize(),
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -176,7 +179,8 @@ public final class XAIFileClient: AIFileClient, @unchecked Sendable {
             filename: raw["filename"]?.stringValue ?? request.filename,
             mediaType: request.mediaType,
             metadata: ["xai": .object(metadata)],
-            rawValue: raw
+            rawValue: raw,
+            responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
     }
 }

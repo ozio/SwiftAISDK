@@ -22,7 +22,8 @@ public final class OpenAISkillsClient: AISkillsClient, @unchecked Sendable {
             modelID: "",
             body: form.finalize(),
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -51,6 +52,7 @@ public final class OpenAISkillsClient: AISkillsClient, @unchecked Sendable {
             description: raw["description"]?.stringValue,
             latestVersion: raw["latest_version"]?.stringValue,
             providerMetadata: openAIMetadata.isEmpty ? [:] : [providerReferenceKey: .object(openAIMetadata)],
+            responseMetadata: aiResponseMetadata(from: raw, response: response),
             warnings: warnings,
             rawValue: raw
         )
@@ -83,14 +85,20 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             modelID: "",
             body: form.finalize(),
             contentType: "multipart/form-data; boundary=\(form.boundary)",
-            headers: headers
+            headers: headers,
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
 
         let raw = try response.jsonValue()
-        let versionMetadata = try await fetchVersionMetadata(skillID: raw["id"]?.stringValue, version: raw["latest_version"]?.stringValue, headers: headers)
+        let versionMetadata = try await fetchVersionMetadata(
+            skillID: raw["id"]?.stringValue,
+            version: raw["latest_version"]?.stringValue,
+            headers: headers,
+            abortSignal: request.abortSignal
+        )
         let metadata = anthropicSkillMetadata(from: raw)
 
         return SkillUploadResult(
@@ -100,12 +108,13 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             description: versionMetadata.description ?? raw["description"]?.stringValue,
             latestVersion: raw["latest_version"]?.stringValue,
             providerMetadata: metadata.isEmpty ? [:] : [providerReferenceKey: .object(metadata)],
+            responseMetadata: aiResponseMetadata(from: raw, response: response),
             warnings: [],
             rawValue: raw
         )
     }
 
-    private func fetchVersionMetadata(skillID: String?, version: String?, headers: [String: String]) async throws -> (name: String?, description: String?) {
+    private func fetchVersionMetadata(skillID: String?, version: String?, headers: [String: String], abortSignal: AIAbortSignal?) async throws -> (name: String?, description: String?) {
         guard let skillID, let version else {
             return (nil, nil)
         }
@@ -113,7 +122,8 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             method: "GET",
             url: try requireURL("\(withoutTrailingSlash(config.baseURL))/skills/\(skillID)/versions/\(version)"),
             headers: config.headers.mergingHeaders(headers),
-            body: nil
+            body: nil,
+            abortSignal: abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
