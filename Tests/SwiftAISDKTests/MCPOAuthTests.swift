@@ -260,6 +260,50 @@ import Testing
     #expect(form["client_id"] == nil)
 }
 
+@Test func mcpOAuthExchangeAuthorizationUsesCustomClientAuthentication() async throws {
+    let metadata = MCPOAuthAuthorizationServerMetadata(
+        issuer: "https://auth.example.com",
+        authorizationEndpoint: try requireURL("https://auth.example.com/auth"),
+        tokenEndpoint: try requireURL("https://auth.example.com/token"),
+        responseTypesSupported: ["code"],
+        codeChallengeMethodsSupported: ["S256"],
+        grantTypesSupported: ["authorization_code"],
+        tokenEndpointAuthMethodsSupported: ["client_secret_basic"]
+    )
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "access_token": "access-123",
+      "token_type": "Bearer"
+    }
+    """))
+
+    _ = try await MCPOAuth.exchangeAuthorization(
+        authorizationServerURL: try requireURL("https://auth.example.com"),
+        metadata: metadata,
+        clientInformation: MCPOAuthClientInformation(clientID: "client123", clientSecret: "secret123"),
+        authorizationCode: "code123",
+        codeVerifier: "verifier123",
+        redirectURI: try requireURL("http://localhost:3000/callback"),
+        clientAuthentication: { request in
+            var customized = request
+            customized.headers["X-Client-Assertion"] = "assertion-123"
+            customized.parameters.append(URLQueryItem(name: "client_assertion_type", value: "jwt-bearer"))
+            customized.parameters.append(URLQueryItem(name: "client_assertion", value: "jwt-token"))
+            return customized
+        },
+        transport: transport
+    )
+
+    let request = try await #require(transport.requests().first)
+    #expect(request.headers["Authorization"] == nil)
+    #expect(request.headers["X-Client-Assertion"] == "assertion-123")
+    let form = try formItems(request)
+    #expect(form["client_id"] == nil)
+    #expect(form["client_secret"] == nil)
+    #expect(form["client_assertion_type"] == "jwt-bearer")
+    #expect(form["client_assertion"] == "jwt-token")
+}
+
 @Test func mcpOAuthRefreshAuthorizationPreservesRefreshTokenAndUsesPublicClientAuth() async throws {
     let metadata = MCPOAuthAuthorizationServerMetadata(
         issuer: "https://auth.example.com",
@@ -600,6 +644,51 @@ import Testing
     #expect(await transport.requests().count == 6)
 }
 
+@Test func mcpOAuthAuthUsesProviderCustomClientAuthentication() async throws {
+    let provider = TestOAuthClientProvider(
+        clientInformation: MCPOAuthClientInformation(clientID: "client123", clientSecret: "secret123"),
+        codeVerifier: "verifier123",
+        storedState: "state123",
+        customAuthentication: { request in
+            var customized = request
+            customized.headers["X-Provider-Auth"] = request.metadata?.issuer
+            customized.parameters.append(URLQueryItem(name: "client_assertion", value: "provider-token"))
+            return customized
+        }
+    )
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {
+          "resource": "https://resource.example.com/mcp",
+          "authorization_servers": ["https://auth.example.com"]
+        }
+        """),
+        oauthAuthorizationMetadataResponse(),
+        jsonResponse("""
+        {
+          "access_token": "access-123",
+          "token_type": "Bearer"
+        }
+        """)
+    ])
+
+    let result = try await MCPOAuth.auth(
+        provider: provider,
+        serverURL: "https://resource.example.com/mcp/rpc",
+        authorizationCode: "code123",
+        callbackState: "state123",
+        transport: transport
+    )
+
+    #expect(result == .authorized)
+    let request = try await #require(transport.requests().last)
+    #expect(request.headers["Authorization"] == nil)
+    #expect(request.headers["X-Provider-Auth"] == "https://auth.example.com")
+    let form = try formItems(request)
+    #expect(form["client_assertion"] == "provider-token")
+    #expect(form["client_secret"] == nil)
+}
+
 private func oauthAuthorizationMetadataResponse() -> AIHTTPResponse {
     jsonResponse("""
     {
@@ -631,6 +720,7 @@ private actor TestOAuthClientProvider: MCPOAuthClientProvider {
     private var savedCodeVerifierValue: String?
     private var redirectedURLValue: URL?
     private var invalidationValues: [MCPOAuthCredentialScope] = []
+    private let customAuthentication: MCPOAuthClientAuthenticationHandler?
 
     init(
         redirectURL: URL = URL(string: "http://localhost:3000/callback")!,
@@ -644,7 +734,8 @@ private actor TestOAuthClientProvider: MCPOAuthClientProvider {
         codeVerifier: String = "stored-verifier",
         state: String? = nil,
         storedState: String? = nil,
-        supportsDynamicClientRegistration: Bool = false
+        supportsDynamicClientRegistration: Bool = false,
+        customAuthentication: MCPOAuthClientAuthenticationHandler? = nil
     ) {
         self.redirectURL = redirectURL
         self.clientMetadata = clientMetadata
@@ -654,6 +745,7 @@ private actor TestOAuthClientProvider: MCPOAuthClientProvider {
         self.currentCodeVerifier = codeVerifier
         self.currentState = state
         self.currentStoredState = storedState
+        self.customAuthentication = customAuthentication
     }
 
     func tokens() async throws -> MCPOAuthTokens? {
@@ -708,6 +800,10 @@ private actor TestOAuthClientProvider: MCPOAuthClientProvider {
 
     func storedState() async throws -> String? {
         currentStoredState
+    }
+
+    func authenticateTokenRequest(_ request: MCPOAuthClientAuthenticationRequest) async throws -> MCPOAuthClientAuthenticationRequest? {
+        try await customAuthentication?(request)
     }
 
     func savedTokens() -> MCPOAuthTokens? {

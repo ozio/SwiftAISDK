@@ -215,7 +215,8 @@ Impact:
   selection, dynamic client registration, and full provider-flow orchestration
   through `MCPOAuthClientProvider`, including resource selection, callback state
   validation, redirect start, token refresh, credential invalidation/retry for
-  OAuth errors, and authorization-code exchange.
+  OAuth errors, authorization-code exchange, and custom token endpoint client
+  authentication hooks for assertion/proprietary auth schemes.
 - `toolApproval` exists on `AI.generateText` and `AI.streamText` for
   Swift-executed tools. It supports automatic approve/deny stages and stops the
   loop for `.userApproval`, matching the first upstream approval control flow.
@@ -230,10 +231,10 @@ Recommendation:
 
 Build on the new `AITool` abstraction: add richer typed validation errors,
 provider-defined tool schema adapters, richer provider-native handling for
-multimodal `modelOutput`, finer MCP OAuth parity such as custom client
-authentication hooks and browser-specific CORS retry behavior, richer stream
-tool lifecycle events, and provider-executed approval response mapping for
-non-OpenAI providers that expose an equivalent native wire format. Keep
+multimodal `modelOutput`, finer MCP OAuth parity such as browser-specific CORS
+retry behavior, richer stream tool lifecycle events, and provider-executed
+approval response mapping for non-OpenAI providers that expose an equivalent
+native wire format. Keep
 provider-defined tools as specialized `AITool` values instead of plain JSON
 where possible.
 
@@ -351,8 +352,8 @@ Progress:
    MCP-style tool model-output conversion and first-pass Streamable HTTP
    session plus streaming semantics. Next passes should add typed validation
    errors, provider-executed approval responses, finer MCP OAuth parity such
-   as custom client authentication hooks and browser-specific CORS retry
-   behavior, and richer stream lifecycle handling.
+   as browser-specific CORS retry behavior, and richer stream lifecycle
+   handling.
 
 6. **Object generation pass.**
    First `AI.generateObject` slice is in place for `Decodable` plus JSON

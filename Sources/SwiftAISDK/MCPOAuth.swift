@@ -339,6 +339,30 @@ public struct MCPOAuthServerError: Error, Equatable, CustomStringConvertible, Se
     }
 }
 
+public struct MCPOAuthClientAuthenticationRequest: Sendable {
+    public var headers: [String: String]
+    public var parameters: [URLQueryItem]
+    public var tokenURL: URL
+    public var authorizationServerURL: URL
+    public var metadata: MCPOAuthAuthorizationServerMetadata?
+
+    public init(
+        headers: [String: String],
+        parameters: [URLQueryItem],
+        tokenURL: URL,
+        authorizationServerURL: URL,
+        metadata: MCPOAuthAuthorizationServerMetadata? = nil
+    ) {
+        self.headers = headers
+        self.parameters = parameters
+        self.tokenURL = tokenURL
+        self.authorizationServerURL = authorizationServerURL
+        self.metadata = metadata
+    }
+}
+
+public typealias MCPOAuthClientAuthenticationHandler = @Sendable (MCPOAuthClientAuthenticationRequest) async throws -> MCPOAuthClientAuthenticationRequest?
+
 public protocol MCPOAuthClientProvider: Sendable {
     var redirectURL: URL { get }
     var clientMetadata: MCPOAuthClientMetadata { get }
@@ -358,6 +382,7 @@ public protocol MCPOAuthClientProvider: Sendable {
     func saveState(_ state: String) async throws
     func storedState() async throws -> String?
     func validateResourceURL(serverURL: URL, resource: URL?) async throws -> URL?
+    func authenticateTokenRequest(_ request: MCPOAuthClientAuthenticationRequest) async throws -> MCPOAuthClientAuthenticationRequest?
 }
 
 public extension MCPOAuthClientProvider {
@@ -371,6 +396,7 @@ public extension MCPOAuthClientProvider {
     func saveState(_ state: String) async throws {}
     func storedState() async throws -> String? { nil }
     func validateResourceURL(serverURL: URL, resource: URL?) async throws -> URL? { nil }
+    func authenticateTokenRequest(_ request: MCPOAuthClientAuthenticationRequest) async throws -> MCPOAuthClientAuthenticationRequest? { nil }
 }
 
 public enum MCPOAuth {
@@ -544,6 +570,7 @@ public enum MCPOAuth {
         codeVerifier: String,
         redirectURI: URL,
         resource: URL? = nil,
+        clientAuthentication: MCPOAuthClientAuthenticationHandler? = nil,
         transport: any AITransport = URLSessionTransport.shared
     ) async throws -> MCPOAuthTokens {
         let grantType = "authorization_code"
@@ -560,9 +587,11 @@ public enum MCPOAuth {
         }
         let response = try await tokenRequest(
             url: tokenURL,
+            authorizationServerURL: authorizationServerURL,
             clientInformation: clientInformation,
             metadata: metadata,
             parameters: parameters,
+            clientAuthentication: clientAuthentication,
             transport: transport
         )
         return try MCPOAuthTokens(json: response.jsonValue())
@@ -574,6 +603,7 @@ public enum MCPOAuth {
         clientInformation: MCPOAuthClientInformation,
         refreshToken: String,
         resource: URL? = nil,
+        clientAuthentication: MCPOAuthClientAuthenticationHandler? = nil,
         transport: any AITransport = URLSessionTransport.shared
     ) async throws -> MCPOAuthTokens {
         let grantType = "refresh_token"
@@ -588,9 +618,11 @@ public enum MCPOAuth {
         }
         let response = try await tokenRequest(
             url: tokenURL,
+            authorizationServerURL: authorizationServerURL,
             clientInformation: clientInformation,
             metadata: metadata,
             parameters: parameters,
+            clientAuthentication: clientAuthentication,
             transport: transport
         )
         var raw = try response.jsonValue()
@@ -696,6 +728,9 @@ private func authInternal(
             codeVerifier: try await provider.codeVerifier(),
             redirectURI: provider.redirectURL,
             resource: resource,
+            clientAuthentication: { request in
+                try await provider.authenticateTokenRequest(request)
+            },
             transport: transport
         )
         try await provider.saveTokens(tokens)
@@ -710,6 +745,9 @@ private func authInternal(
                 clientInformation: clientInformation,
                 refreshToken: refreshToken,
                 resource: resource,
+                clientAuthentication: { request in
+                    try await provider.authenticateTokenRequest(request)
+                },
                 transport: transport
             )
             try await provider.saveTokens(tokens)
@@ -846,9 +884,11 @@ private func discoveryGET(url: URL, protocolVersion: String, transport: any AITr
 
 private func tokenRequest(
     url: URL,
+    authorizationServerURL: URL,
     clientInformation: MCPOAuthClientInformation,
     metadata: MCPOAuthAuthorizationServerMetadata?,
     parameters: [URLQueryItem],
+    clientAuthentication: MCPOAuthClientAuthenticationHandler?,
     transport: any AITransport
 ) async throws -> AIHTTPResponse {
     var headers = [
@@ -856,16 +896,27 @@ private func tokenRequest(
         "Accept": "application/json"
     ]
     var parameters = parameters
-    let authMethod = selectClientAuthMethod(
-        clientInformation: clientInformation,
-        supportedMethods: metadata?.tokenEndpointAuthMethodsSupported ?? []
-    )
-    try applyClientAuthentication(
-        authMethod,
-        clientInformation: clientInformation,
-        headers: &headers,
-        parameters: &parameters
-    )
+    if let customized = try await clientAuthentication?(MCPOAuthClientAuthenticationRequest(
+        headers: headers,
+        parameters: parameters,
+        tokenURL: url,
+        authorizationServerURL: authorizationServerURL,
+        metadata: metadata
+    )) {
+        headers = customized.headers
+        parameters = customized.parameters
+    } else {
+        let authMethod = selectClientAuthMethod(
+            clientInformation: clientInformation,
+            supportedMethods: metadata?.tokenEndpointAuthMethodsSupported ?? []
+        )
+        try applyClientAuthentication(
+            authMethod,
+            clientInformation: clientInformation,
+            headers: &headers,
+            parameters: &parameters
+        )
+    }
     let response = try await transport.send(AIHTTPRequest(
         method: "POST",
         url: url,

@@ -394,6 +394,11 @@ let authResult = try await MCPOAuth.auth(
 )
 ```
 
+Providers can override token endpoint authentication through
+`authenticateTokenRequest(_:)` when a server needs assertions or proprietary
+headers instead of the default `client_secret_basic`, `client_secret_post`, or
+public-client modes.
+
 The lower-level helpers are public too, so apps can drive custom UX around
 PKCE authorization URLs, token exchange, refresh, and dynamic registration:
 
