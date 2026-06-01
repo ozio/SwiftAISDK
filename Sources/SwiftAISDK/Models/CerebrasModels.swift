@@ -31,7 +31,7 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
             text: text,
             reasoning: choice?["message"]?["reasoning"]?.stringValue ?? "",
             finishReason: finishReason,
-            usage: tokenUsage(from: raw),
+            usage: cerebrasUsage(from: raw),
             toolCalls: cerebrasShouldDropStructuredToolCalls(hasText: !text.isEmpty, body: prepared.body) ? [] : toolCalls,
             providerMetadata: cerebrasProviderMetadata(from: raw, choice: choice),
             rawValue: raw,
@@ -75,7 +75,7 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                             continuation.yield(.responseMetadata(cerebrasResponseMetadata(from: raw, response: response, modelID: modelID)))
                         }
                         cerebrasMergeProviderMetadata(cerebrasProviderMetadata(from: raw, choice: raw["choices"]?[0]), into: &providerMetadata)
-                        latestUsage = tokenUsage(from: raw) ?? latestUsage
+                        latestUsage = cerebrasUsage(from: raw) ?? latestUsage
                         if let reasoning = raw["choices"]?[0]?["delta"]?["reasoning"]?.stringValue, !reasoning.isEmpty {
                             if activeText {
                                 continuation.yield(.textEnd(id: "0"))
@@ -142,8 +142,13 @@ private struct CerebrasPreparedCall {
     var warnings: [AIWarning]
 }
 
+private struct CerebrasPreparedTools {
+    var tools: [JSONValue]
+    var warnings: [AIWarning]
+}
+
 private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> CerebrasPreparedCall {
-    var options = cerebrasOptions(from: request.extraBody)
+    var options = cerebrasOptions(from: request)
     let responseFormat = cerebrasResolvedResponseFormat(request: request, options: &options)
     let toolChoiceInput = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
     var body: [String: JSONValue] = [
@@ -153,11 +158,14 @@ private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: St
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
     if let topP = request.topP { body["top_p"] = .number(topP) }
+    if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
+    if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
+    if let seed = request.seed { body["seed"] = .number(Double(seed)) }
     if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
     if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
-    let tools = cerebrasTools(from: request.tools)
-    if !tools.isEmpty {
-        body["tools"] = .array(tools)
+    let preparedTools = cerebrasTools(from: request.tools)
+    if !preparedTools.tools.isEmpty {
+        body["tools"] = .array(preparedTools.tools)
         if let toolChoice = cerebrasToolChoice(from: toolChoiceInput) {
             body["tool_choice"] = toolChoice
         }
@@ -167,12 +175,33 @@ private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: St
     } else {
         options.removeValue(forKey: "strictJsonSchema")
     }
+    cerebrasApplyKnownOptions(from: &options, reasoning: request.reasoning, to: &body)
     body.merge(options) { _, new in new }
 
     if let messages = body["messages"]?.arrayValue {
         body["messages"] = .array(messages.map(cerebrasMessageTransform))
     }
-    return CerebrasPreparedCall(body: body, warnings: cerebrasWarnings(from: request.extraBody))
+    return CerebrasPreparedCall(
+        body: body,
+        warnings: cerebrasWarnings(for: request)
+            + cerebrasCallWarnings(for: request)
+            + preparedTools.warnings
+            + (request.tools.isEmpty ? [] : cerebrasToolChoiceWarnings(from: toolChoiceInput))
+    )
+}
+
+private func cerebrasOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+    var output = cerebrasOptions(from: request.extraBody)
+    if let deprecated = request.providerOptions["openai-compatible"]?.objectValue {
+        output.merge(deprecated) { _, nested in nested }
+    }
+    if let compatible = request.providerOptions["openaiCompatible"]?.objectValue {
+        output.merge(compatible) { _, nested in nested }
+    }
+    if let nested = request.providerOptions["cerebras"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    return output
 }
 
 private func cerebrasOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
@@ -187,6 +216,21 @@ private func cerebrasOptions(from extraBody: [String: JSONValue]) -> [String: JS
         output.merge(nested) { _, nested in nested }
     }
     return output
+}
+
+private func cerebrasApplyKnownOptions(from options: inout [String: JSONValue], reasoning: String?, to body: inout [String: JSONValue]) {
+    if let user = options.removeValue(forKey: "user") {
+        body["user"] = user
+    }
+    if let effort = options.removeValue(forKey: "reasoningEffort") {
+        body["reasoning_effort"] = effort
+    }
+    if let verbosity = options.removeValue(forKey: "textVerbosity") {
+        body["verbosity"] = verbosity
+    }
+    if let reasoning, reasoning != "none", body["reasoning_effort"] == nil {
+        body["reasoning_effort"] = .string(reasoning)
+    }
 }
 
 private func cerebrasResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
@@ -238,10 +282,15 @@ private func cerebrasResponseFormat(from value: JSONValue, strictJsonSchema: JSO
     ])
 }
 
-private func cerebrasTools(from tools: [String: JSONValue]) -> [JSONValue] {
-    tools.compactMap { name, schema in
+private func cerebrasTools(from tools: [String: JSONValue]) -> CerebrasPreparedTools {
+    var warnings: [AIWarning] = []
+    let values = tools.compactMap { name, schema -> JSONValue? in
         let object = schema.objectValue
         if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "provider-defined tool \(object?["id"]?.stringValue ?? name)"
+            ))
             return nil
         }
         var parameters = schema
@@ -264,6 +313,7 @@ private func cerebrasTools(from tools: [String: JSONValue]) -> [JSONValue] {
             "function": .object(function)
         ])
     }
+    return CerebrasPreparedTools(tools: values, warnings: warnings)
 }
 
 private func cerebrasToolChoice(from value: JSONValue?) -> JSONValue? {
@@ -292,14 +342,38 @@ private func cerebrasToolChoice(from value: JSONValue?) -> JSONValue? {
     }
 }
 
-private func cerebrasWarnings(from extraBody: [String: JSONValue]) -> [AIWarning] {
-    extraBody["openai-compatible"] == nil ? [] : [
+private func cerebrasWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+    (request.extraBody["openai-compatible"] == nil && request.providerOptions["openai-compatible"] == nil) ? [] : [
         AIWarning(
             type: "deprecated",
             setting: "providerOptions key 'openai-compatible'",
             message: "Use 'openaiCompatible' instead."
         )
     ]
+}
+
+private func cerebrasCallWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+    request.topK == nil ? [] : [AIWarning(type: "unsupported", feature: "topK")]
+}
+
+private func cerebrasToolChoiceWarnings(from value: JSONValue?) -> [AIWarning] {
+    if let string = value?.stringValue {
+        switch string {
+        case "auto", "none", "required":
+            return []
+        default:
+            return [AIWarning(type: "unsupported", feature: "tool choice type: \(string)")]
+        }
+    }
+    guard let object = value?.objectValue else { return [] }
+    switch object["type"]?.stringValue {
+    case "auto", "none", "required", "tool":
+        return []
+    case let type?:
+        return [AIWarning(type: "unsupported", feature: "tool choice type: \(type)")]
+    case nil:
+        return [AIWarning(type: "unsupported", feature: "tool choice type: undefined")]
+    }
 }
 
 private func cerebrasMessageTransform(_ message: JSONValue) -> JSONValue {
@@ -352,6 +426,27 @@ private func cerebrasProviderMetadata(from raw: JSONValue, choice: JSONValue?) -
     }
     guard !metadata.isEmpty else { return [:] }
     return ["cerebras": .object(metadata)]
+}
+
+private func cerebrasUsage(from raw: JSONValue) -> TokenUsage? {
+    guard let usage = raw["usage"] else { return nil }
+    let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue ?? 0
+    let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue ?? 0
+    let cacheReadTokens = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
+        ?? usage["cached_tokens"]?.intValue
+        ?? 0
+    let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue ?? 0
+    let totalTokens = usage["total_tokens"]?.intValue ?? inputTokens + outputTokens
+    return TokenUsage(
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: totalTokens,
+        inputTokensNoCache: inputTokens - cacheReadTokens,
+        inputTokensCacheRead: cacheReadTokens,
+        outputTextTokens: outputTokens - reasoningTokens,
+        outputReasoningTokens: reasoningTokens,
+        rawValue: usage
+    )
 }
 
 private func cerebrasMergeProviderMetadata(_ source: [String: JSONValue], into target: inout [String: JSONValue]) {

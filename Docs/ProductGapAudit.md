@@ -357,7 +357,11 @@ Impact:
   shape, maps call-level `responseFormat` into native structured outputs,
   forwards abort signals, preserves response/provider metadata, and emits
   text/reasoning stream lifecycle parts while keeping the upstream mixed
-  structured-output/tool-call normalization.
+  structured-output/tool-call normalization. The dedicated Cerebras pass also
+  maps upstream OpenAI-compatible `providerOptions.cerebras` and
+  `providerOptions.openaiCompatible` fields (`user`, `reasoningEffort`,
+  `textVerbosity`, `strictJsonSchema`), standard penalties/seed, provider-tool
+  warnings, and rich cache/reasoning token usage.
 - DeepSeek chat now mirrors the upstream native model path more closely:
   top-level reasoning, `frequencyPenalty`, `presencePenalty`, unsupported
   `topK`/`seed` warnings, JSON response-format injection, function tools/tool
