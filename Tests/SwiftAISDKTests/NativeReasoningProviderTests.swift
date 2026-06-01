@@ -638,7 +638,8 @@ import Testing
 }
 
 @Test func cerebrasLanguageTransformsReasoningContentAndNormalizesJsonFinish() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"{\"result\":\"2026\"}","reasoning":"think","tool_calls":[{"id":"repeat_call","index":0,"type":"function","function":{"name":"nonUsefulTool","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}"#))
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-gen-1","model":"zai-glm-4.7","choices":[{"message":{"content":"{\"result\":\"2026\"}","reasoning":"think","tool_calls":[{"id":"repeat_call","index":0,"type":"function","function":{"name":"nonUsefulTool","arguments":"{}"}}]},"finish_reason":"tool_calls","logprobs":{"content":[{"token":"2026","logprob":-0.1}]}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"completion_tokens_details":{"accepted_prediction_tokens":1,"rejected_prediction_tokens":0}}}"#,
+    headers: ["x-cerebras": "yes"]))
     let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
     let model = try provider.languageModel("zai-glm-4.7")
 
@@ -654,8 +655,15 @@ import Testing
     ))
 
     #expect(result.text == "{\"result\":\"2026\"}")
+    #expect(result.reasoning == "think")
     #expect(result.finishReason == "stop")
     #expect(result.toolCalls.isEmpty)
+    #expect(result.providerMetadata["cerebras"]?["acceptedPredictionTokens"]?.intValue == 1)
+    #expect(result.providerMetadata["cerebras"]?["rejectedPredictionTokens"]?.intValue == 0)
+    #expect(result.providerMetadata["cerebras"]?["logprobs"]?[0]?["token"]?.stringValue == "2026")
+    #expect(result.responseMetadata.id == "cerebras-gen-1")
+    #expect(result.responseMetadata.modelID == "zai-glm-4.7")
+    #expect(result.responseMetadata.headers["x-cerebras"] == "yes")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.cerebras.ai/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer cerebras-key")
@@ -696,6 +704,48 @@ import Testing
     #expect(body["response_format"]?["json_schema"]?["strict"]?.boolValue == false)
     #expect(body["responseFormat"] == nil)
     #expect(body["strictJsonSchema"] == nil)
+}
+
+@Test func cerebrasLanguageMapsStandardResponseFormatToolsAndToolChoice() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Magic number?")],
+        responseFormat: .json(
+            schema: [
+                "type": "object",
+                "properties": ["result": ["type": "string"]],
+                "required": ["result"]
+            ],
+            name: "answer",
+            description: "Answer schema"
+        ),
+        tools: [
+            "nonUsefulTool": [
+                "type": "object",
+                "description": "Returns a magic number",
+                "properties": [:],
+                "strict": true
+            ]
+        ],
+        toolChoice: ["type": "tool", "toolName": "nonUsefulTool"]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
+    #expect(body["response_format"]?["json_schema"]?["description"]?.stringValue == "Answer schema")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["additionalProperties"]?.boolValue == false)
+    #expect(body["tools"]?[0]?["type"]?.stringValue == "function")
+    #expect(body["tools"]?[0]?["function"]?["name"]?.stringValue == "nonUsefulTool")
+    #expect(body["tools"]?[0]?["function"]?["description"]?.stringValue == "Returns a magic number")
+    #expect(body["tools"]?[0]?["function"]?["strict"]?.boolValue == true)
+    #expect(body["tools"]?[0]?["function"]?["parameters"]?["strict"] == nil)
+    #expect(body["tool_choice"]?["type"]?.stringValue == "function")
+    #expect(body["tool_choice"]?["function"]?["name"]?.stringValue == "nonUsefulTool")
 }
 
 @Test func cerebrasChatModelUsesNativeStructuredResponseFormat() async throws {
@@ -749,15 +799,23 @@ import Testing
     let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
     let model = try provider.languageModel("zai-glm-4.7")
 
-    var reasoning: [String] = []
-    var text: [String] = []
+    var reasoningLifecycle: [String] = []
+    var textLifecycle: [String] = []
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .reasoningDelta(delta):
-            reasoning.append(delta)
-        case let .textDelta(delta):
-            text.append(delta)
+        case let .reasoningStart(id, _):
+            reasoningLifecycle.append("start:\(id)")
+        case let .reasoningDeltaPart(id, delta, _):
+            reasoningLifecycle.append("delta:\(id):\(delta)")
+        case let .reasoningEnd(id, _):
+            reasoningLifecycle.append("end:\(id)")
+        case let .textStart(id, _):
+            textLifecycle.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            textLifecycle.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            textLifecycle.append("end:\(id)")
         case let .finish(_, usage):
             totalTokens = usage?.totalTokens
         default:
@@ -765,8 +823,16 @@ import Testing
         }
     }
 
-    #expect(reasoning == ["think"])
-    #expect(text == ["done"])
+    #expect(reasoningLifecycle == [
+        "start:reasoning-0",
+        "delta:reasoning-0:think",
+        "end:reasoning-0"
+    ])
+    #expect(textLifecycle == [
+        "start:0",
+        "delta:0:done",
+        "end:0"
+    ])
     #expect(totalTokens == 3)
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
@@ -787,7 +853,7 @@ import Testing
     let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
     let model = try provider.languageModel("zai-glm-4.7")
 
-    var text: [String] = []
+    var textLifecycle: [String] = []
     var inputLifecycle: [String] = []
     var finalCalls: [AIToolCall] = []
     var finishReason: String?
@@ -797,8 +863,12 @@ import Testing
         extraBody: ["response_format": .object(["type": "json_schema"])]
     )) {
         switch part {
-        case let .textDelta(delta):
-            text.append(delta)
+        case let .textStart(id, _):
+            textLifecycle.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            textLifecycle.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            textLifecycle.append("end:\(id)")
         case let .toolInputStart(id, name, _, _, _, _):
             inputLifecycle.append("start:\(id):\(name)")
         case let .toolInputDelta(id, delta, _):
@@ -810,12 +880,19 @@ import Testing
         case let .finish(reason, usage):
             finishReason = reason
             totalTokens = usage?.totalTokens
+        case let .finishMetadata(reason, usage, _):
+            finishReason = reason
+            totalTokens = usage?.totalTokens
         default:
             break
         }
     }
 
-    #expect(text == ["{\"result\":\"2026\"}"])
+    #expect(textLifecycle == [
+        "start:0",
+        "delta:0:{\"result\":\"2026\"}",
+        "end:0"
+    ])
     #expect(inputLifecycle == [
         "start:call_magic:nonUsefulTool",
         "delta:call_magic:{}",

@@ -95,6 +95,33 @@ import Testing
     #expect(streamRequest.abortSignal === streamController.signal)
 }
 
+@Test func cerebrasLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"id":"cerebras-1","model":"zai-glm-4.7","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}
+    """))
+    let generateProvider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: generateTransport))
+    let generateModel = try generateProvider.languageModel("zai-glm-4.7")
+    let generateController = AIAbortController()
+
+    _ = try await generateModel.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"id":"cerebras-1","model":"zai-glm-4.7","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+    """))
+    let streamProvider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("zai-glm-4.7")
+    let streamController = AIAbortController()
+
+    for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}
+
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.abortSignal === streamController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

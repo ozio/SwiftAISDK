@@ -321,6 +321,11 @@ Impact:
   parts in addition to legacy `.toolCallDelta` and final `.toolCall` parts, so
   consumers can observe argument assembly without waiting for the final tool
   call.
+- Cerebras chat now uses the upstream OpenAI-compatible function-tool wire
+  shape, maps call-level `responseFormat` into native structured outputs,
+  forwards abort signals, preserves response/provider metadata, and emits
+  text/reasoning stream lifecycle parts while keeping the upstream mixed
+  structured-output/tool-call normalization.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`
