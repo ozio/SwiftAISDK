@@ -152,6 +152,7 @@ public final class MistralEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             embeddings: embeddings,
             usage: tokenUsage(from: raw),
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

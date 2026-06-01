@@ -83,6 +83,7 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
         return EmbeddingResult(
             embeddings: embeddings,
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

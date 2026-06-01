@@ -174,6 +174,7 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
         return EmbeddingResult(
             embeddings: embeddings,
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: body, headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

@@ -132,6 +132,7 @@ public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable
         return RerankingResult(
             results: results,
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

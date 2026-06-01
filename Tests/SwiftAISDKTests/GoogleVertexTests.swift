@@ -242,6 +242,8 @@ import Testing
     let result = try await model.embed(EmbeddingRequest(values: ["hello"], dimensions: 128))
 
     #expect(result.embeddings == [[0.4, 0.5]])
+    #expect(result.requestMetadata.body?["instances"]?[0]?["content"]?.stringValue == "hello")
+    #expect(result.requestMetadata.body?["parameters"]?["outputDimensionality"]?.intValue == 128)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/text-embedding-005:predict")
     #expect(request.headers["x-goog-api-key"] == "vertex-key")

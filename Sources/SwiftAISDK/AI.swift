@@ -1712,7 +1712,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await model.embed(request)
+            var result = try await model.embed(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: embeddingRequestMetadataBody(request), headers: request.headers)
+            }
+            return result
         }
     }
 
@@ -1752,6 +1756,7 @@ public enum AI {
             var rawValues: [JSONValue] = []
             var warnings: [AIWarning] = []
             var providerMetadata: [String: JSONValue] = [:]
+            var requestMetadata = AIRequestMetadata(body: embeddingRequestMetadataBody(request), headers: request.headers)
             var responseMetadata = AIResponseMetadata()
 
             for chunk in values.chunked(size: chunkSize) {
@@ -1763,6 +1768,9 @@ public enum AI {
                 rawValues.append(result.rawValue)
                 warnings.append(contentsOf: result.warnings)
                 providerMetadata.merge(result.providerMetadata) { _, new in new }
+                if requestMetadata.body == nil, result.requestMetadata.body != nil {
+                    requestMetadata = result.requestMetadata
+                }
                 if responseMetadata == AIResponseMetadata() {
                     responseMetadata = result.responseMetadata
                 }
@@ -1774,6 +1782,7 @@ public enum AI {
                 rawValue: .array(rawValues),
                 warnings: warnings,
                 providerMetadata: providerMetadata,
+                requestMetadata: requestMetadata,
                 responseMetadata: responseMetadata
             )
         }
@@ -1874,7 +1883,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await model.rerank(request)
+            var result = try await model.rerank(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: rerankingRequestMetadataBody(request), headers: request.headers)
+            }
+            return result
         }
     }
 
@@ -3425,6 +3438,15 @@ private func embeddingRequestTelemetryInput(_ request: EmbeddingRequest) -> JSON
     ])
 }
 
+private func embeddingRequestMetadataBody(_ request: EmbeddingRequest) -> JSONValue {
+    .object([
+        "values": .array(request.values.map(JSONValue.string)),
+        "dimensions": request.dimensions.map { .number(Double($0)) },
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
+    ])
+}
+
 private func imageRequestTelemetryInput(_ request: ImageGenerationRequest) -> JSONValue {
     .object([
         "prompt": .string(request.prompt),
@@ -3493,6 +3515,16 @@ private func rerankingRequestTelemetryInput(_ request: RerankingRequest) -> JSON
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
         "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func rerankingRequestMetadataBody(_ request: RerankingRequest) -> JSONValue {
+    .object([
+        "query": .string(request.query),
+        "documents": .array(request.documents.map(JSONValue.string)),
+        "topK": request.topK.map { .number(Double($0)) },
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
     ])
 }
 
@@ -3678,6 +3710,7 @@ private func objectStreamTelemetryOutput(
 private func embeddingTelemetryOutput(_ result: EmbeddingResult) -> JSONValue {
     .object([
         "embeddings": .array(result.embeddings.map { .array($0.map(JSONValue.number)) }),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
 }
@@ -3724,6 +3757,7 @@ private func rerankingTelemetryOutput(_ result: RerankingResult) -> JSONValue {
                 "document": ranked.document.map(JSONValue.string)
             ])
         }),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
 }

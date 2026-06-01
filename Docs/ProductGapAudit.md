@@ -219,12 +219,12 @@ Progress:
   titles, and scalar options without storing raw uploaded bytes. File uploads
   now also return upstream-style unsupported warnings when a provider ignores
   options such as `displayName` or `purpose`, instead of dropping them
-  silently. Native
-  embedding and reranking
-  models for Cohere,
-  Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic
-  JSON reranking wrappers also preserve provider response headers and raw JSON
-  bodies. Native transcription models now map upstream-style segments,
+  silently. Native embedding and reranking models for OpenAI-compatible,
+  Google Generative AI, Google Vertex, Cohere, Voyage, Mistral, Baseten,
+  Gateway, Amazon Bedrock, TogetherAI, and generic JSON reranking wrappers now
+  preserve safe request metadata for their provider JSON bodies alongside
+  provider response headers and raw JSON bodies. Native transcription models now
+  map upstream-style segments,
   language, and duration for Deepgram, ElevenLabs, Groq/OpenAI-compatible
   verbose JSON, AssemblyAI, Rev.ai, Gladia, fal, Gateway, and generic JSON
   transcription wrappers. OpenAI-compatible chat, completion, and Responses

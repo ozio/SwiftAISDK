@@ -156,8 +156,12 @@ import Testing
     let embeddingProvider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: embeddingTransport))
     let embeddingModel = try embeddingProvider.embeddingModel("text-embedding-3-small")
 
-    let embedding = try await embeddingModel.embed(EmbeddingRequest(values: ["hi"]))
+    let embedding = try await embeddingModel.embed(EmbeddingRequest(values: ["hi"], dimensions: 64, headers: ["x-client": "swift"]))
 
+    #expect(embedding.requestMetadata.body?["input"]?[0]?.stringValue == "hi")
+    #expect(embedding.requestMetadata.body?["dimensions"]?.intValue == 64)
+    #expect(embedding.requestMetadata.headers["x-client"] == "swift")
+    #expect(embedding.requestMetadata.headers["Authorization"] == nil)
     #expect(embedding.responseMetadata.modelID == "text-embedding-3-small")
     #expect(embedding.responseMetadata.headers["embedding-header"] == "value")
     #expect(embedding.responseMetadata.body?["data"]?[0]?["embedding"]?[0]?.doubleValue == 0.1)

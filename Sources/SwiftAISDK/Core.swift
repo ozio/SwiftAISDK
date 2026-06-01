@@ -1355,6 +1355,7 @@ public struct EmbeddingResult: Sendable {
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
     public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
 
     public init(
@@ -1363,6 +1364,7 @@ public struct EmbeddingResult: Sendable {
         rawValue: JSONValue,
         warnings: [AIWarning] = [],
         providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.embeddings = embeddings
@@ -1370,6 +1372,7 @@ public struct EmbeddingResult: Sendable {
         self.rawValue = rawValue
         self.warnings = warnings
         self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
     }
 }
@@ -1682,6 +1685,7 @@ public struct RerankingResult: Sendable {
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
     public var providerMetadata: [String: JSONValue]
+    public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
 
     public init(
@@ -1689,12 +1693,14 @@ public struct RerankingResult: Sendable {
         rawValue: JSONValue,
         warnings: [AIWarning] = [],
         providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.results = results
         self.rawValue = rawValue
         self.warnings = warnings
         self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
     }
 }

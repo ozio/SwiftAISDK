@@ -1940,6 +1940,7 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             usage: tokenUsage(from: raw),
             rawValue: raw,
             warnings: warnings,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

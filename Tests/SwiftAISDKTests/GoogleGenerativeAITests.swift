@@ -37,6 +37,21 @@ import Testing
     #expect(body["contents"]?[0]?["parts"]?[0]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
 }
 
+@Test func googleEmbeddingPreservesRequestMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"embedding":{"values":[0.1,0.2]}}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.embeddingModel("gemini-embedding-001")
+
+    let result = try await model.embed(EmbeddingRequest(values: ["hello"], headers: ["x-client": "swift"]))
+
+    #expect(result.embeddings == [[0.1, 0.2]])
+    #expect(result.requestMetadata.body?["content"]?["parts"]?[0]?["text"]?.stringValue == "hello")
+    #expect(result.requestMetadata.headers["x-client"] == "swift")
+    #expect(result.requestMetadata.headers["x-goog-api-key"] == nil)
+}
+
 @Test func googleLanguageMapsFunctionToolsAndToolChoice() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"tool-ready"}]},"finishReason":"STOP"}]}

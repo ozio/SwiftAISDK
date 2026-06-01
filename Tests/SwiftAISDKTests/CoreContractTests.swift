@@ -96,10 +96,12 @@ import Testing
         rawValue: .object([:]),
         warnings: [warning],
         providerMetadata: providerMetadata,
+        requestMetadata: request,
         responseMetadata: response
     )
     #expect(embedding.warnings == [warning])
     #expect(embedding.providerMetadata == providerMetadata)
+    #expect(embedding.requestMetadata == request)
     #expect(embedding.responseMetadata == response)
 
     let image = ImageGenerationResult(
@@ -135,7 +137,8 @@ import Testing
     let video = VideoGenerationResult(urls: [], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, responseMetadata: response)
     #expect(video.providerMetadata == providerMetadata)
 
-    let reranking = RerankingResult(results: [], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, responseMetadata: response)
+    let reranking = RerankingResult(results: [], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, requestMetadata: request, responseMetadata: response)
+    #expect(reranking.requestMetadata == request)
     #expect(reranking.responseMetadata == response)
 
     let file = FileUploadResult(providerReference: ["file": "file-1"], rawValue: .object([:]), warnings: [warning], providerMetadata: providerMetadata, requestMetadata: request, responseMetadata: response)

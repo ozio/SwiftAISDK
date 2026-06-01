@@ -186,6 +186,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
         return EmbeddingResult(
             embeddings: [embedding],
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -612,6 +613,7 @@ public final class AmazonBedrockRerankingModel: RerankingModel, @unchecked Senda
         return RerankingResult(
             results: results,
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

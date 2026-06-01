@@ -172,6 +172,7 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             embeddings: embeddings,
             usage: TokenUsage(totalTokens: raw["meta"]?["billed_units"]?["input_tokens"]?.intValue),
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -208,6 +209,7 @@ public final class CohereRerankingModel: RerankingModel, @unchecked Sendable {
         return RerankingResult(
             results: rerankingResults(from: raw["results"]),
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -256,6 +258,7 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             embeddings: embeddings,
             usage: TokenUsage(totalTokens: raw["usage"]?["total_tokens"]?.intValue),
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -292,6 +295,7 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
         return RerankingResult(
             results: rerankingResults(from: raw["data"]),
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

@@ -302,6 +302,7 @@ public final class GatewayEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             embeddings: embeddings,
             usage: gatewayEmbeddingUsage(from: raw),
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -443,7 +444,7 @@ public final class GatewayRerankingModel: RerankingModel, @unchecked Sendable {
                 return nil
             }
             return RerankedDocument(index: index, score: score)
-        }, rawValue: raw, responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID))
+        }, rawValue: raw, requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers), responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID))
     }
 }
 
