@@ -318,6 +318,71 @@ private func openAICompatibleResponseMetadata(from raw: JSONValue? = nil, respon
     )
 }
 
+private func openAICompatibleProviderMetadataNamespace(_ providerID: String) -> String {
+    openAIBackedProviderRoot(providerID) ?? openAICompatibleProviderRoot(providerID)
+}
+
+private func openAICompatibleNamespacedProviderMetadata(_ metadata: [String: JSONValue], providerID: String) -> [String: JSONValue] {
+    guard !metadata.isEmpty else { return [:] }
+    return [openAICompatibleProviderMetadataNamespace(providerID): .object(metadata)]
+}
+
+private func openAICompatibleMergeProviderMetadata(_ source: [String: JSONValue], into target: inout [String: JSONValue]) {
+    for (key, value) in source {
+        if case let .object(existing) = target[key],
+           case let .object(incoming) = value {
+            target[key] = .object(existing.merging(incoming) { _, new in new })
+        } else {
+            target[key] = value
+        }
+    }
+}
+
+private func openAICompatibleChatProviderMetadata(from raw: JSONValue, choice: JSONValue?, providerID: String) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [:]
+    if let accepted = raw["usage"]?["completion_tokens_details"]?["accepted_prediction_tokens"] {
+        metadata["acceptedPredictionTokens"] = accepted
+    }
+    if let rejected = raw["usage"]?["completion_tokens_details"]?["rejected_prediction_tokens"] {
+        metadata["rejectedPredictionTokens"] = rejected
+    }
+    if let logprobs = choice?["logprobs"]?["content"] {
+        metadata["logprobs"] = logprobs
+    }
+    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+}
+
+private func openAICompatibleCompletionProviderMetadata(from choice: JSONValue?, providerID: String) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [:]
+    if let logprobs = choice?["logprobs"] {
+        metadata["logprobs"] = logprobs
+    }
+    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+}
+
+private func openAIResponsesProviderMetadata(from raw: JSONValue, providerID: String) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [:]
+    if let responseID = raw["id"] {
+        metadata["responseId"] = responseID
+    }
+    if let serviceTier = raw["service_tier"] {
+        metadata["serviceTier"] = serviceTier
+    }
+    let logprobs = openAIResponsesOutputLogprobs(from: raw)
+    if !logprobs.isEmpty {
+        metadata["logprobs"] = .array(logprobs)
+    }
+    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+}
+
+private func openAIResponsesOutputLogprobs(from raw: JSONValue) -> [JSONValue] {
+    raw["output"]?.arrayValue?.flatMap { item in
+        item["content"]?.arrayValue?.compactMap { content in
+            content["logprobs"]
+        } ?? []
+    } ?? []
+}
+
 private func openAICompatibleURL(_ string: String, queryParams: [String: String]) throws -> URL {
     guard !queryParams.isEmpty else { return try requireURL(string) }
     guard var components = URLComponents(string: string) else { throw AIError.invalidURL(string) }
@@ -361,6 +426,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             finishReason: openAICompatibleFinishReason(choice?["finish_reason"]?.stringValue),
             usage: usage(from: raw),
             toolCalls: toolCalls,
+            providerMetadata: openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID),
             rawValue: raw,
             warnings: warnings,
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
@@ -379,12 +445,17 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     }
                     continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
                     var toolCalls = OpenAICompatibleStreamingToolCalls()
+                    var providerMetadata: [String: JSONValue] = [:]
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
                         let choice = raw["choices"]?[0]
+                        openAICompatibleMergeProviderMetadata(
+                            openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID),
+                            into: &providerMetadata
+                        )
                         let delta = choice?["delta"]
                         if let reasoning = delta?["reasoning_content"]?.stringValue ?? delta?["reasoning"]?.stringValue {
                             continuation.yield(.reasoningDelta(reasoning))
@@ -407,7 +478,13 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                             for toolCall in toolCalls.finishedCalls() {
                                 continuation.yield(.toolCall(toolCall))
                             }
-                            continuation.yield(.finish(reason: openAICompatibleFinishReason(reason), usage: usage(from: raw)))
+                            let finishReason = openAICompatibleFinishReason(reason)
+                            let finishUsage = usage(from: raw)
+                            if providerMetadata.isEmpty {
+                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
+                            } else {
+                                continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
+                            }
                         }
                     }
                     continuation.finish()
@@ -821,6 +898,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
             text: text,
             finishReason: raw["choices"]?[0]?["finish_reason"]?.stringValue,
             usage: tokenUsage(from: raw),
+            providerMetadata: openAICompatibleCompletionProviderMetadata(from: raw["choices"]?[0], providerID: providerID),
             rawValue: raw,
             warnings: warnings,
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
@@ -838,17 +916,28 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                         throw httpStatusError(provider: providerID, response: response)
                     }
                     continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
+                    var providerMetadata: [String: JSONValue] = [:]
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
                         let choice = raw["choices"]?[0]
+                        openAICompatibleMergeProviderMetadata(
+                            openAICompatibleCompletionProviderMetadata(from: choice, providerID: providerID),
+                            into: &providerMetadata
+                        )
                         if let delta = choice?["text"]?.stringValue {
                             continuation.yield(.textDelta(delta))
                         }
                         if let reason = choice?["finish_reason"]?.stringValue {
-                            continuation.yield(.finish(reason: openAICompatibleFinishReason(reason), usage: tokenUsage(from: raw)))
+                            let finishReason = openAICompatibleFinishReason(reason)
+                            let finishUsage = tokenUsage(from: raw)
+                            if providerMetadata.isEmpty {
+                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
+                            } else {
+                                continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
+                            }
                         }
                     }
                     continuation.finish()
@@ -907,6 +996,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
             toolApprovalRequests: toolApprovalRequests,
+            providerMetadata: openAIResponsesProviderMetadata(from: raw, providerID: providerID),
             rawValue: raw,
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -923,11 +1013,17 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     }
                     continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
                     var toolCallBuffers = OpenAIResponsesStreamingToolCalls()
+                    var providerMetadata: [String: JSONValue] = [:]
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
+                        let responsePayload = raw["response"] ?? raw
+                        openAICompatibleMergeProviderMetadata(
+                            openAIResponsesProviderMetadata(from: responsePayload, providerID: providerID),
+                            into: &providerMetadata
+                        )
                         if let delta = raw["delta"]?.stringValue ?? raw["output_text_delta"]?.stringValue, openAIResponsesIsTextDelta(raw) {
                             continuation.yield(.textDelta(delta))
                         }
@@ -939,22 +1035,28 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         }
                         if raw["type"]?.stringValue == "response.completed" {
                             let response = raw["response"] ?? raw
-                            continuation.yield(.finish(
-                                reason: openAIResponsesFinishReason(
-                                    status: response["status"]?.stringValue,
-                                    incompleteReason: response["incomplete_details"]?["reason"]?.stringValue
-                                ),
-                                usage: tokenUsage(from: response)
-                            ))
+                            let finishReason = openAIResponsesFinishReason(
+                                status: response["status"]?.stringValue,
+                                incompleteReason: response["incomplete_details"]?["reason"]?.stringValue
+                            )
+                            let finishUsage = tokenUsage(from: response)
+                            if providerMetadata.isEmpty {
+                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
+                            } else {
+                                continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
+                            }
                         } else if raw["type"]?.stringValue == "response.incomplete" {
                             let response = raw["response"] ?? raw
-                            continuation.yield(.finish(
-                                reason: openAIResponsesFinishReason(
-                                    status: response["status"]?.stringValue ?? "incomplete",
-                                    incompleteReason: response["incomplete_details"]?["reason"]?.stringValue
-                                ),
-                                usage: tokenUsage(from: response)
-                            ))
+                            let finishReason = openAIResponsesFinishReason(
+                                status: response["status"]?.stringValue ?? "incomplete",
+                                incompleteReason: response["incomplete_details"]?["reason"]?.stringValue
+                            )
+                            let finishUsage = tokenUsage(from: response)
+                            if providerMetadata.isEmpty {
+                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
+                            } else {
+                                continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
+                            }
                         }
                     }
                     continuation.finish()

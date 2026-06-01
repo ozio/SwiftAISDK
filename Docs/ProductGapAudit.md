@@ -213,9 +213,13 @@ Progress:
   bodies. Native transcription models now map upstream-style segments,
   language, and duration for Deepgram, ElevenLabs, Groq/OpenAI-compatible
   verbose JSON, AssemblyAI, Rev.ai, Gladia, fal, Gateway, and generic JSON
-  transcription wrappers. Native speech models now populate request metadata
-  for their provider JSON bodies, and OpenAI-compatible/Groq multipart
-  transcription preserves safe form metadata without storing raw audio bytes.
+  transcription wrappers. OpenAI-compatible chat, completion, and Responses
+  language models now also lift upstream provider metadata such as prediction
+  token details, logprobs, response IDs, and service tiers into
+  `providerMetadata` for both generate and stream finishes. Native speech
+  models now populate request metadata for their provider JSON bodies, and
+  OpenAI-compatible/Groq multipart transcription preserves safe form metadata
+  without storing raw audio bytes.
   Follow-up passes should keep filling richer metadata and lifecycle fields
   consistently across the remaining native providers.
 
