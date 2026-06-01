@@ -238,7 +238,10 @@ Progress:
   `providerMetadata` for both generate and stream finishes. Native speech
   models now populate request metadata for their provider JSON bodies, and
   OpenAI-compatible/Groq multipart transcription preserves safe form metadata
-  without storing raw audio bytes.
+  without storing raw audio bytes. The AI facade also fills safe fallback request
+  metadata for custom embedding, media, audio, reranking, file, and skill models
+  or clients that return empty metadata, keeping product-level telemetry
+  consistent across built-in and user-provided implementations.
   Follow-up passes should keep filling richer metadata and lifecycle fields
   consistently across the remaining native providers.
 

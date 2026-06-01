@@ -1830,7 +1830,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await model.transcribe(request)
+            var result = try await model.transcribe(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: transcriptionRequestMetadataBody(request), headers: request.headers)
+            }
+            return result
         }
     }
 
@@ -1849,7 +1853,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await model.speak(request)
+            var result = try await model.speak(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: speechRequestMetadataBody(request), headers: request.headers)
+            }
+            return result
         }
     }
 
@@ -1914,7 +1922,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await client.uploadFile(request)
+            var result = try await client.uploadFile(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: fileUploadRequestMetadataBody(request), headers: request.headers)
+            }
+            return result
         }
     }
 
@@ -1933,7 +1945,11 @@ public enum AI {
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            try await client.uploadSkill(request)
+            var result = try await client.uploadSkill(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: skillUploadRequestMetadataBody(request), headers: request.headers)
+            }
+            return result
         }
     }
 }
@@ -3493,6 +3509,18 @@ private func transcriptionRequestTelemetryInput(_ request: AudioTranscriptionReq
     ])
 }
 
+private func transcriptionRequestMetadataBody(_ request: AudioTranscriptionRequest) -> JSONValue {
+    .object([
+        "fileName": .string(request.fileName),
+        "mimeType": .string(request.mimeType),
+        "byteLength": .number(Double(request.audio.count)),
+        "language": request.language.map(JSONValue.string),
+        "prompt": request.prompt.map(JSONValue.string),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
+    ])
+}
+
 private func speechRequestTelemetryInput(_ request: SpeechRequest) -> JSONValue {
     .object([
         "text": .string(request.text),
@@ -3501,6 +3529,16 @@ private func speechRequestTelemetryInput(_ request: SpeechRequest) -> JSONValue 
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
         "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func speechRequestMetadataBody(_ request: SpeechRequest) -> JSONValue {
+    .object([
+        "text": .string(request.text),
+        "voice": request.voice.map(JSONValue.string),
+        "format": request.format.map(JSONValue.string),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
     ])
 }
 
@@ -3549,6 +3587,18 @@ private func fileUploadRequestTelemetryInput(_ request: FileUploadRequest) -> JS
     ])
 }
 
+private func fileUploadRequestMetadataBody(_ request: FileUploadRequest) -> JSONValue {
+    .object([
+        "mediaType": .string(request.mediaType),
+        "filename": request.filename.map(JSONValue.string),
+        "purpose": request.purpose.map(JSONValue.string),
+        "displayName": request.displayName.map(JSONValue.string),
+        "byteLength": .number(Double(request.data.count)),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
+    ])
+}
+
 private func skillUploadRequestTelemetryInput(_ request: SkillUploadRequest) -> JSONValue {
     .object([
         "displayTitle": request.displayTitle.map(JSONValue.string),
@@ -3560,6 +3610,19 @@ private func skillUploadRequestTelemetryInput(_ request: SkillUploadRequest) -> 
             ])
         }),
         "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+private func skillUploadRequestMetadataBody(_ request: SkillUploadRequest) -> JSONValue {
+    .object([
+        "displayTitle": request.displayTitle.map(JSONValue.string),
+        "files": .array(request.files.map { file in
+            .object([
+                "path": .string(file.path),
+                "mediaType": .string(file.mediaType),
+                "byteLength": .number(Double(file.data.count))
+            ])
+        })
     ])
 }
 
@@ -3738,6 +3801,7 @@ private func transcriptionTelemetryOutput(_ result: TranscriptionResult) -> JSON
         "language": result.language.map(JSONValue.string),
         "durationInSeconds": result.durationInSeconds.map(JSONValue.number),
         "segmentCount": .number(Double(result.segments.count)),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
 }
@@ -3745,7 +3809,8 @@ private func transcriptionTelemetryOutput(_ result: TranscriptionResult) -> JSON
 private func speechTelemetryOutput(_ result: SpeechResult) -> JSONValue {
     .object([
         "byteLength": .number(Double(result.audio.count)),
-        "contentType": result.contentType.map(JSONValue.string)
+        "contentType": result.contentType.map(JSONValue.string),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata)
     ])
 }
 

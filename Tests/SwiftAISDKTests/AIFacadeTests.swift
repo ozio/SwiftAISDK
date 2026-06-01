@@ -1424,11 +1424,16 @@ private actor PrepareStepCapture {
     let transcriptionModel = MockTranscriptionModel(result: TranscriptionResult(text: "hello", rawValue: .object([:])))
     let transcription = try await AI.transcribe(model: transcriptionModel, request: AudioTranscriptionRequest(audio: Data("wav".utf8), language: "en"))
     #expect(transcription.text == "hello")
+    #expect(transcription.requestMetadata.body?["byteLength"]?.intValue == 3)
+    #expect(transcription.requestMetadata.body?["language"]?.stringValue == "en")
+    #expect(transcription.requestMetadata.body?["audio"] == nil)
     #expect(transcriptionModel.requests.first?.language == "en")
 
     let speechModel = MockSpeechModel(result: SpeechResult(audio: Data("audio".utf8)))
     let speech = try await AI.generateSpeech(model: speechModel, request: SpeechRequest(text: "hello", voice: "alloy"))
     #expect(String(data: speech.audio, encoding: .utf8) == "audio")
+    #expect(speech.requestMetadata.body?["text"]?.stringValue == "hello")
+    #expect(speech.requestMetadata.body?["voice"]?.stringValue == "alloy")
     #expect(speechModel.requests.first?.voice == "alloy")
 
     let videoModel = MockVideoModel(result: VideoGenerationResult(urls: ["https://example.com/video.mp4"], rawValue: .object([:])))
@@ -1465,6 +1470,34 @@ private actor PrepareStepCapture {
     #expect(skill.requestMetadata.body?["skill"]?.stringValue == "metadata")
     #expect(skill.responseMetadata.id == "skill-response")
     #expect(skillClient.requests.first?.files.first?.path == "skill.md")
+}
+
+@Test func aiFacadeFillsUploadRequestMetadataWhenCustomClientsDoNot() async throws {
+    let fileClient = MockFileClient(result: FileUploadResult(providerReference: ["file": "file-1"], rawValue: .object([:])))
+    let file = try await AI.uploadFile(client: fileClient, request: FileUploadRequest(
+        data: Data("file".utf8),
+        mediaType: "text/plain",
+        filename: "a.txt",
+        purpose: "assistants",
+        displayName: "A"
+    ))
+
+    #expect(file.requestMetadata.body?["filename"]?.stringValue == "a.txt")
+    #expect(file.requestMetadata.body?["mediaType"]?.stringValue == "text/plain")
+    #expect(file.requestMetadata.body?["byteLength"]?.intValue == 4)
+    #expect(file.requestMetadata.body?["data"] == nil)
+
+    let skillClient = MockSkillsClient(result: SkillUploadResult(providerReference: ["skill": "skill-1"], rawValue: .object([:])))
+    let skill = try await AI.uploadSkill(client: skillClient, request: SkillUploadRequest(
+        files: [SkillUploadFile(path: "skill.md", data: Data("skill".utf8), mediaType: "text/markdown")],
+        displayTitle: "Skill"
+    ))
+
+    #expect(skill.requestMetadata.body?["displayTitle"]?.stringValue == "Skill")
+    #expect(skill.requestMetadata.body?["files"]?[0]?["path"]?.stringValue == "skill.md")
+    #expect(skill.requestMetadata.body?["files"]?[0]?["mediaType"]?.stringValue == "text/markdown")
+    #expect(skill.requestMetadata.body?["files"]?[0]?["byteLength"]?.intValue == 5)
+    #expect(skill.requestMetadata.body?["files"]?[0]?["data"] == nil)
 }
 
 private final class MockLanguageModel: LanguageModel, @unchecked Sendable {
