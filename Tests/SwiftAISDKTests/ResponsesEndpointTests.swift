@@ -440,6 +440,11 @@ import Testing
     #expect(result.sources[0].providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
     #expect(result.rawValue["citations"]?[0]?.stringValue == "https://example.com/a")
     #expect(result.rawValue["images"]?[0]?["image_url"]?.stringValue == "https://img.example.com/a.png")
+    #expect(result.providerMetadata["perplexity"]?["images"]?[0]?["imageUrl"]?.stringValue == "https://img.example.com/a.png")
+    #expect(result.providerMetadata["perplexity"]?["usage"]?["citationTokens"]?.intValue == 2)
+    #expect(result.providerMetadata["perplexity"]?["usage"]?["numSearchQueries"]?.intValue == 1)
+    #expect(result.providerMetadata["perplexity"]?["cost"]?["requestCost"]?.doubleValue == 0.01)
+    #expect(result.providerMetadata["perplexity"]?["cost"]?["totalCost"]?.doubleValue == 0.02)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.perplexity.ai/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer pplx-key")
@@ -538,18 +543,29 @@ import Testing
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
     let model = try provider.languageModel("sonar")
 
-    var deltas: [String] = []
+    var streamStartWarnings: [AIWarning]?
+    var textLifecycle: [String] = []
     var sources: [AISource] = []
+    var finishReason: String?
     var totalTokens: Int?
+    var providerMetadata: [String: JSONValue] = [:]
     var metadata: AIResponseMetadata?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .textDelta(delta):
-            deltas.append(delta)
+        case let .streamStart(warnings):
+            streamStartWarnings = warnings
+        case let .textStart(id, _):
+            textLifecycle.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            textLifecycle.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            textLifecycle.append("end:\(id)")
         case let .source(source):
             sources.append(source)
-        case let .finish(_, usage):
+        case let .finishMetadata(reason, usage, metadata):
+            finishReason = reason
             totalTokens = usage?.totalTokens
+            providerMetadata = metadata
         case let .responseMetadata(value):
             metadata = value
         default:
@@ -557,12 +573,19 @@ import Testing
         }
     }
 
-    #expect(deltas == ["hel", "lo"])
+    #expect(streamStartWarnings == [])
+    #expect(textLifecycle == ["start:0", "delta:0:hel", "delta:0:lo", "end:0"])
     #expect(sources.count == 1)
     #expect(sources[0].id == "citation-0")
     #expect(sources[0].url == "https://example.com/a")
     #expect(sources[0].providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
+    #expect(finishReason == "stop")
     #expect(totalTokens == 4)
+    #expect(providerMetadata["perplexity"]?["usage"]?["citationTokens"]?.intValue == 1)
+    #expect(providerMetadata["perplexity"]?["usage"]?["numSearchQueries"]?.intValue == 1)
+    #expect(providerMetadata["perplexity"]?["images"] == .null)
+    #expect(providerMetadata["perplexity"]?["cost"] == .null)
+    #expect(metadata?.id == "ppl-1")
     #expect(metadata?.modelID == "sonar")
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))

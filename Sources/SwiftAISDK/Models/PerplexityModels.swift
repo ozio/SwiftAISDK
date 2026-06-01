@@ -26,9 +26,10 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
         }
         return TextGenerationResult(
             text: text,
-            finishReason: choice?["finish_reason"]?.stringValue,
+            finishReason: perplexityFinishReason(choice?["finish_reason"]?.stringValue),
             usage: tokenUsage(from: raw),
             sources: perplexitySources(from: raw["citations"]),
+            providerMetadata: perplexityProviderMetadata(from: raw),
             rawValue: raw,
             warnings: prepared.warnings,
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
@@ -46,31 +47,46 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                         throw httpStatusError(provider: providerID, response: response)
                     }
 
-                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
-                    if !prepared.warnings.isEmpty {
-                        continuation.yield(.streamStart(warnings: prepared.warnings))
-                    }
+                    continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
-                    var emittedSourceURLs: Set<String> = []
+                    var finishReason: String?
+                    var providerMetadata = perplexityEmptyProviderMetadata()
+                    var didEmitResponseMetadata = false
+                    var didEmitSources = false
+                    var activeTextID: String?
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
+                        if !didEmitResponseMetadata {
+                            didEmitResponseMetadata = true
+                            continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: response, modelID: modelID)))
+                        }
                         latestUsage = tokenUsage(from: raw) ?? latestUsage
-                        for source in perplexitySources(from: raw["citations"]) where source.url.map({ !emittedSourceURLs.contains($0) }) ?? true {
-                            if let url = source.url {
-                                emittedSourceURLs.insert(url)
+                        perplexityMergeProviderMetadata(from: raw, into: &providerMetadata)
+                        if !didEmitSources {
+                            didEmitSources = true
+                            for source in perplexitySources(from: raw["citations"]) {
+                                continuation.yield(.source(source))
                             }
-                            continuation.yield(.source(source))
                         }
                         if let delta = raw["choices"]?[0]?["delta"]?["content"]?.stringValue, !delta.isEmpty {
-                            continuation.yield(.textDelta(delta))
+                            let id = activeTextID ?? "0"
+                            if activeTextID == nil {
+                                activeTextID = id
+                                continuation.yield(.textStart(id: id))
+                            }
+                            continuation.yield(.textDeltaPart(id: id, delta: delta))
                         }
                         if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
-                            continuation.yield(.finish(reason: reason, usage: latestUsage))
+                            finishReason = perplexityFinishReason(reason)
                         }
                     }
+                    if let textID = activeTextID {
+                        continuation.yield(.textEnd(id: textID))
+                    }
+                    continuation.yield(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -183,6 +199,83 @@ private func perplexitySources(from citations: JSONValue?) -> [AISource] {
             rawValue: citation
         )
     } ?? []
+}
+
+private func perplexityProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
+    [
+        "perplexity": .object([
+            "usage": perplexityUsageMetadata(from: raw["usage"]),
+            "cost": perplexityCostMetadata(from: raw["usage"]?["cost"]),
+            "images": perplexityImagesMetadata(from: raw["images"])
+        ])
+    ]
+}
+
+private func perplexityEmptyProviderMetadata() -> [String: JSONValue] {
+    [
+        "perplexity": .object([
+            "usage": .object([
+                "citationTokens": .null,
+                "numSearchQueries": .null
+            ]),
+            "cost": .null,
+            "images": .null
+        ])
+    ]
+}
+
+private func perplexityMergeProviderMetadata(from raw: JSONValue, into metadata: inout [String: JSONValue]) {
+    var perplexity = metadata["perplexity"]?.objectValue
+        ?? perplexityEmptyProviderMetadata()["perplexity"]?.objectValue
+        ?? [:]
+    if let usage = raw["usage"] {
+        perplexity["usage"] = perplexityUsageMetadata(from: usage)
+        perplexity["cost"] = perplexityCostMetadata(from: usage["cost"])
+    }
+    if raw["images"] != nil {
+        perplexity["images"] = perplexityImagesMetadata(from: raw["images"])
+    }
+    metadata["perplexity"] = .object(perplexity)
+}
+
+private func perplexityUsageMetadata(from value: JSONValue?) -> JSONValue {
+    .object([
+        "citationTokens": value?["citation_tokens"] ?? .null,
+        "numSearchQueries": value?["num_search_queries"] ?? .null
+    ])
+}
+
+private func perplexityCostMetadata(from value: JSONValue?) -> JSONValue {
+    guard let value else { return .null }
+    return .object([
+        "inputTokensCost": value["input_tokens_cost"] ?? .null,
+        "outputTokensCost": value["output_tokens_cost"] ?? .null,
+        "requestCost": value["request_cost"] ?? .null,
+        "totalCost": value["total_cost"] ?? .null
+    ])
+}
+
+private func perplexityImagesMetadata(from value: JSONValue?) -> JSONValue {
+    guard let images = value?.arrayValue else { return .null }
+    return .array(images.map { image in
+        .object([
+            "imageUrl": image["image_url"] ?? .null,
+            "originUrl": image["origin_url"] ?? .null,
+            "height": image["height"] ?? .null,
+            "width": image["width"] ?? .null
+        ])
+    })
+}
+
+private func perplexityFinishReason(_ reason: String?) -> String? {
+    switch reason {
+    case "stop", "length":
+        return reason
+    case nil:
+        return nil
+    default:
+        return "other"
+    }
 }
 
 private func perplexityMessageJSON(_ message: AIMessage) -> JSONValue {

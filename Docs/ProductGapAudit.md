@@ -139,7 +139,9 @@ Impact:
   structured output when an agent is selected. Perplexity now maps standard
   JSON response formats into native `response_format.type=json_schema`
   requests, keeps Perplexity-specific options scoped, returns upstream-style
-  warnings for unsupported call settings, and preserves response metadata.
+  warnings for unsupported call settings, preserves response/provider
+  metadata including usage/cost/images, forwards abort signals, and emits
+  text stream lifecycle parts.
   Hugging Face Responses now maps standard JSON response formats into
   `text.format.type=json_schema`, honors `strictJsonSchema`, returns upstream
   unsupported-setting warnings, preserves response metadata, and emits
@@ -198,8 +200,9 @@ The Swift contract keeps only a compact subset. For example:
   is still uneven: OpenAI-compatible chat/responses, Anthropic, Google
   GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere,
   Groq, DeepSeek, Cerebras, and Alibaba streams now emit tool input
-  start/delta/end parts alongside final tool calls. Mistral, Cohere, Groq,
-  DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit
+  start/delta/end parts alongside final tool calls. Perplexity emits text
+  lifecycle parts; Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and
+  Hugging Face Responses also emit
   text/reasoning start/delta/end parts. Remaining native language stream
   parsers should get the same treatment where upstream exposes equivalent
   events.
@@ -345,6 +348,10 @@ Impact:
   `topK`/`seed` warnings, JSON response-format injection, function tools/tool
   choice, response/provider metadata, abort signals, and text/reasoning stream
   lifecycle parts are covered in a dedicated provider test file.
+- Perplexity language now follows the upstream native model path more closely:
+  mapped finish reasons, response/provider metadata for usage, cost, and
+  images, first-chunk response metadata and citations, abort signals, and
+  text stream lifecycle parts are covered by focused tests.
 - Alibaba chat now follows its native upstream model more closely: top-level
   sampling, seed, reasoning budget, JSON response format, function tools/tool
   choice, assistant tool-call history, tool-result messages, response metadata,

@@ -119,7 +119,8 @@ prompts, or elicitation behavior.
    git -C /tmp/vercel-ai-sdk-upstream log -1 --format='%h %cI %s'
    ```
 
-3. Pick one provider surface or one cross-cutting surface.
+3. Pick exactly one provider package for a provider-complete pass, unless the
+   change is truly cross-cutting.
 4. Read upstream tests before implementation files.
 5. Port behavior in the closest existing Swift provider/model file.
 6. Add focused tests in the closest split test file.
@@ -129,8 +130,41 @@ prompts, or elicitation behavior.
 9. Update this guide if provider coverage, known gaps, or porting rules changed.
 10. Commit and push the round.
 
-Keep rounds small. A good round changes one provider, one capability, or one
-shared behavior such as streaming, provider options, or provider IDs.
+Keep rounds small, but finish the chosen provider before moving to another
+provider. A provider-complete pass may touch multiple capabilities for that
+provider; avoid mixing unrelated provider fixes into the same commit.
+
+## Provider-Complete Definition of Done
+
+For each provider package, work through this checklist before calling the pass
+complete:
+
+- Public factory names, aliases, default model constructors, provider IDs, base
+  URLs, environment variables, and auth/header behavior match upstream.
+- Every upstream model surface exposed by the provider is represented in Swift
+  or explicitly listed as a known gap: language, responses, embeddings,
+  reranking, image, video, transcription, speech, files, and skills.
+- Request preparation matches upstream for standard call settings, provider
+  options, deprecated option namespaces, structured outputs, provider-defined
+  tools, tool choice, multipart fields, polling bodies, and unsupported-setting
+  warnings.
+- Generate and stream parsing preserve text, reasoning, tool calls, sources,
+  files, usage, finish reasons, raw values, response/request metadata, provider
+  metadata, and raw chunks where upstream exposes them.
+- Streams emit v4 lifecycle parts where upstream does: stream start, text and
+  reasoning start/delta/end, tool input start/delta/end, sources, errors, and
+  finish metadata.
+- Abort signals are forwarded through direct requests, stream requests,
+  multipart uploads, submit/poll loops, downloads, and retry sleeps.
+- Error mapping preserves provider status, headers, and body details through the
+  shared HTTP error path.
+- Focused Swift tests cover request shape, warnings, response parsing, stream
+  lifecycle, metadata, abort propagation, and at least one unsupported-model or
+  invalid-response case where upstream has equivalent behavior.
+- Live smoke coverage is added or updated when the provider has usable local
+  credentials and a low-cost representative call.
+- `Docs/ProductGapAudit.md`, this guide, and the capability matrix describe the
+  final provider state and any remaining known gaps.
 
 ## Upstream Triage Commands
 
@@ -320,7 +354,7 @@ the touched surface into the newer naming pattern.
 | xAI provider IDs and files | Root provider stays `xai`, concrete surfaces use `xai.responses`, `xai.chat`, `xai.image`, `xai.video`, and `xai.files`. xAI file uploads use `team_id` from provider options, do not send OpenAI's `purpose` field, forward `AIAbortSignal`, and preserve upload response metadata. xAI video create/poll requests forward `AIAbortSignal`. |
 | Provider options | Preserve upstream namespaces and avoid leaking provider-specific options into unrelated providers. |
 | OpenAI-compatible warnings | Chat, completion, embedding, and image models return deprecated warnings for raw provider option keys such as `openai-compatible` or `test-provider`, pointing callers to the camelCase keys. Image models also return unsupported warnings for top-level `aspectRatio` and `seed`; these settings are intentionally not forwarded to OpenAI-style image endpoints. |
-| Core v4 contract | Core request/result/stream types now have v4-shaped slots for provider options, response metadata, provider metadata, warnings, stream lifecycle parts, tool results/approval requests, files, custom parts, streamed errors, upstream-style abort signals through `AIAbortController`/`AIAbortSignal`, and tool execution context through `AIToolExecutionContext`. Provider passes should populate or propagate these fields when upstream exposes equivalent data. OpenAI-compatible chat/responses, Anthropic, Google GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face Responses streaming now populate tool input start/delta/end parts while keeping final tool calls for existing consumers. Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit text/reasoning start-delta-end lifecycle parts. Perplexity, Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face language calls now forward abort signals; Perplexity, Mistral, Groq, DeepSeek, Alibaba, and Hugging Face also return upstream-style unsupported warnings for unsupported standard settings. Streaming providers must only emit `.raw(...)` chunks when `LanguageModelRequest.includeRawChunks` is true, matching upstream `includeRawChunks`. When adding provider helpers, keep abort propagation explicit through builder, signing, polling, and download steps. |
+| Core v4 contract | Core request/result/stream types now have v4-shaped slots for provider options, response metadata, provider metadata, warnings, stream lifecycle parts, tool results/approval requests, files, custom parts, streamed errors, upstream-style abort signals through `AIAbortController`/`AIAbortSignal`, and tool execution context through `AIToolExecutionContext`. Provider passes should populate or propagate these fields when upstream exposes equivalent data. OpenAI-compatible chat/responses, Anthropic, Google GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face Responses streaming now populate tool input start/delta/end parts while keeping final tool calls for existing consumers. Perplexity emits text lifecycle parts; Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit text/reasoning start-delta-end lifecycle parts. Perplexity, Mistral, Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face language calls now forward abort signals; Perplexity, Mistral, Groq, DeepSeek, Alibaba, and Hugging Face also return upstream-style unsupported warnings for unsupported standard settings. Streaming providers must only emit `.raw(...)` chunks when `LanguageModelRequest.includeRawChunks` is true, matching upstream `includeRawChunks`. When adding provider helpers, keep abort propagation explicit through builder, signing, polling, and download steps. |
 | Native response metadata | Use `aiResponseMetadata(...)` when native providers can expose upstream response metadata. It derives IDs/model IDs from provider JSON, preserves response headers and raw JSON bodies, and uses the current call time when the provider body has no `created` timestamp. Anthropic language, Perplexity language, Mistral chat language, Cohere chat language, Groq chat language, DeepSeek chat language, Cerebras chat language, Alibaba chat language, Hugging Face Responses language, Google Generative AI language/embedding/image/video/files, Google Vertex language/embedding/image/video, OpenAI-compatible multipart files, xAI files, OpenAI/Anthropic skill uploads, native embedding/reranking surfaces for Cohere, Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic JSON reranking wrappers, native media surfaces for Replicate, fal, Fireworks, DeepInfra, TogetherAI, xAI, QuiverAI, generic JSON image/video wrappers, and native audio/transcription surfaces for Deepgram, ElevenLabs, LMNT, Hume, AssemblyAI, Rev.ai, Gladia, and Groq preserve metadata on results; language streams emit response metadata before model deltas. For submit/poll flows, attach metadata from the final provider result response when that JSON becomes the result `rawValue`; for submit/download flows, attach metadata from the provider submit response rather than the SDK-managed asset download. |
 | Native request metadata | Populate `AIRequestMetadata` where the Swift result shape exposes it and upstream returns request bodies. Native embedding and reranking models for OpenAI-compatible, Google Generative AI, Google Vertex, Cohere, Voyage, Mistral, Baseten, Gateway, Amazon Bedrock, TogetherAI, and generic JSON reranking wrappers preserve the JSON body sent to the provider without provider auth headers; `AI.embed`, chunked `AI.embedMany`, and `AI.rerank` also fill a safe facade-level request snapshot when a custom model returns no metadata. Native image/video models preserve provider JSON bodies or safe request snapshots on `ImageGenerationResult` and `VideoGenerationResult`; sanitize inline/base64 media payloads through `aiRequestMetadata(...)`, preserving encoded byte length rather than raw image bytes. `AI.generateImage`, `AI.generateVideo`, `AI.transcribe`, `AI.generateSpeech`, `AI.uploadFile`, and `AI.uploadSkill` fill safe facade-level request snapshots when custom models or clients return no metadata. Native speech models for Deepgram, ElevenLabs, LMNT, Hume, fal, OpenAI-compatible speech, Gateway speech, and generic JSON speech preserve the JSON body sent to the provider without provider auth headers. OpenAI-compatible and Groq multipart transcription preserve safe form metadata (`model`, filename, MIME type, language/prompt/options) without embedding audio bytes; OpenAI-compatible multipart file uploads, Google resumable file uploads, xAI file uploads, and OpenAI/Anthropic skill uploads preserve safe form metadata such as filename/path, media type, byte length, display title, purpose, scalar provider options, and request headers without storing raw uploaded file bytes. Multipart file clients return `AIWarning(type: "unsupported", feature: ...)` when caller options are intentionally not forwarded, e.g. `displayName` or unsupported `purpose`. Gateway and generic JSON transcription preserve their JSON request bodies because those APIs already send base64 audio JSON. |
 | Transcription detail fields | Upstream transcription results expose `segments`, `language`, and `durationInSeconds` when providers return word/segment/utterance timing. Keep provider parsers aligned for Deepgram words, ElevenLabs words, Groq/OpenAI-compatible verbose JSON segments, AssemblyAI final transcript words, Rev.ai monologue elements, Gladia utterances, fal standard segments, Gateway transcription JSON, and generic JSON transcription wrappers. |
