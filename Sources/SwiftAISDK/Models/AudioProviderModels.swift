@@ -322,10 +322,12 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = falProviderOptions(from: request.extraBody)
+        let options = falProviderOptions(from: request)
+        let outputFormat = request.format == "hex" ? "hex" : "url"
+        let warnings = falSpeechWarnings(for: request)
         var body: [String: JSONValue] = [
             "text": .string(request.text),
-            "output_format": .string(request.format == "hex" ? "hex" : "url")
+            "output_format": .string(outputFormat)
         ]
         if let voice = request.voice { body["voice"] = .string(voice) }
         body.merge(options) { _, new in new }
@@ -342,6 +344,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: audioResponse.body,
             contentType: audioResponse.headers.contentType,
+            warnings: warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: submit.response, modelID: modelID)
         )
@@ -359,7 +362,7 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = falProviderOptions(from: request.extraBody)
+        let options = falProviderOptions(from: request)
         var body: [String: JSONValue] = [
             "audio_url": .string("data:\(request.mimeType);base64,\(request.audio.base64EncodedString())"),
             "task": .string("transcribe"),
@@ -398,12 +401,12 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
         }
         let finalResponse = try await pollFalTranscriptionResponse(modelPath: normalized, requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
         let raw = finalResponse.json
-        let segments = standardTranscriptionSegments(from: raw)
+        let segments = falTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: raw["text"]?.stringValue ?? "",
             rawValue: raw,
             segments: segments,
-            language: raw["language"]?.stringValue,
+            language: raw["inferred_languages"]?[0]?.stringValue ?? raw["language"]?.stringValue,
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
@@ -420,6 +423,9 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
             ))
             if (200..<300).contains(response.statusCode) {
                 return (try response.jsonValue(), response)
+            }
+            if !falIsTranscriptionInProgress(response) {
+                throw httpStatusError(provider: providerID, response: response)
             }
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                 throw AIError.invalidResponse(provider: providerID, message: "Fal transcription request timed out.")
@@ -722,6 +728,47 @@ private func falProviderOptions(from extraBody: [String: JSONValue]) -> [String:
         output.merge(nested) { _, nested in nested }
     }
     return output
+}
+
+private func falProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func falProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func falProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = falProviderOptions(from: extraBody)
+    output.merge(falProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    return output
+}
+
+private func falSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
+    guard let format = request.format, format != "url", format != "hex" else {
+        return []
+    }
+    return [
+        AIWarning(
+            type: "unsupported",
+            feature: "outputFormat",
+            message: "Unsupported outputFormat: \(format). Using 'url' instead."
+        )
+    ]
+}
+
+private func falTranscriptionSegments(from raw: JSONValue) -> [TranscriptionSegment] {
+    raw["chunks"]?.arrayValue?.compactMap { chunk in
+        guard let text = chunk["text"]?.stringValue, !text.isEmpty else { return nil }
+        let start = chunk["timestamp"]?[0]?.doubleValue ?? 0
+        let end = chunk["timestamp"]?[1]?.doubleValue ?? start
+        return TranscriptionSegment(text: text, startSecond: start, endSecond: end)
+    } ?? []
+}
+
+private func falIsTranscriptionInProgress(_ response: AIHTTPResponse) -> Bool {
+    guard let raw = try? response.jsonValue() else { return false }
+    return raw["detail"]?.stringValue == "Request is still in progress"
 }
 
 private func assemblyAITranscriptionOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {

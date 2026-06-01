@@ -313,18 +313,20 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
-        let options = falProviderOptions(from: request.extraBody)
+        let options = falProviderOptions(from: request)
         if let size = request.size {
             body["image_size"] = falImageSize(size)
-        } else if let aspectRatio = request.extraBody["aspectRatio"]?.stringValue
-            ?? request.extraBody["aspect_ratio"]?.stringValue
+        } else if let aspectRatio = request.aspectRatio
             ?? options["aspectRatio"]?.stringValue
             ?? options["aspect_ratio"]?.stringValue {
             body["image_size"] = falImageSize(aspectRatio)
         }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         if let count = request.count { body["num_images"] = .number(Double(count)) }
-        body.merge(try falImageInputs(from: request.files, mask: request.mask, useMultipleImages: options["useMultipleImages"]?.boolValue == true)) { _, new in new }
-        body.merge(falImageOptions(from: request.extraBody)) { _, new in new }
+        let preparedInputs = try falImageInputs(from: request.files, mask: request.mask, useMultipleImages: options["useMultipleImages"]?.boolValue == true)
+        body.merge(preparedInputs.input) { _, new in new }
+        body.merge(falImageOptions(from: options)) { _, new in new }
+        let warnings = preparedInputs.warnings + falDeprecatedImageOptionWarnings(from: options)
 
         let response = try await config.sendJSONResponse(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
@@ -334,6 +336,8 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
             urls: urls,
             base64Images: base64Images,
             rawValue: raw,
+            warnings: warnings,
+            providerMetadata: falImageProviderMetadata(from: raw),
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -363,14 +367,15 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = falProviderOptions(from: request.extraBody)
+        let options = falProviderOptions(from: request)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
         if let durationSeconds = request.durationSeconds { body["duration"] = .string("\(formatDuration(durationSeconds))s") }
-        if let imageInput = falVideoImageInput(from: request.extraBody, options: options) {
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+        if let imageInput = try falVideoImageInput(from: request, options: options) {
             body["image_url"] = imageInput
         }
-        body.merge(falVideoOptions(from: request.extraBody)) { _, new in new }
+        body.merge(falVideoOptions(from: options)) { _, new in new }
 
         let normalized = modelID.replacingOccurrences(of: #"^(fal-ai/|fal/)"#, with: "", options: .regularExpression)
         let queueResponse = try await config.transport.send(config.request(
@@ -390,8 +395,8 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         let finalResponse = try await pollFalResponse(
             url: responseURL,
             headers: request.headers,
-            intervalNanoseconds: falPollInterval(request.extraBody),
-            timeoutNanoseconds: falPollTimeout(request.extraBody),
+            intervalNanoseconds: falPollInterval(options),
+            timeoutNanoseconds: falPollTimeout(options),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.json
@@ -402,6 +407,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
             urls: [videoURL],
             operationID: queued["request_id"]?.stringValue,
             rawValue: raw,
+            providerMetadata: falVideoProviderMetadata(from: raw),
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
@@ -1484,8 +1490,77 @@ private func falImageURLs(from raw: JSONValue) -> [String] {
     return []
 }
 
-private func falImageOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = falProviderOptions(from: extraBody)
+private func falImageProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
+    var fal: [String: JSONValue] = [:]
+    let images = falImageMetadataObjects(from: raw)
+    if !images.isEmpty {
+        fal["images"] = .array(images.map(JSONValue.object))
+    }
+    for (key, value) in raw.objectValue ?? [:] {
+        guard key != "image" && key != "images" else { continue }
+        fal[falMetadataKey(key)] = value
+    }
+    return fal.isEmpty ? [:] : ["fal": .object(fal)]
+}
+
+private func falImageMetadataObjects(from raw: JSONValue) -> [[String: JSONValue]] {
+    if let images = raw["images"]?.arrayValue {
+        return images.compactMap { falSingleImageMetadata(from: $0) }
+    }
+    if let image = raw["image"], image.objectValue != nil {
+        return [falSingleImageMetadata(from: image)].compactMap { $0 }
+    }
+    return []
+}
+
+private func falSingleImageMetadata(from image: JSONValue) -> [String: JSONValue]? {
+    guard let object = image.objectValue else { return nil }
+    var metadata: [String: JSONValue] = [:]
+    for (key, value) in object where key != "url" {
+        metadata[falMetadataKey(key)] = value
+    }
+    return metadata.isEmpty ? nil : metadata
+}
+
+private func falVideoProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
+    var fal: [String: JSONValue] = [:]
+    if let video = raw["video"], let object = video.objectValue {
+        var metadata: [String: JSONValue] = [:]
+        for (key, value) in object {
+            metadata[falMetadataKey(key)] = value
+        }
+        if !metadata.isEmpty {
+            fal["videos"] = .array([.object(metadata)])
+        }
+    }
+    for (key, value) in raw.objectValue ?? [:] {
+        guard key != "video" else { continue }
+        fal[falMetadataKey(key)] = value
+    }
+    return fal.isEmpty ? [:] : ["fal": .object(fal)]
+}
+
+private func falMetadataKey(_ key: String) -> String {
+    switch key {
+    case "content_type":
+        return "contentType"
+    case "file_name":
+        return "fileName"
+    case "file_data":
+        return "fileData"
+    case "file_size":
+        return "fileSize"
+    case "has_nsfw_concepts":
+        return "hasNsfwConcepts"
+    case "num_inference_steps":
+        return "numInferenceSteps"
+    default:
+        return key
+    }
+}
+
+private func falImageOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
+    var output = options
     falMoveKey("imageUrl", to: "image_url", in: &output)
     falMoveKey("maskUrl", to: "mask_url", in: &output)
     falMoveKey("guidanceScale", to: "guidance_scale", in: &output)
@@ -1497,12 +1572,13 @@ private func falImageOptions(from extraBody: [String: JSONValue]) -> [String: JS
     output.removeValue(forKey: "aspectRatio")
     output.removeValue(forKey: "aspect_ratio")
     output.removeValue(forKey: "useMultipleImages")
+    output.removeValue(forKey: "__deprecatedKeys")
     output.removeValue(forKey: "fal")
     return output
 }
 
-private func falVideoOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = falProviderOptions(from: extraBody)
+private func falVideoOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
+    var output = options
     falMoveKey("motionStrength", to: "motion_strength", in: &output)
     falMoveKey("negativePrompt", to: "negative_prompt", in: &output)
     falMoveKey("promptOptimizer", to: "prompt_optimizer", in: &output)
@@ -1513,6 +1589,7 @@ private func falVideoOptions(from extraBody: [String: JSONValue]) -> [String: JS
     output.removeValue(forKey: "poll_timeout_ms")
     output.removeValue(forKey: "image")
     output.removeValue(forKey: "image_url")
+    output.removeValue(forKey: "imageUrl")
     return output
 }
 
@@ -1522,14 +1599,35 @@ private func falMoveKey(_ source: String, to destination: String, in values: ino
     }
 }
 
-private func falPollInterval(_ extraBody: [String: JSONValue]) -> UInt64 {
-    let options = falProviderOptions(from: extraBody)
+private func falDeprecatedImageOptionWarnings(from options: [String: JSONValue]) -> [AIWarning] {
+    let deprecatedKeys: [(snake: String, camel: String)] = [
+        ("image_url", "imageUrl"),
+        ("mask_url", "maskUrl"),
+        ("guidance_scale", "guidanceScale"),
+        ("num_inference_steps", "numInferenceSteps"),
+        ("enable_safety_checker", "enableSafetyChecker"),
+        ("output_format", "outputFormat"),
+        ("sync_mode", "syncMode"),
+        ("safety_tolerance", "safetyTolerance")
+    ].filter { options[$0.snake] != nil }
+    guard !deprecatedKeys.isEmpty else { return [] }
+    let replacements = deprecatedKeys
+        .map { "'\($0.snake)' (use '\($0.camel)')" }
+        .joined(separator: ", ")
+    return [
+        AIWarning(
+            type: "other",
+            message: "fal image providerOptions use deprecated snake_case keys: \(replacements)."
+        )
+    ]
+}
+
+private func falPollInterval(_ options: [String: JSONValue]) -> UInt64 {
     let milliseconds = options["pollIntervalMs"]?.intValue ?? options["poll_interval_ms"]?.intValue ?? 2_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
 
-private func falPollTimeout(_ extraBody: [String: JSONValue]) -> UInt64 {
-    let options = falProviderOptions(from: extraBody)
+private func falPollTimeout(_ options: [String: JSONValue]) -> UInt64 {
     let milliseconds = options["pollTimeoutMs"]?.intValue ?? options["poll_timeout_ms"]?.intValue ?? 300_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
@@ -1538,19 +1636,40 @@ private func falProviderOptions(from extraBody: [String: JSONValue]) -> [String:
     extraBody["fal"]?.objectValue ?? extraBody.filter { key, _ in key != "fal" }
 }
 
-private func falImageInputs(from files: [ImageInputFile], mask: ImageInputFile?, useMultipleImages: Bool) throws -> [String: JSONValue] {
+private func falProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func falProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+}
+
+private func falProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    var output = falProviderOptions(from: extraBody)
+    output.merge(falProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    return output
+}
+
+private func falImageInputs(from files: [ImageInputFile], mask: ImageInputFile?, useMultipleImages: Bool) throws -> (input: [String: JSONValue], warnings: [AIWarning]) {
     var input: [String: JSONValue] = [:]
+    var warnings: [AIWarning] = []
     if !files.isEmpty {
         if useMultipleImages {
             input["image_urls"] = .array(try files.map { .string(try falImageFileInput($0)) })
         } else if let file = files.first {
             input["image_url"] = .string(try falImageFileInput(file))
+            if files.count > 1 {
+                warnings.append(AIWarning(
+                    type: "other",
+                    message: "Multiple input images provided but useMultipleImages is not enabled. Only the first image will be used. Set providerOptions.fal.useMultipleImages to true for models that support multiple images (e.g., fal-ai/flux-2/edit)."
+                ))
+            }
         }
     }
     if let mask {
         input["mask_url"] = .string(try falImageFileInput(mask))
     }
-    return input
+    return (input, warnings)
 }
 
 private func falImageFileInput(_ file: ImageInputFile) throws -> String {
@@ -1564,11 +1683,14 @@ private func falImageFileInput(_ file: ImageInputFile) throws -> String {
     return "data:\(mediaType);base64,\(data.base64EncodedString())"
 }
 
-private func falVideoImageInput(from extraBody: [String: JSONValue], options: [String: JSONValue]) -> JSONValue? {
-    if let image = extraBody["image"] ?? options["image"] {
+private func falVideoImageInput(from request: VideoGenerationRequest, options: [String: JSONValue]) throws -> JSONValue? {
+    if let image = request.image {
+        return .string(try falImageFileInput(image))
+    }
+    if let image = options["image"] {
         return falVideoImageValue(image)
     }
-    if let imageURL = extraBody["imageUrl"] ?? extraBody["image_url"] ?? options["imageUrl"] ?? options["image_url"] {
+    if let imageURL = options["imageUrl"] ?? options["image_url"] {
         return imageURL
     }
     return nil

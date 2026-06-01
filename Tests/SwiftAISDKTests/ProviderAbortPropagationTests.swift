@@ -339,6 +339,61 @@ import Testing
     #expect(requests[1].abortSignal === controller.signal)
 }
 
+@Test func falForwardsAbortSignalToImageVideoAndTranscriptionRequests() async throws {
+    let imageTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"image":{"url":"https://fal.example.com/image.png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+    ])
+    let imageProvider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: imageTransport))
+    let imageModel = try imageProvider.imageModel("fal-ai/qwen-image")
+    let imageController = AIAbortController()
+
+    _ = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: imageController.signal))
+
+    let imageRequests = await imageTransport.requests()
+    #expect(imageRequests.count == 2)
+    #expect(imageRequests[0].abortSignal === imageController.signal)
+    #expect(imageRequests[1].abortSignal === imageController.signal)
+
+    let videoTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"video-1","response_url":"https://queue.fal.run/fal-ai/luma-dream-machine/requests/video-1"}"#),
+        jsonResponse(#"{"video":{"url":"https://fal.example.com/video.mp4"}}"#)
+    ])
+    let videoProvider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: videoTransport))
+    let videoModel = try videoProvider.videoModel("fal-ai/luma-dream-machine")
+    let videoController = AIAbortController()
+
+    _ = try await videoModel.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        providerOptions: ["fal": .object(["pollIntervalMs": .number(1), "pollTimeoutMs": .number(1_000)])],
+        abortSignal: videoController.signal
+    ))
+
+    let videoRequests = await videoTransport.requests()
+    #expect(videoRequests.count == 2)
+    #expect(videoRequests[0].abortSignal === videoController.signal)
+    #expect(videoRequests[1].abortSignal === videoController.signal)
+
+    let transcriptionTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"transcription-1"}"#),
+        jsonResponse(#"{"text":"fal transcript","chunks":[]}"#)
+    ])
+    let transcriptionProvider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transcriptionTransport))
+    let transcriptionModel = try transcriptionProvider.transcriptionModel("fal-ai/wizper")
+    let transcriptionController = AIAbortController()
+
+    _ = try await transcriptionModel.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        mimeType: "audio/wav",
+        abortSignal: transcriptionController.signal
+    ))
+
+    let transcriptionRequests = await transcriptionTransport.requests()
+    #expect(transcriptionRequests.count == 2)
+    #expect(transcriptionRequests[0].abortSignal === transcriptionController.signal)
+    #expect(transcriptionRequests[1].abortSignal === transcriptionController.signal)
+}
+
 @Test func googleVideoForwardsAbortSignalToCreateAndPollRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"name":"operations/video-1","done":false}"#),
