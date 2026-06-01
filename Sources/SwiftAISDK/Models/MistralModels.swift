@@ -44,7 +44,9 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                     var usage: TokenUsage?
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         if let delta = mistralText(from: raw["choices"]?[0]?["delta"]?["content"]), !delta.isEmpty {
                             continuation.yield(.textDelta(delta))
                         }

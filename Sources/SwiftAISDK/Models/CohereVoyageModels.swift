@@ -43,7 +43,9 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                     var pendingToolCall: CoherePendingToolCall?
                     for event in parseServerSentEvents(response.body) {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         switch raw["type"]?.stringValue {
                         case "content-delta":
                             if let text = raw["delta"]?["message"]?["content"]?["text"]?.stringValue {

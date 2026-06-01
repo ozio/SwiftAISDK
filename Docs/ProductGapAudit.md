@@ -190,8 +190,10 @@ Progress:
   carry shared warnings/provider metadata/response metadata where upstream v4 can
   report them; language streams can represent lifecycle parts, stream-start
   warnings, tool results, tool approval requests, files, custom parts, response
-  metadata, and streamed errors. Provider implementations still need follow-up
-  passes to populate these fields consistently.
+  metadata, streamed errors, and opt-in raw chunks. Provider implementations
+  now gate raw stream chunks behind `includeRawChunks`, matching upstream's
+  default-no-raw behavior. Follow-up passes should keep filling richer metadata
+  and lifecycle fields consistently.
 
 ### 3. Tool execution is represented as JSON, not as a Swift product surface
 

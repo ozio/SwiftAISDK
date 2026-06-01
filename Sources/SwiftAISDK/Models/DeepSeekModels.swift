@@ -50,7 +50,9 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
                     var toolCalls = DeepSeekStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         latestUsage = tokenUsage(from: raw) ?? latestUsage
                         if let reasoning = raw["choices"]?[0]?["delta"]?["reasoning_content"]?.stringValue, !reasoning.isEmpty {
                             continuation.yield(.reasoningDelta(reasoning))

@@ -44,7 +44,9 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                     var emittedSourceURLs: Set<String> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         latestUsage = tokenUsage(from: raw) ?? latestUsage
                         for source in perplexitySources(from: raw["citations"]) where source.url.map({ !emittedSourceURLs.contains($0) }) ?? true {
                             if let url = source.url {

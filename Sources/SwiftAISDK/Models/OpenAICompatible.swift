@@ -364,7 +364,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     var toolCalls = OpenAICompatibleStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         let choice = raw["choices"]?[0]
                         let delta = choice?["delta"]
                         if let reasoning = delta?["reasoning_content"]?.stringValue ?? delta?["reasoning"]?.stringValue {
@@ -812,7 +814,9 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                     }
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         let choice = raw["choices"]?[0]
                         if let delta = choice?["text"]?.stringValue {
                             continuation.yield(.textDelta(delta))
@@ -892,7 +896,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     var toolCallBuffers = OpenAIResponsesStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         if let delta = raw["delta"]?.stringValue ?? raw["output_text_delta"]?.stringValue, openAIResponsesIsTextDelta(raw) {
                             continuation.yield(.textDelta(delta))
                         }

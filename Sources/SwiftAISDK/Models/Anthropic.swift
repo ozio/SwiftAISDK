@@ -225,7 +225,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var sourceCounter = 0
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         for part in anthropicStreamParts(from: raw) {
                             continuation.yield(part)
                         }
@@ -400,7 +402,9 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
                     for raw in try amazonBedrockAnthropicStreamEvents(from: response) {
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         for part in anthropicStreamParts(from: raw) {
                             continuation.yield(part)
                         }

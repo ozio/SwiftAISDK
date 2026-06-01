@@ -50,7 +50,9 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                     var toolCalls = AlibabaStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         latestUsage = tokenUsage(from: raw) ?? latestUsage
                         guard let choice = raw["choices"]?[0] else { continue }
 

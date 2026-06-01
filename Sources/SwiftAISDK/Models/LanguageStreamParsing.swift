@@ -1,13 +1,15 @@
 import Foundation
 
-func streamFromSSE(providerID: String, response: AIHTTPResponse, mapChunk: (JSONValue) -> [LanguageStreamPart]) throws -> [LanguageStreamPart] {
+func streamFromSSE(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, mapChunk: (JSONValue) -> [LanguageStreamPart]) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
         throw httpStatusError(provider: providerID, response: response)
     }
     var parts: [LanguageStreamPart] = []
     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
         let raw = try decodeJSONBody(Data(event.data.utf8))
-        parts.append(.raw(raw))
+        if includeRawChunks {
+            parts.append(.raw(raw))
+        }
         parts.append(contentsOf: mapChunk(raw))
     }
     return parts
@@ -66,7 +68,7 @@ func googleStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
     return parts
 }
 
-func streamFromGoogleGenerateContent(providerID: String, response: AIHTTPResponse) throws -> [LanguageStreamPart] {
+func streamFromGoogleGenerateContent(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
         throw httpStatusError(provider: providerID, response: response)
     }
@@ -79,7 +81,9 @@ func streamFromGoogleGenerateContent(providerID: String, response: AIHTTPRespons
 
     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
         let raw = try decodeJSONBody(Data(event.data.utf8))
-        parts.append(.raw(raw))
+        if includeRawChunks {
+            parts.append(.raw(raw))
+        }
         latestUsage = googleGenerateContentUsage(from: raw) ?? latestUsage
 
         for source in googleGenerateContentSources(from: raw) {
@@ -476,7 +480,7 @@ private struct BedrockStreamState {
     }
 }
 
-func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse) throws -> [LanguageStreamPart] {
+func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
         throw httpStatusError(provider: providerID, response: response)
     }
@@ -494,7 +498,9 @@ func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse) thr
     var parts: [LanguageStreamPart] = []
     var state = BedrockStreamState()
     for raw in rawChunks {
-        parts.append(.raw(raw))
+        if includeRawChunks {
+            parts.append(.raw(raw))
+        }
         parts.append(contentsOf: state.parts(from: raw))
     }
     return parts

@@ -43,7 +43,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         body: try Self.generateContentBody(for: request, modelID: modelID),
                         headers: request.headers
                     ))
-                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response)
+                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks)
                     for part in parts {
                         continuation.yield(part)
                     }
@@ -386,7 +386,9 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                     var emittedSourceKeys: Set<String> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         for source in googleInteractionsSources(from: raw, sourceCounter: &sourceCounter, emittedKeys: &emittedSourceKeys) {
                             continuation.yield(.source(source))
                         }

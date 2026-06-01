@@ -40,7 +40,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         abortSignal: request.abortSignal
                     )
                     let response = try await config.transport.send(httpRequest)
-                    let parts = try streamFromBedrockResponse(providerID: providerID, response: response)
+                    let parts = try streamFromBedrockResponse(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks)
                     for part in parts {
                         continuation.yield(part)
                     }

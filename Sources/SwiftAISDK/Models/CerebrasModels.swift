@@ -55,7 +55,9 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                     var toolCalls = CerebrasStreamingToolCalls()
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         latestUsage = tokenUsage(from: raw) ?? latestUsage
                         if let reasoning = raw["choices"]?[0]?["delta"]?["reasoning"]?.stringValue, !reasoning.isEmpty {
                             continuation.yield(.reasoningDelta(reasoning))

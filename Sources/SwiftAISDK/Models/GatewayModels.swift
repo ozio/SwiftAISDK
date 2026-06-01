@@ -112,9 +112,11 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                     var sawToolCalls = false
                     for event in parseServerSentEvents(response.body) {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        continuation.yield(.raw(raw))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
                         let type = raw["type"]?.stringValue
-                        if type == "raw", let rawValue = raw["rawValue"] {
+                        if request.includeRawChunks, type == "raw", let rawValue = raw["rawValue"] {
                             continuation.yield(.raw(rawValue))
                         }
                         if let delta = raw["delta"]?.stringValue

@@ -39,7 +39,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
                         abortSignal: request.abortSignal
                     )
                     let response = try await config.transport.send(httpRequest)
-                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response)
+                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks)
                     for part in parts {
                         continuation.yield(part)
                     }
