@@ -394,7 +394,12 @@ Impact:
   sampling, seed, reasoning budget, JSON response format, function tools/tool
   choice, assistant tool-call history, tool-result messages, response metadata,
   abort signals, unsupported `frequencyPenalty` warnings, and text/reasoning
-  stream lifecycle parts are covered by focused tests.
+  stream lifecycle parts are covered by focused tests. The dedicated Alibaba
+  pass now also covers upstream `providerOptions.alibaba`, provider-defined
+  tool and unsupported user-part warnings, rich cache/read/write and reasoning
+  token usage, and video parity for standard image/resolution/seed inputs,
+  provider options, unsupported standard warnings, final task provider metadata,
+  and response metadata.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

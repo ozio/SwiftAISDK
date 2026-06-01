@@ -1184,7 +1184,8 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let mode = alibabaVideoMode(modelID)
-        let options = alibabaVideoProviderOptions(from: request.extraBody)
+        let options = alibabaVideoProviderOptions(from: request)
+        let warnings = alibabaVideoWarnings(for: request)
         var input: [String: JSONValue] = [:]
         if !request.prompt.isEmpty { input["prompt"] = .string(request.prompt) }
         if let negativePrompt = options["negativePrompt"] ?? options["negative_prompt"] {
@@ -1193,7 +1194,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
         if let audioURL = options["audioUrl"] ?? options["audio_url"] {
             input["audio_url"] = audioURL
         }
-        if mode == "i2v", let image = alibabaVideoImageInput(from: options) {
+        if mode == "i2v", let image = alibabaVideoImageInput(from: request, options: options) {
             input["img_url"] = image
         }
         if mode == "r2v", let referenceURLs = options["referenceUrls"] ?? options["reference_urls"] {
@@ -1202,8 +1203,12 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
 
         var parameters: [String: JSONValue] = [:]
         if let duration = request.durationSeconds { parameters["duration"] = .number(duration) }
-        if let seed = options["seed"] { parameters["seed"] = seed }
-        if let resolution = options["resolution"]?.stringValue {
+        if let seed = request.seed {
+            parameters["seed"] = .number(Double(seed))
+        } else if let seed = options["seed"] {
+            parameters["seed"] = seed
+        }
+        if let resolution = request.resolution ?? options["resolution"]?.stringValue {
             if mode == "i2v" {
                 parameters["resolution"] = .string(alibabaResolution(resolution))
             } else {
@@ -1242,18 +1247,21 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
             timeoutNanoseconds: alibabaPollTimeout(options),
             abortSignal: request.abortSignal
         )
-        guard let url = raw["output"]?["video_url"]?.stringValue else {
+        guard let url = raw.raw["output"]?["video_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Alibaba video status response did not contain output.video_url.")
         }
         return VideoGenerationResult(
             urls: [url],
             operationID: taskID,
-            rawValue: raw,
-            requestMetadata: videoGenerationRequestMetadata(request, body: body)
+            rawValue: raw.raw,
+            warnings: warnings,
+            providerMetadata: alibabaVideoProviderMetadata(taskID: taskID, raw: raw.raw, videoURL: url),
+            requestMetadata: videoGenerationRequestMetadata(request, body: body),
+            responseMetadata: aiResponseMetadata(from: raw.raw, response: raw.response, modelID: modelID)
         )
     }
 
-    private func pollAlibaba(taskID: String, base: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollAlibaba(taskID: String, base: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> AlibabaPollResult {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
@@ -1268,7 +1276,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
             let raw = try response.jsonValue()
             switch raw["output"]?["task_status"]?.stringValue {
             case "SUCCEEDED":
-                return raw
+                return AlibabaPollResult(raw: raw, response: response)
             case "FAILED", "CANCELED":
                 throw AIError.invalidResponse(provider: providerID, message: raw["output"]?["message"]?.stringValue ?? "Alibaba video generation failed.")
             default:
@@ -1776,12 +1784,73 @@ private func alibabaVideoProviderOptions(from extraBody: [String: JSONValue]) ->
     return output
 }
 
-private func alibabaVideoImageInput(from options: [String: JSONValue]) -> JSONValue? {
+private func alibabaVideoProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    var output = alibabaVideoProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["alibaba"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    return output
+}
+
+private func alibabaVideoImageInput(from request: VideoGenerationRequest, options: [String: JSONValue]) -> JSONValue? {
+    if let image = request.image {
+        if let url = image.url {
+            return .string(url)
+        }
+        if let data = image.data {
+            return .string(data.base64EncodedString())
+        }
+    }
     let value = options["image"] ?? options["imageUrl"] ?? options["image_url"] ?? options["imgUrl"] ?? options["img_url"]
     if let object = value?.objectValue {
         return object["url"] ?? object["data"]
     }
     return value
+}
+
+private struct AlibabaPollResult {
+    var raw: JSONValue
+    var response: AIHTTPResponse
+}
+
+private func alibabaVideoWarnings(for request: VideoGenerationRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.aspectRatio != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "aspectRatio",
+            message: "Alibaba video models use explicit size/resolution dimensions. Use the resolution option or providerOptions.alibaba for size control."
+        ))
+    }
+    if request.fps != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "fps",
+            message: "Alibaba video models do not support custom FPS."
+        ))
+    }
+    return warnings
+}
+
+private func alibabaVideoProviderMetadata(taskID: String, raw: JSONValue, videoURL: String) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [
+        "taskId": .string(taskID),
+        "videoUrl": .string(videoURL)
+    ]
+    if let actualPrompt = raw["output"]?["actual_prompt"] {
+        metadata["actualPrompt"] = actualPrompt
+    }
+    if let usage = raw["usage"] {
+        var mappedUsage: [String: JSONValue] = [:]
+        if let duration = usage["duration"] { mappedUsage["duration"] = duration }
+        if let outputVideoDuration = usage["output_video_duration"] { mappedUsage["outputVideoDuration"] = outputVideoDuration }
+        if let resolution = usage["SR"] { mappedUsage["resolution"] = resolution }
+        if let size = usage["size"] { mappedUsage["size"] = size }
+        if !mappedUsage.isEmpty {
+            metadata["usage"] = .object(mappedUsage)
+        }
+    }
+    return ["alibaba": .object(metadata)]
 }
 
 private func alibabaResolution(_ resolution: String) -> String {

@@ -34,7 +34,7 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
             text: text,
             reasoning: choice?["message"]?["reasoning_content"]?.stringValue ?? "",
             finishReason: alibabaFinishReason(choice?["finish_reason"]?.stringValue),
-            usage: tokenUsage(from: raw),
+            usage: alibabaUsage(from: raw),
             toolCalls: toolCalls,
             rawValue: raw,
             warnings: prepared.warnings,
@@ -79,7 +79,7 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                             emittedResponseMetadata = true
                             continuation.yield(.responseMetadata(alibabaResponseMetadata(from: raw, response: response, modelID: modelID)))
                         }
-                        latestUsage = tokenUsage(from: raw) ?? latestUsage
+                        latestUsage = alibabaUsage(from: raw) ?? latestUsage
                         guard let choice = raw["choices"]?[0] else { continue }
 
                         if let reasoning = choice["delta"]?["reasoning_content"]?.stringValue, !reasoning.isEmpty {
@@ -150,6 +150,16 @@ private struct AlibabaPreparedCall {
     var warnings: [AIWarning]
 }
 
+private struct AlibabaPreparedMessages {
+    var messages: [JSONValue]
+    var warnings: [AIWarning]
+}
+
+private struct AlibabaPreparedTools {
+    var tools: [JSONValue]
+    var warnings: [AIWarning]
+}
+
 private func alibabaPreparedCall(
     for request: LanguageModelRequest,
     modelID: String,
@@ -157,13 +167,15 @@ private func alibabaPreparedCall(
     transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
 ) -> AlibabaPreparedCall {
     var warnings = alibabaWarnings(for: request)
-    var options = alibabaOptions(from: request.extraBody)
+    var options = alibabaOptions(from: request)
     let responseFormat = alibabaResolvedResponseFormat(request: request, options: &options)
     let toolChoiceInput = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
+    let preparedMessages = alibabaMessages(request.messages)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
-        "messages": .array(request.messages.flatMap(alibabaMessageJSONs))
+        "messages": .array(preparedMessages.messages)
     ]
+    warnings += preparedMessages.warnings
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
     if let topP = request.topP { body["top_p"] = .number(topP) }
     if let topK = request.topK { body["top_k"] = .number(Double(topK)) }
@@ -171,12 +183,21 @@ private func alibabaPreparedCall(
     if let seed = request.seed { body["seed"] = .number(Double(seed)) }
     if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
     if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
-    let tools = alibabaTools(from: request.tools)
-    if !tools.isEmpty {
-        body["tools"] = .array(tools)
+    let preparedTools = alibabaTools(from: request.tools)
+    warnings += preparedTools.warnings
+    if !preparedTools.tools.isEmpty {
+        body["tools"] = .array(preparedTools.tools)
         if let toolChoice = alibabaToolChoice(from: toolChoiceInput) {
             body["tool_choice"] = toolChoice
         }
+        if let parallelToolCalls = options.removeValue(forKey: "parallel_tool_calls") {
+            body["parallel_tool_calls"] = parallelToolCalls
+        }
+    } else {
+        options.removeValue(forKey: "parallel_tool_calls")
+    }
+    if !request.tools.isEmpty {
+        warnings += alibabaToolChoiceWarnings(from: toolChoiceInput)
     }
     if let responseFormat {
         body["response_format"] = responseFormat
@@ -192,18 +213,35 @@ private func alibabaPreparedCall(
     return AlibabaPreparedCall(body: transformRequestBody?(body) ?? body, warnings: warnings)
 }
 
-private func alibabaMessageJSONs(_ message: AIMessage) -> [JSONValue] {
+private func alibabaMessages(_ messages: [AIMessage]) -> AlibabaPreparedMessages {
+    var output: [JSONValue] = []
+    var warnings: [AIWarning] = []
+    for message in messages {
+        let prepared = alibabaMessageJSONs(message)
+        output += prepared.messages
+        warnings += prepared.warnings
+    }
+    return AlibabaPreparedMessages(messages: output, warnings: warnings)
+}
+
+private struct AlibabaPreparedMessageParts {
+    var parts: [JSONValue]
+    var warnings: [AIWarning]
+}
+
+private func alibabaMessageJSONs(_ message: AIMessage) -> AlibabaPreparedMessages {
     switch message.role {
     case .system:
-        return [.object([
+        return AlibabaPreparedMessages(messages: [.object([
             "role": .string("system"),
             "content": .string(message.combinedText)
-        ])]
+        ])], warnings: [])
     case .user:
-        return [.object([
+        let content = alibabaUserContentParts(message.content)
+        return AlibabaPreparedMessages(messages: [.object([
             "role": .string("user"),
-            "content": .array(alibabaUserContentParts(message.content))
-        ])]
+            "content": .array(content.parts)
+        ])], warnings: content.warnings)
     case .assistant:
         var output: [String: JSONValue] = [
             "role": .string("assistant"),
@@ -213,36 +251,70 @@ private func alibabaMessageJSONs(_ message: AIMessage) -> [JSONValue] {
         if !toolCalls.isEmpty {
             output["tool_calls"] = .array(toolCalls)
         }
-        return [.object(output)]
+        return AlibabaPreparedMessages(messages: [.object(output)], warnings: [])
     case .tool:
         let results = message.content.compactMap(alibabaToolMessageJSON)
         if !results.isEmpty {
-            return results
+            return AlibabaPreparedMessages(messages: results, warnings: [])
         }
-        return [.object([
+        return AlibabaPreparedMessages(messages: [.object([
             "role": .string("tool"),
             "content": .string(message.combinedText)
-        ])]
+        ])], warnings: [])
     }
 }
 
-private func alibabaUserContentParts(_ content: [AIContentPart]) -> [JSONValue] {
-    content.compactMap { part in
+private func alibabaUserContentParts(_ content: [AIContentPart]) -> AlibabaPreparedMessageParts {
+    var warnings: [AIWarning] = []
+    let parts = content.compactMap { part -> JSONValue? in
         switch part {
         case let .text(text):
             return .object(["type": .string("text"), "text": .string(text)])
         case let .imageURL(url):
             return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
         case let .data(mimeType, data), let .file(mimeType, data, _):
-            guard mimeType.lowercased().hasPrefix("image/") else { return nil }
+            guard mimeType.lowercased().hasPrefix("image/") else {
+                warnings.append(AIWarning(type: "unsupported", feature: "user message part type: file"))
+                return nil
+            }
             return .object([
                 "type": .string("image_url"),
                 "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
             ])
         case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+            warnings.append(AIWarning(type: "unsupported", feature: alibabaUserPartFeature(part)))
             return nil
         }
     }
+    return AlibabaPreparedMessageParts(parts: parts, warnings: warnings)
+}
+
+private func alibabaUserPartFeature(_ part: AIContentPart) -> String {
+    switch part {
+    case .data, .file:
+        return "user message part type: file"
+    case .toolCall:
+        return "user message part type: tool-call"
+    case .toolResult:
+        return "user message part type: tool-result"
+    case .toolApprovalRequest:
+        return "user message part type: tool-approval-request"
+    case .toolApprovalResponse:
+        return "user message part type: tool-approval-response"
+    case .imageURL:
+        return "user message part type: image"
+    case .text:
+        return "user message part type: text"
+    }
+}
+
+private func alibabaOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+    var output = alibabaOptions(from: request.extraBody)
+    if let nested = request.providerOptions["alibaba"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    alibabaNormalizeOptions(&output)
+    return output
 }
 
 private func alibabaOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
@@ -250,12 +322,16 @@ private func alibabaOptions(from extraBody: [String: JSONValue]) -> [String: JSO
     if let nested = output.removeValue(forKey: "alibaba")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
+    alibabaNormalizeOptions(&output)
+    return output
+}
+
+private func alibabaNormalizeOptions(_ output: inout [String: JSONValue]) {
     alibabaMoveKey("topK", to: "top_k", in: &output)
     alibabaMoveKey("presencePenalty", to: "presence_penalty", in: &output)
     alibabaMoveKey("enableThinking", to: "enable_thinking", in: &output)
     alibabaMoveKey("thinkingBudget", to: "thinking_budget", in: &output)
     alibabaMoveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
-    return output
 }
 
 private func alibabaResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
@@ -369,10 +445,15 @@ private func alibabaReasoningBudget(_ reasoning: String) -> Int? {
     return min(maxReasoningBudget, max(minReasoningBudget, Int((maxOutputTokens * percentage).rounded())))
 }
 
-private func alibabaTools(from tools: [String: JSONValue]) -> [JSONValue] {
-    tools.compactMap { name, schema in
+private func alibabaTools(from tools: [String: JSONValue]) -> AlibabaPreparedTools {
+    var warnings: [AIWarning] = []
+    let values = tools.compactMap { name, schema -> JSONValue? in
         let object = schema.objectValue
         if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "provider-defined tool \(object?["id"]?.stringValue ?? name)"
+            ))
             return nil
         }
         var parameters = schema
@@ -395,6 +476,7 @@ private func alibabaTools(from tools: [String: JSONValue]) -> [JSONValue] {
             "function": .object(function)
         ])
     }
+    return AlibabaPreparedTools(tools: values, warnings: warnings)
 }
 
 private func alibabaToolChoice(from value: JSONValue?) -> JSONValue? {
@@ -420,6 +502,26 @@ private func alibabaToolChoice(from value: JSONValue?) -> JSONValue? {
         ])
     default:
         return nil
+    }
+}
+
+private func alibabaToolChoiceWarnings(from value: JSONValue?) -> [AIWarning] {
+    if let string = value?.stringValue {
+        switch string {
+        case "auto", "none", "required":
+            return []
+        default:
+            return [AIWarning(type: "unsupported", feature: "tool choice type: \(string)")]
+        }
+    }
+    guard let object = value?.objectValue else { return [] }
+    switch object["type"]?.stringValue {
+    case "auto", "none", "required", "tool":
+        return []
+    case let type?:
+        return [AIWarning(type: "unsupported", feature: "tool choice type: \(type)")]
+    case nil:
+        return [AIWarning(type: "unsupported", feature: "tool choice type: undefined")]
     }
 }
 
@@ -485,6 +587,27 @@ private func alibabaToolCalls(from value: JSONValue?) -> [AIToolCall] {
             rawValue: item
         )
     } ?? []
+}
+
+private func alibabaUsage(from raw: JSONValue) -> TokenUsage? {
+    guard let usage = raw["usage"] else { return nil }
+    let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue ?? 0
+    let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue ?? 0
+    let cacheReadTokens = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue ?? 0
+    let cacheWriteTokens = usage["prompt_tokens_details"]?["cache_creation_input_tokens"]?.intValue ?? 0
+    let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue ?? 0
+    let totalTokens = usage["total_tokens"]?.intValue ?? inputTokens + outputTokens
+    return TokenUsage(
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: totalTokens,
+        inputTokensNoCache: max(0, inputTokens - cacheReadTokens - cacheWriteTokens),
+        inputTokensCacheRead: cacheReadTokens,
+        inputTokensCacheWrite: cacheWriteTokens,
+        outputTextTokens: outputTokens - reasoningTokens,
+        outputReasoningTokens: reasoningTokens,
+        rawValue: usage
+    )
 }
 
 private func alibabaResponseMetadata(from raw: JSONValue? = nil, response: AIHTTPResponse, modelID: String) -> AIResponseMetadata {
