@@ -44,7 +44,7 @@ public enum AIProviderCapabilities {
         providerRow("anthropic-aws", "@ai-sdk/anthropic-aws", ["AIProviders.anthropicAWS", "AIProviders.anthropicAws"], [.language], files: true, skills: true),
         providerRow("assemblyai", "@ai-sdk/assemblyai", ["AIProviders.assemblyAI", "AIProviders.assemblyai"], [.transcription]),
         providerRow("azure", "@ai-sdk/azure", ["AIProviders.azure"], [.language, .completion, .embedding, .image, .transcription, .speech]),
-        providerRow("baseten", "@ai-sdk/baseten", ["AIProviders.baseten"], [.language, .embedding], notes: "Embedding requires a synchronous model URL, matching the upstream Baseten split."),
+        providerRow("baseten", "@ai-sdk/baseten", ["AIProviders.baseten"], [.language, .embedding], notes: "`ProviderSettings.modelURL` selects dedicated Baseten `/sync` or `/sync/v1` model endpoints; embeddings require one, and chat accepts only `/sync/v1` for dedicated endpoints."),
         providerRow("black-forest-labs", "@ai-sdk/black-forest-labs", ["AIProviders.blackForestLabs"], [.image]),
         providerRow("bytedance", "@ai-sdk/bytedance", ["AIProviders.byteDance", "AIProviders.bytedance"], [.video]),
         providerRow("cerebras", "@ai-sdk/cerebras", ["AIProviders.cerebras"], [.language]),

@@ -363,6 +363,13 @@ Impact:
   reasoning usage details populate rich `TokenUsage` fields with raw usage
   retained, streams emit text lifecycle parts, and generate/stream abort
   propagation is covered by focused tests.
+- Baseten now follows its upstream provider split more closely:
+  `ProviderSettings.modelURL` represents dedicated model endpoints, chat uses
+  the Model API base by default or dedicated `/sync/v1` URLs with the upstream
+  placeholder model ID, `/predict` and plain `/sync` chat endpoints are
+  rejected, embeddings require `/sync` or `/sync/v1`, nested Baseten embedding
+  options are stripped before transport, and chat/stream/embedding abort
+  propagation is covered by focused tests.
 - Alibaba chat now follows its native upstream model more closely: top-level
   sampling, seed, reasoning budget, JSON response format, function tools/tool
   choice, assistant tool-call history, tool-result messages, response metadata,

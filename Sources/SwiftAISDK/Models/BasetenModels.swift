@@ -16,13 +16,14 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             "input": .array(request.values)
         ]
         if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
-        body.merge(request.extraBody) { _, new in new }
+        body.merge(basetenEmbeddingOptions(from: request.extraBody)) { _, new in new }
 
         let response = try await config.sendJSONResponse(
             path: "/embeddings",
             modelID: modelID,
             body: .object(body),
-            headers: request.headers
+            headers: request.headers,
+            abortSignal: request.abortSignal
         )
         let raw = response.json
         guard let data = raw["data"]?.arrayValue else {
@@ -39,6 +40,14 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
+}
+
+private func basetenEmbeddingOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
+    var output = extraBody
+    if let nested = output.removeValue(forKey: "baseten")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    return output
 }
 
 extension ModelHTTPConfig {

@@ -257,6 +257,47 @@ import Testing
     #expect(streamRequest.abortSignal === streamController.signal)
 }
 
+@Test func basetenForwardsAbortSignalToChatStreamAndEmbeddingRequests() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+    """))
+    let generateProvider = try AIProviders.baseten(settings: ProviderSettings(apiKey: "baseten-key", transport: generateTransport))
+    let generateModel = try generateProvider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+    let generateController = AIAbortController()
+
+    _ = try await generateModel.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+
+    """))
+    let streamProvider = try AIProviders.baseten(settings: ProviderSettings(apiKey: "baseten-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+    let streamController = AIAbortController()
+
+    for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}
+
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.abortSignal === streamController.signal)
+
+    let embeddingTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"embedding":[0.1]}]}"#))
+    let embeddingProvider = try AIProviders.baseten(settings: ProviderSettings(
+        apiKey: "baseten-key",
+        modelURL: "https://model-123.api.baseten.co/environments/production/sync",
+        transport: embeddingTransport
+    ))
+    let embeddingModel = try embeddingProvider.embeddingModel()
+    let embeddingController = AIAbortController()
+
+    _ = try await embeddingModel.embed(EmbeddingRequest(values: ["Hi"], abortSignal: embeddingController.signal))
+
+    let embeddingRequest = try #require(await embeddingTransport.requests().first)
+    #expect(embeddingRequest.abortSignal === embeddingController.signal)
+}
+
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""

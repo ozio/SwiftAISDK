@@ -201,7 +201,11 @@ public enum AIProviders {
     }
 
     public static func baseten(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "baseten", defaultBaseURL: "https://inference.baseten.co/v1", authorization: .bearer(environmentVariables: ["BASETEN_API_KEY"]), supportedCapabilities: [.language, .embedding], settings: settings)
+        var basetenSettings = settings
+        if let modelURL = settings.modelURL {
+            basetenSettings.baseURL = modelURL
+        }
+        return try OpenAICompatibleProvider(providerID: "baseten", defaultBaseURL: "https://inference.baseten.co/v1", authorization: .bearer(environmentVariables: ["BASETEN_API_KEY"]), supportedCapabilities: [.language, .embedding], settings: basetenSettings)
     }
 
     public static func cerebras(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
