@@ -344,7 +344,9 @@ public enum AIProviders {
     }
 
     public static func quiverAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "quiverai", defaultBaseURL: "https://api.quiver.ai/v1", authorization: .bearer(environmentVariables: ["QUIVERAI_API_KEY"]), supportedCapabilities: [.image], settings: settings)
+        var settings = settings
+        settings.baseURL = settings.baseURL ?? environmentValue(["QUIVERAI_BASE_URL"])
+        return try OpenAICompatibleProvider(providerID: "quiverai", defaultBaseURL: "https://api.quiver.ai/v1", authorization: .bearer(environmentVariables: ["QUIVERAI_API_KEY"]), supportedCapabilities: [.image], settings: settings)
     }
 
     public static func quiverai(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {

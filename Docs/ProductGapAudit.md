@@ -407,6 +407,12 @@ Impact:
   generated image file parts in streams. Image maps standard size/seed plus
   width/height/steps/style/LoRA/progressive options with invalid-size warnings.
   Video now covers both txt2vid JSON jobs and img2vid multipart image jobs.
+- QuiverAI image generation now follows the upstream SVG provider more closely:
+  `providerOptions.quiverai` drives generation/vectorization operations,
+  sampling/token/vectorize options, reference-image limits, and SVG request
+  bodies; standard `size`, `aspectRatio`, `seed`, and `mask` return warnings;
+  results preserve usage, image provider metadata, response metadata,
+  `QUIVERAI_BASE_URL`, and abort propagation.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

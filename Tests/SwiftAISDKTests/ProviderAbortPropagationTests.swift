@@ -222,6 +222,20 @@ import Testing
     #expect(img2vidRequest.abortSignal === img2vidController.signal)
 }
 
+@Test func quiverAIImageForwardsAbortSignalToGenerationRequest() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"svg-1","created":1713374400,"data":[{"svg":"<svg/>","mime_type":"image/svg+xml"}]}
+    """))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let model = try provider.imageModel("arrow-1")
+    let controller = AIAbortController()
+
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", abortSignal: controller.signal))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.abortSignal === controller.signal)
+}
+
 @Test func deepSeekLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
     {"id":"deepseek-1","model":"deepseek-chat","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}
