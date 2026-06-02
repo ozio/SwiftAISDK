@@ -88,6 +88,93 @@ import Testing
     #expect(body["google"] == nil)
 }
 
+@Test func googleLanguageMapsProviderOptionsSamplingAndReasoning() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"options"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3-pro")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Options.")],
+        topK: 7,
+        presencePenalty: 0.2,
+        frequencyPenalty: 0.3,
+        seed: 123,
+        reasoning: "xhigh",
+        providerOptions: [
+            "google": .object([
+                "serviceTier": "flex",
+                "sharedRequestType": "priority",
+                "requestType": "shared",
+                "thinkingConfig": ["includeThoughts": true],
+                "responseModalities": ["TEXT"],
+                "unsupportedProperty": "drop-me"
+            ])
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    let generationConfig = try #require(body["generationConfig"])
+    #expect(generationConfig["topK"]?.intValue == 7)
+    #expect(generationConfig["presencePenalty"]?.doubleValue == 0.2)
+    #expect(generationConfig["frequencyPenalty"]?.doubleValue == 0.3)
+    #expect(generationConfig["seed"]?.intValue == 123)
+    #expect(generationConfig["thinkingConfig"]?["thinkingLevel"]?.stringValue == "high")
+    #expect(generationConfig["thinkingConfig"]?["includeThoughts"]?.boolValue == true)
+    #expect(generationConfig["responseModalities"]?[0]?.stringValue == "TEXT")
+    #expect(body["serviceTier"]?.stringValue == "flex")
+    #expect(body["sharedRequestType"] == nil)
+    #expect(body["requestType"] == nil)
+    #expect(body["unsupportedProperty"] == nil)
+    #expect(request.headers["X-Vertex-AI-LLM-Shared-Request-Type"] == nil)
+    #expect(result.warnings.contains(AIWarning(
+        type: "compatibility",
+        feature: "reasoning",
+        message: "reasoning \"xhigh\" is not directly supported by this model. mapped to effort \"high\"."
+    )))
+    #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("'sharedRequestType' and 'requestType'") ?? false) })
+}
+
+@Test func googleLanguageMapsGemini25ReasoningToThinkingBudget() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"budget"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-pro")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Think.")],
+        reasoning: "high"
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generationConfig"]?["thinkingConfig"]?["thinkingBudget"]?.intValue == 32768)
+}
+
+@Test func googleLanguageWarnsAndDropsVertexOnlyStreamFunctionCallArguments() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"ignored"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3-pro")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Options.")],
+        providerOptions: [
+            "google": .object([
+                "streamFunctionCallArguments": true
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["toolConfig"] == nil)
+    #expect(body["streamFunctionCallArguments"] == nil)
+    #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("'streamFunctionCallArguments' is only supported on the Vertex AI API") ?? false) })
+}
+
 @Test func googleEmbeddingPreservesRequestMetadata() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"embedding":{"values":[0.1,0.2]}}

@@ -137,10 +137,15 @@ Impact:
   `generationConfig.responseMimeType` and `generationConfig.responseSchema`,
   using the same JSON-Schema-to-OpenAPI conversion path as Google function
   tools and honoring `structuredOutputs: false`; their GenerateContent request
-  builders also return upstream-style warnings for unsupported Google
-  provider-defined tools, pre-Gemini-3 function/provider tool mixing, and
-  non-Vertex `vertex_rag_store` usage, omitting unsupported tools from the
-  request body and emitting the same warnings through stream-start parts.
+  builders map standard `topK`, frequency/presence penalties, seed,
+  top-level reasoning into Gemini 3 `thinkingLevel` or Gemini 2.5
+  `thinkingBudget`, scoped `providerOptions.google`/`googleVertex` language
+  options, Gemini `serviceTier`, and Vertex PayGo request headers. They also
+  return upstream-style warnings for unsupported Google provider-defined tools,
+  pre-Gemini-3 function/provider tool mixing, non-Vertex `vertex_rag_store`
+  usage, incompatible Gemini/Vertex option namespaces, and reasoning effort
+  compatibility, omitting unsupported tools and provider-only control fields
+  from the request body and emitting warnings through stream-start parts.
   Google Interactions now maps
   standard JSON response formats into `response_format` text entries, appends
   provider-defined response-format entries, and warns while dropping call-level

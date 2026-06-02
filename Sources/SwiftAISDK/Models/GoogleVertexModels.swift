@@ -12,8 +12,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = googleGenerateContentBody(request, modelID: modelID)
-        let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: prepared.body, headers: request.headers, abortSignal: request.abortSignal)
+        let prepared = googleGenerateContentBody(request, modelID: modelID, providerID: providerID)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: prepared.body, headers: request.headers.mergingHeaders(prepared.headers), abortSignal: request.abortSignal)
         let raw = response.json
         let text = googleGenerateContentText(from: raw)
         let toolCalls = googleGenerateContentToolCalls(from: raw)
@@ -36,11 +36,11 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = googleGenerateContentBody(request, modelID: modelID)
+                    let prepared = googleGenerateContentBody(request, modelID: modelID, providerID: providerID, isStreaming: true)
                     let httpRequest = try await config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         body: prepared.body,
-                        headers: request.headers,
+                        headers: request.headers.mergingHeaders(prepared.headers),
                         abortSignal: request.abortSignal
                     )
                     let response = try await config.transport.send(httpRequest)
@@ -177,12 +177,19 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
 private struct GoogleVertexGenerateContentPreparedCall {
     var body: JSONValue
     var warnings: [AIWarning]
+    var headers: [String: String]
 }
 
-private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID: String) -> GoogleVertexGenerateContentPreparedCall {
-    var options = googleGenerateContentOptions(from: request.extraBody)
+private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID: String, providerID: String, isStreaming: Bool = false) -> GoogleVertexGenerateContentPreparedCall {
+    let preparedOptions = googlePrepareGenerateContentOptions(
+        from: request,
+        modelID: modelID,
+        providerID: providerID,
+        isVertexProvider: true
+    )
+    var options = preparedOptions.options
     let responseFormat = googleResolvedResponseFormat(request: request, options: &options)
-    var warnings: [AIWarning] = []
+    var warnings = preparedOptions.warnings
     let systemText = request.messages.filter { $0.role == .system }.map(\.combinedText).joined(separator: "\n")
     let contents = request.messages.filter { $0.role != .system }.map { message in
         JSONValue.object([
@@ -222,23 +229,24 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
         body["systemInstruction"] = .object(["parts": .array([.object(["text": .string(systemText)])])])
     }
     var generationConfig: [String: JSONValue] = [:]
-    if let temperature = request.temperature { generationConfig["temperature"] = .number(temperature) }
-    if let topP = request.topP { generationConfig["topP"] = .number(topP) }
-    if let maxOutputTokens = request.maxOutputTokens { generationConfig["maxOutputTokens"] = .number(Double(maxOutputTokens)) }
-    if !request.stopSequences.isEmpty { generationConfig["stopSequences"] = .array(request.stopSequences) }
+    googleApplyStandardGenerationSettings(request, to: &generationConfig)
     googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
+    googleApplyProviderGenerationOptions(options, to: &generationConfig)
     if !generationConfig.isEmpty { body["generationConfig"] = .object(generationConfig) }
     if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: true) {
         warnings.append(contentsOf: preparedTools.warnings)
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)
         }
-        if let toolConfig = preparedTools.toolConfig {
+        if let toolConfig = googleToolConfigWithProviderOptions(preparedTools.toolConfig, options: options, isStreaming: isStreaming, isVertexProvider: true) {
             body["toolConfig"] = toolConfig
         }
+    } else if let toolConfig = googleToolConfigWithProviderOptions(nil, options: options, isStreaming: isStreaming, isVertexProvider: true) {
+        body["toolConfig"] = toolConfig
     }
+    body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
     body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
-    return GoogleVertexGenerateContentPreparedCall(body: .object(body), warnings: warnings)
+    return GoogleVertexGenerateContentPreparedCall(body: .object(body), warnings: warnings, headers: preparedOptions.headers)
 }
 
 private func googleVertexToolArguments(_ arguments: String) -> JSONValue {

@@ -118,6 +118,73 @@ import Testing
     #expect(body["responseFormat"] == nil)
 }
 
+@Test func googleVertexLanguageMapsPayGoProviderOptionsAndReasoningOverride() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"vertex options"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-2.5-pro")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Options.")],
+        reasoning: "high",
+        providerOptions: [
+            "googleVertex": .object([
+                "sharedRequestType": "priority",
+                "requestType": "shared",
+                "serviceTier": "priority",
+                "thinkingConfig": ["thinkingBudget": 999],
+                "labels": ["team": "sdk"],
+                "unsupportedProperty": "drop-me"
+            ])
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["X-Vertex-AI-LLM-Shared-Request-Type"] == "priority")
+    #expect(request.headers["X-Vertex-AI-LLM-Request-Type"] == "shared")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["generationConfig"]?["thinkingConfig"]?["thinkingBudget"]?.intValue == 999)
+    #expect(body["labels"]?["team"]?.stringValue == "sdk")
+    #expect(body["serviceTier"] == nil)
+    #expect(body["sharedRequestType"] == nil)
+    #expect(body["requestType"] == nil)
+    #expect(body["unsupportedProperty"] == nil)
+    #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("'serviceTier' is a Gemini API option") ?? false) })
+}
+
+@Test func googleVertexLanguageStreamMapsStreamFunctionCallArgumentsOption() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"candidates":[{"content":{"parts":[{"text":"vertex"}],"role":"model"},"finishReason":"STOP","index":0}]}
+
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-3-pro")
+
+    for try await _ in model.stream(LanguageModelRequest(
+        messages: [.user("Stream.")],
+        providerOptions: [
+            "googleVertex": .object([
+                "streamFunctionCallArguments": true
+            ])
+        ]
+    )) {}
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["toolConfig"]?["functionCallingConfig"]?["streamFunctionCallArguments"]?.boolValue == true)
+    #expect(body["streamFunctionCallArguments"] == nil)
+}
+
 @Test func googleVertexLanguageMapsFunctionToolsAndToolChoice() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"vertex tools"}]},"finishReason":"STOP"}]}

@@ -17,7 +17,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             path: "/models/\(modelID):generateContent",
             modelID: modelID,
             body: prepared.body,
-            headers: request.headers
+            headers: request.headers.mergingHeaders(prepared.headers)
         )
         let raw = response.json
         let text = googleGenerateContentText(from: raw)
@@ -41,12 +41,12 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = try Self.generateContentBody(for: request, modelID: modelID)
+                    let prepared = try Self.generateContentBody(for: request, modelID: modelID, isStreaming: true)
                     let response = try await config.transport.send(config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         modelID: modelID,
                         body: prepared.body,
-                        headers: request.headers
+                        headers: request.headers.mergingHeaders(prepared.headers)
                     ))
                     let parts = try streamFromGoogleGenerateContent(
                         providerID: providerID,
@@ -66,10 +66,16 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
     }
 
-    private static func generateContentBody(for request: LanguageModelRequest, modelID: String) throws -> GoogleGenerateContentPreparedCall {
-        var options = googleGenerateContentOptions(from: request.extraBody)
+    private static func generateContentBody(for request: LanguageModelRequest, modelID: String, isStreaming: Bool = false) throws -> GoogleGenerateContentPreparedCall {
+        let preparedOptions = googlePrepareGenerateContentOptions(
+            from: request,
+            modelID: modelID,
+            providerID: "google.generative-ai",
+            isVertexProvider: false
+        )
+        var options = preparedOptions.options
         let responseFormat = googleResolvedResponseFormat(request: request, options: &options)
-        var warnings: [AIWarning] = []
+        var warnings = preparedOptions.warnings
         let systemText = request.messages
             .filter { $0.role == .system }
             .map(\.combinedText)
@@ -79,11 +85,9 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             .map { try Self.contentJSON($0) }
 
         var generationConfig: [String: JSONValue] = [:]
-        if let temperature = request.temperature { generationConfig["temperature"] = .number(temperature) }
-        if let topP = request.topP { generationConfig["topP"] = .number(topP) }
-        if let maxOutputTokens = request.maxOutputTokens { generationConfig["maxOutputTokens"] = .number(Double(maxOutputTokens)) }
-        if !request.stopSequences.isEmpty { generationConfig["stopSequences"] = .array(request.stopSequences) }
+        googleApplyStandardGenerationSettings(request, to: &generationConfig)
         googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
+        googleApplyProviderGenerationOptions(options, to: &generationConfig)
 
         var body: [String: JSONValue] = ["contents": .array(contents)]
         if !systemText.isEmpty {
@@ -95,12 +99,15 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             if !preparedTools.tools.isEmpty {
                 body["tools"] = .array(preparedTools.tools)
             }
-            if let toolConfig = preparedTools.toolConfig {
+            if let toolConfig = googleToolConfigWithProviderOptions(preparedTools.toolConfig, options: options, isStreaming: isStreaming, isVertexProvider: false) {
                 body["toolConfig"] = toolConfig
             }
+        } else if let toolConfig = googleToolConfigWithProviderOptions(nil, options: options, isStreaming: isStreaming, isVertexProvider: false) {
+            body["toolConfig"] = toolConfig
         }
+        body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
         body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
-        return GoogleGenerateContentPreparedCall(body: .object(body), warnings: warnings)
+        return GoogleGenerateContentPreparedCall(body: .object(body), warnings: warnings, headers: preparedOptions.headers)
     }
 
     private static func contentJSON(_ message: AIMessage) throws -> JSONValue {
@@ -150,6 +157,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
 private struct GoogleGenerateContentPreparedCall {
     var body: JSONValue
     var warnings: [AIWarning]
+    var headers: [String: String]
 }
 
 public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
