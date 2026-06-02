@@ -582,6 +582,9 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             throw httpStatusError(provider: providerID, response: submitResponse)
         }
         var job = try submitResponse.jsonValue()
+        if job["status"]?.stringValue == "failed" {
+            throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription job submission failed.")
+        }
         guard let jobID = job["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Rev.ai job response did not contain id.")
         }
@@ -610,13 +613,9 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
         var job = initial
         let started = DispatchTime.now().uptimeNanoseconds
         while job["status"]?.stringValue != "transcribed" {
-            if job["status"]?.stringValue == "failed" {
-                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription job failed.")
-            }
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                 throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription polling timed out.")
             }
-            try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
             let response = try await config.transport.send(try getRequest(
                 path: "/speechtotext/v1/jobs/\(id)",
                 headers: request.headers,
@@ -626,6 +625,12 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
                 throw httpStatusError(provider: providerID, response: response)
             }
             job = try response.jsonValue()
+            if job["status"]?.stringValue == "failed" {
+                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription job failed.")
+            }
+            if job["status"]?.stringValue != "transcribed" {
+                try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
+            }
         }
         return job
     }
@@ -921,14 +926,47 @@ private func revAIProviderOptions(from extraBody: [String: JSONValue]) -> [Strin
 }
 
 private func revAIProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    revAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    revAIProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: revAITranscriptionProviderOptionKeys
+    )
 }
 
-private func revAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func revAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = revAIProviderOptions(from: extraBody)
-    output.merge(revAIProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["revai"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
     return output
 }
+
+private let revAITranscriptionProviderOptionKeys: Set<String> = [
+    "metadata",
+    "notification_config",
+    "delete_after_seconds",
+    "verbatim",
+    "rush",
+    "test_mode",
+    "segments_to_transcribe",
+    "speaker_names",
+    "skip_diarization",
+    "skip_postprocessing",
+    "skip_punctuation",
+    "remove_disfluencies",
+    "remove_atmospherics",
+    "filter_profanity",
+    "speaker_channels_count",
+    "speakers_count",
+    "diarization_type",
+    "custom_vocabulary_id",
+    "custom_vocabularies",
+    "strict_custom_vocabulary",
+    "summarization_config",
+    "translation_config",
+    "language",
+    "forced_alignment"
+]
 
 private func gladiaProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody

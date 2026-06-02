@@ -107,8 +107,10 @@ import Testing
                 "summarization_config": ["model": "premium", "type": "bullets", "prompt": "short"],
                 "translation_config": ["target_languages": [["language": "en"]], "model": "premium"],
                 "language": "ja",
-                "forced_alignment": true
-            ])
+                "forced_alignment": true,
+                "unsupportedProperty": "drop-me"
+            ]),
+            "openai": .object(["timestampGranularities": ["word"]])
         ],
         extraBody: [
             "revai": .object([
@@ -146,6 +148,23 @@ import Testing
     #expect(form.contains("\"translation_config\""))
     #expect(form.contains("\"forced_alignment\":true"))
     #expect(!form.contains("\"revai\""))
+    #expect(!form.contains("\"openai\""))
+    #expect(!form.contains("\"unsupportedProperty\""))
+    #expect(!form.contains("drop-me"))
     #expect(!form.contains("extra-case"))
     #expect(!form.contains("\"rush\":false"))
+}
+
+@Test func revAITranscriptionThrowsForFailedSubmissionBeforeMissingID() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"status":"failed"}"#))
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
+    let model = try provider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.invalidResponse(provider: "revai.transcription", message: "Rev.ai transcription job submission failed.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            fileName: "clip.wav",
+            mimeType: "audio/wav"
+        ))
+    }
 }

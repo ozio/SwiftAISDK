@@ -308,7 +308,10 @@ Progress:
   while `outputFormat` remains the source of `response_format`. Hume speech now
   scopes `providerOptions.hume` to upstream `context`, maps standard `speed`
   and `instructions` into the first utterance, and returns the upstream
-  unsupported warning for `language`. Mistral and
+  unsupported warning for `language`. RevAI transcription now scopes
+  `providerOptions.revai` to the upstream job config schema, handles failed
+  submissions before requiring an ID, and matches upstream's poll-before-delay
+  status cadence. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.
