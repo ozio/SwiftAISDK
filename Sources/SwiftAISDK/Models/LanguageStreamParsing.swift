@@ -819,7 +819,7 @@ private struct BedrockStreamState {
     }
 }
 
-func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false) throws -> [LanguageStreamPart] {
+func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, warnings: [AIWarning] = []) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
         throw httpStatusError(provider: providerID, response: response)
     }
@@ -834,7 +834,7 @@ func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, inc
             .map { try decodeJSONBody(Data($0.data.utf8)) }
     }
 
-    var parts: [LanguageStreamPart] = []
+    var parts: [LanguageStreamPart] = [.streamStart(warnings: warnings)]
     var state = BedrockStreamState()
     for raw in rawChunks {
         if includeRawChunks {

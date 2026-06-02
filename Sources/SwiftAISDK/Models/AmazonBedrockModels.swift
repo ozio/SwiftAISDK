@@ -11,7 +11,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/converse", body: try converseBody(for: request), headers: request.headers, abortSignal: request.abortSignal)
+        let prepared = try converseBody(for: request)
+        let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/converse", body: prepared.body, headers: request.headers, abortSignal: request.abortSignal)
         let text = raw["output"]?["message"]?["content"]?.arrayValue?.compactMap { $0["text"]?.stringValue }.joined()
         let reasoning = bedrockReasoningText(from: raw["output"]?["message"]?["content"])
         let toolCalls = bedrockToolCalls(from: raw["output"]?["message"]?["content"])
@@ -25,7 +26,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             usage: bedrockUsage(from: raw["usage"]),
             toolCalls: toolCalls,
             providerMetadata: bedrockProviderMetadata(from: raw),
-            rawValue: raw
+            rawValue: raw,
+            warnings: prepared.warnings
         )
     }
 
@@ -33,14 +35,15 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    let prepared = try converseBody(for: request)
                     let httpRequest = try config.request(
                         path: "/model/\(encodedModelID)/converse-stream",
-                        body: try converseBody(for: request),
+                        body: prepared.body,
                         headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"]),
                         abortSignal: request.abortSignal
                     )
                     let response = try await config.transport.send(httpRequest)
-                    let parts = try streamFromBedrockResponse(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks)
+                    let parts = try streamFromBedrockResponse(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks, warnings: prepared.warnings)
                     for part in parts {
                         continuation.yield(part)
                     }
@@ -56,10 +59,17 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         bedrockEncodeModelID(modelID)
     }
 
-    private func converseBody(for request: LanguageModelRequest) throws -> JSONValue {
-        let providerOptions = bedrockRequestProviderOptions(from: request.extraBody)
+    private func converseBody(for request: LanguageModelRequest) throws -> BedrockPreparedConverseCall {
+        var providerOptions = try bedrockRequestProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
         let enableDocumentCitations = bedrockDocumentCitationsEnabled(providerOptions)
         var documentCounter = 0
+        var warnings: [AIWarning] = []
+        let preparedTools = bedrockPrepareTools(
+            from: request.tools,
+            toolChoice: request.toolChoice ?? providerOptions["toolChoice"] ?? request.extraBody["toolChoice"],
+            modelID: modelID
+        )
+        warnings.append(contentsOf: preparedTools.warnings)
 
         let system = request.messages
             .filter { $0.role == .system }
@@ -102,6 +112,14 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         }
                         return .object(["document": .object(document)])
                     case let .toolCall(call):
+                        if preparedTools.toolConfig == nil {
+                            warnings.append(AIWarning(
+                                type: "unsupported",
+                                feature: "toolContent",
+                                message: "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools."
+                            ))
+                            return .object(["text": .string("")])
+                        }
                         return .object([
                             "toolUse": .object([
                                 "toolUseId": .string(call.id),
@@ -110,6 +128,14 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             ])
                         ])
                     case let .toolResult(result):
+                        if preparedTools.toolConfig == nil {
+                            warnings.append(AIWarning(
+                                type: "unsupported",
+                                feature: "toolContent",
+                                message: "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools."
+                            ))
+                            return .object(["text": .string("")])
+                        }
                         return .object([
                             "toolResult": .object([
                                 "toolUseId": .string(result.toolCallID),
@@ -135,12 +161,28 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         if let maxOutputTokens = request.maxOutputTokens { inferenceConfig["maxTokens"] = .number(Double(maxOutputTokens)) }
         if let temperature = request.temperature { inferenceConfig["temperature"] = .number(min(max(temperature, 0), 1)) }
         if let topP = request.topP { inferenceConfig["topP"] = .number(topP) }
+        if let topK = request.topK { inferenceConfig["topK"] = .number(Double(topK)) }
         if !request.stopSequences.isEmpty { inferenceConfig["stopSequences"] = .array(request.stopSequences) }
+        bedrockApplyReasoningConfig(
+            providerOptions.removeValue(forKey: "reasoningConfig"),
+            modelID: modelID,
+            inferenceConfig: &inferenceConfig,
+            providerOptions: &providerOptions,
+            warnings: &warnings
+        )
         if !inferenceConfig.isEmpty { body["inferenceConfig"] = .object(inferenceConfig) }
+        if let toolConfig = preparedTools.toolConfig {
+            body["toolConfig"] = toolConfig
+        }
         bedrockApplyRequestProviderOptions(providerOptions, to: &body)
         body.merge(bedrockPassthroughExtraBody(request.extraBody)) { _, new in new }
-        return .object(body)
+        return BedrockPreparedConverseCall(body: .object(body), warnings: bedrockDeduplicatedWarnings(warnings))
     }
+}
+
+private struct BedrockPreparedConverseCall {
+    var body: JSONValue
+    var warnings: [AIWarning]
 }
 
 private func bedrockToolArguments(_ arguments: String) -> JSONValue {
@@ -207,7 +249,7 @@ public final class AmazonBedrockImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let providerOptions = bedrockImageProviderOptions(from: request.extraBody)
+        let providerOptions = try bedrockImageProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
         let size = request.size?.split(separator: "x").compactMap { Int($0) } ?? []
         var imageGenerationConfig: [String: JSONValue] = [:]
         if size.count == 2 {
@@ -387,12 +429,36 @@ private func bedrockImageFormat(for mimeType: String) -> String? {
     bedrockImageMimeTypes[mimeType]
 }
 
-private func bedrockRequestProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    extraBody["amazonBedrock"]?.objectValue ?? extraBody["bedrock"]?.objectValue ?? [:]
+private struct BedrockPreparedTools {
+    var toolConfig: JSONValue?
+    var warnings: [AIWarning]
+}
+
+private func bedrockRequestProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    if let bedrock = extraBody["bedrock"]?.objectValue {
+        output.merge(bedrock) { _, new in new }
+    }
+    if let amazonBedrock = extraBody["amazonBedrock"]?.objectValue {
+        output.merge(amazonBedrock) { _, new in new }
+    }
+    if let bedrock = providerOptions["bedrock"] {
+        guard let object = bedrock.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.bedrock", message: "Bedrock provider options must be an object.")
+        }
+        output.merge(object) { _, new in new }
+    }
+    if let amazonBedrock = providerOptions["amazonBedrock"] {
+        guard let object = amazonBedrock.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.amazonBedrock", message: "Amazon Bedrock provider options must be an object.")
+        }
+        output.merge(object) { _, new in new }
+    }
+    return output
 }
 
 private func bedrockPassthroughExtraBody(_ extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    extraBody.filter { key, _ in key != "amazonBedrock" && key != "bedrock" }
+    extraBody.filter { key, _ in key != "amazonBedrock" && key != "bedrock" && key != "toolChoice" }
 }
 
 private func bedrockDocumentCitationsEnabled(_ providerOptions: [String: JSONValue]) -> Bool {
@@ -415,6 +481,222 @@ private func bedrockApplyRequestProviderOptions(_ providerOptions: [String: JSON
     }
 }
 
+private func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?, modelID: String) -> BedrockPreparedTools {
+    guard !tools.isEmpty else {
+        return BedrockPreparedTools(toolConfig: nil, warnings: [])
+    }
+
+    let isAnthropicModel = modelID.contains("anthropic.")
+    var warnings: [AIWarning] = []
+    var bedrockTools: [JSONValue] = []
+    let forcedToolName = bedrockForcedToolName(from: toolChoice)
+
+    for (name, schema) in tools {
+        if schema["type"]?.stringValue == "provider" {
+            let id = schema["id"]?.stringValue ?? name
+            if id == "anthropic.web_search_20250305" {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "web_search_20250305 tool",
+                    message: "The web_search_20250305 tool is not supported on Amazon Bedrock."
+                ))
+                continue
+            }
+            if isAnthropicModel, let anthropicToolSchema = bedrockAnthropicProviderToolInputSchema(schema) {
+                bedrockTools.append(.object([
+                    "toolSpec": .object([
+                        "name": .string(name),
+                        "inputSchema": .object(["json": anthropicToolSchema])
+                    ])
+                ]))
+            } else {
+                warnings.append(AIWarning(type: "unsupported", feature: "tool \(id)"))
+            }
+            continue
+        }
+
+        if let forcedToolName, forcedToolName != name {
+            continue
+        }
+
+        var toolSpec: [String: JSONValue] = [
+            "name": .string(name),
+            "inputSchema": .object(["json": schema])
+        ]
+        if let description = schema["description"]?.stringValue,
+           !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            toolSpec["description"] = .string(description)
+        }
+        if let strict = schema["strict"] {
+            toolSpec["strict"] = strict
+        }
+        bedrockTools.append(.object(["toolSpec": .object(toolSpec)]))
+    }
+
+    guard !bedrockTools.isEmpty else {
+        return BedrockPreparedTools(toolConfig: nil, warnings: warnings)
+    }
+
+    var toolConfig: [String: JSONValue] = ["tools": .array(bedrockTools)]
+    if let choice = bedrockToolChoice(from: toolChoice), !bedrockUsesAnthropicProviderTools(tools: tools, modelID: modelID) {
+        if choice == .null {
+            return BedrockPreparedTools(toolConfig: nil, warnings: warnings)
+        }
+        toolConfig["toolChoice"] = choice
+    }
+    return BedrockPreparedTools(toolConfig: .object(toolConfig), warnings: warnings)
+}
+
+private func bedrockUsesAnthropicProviderTools(tools: [String: JSONValue], modelID: String) -> Bool {
+    modelID.contains("anthropic.") && tools.values.contains { $0["type"]?.stringValue == "provider" }
+}
+
+private func bedrockForcedToolName(from toolChoice: JSONValue?) -> String? {
+    guard toolChoice?["type"]?.stringValue == "tool" else { return nil }
+    return toolChoice?["toolName"]?.stringValue ?? toolChoice?["name"]?.stringValue
+}
+
+private func bedrockToolChoice(from value: JSONValue?) -> JSONValue? {
+    guard let value else { return nil }
+    if let string = value.stringValue {
+        switch string {
+        case "auto":
+            return .object(["auto": .object([:])])
+        case "required":
+            return .object(["any": .object([:])])
+        case "none":
+            return .null
+        default:
+            return nil
+        }
+    }
+    switch value["type"]?.stringValue {
+    case "auto":
+        return .object(["auto": .object([:])])
+    case "required":
+        return .object(["any": .object([:])])
+    case "none":
+        return .null
+    case "tool":
+        guard let toolName = value["toolName"]?.stringValue ?? value["name"]?.stringValue else { return nil }
+        return .object(["tool": .object(["name": .string(toolName)])])
+    default:
+        return nil
+    }
+}
+
+private func bedrockAnthropicProviderToolInputSchema(_ tool: JSONValue) -> JSONValue? {
+    if let inputSchema = tool["inputSchema"] {
+        return inputSchema
+    }
+    if let parameters = tool["parameters"] {
+        return parameters
+    }
+    return .object(["type": .string("object"), "properties": .object([:])])
+}
+
+private func bedrockApplyReasoningConfig(
+    _ value: JSONValue?,
+    modelID: String,
+    inferenceConfig: inout [String: JSONValue],
+    providerOptions: inout [String: JSONValue],
+    warnings: inout [AIWarning]
+) {
+    guard let value else { return }
+    guard let reasoningConfig = value.objectValue else {
+        warnings.append(AIWarning(type: "unsupported", feature: "reasoningConfig", message: "Bedrock reasoningConfig must be an object."))
+        return
+    }
+
+    let type = reasoningConfig["type"]?.stringValue
+    let budgetTokens = reasoningConfig["budgetTokens"]?.intValue
+    let maxReasoningEffort = reasoningConfig["maxReasoningEffort"]?.stringValue
+    let display = reasoningConfig["display"]?.stringValue
+    let isAnthropicModel = modelID.contains("anthropic.")
+    let isOpenAIModel = modelID.hasPrefix("openai.")
+    let isAnthropicThinkingEnabled = isAnthropicModel && (type == "enabled" || type == "adaptive")
+
+    if isAnthropicThinkingEnabled {
+        if let budgetTokens, type == "enabled" {
+            let existingMaxTokens = inferenceConfig["maxTokens"]?.intValue
+            inferenceConfig["maxTokens"] = .number(Double((existingMaxTokens ?? 4096) + budgetTokens))
+            bedrockMergeAdditionalModelRequestFields([
+                "thinking": .object([
+                    "type": .string("enabled"),
+                    "budget_tokens": .number(Double(budgetTokens))
+                ])
+            ], into: &providerOptions)
+        } else if type == "adaptive" {
+            var thinking: [String: JSONValue] = ["type": .string("adaptive")]
+            if let display {
+                thinking["display"] = .string(display)
+            }
+            bedrockMergeAdditionalModelRequestFields(["thinking": .object(thinking)], into: &providerOptions)
+        }
+        if inferenceConfig.removeValue(forKey: "temperature") != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported when thinking is enabled"))
+        }
+        if inferenceConfig.removeValue(forKey: "topP") != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "topP", message: "topP is not supported when thinking is enabled"))
+        }
+        if inferenceConfig.removeValue(forKey: "topK") != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "topK", message: "topK is not supported when thinking is enabled"))
+        }
+    } else if !isAnthropicModel {
+        if budgetTokens != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "budgetTokens", message: "budgetTokens applies only to Anthropic models on Bedrock and will be ignored for this model."))
+        }
+        if type == "adaptive" {
+            warnings.append(AIWarning(type: "unsupported", feature: "adaptive thinking", message: "adaptive thinking type applies only to Anthropic models on Bedrock."))
+        }
+    }
+
+    guard let maxReasoningEffort else { return }
+    if isAnthropicModel {
+        let existing = providerOptions["additionalModelRequestFields"]?["output_config"]?.objectValue ?? [:]
+        bedrockMergeAdditionalModelRequestFields([
+            "output_config": .object(existing.merging(["effort": .string(maxReasoningEffort)]) { _, new in new })
+        ], into: &providerOptions)
+    } else if isOpenAIModel {
+        bedrockMergeAdditionalModelRequestFields(["reasoning_effort": .string(maxReasoningEffort)], into: &providerOptions)
+    } else {
+        var nested: [String: JSONValue] = [:]
+        if let type, type != "adaptive" {
+            nested["type"] = .string(type)
+        }
+        if let budgetTokens {
+            nested["budgetTokens"] = .number(Double(budgetTokens))
+        }
+        nested["maxReasoningEffort"] = .string(maxReasoningEffort)
+        bedrockMergeAdditionalModelRequestFields(["reasoningConfig": .object(nested)], into: &providerOptions)
+    }
+}
+
+private func bedrockMergeAdditionalModelRequestFields(_ fields: [String: JSONValue], into providerOptions: inout [String: JSONValue]) {
+    var existing = providerOptions["additionalModelRequestFields"]?.objectValue ?? [:]
+    existing.merge(fields) { old, new in
+        if var oldObject = old.objectValue,
+           let newObject = new.objectValue {
+            oldObject.merge(newObject) { _, nestedNew in nestedNew }
+            return .object(oldObject)
+        }
+        return new
+    }
+    providerOptions["additionalModelRequestFields"] = .object(existing)
+}
+
+private func bedrockDeduplicatedWarnings(_ warnings: [AIWarning]) -> [AIWarning] {
+    var seen: Set<String> = []
+    var output: [AIWarning] = []
+    for warning in warnings {
+        let key = "\(warning.type)|\(warning.feature ?? "")|\(warning.setting ?? "")|\(warning.message ?? "")"
+        if seen.insert(key).inserted {
+            output.append(warning)
+        }
+    }
+    return output
+}
+
 private let bedrockImageProviderOptionKeys: Set<String> = [
     "negativeText",
     "negative_text",
@@ -433,14 +715,27 @@ private let bedrockImageProviderOptionKeys: Set<String> = [
     "seed"
 ]
 
-private func bedrockImageProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let amazonBedrock = extraBody["amazonBedrock"]?.objectValue {
-        return amazonBedrock
-    }
+private func bedrockImageProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output = extraBody.filter { key, _ in bedrockImageProviderOptionKeys.contains(key) }
     if let bedrock = extraBody["bedrock"]?.objectValue {
-        return bedrock
+        output.merge(bedrock) { _, new in new }
     }
-    return extraBody.filter { key, _ in bedrockImageProviderOptionKeys.contains(key) }
+    if let amazonBedrock = extraBody["amazonBedrock"]?.objectValue {
+        output.merge(amazonBedrock) { _, new in new }
+    }
+    if let bedrock = providerOptions["bedrock"] {
+        guard let object = bedrock.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.bedrock", message: "Bedrock provider options must be an object.")
+        }
+        output.merge(object) { _, new in new }
+    }
+    if let amazonBedrock = providerOptions["amazonBedrock"] {
+        guard let object = amazonBedrock.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.amazonBedrock", message: "Amazon Bedrock provider options must be an object.")
+        }
+        output.merge(object) { _, new in new }
+    }
+    return output
 }
 
 private func bedrockImagePassthroughExtraBody(_ extraBody: [String: JSONValue]) -> [String: JSONValue] {
@@ -584,7 +879,7 @@ public final class AmazonBedrockRerankingModel: RerankingModel, @unchecked Senda
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
-        let providerOptions = bedrockRequestProviderOptions(from: request.extraBody)
+        let providerOptions = try bedrockRequestProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
         let modelArn = "arn:aws:bedrock:\(config.region)::foundation-model/\(modelID)"
         var modelConfiguration: [String: JSONValue] = ["modelArn": .string(modelArn)]
         if let additionalModelRequestFields = providerOptions["additionalModelRequestFields"] {

@@ -96,6 +96,169 @@ import Testing
     #expect(body["bedrock"] == nil)
 }
 
+@Test func amazonBedrockConverseMapsNativeToolsToolChoiceAndProviderOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"tool ready"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "secret",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use weather.")],
+        topK: 12,
+        tools: [
+            "weather": [
+                "type": "object",
+                "description": "Look up weather.",
+                "properties": ["city": ["type": "string"]],
+                "required": ["city"]
+            ],
+            "unused": [
+                "type": "object",
+                "properties": [:]
+            ]
+        ],
+        toolChoice: ["type": "tool", "toolName": "weather"],
+        providerOptions: [
+            "amazonBedrock": [
+                "serviceTier": "priority",
+                "additionalModelRequestFields": ["custom": "value"]
+            ]
+        ]
+    ))
+
+    #expect(result.text == "tool ready")
+    #expect(result.warnings.isEmpty)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["inferenceConfig"]?["topK"]?.intValue == 12)
+    #expect(body["serviceTier"]?["type"]?.stringValue == "priority")
+    #expect(body["additionalModelRequestFields"]?["custom"]?.stringValue == "value")
+    let tools = try #require(body["toolConfig"]?["tools"]?.arrayValue)
+    #expect(tools.count == 1)
+    #expect(tools[0]["toolSpec"]?["name"]?.stringValue == "weather")
+    #expect(tools[0]["toolSpec"]?["description"]?.stringValue == "Look up weather.")
+    #expect(tools[0]["toolSpec"]?["inputSchema"]?["json"]?["properties"]?["city"]?["type"]?.stringValue == "string")
+    #expect(body["toolConfig"]?["toolChoice"]?["tool"]?["name"]?.stringValue == "weather")
+    #expect(body["amazonBedrock"] == nil)
+}
+
+@Test func amazonBedrockConverseMapsReasoningConfigLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"thinking done"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "secret",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-7-sonnet-20250219-v1:0")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Think.")],
+        temperature: 0.5,
+        topP: 0.9,
+        topK: 50,
+        maxOutputTokens: 1000,
+        providerOptions: [
+            "amazonBedrock": [
+                "reasoningConfig": [
+                    "type": "enabled",
+                    "budgetTokens": 200,
+                    "maxReasoningEffort": "high"
+                ]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["inferenceConfig"]?["maxTokens"]?.intValue == 1200)
+    #expect(body["inferenceConfig"]?["temperature"] == nil)
+    #expect(body["inferenceConfig"]?["topP"] == nil)
+    #expect(body["inferenceConfig"]?["topK"] == nil)
+    #expect(body["additionalModelRequestFields"]?["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["additionalModelRequestFields"]?["thinking"]?["budget_tokens"]?.intValue == 200)
+    #expect(body["additionalModelRequestFields"]?["output_config"]?["effort"]?.stringValue == "high")
+    #expect(body["reasoningConfig"] == nil)
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported when thinking is enabled")))
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "topP", message: "topP is not supported when thinking is enabled")))
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "topK", message: "topK is not supported when thinking is enabled")))
+}
+
+@Test func amazonBedrockConverseMapsReasoningEffortForOpenAIAndNovaModels() async throws {
+    let openAITransport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"openai"}]}},"stopReason":"end_turn"}
+    """))
+    let openAIProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "secret",
+        transport: openAITransport
+    ))
+    let openAIModel = try openAIProvider.languageModel("openai.gpt-oss-120b-1:0")
+    _ = try await openAIModel.generate(LanguageModelRequest(
+        messages: [.user("Think.")],
+        providerOptions: ["bedrock": ["reasoningConfig": ["maxReasoningEffort": "medium"]]]
+    ))
+    let openAIBody = try decodeJSONBody(try #require((await openAITransport.requests()).first?.body))
+    #expect(openAIBody["additionalModelRequestFields"]?["reasoning_effort"]?.stringValue == "medium")
+
+    let novaTransport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"nova"}]}},"stopReason":"end_turn"}
+    """))
+    let novaProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "secret",
+        transport: novaTransport
+    ))
+    let novaModel = try novaProvider.languageModel("us.amazon.nova-pro-v1:0")
+    let novaResult = try await novaModel.generate(LanguageModelRequest(
+        messages: [.user("Think.")],
+        providerOptions: ["amazonBedrock": ["reasoningConfig": ["type": "enabled", "budgetTokens": 64, "maxReasoningEffort": "low"]]]
+    ))
+    let novaBody = try decodeJSONBody(try #require((await novaTransport.requests()).first?.body))
+    #expect(novaBody["additionalModelRequestFields"]?["reasoningConfig"]?["type"]?.stringValue == "enabled")
+    #expect(novaBody["additionalModelRequestFields"]?["reasoningConfig"]?["budgetTokens"]?.intValue == 64)
+    #expect(novaBody["additionalModelRequestFields"]?["reasoningConfig"]?["maxReasoningEffort"]?.stringValue == "low")
+    #expect(novaResult.warnings.contains(AIWarning(type: "unsupported", feature: "budgetTokens", message: "budgetTokens applies only to Anthropic models on Bedrock and will be ignored for this model.")))
+}
+
+@Test func amazonBedrockLanguageStreamStartCarriesRequestWarnings() async throws {
+    let transport = RecordingTransport(response: amazonEventStreamResponse([
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"text":"ok"}}"#),
+        ("messageStop", #"{"stopReason":"end_turn"}"#)
+    ]))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "secret",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-7-sonnet-20250219-v1:0")
+
+    var startWarnings: [AIWarning] = []
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Think.")],
+        temperature: 0.5,
+        providerOptions: ["amazonBedrock": ["reasoningConfig": ["type": "adaptive", "display": "summarized"]]]
+    )) {
+        if case let .streamStart(warnings) = part {
+            startWarnings = warnings
+        }
+    }
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["additionalModelRequestFields"]?["thinking"]?["type"]?.stringValue == "adaptive")
+    #expect(body["additionalModelRequestFields"]?["thinking"]?["display"]?.stringValue == "summarized")
+    #expect(startWarnings.contains(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported when thinking is enabled")))
+}
+
 @Test func amazonBedrockAnthropicUsesInvokeModelAndTransformsMessagesBody() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"bedrock anthropic"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
