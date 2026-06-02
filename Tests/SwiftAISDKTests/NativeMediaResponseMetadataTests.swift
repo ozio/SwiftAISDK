@@ -140,7 +140,7 @@ import Testing
     let fireworksAsyncTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"fw-job"}"#, headers: ["fireworks-header": "submit"]),
         jsonResponse(#"{"status":"Ready","result":{"sample":"https://assets.example.com/fireworks.png"}}"#),
-        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("fireworks-async".utf8))
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png", "fireworks-header": "download"], body: Data("fireworks-async".utf8))
     ])
     let fireworksAsyncProvider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: fireworksAsyncTransport))
     let fireworksAsyncModel = try fireworksAsyncProvider.imageModel("accounts/fireworks/models/flux-kontext-pro")
@@ -149,8 +149,8 @@ import Testing
 
     #expect(fireworksAsync.requestMetadata.body?["prompt"]?.stringValue == "cat")
     #expect(fireworksAsync.responseMetadata.modelID == "accounts/fireworks/models/flux-kontext-pro")
-    #expect(fireworksAsync.responseMetadata.headers["fireworks-header"] == "submit")
-    #expect(fireworksAsync.responseMetadata.body?["request_id"]?.stringValue == "fw-job")
+    #expect(fireworksAsync.responseMetadata.headers["fireworks-header"] == "download")
+    #expect(fireworksAsync.responseMetadata.body == nil)
 
     let xaiVideoTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"xai-video"}"#, headers: ["xai-header": "create"]),

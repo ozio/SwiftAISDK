@@ -12,16 +12,16 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         let warnings = fireworksImageWarnings(for: request, modelID: modelID)
-        let options = fireworksProviderOptions(from: request.extraBody)
+        let options = fireworksProviderOptions(from: request)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let count = request.count { body["samples"] = .number(Double(count)) }
         if let size = request.size {
-            let dimensions = size.split(separator: "x").compactMap { Int($0) }
-            if dimensions.count == 2 {
-                body["width"] = .string(String(dimensions[0]))
+            let dimensions = size.split(separator: "x", omittingEmptySubsequences: false)
+            if let width = dimensions.first {
+                body["width"] = .string(String(width))
+            }
+            if dimensions.count > 1 {
                 body["height"] = .string(String(dimensions[1]))
-            } else {
-                body["aspect_ratio"] = .string(size)
             }
         }
         if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
@@ -89,7 +89,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             rawValue: submitRaw,
             warnings: warnings,
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
-            responseMetadata: aiResponseMetadata(from: submitRaw, response: submit, modelID: modelID)
+            responseMetadata: aiResponseMetadata(response: imageResponse, modelID: modelID)
         )
     }
 
@@ -112,19 +112,28 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             switch raw["status"]?.stringValue {
             case "Ready":
                 guard let sample = raw["result"]?["sample"]?.stringValue else {
-                    throw AIError.invalidResponse(provider: providerID, message: "Fireworks poll response was Ready but missing result.sample.")
+                    throw AIError.invalidResponse(provider: providerID, message: "Fireworks poll response is Ready but missing result.sample.")
                 }
                 return sample
             case "Error", "Failed":
-                throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation failed.")
+                let status = raw["status"]?.stringValue ?? "unknown"
+                throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation failed with status: \(status)")
             default:
                 if DispatchTime.now().uptimeNanoseconds - started > 120_000_000_000 {
-                    throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation timed out.")
+                    throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation timed out after 120000ms")
                 }
                 try await sleepWithAbortSignal(nanoseconds: 500_000_000, abortSignal: abortSignal)
             }
         }
     }
+}
+
+private func fireworksProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    var output = fireworksProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["fireworks"]?.objectValue {
+        output.merge(nested) { _, providerValue in providerValue }
+    }
+    return output
 }
 
 private func fireworksProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
