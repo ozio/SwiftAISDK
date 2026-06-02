@@ -111,6 +111,35 @@ import Testing
     })
 }
 
+@Test func prodiaLanguageProviderOptionsValidateLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"job-language","state":{"current":"succeeded"}}"#.utf8)),
+        (name: "output", contentType: "text/plain", body: Data("caption text".utf8))
+    ]))
+    let provider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-token", transport: transport))
+    let model = try provider.languageModel("inference.nano-banana.img2img.v2")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.prodia", message: "Prodia provider options must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Describe")], providerOptions: ["prodia": "bad"]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Describe")], providerOptions: ["prodia": ["aspectRatio": nil]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Describe")], providerOptions: ["prodia": ["aspectRatio": "10:10"]]))
+    }
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Describe")],
+        providerOptions: ["prodia": ["aspectRatio": "16:9", "unknown": true]]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(decoding: try #require(request.body), as: UTF8.self)
+    #expect(bodyText.contains(#""aspect_ratio":"16:9""#))
+    #expect(!bodyText.contains("unknown"))
+}
+
 @Test func prodiaImageUsesMultipartJobEndpoint() async throws {
     let transport = RecordingTransport(response: prodiaMultipartResponse(parts: [
         (name: "job", contentType: "application/json", body: Data(#"{"id":"job-1","state":{"current":"succeeded"},"config":{"seed":42},"metrics":{"elapsed":2.5,"ips":10.5},"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:05Z","price":{"product":"flux","dollars":0.0025}}"#.utf8)),
@@ -185,6 +214,61 @@ import Testing
     #expect(body["config"]?["ignoredProviderOption"] == nil)
 }
 
+@Test func prodiaImageProviderOptionsValidateAndStripLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"job-image","state":{"current":"succeeded"}}"#.utf8)),
+        (name: "output", contentType: "image/png", body: Data("png".utf8))
+    ]))
+    let provider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-token", transport: transport))
+    let model = try provider.imageModel("sdxl")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.prodia", message: "Prodia provider options must be an object.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["prodia": false]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["steps": 5]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["width": 255]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["height": 512.5]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["stylePreset": "oil"]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["loras": ["a", "b", "c", "d"]]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["progressive": "true"]]))
+    }
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: [
+            "prodia": [
+                "steps": 4,
+                "width": 512,
+                "height": 768,
+                "stylePreset": "anime",
+                "loras": ["detail"],
+                "progressive": false,
+                "unknown": "stripped"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["config"]?["steps"]?.intValue == 4)
+    #expect(body["config"]?["width"]?.intValue == 512)
+    #expect(body["config"]?["height"]?.intValue == 768)
+    #expect(body["config"]?["style_preset"]?.stringValue == "anime")
+    #expect(body["config"]?["loras"]?[0]?.stringValue == "detail")
+    #expect(body["config"]?["progressive"]?.boolValue == false)
+    #expect(body["config"]?["unknown"] == nil)
+}
+
 @Test func prodiaVideoUsesMultipartJobEndpoint() async throws {
     let transport = RecordingTransport(response: prodiaMultipartResponse(parts: [
         (name: "job", contentType: "application/json", body: Data(#"{"id":"job-video","state":{"current":"succeeded"},"config":{"seed":99},"metrics":{"elapsed":5,"ips":3.2},"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:10Z","price":{"product":"wan","dollars":0.05}}"#.utf8)),
@@ -245,6 +329,34 @@ import Testing
     #expect(!bodyText.contains(#""ignored""#))
     #expect(!bodyText.contains(#""ignoredProviderOption""#))
     #expect(!bodyText.contains(#""seed":999"#))
+}
+
+@Test func prodiaVideoProviderOptionsValidateAndStripLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: multipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"job-video","state":{"current":"succeeded"}}"#.utf8)),
+        (name: "output", contentType: "video/mp4", body: Data("mp4".utf8))
+    ]))
+    let provider = try AIProviders.prodia(settings: ProviderSettings(apiKey: "prodia-token", transport: transport))
+    let model = try provider.videoModel("veo")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.prodia", message: "Prodia provider options must be an object.")) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat", providerOptions: ["prodia": 42]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["resolution": nil]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat", providerOptions: ["prodia": ["resolution": 720]]))
+    }
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["prodia": ["resolution": "720p", "unknown": true]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["config"]?["resolution"]?.stringValue == "720p")
+    #expect(body["config"]?["unknown"] == nil)
 }
 
 private func prodiaMultipartResponse(parts: [(name: String, contentType: String, body: Data)], headers: [String: String]) -> AIHTTPResponse {

@@ -2144,7 +2144,7 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     private func prodiaGenerate(_ request: LanguageModelRequest) async throws -> ProdiaLanguageGeneration {
-        let options = prodiaProviderOptions(from: request)
+        let options = try prodiaProviderOptions(from: request)
         let warnings = prodiaLanguageWarnings(for: request)
         var jobConfig: [String: JSONValue] = [
             "prompt": .string(prodiaPrompt(from: request.messages)),
@@ -2216,7 +2216,7 @@ public final class ProdiaImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = prodiaProviderOptions(from: request)
+        let options = try prodiaProviderOptions(from: request)
         var warnings: [AIWarning] = []
         var jobConfig: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let size = request.size {
@@ -2279,7 +2279,7 @@ public final class ProdiaVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = prodiaProviderOptions(from: request)
+        let options = try prodiaProviderOptions(from: request)
         var jobConfig: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let seed = request.seed {
             jobConfig["seed"] = .number(Double(seed))
@@ -2343,28 +2343,32 @@ private struct ProdiaLanguageGeneration {
     var files: [AIStreamFile]
 }
 
-private func prodiaProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
-    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, allowedProviderKeys: prodiaLanguageProviderOptionKeys)
+private func prodiaProviderOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
+    try prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, validateProviderOptions: prodiaValidateLanguageProviderOptions)
 }
 
-private func prodiaProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
-    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, allowedProviderKeys: prodiaImageProviderOptionKeys)
+private func prodiaProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
+    try prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, validateProviderOptions: prodiaValidateImageProviderOptions)
 }
 
-private func prodiaProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
-    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, allowedProviderKeys: prodiaVideoProviderOptionKeys)
+private func prodiaProviderOptions(from request: VideoGenerationRequest) throws -> [String: JSONValue] {
+    try prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, validateProviderOptions: prodiaValidateVideoProviderOptions)
 }
 
-private func prodiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], allowedProviderKeys: Set<String>) -> [String: JSONValue] {
+private func prodiaProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue],
+    validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = prodiaProviderOptions(from: extraBody)
-    if let nested = providerOptions["prodia"]?.objectValue {
-        for (key, value) in nested where allowedProviderKeys.contains(key) {
-            if value == .null {
-                output.removeValue(forKey: key)
-            } else {
-                output[key] = value
-            }
+    if let value = providerOptions["prodia"] {
+        guard value != .null else {
+            return output
         }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.prodia", message: "Prodia provider options must be an object.")
+        }
+        output.merge(try validateProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
 }
@@ -2394,6 +2398,126 @@ private let prodiaImageProviderOptionKeys: Set<String> = [
 private let prodiaVideoProviderOptionKeys: Set<String> = [
     "resolution"
 ]
+
+private let prodiaAspectRatios: Set<String> = [
+    "1:1",
+    "2:3",
+    "3:2",
+    "4:5",
+    "5:4",
+    "4:7",
+    "7:4",
+    "9:16",
+    "16:9",
+    "9:21",
+    "21:9"
+]
+
+private let prodiaStylePresets: Set<String> = [
+    "3d-model",
+    "analog-film",
+    "anime",
+    "cinematic",
+    "comic-book",
+    "digital-art",
+    "enhance",
+    "fantasy-art",
+    "isometric",
+    "line-art",
+    "low-poly",
+    "neon-punk",
+    "origami",
+    "photographic",
+    "pixel-art",
+    "texture",
+    "craft-clay"
+]
+
+private func prodiaValidateLanguageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where prodiaLanguageProviderOptionKeys.contains(key) {
+        switch key {
+        case "aspectRatio":
+            try prodiaRequireEnum(value, argument: "providerOptions.prodia.aspectRatio", label: "aspectRatio", allowed: prodiaAspectRatios)
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func prodiaValidateImageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where prodiaImageProviderOptionKeys.contains(key) {
+        switch key {
+        case "steps":
+            try prodiaRequireInteger(value, argument: "providerOptions.prodia.steps", label: "steps", min: 1, max: 4)
+        case "width", "height":
+            try prodiaRequireInteger(value, argument: "providerOptions.prodia.\(key)", label: key, min: 256, max: 1920)
+        case "stylePreset":
+            try prodiaRequireEnum(value, argument: "providerOptions.prodia.stylePreset", label: "stylePreset", allowed: prodiaStylePresets)
+        case "loras":
+            try prodiaRequireStringArray(value, argument: "providerOptions.prodia.loras", label: "loras", maxCount: 3)
+        case "progressive":
+            try prodiaRequireBoolean(value, argument: "providerOptions.prodia.progressive", label: "progressive")
+        default:
+            break
+        }
+        output[key] = value
+    }
+    return output
+}
+
+private func prodiaValidateVideoProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where prodiaVideoProviderOptionKeys.contains(key) {
+        switch key {
+        case "resolution":
+            try prodiaRequireString(value, argument: "providerOptions.prodia.resolution", label: "resolution")
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func prodiaRequireString(_ value: JSONValue, argument: String, label: String) throws {
+    guard value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "Prodia \(label) must be a string.")
+    }
+}
+
+private func prodiaRequireBoolean(_ value: JSONValue, argument: String, label: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "Prodia \(label) must be a boolean.")
+    }
+}
+
+private func prodiaRequireInteger(_ value: JSONValue, argument: String, label: String, min: Int, max: Int) throws {
+    guard let number = value.doubleValue, number.isFinite, number.rounded() == number else {
+        throw AIError.invalidArgument(argument: argument, message: "Prodia \(label) must be an integer.")
+    }
+    if number < Double(min) || number > Double(max) {
+        throw AIError.invalidArgument(argument: argument, message: "Prodia \(label) must be an integer between \(min) and \(max).")
+    }
+}
+
+private func prodiaRequireEnum(_ value: JSONValue, argument: String, label: String, allowed: Set<String>) throws {
+    guard let string = value.stringValue, allowed.contains(string) else {
+        throw AIError.invalidArgument(argument: argument, message: "Prodia \(label) must be one of \(allowed.sorted().joined(separator: ", ")).")
+    }
+}
+
+private func prodiaRequireStringArray(_ value: JSONValue, argument: String, label: String, maxCount: Int) throws {
+    guard let array = value.arrayValue, array.allSatisfy({ $0.stringValue != nil }) else {
+        throw AIError.invalidArgument(argument: argument, message: "Prodia \(label) must be an array of strings.")
+    }
+    guard array.count <= maxCount else {
+        throw AIError.invalidArgument(argument: argument, message: "Prodia \(label) must contain at most \(maxCount) values.")
+    }
+}
 
 private func prodiaImageOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
