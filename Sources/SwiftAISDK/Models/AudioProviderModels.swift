@@ -2206,7 +2206,7 @@ private func lmntIsInteger(_ value: Double) -> Bool {
 
 private func lmntSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
     guard let format = request.format,
-          !["mp3", "aac", "mulaw", "raw", "wav"].contains(format.lowercased()) else {
+          !["mp3", "aac", "mulaw", "raw", "wav"].contains(format) else {
         return []
     }
     return [
@@ -2709,10 +2709,10 @@ private func revAITranscriptText(from raw: JSONValue) -> String {
 }
 
 private func lmntResponseFormat(_ outputFormat: String?) -> String {
-    guard let outputFormat, ["mp3", "aac", "mulaw", "raw", "wav"].contains(outputFormat.lowercased()) else {
+    guard let outputFormat, ["mp3", "aac", "mulaw", "raw", "wav"].contains(outputFormat) else {
         return "mp3"
     }
-    return outputFormat.lowercased()
+    return outputFormat
 }
 
 private func humeFormat(_ outputFormat: String?) -> String {

@@ -99,6 +99,20 @@ import Testing
     #expect(body["format"] == nil)
 }
 
+@Test func lmntSpeechTreatsOutputFormatCaseSensitivelyLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mp3"], body: Data("lmnt".utf8)))
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
+    let model = try provider.speechModel("aurora")
+
+    let result = try await model.speak(SpeechRequest(text: "Hi", format: "AAC"))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "outputFormat", message: "Unsupported output format: AAC. Using mp3 instead.")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?.stringValue == "mp3")
+}
+
 @Test func lmntSpeechMapsProviderOptionsNamespaceAndOverridesExtraBody() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mulaw"], body: Data("lmnt".utf8)))
     let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
@@ -154,6 +168,40 @@ import Testing
     #expect(body["unsupportedProperty"] == nil)
     #expect(body["sampleRate"] == nil)
     #expect(body["format"] == nil)
+}
+
+@Test func lmntSpeechTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/wav"], body: Data("lmnt".utf8)))
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
+    let model = try provider.speechModel("aurora")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hi",
+        voice: "ava",
+        format: "wav",
+        providerOptions: ["lmnt": .null],
+        extraBody: [
+            "lmnt": .object([
+                "sampleRate": 8000,
+                "topP": 0.5,
+                "temperature": 0.5,
+                "speed": 0.75,
+                "seed": 1,
+                "conversational": true,
+                "length": 20
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?.stringValue == "wav")
+    #expect(body["sample_rate"]?.intValue == 8000)
+    #expect(body["top_p"]?.doubleValue == 0.5)
+    #expect(body["temperature"]?.doubleValue == 0.5)
+    #expect(body["speed"]?.doubleValue == 0.75)
+    #expect(body["seed"]?.intValue == 1)
+    #expect(body["conversational"]?.boolValue == true)
+    #expect(body["length"]?.intValue == 20)
 }
 
 @Test func lmntSpeechAppliesUpstreamProviderOptionDefaults() async throws {
@@ -240,7 +288,7 @@ import Testing
     let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
     let model = try provider.speechModel("aurora")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.lmnt", message: "LMNT provider options must be an object.")) {
         _ = try await model.speak(SpeechRequest(
             text: "Hi",
             providerOptions: ["lmnt": .string("invalid")]

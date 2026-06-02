@@ -312,9 +312,10 @@ Progress:
   `extraBody` remains the explicit low-level escape hatch. ElevenLabs speech
   also maps standard `language` and `speed`, and returns the upstream
   unsupported warning for `instructions`. LMNT speech now follows the same
-  provider-option boundary for `providerOptions.lmnt`, maps standard `speed`
-  and `language`, and keeps provider `model`/`format` ignored like upstream
-  while `outputFormat` remains the source of `response_format`. Hume speech now
+  provider-option boundary for `providerOptions.lmnt`, treats a null namespace
+  as a no-op over raw `extraBody`, maps standard `speed` and `language`, and
+  keeps provider `model`/`format` ignored like upstream while exact
+  case-sensitive `outputFormat` remains the source of `response_format`. Hume speech now
   scopes `providerOptions.hume` to upstream `context`, maps standard `speed`
   and `instructions` into the first utterance, and returns the upstream
   unsupported warning for `language`. RevAI transcription now scopes
