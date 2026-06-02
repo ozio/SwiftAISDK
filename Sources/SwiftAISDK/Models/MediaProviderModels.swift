@@ -610,7 +610,11 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
 
 private func blackForestLabsProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
     var output = blackForestLabsProviderOptions(from: request.extraBody)
-    if let providerOptions = request.providerOptions["blackForestLabs"]?.objectValue {
+    if let providerValue = request.providerOptions["blackForestLabs"] {
+        guard providerValue != .null else { return output }
+        guard let providerOptions = providerValue.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs", message: "Black Forest Labs provider options must be an object.")
+        }
         output.merge(try blackForestLabsValidatedProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     }
     return output

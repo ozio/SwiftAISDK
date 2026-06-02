@@ -141,6 +141,13 @@ import Testing
     let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
     let model = try provider.imageModel("flux-pro-1.1")
 
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.blackForestLabs", message: "Black Forest Labs provider options must be an object.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid namespace",
+            providerOptions: ["blackForestLabs": .string("bad")]
+        ))
+    }
+
     await #expect(throws: AIError.self) {
         _ = try await model.generateImage(ImageGenerationRequest(
             prompt: "invalid strength",
@@ -189,6 +196,33 @@ import Testing
             providerOptions: ["blackForestLabs": .object(["pollIntervalMillis": 0])]
         ))
     }
+}
+
+@Test func blackForestLabsProviderOptionsNullNamespaceKeepsExtraBodyDefaults() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-null-namespace","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"status":"Ready","result":{"sample":"https://bfl.example.com/null-namespace.png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["blackForestLabs": .null],
+        extraBody: [
+            "blackForestLabs": .object([
+                "promptUpsampling": true,
+                "outputFormat": "png",
+                "pollIntervalMillis": 1,
+                "pollTimeoutMillis": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["prompt_upsampling"]?.boolValue == true)
+    #expect(body["output_format"]?.stringValue == "png")
 }
 
 @Test func blackForestLabsImageMapsFilesMaskAndLegacyNestedOptions() async throws {
