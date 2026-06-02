@@ -129,10 +129,11 @@ import Testing
                     "stability": 0.3,
                     "similarityBoost": 0.8,
                     "style": 0.1,
-                    "useSpeakerBoost": true
+                    "useSpeakerBoost": true,
+                    "ignoredSetting": "drop-me"
                 ],
                 "pronunciationDictionaryLocators": [
-                    ["pronunciationDictionaryId": "dict-provider", "versionId": "v3"]
+                    ["pronunciationDictionaryId": "dict-provider", "versionId": "v3", "ignored": "drop-me"]
                 ],
                 "seed": 123,
                 "previousText": "Provider before",
@@ -177,7 +178,75 @@ import Testing
     #expect(body["elevenlabs"] == nil)
     #expect(body["openai"] == nil)
     #expect(body["voice_settings"]?["speed"] == nil)
+    #expect(body["voice_settings"]?["ignoredSetting"] == nil)
     #expect(body["unsupportedProperty"] == nil)
+    #expect(body["pronunciation_dictionary_locators"]?[0]?["ignored"] == nil)
+}
+
+@Test func elevenLabsSpeechProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
+    let model = try provider.speechModel("eleven_multilingual_v2")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .string("invalid")]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .object(["languageCode": .null])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .object(["voiceSettings": .object(["stability": .number(1.5)])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .object(["pronunciationDictionaryLocators": .array([
+                .object(["pronunciationDictionaryId": .string("one")]),
+                .object(["pronunciationDictionaryId": .string("two")]),
+                .object(["pronunciationDictionaryId": .string("three")]),
+                .object(["pronunciationDictionaryId": .string("four")])
+            ])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .object(["seed": .number(-1)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .object(["previousRequestIds": .array([.string("a"), .string("b"), .string("c"), .string("d")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .object(["applyTextNormalization": .string("sometimes")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["elevenlabs": .object(["enableLogging": .string("false")])]
+        ))
+    }
 }
 
 @Test func elevenLabsTranscriptionUsesSpeechToTextMultipartEndpoint() async throws {
@@ -340,4 +409,58 @@ import Testing
     #expect(body.contains("name=\"diarize\""))
     #expect(body.contains("false"))
     #expect(!body.contains("fr"))
+}
+
+@Test func elevenLabsTranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
+    let model = try provider.transcriptionModel("scribe_v1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["elevenlabs": .number(1)]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["elevenlabs": .object(["languageCode": .number(123)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["elevenlabs": .object(["tagAudioEvents": .string("true")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["elevenlabs": .object(["numSpeakers": .number(0)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["elevenlabs": .object(["numSpeakers": .number(2.5)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["elevenlabs": .object(["timestampsGranularity": .string("segment")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["elevenlabs": .object(["fileFormat": .string("mp3")])]
+        ))
+    }
 }

@@ -202,7 +202,7 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = elevenLabsProviderOptions(from: request)
+        let options = try elevenLabsProviderOptions(from: request)
         let warnings = elevenLabsSpeechWarnings(for: request)
         let voice = request.voice ?? "21m00Tcm4TlvDq8ikWAM"
         var query: [String: String] = [
@@ -287,7 +287,7 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = elevenLabsProviderOptions(from: request)
+        let options = try elevenLabsProviderOptions(from: request)
         var form = MultipartFormData()
         form.appendField(name: "model_id", value: modelID)
         form.appendFile(name: "file", fileName: "audio.\(mediaTypeToExtension(request.mimeType))", mimeType: request.mimeType, data: request.audio)
@@ -1862,27 +1862,102 @@ private func elevenLabsProviderOptions(from extraBody: [String: JSONValue]) -> [
     return output
 }
 
-private func elevenLabsProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    elevenLabsProviderOptions(
+private func elevenLabsProviderOptions(from request: SpeechRequest) throws -> [String: JSONValue] {
+    try elevenLabsProviderOptions(
         extraBody: request.extraBody,
         providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: elevenLabsSpeechProviderOptionKeys
+        supportedProviderOptionKeys: elevenLabsSpeechProviderOptionKeys,
+        validateProviderOptions: elevenLabsValidateSpeechProviderOptions
     )
 }
 
-private func elevenLabsProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
+private func elevenLabsProviderOptions(from request: AudioTranscriptionRequest) throws -> [String: JSONValue] {
     var output = elevenLabsProviderOptions(from: request.extraBody)
-    if let nested = request.providerOptions["elevenlabs"]?.objectValue {
+    if let value = request.providerOptions["elevenlabs"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.elevenlabs", message: "ElevenLabs provider options must be an object.")
+        }
         output.merge(elevenLabsTranscriptionProviderOptionDefaults) { _, defaultValue in defaultValue }
-        output.merge(nested.filter { elevenLabsTranscriptionProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+        output.merge(try elevenLabsValidateTranscriptionProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
 }
 
-private func elevenLabsProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
+private func elevenLabsProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>, validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]) throws -> [String: JSONValue] {
     var output = elevenLabsProviderOptions(from: extraBody)
-    if let nested = providerOptions["elevenlabs"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    if let value = providerOptions["elevenlabs"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.elevenlabs", message: "ElevenLabs provider options must be an object.")
+        }
+        let validated = try validateProviderOptions(nested)
+        output.merge(validated.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private func elevenLabsValidateSpeechProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where elevenLabsSpeechProviderOptionKeys.contains(key) {
+        switch key {
+        case "languageCode", "previousText", "nextText":
+            try elevenLabsRequireString(value, argument: "providerOptions.elevenlabs.\(key)", message: "ElevenLabs \(key) must be a string.")
+            output[key] = value
+        case "voiceSettings":
+            output[key] = try elevenLabsValidatedVoiceSettings(value)
+        case "pronunciationDictionaryLocators":
+            output[key] = try elevenLabsValidatedPronunciationLocators(value)
+        case "seed":
+            guard let number = value.doubleValue, number >= 0, number <= 4_294_967_295 else {
+                throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.seed", message: "ElevenLabs seed must be a number between 0 and 4294967295.")
+            }
+            output[key] = value
+        case "previousRequestIds", "nextRequestIds":
+            output[key] = try elevenLabsStringArray(value, argument: "providerOptions.elevenlabs.\(key)", maxCount: 3)
+        case "applyTextNormalization":
+            guard let mode = value.stringValue, ["auto", "on", "off"].contains(mode) else {
+                throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.applyTextNormalization", message: "ElevenLabs applyTextNormalization must be one of auto, on, off.")
+            }
+            output[key] = value
+        case "applyLanguageTextNormalization", "enableLogging":
+            try elevenLabsRequireBoolean(value, argument: "providerOptions.elevenlabs.\(key)", message: "ElevenLabs \(key) must be a boolean.")
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func elevenLabsValidateTranscriptionProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where elevenLabsTranscriptionProviderOptionKeys.contains(key) {
+        if value == .null {
+            output[key] = value
+            continue
+        }
+        switch key {
+        case "languageCode":
+            try elevenLabsRequireString(value, argument: "providerOptions.elevenlabs.languageCode", message: "ElevenLabs languageCode must be a string.")
+        case "tagAudioEvents", "diarize":
+            try elevenLabsRequireBoolean(value, argument: "providerOptions.elevenlabs.\(key)", message: "ElevenLabs \(key) must be a boolean.")
+        case "numSpeakers":
+            guard let number = value.doubleValue, elevenLabsIsInteger(number), number >= 1, number <= 32 else {
+                throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.numSpeakers", message: "ElevenLabs numSpeakers must be an integer between 1 and 32.")
+            }
+        case "timestampsGranularity":
+            guard let granularity = value.stringValue, ["none", "word", "character"].contains(granularity) else {
+                throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.timestampsGranularity", message: "ElevenLabs timestampsGranularity must be one of none, word, character.")
+            }
+        case "fileFormat":
+            guard let format = value.stringValue, ["pcm_s16le_16", "other"].contains(format) else {
+                throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.fileFormat", message: "ElevenLabs fileFormat must be one of pcm_s16le_16, other.")
+            }
+        default:
+            break
+        }
+        output[key] = value
     }
     return output
 }
@@ -1944,6 +2019,28 @@ private func elevenLabsVoiceSettings(_ value: JSONValue) -> JSONValue {
     return .object(mapped)
 }
 
+private func elevenLabsValidatedVoiceSettings(_ value: JSONValue) throws -> JSONValue {
+    guard let settings = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.voiceSettings", message: "ElevenLabs voiceSettings must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    for key in ["stability", "similarityBoost", "style"] {
+        if let setting = settings[key] {
+            guard let number = setting.doubleValue, number >= 0, number <= 1 else {
+                throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.voiceSettings.\(key)", message: "ElevenLabs voiceSettings.\(key) must be a number between 0 and 1.")
+            }
+            output[key] = setting
+        }
+    }
+    if let useSpeakerBoost = settings["useSpeakerBoost"] {
+        guard useSpeakerBoost.boolValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.voiceSettings.useSpeakerBoost", message: "ElevenLabs voiceSettings.useSpeakerBoost must be a boolean.")
+        }
+        output["useSpeakerBoost"] = useSpeakerBoost
+    }
+    return .object(output)
+}
+
 private func elevenLabsPronunciationLocators(_ value: JSONValue) -> JSONValue {
     guard let array = value.arrayValue else { return value }
     return .array(array.map { item in
@@ -1961,6 +2058,54 @@ private func elevenLabsPronunciationLocators(_ value: JSONValue) -> JSONValue {
         }
         return .object(mapped)
     })
+}
+
+private func elevenLabsValidatedPronunciationLocators(_ value: JSONValue) throws -> JSONValue {
+    guard let array = value.arrayValue, array.count <= 3 else {
+        throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.pronunciationDictionaryLocators", message: "ElevenLabs pronunciationDictionaryLocators must be an array with at most 3 items.")
+    }
+    return .array(try array.enumerated().map { index, item in
+        guard let object = item.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.pronunciationDictionaryLocators[\(index)]", message: "ElevenLabs pronunciationDictionaryLocators items must be objects.")
+        }
+        guard let pronunciationDictionaryID = object["pronunciationDictionaryId"], pronunciationDictionaryID.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.pronunciationDictionaryLocators[\(index)].pronunciationDictionaryId", message: "ElevenLabs pronunciationDictionaryId must be a string.")
+        }
+        var output: [String: JSONValue] = ["pronunciationDictionaryId": pronunciationDictionaryID]
+        if let versionID = object["versionId"] {
+            guard versionID.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.elevenlabs.pronunciationDictionaryLocators[\(index)].versionId", message: "ElevenLabs versionId must be a string.")
+            }
+            output["versionId"] = versionID
+        }
+        return .object(output)
+    })
+}
+
+private func elevenLabsStringArray(_ value: JSONValue, argument: String, maxCount: Int) throws -> JSONValue {
+    guard let array = value.arrayValue, array.count <= maxCount else {
+        throw AIError.invalidArgument(argument: argument, message: "ElevenLabs \(argument) must be an array of strings with at most \(maxCount) items.")
+    }
+    for item in array where item.stringValue == nil {
+        throw AIError.invalidArgument(argument: argument, message: "ElevenLabs \(argument) values must be strings.")
+    }
+    return value
+}
+
+private func elevenLabsRequireString(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func elevenLabsRequireBoolean(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func elevenLabsIsInteger(_ value: Double) -> Bool {
+    value.isFinite && value.rounded(.towardZero) == value
 }
 
 private func queryString(_ values: [String: String]) -> String {
