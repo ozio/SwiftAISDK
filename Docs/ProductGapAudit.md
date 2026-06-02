@@ -279,11 +279,14 @@ Progress:
   preserve safe request metadata for their provider JSON bodies alongside
   provider response headers and raw JSON bodies. TogetherAI reranking now also
   preserves upstream-style JSON object documents so `rankFields` can target
-  object keys instead of only plain text documents. Native image/video models now
-  also preserve safe request metadata for provider JSON bodies or safe request
-  snapshots, omitting inline/base64 media payloads while retaining prompt,
-  size/aspect, count, duration, URL, and option fields. Native transcription
-  models now
+  object keys instead of only plain text documents. Voyage embedding and
+  reranking now scope `providerOptions.voyage` to the upstream embedding/rerank
+  option schemas while keeping raw `extraBody` passthrough; Voyage reranking also
+  stringifies object documents with a compatibility warning, matching upstream
+  behavior. Native image/video models now also preserve safe request metadata for
+  provider JSON bodies or safe request snapshots, omitting inline/base64 media
+  payloads while retaining prompt, size/aspect, count, duration, URL, and option
+  fields. Native transcription models now
   map upstream-style segments,
   language, and duration for Deepgram, ElevenLabs, Groq/OpenAI-compatible
   verbose JSON, AssemblyAI, Rev.ai, Gladia, fal, Gateway, and generic JSON

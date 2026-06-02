@@ -966,6 +966,18 @@ import Testing
 
     _ = try await embeddingModel.embed(EmbeddingRequest(
         values: ["a"],
+        providerOptions: [
+            "voyage": [
+                "inputType": "query",
+                "truncation": true,
+                "outputDimension": 768,
+                "outputDtype": "binary",
+                "unsupported": "drop-me"
+            ],
+            "openai": [
+                "dimensions": 999
+            ]
+        ],
         extraBody: [
             "voyage": [
                 "inputType": "document",
@@ -979,29 +991,49 @@ import Testing
     let embeddingRequest = try #require(await embeddingTransport.requests().first)
     let embeddingBody = try decodeJSONBody(try #require(embeddingRequest.body))
     #expect(embeddingBody["voyage"] == nil)
-    #expect(embeddingBody["input_type"]?.stringValue == "document")
-    #expect(embeddingBody["truncation"]?.boolValue == false)
-    #expect(embeddingBody["output_dimension"]?.intValue == 512)
-    #expect(embeddingBody["output_dtype"]?.stringValue == "int8")
+    #expect(embeddingBody["openai"] == nil)
+    #expect(embeddingBody["unsupported"] == nil)
+    #expect(embeddingBody["input_type"]?.stringValue == "query")
+    #expect(embeddingBody["truncation"]?.boolValue == true)
+    #expect(embeddingBody["output_dimension"]?.intValue == 768)
+    #expect(embeddingBody["output_dtype"]?.stringValue == "binary")
 
     let rerankTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"relevance_score":0.7}]}"#))
     let rerankProvider = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key", transport: rerankTransport))
     let rerankModel = try rerankProvider.rerankingModel("rerank-2.5")
 
-    _ = try await rerankModel.rerank(RerankingRequest(
+    let rerankResult = try await rerankModel.rerank(RerankingRequest(
         query: "q",
-        documents: ["a"],
-        extraBody: [
+        documents: [["body": "a"]],
+        providerOptions: [
             "voyage": [
                 "returnDocuments": true,
+                "truncation": true,
+                "inputType": "drop-me"
+            ],
+            "cohere": [
+                "priority": 1
+            ]
+        ],
+        extraBody: [
+            "voyage": [
+                "returnDocuments": false,
                 "truncation": false
             ]
         ]
     ))
 
+    #expect(rerankResult.warnings == [
+        AIWarning(type: "compatibility", feature: "object documents", message: "Object documents are converted to strings.")
+    ])
     let rerankRequest = try #require(await rerankTransport.requests().first)
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["voyage"] == nil)
+    #expect(rerankBody["cohere"] == nil)
+    #expect(rerankBody["inputType"] == nil)
     #expect(rerankBody["return_documents"]?.boolValue == true)
-    #expect(rerankBody["truncation"]?.boolValue == false)
+    #expect(rerankBody["truncation"]?.boolValue == true)
+    let documentText = try #require(rerankBody["documents"]?[0]?.stringValue)
+    let documentJSON = try decodeJSONBody(Data(documentText.utf8))
+    #expect(documentJSON["body"]?.stringValue == "a")
 }

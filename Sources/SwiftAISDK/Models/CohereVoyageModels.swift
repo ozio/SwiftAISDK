@@ -294,7 +294,11 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        let options = voyageProviderOptions(from: request.extraBody)
+        let options = voyageProviderOptions(
+            extraBody: request.extraBody,
+            providerOptions: request.providerOptions,
+            supportedProviderOptionKeys: voyageEmbeddingProviderOptionKeys
+        )
         guard request.values.count <= 128 else {
             throw AIError.invalidResponse(provider: providerID, message: "Voyage supports at most 128 embedding inputs per call.")
         }
@@ -343,10 +347,15 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
-        let options = voyageProviderOptions(from: request.extraBody)
+        let options = voyageProviderOptions(
+            extraBody: request.extraBody,
+            providerOptions: request.providerOptions,
+            supportedProviderOptionKeys: voyageRerankingProviderOptionKeys
+        )
+        let preparedDocuments = voyageRerankingDocuments(from: request)
         var body: [String: JSONValue] = [
             "query": .string(request.query),
-            "documents": .array(request.documents),
+            "documents": .array(preparedDocuments.documents.map(JSONValue.string)),
             "model": .string(modelID)
         ]
         if let topK = request.topK { body["top_k"] = .number(Double(topK)) }
@@ -363,6 +372,7 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
         return RerankingResult(
             results: rerankingResults(from: raw["data"]),
             rawValue: raw,
+            warnings: preparedDocuments.warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -391,6 +401,50 @@ private func voyageProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
         output.merge(nested) { _, nested in nested }
     }
     return output
+}
+
+private let voyageEmbeddingProviderOptionKeys: Set<String> = ["inputType", "truncation", "outputDimension", "outputDtype"]
+private let voyageRerankingProviderOptionKeys: Set<String> = ["returnDocuments", "truncation"]
+
+private func voyageProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue],
+    supportedProviderOptionKeys: Set<String>
+) -> [String: JSONValue] {
+    var output = voyageProviderOptions(from: extraBody)
+    if let nested = providerOptions["voyage"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private struct VoyageRerankingDocuments {
+    var documents: [String]
+    var warnings: [AIWarning]
+}
+
+private func voyageRerankingDocuments(from request: RerankingRequest) -> VoyageRerankingDocuments {
+    guard let documentObjects = request.documentObjects else {
+        return VoyageRerankingDocuments(documents: request.documents, warnings: [])
+    }
+    let documents = documentObjects.map { object in
+        voyageJSONString(.object(object)) ?? ""
+    }
+    return VoyageRerankingDocuments(
+        documents: documents,
+        warnings: [
+            AIWarning(
+                type: "compatibility",
+                feature: "object documents",
+                message: "Object documents are converted to strings."
+            )
+        ]
+    )
+}
+
+private func voyageJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? JSONEncoder().encode(value) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func cohereResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
