@@ -125,6 +125,59 @@ import Testing
     #expect(body["unsupportedProperty"] == nil)
 }
 
+@Test func humeSpeechScopesContextLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/wav"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        providerOptions: ["hume": .object(["context": .null])],
+        extraBody: ["hume": .object(["context": ["generationId": "legacy-generation"]])]
+    ))
+
+    var body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["context"] == nil)
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        providerOptions: [
+            "hume": .object([
+                "context": [
+                    "utterances": [
+                        [
+                            "text": "Provider line",
+                            "description": "calm",
+                            "speed": 0.85,
+                            "trailingSilence": 0.2,
+                            "unsupportedUtterance": "drop-me",
+                            "voice": [
+                                "id": "voice-id",
+                                "name": "drop-name",
+                                "provider": "HUME_AI",
+                                "unsupportedVoice": "drop-me"
+                            ]
+                        ]
+                    ]
+                ]
+            ])
+        ]
+    ))
+
+    body = try decodeJSONBody(try #require((await transport.requests()).last?.body))
+    let utterance = try #require(body["context"]?["utterances"]?[0])
+    #expect(utterance["text"]?.stringValue == "Provider line")
+    #expect(utterance["description"]?.stringValue == "calm")
+    #expect(utterance["speed"]?.doubleValue == 0.85)
+    #expect(utterance["trailing_silence"]?.doubleValue == 0.2)
+    #expect(utterance["trailingSilence"] == nil)
+    #expect(utterance["unsupportedUtterance"] == nil)
+    #expect(utterance["voice"]?["id"]?.stringValue == "voice-id")
+    #expect(utterance["voice"]?["name"] == nil)
+    #expect(utterance["voice"]?["provider"]?.stringValue == "HUME_AI")
+    #expect(utterance["voice"]?["unsupportedVoice"] == nil)
+}
+
 @Test func humeSpeechMapsStandardSpeedInstructionsAndWarnsForLanguage() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
     let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))

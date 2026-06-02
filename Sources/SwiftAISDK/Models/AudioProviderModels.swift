@@ -1245,8 +1245,9 @@ private func humeSpeechOptions(from extraBody: [String: JSONValue]) -> [String: 
     output.removeValue(forKey: "speed")
     output.removeValue(forKey: "description")
     output.removeValue(forKey: "instructions")
-    if let context = output.removeValue(forKey: "context") {
-        output["context"] = humeContext(context)
+    if let context = output.removeValue(forKey: "context"),
+       let humeContext = humeContext(context) {
+        output["context"] = humeContext
     }
     return output
 }
@@ -1299,22 +1300,45 @@ private func humeSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
     return warnings
 }
 
-private func humeContext(_ value: JSONValue) -> JSONValue {
-    guard let object = value.objectValue else { return value }
+private func humeContext(_ value: JSONValue) -> JSONValue? {
+    guard let object = value.objectValue else { return nil }
     if let generationID = object["generationId"] {
         return .object(["generation_id": generationID])
     }
     if let utterances = object["utterances"]?.arrayValue {
         return .object([
-            "utterances": .array(utterances.map(humeContextUtterance))
+            "utterances": .array(utterances.compactMap(humeContextUtterance))
         ])
     }
-    return value
+    return nil
 }
 
-private func humeContextUtterance(_ value: JSONValue) -> JSONValue {
-    guard let object = value.objectValue else { return value }
-    return .object(mapKeys(object, ["trailingSilence": "trailing_silence"]))
+private func humeContextUtterance(_ value: JSONValue) -> JSONValue? {
+    guard let object = value.objectValue else { return nil }
+    var output: [String: JSONValue] = [:]
+    for key in ["text", "description", "speed"] {
+        if let value = object[key] {
+            output[key] = value
+        }
+    }
+    if let trailingSilence = object["trailingSilence"] {
+        output["trailing_silence"] = trailingSilence
+    }
+    if let voice = object["voice"]?.objectValue {
+        var filteredVoice: [String: JSONValue] = [:]
+        if let id = voice["id"] {
+            filteredVoice["id"] = id
+        } else if let name = voice["name"] {
+            filteredVoice["name"] = name
+        }
+        if let provider = voice["provider"] {
+            filteredVoice["provider"] = provider
+        }
+        if !filteredVoice.isEmpty {
+            output["voice"] = .object(filteredVoice)
+        }
+    }
+    return .object(output)
 }
 
 private struct DeepgramPreparedSpeechOptions {
