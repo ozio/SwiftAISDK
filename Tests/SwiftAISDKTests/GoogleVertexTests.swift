@@ -431,6 +431,36 @@ import Testing
     #expect(finishReason == "tool-calls")
 }
 
+@Test func googleVertexLanguageSharesGenerateContentRichToolMapping() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"toolCall":{"toolType":"vertex_rag_store","id":"rag-1","args":{"query":"swift"}}},{"toolResponse":{"toolType":"vertex_rag_store","response":{"documents":[{"title":"Swift Docs"}]}}}],"role":"model"},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-3-pro")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        .user("Search RAG."),
+        .assistant(toolCalls: [
+            AIToolCall(id: "tool-call-0", name: "lookup", arguments: #"{"query":"swift"}"#)
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "skip_thought_signature_validator")
+    #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("skip_thought_signature_validator") ?? false) })
+    #expect(result.finishReason == "tool-calls")
+    #expect(result.toolCalls.first?.id == "rag-1")
+    #expect(result.toolCalls.first?.name == "server:vertex_rag_store")
+    #expect(result.toolCalls.first?.providerExecuted == true)
+    #expect(result.toolResults.first?.toolCallID == "rag-1")
+    #expect(result.toolResults.first?.result["documents"]?[0]?["title"]?.stringValue == "Swift Docs")
+}
+
 @Test func googleVertexAPIKeyUsesExpressModeAndPredictEmbedding() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"predictions":[{"embeddings":{"values":[0.4,0.5],"statistics":{"token_count":2}}}]}

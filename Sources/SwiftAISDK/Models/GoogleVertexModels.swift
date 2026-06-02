@@ -12,12 +12,13 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = googleGenerateContentBody(request, modelID: modelID, providerID: providerID)
+        let prepared = try googleGenerateContentBody(request, modelID: modelID, providerID: providerID)
         let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: prepared.body, headers: request.headers.mergingHeaders(prepared.headers), abortSignal: request.abortSignal)
         let raw = response.json
         let text = googleGenerateContentText(from: raw)
         let toolCalls = googleGenerateContentToolCalls(from: raw)
-        guard text != nil || !toolCalls.isEmpty else {
+        let toolResults = googleGenerateContentToolResults(from: raw)
+        guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No candidate text found in Vertex response.")
         }
         return TextGenerationResult(
@@ -25,6 +26,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
             finishReason: googleGenerateContentFinishReason(raw["candidates"]?[0]?["finishReason"]?.stringValue, hasToolCalls: !toolCalls.isEmpty),
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
+            toolResults: toolResults,
             sources: googleGenerateContentSources(from: raw),
             providerMetadata: googleGenerateContentProviderMetadata(from: raw),
             rawValue: raw,
@@ -37,7 +39,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = googleGenerateContentBody(request, modelID: modelID, providerID: providerID, isStreaming: true)
+                    let prepared = try googleGenerateContentBody(request, modelID: modelID, providerID: providerID, isStreaming: true)
                     let httpRequest = try await config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         body: prepared.body,
@@ -181,7 +183,7 @@ private struct GoogleVertexGenerateContentPreparedCall {
     var headers: [String: String]
 }
 
-private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID: String, providerID: String, isStreaming: Bool = false) -> GoogleVertexGenerateContentPreparedCall {
+private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID: String, providerID: String, isStreaming: Bool = false) throws -> GoogleVertexGenerateContentPreparedCall {
     let preparedOptions = googlePrepareGenerateContentOptions(
         from: request,
         modelID: modelID,
@@ -192,38 +194,8 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     let responseFormat = googleResolvedResponseFormat(request: request, options: &options)
     var warnings = preparedOptions.warnings
     let systemText = request.messages.filter { $0.role == .system }.map(\.combinedText).joined(separator: "\n")
-    let rawContents = request.messages.filter { $0.role != .system }.map { message in
-        JSONValue.object([
-            "role": .string(message.role == .assistant ? "model" : "user"),
-            "parts": .array(message.content.map { part in
-                switch part {
-                case let .text(text):
-                    return .object(["text": .string(text)])
-                case let .imageURL(url):
-                    return .object(["fileData": .object(["fileUri": .string(url)])])
-                case let .data(mimeType, data), let .file(mimeType, data, _):
-                    return .object(["inlineData": .object(["mimeType": .string(mimeType), "data": .string(data.base64EncodedString())])])
-                case let .providerReference(_, reference):
-                    return .object(["fileData": .object(["fileUri": .string((try? resolveProviderReference(reference, provider: "google")) ?? reference.values.first ?? "")])])
-                case let .toolCall(call):
-                    return .object([
-                        "functionCall": .object([
-                            "name": .string(call.name),
-                            "args": googleVertexToolArguments(call.arguments)
-                        ])
-                    ])
-                case let .toolResult(result):
-                    return .object([
-                        "functionResponse": .object([
-                            "name": .string(result.toolName),
-                            "response": result.modelOutput ?? result.result
-                        ])
-                    ])
-                case .toolApprovalRequest, .toolApprovalResponse:
-                    return .object(["text": .string("")])
-                }
-            })
-        ])
+    let rawContents = try request.messages.filter { $0.role != .system }.map { message in
+        try googleGenerateContentMessageJSON(message, modelID: modelID, warnings: &warnings)
     }
     let preparedMessages = googleContentsWithSystemInstruction(systemText: systemText, contents: rawContents, modelID: modelID)
     var body: [String: JSONValue] = ["contents": .array(preparedMessages.contents)]
@@ -249,10 +221,6 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
     body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
     return GoogleVertexGenerateContentPreparedCall(body: .object(body), warnings: warnings, headers: preparedOptions.headers)
-}
-
-private func googleVertexToolArguments(_ arguments: String) -> JSONValue {
-    (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
 
 private func googleVertexImageBody(for request: ImageGenerationRequest) throws -> [String: JSONValue] {

@@ -465,6 +465,96 @@ import Testing
     #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "sig-google-tool")
 }
 
+@Test func googleGenerateContentInjectsGemini3ThoughtSignatureSentinel() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3-pro")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        .user("Weather?"),
+        .assistant(toolCalls: [
+            AIToolCall(id: "tool-call-0", name: "weather", arguments: #"{"location":"Tokyo"}"#)
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["contents"]?[1]?["parts"]?[0]?["functionCall"]?["name"]?.stringValue == "weather")
+    #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "skip_thought_signature_validator")
+    #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("skip_thought_signature_validator") ?? false) })
+}
+
+@Test func googleGenerateContentParsesProviderExecutedCodeAndServerTools() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}},"thoughtSignature":"sig-server"},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3-pro")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Search and run code.")]))
+
+    #expect(result.text == "")
+    #expect(result.finishReason == "tool-calls")
+    #expect(result.toolCalls.count == 2)
+    #expect(result.toolCalls[0].id == "google-code-execution-0")
+    #expect(result.toolCalls[0].name == "code_execution")
+    #expect(result.toolCalls[0].providerExecuted == true)
+    #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["code"]?.stringValue == "print('hi')")
+    #expect(result.toolCalls[1].id == "search-1")
+    #expect(result.toolCalls[1].name == "server:google_search")
+    #expect(result.toolCalls[1].providerExecuted == true)
+    #expect(result.toolCalls[1].dynamic == true)
+    #expect(result.toolCalls[1].providerMetadata["google"]?["serverToolType"]?.stringValue == "google_search")
+    #expect(result.toolCalls[1].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-server")
+    #expect(result.toolResults.count == 2)
+    #expect(result.toolResults[0].toolCallID == "google-code-execution-0")
+    #expect(result.toolResults[0].result["outcome"]?.stringValue == "OUTCOME_OK")
+    #expect(result.toolResults[0].result["output"]?.stringValue == "hi\n")
+    #expect(result.toolResults[1].toolCallID == "search-1")
+    #expect(result.toolResults[1].toolName == "server:google_search")
+    #expect(result.toolResults[1].dynamic == true)
+    #expect(result.toolResults[1].result["results"]?[0]?["title"]?.stringValue == "Swift")
+}
+
+@Test func googleGenerateContentStreamsProviderExecutedToolsAndInlineData() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="},"thoughtSignature":"sig-file"},{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}}},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}
+
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3-pro")
+
+    var files: [AIStreamFile] = []
+    var toolCalls: [AIToolCall] = []
+    var toolResults: [AIToolResult] = []
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Search and run code.")])) {
+        switch part {
+        case let .file(file):
+            files.append(file)
+        case let .toolCall(call):
+            toolCalls.append(call)
+        case let .toolResult(result):
+            toolResults.append(result)
+        case let .finish(reason, _):
+            finishReason = reason
+        default:
+            break
+        }
+    }
+
+    #expect(files.count == 1)
+    #expect(files[0].mediaType == "image/png")
+    #expect(files[0].data == Data("image".utf8))
+    #expect(files[0].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-file")
+    #expect(toolCalls.map(\.name) == ["code_execution", "server:google_search"])
+    #expect(toolCalls.map(\.providerExecuted) == [true, true])
+    #expect(toolResults.map(\.toolCallID) == ["google-code-execution-1", "search-1"])
+    #expect(toolResults[1].result["results"]?[0]?["title"]?.stringValue == "Swift")
+    #expect(finishReason == "tool-calls")
+}
+
 @Test func googleLanguageExtractsGroundingSources() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"grounded"}]},"finishReason":"STOP","groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source Title"}},{"retrievedContext":{"uri":"gs://rag-corpus/document.pdf","title":"RAG Document","text":"Retrieved context"}},{"retrievedContext":{"fileSearchStore":"fileSearchStores/test-store-xyz","title":"Test Document"}},{"maps":{"uri":"https://maps.google.com/maps?cid=12345","title":"Best Restaurant"}},{"image":{"sourceUri":"https://example.com/article","imageUri":"https://example.com/image.jpg","title":"Image Result"}}]}}]}
