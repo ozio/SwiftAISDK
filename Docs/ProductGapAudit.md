@@ -483,6 +483,9 @@ Impact:
   or `/speak` query strings. Speech output-format parsing also mirrors
   upstream's per-encoding sample-rate allow-lists and unknown-format no-op
   behavior.
+- ElevenLabs speech output-format aliases now preserve upstream's exact
+  case-sensitive matching, while speech/transcription provider options cover
+  null namespace no-op and typed non-object errors.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

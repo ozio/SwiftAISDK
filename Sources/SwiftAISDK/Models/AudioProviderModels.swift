@@ -2723,7 +2723,7 @@ private func humeFormat(_ outputFormat: String?) -> String {
 }
 
 private func elevenLabsOutputFormat(_ outputFormat: String?) -> String {
-    switch outputFormat?.lowercased() {
+    switch outputFormat {
     case "mp3":
         return "mp3_44100_128"
     case "mp3_32":

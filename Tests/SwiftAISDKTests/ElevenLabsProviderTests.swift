@@ -31,6 +31,25 @@ import Testing
     #expect(body["voice_settings"]?["use_speaker_boost"]?.boolValue == true)
 }
 
+@Test func elevenLabsSpeechMapsOutputFormatAliasesCaseSensitivelyLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("one".utf8)),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/wav"], body: Data("two".utf8)),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("three".utf8))
+    ])
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.speechModel("eleven_multilingual_v2")
+
+    _ = try await model.speak(SpeechRequest(text: "Hello", voice: "voice-123", format: "mp3_192"))
+    _ = try await model.speak(SpeechRequest(text: "Hello", voice: "voice-123", format: "pcm_16000"))
+    _ = try await model.speak(SpeechRequest(text: "Hello", voice: "voice-123", format: "MP3"))
+
+    let requests = await transport.requests()
+    #expect(requests[0].url.absoluteString == "https://api.elevenlabs.io/v1/text-to-speech/voice-123?output_format=mp3_44100_192")
+    #expect(requests[1].url.absoluteString == "https://api.elevenlabs.io/v1/text-to-speech/voice-123?output_format=pcm_16000")
+    #expect(requests[2].url.absoluteString == "https://api.elevenlabs.io/v1/text-to-speech/voice-123?output_format=MP3")
+}
+
 @Test func elevenLabsSpeechMapsStandardLanguageSpeedAndInstructionsWarning() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("eleven-audio".utf8)))
     let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
@@ -183,11 +202,29 @@ import Testing
     #expect(body["pronunciation_dictionary_locators"]?[0]?["ignored"] == nil)
 }
 
+@Test func elevenLabsSpeechTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("eleven-audio".utf8)))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.speechModel("eleven_multilingual_v2")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        voice: "voice-123",
+        providerOptions: ["elevenlabs": .null],
+        extraBody: ["elevenlabs": .object(["languageCode": "ja", "enableLogging": false])]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/text-to-speech/voice-123?enable_logging=false&output_format=mp3_44100_128")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["language_code"]?.stringValue == "ja")
+}
+
 @Test func elevenLabsSpeechProviderOptionsRejectInvalidSchemaFields() async throws {
     let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
     let model = try provider.speechModel("eleven_multilingual_v2")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.elevenlabs", message: "ElevenLabs provider options must be an object.")) {
         _ = try await model.speak(SpeechRequest(
             text: "Hello",
             providerOptions: ["elevenlabs": .string("invalid")]
@@ -317,6 +354,30 @@ import Testing
     #expect(!body.contains("elevenlabs"))
 }
 
+@Test func elevenLabsTranscriptionTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"language_code":"ja","language_probability":0.99,"text":"null namespace"}"#))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.transcriptionModel("scribe_v1")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("mp3".utf8),
+        fileName: "clip.mp3",
+        mimeType: "audio/mpeg",
+        providerOptions: ["elevenlabs": .null],
+        extraBody: ["elevenlabs": .object(["languageCode": "ja", "diarize": false])]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(body.contains("name=\"language_code\""))
+    #expect(body.contains("ja"))
+    #expect(body.contains("name=\"diarize\""))
+    #expect(body.contains("false"))
+    #expect(!body.contains("tag_audio_events"))
+    #expect(!body.contains("timestamps_granularity"))
+    #expect(!body.contains("file_format"))
+}
+
 @Test func elevenLabsTranscriptionMapsProviderOptionsNamespaceAndOverridesExtraBody() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"language_code":"ja","language_probability":0.99,"text":"provider transcript"}"#))
     let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
@@ -415,7 +476,7 @@ import Testing
     let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
     let model = try provider.transcriptionModel("scribe_v1")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.elevenlabs", message: "ElevenLabs provider options must be an object.")) {
         _ = try await model.transcribe(AudioTranscriptionRequest(
             audio: Data("mp3".utf8),
             providerOptions: ["elevenlabs": .number(1)]
