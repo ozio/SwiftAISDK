@@ -774,6 +774,32 @@ import Testing
     #expect(requests[1].abortSignal === controller.signal)
 }
 
+@Test func deepInfraImageForwardsAbortSignalToGenerationAndEditRequests() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse(#"{"images":["data:image/png;base64,image"]}"#))
+    let generateProvider = try AIProviders.deepInfra(settings: ProviderSettings(apiKey: "deepinfra-key", transport: generateTransport))
+    let generateModel = try generateProvider.imageModel("black-forest-labs/FLUX-1-schnell")
+    let generateController = AIAbortController()
+
+    _ = try await generateModel.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let editTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"edited"}]}"#))
+    let editProvider = try AIProviders.deepInfra(settings: ProviderSettings(apiKey: "deepinfra-key", transport: editTransport))
+    let editModel = try editProvider.imageModel("black-forest-labs/FLUX.1-Kontext-dev")
+    let editController = AIAbortController()
+
+    _ = try await editModel.generateImage(ImageGenerationRequest(
+        prompt: "edit",
+        files: [ImageInputFile(data: Data("png".utf8), mediaType: "image/png")],
+        abortSignal: editController.signal
+    ))
+
+    let editRequest = try #require(await editTransport.requests().first)
+    #expect(editRequest.abortSignal === editController.signal)
+}
+
 @Test func fireworksAsyncImageForwardsAbortSignalToSubmitPollAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"fw-1"}"#),

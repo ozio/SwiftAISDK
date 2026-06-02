@@ -328,7 +328,7 @@ import Testing
     let provider = try AIProviders.deepInfra(settings: ProviderSettings(apiKey: "deepinfra-key", transport: transport))
     let model = try provider.imageModel("black-forest-labs/FLUX-1-schnell")
 
-    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "1024x768", count: 1, extraBody: ["seed": 42]))
+    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "1024x768", seed: 42, count: 1))
 
     #expect(result.base64Images == ["deepinfra-image"])
     let request = try #require(await transport.requests().first)
@@ -349,9 +349,11 @@ import Testing
 
     _ = try await generateModel.generateImage(ImageGenerationRequest(
         prompt: "cat",
-        size: "16:9",
+        aspectRatio: "16:9",
+        seed: 7,
         count: 1,
         extraBody: [
+            "raw_param": .string("raw"),
             "deepinfra": .object([
                 "seed": 42,
                 "additional_param": "value"
@@ -363,6 +365,7 @@ import Testing
     #expect(generateBody["prompt"]?.stringValue == "cat")
     #expect(generateBody["aspect_ratio"]?.stringValue == "16:9")
     #expect(generateBody["seed"]?.intValue == 42)
+    #expect(generateBody["raw_param"]?.stringValue == "raw")
     #expect(generateBody["additional_param"]?.stringValue == "value")
     #expect(generateBody["deepinfra"] == nil)
 
@@ -421,6 +424,18 @@ import Testing
     #expect(body.range(of: Data("1024x1024".utf8)) != nil)
     #expect(body.range(of: Data(#"name="guidance""#.utf8)) != nil)
     #expect(body.range(of: Data("7.5".utf8)) != nil)
+}
+
+@Test func deepInfraImageRejectsMoreThanOneImagePerCall() async throws {
+    let provider = try AIProviders.deepInfra(settings: ProviderSettings(
+        apiKey: "deepinfra-key",
+        transport: RecordingTransport(response: jsonResponse(#"{"images":[]}"#))
+    ))
+    let model = try provider.imageModel("black-forest-labs/FLUX-1-schnell")
+
+    await #expect(throws: AIError.invalidArgument(argument: "count", message: "DeepInfra image models support at most 1 image per call.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", count: 2))
+    }
 }
 
 @Test func fireworksLanguageTransformsThinkingOptions() async throws {

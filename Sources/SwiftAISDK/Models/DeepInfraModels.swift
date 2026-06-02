@@ -11,6 +11,9 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+        if let count = request.count, count > 1 {
+            throw AIError.invalidArgument(argument: "count", message: "DeepInfra image models support at most 1 image per call.")
+        }
         if !request.files.isEmpty {
             return try await editImage(request)
         }
@@ -27,6 +30,8 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
                 body["aspect_ratio"] = .string(size)
             }
         }
+        if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         body.merge(options) { _, new in new }
 
         let base = withoutTrailingSlash(config.baseURL)
@@ -37,7 +42,8 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             headers: config.headers
                 .mergingHeaders(request.headers)
                 .mergingHeaders(["content-type": "application/json"]),
-            body: try encodeJSONBody(.object(body))
+            body: try encodeJSONBody(.object(body)),
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -94,7 +100,8 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             headers: config.headers
                 .mergingHeaders(request.headers)
                 .mergingHeaders(["content-type": "multipart/form-data; boundary=\(form.boundary)"]),
-            body: form.finalize()
+            body: form.finalize(),
+            abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
@@ -112,11 +119,10 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
 }
 
 private func deepInfraProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let nested = extraBody["deepinfra"]?.objectValue {
-        return nested
-    }
     var output = extraBody
-    output.removeValue(forKey: "deepinfra")
+    if let nested = output.removeValue(forKey: "deepinfra")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     return output
 }
 
