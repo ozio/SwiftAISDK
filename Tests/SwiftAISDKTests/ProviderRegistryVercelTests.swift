@@ -145,10 +145,40 @@ import Testing
     #expect(body["model"]?.stringValue == "v0-1.0-md")
 }
 
+@Test func vercelProviderLoadsAPIKeyBeforeCustomAuthorizationOverrideLikeUpstream() async throws {
+    #expect(throws: AIError.missingAPIKey(provider: "vercel", environmentVariables: ["VERCEL_API_KEY"])) {
+        _ = try AIProviders.vercel(settings: ProviderSettings(
+            headers: ["Authorization": "Bearer custom-key"],
+            transport: RecordingTransport(response: jsonResponse("{}"))
+        ))
+    }
+
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"custom auth"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.vercel(settings: ProviderSettings(
+        apiKey: "loaded-key",
+        headers: ["Authorization": "Bearer custom-key"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("v0-1.5-md")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer custom-key")
+}
+
 @Test func vercelProviderRejectsUnsupportedModelFamiliesWithVercelID() throws {
     let provider = try AIProviders.vercel(settings: ProviderSettings(apiKey: "vercel-key", transport: RecordingTransport(response: jsonResponse("{}"))))
 
     #expect(throws: AIError.unsupportedModel(provider: "vercel", capability: .embedding, modelID: "embed")) {
         _ = try provider.embeddingModel("embed")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "vercel", capability: .embedding, modelID: "embed")) {
+        _ = try provider.textEmbeddingModel("embed")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "vercel", capability: .image, modelID: "image")) {
+        _ = try provider.imageModel("image")
     }
 }

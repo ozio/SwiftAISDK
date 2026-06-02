@@ -60,11 +60,11 @@ public final class VercelProvider: AIProvider, @unchecked Sendable {
 
 private func vercelHeaders(settings: ProviderSettings) throws -> [String: String] {
     var headers = settings.headers
+    let key = settings.apiKey ?? environmentValue(["VERCEL_API_KEY"])
+    guard let key else {
+        throw AIError.missingAPIKey(provider: "vercel", environmentVariables: ["VERCEL_API_KEY"])
+    }
     if !headers.keys.contains(where: { $0.caseInsensitiveCompare("authorization") == .orderedSame }) {
-        let key = settings.apiKey ?? environmentValue(["VERCEL_API_KEY"])
-        guard let key else {
-            throw AIError.missingAPIKey(provider: "vercel", environmentVariables: ["VERCEL_API_KEY"])
-        }
         headers["Authorization"] = "Bearer \(key)"
     }
     return withUserAgentSuffix(headers, "ai-sdk/vercel/0.0.0-test")
