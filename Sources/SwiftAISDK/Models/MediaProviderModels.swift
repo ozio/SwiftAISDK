@@ -1801,20 +1801,28 @@ private struct ProdiaLanguageGeneration {
 }
 
 private func prodiaProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
-    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, allowedProviderKeys: prodiaLanguageProviderOptionKeys)
 }
 
 private func prodiaProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
-    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, allowedProviderKeys: prodiaImageProviderOptionKeys)
 }
 
 private func prodiaProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
-    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    prodiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions, allowedProviderKeys: prodiaVideoProviderOptionKeys)
 }
 
-private func prodiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func prodiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], allowedProviderKeys: Set<String>) -> [String: JSONValue] {
     var output = prodiaProviderOptions(from: extraBody)
-    output.merge(prodiaProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["prodia"]?.objectValue {
+        for (key, value) in nested where allowedProviderKeys.contains(key) {
+            if value == .null {
+                output.removeValue(forKey: key)
+            } else {
+                output[key] = value
+            }
+        }
+    }
     return output
 }
 
@@ -1826,6 +1834,23 @@ private func prodiaProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
     output.removeValue(forKey: "prodia")
     return output
 }
+
+private let prodiaLanguageProviderOptionKeys: Set<String> = [
+    "aspectRatio"
+]
+
+private let prodiaImageProviderOptionKeys: Set<String> = [
+    "steps",
+    "width",
+    "height",
+    "stylePreset",
+    "loras",
+    "progressive"
+]
+
+private let prodiaVideoProviderOptionKeys: Set<String> = [
+    "resolution"
+]
 
 private func prodiaImageOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]

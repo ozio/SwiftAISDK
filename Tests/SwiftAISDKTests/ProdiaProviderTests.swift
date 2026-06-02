@@ -160,7 +160,9 @@ import Testing
                 "steps": 4,
                 "stylePreset": "cinematic",
                 "loras": ["detail", "light"],
-                "progressive": true
+                "progressive": true,
+                "seed": 999,
+                "ignoredProviderOption": true
             ])
         ],
         extraBody: ["prodia": .object(["width": 256, "ignored": true])]
@@ -176,9 +178,11 @@ import Testing
     #expect(body["config"]?["style_preset"]?.stringValue == "cinematic")
     #expect(body["config"]?["loras"]?[0]?.stringValue == "detail")
     #expect(body["config"]?["progressive"]?.boolValue == true)
+    #expect(body["config"]?["seed"] == nil)
     #expect(body["config"]?["stylePreset"] == nil)
     #expect(body["config"]?["prodia"] == nil)
     #expect(body["config"]?["ignored"] == nil)
+    #expect(body["config"]?["ignoredProviderOption"] == nil)
 }
 
 @Test func prodiaVideoUsesMultipartJobEndpoint() async throws {
@@ -227,7 +231,7 @@ import Testing
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
         image: ImageInputFile(data: imageBytes, mediaType: "image"),
-        providerOptions: ["prodia": .object(["resolution": "720p"])],
+        providerOptions: ["prodia": .object(["resolution": "720p", "seed": 999, "ignoredProviderOption": true])],
         extraBody: ["prodia": .object(["resolution": "480p", "seed": 7, "ignored": true])]
     ))
 
@@ -239,6 +243,8 @@ import Testing
     #expect(bodyText.contains(#""resolution":"720p""#))
     #expect(bodyText.contains(#""seed":7"#))
     #expect(!bodyText.contains(#""ignored""#))
+    #expect(!bodyText.contains(#""ignoredProviderOption""#))
+    #expect(!bodyText.contains(#""seed":999"#))
 }
 
 private func prodiaMultipartResponse(parts: [(name: String, contentType: String, body: Data)], headers: [String: String]) -> AIHTTPResponse {
