@@ -265,7 +265,10 @@ Progress:
   default-no-raw behavior. The shared OpenAI-compatible layer now carries
   upstream-style response headers and raw JSON bodies through
   `AIResponseMetadata` for text, stream, embedding, image, transcription, and
-  speech calls; Anthropic language and Google/Vertex language plus embedding
+  speech calls; OpenAI image generation/edit results now also mirror upstream
+  image usage and `providerMetadata.openai.images` fields, including revised
+  prompts, created/model option metadata, and distributed input token details;
+  Anthropic language and Google/Vertex language plus embedding
   models now do the same for their native response headers/bodies and stream
   response metadata. OpenAI-compatible chat streams now also emit v4-shaped
   text/reasoning lifecycle parts while retaining legacy deltas for existing

@@ -326,7 +326,7 @@ the touched surface into the newer naming pattern.
 | Provider surface | Upstream package/files | Swift entry points | Main tests |
 | --- | --- | --- | --- |
 | Model resolution | `packages/ai/src/model/resolve-model.ts` | `AIDefaultProvider`, `AI.resolveLanguageModel(...)`, `AI.resolveEmbeddingModel(...)`, `AI.resolveImageModel(...)`, `AI.resolveTranscriptionModel(...)`, `AI.resolveSpeechModel(...)`, `AI.resolveVideoModel(...)`, `AI.resolveRerankingModel(...)`, string-model `AI` facade overloads | `AIModelResolutionTests.swift` |
-| OpenAI Chat | `@ai-sdk/openai`, chat model files | `AIProviders.openAI`, `OpenAICompatibleChatModel`, OpenAI tools | `OpenAIChatTests.swift`, `OpenAIMediaTests.swift` |
+| OpenAI Chat/Image | `@ai-sdk/openai`, chat and image model files | `AIProviders.openAI`, `OpenAICompatibleChatModel`, `OpenAICompatibleImageModel`, OpenAI tools. Image generation/edit results expose upstream-style OpenAI usage and `providerMetadata.openai.images` metadata, including revised prompts, created/model-option fields, and distributed image/text token details. | `OpenAIChatTests.swift`, `OpenAIMediaTests.swift` |
 | OpenAI Responses | `@ai-sdk/openai`, responses model/tool files | `AIProviders.openAI`, `OpenAICompatibleResponsesModel`, `OpenAITools` | `OpenAIResponsesTests.swift`, `ResponsesEndpointTests.swift` |
 | OpenAI Files/Skills | `@ai-sdk/openai` file and skill clients | `OpenAIFileClient`, `OpenAISkillsClient` | `FileAndSkillClientTests.swift` |
 | Azure OpenAI | `@ai-sdk/azure` | `AIProviders.azureOpenAI`, `AzureOpenAIProvider`, `AzureOpenAITools` | `AlibabaProdiaAzureQuiverTests.swift`, `OpenAIResponsesTests.swift` |

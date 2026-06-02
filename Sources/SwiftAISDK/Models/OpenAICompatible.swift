@@ -2512,6 +2512,8 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
             rawValue: raw,
             warnings: warnings,
+            usage: tokenUsage(from: raw),
+            providerMetadata: openAIImageProviderMetadata(from: raw, providerID: providerID),
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -2570,10 +2572,62 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             base64Images: data.compactMap { $0["b64_json"]?.stringValue },
             rawValue: raw,
             warnings: warnings,
+            usage: tokenUsage(from: raw),
+            providerMetadata: openAIImageProviderMetadata(from: raw, providerID: providerID),
             requestMetadata: imageGenerationRequestMetadata(request),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
+}
+
+private func openAIImageProviderMetadata(from raw: JSONValue, providerID: String) -> [String: JSONValue] {
+    guard isOpenAIBackedProvider(providerID) else { return [:] }
+    let images = raw["data"]?.arrayValue ?? []
+    return [
+        "openai": .object([
+            "images": .array(images.enumerated().map { index, image in
+                var metadata: [String: JSONValue] = [:]
+                if let revisedPrompt = image["revised_prompt"]?.stringValue, !revisedPrompt.isEmpty {
+                    metadata["revisedPrompt"] = .string(revisedPrompt)
+                }
+                if let created = raw["created"] {
+                    metadata["created"] = created
+                }
+                if let size = raw["size"] {
+                    metadata["size"] = size
+                }
+                if let quality = raw["quality"] {
+                    metadata["quality"] = quality
+                }
+                if let background = raw["background"] {
+                    metadata["background"] = background
+                }
+                if let outputFormat = raw["output_format"] {
+                    metadata["outputFormat"] = outputFormat
+                }
+                metadata.merge(openAIImageTokenDetails(from: raw["usage"]?["input_tokens_details"], index: index, total: images.count)) { _, new in new }
+                return .object(metadata)
+            })
+        ])
+    ]
+}
+
+private func openAIImageTokenDetails(from details: JSONValue?, index: Int, total: Int) -> [String: JSONValue] {
+    guard total > 0 else { return [:] }
+    var metadata: [String: JSONValue] = [:]
+    if let imageTokens = details?["image_tokens"]?.intValue {
+        metadata["imageTokens"] = .number(Double(openAIImageDistributedTokens(imageTokens, index: index, total: total)))
+    }
+    if let textTokens = details?["text_tokens"]?.intValue {
+        metadata["textTokens"] = .number(Double(openAIImageDistributedTokens(textTokens, index: index, total: total)))
+    }
+    return metadata
+}
+
+private func openAIImageDistributedTokens(_ tokens: Int, index: Int, total: Int) -> Int {
+    let base = tokens / total
+    let remainder = tokens - base * (total - 1)
+    return index == total - 1 ? remainder : base
 }
 
 private func openAICompatibleImageWarnings(from request: ImageGenerationRequest, providerID: String) -> [AIWarning] {

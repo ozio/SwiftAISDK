@@ -157,6 +157,74 @@ import Testing
     #expect(body["user"]?.stringValue == "user-1")
 }
 
+@Test func openAIImageCarriesUsageAndProviderImageMetadataLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "created":1733837122,
+      "size":"1024x1024",
+      "quality":"high",
+      "background":"transparent",
+      "output_format":"webp",
+      "data":[{"b64_json":"image-b64","revised_prompt":"a sharper cat"}],
+      "usage":{
+        "input_tokens":12,
+        "output_tokens":0,
+        "total_tokens":12,
+        "input_tokens_details":{"image_tokens":7,"text_tokens":5}
+      }
+    }
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.imageModel("gpt-image-1")
+
+    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "1024x1024", count: 1))
+
+    #expect(result.base64Images == ["image-b64"])
+    #expect(result.usage?.inputTokens == 12)
+    #expect(result.usage?.outputTokens == 0)
+    #expect(result.usage?.totalTokens == 12)
+    let imageMetadata = try #require(result.providerMetadata["openai"]?["images"]?[0])
+    #expect(imageMetadata["revisedPrompt"]?.stringValue == "a sharper cat")
+    #expect(imageMetadata["created"]?.intValue == 1733837122)
+    #expect(imageMetadata["size"]?.stringValue == "1024x1024")
+    #expect(imageMetadata["quality"]?.stringValue == "high")
+    #expect(imageMetadata["background"]?.stringValue == "transparent")
+    #expect(imageMetadata["outputFormat"]?.stringValue == "webp")
+    #expect(imageMetadata["imageTokens"]?.intValue == 7)
+    #expect(imageMetadata["textTokens"]?.intValue == 5)
+}
+
+@Test func openAIImageDistributesTokenDetailsAcrossImagesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "created":1733837122,
+      "data":[
+        {"b64_json":"image-1"},
+        {"b64_json":"image-2"},
+        {"b64_json":"image-3"}
+      ],
+      "usage":{
+        "input_tokens":30,
+        "output_tokens":900,
+        "total_tokens":930,
+        "input_tokens_details":{"image_tokens":194,"text_tokens":28}
+      }
+    }
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.imageModel("gpt-image-1")
+
+    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "1024x1024", count: 3))
+
+    let images = try #require(result.providerMetadata["openai"]?["images"]?.arrayValue)
+    #expect(images[0]["imageTokens"]?.intValue == 64)
+    #expect(images[0]["textTokens"]?.intValue == 9)
+    #expect(images[1]["imageTokens"]?.intValue == 64)
+    #expect(images[1]["textTokens"]?.intValue == 9)
+    #expect(images[2]["imageTokens"]?.intValue == 66)
+    #expect(images[2]["textTokens"]?.intValue == 10)
+}
+
 @Test func openAIImageMapsNestedProviderOptionsForGenerateAndEdit() async throws {
     let generationTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image-b64"}]}"#))
     let generationProvider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: generationTransport))
@@ -237,6 +305,7 @@ import Testing
     ))
 
     #expect(result.base64Images == ["edited-b64"])
+    #expect(result.providerMetadata["openai"]?["images"]?[0]?["created"]?.intValue == 1710000000)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/images/edits")
     #expect(request.headers["Authorization"] == "Bearer test-key")
