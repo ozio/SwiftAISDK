@@ -99,6 +99,13 @@ import Testing
     let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: lumaTransport()))
     let model = try provider.imageModel("photon-1")
 
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.luma", message: "Luma provider options must be an object.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "Invalid namespace",
+            providerOptions: ["luma": .string("bad")]
+        ))
+    }
+
     await #expect(throws: AIError.self) {
         _ = try await model.generateImage(ImageGenerationRequest(
             prompt: "Invalid reference type",
@@ -120,6 +127,45 @@ import Testing
             providerOptions: ["luma": .object(["pollIntervalMillis": .string("fast")])]
         ))
     }
+}
+
+@Test func lumaProviderOptionsNullNamespaceUsesExtraBodyLikeUpstream() async throws {
+    let transport = lumaTransport()
+    let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
+    let model = try provider.imageModel("photon-1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "Use extra body",
+        providerOptions: ["luma": .null],
+        extraBody: [
+            "luma": .object([
+                "aspectRatio": .string("4:3"),
+                "additional_param": .string("value"),
+                "pollIntervalMillis": .number(1)
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["aspect_ratio"]?.stringValue == "4:3")
+    #expect(body["additional_param"]?.stringValue == "value")
+}
+
+@Test func lumaMaxPollAttemptsZeroMatchesUpstreamNoPolling() async throws {
+    let transport = lumaTransport()
+    let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
+    let model = try provider.imageModel("photon-1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "No polling",
+            providerOptions: ["luma": .object(["maxPollAttempts": .number(0)])]
+        ))
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 1)
+    #expect(requests[0].method == "POST")
 }
 
 @Test func lumaProviderOptionsNullishFieldsClearExtraBodyDefaults() async throws {

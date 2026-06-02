@@ -989,6 +989,9 @@ private func lumaProviderOptions(from request: ImageGenerationRequest) throws ->
     guard let providerValue = request.providerOptions["luma"] else {
         return resolved
     }
+    guard providerValue != .null else {
+        return resolved
+    }
     guard let providerOptions = providerValue.objectValue else {
         throw AIError.invalidArgument(argument: "providerOptions.luma", message: "Luma provider options must be an object.")
     }
@@ -1129,11 +1132,12 @@ private func lumaCharacterReference(_ images: [JSONValue]) throws -> JSONValue {
 
 private func lumaPollInterval(_ value: JSONValue?) -> UInt64 {
     let milliseconds = value?.doubleValue ?? 500
-    return UInt64(max(milliseconds, 1)) * 1_000_000
+    return UInt64(max(milliseconds, 0)) * 1_000_000
 }
 
 private func lumaMaxPollAttempts(_ value: JSONValue?) -> Int {
-    return max(value?.intValue ?? 120, 1)
+    guard let attempts = value?.doubleValue else { return 120 }
+    return max(Int(attempts.rounded(.up)), 0)
 }
 
 public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
