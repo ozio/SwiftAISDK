@@ -703,7 +703,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = lumaProviderOptions(from: request)
+        let options = try lumaProviderOptions(from: request)
         var warnings: [AIWarning] = []
         var body: [String: JSONValue] = [
             "prompt": .string(request.prompt),
@@ -725,7 +725,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
         }
         if let aspectRatio = request.aspectRatio {
             body["aspect_ratio"] = .string(aspectRatio)
-        } else if let aspectRatio = options["aspectRatio"] ?? options["aspect_ratio"] {
+        } else if let aspectRatio = options.extraAspectRatio {
             body["aspect_ratio"] = aspectRatio
         }
         body.merge(try lumaOptions(from: options, files: request.files, mask: request.mask)) { _, new in new }
@@ -736,8 +736,8 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
         let finalResponse = try await pollLuma(
             id: id,
             headers: request.headers,
-            intervalNanoseconds: lumaPollInterval(options),
-            maxAttempts: lumaMaxPollAttempts(options),
+            intervalNanoseconds: lumaPollInterval(options.pollIntervalMillis),
+            maxAttempts: lumaMaxPollAttempts(options.maxPollAttempts),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.raw
@@ -783,19 +783,22 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
-private func lumaOptions(from options: [String: JSONValue], files: [ImageInputFile], mask: ImageInputFile?) throws -> [String: JSONValue] {
+private struct LumaResolvedOptions {
+    var requestOptions: [String: JSONValue]
+    var extraAspectRatio: JSONValue?
+    var referenceType: String?
+    var imageConfigs: [JSONValue]
+    var pollIntervalMillis: JSONValue?
+    var maxPollAttempts: JSONValue?
+}
+
+private func lumaOptions(from options: LumaResolvedOptions, files: [ImageInputFile], mask: ImageInputFile?) throws -> [String: JSONValue] {
     if mask != nil {
         throw AIError.invalidArgument(argument: "mask", message: "Luma AI does not support mask-based image editing.")
     }
-    var output = options
-    output.removeValue(forKey: "aspectRatio")
-    output.removeValue(forKey: "aspect_ratio")
-    output.removeValue(forKey: "pollIntervalMillis")
-    output.removeValue(forKey: "maxPollAttempts")
-
-    let referenceType = output.removeValue(forKey: "referenceType")?.stringValue ?? "image"
-    let imageConfigs = output.removeValue(forKey: "images")?.arrayValue ?? []
-    let images = try lumaReferenceImages(from: files, imageConfigs: imageConfigs)
+    var output = options.requestOptions
+    let referenceType = options.referenceType ?? "image"
+    let images = try lumaReferenceImages(from: files, imageConfigs: options.imageConfigs)
     guard !images.isEmpty else { return output }
 
     switch referenceType {
@@ -820,16 +823,124 @@ private func lumaOptions(from options: [String: JSONValue], files: [ImageInputFi
     return output
 }
 
-private func lumaProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
-    var output = lumaProviderOptions(from: request.extraBody)
-    if let providerOptions = request.providerOptions["luma"]?.objectValue {
-        output.merge(providerOptions) { _, providerValue in providerValue }
+private func lumaProviderOptions(from request: ImageGenerationRequest) throws -> LumaResolvedOptions {
+    var extraOptions = lumaProviderOptions(from: request.extraBody)
+    let extraAspectRatio = extraOptions["aspectRatio"] ?? extraOptions["aspect_ratio"]
+    extraOptions.removeValue(forKey: "aspectRatio")
+    extraOptions.removeValue(forKey: "aspect_ratio")
+
+    var resolved = LumaResolvedOptions(
+        requestOptions: extraOptions,
+        extraAspectRatio: extraAspectRatio,
+        referenceType: extraOptions.removeValue(forKey: "referenceType")?.stringValue,
+        imageConfigs: extraOptions.removeValue(forKey: "images")?.arrayValue ?? [],
+        pollIntervalMillis: extraOptions.removeValue(forKey: "pollIntervalMillis"),
+        maxPollAttempts: extraOptions.removeValue(forKey: "maxPollAttempts")
+    )
+    resolved.requestOptions = extraOptions
+
+    guard let providerValue = request.providerOptions["luma"] else {
+        return resolved
     }
-    return output
+    guard let providerOptions = providerValue.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.luma", message: "Luma provider options must be an object.")
+    }
+
+    let parsedProviderOptions = try lumaValidatedProviderOptions(from: providerOptions)
+    resolved.requestOptions.merge(parsedProviderOptions.requestOptions) { _, providerValue in providerValue }
+    if parsedProviderOptions.hasReferenceType {
+        resolved.referenceType = parsedProviderOptions.referenceType
+    }
+    if parsedProviderOptions.hasImages {
+        resolved.imageConfigs = parsedProviderOptions.imageConfigs
+    }
+    if parsedProviderOptions.hasPollIntervalMillis {
+        resolved.pollIntervalMillis = parsedProviderOptions.pollIntervalMillis
+    }
+    if parsedProviderOptions.hasMaxPollAttempts {
+        resolved.maxPollAttempts = parsedProviderOptions.maxPollAttempts
+    }
+    return resolved
 }
 
 private func lumaProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     extraBody["luma"]?.objectValue ?? extraBody.filter { key, _ in key != "luma" }
+}
+
+private struct LumaParsedProviderOptions {
+    var requestOptions: [String: JSONValue]
+    var hasReferenceType = false
+    var referenceType: String?
+    var hasImages = false
+    var imageConfigs: [JSONValue] = []
+    var hasPollIntervalMillis = false
+    var pollIntervalMillis: JSONValue?
+    var hasMaxPollAttempts = false
+    var maxPollAttempts: JSONValue?
+}
+
+private func lumaValidatedProviderOptions(from providerOptions: [String: JSONValue]) throws -> LumaParsedProviderOptions {
+    var output = LumaParsedProviderOptions(requestOptions: providerOptions)
+    if let referenceType = providerOptions["referenceType"] {
+        output.hasReferenceType = true
+        output.requestOptions.removeValue(forKey: "referenceType")
+        if referenceType != .null {
+            guard let value = referenceType.stringValue,
+                  ["image", "style", "character", "modify_image"].contains(value) else {
+                throw AIError.invalidArgument(argument: "providerOptions.luma.referenceType", message: "Luma referenceType must be one of image, style, character, modify_image.")
+            }
+            output.referenceType = value
+        }
+    }
+    if let images = providerOptions["images"] {
+        output.hasImages = true
+        output.requestOptions.removeValue(forKey: "images")
+        if images != .null {
+            guard let array = images.arrayValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.luma.images", message: "Luma images provider option must be an array.")
+            }
+            output.imageConfigs = try array.enumerated().map { index, value in
+                guard let object = value.objectValue else {
+                    throw AIError.invalidArgument(argument: "providerOptions.luma.images", message: "Luma images[\(index)] must be an object.")
+                }
+                var config: [String: JSONValue] = [:]
+                if let weight = object["weight"], weight != .null {
+                    guard let number = weight.doubleValue, number >= 0, number <= 1 else {
+                        throw AIError.invalidArgument(argument: "providerOptions.luma.images[\(index)].weight", message: "Luma image weight must be a number between 0 and 1.")
+                    }
+                    config["weight"] = weight
+                }
+                if let id = object["id"], id != .null {
+                    guard id.stringValue != nil else {
+                        throw AIError.invalidArgument(argument: "providerOptions.luma.images[\(index)].id", message: "Luma image id must be a string.")
+                    }
+                    config["id"] = id
+                }
+                return .object(config)
+            }
+        }
+    }
+    if let pollIntervalMillis = providerOptions["pollIntervalMillis"] {
+        output.hasPollIntervalMillis = true
+        output.requestOptions.removeValue(forKey: "pollIntervalMillis")
+        if pollIntervalMillis != .null {
+            guard pollIntervalMillis.doubleValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.luma.pollIntervalMillis", message: "Luma pollIntervalMillis must be a number.")
+            }
+            output.pollIntervalMillis = pollIntervalMillis
+        }
+    }
+    if let maxPollAttempts = providerOptions["maxPollAttempts"] {
+        output.hasMaxPollAttempts = true
+        output.requestOptions.removeValue(forKey: "maxPollAttempts")
+        if maxPollAttempts != .null {
+            guard maxPollAttempts.doubleValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.luma.maxPollAttempts", message: "Luma maxPollAttempts must be a number.")
+            }
+            output.maxPollAttempts = maxPollAttempts
+        }
+    }
+    return output
 }
 
 private func lumaReferenceImages(from files: [ImageInputFile], imageConfigs: [JSONValue]) throws -> [JSONValue] {
@@ -869,13 +980,13 @@ private func lumaCharacterReference(_ images: [JSONValue]) throws -> JSONValue {
     return .object(identities.mapValues { .object(["images": .array($0)]) })
 }
 
-private func lumaPollInterval(_ options: [String: JSONValue]) -> UInt64 {
-    let milliseconds = options["pollIntervalMillis"]?.intValue ?? 500
+private func lumaPollInterval(_ value: JSONValue?) -> UInt64 {
+    let milliseconds = value?.doubleValue ?? 500
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
 
-private func lumaMaxPollAttempts(_ options: [String: JSONValue]) -> Int {
-    return max(options["maxPollAttempts"]?.intValue ?? 120, 1)
+private func lumaMaxPollAttempts(_ value: JSONValue?) -> Int {
+    return max(value?.intValue ?? 120, 1)
 }
 
 public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {

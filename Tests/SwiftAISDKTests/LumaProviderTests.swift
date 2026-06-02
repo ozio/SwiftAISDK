@@ -68,6 +68,89 @@ import Testing
     #expect(body["seed"] == nil)
 }
 
+@Test func lumaProviderOptionsAspectRatioPassthroughMatchesUpstream() async throws {
+    let transport = lumaTransport()
+    let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
+    let model = try provider.imageModel("photon-1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "wide landscape",
+        aspectRatio: "16:9",
+        providerOptions: [
+            "luma": .object([
+                "aspectRatio": .string("custom-passthrough"),
+                "aspect_ratio": .string("1:1"),
+                "pollIntervalMillis": .number(1)
+            ])
+        ],
+        extraBody: [
+            "luma": .object([
+                "aspectRatio": .string("4:3")
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["aspect_ratio"]?.stringValue == "1:1")
+    #expect(body["aspectRatio"]?.stringValue == "custom-passthrough")
+}
+
+@Test func lumaProviderOptionsValidateKnownSchemaFields() async throws {
+    let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: lumaTransport()))
+    let model = try provider.imageModel("photon-1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "Invalid reference type",
+            providerOptions: ["luma": .object(["referenceType": .string("invalid")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "Invalid weight",
+            files: [ImageInputFile(url: "https://example.com/input.jpg")],
+            providerOptions: ["luma": .object(["images": .array([.object(["weight": .number(2)])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "Invalid polling",
+            providerOptions: ["luma": .object(["pollIntervalMillis": .string("fast")])]
+        ))
+    }
+}
+
+@Test func lumaProviderOptionsNullishFieldsClearExtraBodyDefaults() async throws {
+    let transport = lumaTransport()
+    let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
+    let model = try provider.imageModel("photon-1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "Use default image references",
+        files: [ImageInputFile(url: "https://example.com/input.jpg")],
+        providerOptions: [
+            "luma": .object([
+                "referenceType": .null,
+                "images": .null,
+                "pollIntervalMillis": .number(1)
+            ])
+        ],
+        extraBody: [
+            "luma": .object([
+                "referenceType": .string("style"),
+                "images": .array([.object(["weight": .number(0.2)])])
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image"]?[0]?["url"]?.stringValue == "https://example.com/input.jpg")
+    #expect(body["image"]?[0]?["weight"]?.doubleValue == 0.85)
+    #expect(body["style"] == nil)
+}
+
 @Test func lumaImageMapsURLFilesAsDefaultImageReferences() async throws {
     let transport = lumaTransport()
     let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
