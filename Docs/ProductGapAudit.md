@@ -329,7 +329,8 @@ Progress:
   validates polling/result status shapes like upstream. AssemblyAI transcription now scopes
   `providerOptions.assemblyai` to the upstream submit schema and uses the
   upstream 3s poll cadence while keeping raw `extraBody` passthrough for
-  explicit low-level overrides. Vercel now mirrors the upstream callable chat
+  explicit low-level overrides, treats a null namespace as a no-op, and
+  validates submit/poll/final transcript shapes like upstream. Vercel now mirrors the upstream callable chat
   provider wrapper, custom base URL/header behavior, and `ai-sdk/vercel`
   user-agent suffix over OpenAI-compatible chat. Hugging Face Responses now
   mirrors the upstream callable/responses wrapper, scopes

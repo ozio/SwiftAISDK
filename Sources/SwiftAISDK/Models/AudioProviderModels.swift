@@ -499,12 +499,16 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         body.merge(assemblyAITranscriptionOptions(from: options)) { _, new in new }
 
         let submitRaw = try await config.sendJSON(path: "/v2/transcript", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        guard let submitStatus = submitRaw["status"]?.stringValue, assemblyAITranscriptStatuses.contains(submitStatus) else {
+            throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI submit response status is invalid.")
+        }
         guard let transcriptID = submitRaw["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI submit response did not contain id.")
         }
 
         let finalResponse = try await pollAssemblyAITranscriptResponse(id: transcriptID, request: request)
         let raw = finalResponse.json
+        try validateAssemblyAITranscriptResponse(raw, providerID: providerID)
         let status = raw["status"]?.stringValue
         if status == "error" {
             throw AIError.invalidResponse(provider: providerID, message: "Transcription failed: \(raw["error"]?.stringValue ?? "Unknown error")")
@@ -528,7 +532,10 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
                 throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
-            switch raw["status"]?.stringValue {
+            guard let status = raw["status"]?.stringValue, assemblyAITranscriptStatuses.contains(status) else {
+                throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription status is invalid.")
+            }
+            switch status {
             case "completed", "error":
                 return (raw, response)
             default:
@@ -547,6 +554,40 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
             headers: config.headers.mergingHeaders(requestHeaders),
             abortSignal: abortSignal
         )
+    }
+}
+
+private let assemblyAITranscriptStatuses: Set<String> = ["queued", "processing", "completed", "error"]
+
+private func validateAssemblyAITranscriptResponse(_ raw: JSONValue, providerID: String) throws {
+    guard raw["id"]?.stringValue != nil else {
+        throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription result is invalid.")
+    }
+    if let text = raw["text"], text != .null, text.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription result is invalid.")
+    }
+    if let languageCode = raw["language_code"], languageCode != .null, languageCode.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription result is invalid.")
+    }
+    if let audioDuration = raw["audio_duration"], audioDuration != .null, audioDuration.doubleValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription result is invalid.")
+    }
+    if let error = raw["error"], error != .null, error.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription result is invalid.")
+    }
+    guard let words = raw["words"] else { return }
+    guard words != .null else { return }
+    guard let array = words.arrayValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription result is invalid.")
+    }
+    for word in array {
+        guard
+            word["start"]?.doubleValue != nil,
+            word["end"]?.doubleValue != nil,
+            word["text"]?.stringValue != nil
+        else {
+            throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription result is invalid.")
+        }
     }
 }
 

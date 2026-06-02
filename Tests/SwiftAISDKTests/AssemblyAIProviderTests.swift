@@ -98,6 +98,33 @@ import Testing
     #expect(submitBody["summaryModel"] == nil)
 }
 
+@Test func assemblyAITranscriptionTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+        jsonResponse(#"{"id":"job-123","status":"queued"}"#),
+        jsonResponse(#"{"id":"job-123","status":"completed","text":"null namespace"}"#)
+    ])
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: transport))
+    let model = try provider.transcriptionModel("best")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        providerOptions: ["assemblyai": .null],
+        extraBody: [
+            "assemblyai": .object([
+                "languageCode": "it",
+                "autoHighlights": true,
+                "wordBoost": ["SwiftAISDK"]
+            ])
+        ]
+    ))
+
+    let submitBody = try decodeJSONBody(try #require((await transport.requests())[1].body))
+    #expect(submitBody["language_code"]?.stringValue == "it")
+    #expect(submitBody["auto_highlights"]?.boolValue == true)
+    #expect(submitBody["word_boost"]?[0]?.stringValue == "SwiftAISDK")
+}
+
 @Test func assemblyAITranscriptionMapsProviderOptionsNamespaceAndOverridesExtraBody() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
@@ -297,6 +324,47 @@ import Testing
     let model = try provider.transcriptionModel("best")
 
     await #expect(throws: AIError.invalidResponse(provider: "assemblyai.transcription", message: "Transcription failed: bad audio")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
+    }
+}
+
+@Test func assemblyAITranscriptionRejectsInvalidSubmitStatusLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+        jsonResponse(#"{"id":"job-123","status":"paused"}"#)
+    ])
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: transport))
+    let model = try provider.transcriptionModel("best")
+
+    await #expect(throws: AIError.invalidResponse(provider: "assemblyai.transcription", message: "AssemblyAI submit response status is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
+    }
+}
+
+@Test func assemblyAITranscriptionRejectsInvalidPollingStatusLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+        jsonResponse(#"{"id":"job-123","status":"queued"}"#),
+        jsonResponse(#"{"id":"job-123","status":"paused"}"#)
+    ])
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: transport))
+    let model = try provider.transcriptionModel("best")
+
+    await #expect(throws: AIError.invalidResponse(provider: "assemblyai.transcription", message: "AssemblyAI transcription status is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
+    }
+}
+
+@Test func assemblyAITranscriptionRejectsInvalidFinalResultLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+        jsonResponse(#"{"id":"job-123","status":"queued"}"#),
+        jsonResponse(#"{"id":"job-123","status":"completed","words":[{"text":"missing timing","start":0}]}"#)
+    ])
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: transport))
+    let model = try provider.transcriptionModel("best")
+
+    await #expect(throws: AIError.invalidResponse(provider: "assemblyai.transcription", message: "AssemblyAI transcription result is invalid.")) {
         _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
     }
 }
