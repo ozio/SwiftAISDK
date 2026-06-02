@@ -1998,7 +1998,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let mode = alibabaVideoMode(modelID)
-        let options = alibabaVideoProviderOptions(from: request)
+        let options = try alibabaVideoProviderOptions(from: request)
         let warnings = alibabaVideoWarnings(for: request)
         var input: [String: JSONValue] = [:]
         if !request.prompt.isEmpty { input["prompt"] = .string(request.prompt) }
@@ -2951,12 +2951,74 @@ private func alibabaVideoProviderOptions(from extraBody: [String: JSONValue]) ->
     return output
 }
 
-private func alibabaVideoProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+private func alibabaVideoProviderOptions(from request: VideoGenerationRequest) throws -> [String: JSONValue] {
     var output = alibabaVideoProviderOptions(from: request.extraBody)
-    if let nested = request.providerOptions["alibaba"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+    if let value = request.providerOptions["alibaba"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.alibaba", message: "Alibaba provider options must be an object.")
+        }
+        output.merge(try alibabaValidateVideoProviderOptions(nested)) { _, nested in nested }
     }
     return output
+}
+
+private func alibabaValidateVideoProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options {
+        switch key {
+        case "negativePrompt", "audioUrl":
+            try alibabaRequireStringOrNull(value, argument: "providerOptions.alibaba.\(key)", label: key)
+            if value != .null { output[key] = value }
+        case "promptExtend", "watermark", "audio":
+            try alibabaRequireBooleanOrNull(value, argument: "providerOptions.alibaba.\(key)", label: key)
+            if value != .null { output[key] = value }
+        case "shotType":
+            try alibabaRequireEnumOrNull(value, argument: "providerOptions.alibaba.shotType", label: "shotType", allowed: ["single", "multi"])
+            if value != .null { output[key] = value }
+        case "referenceUrls":
+            try alibabaRequireStringArrayOrNull(value, argument: "providerOptions.alibaba.referenceUrls", label: "referenceUrls")
+            if value != .null { output[key] = value }
+        case "pollIntervalMs", "pollTimeoutMs":
+            try alibabaRequirePositiveNumberOrNull(value, argument: "providerOptions.alibaba.\(key)", label: key)
+            if value != .null { output[key] = value }
+        default:
+            output[key] = value
+        }
+    }
+    return output
+}
+
+private func alibabaRequireStringOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be a string or null.")
+    }
+}
+
+private func alibabaRequireBooleanOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be a boolean or null.")
+    }
+}
+
+private func alibabaRequirePositiveNumberOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value != .null else { return }
+    guard let number = value.doubleValue, number > 0 else {
+        throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be a positive number or null.")
+    }
+}
+
+private func alibabaRequireEnumOrNull(_ value: JSONValue, argument: String, label: String, allowed: Set<String>) throws {
+    guard value != .null else { return }
+    guard let string = value.stringValue, allowed.contains(string) else {
+        throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be one of \(allowed.sorted().joined(separator: ", ")) or null.")
+    }
+}
+
+private func alibabaRequireStringArrayOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value != .null else { return }
+    guard let array = value.arrayValue, array.allSatisfy({ $0.stringValue != nil }) else {
+        throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be an array of strings or null.")
+    }
 }
 
 private func alibabaVideoImageInput(from request: VideoGenerationRequest, options: [String: JSONValue]) -> JSONValue? {

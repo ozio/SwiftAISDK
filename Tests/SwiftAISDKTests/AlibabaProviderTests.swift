@@ -172,16 +172,16 @@ import Testing
             "alibaba": [
                 "enableThinking": true,
                 "thinkingBudget": 2048,
-                "parallelToolCalls": false,
-                "topK": 7,
-                "presencePenalty": 0.2
+                "parallelToolCalls": false
             ]
         ],
         extraBody: [
             "alibaba": [
                 "enableThinking": false,
                 "thinkingBudget": 1024,
-                "parallelToolCalls": true
+                "parallelToolCalls": true,
+                "topK": 7,
+                "presencePenalty": 0.2
             ]
         ]
     ))
@@ -206,6 +206,41 @@ import Testing
     #expect(body["enableThinking"] == nil)
     #expect(body["thinkingBudget"] == nil)
     #expect(body["parallelToolCalls"] == nil)
+}
+
+@Test func alibabaLanguageProviderOptionsValidateAndStripLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.languageModel("qwen-plus")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], providerOptions: ["alibaba": false]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], providerOptions: ["alibaba": ["thinkingBudget": 0]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], providerOptions: ["alibaba": ["enableThinking": nil]]))
+    }
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "openai": ["enableThinking": true],
+            "alibaba": [
+                "enableThinking": true,
+                "parallelToolCalls": false,
+                "topK": 99
+            ]
+        ],
+        extraBody: ["topK": 7]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["enable_thinking"]?.boolValue == true)
+    #expect(body["parallel_tool_calls"] == nil)
+    #expect(body["top_k"]?.intValue == 7)
+    #expect(body["openai"] == nil)
 }
 
 @Test func alibabaLanguageWarnsForUnsupportedPartsProviderToolsAndToolChoice() async throws {
@@ -495,4 +530,48 @@ import Testing
     #expect(body["parameters"]?["seed"]?.intValue == 42)
     #expect(body["parameters"]?["prompt_extend"]?.boolValue == true)
     #expect(body["parameters"]?["watermark"]?.boolValue == false)
+}
+
+@Test func alibabaVideoProviderOptionsValidateScopeAndNullishLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-r2v"},"request_id":"req-1"}"#),
+        jsonResponse(#"{"output":{"task_id":"task-r2v","task_status":"SUCCEEDED","video_url":"https://dashscope.example.com/r2v.mp4"},"request_id":"req-2"}"#)
+    ])
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.videoModel("wan2.1-r2v-plus")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "wave", providerOptions: ["alibaba": false]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "wave", providerOptions: ["alibaba": ["shotType": "wide"]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "wave", providerOptions: ["alibaba": ["pollIntervalMs": 0]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "wave", providerOptions: ["alibaba": ["referenceUrls": [1, 2]]]))
+    }
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "wave",
+        providerOptions: [
+            "openai": ["negativePrompt": "ignored"],
+            "alibaba": [
+                "negativePrompt": nil,
+                "referenceUrls": ["https://example.com/ref.png"],
+                "promptExtend": nil,
+                "customUnknown": "kept",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?["negative_prompt"] == nil)
+    #expect(body["input"]?["reference_urls"]?[0]?.stringValue == "https://example.com/ref.png")
+    #expect(body["parameters"]?["prompt_extend"] == nil)
+    #expect(body["parameters"]?["customUnknown"] == nil)
+    #expect(body["parameters"]?["openai"] == nil)
 }

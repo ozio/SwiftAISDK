@@ -11,7 +11,7 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = alibabaPreparedCall(
+        let prepared = try alibabaPreparedCall(
             for: request,
             modelID: modelID,
             stream: false,
@@ -46,7 +46,7 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = alibabaPreparedCall(
+                    let prepared = try alibabaPreparedCall(
                         for: request,
                         modelID: modelID,
                         stream: true,
@@ -165,9 +165,9 @@ private func alibabaPreparedCall(
     modelID: String,
     stream: Bool,
     transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
-) -> AlibabaPreparedCall {
+) throws -> AlibabaPreparedCall {
     var warnings = alibabaWarnings(for: request)
-    var options = alibabaOptions(from: request)
+    var options = try alibabaOptions(from: request)
     let responseFormat = alibabaResolvedResponseFormat(request: request, options: &options)
     let toolChoiceInput = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
     let preparedMessages = alibabaMessages(request.messages)
@@ -308,10 +308,13 @@ private func alibabaUserPartFeature(_ part: AIContentPart) -> String {
     }
 }
 
-private func alibabaOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+private func alibabaOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
     var output = alibabaOptions(from: request.extraBody)
-    if let nested = request.providerOptions["alibaba"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+    if let value = request.providerOptions["alibaba"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.alibaba", message: "Alibaba provider options must be an object.")
+        }
+        output.merge(try alibabaValidateLanguageProviderOptions(nested)) { _, nested in nested }
     }
     alibabaNormalizeOptions(&output)
     return output
@@ -332,6 +335,32 @@ private func alibabaNormalizeOptions(_ output: inout [String: JSONValue]) {
     alibabaMoveKey("enableThinking", to: "enable_thinking", in: &output)
     alibabaMoveKey("thinkingBudget", to: "thinking_budget", in: &output)
     alibabaMoveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
+}
+
+private func alibabaValidateLanguageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options {
+        switch key {
+        case "enableThinking":
+            guard let bool = value.boolValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.alibaba.enableThinking", message: "Alibaba enableThinking must be a boolean.")
+            }
+            output[key] = .bool(bool)
+        case "thinkingBudget":
+            guard let number = value.doubleValue, number > 0 else {
+                throw AIError.invalidArgument(argument: "providerOptions.alibaba.thinkingBudget", message: "Alibaba thinkingBudget must be a positive number.")
+            }
+            output[key] = .number(number)
+        case "parallelToolCalls":
+            guard let bool = value.boolValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.alibaba.parallelToolCalls", message: "Alibaba parallelToolCalls must be a boolean.")
+            }
+            output[key] = .bool(bool)
+        default:
+            break
+        }
+    }
+    return output
 }
 
 private func alibabaResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
