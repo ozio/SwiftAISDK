@@ -11,7 +11,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = body(for: request, stream: false)
+        let prepared = try body(for: request, stream: false)
         let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
@@ -43,7 +43,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = body(for: request, stream: true)
+                    let prepared = try body(for: request, stream: true)
                     let response = try await config.transport.send(config.request(
                         path: "/chat/completions",
                         modelID: modelID,
@@ -123,8 +123,8 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) -> MistralPreparedCall {
-        var options = mistralProviderOptions(from: request)
+    private func body(for request: LanguageModelRequest, stream: Bool) throws -> MistralPreparedCall {
+        var options = try mistralProviderOptions(from: request)
         let responseFormat = mistralResolvedResponseFormat(request: request, options: &options)
         let warnings = mistralWarnings(for: request, modelID: modelID)
         let messages = mistralMessages(request.messages, responseFormat: responseFormat)
@@ -320,10 +320,17 @@ private func mistralProviderOptions(from extraBody: [String: JSONValue]) -> [Str
     return output
 }
 
-private func mistralProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+private func mistralProviderOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
     var output = mistralProviderOptions(from: request.extraBody)
-    if let nested = request.providerOptions["mistral"]?.objectValue {
-        output.merge(nested.filter { mistralLanguageProviderOptionKeys.contains($0.key) }) { _, nested in nested }
+    if let value = request.providerOptions["mistral"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.mistral", message: "Mistral provider options must be an object.")
+        }
+        for key in mistralLanguageProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try mistralValidateLanguageProviderOptions(nested)) { _, nested in nested }
     }
     return output
 }
@@ -337,6 +344,43 @@ private let mistralLanguageProviderOptionKeys: Set<String> = [
     "parallelToolCalls",
     "reasoningEffort"
 ]
+
+private func mistralValidateLanguageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where mistralLanguageProviderOptionKeys.contains(key) {
+        guard value != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.mistral.\(key)", message: "Mistral \(key) cannot be null.")
+        }
+        switch key {
+        case "safePrompt", "structuredOutputs", "strictJsonSchema", "parallelToolCalls":
+            try mistralRequireBoolean(value, argument: "providerOptions.mistral.\(key)", message: "Mistral \(key) must be a boolean.")
+            output[key] = value
+        case "documentImageLimit", "documentPageLimit":
+            try mistralRequireNumber(value, argument: "providerOptions.mistral.\(key)", message: "Mistral \(key) must be a number.")
+            output[key] = value
+        case "reasoningEffort":
+            guard let string = value.stringValue, ["high", "none"].contains(string) else {
+                throw AIError.invalidArgument(argument: "providerOptions.mistral.reasoningEffort", message: "Mistral reasoningEffort must be high or none.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func mistralRequireBoolean(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func mistralRequireNumber(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.doubleValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
 
 private func mistralMessagesJSON(_ messages: [AIMessage]) -> [JSONValue] {
     messages.flatMap(mistralMessageJSONs)

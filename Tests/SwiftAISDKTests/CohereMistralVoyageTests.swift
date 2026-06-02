@@ -402,6 +402,31 @@ import Testing
     #expect(body["strictJsonSchema"] == nil)
 }
 
+@Test func mistralLanguageUsesProviderOptionsStructuredOutputControls() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"{\\"value\\":\\"ok\\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Answer.")],
+        responseFormat: .json(schema: ["type": "object"], name: "answer"),
+        providerOptions: [
+            "mistral": [
+                "structuredOutputs": true,
+                "strictJsonSchema": true
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["strict"]?.boolValue == true)
+    #expect(body["structuredOutputs"] == nil)
+    #expect(body["strictJsonSchema"] == nil)
+}
+
 @Test func mistralUnknownFinishReasonMapsToOtherAndParallelToolsNeedTools() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"cmpl-1","object":"chat.completion","model":"mistral-large-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"unexpected"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
@@ -720,6 +745,46 @@ import Testing
     let embeddingBody = try decodeJSONBody(try #require(embeddingRequest.body))
     #expect(embeddingBody["mistral"] == nil)
     #expect(embeddingBody["encoding_format"]?.stringValue == "float")
+}
+
+@Test func mistralLanguageProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.mistral", message: "Mistral provider options must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["mistral": "not-an-object"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.mistral.safePrompt", message: "Mistral safePrompt cannot be null.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["mistral": .object(["safePrompt": .null])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.mistral.parallelToolCalls", message: "Mistral parallelToolCalls must be a boolean.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["mistral": .object(["parallelToolCalls": "false"])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.mistral.documentImageLimit", message: "Mistral documentImageLimit must be a number.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["mistral": .object(["documentImageLimit": "5"])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.mistral.reasoningEffort", message: "Mistral reasoningEffort must be high or none.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["mistral": .object(["reasoningEffort": "medium"])]
+        ))
+    }
 }
 
 @Test func cohereLanguageStreamsChatEvents() async throws {
