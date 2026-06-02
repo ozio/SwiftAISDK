@@ -11,7 +11,7 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = togetherAIProviderOptions(from: request)
+        let options = try togetherAIProviderOptions(from: request)
         var warnings: [AIWarning] = []
         if request.mask != nil {
             throw AIError.invalidResponse(
@@ -45,11 +45,9 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
             body["n"] = .number(Double(count))
         }
         if let size = request.size {
-            let dimensions = size.split(separator: "x").compactMap { Int($0) }
-            if dimensions.count == 2 {
-                body["width"] = .number(Double(dimensions[0]))
-                body["height"] = .number(Double(dimensions[1]))
-            }
+            let dimensions = size.split(separator: "x", omittingEmptySubsequences: false)
+            body["width"] = togetherAIParseInt(dimensions.first.map(String.init))
+            body["height"] = dimensions.count > 1 ? togetherAIParseInt(String(dimensions[1])) : .null
         }
         if let imageURL = togetherAIImageURL(from: request.files.first) {
             body["image_url"] = .string(imageURL)
@@ -83,25 +81,31 @@ private func togetherAIProviderOptions(from extraBody: [String: JSONValue]) -> [
     return output
 }
 
-private func togetherAIProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
-    togetherAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
-}
-
-private func togetherAIProviderOptions(from request: RerankingRequest) -> [String: JSONValue] {
-    togetherAIProviderOptions(
+private func togetherAIProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
+    try togetherAIProviderOptions(
         extraBody: request.extraBody,
         providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: togetherAIRerankingProviderOptionKeys
+        validateProviderOptions: togetherAIValidateImageProviderOptions
+    )
+}
+
+private func togetherAIProviderOptions(from request: RerankingRequest) throws -> [String: JSONValue] {
+    try togetherAIProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: togetherAIRerankingProviderOptionKeys,
+        validateProviderOptions: togetherAIValidateRerankingProviderOptions
     )
 }
 
 private func togetherAIProviderOptions(
     extraBody: [String: JSONValue],
     providerOptions: [String: JSONValue],
-    supportedProviderOptionKeys: Set<String>? = nil
-) -> [String: JSONValue] {
+    supportedProviderOptionKeys: Set<String>? = nil,
+    validateProviderOptions: ([String: JSONValue], String) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = togetherAIProviderOptions(from: extraBody)
-    var scopedProviderOptions = togetherAIProviderOptions(fromProviderOptions: providerOptions)
+    var scopedProviderOptions = try togetherAIProviderOptions(fromProviderOptions: providerOptions, validate: validateProviderOptions)
     if let supportedProviderOptionKeys {
         scopedProviderOptions = scopedProviderOptions.filter { supportedProviderOptionKeys.contains($0.key) }
     }
@@ -109,17 +113,60 @@ private func togetherAIProviderOptions(
     return output
 }
 
-private func togetherAIProviderOptions(fromProviderOptions providerOptions: [String: JSONValue]) -> [String: JSONValue] {
-    if let nested = providerOptions["togetherai"]?.objectValue {
-        return nested
+private func togetherAIProviderOptions(
+    fromProviderOptions providerOptions: [String: JSONValue],
+    validate: ([String: JSONValue], String) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
+    if let value = providerOptions["togetherai"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.togetherai", message: "TogetherAI provider options must be an object.")
+        }
+        return try validate(nested, "providerOptions.togetherai")
     }
-    if let nested = providerOptions["togetherAI"]?.objectValue {
-        return nested
+    if let value = providerOptions["togetherAI"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.togetherAI", message: "TogetherAI provider options must be an object.")
+        }
+        return try validate(nested, "providerOptions.togetherAI")
     }
     return [:]
 }
 
 private let togetherAIRerankingProviderOptionKeys: Set<String> = ["rankFields"]
+
+private func togetherAIValidateImageProviderOptions(_ options: [String: JSONValue], argumentPrefix: String) throws -> [String: JSONValue] {
+    for (key, value) in options {
+        switch key {
+        case "steps", "guidance":
+            guard value == .null || value.doubleValue != nil else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "TogetherAI \(key) must be a number or null.")
+            }
+        case "negative_prompt":
+            guard value == .null || value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).negative_prompt", message: "TogetherAI negative_prompt must be a string or null.")
+            }
+        case "disable_safety_checker":
+            guard value == .null || value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).disable_safety_checker", message: "TogetherAI disable_safety_checker must be a boolean or null.")
+            }
+        default:
+            break
+        }
+    }
+    return options
+}
+
+private func togetherAIValidateRerankingProviderOptions(_ options: [String: JSONValue], argumentPrefix: String) throws -> [String: JSONValue] {
+    if let rankFields = options["rankFields"] {
+        guard let fields = rankFields.arrayValue else {
+            throw AIError.invalidArgument(argument: "\(argumentPrefix).rankFields", message: "TogetherAI rankFields must be an array of strings.")
+        }
+        guard fields.allSatisfy({ $0.stringValue != nil }) else {
+            throw AIError.invalidArgument(argument: "\(argumentPrefix).rankFields", message: "TogetherAI rankFields must be an array of strings.")
+        }
+    }
+    return options
+}
 
 private func togetherAIImageOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var options: [String: JSONValue] = [:]
@@ -147,6 +194,23 @@ private func togetherAIImageURL(from file: ImageInputFile?) -> String? {
     return "data:\(file.mediaType ?? "application/octet-stream");base64,\(data.base64EncodedString())"
 }
 
+private func togetherAIParseInt(_ value: String?) -> JSONValue {
+    guard let value else { return .null }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    var output = ""
+    for (index, character) in trimmed.enumerated() {
+        if index == 0 && (character == "-" || character == "+") {
+            output.append(character)
+        } else if character.isNumber {
+            output.append(character)
+        } else {
+            break
+        }
+    }
+    guard output != "-" && output != "+", let number = Int(output) else { return .null }
+    return .number(Double(number))
+}
+
 public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable {
     public let providerID = "togetherai.reranking"
     public let modelID: String
@@ -158,7 +222,7 @@ public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
-        let options = togetherAIProviderOptions(from: request)
+        let options = try togetherAIProviderOptions(from: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "query": .string(request.query),
