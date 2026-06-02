@@ -552,11 +552,13 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
         guard let basePrefix else {
             throw AIError.invalidURL("Azure requires ProviderSettings.baseURL or AZURE_RESOURCE_NAME/resourceName.")
         }
-        let headers = try OpenAICompatibleProvider.buildHeaders(
-            providerID: providerID,
-            authorization: .apiKeyHeader(name: "api-key", environmentVariables: ["AZURE_API_KEY"]),
-            settings: settings
-        )
+        var headers = settings.headers
+        let key = settings.apiKey ?? environmentValue(["AZURE_API_KEY"])
+        guard let key else {
+            throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AZURE_API_KEY"])
+        }
+        headers["api-key"] = headers["api-key"] ?? key
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/3.0.68")
         let baseURL = withoutTrailingSlash(basePrefix)
         let config = ModelHTTPConfig(providerID: providerID, baseURL: baseURL, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody) { modelID, path in
             let urlString = useDeploymentBasedURLs

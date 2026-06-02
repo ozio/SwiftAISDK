@@ -6,7 +6,10 @@ import Testing
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"azure response","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}"#))
     let provider = try AIProviders.azure(resourceName: "test-resource", apiVersion: "2025-04-01-preview", settings: ProviderSettings(
         apiKey: "azure-key",
-        headers: ["Custom-Provider-Header": "provider"],
+        headers: [
+            "Custom-Provider-Header": "provider",
+            "user-agent": "my-app"
+        ],
         transport: transport
     ))
     let model = try provider.languageModel("gpt-4.1-deployment")
@@ -32,8 +35,9 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://test-resource.openai.azure.com/openai/v1/responses?api-version=2025-04-01-preview")
     #expect(request.headers["api-key"] == "azure-key")
-    #expect(request.headers["Custom-Provider-Header"] == "provider")
+    #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.68")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -102,23 +106,37 @@ import Testing
     ])
     let provider = try AIProviders.azure(resourceName: "test-resource", settings: ProviderSettings(apiKey: "azure-key", transport: transport))
 
+    let callableModel = try provider("responses-deployment")
     let languageModel = try provider.languageModel("responses-deployment")
     let responsesModel = try provider.responses("responses-deployment")
     let chatModel = try provider.chat("chat-deployment")
     let completionModel = try provider.completion("completion-deployment")
+    let embeddingAlias = try provider.embedding("embedding-deployment")
     let embeddingModel = try provider.embeddingModel("embedding-deployment")
+    let textEmbedding = try provider.textEmbedding("embedding-deployment")
+    let textEmbeddingModel = try provider.textEmbeddingModel("embedding-deployment")
+    let imageAlias = try provider.image("image-deployment")
     let imageModel = try provider.imageModel("image-deployment")
+    let transcriptionAlias = try provider.transcription("transcription-deployment")
     let transcriptionModel = try provider.transcriptionModel("transcription-deployment")
+    let speechAlias = try provider.speech("speech-deployment")
     let speechModel = try provider.speechModel("speech-deployment")
 
     #expect(provider.providerID == "azure")
+    #expect(callableModel.providerID == "azure.responses")
     #expect(languageModel.providerID == "azure.responses")
     #expect(responsesModel.providerID == "azure.responses")
     #expect(chatModel.providerID == "azure.chat")
     #expect(completionModel.providerID == "azure.completion")
+    #expect(embeddingAlias.providerID == "azure.embeddings")
     #expect(embeddingModel.providerID == "azure.embeddings")
+    #expect(textEmbedding.providerID == "azure.embeddings")
+    #expect(textEmbeddingModel.providerID == "azure.embeddings")
+    #expect(imageAlias.providerID == "azure.image")
     #expect(imageModel.providerID == "azure.image")
+    #expect(transcriptionAlias.providerID == "azure.transcription")
     #expect(transcriptionModel.providerID == "azure.transcription")
+    #expect(speechAlias.providerID == "azure.speech")
     #expect(speechModel.providerID == "azure.speech")
 
     let responsesResult = try await responsesModel.generate(LanguageModelRequest(messages: [.user("Hi")]))

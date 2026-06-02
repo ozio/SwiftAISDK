@@ -72,6 +72,14 @@ public enum AIProviders {
         try AzureOpenAIProvider(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, settings: settings)
     }
 
+    public static func azureOpenAI(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
+        try azure(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, settings: settings)
+    }
+
+    public static func azureOpenai(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
+        try azureOpenAI(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, settings: settings)
+    }
+
     public static func gateway(settings: ProviderSettings = ProviderSettings(), teamIDOrSlug: String? = nil) throws -> GatewayProvider {
         try GatewayProvider(settings: settings, teamIDOrSlug: teamIDOrSlug)
     }

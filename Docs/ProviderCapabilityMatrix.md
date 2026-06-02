@@ -29,7 +29,7 @@ Legend:
 | `@ai-sdk/anthropic` | `anthropic` | `AIProviders.anthropic` | yes |  |  |  |  |  |  |  | yes | yes |
 | `@ai-sdk/anthropic-aws` | `anthropic-aws` | `AIProviders.anthropicAWS`, `AIProviders.anthropicAws` | yes |  |  |  |  |  |  |  | yes | yes |
 | `@ai-sdk/assemblyai` | `assemblyai` | `AIProviders.assemblyAI`, `AIProviders.assemblyai` |  |  |  |  | yes |  |  |  |  |  |
-| `@ai-sdk/azure` | `azure` | `AIProviders.azure` | yes | yes | yes | yes | yes | yes |  |  |  |  |
+| `@ai-sdk/azure` | `azure` | `AIProviders.azure`, `AIProviders.azureOpenAI`, `AIProviders.azureOpenai` | yes | yes | yes | yes | yes | yes |  |  |  |  |
 | `@ai-sdk/baseten` | `baseten` | `AIProviders.baseten` | yes |  | yes |  |  |  |  |  |  |  |
 | `@ai-sdk/black-forest-labs` | `black-forest-labs` | `AIProviders.blackForestLabs` |  |  |  | yes |  |  |  |  |  |  |
 | `@ai-sdk/bytedance` | `bytedance` | `AIProviders.byteDance`, `AIProviders.bytedance` |  |  |  |  |  |  | yes |  |  |  |

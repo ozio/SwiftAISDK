@@ -68,6 +68,8 @@ import Testing
     #expect(try AIProviders.klingai(settings: settings).providerID == "klingai")
     #expect(try AIProviders.bytedance(settings: settings).providerID == "bytedance")
     #expect(try AIProviders.quiverai(settings: settings).providerID == "quiverai")
+    #expect(try AIProviders.azureOpenAI(resourceName: "resource", settings: settings).providerID == "azure")
+    #expect(try AIProviders.azureOpenai(resourceName: "resource", settings: settings).providerID == "azure")
 }
 
 @Test func providerFactoryAliasesMirrorUpstreamNames() throws {
