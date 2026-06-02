@@ -731,7 +731,7 @@ private func moonshotChatBody(from input: [String: JSONValue]) -> [String: JSONV
 }
 
 private func moonshotChatUsage(from raw: JSONValue) -> TokenUsage? {
-    guard let usage = raw["usage"] else { return nil }
+    guard let usage = raw["usage"] else { return TokenUsage() }
     let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue ?? 0
     let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue ?? 0
     let cacheReadTokens = usage["cached_tokens"]?.intValue

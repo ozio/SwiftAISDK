@@ -99,3 +99,33 @@ import Testing
     #expect(body["moonshotAI"] == nil)
     #expect(body["reasoning_history"]?.stringValue == "disabled")
 }
+
+@Test func moonshotLanguageReturnsEmptyUsageWhenProviderOmitsUsage() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"moon"},"finish_reason":"stop"}]}
+    """))
+    let generateProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: generateTransport))
+    let generate = try await generateProvider.languageModel("kimi-k2").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(generate.text == "moon")
+    #expect(generate.usage == TokenUsage())
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"content":"moon"},"finish_reason":null}]}
+
+    data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+    data: [DONE]
+
+    """))
+    let streamProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: streamTransport))
+    var finishUsage: TokenUsage?
+    let streamModel = try streamProvider.languageModel("kimi-k2")
+    for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .finish(_, usage) = part {
+            finishUsage = usage
+        }
+    }
+
+    #expect(finishUsage == TokenUsage())
+}
