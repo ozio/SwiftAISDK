@@ -93,7 +93,7 @@ import Testing
     #expect(openAITranscript.requestMetadata.body?["audio"] == nil)
 
     let groqTransport = RecordingTransport(response: jsonResponse("""
-    {"text":"groq transcript","language":"en","segments":[{"text":"groq","start":0,"end":0.5}]}
+    {"text":"groq transcript","x_groq":{"id":"groq-request"},"language":"en","segments":[{"id":0,"seek":0,"start":0,"end":0.5,"text":"groq","tokens":[1],"temperature":0,"avg_logprob":-0.1,"compression_ratio":1,"no_speech_prob":0}]}
     """))
     let groq = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: groqTransport))
     let groqTranscript = try await groq.transcriptionModel("whisper-large-v3").transcribe(AudioTranscriptionRequest(
@@ -104,7 +104,7 @@ import Testing
     ))
 
     #expect(groqTranscript.requestMetadata.body?["model"]?.stringValue == "whisper-large-v3")
-    #expect(groqTranscript.requestMetadata.body?["filename"]?.stringValue == "clip.wav")
+    #expect(groqTranscript.requestMetadata.body?["filename"]?.stringValue == "audio.wav")
     #expect(groqTranscript.requestMetadata.body?["timestamp_granularities"]?[0]?.stringValue == "segment")
     #expect(groqTranscript.requestMetadata.body?["audio"] == nil)
 

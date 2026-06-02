@@ -186,6 +186,27 @@ import Testing
     #expect(body["unsupportedProperty"] == nil)
 }
 
+@Test func groqLanguageTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"openai/gpt-oss-20b","choices":[{"message":{"content":"answer"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.languageModel("openai/gpt-oss-20b")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["groq": .null],
+        extraBody: [
+            "groq": [
+                "user": "user-123",
+                "serviceTier": "flex"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["user"]?.stringValue == "user-123")
+    #expect(body["service_tier"]?.stringValue == "flex")
+}
+
 @Test func groqLanguageMapsStandardStructuredResponseFormat() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":4}}"#))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
@@ -409,7 +430,7 @@ import Testing
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"model\""))
     #expect(bodyText.contains("whisper-large-v3"))
-    #expect(bodyText.contains("name=\"file\"; filename=\"clip.mp3\""))
+    #expect(bodyText.contains("name=\"file\"; filename=\"audio.mp3\""))
     #expect(bodyText.contains("name=\"language\""))
     #expect(bodyText.contains("en"))
     #expect(bodyText.contains("name=\"prompt\""))
@@ -424,7 +445,7 @@ import Testing
 }
 
 @Test func groqTranscriptionMapsNestedProviderOptions() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"text":"nested transcript"}"#))
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"nested transcript","x_groq":{"id":"req-nested"}}"#))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.transcriptionModel("whisper-large-v3-turbo")
 
@@ -454,7 +475,7 @@ import Testing
 }
 
 @Test func groqTranscriptionMapsProviderOptionsNamespace() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"text":"provider options transcript","language":"fr","duration":0.8}"#))
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"provider options transcript","x_groq":{"id":"req-provider"},"language":"fr","duration":0.8}"#))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.transcriptionModel("whisper-large-v3-turbo")
 
@@ -493,7 +514,7 @@ import Testing
 }
 
 @Test func groqTranscriptionProviderOptionsNullishFieldsClearExtraBodyDefaults() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"text":"nullish transcript"}"#))
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"nullish transcript","x_groq":{"id":"req-nullish"}}"#))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.transcriptionModel("whisper-large-v3-turbo")
 
@@ -528,6 +549,54 @@ import Testing
     #expect(!bodyText.contains("name=\"response_format\""))
     #expect(!bodyText.contains("name=\"temperature\""))
     #expect(!bodyText.contains("name=\"timestamp_granularities[]\""))
+}
+
+@Test func groqTranscriptionTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"null namespace transcript","x_groq":{"id":"req-null-namespace"}}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.transcriptionModel("whisper-large-v3-turbo")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("mp3".utf8),
+        mimeType: "audio/mpeg",
+        providerOptions: ["groq": .null],
+        extraBody: [
+            "groq": [
+                "responseFormat": "verbose_json",
+                "timestampGranularities": ["segment"],
+                "temperature": 0.2
+            ]
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"response_format\""))
+    #expect(bodyText.contains("verbose_json"))
+    #expect(bodyText.contains("name=\"timestamp_granularities[]\""))
+    #expect(bodyText.contains("segment"))
+    #expect(bodyText.contains("name=\"temperature\""))
+    #expect(bodyText.contains("0.2"))
+}
+
+@Test func groqTranscriptionRejectsMissingXGroqIDLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"missing id"}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.transcriptionModel("whisper-large-v3")
+
+    await #expect(throws: AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("mp3".utf8), mimeType: "audio/mpeg"))
+    }
+}
+
+@Test func groqTranscriptionRejectsInvalidVerboseSegmentsLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"bad segments","x_groq":{"id":"req-bad"},"segments":[{"text":"missing required fields","start":0,"end":1}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.transcriptionModel("whisper-large-v3")
+
+    await #expect(throws: AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("mp3".utf8), mimeType: "audio/mpeg"))
+    }
 }
 
 @Test func groqTranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {

@@ -89,7 +89,7 @@ import Testing
     #expect(hume.responseMetadata.headers["hume-header"] == "speech")
 
     let groqTransport = RecordingTransport(response: jsonResponse(
-        #"{"text":"groq transcript"}"#,
+        #"{"text":"groq transcript","x_groq":{"id":"groq-response"}}"#,
         headers: ["groq-header": "transcription"]
     ))
     let groqProvider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: groqTransport))

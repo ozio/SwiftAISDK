@@ -291,7 +291,7 @@ import Testing
 }
 
 @Test func groqTranscriptionForwardsAbortSignalToMultipartRequest() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"text":"ok"}"#))
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"ok","x_groq":{"id":"groq-abort"}}"#))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.transcriptionModel("whisper-large-v3")
     let controller = AIAbortController()

@@ -390,7 +390,8 @@ Impact:
 - Groq transcription now follows upstream `providerOptions.groq` for
   multipart fields (`language`, `prompt`, `responseFormat`, `temperature`,
   and `timestampGranularities`), preserves safe request metadata for those
-  fields, forwards abort signals, and lives in a dedicated
+  fields with upstream `audio.<media extension>` upload filenames, validates
+  upstream `x_groq.id` and verbose segment response shapes, forwards abort signals, and lives in a dedicated
   `GroqProviderTests.swift` suite for provider-by-provider parity passes.
 - Cerebras chat now uses the upstream OpenAI-compatible function-tool wire
   shape, maps call-level `responseFormat` into native structured outputs,

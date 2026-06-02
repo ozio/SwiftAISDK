@@ -28,7 +28,7 @@ import Testing
     #expect(elevenResult.durationInSeconds == 1.1)
 
     let groqTransport = RecordingTransport(response: jsonResponse("""
-    {"text":"groq text","language":"es","duration":2.4,"segments":[{"text":"groq","start":0,"end":1.0},{"text":"text","start":1.1,"end":2.4}]}
+    {"text":"groq text","x_groq":{"id":"groq-detail"},"language":"es","duration":2.4,"segments":[{"id":0,"seek":0,"text":"groq","start":0,"end":1.0,"tokens":[1],"temperature":0,"avg_logprob":-0.1,"compression_ratio":1,"no_speech_prob":0},{"id":1,"seek":0,"text":"text","start":1.1,"end":2.4,"tokens":[2],"temperature":0,"avg_logprob":-0.1,"compression_ratio":1,"no_speech_prob":0}]}
     """))
     let groq = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: groqTransport))
     let groqResult = try await groq.transcriptionModel("whisper-large-v3").transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8)))
