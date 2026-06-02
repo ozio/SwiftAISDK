@@ -208,6 +208,13 @@ import Testing
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"unused"}"#))))
     let model = try provider.videoModel("seedance-1-0-pro")
 
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.bytedance", message: "ByteDance provider options must be an object.")) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "invalid namespace",
+            providerOptions: ["bytedance": .string("bad")]
+        ))
+    }
+
     await #expect(throws: AIError.self) {
         _ = try await model.generateVideo(VideoGenerationRequest(
             prompt: "invalid boolean",
@@ -235,6 +242,32 @@ import Testing
             providerOptions: ["bytedance": .object(["pollTimeoutMs": .number(0)])]
         ))
     }
+}
+
+@Test func byteDanceProviderOptionsNullNamespaceKeepsExtraBodyDefaults() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-null-namespace"}"#),
+        jsonResponse(#"{"id":"task-null-namespace","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/null-namespace.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        providerOptions: ["bytedance": .null],
+        extraBody: [
+            "bytedance": .object([
+                "generate_audio": true,
+                "reference_images": ["https://example.com/ref.png"],
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generate_audio"]?.boolValue == true)
+    #expect(body["content"]?.arrayValue?.contains { $0["role"]?.stringValue == "reference_image" } == true)
 }
 
 @Test func byteDanceProviderOptionsUseUpstreamPassthroughForSnakeCase() async throws {

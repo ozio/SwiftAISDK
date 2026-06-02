@@ -1739,7 +1739,11 @@ private struct ByteDanceResolvedOptions {
 
 private func byteDanceProviderOptions(from request: VideoGenerationRequest) throws -> ByteDanceResolvedOptions {
     var output = try byteDanceExtraBodyOptions(from: request.extraBody)
-    if let providerOptions = request.providerOptions["bytedance"]?.objectValue {
+    if let providerValue = request.providerOptions["bytedance"] {
+        guard providerValue != .null else { return output }
+        guard let providerOptions = providerValue.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.bytedance", message: "ByteDance provider options must be an object.")
+        }
         let parsed = try byteDanceValidatedProviderOptions(from: providerOptions)
         for (key, value) in parsed.known {
             if value == .null {
