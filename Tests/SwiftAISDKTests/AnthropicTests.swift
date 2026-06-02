@@ -170,6 +170,64 @@ import Testing
     #expect(body["messages"]?[0]?["content"]?[1]?["source"]?["data"]?.stringValue == Data("%PDF".utf8).base64EncodedString())
 }
 
+@Test func anthropicRequestMapsNestedProviderOptionsAndBetaHeaderLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        headers: ["anthropic-beta": "configured-beta"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "anthropic": [
+                "metadata": ["userId": "user-typed"],
+                "effort": "xhigh",
+                "speed": "fast",
+                "taskBudget": ["type": "tokens", "total": 20_000],
+                "anthropicBeta": ["my-beta-2025-01-01", "another-beta-2025-06-01"],
+                "unsupportedTypedKey": "drop-me"
+            ]
+        ],
+        extraBody: [
+            "metadata": ["userId": "raw-user"],
+            "anthropicBeta": ["raw-beta-2025-02-02"]
+        ],
+        headers: ["anthropic-beta": "request-beta"]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let betaHeader = try #require(request.headers["anthropic-beta"])
+    #expect(betaHeader.contains("configured-beta"))
+    #expect(betaHeader.contains("request-beta"))
+    #expect(betaHeader.contains("my-beta-2025-01-01"))
+    #expect(betaHeader.contains("another-beta-2025-06-01"))
+    #expect(betaHeader.contains("raw-beta-2025-02-02"))
+
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["metadata"]?["user_id"]?.stringValue == "user-typed")
+    #expect(body["output_config"]?["effort"]?.stringValue == "xhigh")
+    #expect(body["output_config"]?["task_budget"]?["type"]?.stringValue == "tokens")
+    #expect(body["output_config"]?["task_budget"]?["total"]?.intValue == 20_000)
+    #expect(body["speed"]?.stringValue == "fast")
+    #expect(body["anthropicBeta"] == nil)
+    #expect(body["unsupportedTypedKey"] == nil)
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.anthropic.anthropicBeta[0]",
+        message: "Anthropic anthropicBeta values must be strings."
+    )) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["anthropic": ["anthropicBeta": [1]]]
+        ))
+    }
+}
+
 @Test func anthropicRequestConvertsProviderReferenceFilesLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}

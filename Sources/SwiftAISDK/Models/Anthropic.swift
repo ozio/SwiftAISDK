@@ -273,8 +273,12 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)
         }
-        body.merge(anthropicOptions(from: request.extraBody)) { _, new in new }
+        let providerOptions = try anthropicOptions(from: request)
+        body.merge(providerOptions.body) { _, new in new }
         applyAnthropicThinkingRules(to: &body, requestedMaxTokens: request.maxOutputTokens)
+        for beta in providerOptions.betas where !betas.contains(beta) {
+            betas.append(beta)
+        }
         for beta in preparedTools.betas where !betas.contains(beta) {
             betas.append(beta)
         }
@@ -937,6 +941,73 @@ func anthropicFinishReason(_ reason: String?) -> String? {
         return "other"
     default:
         return "other"
+    }
+}
+
+private struct AnthropicMappedOptions {
+    var body: [String: JSONValue]
+    var betas: [String]
+}
+
+private let anthropicLanguageProviderOptionKeys: Set<String> = [
+    "sendReasoning",
+    "structuredOutputMode",
+    "thinking",
+    "disableParallelToolUse",
+    "cacheControl",
+    "metadata",
+    "mcpServers",
+    "container",
+    "toolStreaming",
+    "effort",
+    "taskBudget",
+    "speed",
+    "inferenceGeo",
+    "anthropicBeta",
+    "contextManagement"
+]
+
+private func anthropicOptions(from request: LanguageModelRequest) throws -> AnthropicMappedOptions {
+    var output = anthropicOptions(from: request.extraBody)
+    var betas: [String] = []
+
+    if let value = request.providerOptions["anthropic"] {
+        guard value != .null else {
+            return AnthropicMappedOptions(body: output, betas: betas)
+        }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.anthropic", message: "Anthropic provider options must be an object.")
+        }
+        let typed = try anthropicTypedOptions(from: nested)
+        output.merge(typed.body) { _, typed in typed }
+        betas.append(contentsOf: typed.betas)
+    }
+
+    if let betaValue = request.extraBody["anthropicBeta"] {
+        betas.append(contentsOf: try anthropicBetaValues(betaValue, argument: "extraBody.anthropicBeta"))
+    }
+
+    return AnthropicMappedOptions(body: output, betas: betas)
+}
+
+private func anthropicTypedOptions(from options: [String: JSONValue]) throws -> AnthropicMappedOptions {
+    let knownOptions = options.filter { anthropicLanguageProviderOptionKeys.contains($0.key) }
+    var body = anthropicOptions(from: knownOptions)
+    body.removeValue(forKey: "anthropicBeta")
+    let betas = try anthropicBetaValues(options["anthropicBeta"], argument: "providerOptions.anthropic.anthropicBeta")
+    return AnthropicMappedOptions(body: body, betas: betas)
+}
+
+private func anthropicBetaValues(_ value: JSONValue?, argument: String) throws -> [String] {
+    guard let value, value != .null else { return [] }
+    guard let values = value.arrayValue else {
+        throw AIError.invalidArgument(argument: argument, message: "Anthropic anthropicBeta must be an array of strings.")
+    }
+    return try values.enumerated().map { index, value in
+        guard let string = value.stringValue else {
+            throw AIError.invalidArgument(argument: "\(argument)[\(index)]", message: "Anthropic anthropicBeta values must be strings.")
+        }
+        return string
     }
 }
 
