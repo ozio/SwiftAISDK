@@ -689,6 +689,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
         guard raw["status"]?.stringValue != "error" else {
             throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription failed.")
         }
+        try validateGladiaTranscriptionResult(raw, providerID: providerID)
         guard raw["result"]?.objectValue != nil else {
             throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is empty.")
         }
@@ -707,20 +708,48 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
     private func pollGladiaResultResponse(url: String, request: AudioTranscriptionRequest) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
+            if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
+                throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription polling timed out.")
+            }
             let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
-            switch raw["status"]?.stringValue {
+            guard let status = raw["status"]?.stringValue, ["queued", "processing", "done", "error"].contains(status) else {
+                throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription status is invalid.")
+            }
+            switch status {
             case "done", "error":
                 return (raw, response)
             default:
-                if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
-                    throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription polling timed out.")
-                }
                 try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
             }
+        }
+    }
+}
+
+private func validateGladiaTranscriptionResult(_ raw: JSONValue, providerID: String) throws {
+    guard let result = raw["result"] else { return }
+    guard result != .null else { return }
+    guard
+        result["metadata"]?["audio_duration"]?.doubleValue != nil,
+        result["transcription"]?["full_transcript"]?.stringValue != nil,
+        let languages = result["transcription"]?["languages"]?.arrayValue,
+        let utterances = result["transcription"]?["utterances"]?.arrayValue
+    else {
+        throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+    }
+    guard languages.allSatisfy({ $0.stringValue != nil }) else {
+        throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+    }
+    for utterance in utterances {
+        guard
+            utterance["start"]?.doubleValue != nil,
+            utterance["end"]?.doubleValue != nil,
+            utterance["text"]?.stringValue != nil
+        else {
+            throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
         }
     }
 }

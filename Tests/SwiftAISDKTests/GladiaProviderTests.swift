@@ -88,7 +88,7 @@ import Testing
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
         jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
-        jsonResponse(#"{"status":"done","result":{"transcription":{"full_transcript":"gladia nested"}}}"#)
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":1.0},"transcription":{"full_transcript":"gladia nested","languages":["ja"],"utterances":[{"start":0,"end":1.0,"text":"gladia nested"}]}}}"#)
     ])
     let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
     let model = try provider.transcriptionModel("default")
@@ -128,6 +128,33 @@ import Testing
     #expect(initBody["summarization_config"]?["type"]?.stringValue == "concise")
     #expect(initBody["gladia"] == nil)
     #expect(initBody["callbackConfig"] == nil)
+}
+
+@Test func gladiaTranscriptionTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":1.0},"transcription":{"full_transcript":"null namespace","languages":["fr"],"utterances":[{"start":0,"end":1.0,"text":"null namespace"}]}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
+    let model = try provider.transcriptionModel("default")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        providerOptions: ["gladia": .null],
+        extraBody: [
+            "gladia": .object([
+                "contextPrompt": "extra prompt",
+                "language": "fr",
+                "callback": true
+            ])
+        ]
+    ))
+
+    let initBody = try decodeJSONBody(try #require((await transport.requests())[1].body))
+    #expect(initBody["context_prompt"]?.stringValue == "extra prompt")
+    #expect(initBody["language"]?.stringValue == "fr")
+    #expect(initBody["callback"]?.boolValue == true)
 }
 
 @Test func gladiaTranscriptionMapsProviderOptionsNamespaceAndOverridesExtraBody() async throws {
@@ -375,7 +402,7 @@ import Testing
     let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
     let model = try provider.transcriptionModel("default")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.gladia", message: "Gladia provider options must be an object.")) {
         _ = try await model.transcribe(AudioTranscriptionRequest(
             audio: Data("audio".utf8),
             providerOptions: ["gladia": .string("invalid")]
@@ -492,6 +519,34 @@ import Testing
             audio: Data("audio".utf8),
             providerOptions: ["gladia": .object(["customMetadata": .string("invalid")])]
         ))
+    }
+}
+
+@Test func gladiaTranscriptionRejectsUnknownPollingStatusLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"paused"}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
+    let model = try provider.transcriptionModel("default")
+
+    await #expect(throws: AIError.invalidResponse(provider: "gladia.transcription", message: "Gladia transcription status is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+    }
+}
+
+@Test func gladiaTranscriptionRejectsInvalidDoneResultLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"done","result":{"transcription":{"full_transcript":"missing metadata"}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
+    let model = try provider.transcriptionModel("default")
+
+    await #expect(throws: AIError.invalidResponse(provider: "gladia.transcription", message: "Gladia transcription result is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
     }
 }
 

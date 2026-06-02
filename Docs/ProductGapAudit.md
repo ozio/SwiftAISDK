@@ -325,7 +325,8 @@ Progress:
   submissions before requiring an ID, and matches upstream's poll-before-delay
   status cadence. Gladia transcription now scopes `providerOptions.gladia` to
   the upstream initiation schema while retaining raw `extraBody` passthrough
-  for explicit low-level overrides. AssemblyAI transcription now scopes
+  for explicit low-level overrides, treats a null namespace as a no-op, and
+  validates polling/result status shapes like upstream. AssemblyAI transcription now scopes
   `providerOptions.assemblyai` to the upstream submit schema and uses the
   upstream 3s poll cadence while keeping raw `extraBody` passthrough for
   explicit low-level overrides. Vercel now mirrors the upstream callable chat

@@ -147,7 +147,7 @@ import Testing
     let gladiaTransport = RecordingTransport(responses: [
         jsonResponse(#"{"audio_url":"https://gladia.example.com/audio.wav"}"#),
         jsonResponse(#"{"result_url":"https://gladia.example.com/result"}"#),
-        jsonResponse(#"{"status":"done","result":{"transcription":{"full_transcript":"gladia transcript"}}}"#, headers: ["gladia-header": "result"])
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":1.0},"transcription":{"full_transcript":"gladia transcript","languages":["en"],"utterances":[{"start":0,"end":1.0,"text":"gladia transcript"}]}}}"#, headers: ["gladia-header": "result"])
     ])
     let gladiaProvider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: gladiaTransport))
     let gladiaModel = try gladiaProvider.transcriptionModel("default")
