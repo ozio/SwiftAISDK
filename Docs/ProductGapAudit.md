@@ -305,7 +305,10 @@ Progress:
   unsupported warning for `instructions`. LMNT speech now follows the same
   provider-option boundary for `providerOptions.lmnt`, maps standard `speed`
   and `language`, and keeps provider `model`/`format` ignored like upstream
-  while `outputFormat` remains the source of `response_format`. Mistral and
+  while `outputFormat` remains the source of `response_format`. Hume speech now
+  scopes `providerOptions.hume` to upstream `context`, maps standard `speed`
+  and `instructions` into the first utterance, and returns the upstream
+  unsupported warning for `language`. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.

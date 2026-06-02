@@ -81,10 +81,10 @@ import Testing
         text: "Hello",
         voice: "voice-id",
         format: "pcm",
+        speed: 1.1,
+        instructions: "bright",
         providerOptions: [
             "hume": .object([
-                "speed": 1.1,
-                "description": "bright",
                 "context": [
                     "utterances": [
                         [
@@ -95,13 +95,15 @@ import Testing
                             "voice": ["name": "Ivy", "provider": "CUSTOM_VOICE"]
                         ]
                     ]
-                ]
-            ])
+                ],
+                "speed": 2.0,
+                "description": "drop-me",
+                "unsupportedProperty": "drop-me"
+            ]),
+            "openai": .object(["voice": "alloy"])
         ],
         extraBody: [
             "hume": .object([
-                "speed": 0.6,
-                "description": "ignored",
                 "context": ["generationId": "ignored-generation"]
             ])
         ]
@@ -119,6 +121,34 @@ import Testing
     #expect(body["context"]?["generation_id"] == nil)
     #expect(body["context"]?["generationId"] == nil)
     #expect(body["hume"] == nil)
+    #expect(body["openai"] == nil)
+    #expect(body["unsupportedProperty"] == nil)
+}
+
+@Test func humeSpeechMapsStandardSpeedInstructionsAndWarnsForLanguage() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Bonjour",
+        voice: "voice-id",
+        speed: 1.4,
+        language: "fr",
+        instructions: "speak warmly"
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "language",
+            message: "Hume speech models do not support language selection. Language parameter \"fr\" was ignored."
+        )
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["utterances"]?[0]?["speed"]?.doubleValue == 1.4)
+    #expect(body["utterances"]?[0]?["description"]?.stringValue == "speak warmly")
+    #expect(body["language"] == nil)
 }
 
 @Test func humeSpeechWarnsAndFallsBackForUnsupportedOutputFormat() async throws {

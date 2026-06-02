@@ -154,6 +154,12 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
                 "provider": .string("HUME_AI")
             ])
         ]
+        if let speed = request.speed {
+            utterance["speed"] = .number(speed)
+        }
+        if let instructions = request.instructions {
+            utterance["description"] = .string(instructions)
+        }
         if let speed = options["speed"] {
             utterance["speed"] = speed
         }
@@ -1122,27 +1128,43 @@ private func humeProviderOptions(from extraBody: [String: JSONValue]) -> [String
 }
 
 private func humeProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    humeProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    humeProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: humeSpeechProviderOptionKeys
+    )
 }
 
-private func humeProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func humeProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = humeProviderOptions(from: extraBody)
-    output.merge(humeProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["hume"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
     return output
 }
 
+private let humeSpeechProviderOptionKeys: Set<String> = [
+    "context"
+]
+
 private func humeSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
-    guard let format = request.format,
-          !["mp3", "pcm", "wav"].contains(format.lowercased()) else {
-        return []
-    }
-    return [
-        AIWarning(
+    var warnings: [AIWarning] = []
+    if let format = request.format,
+       !["mp3", "pcm", "wav"].contains(format.lowercased()) {
+        warnings.append(AIWarning(
             type: "unsupported",
             feature: "outputFormat",
             message: "Unsupported output format: \(format). Using mp3 instead."
-        )
-    ]
+        ))
+    }
+    if let language = request.language {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "language",
+            message: "Hume speech models do not support language selection. Language parameter \"\(language)\" was ignored."
+        ))
+    }
+    return warnings
 }
 
 private func humeContext(_ value: JSONValue) -> JSONValue {
