@@ -168,7 +168,13 @@ private func huggingFaceProviderOptions(from request: LanguageModelRequest) -> [
         output.merge(nested) { _, nested in nested }
     }
     if let nested = request.providerOptions["huggingface"]?.objectValue {
-        output.merge(nested.filter { huggingFaceResponsesProviderOptionKeys.contains($0.key) }) { _, nested in nested }
+        for (key, value) in nested where huggingFaceResponsesProviderOptionKeys.contains(key) {
+            if value == .null {
+                output.removeValue(forKey: key)
+            } else {
+                output[key] = value
+            }
+        }
     }
     return output
 }

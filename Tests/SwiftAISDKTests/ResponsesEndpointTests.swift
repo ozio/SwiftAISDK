@@ -315,6 +315,41 @@ import Testing
     #expect(requests.isEmpty)
 }
 
+@Test func huggingFaceProviderOptionsNullsDoNotLeakIntoResponsesBody() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-hf-null","status":"completed","output_text":"ok"}"#))
+    let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
+    let model = try provider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Return JSON.")],
+        responseFormat: .json(schema: ["type": "object"]),
+        providerOptions: [
+            "huggingface": .object([
+                "metadata": .null,
+                "instructions": .null,
+                "strictJsonSchema": .null,
+                "reasoningEffort": .null
+            ])
+        ],
+        extraBody: [
+            "huggingface": .object([
+                "metadata": ["trace": "legacy"],
+                "instructions": "legacy",
+                "strictJsonSchema": true,
+                "reasoningEffort": "high"
+            ])
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["metadata"] == nil)
+    #expect(body["instructions"] == nil)
+    #expect(body["reasoning"] == nil)
+    #expect(body["text"]?["format"]?["strict"]?.boolValue == false)
+    #expect(body["huggingface"] == nil)
+}
+
 @Test func huggingFaceLanguageStreamsReasoningTextAndToolCalls() async throws {
     let chunks = [
         #"data:{"type":"response.created","response":{"id":"resp-hf-1","model":"deepseek-ai/DeepSeek-V3-0324","created_at":1741257730}}"#,
