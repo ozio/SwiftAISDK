@@ -191,7 +191,7 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     let responseFormat = googleResolvedResponseFormat(request: request, options: &options)
     var warnings = preparedOptions.warnings
     let systemText = request.messages.filter { $0.role == .system }.map(\.combinedText).joined(separator: "\n")
-    let contents = request.messages.filter { $0.role != .system }.map { message in
+    let rawContents = request.messages.filter { $0.role != .system }.map { message in
         JSONValue.object([
             "role": .string(message.role == .assistant ? "model" : "user"),
             "parts": .array(message.content.map { part in
@@ -224,9 +224,10 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
             })
         ])
     }
-    var body: [String: JSONValue] = ["contents": .array(contents)]
-    if !systemText.isEmpty {
-        body["systemInstruction"] = .object(["parts": .array([.object(["text": .string(systemText)])])])
+    let preparedMessages = googleContentsWithSystemInstruction(systemText: systemText, contents: rawContents, modelID: modelID)
+    var body: [String: JSONValue] = ["contents": .array(preparedMessages.contents)]
+    if let systemInstruction = preparedMessages.systemInstruction {
+        body["systemInstruction"] = systemInstruction
     }
     var generationConfig: [String: JSONValue] = [:]
     googleApplyStandardGenerationSettings(request, to: &generationConfig)

@@ -303,6 +303,29 @@ func googleTopLevelGenerateContentOptions(_ options: [String: JSONValue]) -> [St
     return output
 }
 
+func googleContentsWithSystemInstruction(systemText: String, contents: [JSONValue], modelID: String) -> (contents: [JSONValue], systemInstruction: JSONValue?) {
+    guard !systemText.isEmpty else {
+        return (contents, nil)
+    }
+    guard googleIsGemmaModel(modelID) else {
+        return (
+            contents,
+            .object(["parts": .array([.object(["text": .string(systemText)])])])
+        )
+    }
+    guard var first = contents.first?.objectValue,
+          first["role"]?.stringValue == "user",
+          var parts = first["parts"]?.arrayValue else {
+        return (contents, nil)
+    }
+
+    parts.insert(.object(["text": .string(systemText + "\n\n")]), at: 0)
+    first["parts"] = .array(parts)
+    var adjusted = contents
+    adjusted[0] = .object(first)
+    return (adjusted, nil)
+}
+
 func googleToolConfigWithProviderOptions(_ toolConfig: JSONValue?, options: [String: JSONValue], isStreaming: Bool, isVertexProvider: Bool) -> JSONValue? {
     let shouldStreamFunctionCallArguments = isStreaming && isVertexProvider && options["streamFunctionCallArguments"]?.boolValue == true
     let retrievalConfig = options["retrievalConfig"]
@@ -372,6 +395,10 @@ private func googleMaxThinkingTokensForGemini25Model(_ modelID: String) -> Int {
         return 32768
     }
     return 24576
+}
+
+private func googleIsGemmaModel(_ modelID: String) -> Bool {
+    modelID.lowercased().hasPrefix("gemma-")
 }
 
 private let googleKnownLanguageProviderOptionKeys: Set<String> = [

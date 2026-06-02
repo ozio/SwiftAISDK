@@ -37,6 +37,37 @@ import Testing
     #expect(body["contents"]?[0]?["parts"]?[0]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
 }
 
+@Test func googleGemmaPrependsSystemInstructionToFirstUserMessage() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"gemma"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemma-3-12b-it")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.system("Be precise."), .user("Hello")]))
+
+    #expect(result.warnings.isEmpty)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["systemInstruction"] == nil)
+    #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
+    #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Be precise.\n\n")
+    #expect(body["contents"]?[0]?["parts"]?[1]?["text"]?.stringValue == "Hello")
+}
+
+@Test func googleGeminiStillSendsSystemInstruction() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-pro")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.system("Be precise."), .user("Hello")]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["systemInstruction"]?["parts"]?[0]?["text"]?.stringValue == "Be precise.")
+    #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hello")
+}
+
 @Test func googleLanguageMapsStandardStructuredResponseFormat() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"{\\"location\\":\\"Tokyo\\"}"}]},"finishReason":"STOP"}]}

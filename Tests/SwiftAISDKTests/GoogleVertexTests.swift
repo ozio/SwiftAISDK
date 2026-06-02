@@ -58,6 +58,28 @@ import Testing
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hi")
 }
 
+@Test func googleVertexGemmaPrependsSystemInstructionToFirstUserMessage() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"vertex gemma"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemma-3-27b-it")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.system("Be precise."), .user("Hi")]))
+
+    #expect(result.warnings.isEmpty)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["systemInstruction"] == nil)
+    #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
+    #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Be precise.\n\n")
+    #expect(body["contents"]?[0]?["parts"]?[1]?["text"]?.stringValue == "Hi")
+}
+
 @Test func googleVertexLanguageExtractsGroundingSources() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"vertex grounded"}]},"finishReason":"STOP","groundingMetadata":{"groundingChunks":[{"retrievedContext":{"uri":"https://external-rag-source.com/page","title":"External RAG Source"}},{"retrievedContext":{"uri":"gs://bucket/notes.md"}}]}}]}

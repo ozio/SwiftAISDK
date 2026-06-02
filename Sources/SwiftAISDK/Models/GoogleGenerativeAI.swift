@@ -80,18 +80,19 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             .filter { $0.role == .system }
             .map(\.combinedText)
             .joined(separator: "\n")
-        let contents = try request.messages
+        let rawContents = try request.messages
             .filter { $0.role != .system }
             .map { try Self.contentJSON($0) }
+        let preparedMessages = googleContentsWithSystemInstruction(systemText: systemText, contents: rawContents, modelID: modelID)
 
         var generationConfig: [String: JSONValue] = [:]
         googleApplyStandardGenerationSettings(request, to: &generationConfig)
         googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
         googleApplyProviderGenerationOptions(options, to: &generationConfig)
 
-        var body: [String: JSONValue] = ["contents": .array(contents)]
-        if !systemText.isEmpty {
-            body["systemInstruction"] = .object(["parts": .array([.object(["text": .string(systemText)])])])
+        var body: [String: JSONValue] = ["contents": .array(preparedMessages.contents)]
+        if let systemInstruction = preparedMessages.systemInstruction {
+            body["systemInstruction"] = systemInstruction
         }
         if !generationConfig.isEmpty { body["generationConfig"] = .object(generationConfig) }
         if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: false) {
