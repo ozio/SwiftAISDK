@@ -667,14 +667,29 @@ import Testing
     _ = try await chatModel.generate(LanguageModelRequest(
         messages: [.user("Hi")],
         tools: ["lookup": ["type": "object", "properties": [:]]],
+        providerOptions: [
+            "mistral": [
+                "safePrompt": true,
+                "documentImageLimit": 5,
+                "documentPageLimit": 7,
+                "parallelToolCalls": false,
+                "reasoningEffort": "none",
+                "randomSeed": 99,
+                "unsupported": "drop-me"
+            ],
+            "cohere": [
+                "safePrompt": true
+            ]
+        ],
         extraBody: [
             "safePrompt": false,
             "mistral": [
-                "safePrompt": true,
+                "safePrompt": false,
                 "randomSeed": 11,
                 "documentImageLimit": 3,
-                "parallelToolCalls": false,
-                "reasoningEffort": "high"
+                "parallelToolCalls": true,
+                "reasoningEffort": "high",
+                "rawExtra": "keep-me"
             ]
         ]
     ))
@@ -682,11 +697,15 @@ import Testing
     let chatRequest = try #require(await chatTransport.requests().first)
     let chatBody = try decodeJSONBody(try #require(chatRequest.body))
     #expect(chatBody["mistral"] == nil)
+    #expect(chatBody["cohere"] == nil)
+    #expect(chatBody["unsupported"] == nil)
     #expect(chatBody["safe_prompt"]?.boolValue == true)
     #expect(chatBody["random_seed"]?.intValue == 11)
-    #expect(chatBody["document_image_limit"]?.intValue == 3)
+    #expect(chatBody["document_image_limit"]?.intValue == 5)
+    #expect(chatBody["document_page_limit"]?.intValue == 7)
     #expect(chatBody["parallel_tool_calls"]?.boolValue == false)
-    #expect(chatBody["reasoning_effort"]?.stringValue == "high")
+    #expect(chatBody["reasoning_effort"]?.stringValue == "none")
+    #expect(chatBody["rawExtra"]?.stringValue == "keep-me")
 
     let embeddingTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"embedding":[0.1,0.2]}]}"#))
     let embeddingProvider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: embeddingTransport))

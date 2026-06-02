@@ -115,7 +115,9 @@ Impact:
   emits stream-start plus text/reasoning lifecycle parts. Its structured output
   pass covers native `response_format` requests, including `json_schema`,
   `json_object`, `structuredOutputs`, `strictJsonSchema`, and the upstream JSON
-  system instruction for no-schema JSON calls. Groq now maps
+  system instruction for no-schema JSON calls; `providerOptions.mistral` is now
+  scoped to the upstream chat option schema while raw `extraBody` remains a
+  passthrough escape hatch. Groq now maps
   standard JSON response formats to native `json_schema`/`json_object`
   requests, keeps `structuredOutputs`/`strictJsonSchema` as control options
   instead of leaking them into the provider body, maps top-level

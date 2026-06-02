@@ -323,10 +323,20 @@ private func mistralProviderOptions(from extraBody: [String: JSONValue]) -> [Str
 private func mistralProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
     var output = mistralProviderOptions(from: request.extraBody)
     if let nested = request.providerOptions["mistral"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+        output.merge(nested.filter { mistralLanguageProviderOptionKeys.contains($0.key) }) { _, nested in nested }
     }
     return output
 }
+
+private let mistralLanguageProviderOptionKeys: Set<String> = [
+    "safePrompt",
+    "documentImageLimit",
+    "documentPageLimit",
+    "structuredOutputs",
+    "strictJsonSchema",
+    "parallelToolCalls",
+    "reasoningEffort"
+]
 
 private func mistralMessagesJSON(_ messages: [AIMessage]) -> [JSONValue] {
     messages.flatMap(mistralMessageJSONs)
