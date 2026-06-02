@@ -11,6 +11,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+        let warnings = fireworksImageWarnings(for: request, modelID: modelID)
         let options = fireworksProviderOptions(from: request.extraBody)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let count = request.count { body["samples"] = .number(Double(count)) }
@@ -23,6 +24,8 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
                 body["aspect_ratio"] = .string(size)
             }
         }
+        if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         if let inputImage = fireworksImageURL(from: request.files.first) {
             body["input_image"] = .string(inputImage)
         }
@@ -30,7 +33,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
 
         switch fireworksURLFormat(modelID) {
         case "workflows_async":
-            return try await generateAsync(request: request, body: body)
+            return try await generateAsync(request: request, body: body, warnings: warnings)
         default:
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "POST",
@@ -51,13 +54,14 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
                 urls: [],
                 base64Images: [response.body.base64EncodedString()],
                 rawValue: raw,
+                warnings: warnings,
                 requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
                 responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
             )
         }
     }
 
-    private func generateAsync(request: ImageGenerationRequest, body: [String: JSONValue]) async throws -> ImageGenerationResult {
+    private func generateAsync(request: ImageGenerationRequest, body: [String: JSONValue], warnings: [AIWarning]) async throws -> ImageGenerationResult {
         let submit = try await config.transport.send(AIHTTPRequest(
             method: "POST",
             url: try requireURL(fireworksURL(modelID: modelID, baseURL: config.baseURL)),
@@ -83,6 +87,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             urls: [imageURL],
             base64Images: [imageResponse.body.base64EncodedString()],
             rawValue: submitRaw,
+            warnings: warnings,
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: submitRaw, response: submit, modelID: modelID)
         )
@@ -123,12 +128,43 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
 }
 
 private func fireworksProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let nested = extraBody["fireworks"]?.objectValue {
-        return nested
-    }
     var output = extraBody
-    output.removeValue(forKey: "fireworks")
+    if let nested = output.removeValue(forKey: "fireworks")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     return output
+}
+
+private func fireworksImageWarnings(for request: ImageGenerationRequest, modelID: String) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if !fireworksSupportsSize(modelID), request.size != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "size",
+            message: "This model does not support the `size` option. Use `aspectRatio` instead."
+        ))
+    }
+    if fireworksSupportsSize(modelID), request.aspectRatio != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "aspectRatio",
+            message: "This model does not support the `aspectRatio` option."
+        ))
+    }
+    if request.files.count > 1 {
+        warnings.append(AIWarning(
+            type: "other",
+            message: "Fireworks only supports a single input image. Additional images are ignored."
+        ))
+    }
+    if request.mask != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "mask",
+            message: "Fireworks Kontext models do not support explicit masks. Use the prompt to describe the areas to edit."
+        ))
+    }
+    return warnings
 }
 
 private func fireworksImageURL(from file: ImageInputFile?) -> String? {
@@ -171,4 +207,8 @@ private func fireworksURLFormat(_ modelID: String) -> String {
     default:
         return "workflows"
     }
+}
+
+private func fireworksSupportsSize(_ modelID: String) -> Bool {
+    fireworksURLFormat(modelID) == "image_generation"
 }

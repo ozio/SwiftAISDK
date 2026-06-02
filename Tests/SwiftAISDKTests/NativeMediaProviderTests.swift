@@ -507,9 +507,10 @@ import Testing
     let provider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: transport))
     let model = try provider.imageModel("accounts/fireworks/models/flux-1-schnell-fp8")
 
-    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "16:9", count: 1, extraBody: ["seed": 42]))
+    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", aspectRatio: "16:9", seed: 42, count: 1))
 
     #expect(result.base64Images == [Data("png".utf8).base64EncodedString()])
+    #expect(result.warnings.isEmpty)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image")
     #expect(request.headers["Authorization"] == "Bearer fireworks-key")
@@ -533,6 +534,9 @@ import Testing
 
     #expect(result.urls == ["https://assets.example.com/fireworks.png"])
     #expect(result.base64Images == [Data("async-png".utf8).base64EncodedString()])
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "size", message: "This model does not support the `size` option. Use `aspectRatio` instead.")
+    ])
     let requests = await transport.requests()
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro")
@@ -557,21 +561,59 @@ import Testing
     let provider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: transport))
     let model = try provider.imageModel("accounts/fireworks/models/flux-kontext-pro")
 
-    _ = try await model.generateImage(ImageGenerationRequest(
+    let result = try await model.generateImage(ImageGenerationRequest(
         prompt: "restyle",
-        files: [ImageInputFile(data: Data([1, 2, 3]), mediaType: "image/png")],
+        aspectRatio: "16:9",
+        seed: 7,
+        files: [
+            ImageInputFile(data: Data([1, 2, 3]), mediaType: "image/png"),
+            ImageInputFile(data: Data([4, 5, 6]), mediaType: "image/png")
+        ],
+        mask: ImageInputFile(data: Data([7, 8, 9]), mediaType: "image/png"),
         extraBody: [
+            "raw_param": .string("raw"),
             "fireworks": .object([
                 "seed": 99,
                 "strength": 0.7
             ])
         ]
     ))
+    #expect(result.warnings == [
+        AIWarning(type: "other", message: "Fireworks only supports a single input image. Additional images are ignored."),
+        AIWarning(type: "unsupported", feature: "mask", message: "Fireworks Kontext models do not support explicit masks. Use the prompt to describe the areas to edit.")
+    ])
 
     let submitBody = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(submitBody["prompt"]?.stringValue == "restyle")
     #expect(submitBody["input_image"]?.stringValue == "data:image/png;base64,\(Data([1, 2, 3]).base64EncodedString())")
+    #expect(submitBody["aspect_ratio"]?.stringValue == "16:9")
     #expect(submitBody["seed"]?.intValue == 99)
+    #expect(submitBody["raw_param"]?.stringValue == "raw")
     #expect(submitBody["strength"]?.doubleValue == 0.7)
     #expect(submitBody["fireworks"] == nil)
+}
+
+@Test func fireworksImageWarningsMatchBackendSupport() async throws {
+    let workflowTransport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data("png".utf8)))
+    let workflowProvider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: workflowTransport))
+    let workflowModel = try workflowProvider.imageModel("accounts/fireworks/models/flux-1-dev-fp8")
+
+    let workflowResult = try await workflowModel.generateImage(ImageGenerationRequest(prompt: "cat", size: "1024x1024", aspectRatio: "1:1"))
+    #expect(workflowResult.warnings == [
+        AIWarning(type: "unsupported", feature: "size", message: "This model does not support the `size` option. Use `aspectRatio` instead.")
+    ])
+
+    let sizeTransport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data("png".utf8)))
+    let sizeProvider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: sizeTransport))
+    let sizeModel = try sizeProvider.imageModel("accounts/fireworks/models/playground-v2-5-1024px-aesthetic")
+
+    let sizeResult = try await sizeModel.generateImage(ImageGenerationRequest(prompt: "cat", size: "1024x768", aspectRatio: "1:1", seed: 42))
+    #expect(sizeResult.warnings == [
+        AIWarning(type: "unsupported", feature: "aspectRatio", message: "This model does not support the `aspectRatio` option.")
+    ])
+    let body = try decodeJSONBody(try #require((await sizeTransport.requests()).first?.body))
+    #expect(body["width"]?.stringValue == "1024")
+    #expect(body["height"]?.stringValue == "768")
+    #expect(body["aspect_ratio"]?.stringValue == "1:1")
+    #expect(body["seed"]?.intValue == 42)
 }
