@@ -12,6 +12,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         let (model, version) = splitVersionedModelID(modelID)
+        let options = try replicateProviderOptions(from: request)
         var input: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let size = request.size { input["size"] = .string(size) }
         if let aspectRatio = request.aspectRatio { input["aspect_ratio"] = .string(aspectRatio) }
@@ -19,7 +20,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count { input["num_outputs"] = .number(Double(count)) }
         let preparedInputs = try replicateImageInputs(from: request.files, mask: request.mask, modelID: modelID)
         input.merge(preparedInputs.input) { _, new in new }
-        input.merge(replicateImageOptions(from: request)) { _, new in new }
+        input.merge(replicateImageOptions(from: options)) { _, new in new }
 
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
@@ -28,7 +29,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
             path: path,
             modelID: modelID,
             body: .object(body),
-            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request)),
+            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: options)),
             abortSignal: request.abortSignal
         )
         let raw = response.json
@@ -69,7 +70,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let (model, version) = splitVersionedModelID(modelID)
-        let options = replicateProviderOptions(from: request)
+        let options = try replicateProviderOptions(from: request)
         var input: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let aspectRatio = request.aspectRatio { input["aspect_ratio"] = .string(aspectRatio) }
         if let durationSeconds = request.durationSeconds { input["duration"] = .number(durationSeconds) }
@@ -91,7 +92,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
         if let image = try replicateVideoImageInput(from: request, options: options) {
             input["image"] = image
         }
-        input.merge(replicateVideoOptions(from: request)) { _, new in new }
+        input.merge(replicateVideoOptions(from: options)) { _, new in new }
 
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
@@ -100,15 +101,15 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             path: path,
             modelID: modelID,
             body: .object(body),
-            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: request)),
+            headers: request.headers.mergingHeaders(replicatePreferHeaders(from: options)),
             abortSignal: request.abortSignal
         )
         let finalResponse = try await pollReplicatePredictionResponse(
             createResponse.json,
             initialResponse: createResponse.response,
             headers: request.headers,
-            intervalNanoseconds: replicatePollInterval(from: request),
-            timeoutNanoseconds: replicatePollTimeout(from: request),
+            intervalNanoseconds: replicatePollInterval(from: options),
+            timeoutNanoseconds: replicatePollTimeout(from: options),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.json
@@ -146,14 +147,6 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
-private func replicatePreferHeaders(from request: ImageGenerationRequest) -> [String: String] {
-    replicatePreferHeaders(from: replicateProviderOptions(from: request))
-}
-
-private func replicatePreferHeaders(from request: VideoGenerationRequest) -> [String: String] {
-    replicatePreferHeaders(from: replicateProviderOptions(from: request))
-}
-
 private func replicatePreferHeaders(from options: [String: JSONValue]) -> [String: String] {
     if let wait = options["maxWaitTimeInSeconds"]?.intValue ?? options["max_wait_time_in_seconds"]?.intValue {
         return ["prefer": "wait=\(wait)"]
@@ -161,8 +154,8 @@ private func replicatePreferHeaders(from options: [String: JSONValue]) -> [Strin
     return ["prefer": "wait"]
 }
 
-private func replicateImageOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
-    var output = replicateProviderOptions(from: request)
+private func replicateImageOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
+    var output = options
     if let aspectRatio = output.removeValue(forKey: "aspectRatio") {
         output["aspect_ratio"] = aspectRatio
     }
@@ -171,8 +164,8 @@ private func replicateImageOptions(from request: ImageGenerationRequest) -> [Str
     return output
 }
 
-private func replicateVideoOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
-    var output = replicateProviderOptions(from: request)
+private func replicateVideoOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
+    var output = options
     output.removeValue(forKey: "maxWaitTimeInSeconds")
     output.removeValue(forKey: "max_wait_time_in_seconds")
     output.removeValue(forKey: "pollIntervalMs")
@@ -185,17 +178,18 @@ private func replicateVideoOptions(from request: VideoGenerationRequest) -> [Str
     output.removeValue(forKey: "image")
     output.removeValue(forKey: "imageUrl")
     output.removeValue(forKey: "image_url")
+    for key in replicateVideoNullishProviderOptionKeys where output[key] == .null {
+        output.removeValue(forKey: key)
+    }
     return output
 }
 
-private func replicatePollInterval(from request: VideoGenerationRequest) -> UInt64 {
-    let options = replicateProviderOptions(from: request)
+private func replicatePollInterval(from options: [String: JSONValue]) -> UInt64 {
     let milliseconds = options["pollIntervalMs"]?.intValue ?? options["poll_interval_ms"]?.intValue ?? 2_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
 
-private func replicatePollTimeout(from request: VideoGenerationRequest) -> UInt64 {
-    let options = replicateProviderOptions(from: request)
+private func replicatePollTimeout(from options: [String: JSONValue]) -> UInt64 {
     let milliseconds = options["pollTimeoutMs"]?.intValue ?? options["poll_timeout_ms"]?.intValue ?? 300_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
 }
@@ -204,18 +198,118 @@ private func replicateProviderOptions(from extraBody: [String: JSONValue]) -> [S
     extraBody["replicate"]?.objectValue ?? extraBody.filter { key, _ in key != "replicate" }
 }
 
-private func replicateProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
-    replicateProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+private func replicateProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
+    try replicateProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        validateProviderOptions: replicateValidateImageProviderOptions
+    )
 }
 
-private func replicateProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
-    replicateProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+private func replicateProviderOptions(from request: VideoGenerationRequest) throws -> [String: JSONValue] {
+    try replicateProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        validateProviderOptions: replicateValidateVideoProviderOptions
+    )
 }
 
-private func replicateProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func replicateProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue],
+    validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = replicateProviderOptions(from: extraBody)
-    output.merge(replicateProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let value = providerOptions["replicate"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.replicate", message: "Replicate provider options must be an object.")
+        }
+        output.merge(try validateProviderOptions(nested)) { _, providerValue in providerValue }
+    }
     return output
+}
+
+private let replicateVideoNullishProviderOptionKeys: Set<String> = [
+    "guidance_scale",
+    "num_inference_steps",
+    "motion_bucket_id",
+    "cond_aug",
+    "decoding_t",
+    "video_length",
+    "sizing_strategy",
+    "frames_per_second",
+    "prompt_optimizer"
+]
+
+private func replicateValidateImageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    for (key, value) in options {
+        switch key {
+        case "maxWaitTimeInSeconds":
+            try replicateValidatePositiveNumberOrNull(value, argument: "providerOptions.replicate.maxWaitTimeInSeconds", label: "maxWaitTimeInSeconds")
+        case "guidance_scale", "num_inference_steps":
+            try replicateValidateNumberOrNull(value, argument: "providerOptions.replicate.\(key)", label: key)
+        case "negative_prompt":
+            try replicateValidateStringOrNull(value, argument: "providerOptions.replicate.negative_prompt", label: "negative_prompt")
+        case "output_format":
+            guard value == .null || ["png", "jpg", "webp"].contains(value.stringValue ?? "") else {
+                throw AIError.invalidArgument(argument: "providerOptions.replicate.output_format", message: "Replicate output_format must be png, jpg, webp, or null.")
+            }
+        case "output_quality":
+            try replicateValidateNumberOrNull(value, argument: "providerOptions.replicate.output_quality", label: "output_quality", min: 1, max: 100)
+        case "strength":
+            try replicateValidateNumberOrNull(value, argument: "providerOptions.replicate.strength", label: "strength", min: 0, max: 1)
+        default:
+            break
+        }
+    }
+    return options
+}
+
+private func replicateValidateVideoProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    for (key, value) in options {
+        switch key {
+        case "pollIntervalMs", "pollTimeoutMs", "maxWaitTimeInSeconds":
+            try replicateValidatePositiveNumberOrNull(value, argument: "providerOptions.replicate.\(key)", label: key)
+        case "guidance_scale", "num_inference_steps", "motion_bucket_id", "cond_aug", "decoding_t", "frames_per_second":
+            try replicateValidateNumberOrNull(value, argument: "providerOptions.replicate.\(key)", label: key)
+        case "video_length", "sizing_strategy":
+            try replicateValidateStringOrNull(value, argument: "providerOptions.replicate.\(key)", label: key)
+        case "prompt_optimizer":
+            guard value == .null || value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.replicate.prompt_optimizer", message: "Replicate prompt_optimizer must be a boolean or null.")
+            }
+        default:
+            break
+        }
+    }
+    return options
+}
+
+private func replicateValidatePositiveNumberOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    try replicateValidateNumberOrNull(value, argument: argument, label: label, min: 0, exclusiveMin: true)
+}
+
+private func replicateValidateNumberOrNull(_ value: JSONValue, argument: String, label: String, min: Double? = nil, max: Double? = nil, exclusiveMin: Bool = false) throws {
+    guard value != .null else { return }
+    guard let number = value.doubleValue else {
+        throw AIError.invalidArgument(argument: argument, message: "Replicate \(label) must be a number or null.")
+    }
+    if let min, exclusiveMin ? number <= min : number < min {
+        throw AIError.invalidArgument(argument: argument, message: "Replicate \(label) must be \(exclusiveMin ? "greater than" : "at least") \(replicateFormatNumber(min)) or null.")
+    }
+    if let max, number > max {
+        throw AIError.invalidArgument(argument: argument, message: "Replicate \(label) must be at most \(replicateFormatNumber(max)) or null.")
+    }
+}
+
+private func replicateValidateStringOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "Replicate \(label) must be a string or null.")
+    }
+}
+
+private func replicateFormatNumber(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(value)
 }
 
 private func replicateImageInputs(from files: [ImageInputFile], mask: ImageInputFile?, modelID: String) throws -> (input: [String: JSONValue], warnings: [AIWarning]) {
