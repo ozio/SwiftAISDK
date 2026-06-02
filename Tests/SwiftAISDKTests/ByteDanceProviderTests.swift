@@ -2,6 +2,12 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func byteDanceUsesUpstreamARKAPIKeyEnvironmentOnly() throws {
+    #expect(throws: AIError.missingAPIKey(provider: "bytedance", environmentVariables: ["ARK_API_KEY"])) {
+        _ = try AIProviders.byteDance(settings: ProviderSettings())
+    }
+}
+
 @Test func byteDanceVideoSubmitsPollsAndPreservesMetadata() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"task-1"}"#),

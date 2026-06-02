@@ -332,7 +332,7 @@ public enum AIProviders {
     }
 
     public static func byteDance(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "bytedance", defaultBaseURL: "https://ark.ap-southeast.bytepluses.com/api/v3", authorization: .bearer(environmentVariables: ["ARK_API_KEY", "BYTEDANCE_API_KEY"]), supportedCapabilities: [.video], settings: settings)
+        try OpenAICompatibleProvider(providerID: "bytedance", defaultBaseURL: "https://ark.ap-southeast.bytepluses.com/api/v3", authorization: .bearer(environmentVariables: ["ARK_API_KEY"]), supportedCapabilities: [.video], settings: settings)
     }
 
     public static func bytedance(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
