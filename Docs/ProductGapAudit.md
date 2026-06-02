@@ -311,7 +311,9 @@ Progress:
   unsupported warning for `language`. RevAI transcription now scopes
   `providerOptions.revai` to the upstream job config schema, handles failed
   submissions before requiring an ID, and matches upstream's poll-before-delay
-  status cadence. Mistral and
+  status cadence. Gladia transcription now scopes `providerOptions.gladia` to
+  the upstream initiation schema while retaining raw `extraBody` passthrough
+  for explicit low-level overrides. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.

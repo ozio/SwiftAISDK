@@ -977,14 +977,55 @@ private func gladiaProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
 }
 
 private func gladiaProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    gladiaProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    gladiaProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: gladiaTranscriptionProviderOptionKeys
+    )
 }
 
-private func gladiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func gladiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = gladiaProviderOptions(from: extraBody)
-    output.merge(gladiaProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["gladia"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
     return output
 }
+
+private let gladiaTranscriptionProviderOptionKeys: Set<String> = [
+    "contextPrompt",
+    "customVocabulary",
+    "customVocabularyConfig",
+    "detectLanguage",
+    "enableCodeSwitching",
+    "codeSwitchingConfig",
+    "language",
+    "callback",
+    "callbackConfig",
+    "subtitles",
+    "subtitlesConfig",
+    "diarization",
+    "diarizationConfig",
+    "translation",
+    "translationConfig",
+    "summarization",
+    "summarizationConfig",
+    "moderation",
+    "namedEntityRecognition",
+    "chapterization",
+    "nameConsistency",
+    "customSpelling",
+    "customSpellingConfig",
+    "structuredDataExtraction",
+    "structuredDataExtractionConfig",
+    "sentimentAnalysis",
+    "audioToLlm",
+    "audioToLlmConfig",
+    "customMetadata",
+    "sentences",
+    "displayMode",
+    "punctuationEnhanced"
+]
 
 private func gladiaTranscriptionOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]

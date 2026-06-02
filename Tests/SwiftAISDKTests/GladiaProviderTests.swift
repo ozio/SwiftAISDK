@@ -203,8 +203,10 @@ import Testing
                 "customMetadata": ["case": "provider"],
                 "sentences": true,
                 "displayMode": true,
-                "punctuationEnhanced": true
-            ])
+                "punctuationEnhanced": true,
+                "unsupportedProperty": "drop-me"
+            ]),
+            "openai": .object(["timestampGranularities": ["word"]])
         ],
         extraBody: [
             "gladia": .object([
@@ -260,6 +262,8 @@ import Testing
     #expect(initBody["display_mode"]?.boolValue == true)
     #expect(initBody["punctuation_enhanced"]?.boolValue == true)
     #expect(initBody["gladia"] == nil)
+    #expect(initBody["openai"] == nil)
+    #expect(initBody["unsupportedProperty"] == nil)
     #expect(initBody["contextPrompt"] == nil)
     #expect(initBody["callbackConfig"] == nil)
 }
