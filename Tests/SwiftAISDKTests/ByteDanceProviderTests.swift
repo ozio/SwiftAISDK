@@ -90,9 +90,7 @@ import Testing
                 ],
                 "referenceVideos": ["https://example.com/ref.mp4"],
                 "referenceAudio": [
-                    .object([
-                        "data": .string("data:audio/mpeg;base64,YXVkaW8=")
-                    ])
+                    "data:audio/mpeg;base64,YXVkaW8="
                 ]
             ])
         ]
@@ -163,12 +161,138 @@ import Testing
     #expect(body["service_tier"]?.stringValue == "flex")
     #expect(body["draft"]?.boolValue == true)
     #expect(body["seed"]?.intValue == 7)
-    #expect(body["resolution"]?.stringValue == "720p")
+    #expect(body["resolution"]?.stringValue == "1280x720")
     #expect(body["customFlag"]?.stringValue == "keep-me")
     #expect(body["pollIntervalMs"] == nil)
     #expect(body["pollTimeoutMs"] == nil)
     #expect(body["n"] == nil)
     #expect(body["bytedance"] == nil)
+}
+
+@Test func byteDanceExtraBodyKeepsLegacyMediaAliasesAndResolutionMapping() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-extra"}"#),
+        jsonResponse(#"{"id":"task-extra","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/extra.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        extraBody: [
+            "bytedance": .object([
+                "last_frame_image": "https://example.com/end.png",
+                "reference_audio": [
+                    .object([
+                        "data": .string("data:audio/mpeg;base64,YXVkaW8=")
+                    ])
+                ],
+                "generate_audio": true,
+                "resolution": "1280x720",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["content"]?[1]?["role"]?.stringValue == "last_frame")
+    #expect(body["content"]?[1]?["image_url"]?["url"]?.stringValue == "https://example.com/end.png")
+    #expect(body["content"]?[2]?["role"]?.stringValue == "reference_audio")
+    #expect(body["content"]?[2]?["audio_url"]?["url"]?.stringValue == "data:audio/mpeg;base64,YXVkaW8=")
+    #expect(body["generate_audio"]?.boolValue == true)
+    #expect(body["resolution"]?.stringValue == "720p")
+}
+
+@Test func byteDanceProviderOptionsValidateKnownSchemaFields() async throws {
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"unused"}"#))))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "invalid boolean",
+            providerOptions: ["bytedance": .object(["watermark": .string("no")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "invalid tier",
+            providerOptions: ["bytedance": .object(["serviceTier": .string("premium")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "invalid reference",
+            providerOptions: ["bytedance": .object(["referenceAudio": .array([.object(["data": .string("audio")])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "invalid polling",
+            providerOptions: ["bytedance": .object(["pollTimeoutMs": .number(0)])]
+        ))
+    }
+}
+
+@Test func byteDanceProviderOptionsUseUpstreamPassthroughForSnakeCase() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-snake"}"#),
+        jsonResponse(#"{"id":"task-snake","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/snake.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        providerOptions: [
+            "bytedance": .object([
+                "generateAudio": true,
+                "generate_audio": false,
+                "serviceTier": "flex",
+                "service_tier": "default",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generate_audio"]?.boolValue == false)
+    #expect(body["service_tier"]?.stringValue == "default")
+}
+
+@Test func byteDanceProviderOptionsNullishFieldsClearExtraBodyDefaults() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-null"}"#),
+        jsonResponse(#"{"id":"task-null","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/null.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        providerOptions: [
+            "bytedance": .object([
+                "generateAudio": .null,
+                "referenceImages": .null,
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ],
+        extraBody: [
+            "bytedance": .object([
+                "generateAudio": true,
+                "referenceImages": ["https://example.com/ref.png"]
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generate_audio"] == nil)
+    #expect(body["content"]?.arrayValue?.contains { $0["role"]?.stringValue == "reference_image" } == false)
 }
 
 @Test func byteDanceVideoThrowsForMissingTaskID() async throws {

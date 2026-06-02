@@ -1504,7 +1504,7 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = byteDanceProviderOptions(from: request)
+        let options = try byteDanceProviderOptions(from: request)
         let warnings = byteDanceWarnings(for: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -1525,8 +1525,8 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         let finalResponse = try await pollByteDance(
             taskID: taskID,
             headers: request.headers,
-            intervalNanoseconds: byteDancePollInterval(options),
-            timeoutNanoseconds: byteDancePollTimeout(options),
+            intervalNanoseconds: byteDancePollInterval(options.known["pollIntervalMs"]),
+            timeoutNanoseconds: byteDancePollTimeout(options.known["pollTimeoutMs"]),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.raw
@@ -1577,53 +1577,69 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
-private func byteDanceProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
-    var output = byteDanceProviderOptions(from: request.extraBody)
+private struct ByteDanceResolvedOptions {
+    var known: [String: JSONValue]
+    var passthrough: [String: JSONValue]
+}
+
+private func byteDanceProviderOptions(from request: VideoGenerationRequest) throws -> ByteDanceResolvedOptions {
+    var output = try byteDanceExtraBodyOptions(from: request.extraBody)
     if let providerOptions = request.providerOptions["bytedance"]?.objectValue {
-        output.merge(providerOptions) { _, providerValue in providerValue }
+        let parsed = try byteDanceValidatedProviderOptions(from: providerOptions)
+        for (key, value) in parsed.known {
+            if value == .null {
+                output.known.removeValue(forKey: key)
+            } else {
+                output.known[key] = value
+            }
+        }
+        output.passthrough.merge(parsed.passthrough) { _, providerValue in providerValue }
     }
     return output
 }
 
-private func byteDanceProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let nested = extraBody["bytedance"]?.objectValue {
-        return nested
+private func byteDanceExtraBodyOptions(from extraBody: [String: JSONValue]) throws -> ByteDanceResolvedOptions {
+    var passthrough = extraBody["bytedance"]?.objectValue ?? extraBody.filter { key, _ in key != "bytedance" }
+    var known: [String: JSONValue] = [:]
+    for (key, canonicalKey) in byteDanceExtraBodyOptionAliases {
+        if let value = passthrough.removeValue(forKey: key), value != .null {
+            known[canonicalKey] = value
+        }
     }
-    var output = extraBody
-    output.removeValue(forKey: "bytedance")
-    return output
+    return ByteDanceResolvedOptions(known: known, passthrough: passthrough)
 }
 
-private func byteDanceContent(prompt: String, image: ImageInputFile?, options: [String: JSONValue]) throws -> [JSONValue] {
+private func byteDanceContent(prompt: String, image: ImageInputFile?, options: ByteDanceResolvedOptions) throws -> [JSONValue] {
     var content: [JSONValue] = []
+    let known = options.known
     if !prompt.isEmpty {
         content.append(.object(["type": .string("text"), "text": .string(prompt)]))
     }
-    if let image = try byteDanceMediaURL(from: image) ?? byteDanceMediaURL(options["image"] ?? options["imageUrl"] ?? options["image_url"]) {
+    if let image = try byteDanceMediaURL(from: image) ?? byteDanceMediaURL(known["image"]) {
         content.append(.object(["type": .string("image_url"), "image_url": .object(["url": .string(image)])]))
     }
-    if let lastFrameImage = byteDanceMediaURL(options["lastFrameImage"] ?? options["last_frame_image"]) {
+    if let lastFrameImage = byteDanceMediaURL(known["lastFrameImage"]) {
         content.append(.object([
             "type": .string("image_url"),
             "image_url": .object(["url": .string(lastFrameImage)]),
             "role": .string("last_frame")
         ]))
     }
-    for imageURL in byteDanceMediaURLs(options["referenceImages"] ?? options["reference_images"]) {
+    for imageURL in byteDanceMediaURLs(known["referenceImages"]) {
         content.append(.object([
             "type": .string("image_url"),
             "image_url": .object(["url": .string(imageURL)]),
             "role": .string("reference_image")
         ]))
     }
-    for videoURL in byteDanceMediaURLs(options["referenceVideos"] ?? options["reference_videos"]) {
+    for videoURL in byteDanceMediaURLs(known["referenceVideos"]) {
         content.append(.object([
             "type": .string("video_url"),
             "video_url": .object(["url": .string(videoURL)]),
             "role": .string("reference_video")
         ]))
     }
-    for audioURL in byteDanceMediaURLs(options["referenceAudio"] ?? options["reference_audio"]) {
+    for audioURL in byteDanceMediaURLs(known["referenceAudio"]) {
         content.append(.object([
             "type": .string("audio_url"),
             "audio_url": .object(["url": .string(audioURL)]),
@@ -1633,21 +1649,20 @@ private func byteDanceContent(prompt: String, image: ImageInputFile?, options: [
     return content
 }
 
-private func byteDanceOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
+private func byteDanceOptions(from options: ByteDanceResolvedOptions) -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
-    if let seed = options["seed"] { output["seed"] = seed }
-    if let resolution = options["resolution"]?.stringValue {
+    let known = options.known
+    if let seed = known["seed"] { output["seed"] = seed }
+    if let resolution = known["resolution"]?.stringValue {
         output["resolution"] = .string(byteDanceResolutionMap[resolution] ?? resolution)
     }
-    if let watermark = options["watermark"] { output["watermark"] = watermark }
-    if let generateAudio = options["generateAudio"] ?? options["generate_audio"] { output["generate_audio"] = generateAudio }
-    if let cameraFixed = options["cameraFixed"] ?? options["camera_fixed"] { output["camera_fixed"] = cameraFixed }
-    if let returnLastFrame = options["returnLastFrame"] ?? options["return_last_frame"] { output["return_last_frame"] = returnLastFrame }
-    if let serviceTier = options["serviceTier"] ?? options["service_tier"] { output["service_tier"] = serviceTier }
-    if let draft = options["draft"] { output["draft"] = draft }
-    for (key, value) in options where !byteDanceHandledOptionKeys.contains(key) {
-        output[key] = value
-    }
+    if let watermark = known["watermark"] { output["watermark"] = watermark }
+    if let generateAudio = known["generateAudio"] { output["generate_audio"] = generateAudio }
+    if let cameraFixed = known["cameraFixed"] { output["camera_fixed"] = cameraFixed }
+    if let returnLastFrame = known["returnLastFrame"] { output["return_last_frame"] = returnLastFrame }
+    if let serviceTier = known["serviceTier"] { output["service_tier"] = serviceTier }
+    if let draft = known["draft"] { output["draft"] = draft }
+    output.merge(options.passthrough) { _, new in new }
     return output
 }
 
@@ -1670,34 +1685,110 @@ private func byteDanceWarnings(for request: VideoGenerationRequest) -> [AIWarnin
     return warnings
 }
 
-private let byteDanceHandledOptionKeys: Set<String> = [
-    "bytedance",
-    "image",
-    "imageUrl",
-    "image_url",
-    "lastFrameImage",
-    "last_frame_image",
-    "referenceImages",
-    "reference_images",
-    "referenceVideos",
-    "reference_videos",
-    "referenceAudio",
-    "reference_audio",
+private let byteDanceProviderOptionKeys: Set<String> = [
     "watermark",
     "generateAudio",
-    "generate_audio",
     "cameraFixed",
-    "camera_fixed",
     "returnLastFrame",
-    "return_last_frame",
     "serviceTier",
-    "service_tier",
     "draft",
-    "seed",
-    "resolution",
+    "lastFrameImage",
+    "referenceImages",
+    "referenceVideos",
+    "referenceAudio",
     "pollIntervalMs",
     "pollTimeoutMs"
 ]
+
+private let byteDanceExtraBodyOptionAliases: [String: String] = [
+    "image": "image",
+    "imageUrl": "image",
+    "image_url": "image",
+    "lastFrameImage": "lastFrameImage",
+    "last_frame_image": "lastFrameImage",
+    "referenceImages": "referenceImages",
+    "reference_images": "referenceImages",
+    "referenceVideos": "referenceVideos",
+    "reference_videos": "referenceVideos",
+    "referenceAudio": "referenceAudio",
+    "reference_audio": "referenceAudio",
+    "watermark": "watermark",
+    "generateAudio": "generateAudio",
+    "generate_audio": "generateAudio",
+    "cameraFixed": "cameraFixed",
+    "camera_fixed": "cameraFixed",
+    "returnLastFrame": "returnLastFrame",
+    "return_last_frame": "returnLastFrame",
+    "serviceTier": "serviceTier",
+    "service_tier": "serviceTier",
+    "draft": "draft",
+    "seed": "seed",
+    "resolution": "resolution",
+    "pollIntervalMs": "pollIntervalMs",
+    "pollTimeoutMs": "pollTimeoutMs"
+]
+
+private func byteDanceValidatedProviderOptions(from providerOptions: [String: JSONValue]) throws -> ByteDanceResolvedOptions {
+    var known: [String: JSONValue] = [:]
+    var valuesToValidate: [String: JSONValue] = [:]
+    var passthrough = providerOptions
+    for key in byteDanceProviderOptionKeys {
+        if let value = passthrough.removeValue(forKey: key) {
+            if value == .null {
+                known[key] = .null
+            } else {
+                valuesToValidate[key] = value
+            }
+        }
+    }
+    known.merge(try byteDanceValidateKnownOptions(valuesToValidate)) { _, validated in validated }
+    return ByteDanceResolvedOptions(known: known, passthrough: passthrough)
+}
+
+private func byteDanceValidateKnownOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options {
+        switch key {
+        case "watermark", "generateAudio", "cameraFixed", "returnLastFrame", "draft":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.bytedance.\(key)", message: "ByteDance \(key) must be a boolean.")
+            }
+            output[key] = value
+        case "serviceTier":
+            guard let serviceTier = value.stringValue, ["default", "flex"].contains(serviceTier) else {
+                throw AIError.invalidArgument(argument: "providerOptions.bytedance.serviceTier", message: "ByteDance serviceTier must be one of default, flex.")
+            }
+            output[key] = value
+        case "lastFrameImage":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.bytedance.lastFrameImage", message: "ByteDance lastFrameImage must be a string.")
+            }
+            output[key] = value
+        case "referenceImages", "referenceVideos", "referenceAudio":
+            output[key] = try byteDanceStringArray(value, key: key)
+        case "pollIntervalMs", "pollTimeoutMs":
+            guard let number = value.doubleValue, number > 0 else {
+                throw AIError.invalidArgument(argument: "providerOptions.bytedance.\(key)", message: "ByteDance \(key) must be a positive number.")
+            }
+            output[key] = value
+        case "image", "seed", "resolution":
+            output[key] = value
+        default:
+            output[key] = value
+        }
+    }
+    return output
+}
+
+private func byteDanceStringArray(_ value: JSONValue, key: String) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.bytedance.\(key)", message: "ByteDance \(key) must be an array of strings.")
+    }
+    for (index, item) in array.enumerated() where item.stringValue == nil {
+        throw AIError.invalidArgument(argument: "providerOptions.bytedance.\(key)[\(index)]", message: "ByteDance \(key) values must be strings.")
+    }
+    return value
+}
 
 private let byteDanceResolutionMap: [String: String] = [
     "864x496": "480p", "496x864": "480p", "752x560": "480p", "560x752": "480p",
@@ -1738,13 +1829,13 @@ private func byteDanceMediaURLs(_ value: JSONValue?) -> [String] {
     return value?.arrayValue?.compactMap(byteDanceMediaURL) ?? []
 }
 
-private func byteDancePollInterval(_ options: [String: JSONValue]) -> UInt64 {
-    let milliseconds = options["pollIntervalMs"]?.doubleValue ?? 3_000
+private func byteDancePollInterval(_ value: JSONValue?) -> UInt64 {
+    let milliseconds = value?.doubleValue ?? 3_000
     return UInt64(max(milliseconds, 1) * 1_000_000)
 }
 
-private func byteDancePollTimeout(_ options: [String: JSONValue]) -> UInt64 {
-    let milliseconds = options["pollTimeoutMs"]?.doubleValue ?? 300_000
+private func byteDancePollTimeout(_ value: JSONValue?) -> UInt64 {
+    let milliseconds = value?.doubleValue ?? 300_000
     return UInt64(max(milliseconds, 1) * 1_000_000)
 }
 
