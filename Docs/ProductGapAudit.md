@@ -218,9 +218,10 @@ The Swift contract keeps only a compact subset. For example:
   is still uneven: OpenAI-compatible chat/responses, Anthropic, Google
   GenerateContent/Interactions, native Bedrock, Gateway, Mistral, Cohere,
   Groq, DeepSeek, Cerebras, and Alibaba streams now emit tool input
-  start/delta/end parts alongside final tool calls. OpenAI-compatible chat and
-  Perplexity emit text lifecycle parts; OpenAI-compatible chat, Mistral,
-  Cohere, Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit
+  start/delta/end parts alongside final tool calls. OpenAI-compatible chat,
+  OpenAI Responses message items, and Perplexity emit text lifecycle parts;
+  OpenAI-compatible chat, OpenAI Responses reasoning items, Mistral, Cohere,
+  Groq, DeepSeek, Cerebras, Alibaba, and Hugging Face Responses also emit
   text/reasoning start/delta/end parts. Remaining native language stream
   parsers should get the same treatment where upstream exposes equivalent
   events.
@@ -271,9 +272,10 @@ Progress:
   Anthropic language and Google/Vertex language plus embedding
   models now do the same for their native response headers/bodies and stream
   response metadata. OpenAI-compatible chat streams and OpenAI Responses
-  message-item streams now also emit v4-shaped text/reasoning lifecycle parts
-  with provider metadata where upstream exposes it, while retaining legacy deltas for existing
-  consumers. Core video requests now expose upstream-style optional `image`,
+  message/reasoning item streams now also emit v4-shaped text/reasoning
+  lifecycle parts with provider metadata where upstream exposes it, including
+  Codex-style message `phase` values and Responses encrypted reasoning content,
+  while retaining legacy deltas for existing consumers. Core video requests now expose upstream-style optional `image`,
   `resolution`, `fps`, and `seed` fields so provider ports do not have to hide
   standard video call settings inside `extraBody`. Google Generative AI
   image/video/files and Google Vertex

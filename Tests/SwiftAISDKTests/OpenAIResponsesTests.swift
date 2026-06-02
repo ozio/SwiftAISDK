@@ -585,6 +585,67 @@ import Testing
     #expect(textEnds[1].1["openai"]?["phase"]?.stringValue == "final_answer")
 }
 
+@Test func openAIResponsesStreamsReasoningLifecycleProviderMetadataLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_reasoning","type":"reasoning","encrypted_content":"encrypted_reasoning_data_initial"}}
+
+    data: {"type":"response.reasoning_summary_part.added","item_id":"rs_reasoning","summary_index":0}
+
+    data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_reasoning","summary_index":0,"delta":"first thought"}
+
+    data: {"type":"response.reasoning_summary_part.done","item_id":"rs_reasoning","summary_index":0}
+
+    data: {"type":"response.reasoning_summary_part.added","item_id":"rs_reasoning","summary_index":1}
+
+    data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_reasoning","summary_index":1,"delta":"second thought"}
+
+    data: {"type":"response.reasoning_summary_part.done","item_id":"rs_reasoning","summary_index":1}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_reasoning","type":"reasoning","encrypted_content":"encrypted_reasoning_data_final"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("o3-mini")
+
+    var reasoningStarts: [(String, [String: JSONValue])] = []
+    var reasoningDeltas: [(String, String, [String: JSONValue])] = []
+    var reasoningEnds: [(String, [String: JSONValue])] = []
+    var legacyReasoning: [String] = []
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: ["store": false]
+    )) {
+        switch part {
+        case let .reasoningStart(id, metadata):
+            reasoningStarts.append((id, metadata))
+        case let .reasoningDelta(delta):
+            legacyReasoning.append(delta)
+        case let .reasoningDeltaPart(id, delta, metadata):
+            reasoningDeltas.append((id, delta, metadata))
+        case let .reasoningEnd(id, metadata):
+            reasoningEnds.append((id, metadata))
+        default:
+            break
+        }
+    }
+
+    #expect(legacyReasoning == ["first thought", "second thought"])
+    #expect(reasoningStarts.map { $0.0 } == ["rs_reasoning:0", "rs_reasoning:1"])
+    #expect(reasoningDeltas.map { $0.0 } == ["rs_reasoning:0", "rs_reasoning:1"])
+    #expect(reasoningDeltas.map { $0.1 } == ["first thought", "second thought"])
+    #expect(reasoningEnds.map { $0.0 } == ["rs_reasoning:0", "rs_reasoning:1"])
+    #expect(reasoningStarts[0].1["openai"]?["itemId"]?.stringValue == "rs_reasoning")
+    #expect(reasoningStarts[0].1["openai"]?["reasoningEncryptedContent"]?.stringValue == "encrypted_reasoning_data_initial")
+    #expect(reasoningDeltas[0].2["openai"]?["itemId"]?.stringValue == "rs_reasoning")
+    #expect(reasoningDeltas[0].2["openai"]?["reasoningEncryptedContent"] == nil)
+    #expect(reasoningEnds[0].1["openai"]?["itemId"]?.stringValue == "rs_reasoning")
+    #expect(reasoningEnds[0].1["openai"]?["reasoningEncryptedContent"] == nil)
+    #expect(reasoningStarts[1].1["openai"]?["reasoningEncryptedContent"]?.stringValue == "encrypted_reasoning_data_initial")
+    #expect(reasoningEnds[1].1["openai"]?["reasoningEncryptedContent"]?.stringValue == "encrypted_reasoning_data_final")
+}
+
 @Test func openAIResponsesStreamMapsIncompleteFinishReason() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"type":"response.output_text.delta","delta":"partial"}
