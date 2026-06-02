@@ -290,9 +290,9 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
         let options = elevenLabsProviderOptions(from: request)
         var form = MultipartFormData()
         form.appendField(name: "model_id", value: modelID)
-        form.appendFile(name: "file", fileName: request.fileName, mimeType: request.mimeType, data: request.audio)
+        form.appendFile(name: "file", fileName: "audio.\(mediaTypeToExtension(request.mimeType))", mimeType: request.mimeType, data: request.audio)
         form.appendField(name: "diarize", value: String(options["diarize"]?.boolValue ?? true))
-        if let language = request.language ?? options["languageCode"]?.stringValue ?? options["language_code"]?.stringValue {
+        if let language = options["languageCode"]?.stringValue ?? options["language_code"]?.stringValue {
             form.appendField(name: "language_code", value: language)
         }
         for (key, value) in options {
@@ -1619,11 +1619,12 @@ private func elevenLabsProviderOptions(from request: SpeechRequest) -> [String: 
 }
 
 private func elevenLabsProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    elevenLabsProviderOptions(
-        extraBody: request.extraBody,
-        providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: elevenLabsTranscriptionProviderOptionKeys
-    )
+    var output = elevenLabsProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["elevenlabs"]?.objectValue {
+        output.merge(elevenLabsTranscriptionProviderOptionDefaults) { _, defaultValue in defaultValue }
+        output.merge(nested.filter { elevenLabsTranscriptionProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
+    return output
 }
 
 private func elevenLabsProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
@@ -1655,6 +1656,13 @@ private let elevenLabsTranscriptionProviderOptionKeys: Set<String> = [
     "timestampsGranularity",
     "diarize",
     "fileFormat"
+]
+
+private let elevenLabsTranscriptionProviderOptionDefaults: [String: JSONValue] = [
+    "tagAudioEvents": .bool(true),
+    "timestampsGranularity": .string("word"),
+    "diarize": .bool(false),
+    "fileFormat": .string("other")
 ]
 
 private func elevenLabsSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {

@@ -201,11 +201,10 @@ import Testing
     let body = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(body.contains("name=\"model_id\""))
     #expect(body.contains("scribe_v1"))
-    #expect(body.contains("name=\"file\"; filename=\"clip.mp3\""))
+    #expect(body.contains("name=\"file\"; filename=\"audio.mp3\""))
     #expect(body.contains("name=\"diarize\""))
     #expect(body.contains("false"))
-    #expect(body.contains("name=\"language_code\""))
-    #expect(body.contains("en"))
+    #expect(!body.contains("name=\"language_code\""))
     #expect(body.contains("name=\"tag_audio_events\""))
     #expect(body.contains("name=\"timestamps_granularity\""))
     #expect(body.contains("word"))
@@ -300,4 +299,45 @@ import Testing
     #expect(!body.contains("unsupportedProperty"))
     #expect(!body.contains("drop-me"))
     #expect(!body.contains("openai"))
+}
+
+@Test func elevenLabsTranscriptionAppliesUpstreamProviderOptionDefaults() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"language_code":"en","language_probability":0.99,"text":"provider defaults"}"#))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.transcriptionModel("scribe_v1")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        fileName: "ignored.wav",
+        mimeType: "audio/wav",
+        language: "fr",
+        providerOptions: [
+            "elevenlabs": .object([
+                "languageCode": .string("en")
+            ])
+        ],
+        extraBody: [
+            "elevenlabs": .object([
+                "diarize": .bool(true),
+                "tagAudioEvents": .bool(false),
+                "timestampsGranularity": .string("none"),
+                "fileFormat": .string("pcm_s16le_16")
+            ])
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(body.contains("name=\"file\"; filename=\"audio.wav\""))
+    #expect(body.contains("name=\"language_code\""))
+    #expect(body.contains("en"))
+    #expect(body.contains("name=\"tag_audio_events\""))
+    #expect(body.contains("true"))
+    #expect(body.contains("name=\"timestamps_granularity\""))
+    #expect(body.contains("word"))
+    #expect(body.contains("name=\"file_format\""))
+    #expect(body.contains("other"))
+    #expect(body.contains("name=\"diarize\""))
+    #expect(body.contains("false"))
+    #expect(!body.contains("fr"))
 }
