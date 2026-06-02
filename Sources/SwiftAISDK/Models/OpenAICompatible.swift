@@ -1410,6 +1410,8 @@ private struct OpenAICompatibleToolCallBuffer {
     var arguments: String = ""
     var inputStarted = false
     var codeInterpreterContainerID: String?
+    var applyPatchHasDiff = false
+    var applyPatchEndEmitted = false
     var rawValue: JSONValue?
 }
 
@@ -2400,6 +2402,8 @@ private struct OpenAIResponsesStreamingToolCalls {
                 return handleComputerUseAdded(item: item, index: index)
             case "code_interpreter_call":
                 return handleCodeInterpreterAdded(item: item, index: index)
+            case "apply_patch_call":
+                return handleApplyPatchAdded(item: item, index: index)
             case "tool_search_call":
                 return handleToolSearchAdded(item: item, index: index)
             case "tool_search_output", "mcp_call", "mcp_list_tools", "mcp_approval_request":
@@ -2467,12 +2471,36 @@ private struct OpenAIResponsesStreamingToolCalls {
                     preliminary: true
                 ))
             ]
+        case "response.apply_patch_call_operation_diff.delta":
+            guard let index = raw["output_index"]?.intValue,
+                  var buffer = buffers[index],
+                  let id = buffer.id else { return [] }
+            buffer.applyPatchHasDiff = true
+            buffers[index] = buffer
+            return [.toolInputDelta(id: id, delta: openAIResponsesEscapeJSONStringFragment(raw["delta"]?.stringValue ?? ""))]
+        case "response.apply_patch_call_operation_diff.done":
+            guard let index = raw["output_index"]?.intValue,
+                  var buffer = buffers[index],
+                  let id = buffer.id,
+                  buffer.applyPatchEndEmitted == false else { return [] }
+            var parts: [LanguageStreamPart] = []
+            if !buffer.applyPatchHasDiff {
+                parts.append(.toolInputDelta(id: id, delta: openAIResponsesEscapeJSONStringFragment(raw["diff"]?.stringValue ?? "")))
+                buffer.applyPatchHasDiff = true
+            }
+            parts.append(.toolInputDelta(id: id, delta: "\"}}"))
+            parts.append(.toolInputEnd(id: id))
+            buffer.applyPatchEndEmitted = true
+            buffers[index] = buffer
+            return parts
         case "response.output_item.done":
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
             switch item["type"]?.stringValue {
             case "web_search_call", "file_search_call", "image_generation_call", "code_interpreter_call":
                 buffers[index] = nil
                 return openAIResponsesToolResult(from: item, providerID: providerID).map { [.toolResult($0)] } ?? []
+            case "apply_patch_call":
+                return handleApplyPatchDone(item: item, index: index)
             case "computer_call":
                 return handleComputerUseDone(item: item, index: index)
             case "tool_search_call":
@@ -2590,6 +2618,59 @@ private struct OpenAIResponsesStreamingToolCalls {
                 delta: "{\"containerId\":\"\(openAIResponsesEscapeJSONStringFragment(containerID))\",\"code\":\""
             )
         ]
+    }
+
+    private mutating func handleApplyPatchAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        let operation = item["operation"] ?? .object([:])
+        let operationType = operation["type"]?.stringValue ?? ""
+        let deleteFile = operationType == "delete_file"
+        buffers[index] = OpenAICompatibleToolCallBuffer(
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: "",
+            inputStarted: true,
+            applyPatchHasDiff: deleteFile,
+            applyPatchEndEmitted: deleteFile,
+            rawValue: item
+        )
+        var parts: [LanguageStreamPart] = [
+            .toolInputStart(id: toolCall.id, name: toolCall.name)
+        ]
+        if deleteFile {
+            parts.append(.toolInputDelta(id: toolCall.id, delta: toolCall.arguments))
+            parts.append(.toolInputEnd(id: toolCall.id))
+        } else {
+            parts.append(.toolInputDelta(id: toolCall.id, delta: openAIResponsesApplyPatchInputPrefix(callID: toolCall.id, operation: operation)))
+        }
+        return parts
+    }
+
+    private mutating func handleApplyPatchDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        var buffer = buffers[index]
+        let toolCall = openAIResponsesToolCall(from: item, providerID: providerID)
+        let toolCallID = toolCall?.id ?? buffer?.id ?? item["call_id"]?.stringValue ?? "apply-patch-call"
+        var parts: [LanguageStreamPart] = []
+        if var currentBuffer = buffer,
+           currentBuffer.applyPatchEndEmitted == false,
+           item["operation"]?["type"]?.stringValue != "delete_file" {
+            if !currentBuffer.applyPatchHasDiff {
+                parts.append(.toolInputDelta(
+                    id: toolCallID,
+                    delta: openAIResponsesEscapeJSONStringFragment(item["operation"]?["diff"]?.stringValue ?? "")
+                ))
+                currentBuffer.applyPatchHasDiff = true
+            }
+            parts.append(.toolInputDelta(id: toolCallID, delta: "\"}}"))
+            parts.append(.toolInputEnd(id: toolCallID))
+            currentBuffer.applyPatchEndEmitted = true
+            buffer = currentBuffer
+        }
+        if item["status"]?.stringValue == "completed", let toolCall {
+            parts.append(.toolCall(toolCall))
+        }
+        buffers[index] = nil
+        return parts
     }
 
     private mutating func handleToolSearchDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
@@ -2711,7 +2792,16 @@ private func openAIResponsesToolCall(from item: JSONValue, providerID: String) -
     case "shell_call":
         return openAIResponsesHostedToolCall(item: item, name: "shell", idKey: "call_id", arguments: openAIResponsesJSONString(.object(["action": item["action"] ?? .null])) ?? "{}")
     case "apply_patch_call":
-        return openAIResponsesHostedToolCall(item: item, name: "apply_patch", idKey: "call_id", arguments: openAIResponsesJSONString(.object(["callId": item["call_id"] ?? .null, "operation": item["operation"] ?? .null])) ?? "{}")
+        return AIToolCall(
+            id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "apply-patch-call",
+            name: "apply_patch",
+            arguments: openAIResponsesJSONString(.object([
+                "callId": item["call_id"] ?? .null,
+                "operation": item["operation"] ?? .null
+            ])) ?? "{}",
+            providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID),
+            rawValue: item
+        )
     case "mcp_approval_request":
         let approvalRequestID = openAIResponsesApprovalRequestID(from: item)
         let toolName = "mcp.\(item["name"]?.stringValue ?? "tool")"
@@ -2745,6 +2835,10 @@ private func openAIResponsesToolSearchCall(from item: JSONValue, id: String, pro
         providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID),
         rawValue: item
     )
+}
+
+private func openAIResponsesApplyPatchInputPrefix(callID: String, operation: JSONValue) -> String {
+    "{\"callId\":\"\(openAIResponsesEscapeJSONStringFragment(callID))\",\"operation\":{\"type\":\"\(openAIResponsesEscapeJSONStringFragment(operation["type"]?.stringValue ?? ""))\",\"path\":\"\(openAIResponsesEscapeJSONStringFragment(operation["path"]?.stringValue ?? ""))\",\"diff\":\""
 }
 
 private func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCallIDOverride: String? = nil) -> AIToolResult? {

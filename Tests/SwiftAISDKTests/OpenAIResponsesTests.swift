@@ -766,6 +766,94 @@ import Testing
     #expect(toolResults[1].result["result"]?.stringValue == "final-image")
 }
 
+@Test func openAIResponsesStreamsApplyPatchDiffLifecycleLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"apc_1","type":"apply_patch_call","status":"in_progress","call_id":"call_patch_1","operation":{"type":"create_file","path":"shopping.md","diff":""}}}
+
+    data: {"type":"response.apply_patch_call_operation_diff.delta","output_index":0,"delta":"+## Shopping\\n"}
+
+    data: {"type":"response.apply_patch_call_operation_diff.done","output_index":0,"diff":"+## Shopping\\n"}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"apc_1","type":"apply_patch_call","status":"completed","call_id":"call_patch_1","operation":{"type":"create_file","path":"shopping.md","diff":"+## Shopping\\n"}}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    var lifecycle: [String] = []
+    var inputDeltas: [String] = []
+    var toolCall: AIToolCall?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Patch a file.")])) {
+        switch part {
+        case let .toolInputStart(id, name, providerExecuted, _, _, _):
+            lifecycle.append("start:\(id):\(name):\(providerExecuted)")
+        case let .toolInputDelta(id, delta, _):
+            lifecycle.append("delta:\(id)")
+            inputDeltas.append(delta)
+        case let .toolInputEnd(id, _):
+            lifecycle.append("end:\(id)")
+        case let .toolCall(call):
+            toolCall = call
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == ["start:call_patch_1:apply_patch:false", "delta:call_patch_1", "delta:call_patch_1", "delta:call_patch_1", "end:call_patch_1"])
+    let streamedInput = try decodeJSONBody(Data(inputDeltas.joined().utf8))
+    #expect(streamedInput["callId"]?.stringValue == "call_patch_1")
+    #expect(streamedInput["operation"]?["type"]?.stringValue == "create_file")
+    #expect(streamedInput["operation"]?["path"]?.stringValue == "shopping.md")
+    #expect(streamedInput["operation"]?["diff"]?.stringValue == "+## Shopping\n")
+    let finalInput = try decodeJSONBody(Data(try #require(toolCall?.arguments).utf8))
+    #expect(finalInput["callId"]?.stringValue == "call_patch_1")
+    #expect(finalInput["operation"]?["diff"]?.stringValue == "+## Shopping\n")
+    #expect(toolCall?.providerMetadata["openai"]?["itemId"]?.stringValue == "apc_1")
+}
+
+@Test func openAIResponsesStreamsApplyPatchDeleteFileLifecycleLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"apc_delete_1","type":"apply_patch_call","status":"in_progress","call_id":"call_delete_1","operation":{"type":"delete_file","path":"obsolete.txt"}}}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"apc_delete_1","type":"apply_patch_call","status":"completed","call_id":"call_delete_1","operation":{"type":"delete_file","path":"obsolete.txt"}}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    var lifecycle: [String] = []
+    var inputDeltas: [String] = []
+    var toolCall: AIToolCall?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Delete a file.")])) {
+        switch part {
+        case let .toolInputStart(id, name, providerExecuted, _, _, _):
+            lifecycle.append("start:\(id):\(name):\(providerExecuted)")
+        case let .toolInputDelta(id, delta, _):
+            lifecycle.append("delta:\(id)")
+            inputDeltas.append(delta)
+        case let .toolInputEnd(id, _):
+            lifecycle.append("end:\(id)")
+        case let .toolCall(call):
+            toolCall = call
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == ["start:call_delete_1:apply_patch:false", "delta:call_delete_1", "end:call_delete_1"])
+    let streamedInput = try decodeJSONBody(Data(inputDeltas.joined().utf8))
+    #expect(streamedInput["callId"]?.stringValue == "call_delete_1")
+    #expect(streamedInput["operation"]?["type"]?.stringValue == "delete_file")
+    #expect(streamedInput["operation"]?["path"]?.stringValue == "obsolete.txt")
+    let finalInput = try decodeJSONBody(Data(try #require(toolCall?.arguments).utf8))
+    #expect(finalInput["operation"]?["type"]?.stringValue == "delete_file")
+    #expect(toolCall?.providerMetadata["openai"]?["itemId"]?.stringValue == "apc_delete_1")
+}
+
 @Test func openAIResponsesStreamsToolSearchOutputWithFinalCallIDLikeUpstream() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"type":"response.output_item.added","output_index":0,"item":{"type":"tool_search_call","id":"tsc_client_1","execution":"client","call_id":"call_provisional","status":"completed","arguments":{"goal":"Find the weather tool"}}}

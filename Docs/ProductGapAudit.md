@@ -280,7 +280,8 @@ Progress:
   with context-management compaction requests, compaction custom stream parts,
   function/custom tool item metadata, computer-use hosted tool-call/tool-result
   parity, tool-search output pairing, MCP call/result parity, code-interpreter
-  input streaming, and image partial-result streaming covered as well,
+  input streaming, image partial-result streaming, and apply-patch diff/delete
+  input streaming covered as well,
   while retaining legacy deltas for existing consumers. Core video requests now expose upstream-style optional `image`,
   `resolution`, `fps`, and `seed` fields so provider ports do not have to hide
   standard video call settings inside `extraBody`. Google Generative AI
