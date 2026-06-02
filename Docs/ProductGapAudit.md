@@ -149,6 +149,10 @@ Impact:
   `text.format.type=json_schema`, honors `strictJsonSchema`, returns upstream
   unsupported-setting warnings, preserves response metadata, and emits
   v4-shaped stream lifecycle parts for text, reasoning, and tool inputs.
+  xAI Chat now uses upstream chat-specific request semantics for
+  `max_completion_tokens`, `seed`, unsupported-setting warnings, call-level JSON
+  response formats, and schema-validated `providerOptions.xai` chat/search
+  options instead of relying on generic OpenAI-compatible passthrough.
   xAI Responses now schema-validates `providerOptions.xai` response options
   with upstream enum/range/nullish behavior, strips unknown typed keys, maps
   reasoning/top-logprobs/previous-response fields, and injects encrypted
