@@ -106,12 +106,21 @@ func googleStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
     return parts
 }
 
-func streamFromGoogleGenerateContent(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, modelID: String? = nil) throws -> [LanguageStreamPart] {
+func streamFromGoogleGenerateContent(
+    providerID: String,
+    response: AIHTTPResponse,
+    includeRawChunks: Bool = false,
+    modelID: String? = nil,
+    warnings: [AIWarning] = []
+) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
         throw httpStatusError(provider: providerID, response: response)
     }
 
-    var parts: [LanguageStreamPart] = [.responseMetadata(aiResponseMetadata(response: response, modelID: modelID))]
+    var parts: [LanguageStreamPart] = [
+        .responseMetadata(aiResponseMetadata(response: response, modelID: modelID)),
+        .streamStart(warnings: warnings)
+    ]
     var toolCalls = GoogleGenerateContentStreamingToolCalls()
     var latestFinishReason: String?
     var latestUsage: TokenUsage?

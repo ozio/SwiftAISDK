@@ -12,10 +12,11 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        let prepared = try Self.generateContentBody(for: request, modelID: modelID)
         let response = try await config.sendJSONResponse(
             path: "/models/\(modelID):generateContent",
             modelID: modelID,
-            body: try Self.generateContentBody(for: request, modelID: modelID),
+            body: prepared.body,
             headers: request.headers
         )
         let raw = response.json
@@ -31,6 +32,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             toolCalls: toolCalls,
             sources: googleGenerateContentSources(from: raw),
             rawValue: raw,
+            warnings: prepared.warnings,
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -39,13 +41,20 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    let prepared = try Self.generateContentBody(for: request, modelID: modelID)
                     let response = try await config.transport.send(config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         modelID: modelID,
-                        body: try Self.generateContentBody(for: request, modelID: modelID),
+                        body: prepared.body,
                         headers: request.headers
                     ))
-                    let parts = try streamFromGoogleGenerateContent(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks, modelID: modelID)
+                    let parts = try streamFromGoogleGenerateContent(
+                        providerID: providerID,
+                        response: response,
+                        includeRawChunks: request.includeRawChunks,
+                        modelID: modelID,
+                        warnings: prepared.warnings
+                    )
                     for part in parts {
                         continuation.yield(part)
                     }
@@ -57,9 +66,10 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
     }
 
-    private static func generateContentBody(for request: LanguageModelRequest, modelID: String) throws -> JSONValue {
+    private static func generateContentBody(for request: LanguageModelRequest, modelID: String) throws -> GoogleGenerateContentPreparedCall {
         var options = googleGenerateContentOptions(from: request.extraBody)
         let responseFormat = googleResolvedResponseFormat(request: request, options: &options)
+        var warnings: [AIWarning] = []
         let systemText = request.messages
             .filter { $0.role == .system }
             .map(\.combinedText)
@@ -81,13 +91,16 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
         if !generationConfig.isEmpty { body["generationConfig"] = .object(generationConfig) }
         if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: false) {
-            body["tools"] = .array(preparedTools.tools)
+            warnings.append(contentsOf: preparedTools.warnings)
+            if !preparedTools.tools.isEmpty {
+                body["tools"] = .array(preparedTools.tools)
+            }
             if let toolConfig = preparedTools.toolConfig {
                 body["toolConfig"] = toolConfig
             }
         }
         body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
-        return .object(body)
+        return GoogleGenerateContentPreparedCall(body: .object(body), warnings: warnings)
     }
 
     private static func contentJSON(_ message: AIMessage) throws -> JSONValue {
@@ -132,6 +145,11 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
         return .object(["role": .string(role), "parts": .array(parts)])
     }
+}
+
+private struct GoogleGenerateContentPreparedCall {
+    var body: JSONValue
+    var warnings: [AIWarning]
 }
 
 public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {

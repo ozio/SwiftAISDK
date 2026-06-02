@@ -136,7 +136,12 @@ Impact:
   Vertex now map standard JSON response formats into
   `generationConfig.responseMimeType` and `generationConfig.responseSchema`,
   using the same JSON-Schema-to-OpenAPI conversion path as Google function
-  tools and honoring `structuredOutputs: false`. Google Interactions now maps
+  tools and honoring `structuredOutputs: false`; their GenerateContent request
+  builders also return upstream-style warnings for unsupported Google
+  provider-defined tools, pre-Gemini-3 function/provider tool mixing, and
+  non-Vertex `vertex_rag_store` usage, omitting unsupported tools from the
+  request body and emitting the same warnings through stream-start parts.
+  Google Interactions now maps
   standard JSON response formats into `response_format` text entries, appends
   provider-defined response-format entries, and warns while dropping call-level
   structured output when an agent is selected. Perplexity now maps standard

@@ -182,6 +182,60 @@ import Testing
     #expect(retrieval["retrieval"]?["vertex_rag_store"]?["similarity_top_k"]?.intValue == 3)
 }
 
+@Test func googleVertexLanguageWarnsForUnsupportedProviderToolsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"vertex"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-pro")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Search.")],
+        tools: ["google.google_search": GoogleVertexTools.googleSearch()]
+    ))
+
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "provider-defined tool google.google_search" && $0.message == "Google Search requires Gemini 2.0 or newer."
+    })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["tools"] == nil)
+}
+
+@Test func googleVertexLanguageStreamStartCarriesProviderToolWarnings() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"candidates":[{"content":{"parts":[{"text":"vertex"}],"role":"model"},"finishReason":"STOP","index":0}]}
+
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-pro")
+
+    var startWarnings: [AIWarning] = []
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Search.")],
+        tools: ["google.google_search": GoogleVertexTools.googleSearch()]
+    )) {
+        if case let .streamStart(warnings) = part {
+            startWarnings = warnings
+        }
+    }
+
+    #expect(startWarnings.contains {
+        $0.type == "unsupported" && $0.feature == "provider-defined tool google.google_search" && $0.message == "Google Search requires Gemini 2.0 or newer."
+    })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["tools"] == nil)
+}
+
 @Test func googleVertexLanguageStreamsGenerateContentEvents() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"candidates":[{"content":{"parts":[{"text":"ver"}],"role":"model"},"index":0}]}

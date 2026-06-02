@@ -165,6 +165,72 @@ import Testing
     #expect(body["toolChoice"] == nil)
 }
 
+@Test func googleLanguageWarnsForUnsupportedProviderDefinedToolsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"plain"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-pro")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Search.")],
+        tools: [
+            "google.google_search": GoogleTools.googleSearch(),
+            "google.unknown": GoogleTools.providerTool(id: "google.unknown", name: "unknown")
+        ]
+    ))
+
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "provider-defined tool google.google_search" && $0.message == "Google Search requires Gemini 2.0 or newer."
+    })
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "provider-defined tool google.unknown")))
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["tools"] == nil)
+}
+
+@Test func googleLanguageWarnsForMixedFunctionAndProviderToolsBeforeGemini3() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"mixed"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use tools.")],
+        tools: [
+            "lookup": ["type": "object", "properties": ["query": ["type": "string"]]],
+            "google.google_search": GoogleTools.googleSearch()
+        ]
+    ))
+
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "combination of function and provider-defined tools")))
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools.contains { $0["googleSearch"]?.objectValue?.isEmpty == true })
+    #expect(!tools.contains { $0["functionDeclarations"] != nil })
+}
+
+@Test func googleLanguageWarnsForVertexRagStoreOnNonVertexProvider() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"rag"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use RAG.")],
+        tools: [
+            "google.vertex_rag_store": GoogleTools.vertexRagStore(ragCorpus: "projects/p/locations/l/ragCorpora/rag-1", topK: 2)
+        ]
+    ))
+
+    #expect(result.warnings.contains {
+        $0.type == "other" && ($0.message?.contains("vertex_rag_store") == true)
+    })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["tools"]?[0]?["retrieval"]?["vertex_rag_store"]?["similarity_top_k"]?.intValue == 2)
+}
+
 @Test func googleToolsHelpersMirrorProviderExecutedToolFactories() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"grounded"}]},"finishReason":"STOP"}]}
@@ -205,6 +271,31 @@ import Testing
     #expect(fileSearch["fileSearch"]?["metadataFilter"]?.stringValue == #"author="Ada""#)
     #expect(fileSearch["fileSearch"]?["topK"]?.intValue == 4)
     #expect(tools.contains { $0["codeExecution"]?.objectValue?.isEmpty == true })
+}
+
+@Test func googleLanguageStreamStartCarriesProviderToolWarnings() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP","index":0}]}
+
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-pro")
+
+    var startWarnings: [AIWarning] = []
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Search.")],
+        tools: ["google.google_search": GoogleTools.googleSearch()]
+    )) {
+        if case let .streamStart(warnings) = part {
+            startWarnings = warnings
+        }
+    }
+
+    #expect(startWarnings.contains {
+        $0.type == "unsupported" && $0.feature == "provider-defined tool google.google_search" && $0.message == "Google Search requires Gemini 2.0 or newer."
+    })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["tools"] == nil)
 }
 
 @Test func googleLanguageParsesFunctionCalls() async throws {
