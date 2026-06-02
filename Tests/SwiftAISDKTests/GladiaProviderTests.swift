@@ -267,3 +267,120 @@ import Testing
     #expect(initBody["contextPrompt"] == nil)
     #expect(initBody["callbackConfig"] == nil)
 }
+
+@Test func gladiaTranscriptionScopesProviderOptionsLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":0.8},"transcription":{"full_transcript":"scoped","languages":["en"],"utterances":[{"start":0,"end":0.8,"text":"scoped"}]}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
+    let model = try provider.transcriptionModel("default")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        mimeType: "audio/wav",
+        providerOptions: [
+            "gladia": .object([
+                "contextPrompt": .null,
+                "language": .null,
+                "callback": .null,
+                "customVocabularyConfig": [
+                    "vocabulary": [
+                        [
+                            "value": "SwiftAISDK",
+                            "intensity": .null,
+                            "pronunciations": ["swift ai sdk"],
+                            "language": "en",
+                            "unsupportedTerm": "drop-me"
+                        ]
+                    ],
+                    "defaultIntensity": .null,
+                    "unsupportedConfig": "drop-me"
+                ],
+                "callbackConfig": [
+                    "url": "https://example.com/hook",
+                    "method": .null,
+                    "unsupportedConfig": "drop-me"
+                ],
+                "subtitlesConfig": [
+                    "formats": ["srt"],
+                    "maximumRowsPerCaption": .null,
+                    "style": "default",
+                    "unsupportedConfig": "drop-me"
+                ],
+                "diarizationConfig": [
+                    "numberOfSpeakers": 2,
+                    "enhanced": .null,
+                    "unsupportedConfig": "drop-me"
+                ],
+                "translationConfig": [
+                    "targetLanguages": ["de"],
+                    "model": .null,
+                    "matchOriginalUtterances": true,
+                    "unsupportedConfig": "drop-me"
+                ],
+                "summarizationConfig": [
+                    "type": .null,
+                    "unsupportedConfig": "drop-me"
+                ],
+                "structuredDataExtractionConfig": [
+                    "classes": ["person"],
+                    "unsupportedConfig": "drop-me"
+                ],
+                "audioToLlmConfig": [
+                    "prompts": ["summarize"],
+                    "unsupportedConfig": "drop-me"
+                ]
+            ])
+        ],
+        extraBody: [
+            "gladia": .object([
+                "contextPrompt": "legacy prompt",
+                "language": "ja",
+                "callback": true
+            ])
+        ]
+    ))
+
+    let initBody = try decodeJSONBody(try #require((await transport.requests())[1].body))
+    #expect(initBody["context_prompt"] == nil)
+    #expect(initBody["language"] == nil)
+    #expect(initBody["callback"] == nil)
+    #expect(initBody["custom_vocabulary_config"]?["vocabulary"]?[0]?["value"]?.stringValue == "SwiftAISDK")
+    #expect(initBody["custom_vocabulary_config"]?["vocabulary"]?[0]?["intensity"] == nil)
+    #expect(initBody["custom_vocabulary_config"]?["vocabulary"]?[0]?["unsupportedTerm"] == nil)
+    #expect(initBody["custom_vocabulary_config"]?["default_intensity"] == nil)
+    #expect(initBody["custom_vocabulary_config"]?["unsupportedConfig"] == nil)
+    #expect(initBody["callback_config"]?["url"]?.stringValue == "https://example.com/hook")
+    #expect(initBody["callback_config"]?["method"] == nil)
+    #expect(initBody["callback_config"]?["unsupportedConfig"] == nil)
+    #expect(initBody["subtitles_config"]?["formats"]?[0]?.stringValue == "srt")
+    #expect(initBody["subtitles_config"]?["maximum_rows_per_caption"] == nil)
+    #expect(initBody["subtitles_config"]?["unsupportedConfig"] == nil)
+    #expect(initBody["diarization_config"]?["number_of_speakers"]?.intValue == 2)
+    #expect(initBody["diarization_config"]?["enhanced"] == nil)
+    #expect(initBody["translation_config"]?["target_languages"]?[0]?.stringValue == "de")
+    #expect(initBody["translation_config"]?["model"] == nil)
+    #expect(initBody["translation_config"]?["match_original_utterances"]?.boolValue == true)
+    #expect(initBody["summarization_config"]?["type"] == nil)
+    #expect(initBody["summarization_config"]?["unsupportedConfig"] == nil)
+    #expect(initBody["structured_data_extraction_config"]?["classes"]?[0]?.stringValue == "person")
+    #expect(initBody["structured_data_extraction_config"]?["unsupportedConfig"] == nil)
+    #expect(initBody["audio_to_llm_config"]?["prompts"]?[0]?.stringValue == "summarize")
+    #expect(initBody["audio_to_llm_config"]?["unsupportedConfig"] == nil)
+}
+
+@Test func gladiaTranscriptionThrowsWhenDoneResultIsEmpty() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"done"}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
+    let model = try provider.transcriptionModel("default")
+
+    await #expect(throws: AIError.invalidResponse(provider: "gladia.transcription", message: "Gladia transcription result is empty.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+    }
+}

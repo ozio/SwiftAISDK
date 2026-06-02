@@ -688,6 +688,9 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
         guard raw["status"]?.stringValue != "error" else {
             throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription failed.")
         }
+        guard raw["result"]?.objectValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is empty.")
+        }
         let text = raw["result"]?["transcription"]?["full_transcript"]?.stringValue ?? ""
         let segments = gladiaTranscriptionSegments(from: raw)
         return TranscriptionResult(
@@ -1075,9 +1078,63 @@ private func gladiaProviderOptions(from request: AudioTranscriptionRequest) -> [
 private func gladiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = gladiaProviderOptions(from: extraBody)
     if let nested = providerOptions["gladia"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+        for (key, value) in nested where supportedProviderOptionKeys.contains(key) {
+            if value == .null {
+                output.removeValue(forKey: key)
+                continue
+            }
+            output[key] = gladiaProviderOption(key: key, value: value)
+        }
     }
     return output
+}
+
+private func gladiaProviderOption(key: String, value: JSONValue) -> JSONValue {
+    switch key {
+    case "customVocabularyConfig":
+        return gladiaCustomVocabularyConfig(value)
+    case "codeSwitchingConfig":
+        return gladiaScopedObject(value, allowedKeys: ["languages"])
+    case "callbackConfig":
+        return gladiaScopedObject(value, allowedKeys: ["url", "method"])
+    case "subtitlesConfig":
+        return gladiaScopedObject(value, allowedKeys: ["formats", "minimumDuration", "maximumDuration", "maximumCharactersPerRow", "maximumRowsPerCaption", "style"])
+    case "diarizationConfig":
+        return gladiaScopedObject(value, allowedKeys: ["numberOfSpeakers", "minSpeakers", "maxSpeakers", "enhanced"])
+    case "translationConfig":
+        return gladiaScopedObject(value, allowedKeys: ["targetLanguages", "model", "matchOriginalUtterances"])
+    case "summarizationConfig":
+        return gladiaScopedObject(value, allowedKeys: ["type"])
+    case "customSpellingConfig":
+        return gladiaScopedObject(value, allowedKeys: ["spellingDictionary"])
+    case "structuredDataExtractionConfig":
+        return gladiaScopedObject(value, allowedKeys: ["classes"])
+    case "audioToLlmConfig":
+        return gladiaScopedObject(value, allowedKeys: ["prompts"])
+    default:
+        return value
+    }
+}
+
+private func gladiaScopedObject(_ value: JSONValue, allowedKeys: Set<String>) -> JSONValue {
+    guard let object = value.objectValue else { return value }
+    return .object(object.filter { allowedKeys.contains($0.key) && $0.value != .null })
+}
+
+private func gladiaCustomVocabularyConfig(_ value: JSONValue) -> JSONValue {
+    guard var object = gladiaScopedObject(value, allowedKeys: ["vocabulary", "defaultIntensity"]).objectValue else {
+        return value
+    }
+    if object["defaultIntensity"] == .null {
+        object.removeValue(forKey: "defaultIntensity")
+    }
+    if let vocabulary = object["vocabulary"]?.arrayValue {
+        object["vocabulary"] = .array(vocabulary.map { item in
+            guard let itemObject = item.objectValue else { return item }
+            return gladiaScopedObject(.object(itemObject), allowedKeys: ["value", "intensity", "pronunciations", "language"])
+        })
+    }
+    return .object(object)
 }
 
 private let gladiaTranscriptionProviderOptionKeys: Set<String> = [
