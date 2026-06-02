@@ -497,6 +497,24 @@ import Testing
     #expect(result.sources[4].rawValue?["image"]?["imageUri"]?.stringValue == "https://example.com/image.jpg")
 }
 
+@Test func googleLanguagePreservesGenerateContentProviderMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"metadata"}]},"finishReason":"STOP","finishMessage":"done","safetyRatings":[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"NEGLIGIBLE","blocked":false}],"groundingMetadata":{"webSearchQueries":["weather"],"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source"}}]},"urlContextMetadata":{"urlMetadata":[{"retrievedUrl":"https://example.com/page","urlRetrievalStatus":"URL_RETRIEVAL_STATUS_SUCCESS"}]}}],"promptFeedback":{"blockReason":"SAFETY","safetyRatings":[{"category":"HARM_CATEGORY_HATE_SPEECH","probability":"NEGLIGIBLE"}]},"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3,"serviceTier":"priority"}}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Metadata?")]))
+    let metadata = try #require(result.providerMetadata["google"])
+
+    #expect(metadata["safetyRatings"]?[0]?["category"]?.stringValue == "HARM_CATEGORY_DANGEROUS_CONTENT")
+    #expect(metadata["promptFeedback"]?["blockReason"]?.stringValue == "SAFETY")
+    #expect(metadata["groundingMetadata"]?["webSearchQueries"]?[0]?.stringValue == "weather")
+    #expect(metadata["urlContextMetadata"]?["urlMetadata"]?[0]?["retrievedUrl"]?.stringValue == "https://example.com/page")
+    #expect(metadata["finishMessage"]?.stringValue == "done")
+    #expect(metadata["serviceTier"]?.stringValue == "priority")
+}
+
 @Test func googleImagenUsesPredictInstancesAndParameters() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"predictions":[{"bytesBase64Encoded":"image-1"},{"bytesBase64Encoded":"image-2"}]}"#))
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
@@ -1034,6 +1052,32 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
+}
+
+@Test func googleLanguageStreamPreservesFinishProviderMetadataAcrossChunks() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"index":0,"groundingMetadata":{"webSearchQueries":["super bowl"],"groundingChunks":[{"web":{"uri":"https://example.com/superbowl","title":"Super Bowl"}}]},"urlContextMetadata":{"urlMetadata":[{"retrievedUrl":"https://example.com/page","urlRetrievalStatus":"URL_RETRIEVAL_STATUS_SUCCESS"}]}}]}
+
+    data: {"candidates":[{"content":{"parts":[{"text":" world"}],"role":"model"},"finishReason":"STOP","finishMessage":"finished","index":0,"safetyRatings":[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"NEGLIGIBLE"}]}],"promptFeedback":{"blockReason":"SAFETY"},"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3,"serviceTier":"priority"}}
+
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    var providerMetadata: [String: JSONValue] = [:]
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Ping")])) {
+        if case let .finishMetadata(_, _, metadata) = part {
+            providerMetadata = metadata
+        }
+    }
+
+    let google = try #require(providerMetadata["google"])
+    #expect(google["groundingMetadata"]?["webSearchQueries"]?[0]?.stringValue == "super bowl")
+    #expect(google["urlContextMetadata"]?["urlMetadata"]?[0]?["retrievedUrl"]?.stringValue == "https://example.com/page")
+    #expect(google["safetyRatings"]?[0]?["category"]?.stringValue == "HARM_CATEGORY_DANGEROUS_CONTENT")
+    #expect(google["promptFeedback"]?["blockReason"]?.stringValue == "SAFETY")
+    #expect(google["finishMessage"]?.stringValue == "finished")
+    #expect(google["serviceTier"]?.stringValue == "priority")
 }
 
 @Test func googleLanguageStreamsFunctionCallPartialArguments() async throws {

@@ -146,8 +146,10 @@ Impact:
   usage, incompatible Gemini/Vertex option namespaces, and reasoning effort
   compatibility, omitting unsupported tools and provider-only control fields
   from the request body, carrying Gemma system prompts in the first user content
-  instead of `systemInstruction`, and emitting warnings through stream-start
-  parts.
+  instead of `systemInstruction`, preserving GenerateContent provider metadata
+  such as safety ratings, prompt feedback, grounding/url context metadata,
+  finish messages, and service tier on generate and stream finish parts, and
+  emitting warnings through stream-start parts.
   Google Interactions now maps
   standard JSON response formats into `response_format` text entries, appends
   provider-defined response-format entries, and warns while dropping call-level

@@ -105,6 +105,28 @@ import Testing
     #expect(result.sources[1].filename == "notes.md")
 }
 
+@Test func googleVertexLanguagePreservesGenerateContentProviderMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"vertex metadata"}]},"finishReason":"STOP","finishMessage":"vertex done","safetyRatings":[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"NEGLIGIBLE"}],"groundingMetadata":{"webSearchQueries":["vertex"],"groundingChunks":[{"web":{"uri":"https://vertex.example.com","title":"Vertex"}}]}}],"promptFeedback":{"blockReason":"SAFETY"},"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3,"serviceTier":"standard"}}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-2.5-pro")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Metadata?")]))
+    let metadata = try #require(result.providerMetadata["google"])
+
+    #expect(metadata["safetyRatings"]?[0]?["category"]?.stringValue == "HARM_CATEGORY_DANGEROUS_CONTENT")
+    #expect(metadata["promptFeedback"]?["blockReason"]?.stringValue == "SAFETY")
+    #expect(metadata["groundingMetadata"]?["webSearchQueries"]?[0]?.stringValue == "vertex")
+    #expect(metadata["finishMessage"]?.stringValue == "vertex done")
+    #expect(metadata["serviceTier"]?.stringValue == "standard")
+}
+
 @Test func googleVertexLanguageMapsStandardStructuredResponseFormat() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"{\\"answer\\":\\"vertex\\"}"}]},"finishReason":"STOP"}]}

@@ -124,6 +124,7 @@ func streamFromGoogleGenerateContent(
     var toolCalls = GoogleGenerateContentStreamingToolCalls()
     var latestFinishReason: String?
     var latestUsage: TokenUsage?
+    var latestProviderMetadata: [String: JSONValue] = [:]
     var emittedSourceKeys: Set<String> = []
 
     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -132,6 +133,10 @@ func streamFromGoogleGenerateContent(
             parts.append(.raw(raw))
         }
         latestUsage = googleGenerateContentUsage(from: raw) ?? latestUsage
+        latestProviderMetadata = googleMergeProviderMetadata(
+            latestProviderMetadata,
+            googleGenerateContentProviderMetadata(from: raw, includeNullDefaults: false)
+        )
 
         for source in googleGenerateContentSources(from: raw) {
             let key = googleSourceDeduplicationKey(source)
@@ -162,10 +167,10 @@ func streamFromGoogleGenerateContent(
     let finalToolCalls = toolCalls.finishedParts()
     parts.append(contentsOf: finalToolCalls)
     if latestFinishReason != nil || latestUsage != nil {
-        parts.append(.finish(
-            reason: googleGenerateContentFinishReason(latestFinishReason, hasToolCalls: !finalToolCalls.isEmpty),
-            usage: latestUsage
-        ))
+        let finishReason = googleGenerateContentFinishReason(latestFinishReason, hasToolCalls: !finalToolCalls.isEmpty)
+        let providerMetadata = googleFinalizeGenerateContentProviderMetadata(latestProviderMetadata)
+        parts.append(.finish(reason: finishReason, usage: latestUsage))
+        parts.append(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
     }
     return parts
 }
@@ -198,6 +203,56 @@ func googleGenerateContentSources(from raw: JSONValue) -> [AISource] {
     return chunks.enumerated().compactMap { index, chunk in
         googleGroundingChunkSource(from: chunk, index: index)
     }
+}
+
+func googleGenerateContentProviderMetadata(from raw: JSONValue, includeNullDefaults: Bool = true) -> [String: JSONValue] {
+    let candidate = raw["candidates"]?[0]
+    var google: [String: JSONValue] = [:]
+    if let safetyRatings = candidate?["safetyRatings"] {
+        google["safetyRatings"] = safetyRatings
+    }
+    if let promptFeedback = raw["promptFeedback"] {
+        google["promptFeedback"] = promptFeedback
+    }
+    if let groundingMetadata = candidate?["groundingMetadata"] {
+        google["groundingMetadata"] = groundingMetadata
+    }
+    if let urlContextMetadata = candidate?["urlContextMetadata"] {
+        google["urlContextMetadata"] = urlContextMetadata
+    }
+    if let finishMessage = candidate?["finishMessage"] {
+        google["finishMessage"] = finishMessage
+    } else if includeNullDefaults {
+        google["finishMessage"] = .null
+    }
+    if let serviceTier = raw["usageMetadata"]?["serviceTier"] {
+        google["serviceTier"] = serviceTier
+    } else if includeNullDefaults {
+        google["serviceTier"] = .null
+    }
+    guard !google.isEmpty else { return [:] }
+    return ["google": .object(google)]
+}
+
+func googleFinalizeGenerateContentProviderMetadata(_ providerMetadata: [String: JSONValue]) -> [String: JSONValue] {
+    var google = providerMetadata["google"]?.objectValue ?? [:]
+    google["finishMessage"] = google["finishMessage"] ?? .null
+    google["serviceTier"] = google["serviceTier"] ?? .null
+    return ["google": .object(google)]
+}
+
+func googleMergeProviderMetadata(_ current: [String: JSONValue], _ incoming: [String: JSONValue]) -> [String: JSONValue] {
+    var output = current
+    for (provider, value) in incoming {
+        if var existing = output[provider]?.objectValue,
+           let incomingObject = value.objectValue {
+            existing.merge(incomingObject) { _, new in new }
+            output[provider] = .object(existing)
+        } else {
+            output[provider] = value
+        }
+    }
+    return output
 }
 
 func googleGenerateContentUsage(from raw: JSONValue) -> TokenUsage? {

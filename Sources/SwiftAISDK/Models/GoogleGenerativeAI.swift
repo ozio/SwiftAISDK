@@ -31,6 +31,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
             sources: googleGenerateContentSources(from: raw),
+            providerMetadata: googleGenerateContentProviderMetadata(from: raw),
             rawValue: raw,
             warnings: prepared.warnings,
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
