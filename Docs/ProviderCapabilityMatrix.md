@@ -76,6 +76,7 @@ Legend:
 | `baseten` | `ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1`. |
 | `gateway` | Gateway also exposes model, credits, spend, and generation metadata management APIs. |
 | `google.generative-ai` | Also exposes Gemini interactions models and agents. |
+| `moonshotai` | Chat requests stream usage by default and maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema. |
 | `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. |
 | `openai-compatible` | Generic OpenAI-compatible factory; caller supplies provider ID and base URL. |
 

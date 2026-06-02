@@ -432,7 +432,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         let warnings = isOpenAIBackedProvider(providerID)
             ? []
             : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
-        let response = try await config.sendJSONResponse(path: "/chat/completions", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/chat/completions", modelID: modelID, body: .object(try body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let choice = raw["choices"]?[0]
         let toolCalls = openAICompatibleChatToolCalls(from: choice?["message"]?["tool_calls"])
@@ -462,7 +462,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     let warnings = isOpenAIBackedProvider(providerID)
                         ? []
                         : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
-                    let body = JSONValue.object(body(for: request, stream: true))
+                    let body = JSONValue.object(try body(for: request, stream: true))
                     let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
@@ -551,7 +551,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) -> [String: JSONValue] {
+    private func body(for request: LanguageModelRequest, stream: Bool) throws -> [String: JSONValue] {
         var body = Self.body(
             for: request,
             modelID: modelID,
@@ -567,7 +567,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             body = fireworksChatBody(from: body)
         }
         if openAICompatibleProviderRoot(providerID) == "moonshotai" {
-            body = moonshotChatBody(from: body)
+            body = try moonshotChatBody(from: body, request: request)
         }
         if providerID == "googleVertex.xai" {
             body.removeValue(forKey: "reasoning_effort")
@@ -729,7 +729,7 @@ private func fireworksReasoningEffort(_ value: String) -> String {
     }
 }
 
-private func moonshotChatBody(from input: [String: JSONValue]) -> [String: JSONValue] {
+private func moonshotChatBody(from input: [String: JSONValue], request: LanguageModelRequest) throws -> [String: JSONValue] {
     var body = input
     if let nested = body.removeValue(forKey: "moonshotai")?.objectValue {
         body.merge(nested) { _, nested in nested }
@@ -737,6 +737,9 @@ private func moonshotChatBody(from input: [String: JSONValue]) -> [String: JSONV
     if let nested = body.removeValue(forKey: "moonshotAI")?.objectValue {
         body.merge(nested) { _, nested in nested }
     }
+
+    let providerOptions = try moonshotProviderOptions(from: request.providerOptions)
+    body.merge(providerOptions) { _, providerValue in providerValue }
 
     if let thinking = body.removeValue(forKey: "thinking")?.objectValue {
         var converted: [String: JSONValue] = [:]
@@ -754,6 +757,58 @@ private func moonshotChatBody(from input: [String: JSONValue]) -> [String: JSONV
     }
 
     return body
+}
+
+private func moonshotProviderOptions(from providerOptions: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    if let value = providerOptions["moonshotai"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.moonshotai", message: "MoonshotAI provider options must be an object.")
+        }
+        output.merge(try moonshotValidateLanguageProviderOptions(nested, argumentPrefix: "providerOptions.moonshotai")) { _, providerValue in providerValue }
+    }
+    if let value = providerOptions["moonshotAI"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.moonshotAI", message: "MoonshotAI provider options must be an object.")
+        }
+        output.merge(try moonshotValidateLanguageProviderOptions(nested, argumentPrefix: "providerOptions.moonshotAI")) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private func moonshotValidateLanguageProviderOptions(_ options: [String: JSONValue], argumentPrefix: String) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    if let thinking = options["thinking"] {
+        guard let thinkingObject = thinking.objectValue else {
+            throw AIError.invalidArgument(argument: "\(argumentPrefix).thinking", message: "MoonshotAI thinking must be an object.")
+        }
+        var mappedThinking: [String: JSONValue] = [:]
+        if let type = thinkingObject["type"] {
+            guard let typeValue = type.stringValue, typeValue == "enabled" || typeValue == "disabled" else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).thinking.type", message: "MoonshotAI thinking.type must be enabled or disabled.")
+            }
+            mappedThinking["type"] = .string(typeValue)
+        }
+        if let budgetTokens = thinkingObject["budgetTokens"] {
+            guard let number = budgetTokens.doubleValue, moonshotIsInteger(number), number >= 1024 else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).thinking.budgetTokens", message: "MoonshotAI thinking.budgetTokens must be an integer greater than or equal to 1024.")
+            }
+            mappedThinking["budgetTokens"] = .number(number)
+        }
+        output["thinking"] = .object(mappedThinking)
+    }
+    if let reasoningHistory = options["reasoningHistory"] {
+        guard let value = reasoningHistory.stringValue,
+              value == "disabled" || value == "interleaved" || value == "preserved" else {
+            throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningHistory", message: "MoonshotAI reasoningHistory must be disabled, interleaved, or preserved.")
+        }
+        output["reasoningHistory"] = .string(value)
+    }
+    return output
+}
+
+private func moonshotIsInteger(_ value: Double) -> Bool {
+    value.rounded(.towardZero) == value
 }
 
 private func moonshotChatUsage(from raw: JSONValue) -> TokenUsage? {
