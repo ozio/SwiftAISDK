@@ -405,10 +405,13 @@ private func openAIResponsesOutputLogprobs(from raw: JSONValue) -> [JSONValue] {
     } ?? []
 }
 
-private func openAIResponsesTextProviderMetadata(itemID: String, phase: JSONValue?, providerID: String) -> [String: JSONValue] {
+private func openAIResponsesTextProviderMetadata(itemID: String, phase: JSONValue?, annotations: [JSONValue] = [], providerID: String) -> [String: JSONValue] {
     var metadata: [String: JSONValue] = ["itemId": .string(itemID)]
     if let phase {
         metadata["phase"] = phase
+    }
+    if !annotations.isEmpty {
+        metadata["annotations"] = .array(annotations)
     }
     return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
 }
@@ -430,6 +433,95 @@ private enum OpenAIResponsesReasoningSummaryState {
 private struct OpenAIResponsesActiveReasoning {
     var encryptedContent: JSONValue?
     var summaryParts: [Int: OpenAIResponsesReasoningSummaryState]
+}
+
+private func openAIResponsesSources(from raw: JSONValue, providerID: String) -> [AISource] {
+    var sourceCounter = 0
+    return raw["output"]?.arrayValue?.flatMap { item -> [AISource] in
+        guard item["type"]?.stringValue == "message" else { return [] }
+        return item["content"]?.arrayValue?.flatMap { content in
+            openAIResponsesSources(fromAnnotations: content["annotations"]?.arrayValue ?? [], providerID: providerID, sourceCounter: &sourceCounter)
+        } ?? []
+    } ?? []
+}
+
+private func openAIResponsesSources(fromAnnotations annotations: [JSONValue], providerID: String, sourceCounter: inout Int) -> [AISource] {
+    annotations.compactMap { annotation in
+        defer { sourceCounter += 1 }
+        return openAIResponsesSource(from: annotation, id: "openai-responses-source-\(sourceCounter)", providerID: providerID)
+    }
+}
+
+private func openAIResponsesSource(from annotation: JSONValue, id: String, providerID: String) -> AISource? {
+    switch annotation["type"]?.stringValue {
+    case "url_citation":
+        guard let url = annotation["url"]?.stringValue, !url.isEmpty else { return nil }
+        return AISource(
+            id: id,
+            sourceType: "url",
+            url: url,
+            title: annotation["title"]?.stringValue,
+            rawValue: annotation
+        )
+    case "file_citation":
+        guard let fileID = annotation["file_id"]?.stringValue else { return nil }
+        let filename = annotation["filename"]?.stringValue
+        var metadata: [String: JSONValue] = [
+            "type": .string("file_citation"),
+            "fileId": .string(fileID)
+        ]
+        if let index = annotation["index"] {
+            metadata["index"] = index
+        }
+        return AISource(
+            id: id,
+            sourceType: "document",
+            title: filename,
+            mediaType: "text/plain",
+            filename: filename,
+            providerMetadata: openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID),
+            rawValue: annotation
+        )
+    case "container_file_citation":
+        guard let fileID = annotation["file_id"]?.stringValue else { return nil }
+        let filename = annotation["filename"]?.stringValue
+        var metadata: [String: JSONValue] = [
+            "type": .string("container_file_citation"),
+            "fileId": .string(fileID)
+        ]
+        if let containerID = annotation["container_id"] {
+            metadata["containerId"] = containerID
+        }
+        return AISource(
+            id: id,
+            sourceType: "document",
+            title: filename,
+            mediaType: "text/plain",
+            filename: filename,
+            providerMetadata: openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID),
+            rawValue: annotation
+        )
+    case "file_path":
+        guard let fileID = annotation["file_id"]?.stringValue else { return nil }
+        var metadata: [String: JSONValue] = [
+            "type": .string("file_path"),
+            "fileId": .string(fileID)
+        ]
+        if let index = annotation["index"] {
+            metadata["index"] = index
+        }
+        return AISource(
+            id: id,
+            sourceType: "document",
+            title: fileID,
+            mediaType: "application/octet-stream",
+            filename: fileID,
+            providerMetadata: openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID),
+            rawValue: annotation
+        )
+    default:
+        return nil
+    }
 }
 
 private func openAICompatibleURL(_ string: String, queryParams: [String: String]) throws -> URL {
@@ -1499,6 +1591,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
             toolApprovalRequests: toolApprovalRequests,
+            sources: openAIResponsesSources(from: raw, providerID: providerID),
             providerMetadata: openAIResponsesProviderMetadata(from: raw, providerID: providerID),
             rawValue: raw,
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
@@ -1519,7 +1612,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     var toolCallBuffers = OpenAIResponsesStreamingToolCalls()
                     var providerMetadata: [String: JSONValue] = [:]
                     var textItemPhases: [String: JSONValue] = [:]
+                    var textItemAnnotations: [String: [JSONValue]] = [:]
                     var activeReasoning: [String: OpenAIResponsesActiveReasoning] = [:]
+                    var sourceCounter = 0
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
@@ -1537,6 +1632,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             if let phase = item["phase"] {
                                 textItemPhases[itemID] = phase
                             }
+                            textItemAnnotations[itemID] = []
                             continuation.yield(.textStart(
                                 id: itemID,
                                 providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: item["phase"], providerID: providerID)
@@ -1581,6 +1677,14 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 ))
                             }
                         }
+                        if raw["type"]?.stringValue == "response.output_text.annotation.added",
+                           let annotation = raw["annotation"],
+                           let itemID = raw["item_id"]?.stringValue {
+                            textItemAnnotations[itemID, default: []].append(annotation)
+                            for source in openAIResponsesSources(fromAnnotations: [annotation], providerID: providerID, sourceCounter: &sourceCounter) {
+                                continuation.yield(.source(source))
+                            }
+                        }
                         if raw["type"]?.stringValue == "response.reasoning_summary_part.added",
                            let itemID = raw["item_id"]?.stringValue,
                            let summaryIndex = raw["summary_index"]?.intValue,
@@ -1614,10 +1718,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                            item["type"]?.stringValue == "message",
                            let itemID = item["id"]?.stringValue {
                             let phase = item["phase"] ?? textItemPhases[itemID]
+                            let annotations = textItemAnnotations[itemID] ?? []
                             continuation.yield(.textEnd(
                                 id: itemID,
-                                providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: phase, providerID: providerID)
+                                providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: phase, annotations: annotations, providerID: providerID)
                             ))
+                            textItemAnnotations[itemID] = nil
                         }
                         if raw["type"]?.stringValue == "response.reasoning_summary_part.done",
                            let itemID = raw["item_id"]?.stringValue,

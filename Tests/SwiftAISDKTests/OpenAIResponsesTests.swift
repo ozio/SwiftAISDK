@@ -172,6 +172,55 @@ import Testing
     #expect(result.usage?.totalTokens == 3)
 }
 
+@Test func openAIResponsesGenerateMapsAnnotationSourcesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"""
+    {
+      "id": "resp-annotations",
+      "status": "completed",
+      "output_text": "Based on web search and file content.",
+      "output": [
+        {
+          "id": "msg-annotations",
+          "type": "message",
+          "status": "completed",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "Based on web search and file content.",
+              "annotations": [
+                {"type":"url_citation","url":"https://example.com","title":"Example URL","start_index":0,"end_index":10},
+                {"type":"file_citation","file_id":"file-abc123","filename":"resource1.json","index":123},
+                {"type":"container_file_citation","container_id":"cntr-1","file_id":"cfile-1","filename":"rolls.csv","start_index":42,"end_index":51},
+                {"type":"file_path","file_id":"cfile-path","index":7}
+              ]
+            }
+          ]
+        }
+      ],
+      "usage": {"input_tokens":1,"output_tokens":2,"total_tokens":3}
+    }
+    """#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4.1")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.sources.map(\.sourceType) == ["url", "document", "document", "document"])
+    #expect(result.sources[0].url == "https://example.com")
+    #expect(result.sources[0].title == "Example URL")
+    #expect(result.sources[1].mediaType == "text/plain")
+    #expect(result.sources[1].filename == "resource1.json")
+    #expect(result.sources[1].providerMetadata["openai"]?["type"]?.stringValue == "file_citation")
+    #expect(result.sources[1].providerMetadata["openai"]?["fileId"]?.stringValue == "file-abc123")
+    #expect(result.sources[1].providerMetadata["openai"]?["index"]?.intValue == 123)
+    #expect(result.sources[2].providerMetadata["openai"]?["type"]?.stringValue == "container_file_citation")
+    #expect(result.sources[2].providerMetadata["openai"]?["containerId"]?.stringValue == "cntr-1")
+    #expect(result.sources[3].mediaType == "application/octet-stream")
+    #expect(result.sources[3].filename == "cfile-path")
+    #expect(result.sources[3].providerMetadata["openai"]?["type"]?.stringValue == "file_path")
+}
+
 @Test func openAIResponsesMapsFunctionAndProviderTools() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
@@ -644,6 +693,57 @@ import Testing
     #expect(reasoningEnds[0].1["openai"]?["reasoningEncryptedContent"] == nil)
     #expect(reasoningStarts[1].1["openai"]?["reasoningEncryptedContent"]?.stringValue == "encrypted_reasoning_data_initial")
     #expect(reasoningEnds[1].1["openai"]?["reasoningEncryptedContent"]?.stringValue == "encrypted_reasoning_data_final")
+}
+
+@Test func openAIResponsesStreamsAnnotationSourcesAndTextMetadataLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_annotations","type":"message","status":"in_progress","content":[],"role":"assistant"}}
+
+    data: {"type":"response.output_text.annotation.added","item_id":"msg_annotations","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"url_citation","url":"https://example.com","title":"Example URL","start_index":0,"end_index":10}}
+
+    data: {"type":"response.output_text.annotation.added","item_id":"msg_annotations","output_index":0,"content_index":0,"annotation_index":1,"annotation":{"type":"file_citation","file_id":"file-abc123","filename":"resource1.json","index":123}}
+
+    data: {"type":"response.output_text.annotation.added","item_id":"msg_annotations","output_index":0,"content_index":0,"annotation_index":2,"annotation":{"type":"container_file_citation","container_id":"cntr-1","file_id":"cfile-1","filename":"rolls.csv","start_index":42,"end_index":51}}
+
+    data: {"type":"response.output_text.annotation.added","item_id":"msg_annotations","output_index":0,"content_index":0,"annotation_index":3,"annotation":{"type":"file_path","file_id":"cfile-path","index":7}}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_annotations","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Based on sources.","annotations":[]}]}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4.1")
+
+    var sources: [AISource] = []
+    var textEndMetadata: [String: JSONValue] = [:]
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .source(source):
+            sources.append(source)
+        case let .textEnd(id, metadata) where id == "msg_annotations":
+            textEndMetadata = metadata
+        default:
+            break
+        }
+    }
+
+    #expect(sources.map(\.sourceType) == ["url", "document", "document", "document"])
+    #expect(sources[0].url == "https://example.com")
+    #expect(sources[1].filename == "resource1.json")
+    #expect(sources[1].providerMetadata["openai"]?["type"]?.stringValue == "file_citation")
+    #expect(sources[1].providerMetadata["openai"]?["fileId"]?.stringValue == "file-abc123")
+    #expect(sources[1].providerMetadata["openai"]?["index"]?.intValue == 123)
+    #expect(sources[2].providerMetadata["openai"]?["containerId"]?.stringValue == "cntr-1")
+    #expect(sources[3].mediaType == "application/octet-stream")
+    #expect(sources[3].filename == "cfile-path")
+    let annotations = try #require(textEndMetadata["openai"]?["annotations"]?.arrayValue)
+    #expect(textEndMetadata["openai"]?["itemId"]?.stringValue == "msg_annotations")
+    #expect(annotations.count == 4)
+    #expect(annotations[0]["type"]?.stringValue == "url_citation")
+    #expect(annotations[1]["type"]?.stringValue == "file_citation")
+    #expect(annotations[2]["type"]?.stringValue == "container_file_citation")
+    #expect(annotations[3]["type"]?.stringValue == "file_path")
 }
 
 @Test func openAIResponsesStreamMapsIncompleteFinishReason() async throws {

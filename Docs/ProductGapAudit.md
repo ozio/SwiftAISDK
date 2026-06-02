@@ -275,6 +275,8 @@ Progress:
   message/reasoning item streams now also emit v4-shaped text/reasoning
   lifecycle parts with provider metadata where upstream exposes it, including
   Codex-style message `phase` values and Responses encrypted reasoning content,
+  and OpenAI Responses output-text annotations now surface as `AISource`
+  values plus text-end annotation metadata for both generate and stream paths,
   while retaining legacy deltas for existing consumers. Core video requests now expose upstream-style optional `image`,
   `resolution`, `fps`, and `seed` fields so provider ports do not have to hide
   standard video call settings inside `extraBody`. Google Generative AI
