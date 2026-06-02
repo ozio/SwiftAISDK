@@ -30,7 +30,7 @@ import Testing
 
     #expect(result.text == "hello world")
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_entities=true&detect_language=false&diarize=true&filler_words=true&language=en&model=nova-3&redact=ssn%2Cpci&search=Codex&smart_format=true&summarize=v2&topics=true&utt_split=0.8&utterances=true")
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_entities=true&detect_language=false&diarize=true&filler_words=true&model=nova-3&redact=ssn%2Cpci&search=Codex&smart_format=true&summarize=v2&topics=true&utt_split=0.8&utterances=true")
     #expect(request.headers["authorization"] == "Token deepgram-key")
     #expect(request.headers["content-type"] == "audio/wav")
     #expect(request.body == Data("wav".utf8))
@@ -70,9 +70,26 @@ import Testing
     #expect(result.segments == [TranscriptionSegment(text: "hej", startSecond: 0, endSecond: 0.5)])
 
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_language=true&diarize=false&intents=true&keyterm=SwiftAISDK&language=sv&model=nova-3&paragraphs=true&replace=redacted&sentiment=true&smart_format=true")
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_language=true&diarize=false&language=sv&model=nova-3&smart_format=true")
     #expect(request.headers["content-type"] == "audio/wav")
     #expect(request.body == Data("wav".utf8))
+}
+
+@Test func deepgramTranscriptionIgnoresStandardLanguageLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"results":{"channels":[{"alternatives":[{"transcript":"hello","words":[]}]}]}}
+    """))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+    let model = try provider.transcriptionModel("nova-3")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        mimeType: "audio/wav",
+        language: "fr"
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?diarize=true&model=nova-3")
 }
 
 @Test func deepgramAudioModelsMapNestedExtraBodyOptions() async throws {

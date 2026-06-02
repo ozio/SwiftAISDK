@@ -17,7 +17,6 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
             "model": modelID,
             "diarize": "true"
         ]
-        if let language = request.language { query["language"] = language }
         query.merge(deepgramTranscriptionQuery(from: options)) { _, new in new }
 
         let response = try await config.transport.send(config.rawRequest(
@@ -737,8 +736,10 @@ private func deepgramTranscriptionQuery(from extraBody: [String: JSONValue]) -> 
             mappedKey = "smart_format"
         case "uttSplit":
             mappedKey = "utt_split"
-        default:
+        case "language", "punctuate", "redact", "search", "summarize", "topics", "utterances", "diarize":
             mappedKey = key
+        default:
+            continue
         }
         if let scalar = deepgramQueryValue(value) {
             query[mappedKey] = scalar
