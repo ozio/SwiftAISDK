@@ -102,7 +102,7 @@ import Testing
                 "speakers_count": 3,
                 "diarization_type": "premium",
                 "custom_vocabulary_id": "vocab-1",
-                "custom_vocabularies": [["phrases": ["SwiftAISDK"]]],
+                "custom_vocabularies": [["phrases": ["ProviderPhrase"]]],
                 "strict_custom_vocabulary": true,
                 "summarization_config": ["model": "premium", "type": "bullets", "prompt": "short"],
                 "translation_config": ["target_languages": [["language": "en"]], "model": "premium"],
@@ -143,6 +143,7 @@ import Testing
     #expect(form.contains("\"diarization_type\":\"premium\""))
     #expect(form.contains("\"custom_vocabulary_id\":\"vocab-1\""))
     #expect(form.contains("\"custom_vocabularies\""))
+    #expect(!form.contains("ProviderPhrase"))
     #expect(form.contains("\"strict_custom_vocabulary\":true"))
     #expect(form.contains("\"summarization_config\""))
     #expect(form.contains("\"translation_config\""))
@@ -221,6 +222,144 @@ import Testing
     #expect(form.contains("\"translation_config\""))
     #expect(form.contains("\"target_languages\""))
     #expect(form.contains("\"language\":\"de\""))
+}
+
+@Test func revAITranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
+    let model = try provider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .string("invalid")]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["metadata": .number(1)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["notification_config": .object(["auth_headers": .object(["Authorization": .string("Bearer hook")])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["notification_config": .object(["url": .string("https://example.com"), "auth_headers": .object(["Authorization": .number(1)])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["delete_after_seconds": .string("60")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["verbatim": .null])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["rush": .string("true")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["segments_to_transcribe": .array([.object(["start": .number(0)])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["speaker_names": .array([.object(["display_name": .number(1)])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["diarization_type": .string("basic")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["custom_vocabularies": .null])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["custom_vocabularies": .array([.string("invalid")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["strict_custom_vocabulary": .null])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["summarization_config": .object(["model": .string("fast")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["summarization_config": .object(["prompt": .number(1)])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["translation_config": .object(["model": .string("standard")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["translation_config": .object(["target_languages": .array([.object(["language": .string("xx")])])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["language": .number(1)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["revai": .object(["forced_alignment": .string("true")])]
+        ))
+    }
 }
 
 @Test func revAITranscriptionThrowsForFailedSubmissionBeforeMissingID() async throws {
