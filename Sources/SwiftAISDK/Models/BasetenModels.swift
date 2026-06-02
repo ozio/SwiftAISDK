@@ -50,11 +50,12 @@ private func basetenEmbeddingOptions(from extraBody: [String: JSONValue]) -> [St
 
 extension ModelHTTPConfig {
     var basetenEmbeddingConfig: ModelHTTPConfig? {
-        guard baseURL.contains("/sync"), !baseURL.contains("/predict") else { return nil }
-        let embeddingBaseURL = baseURL.contains("/sync/v1") ? baseURL : "\(baseURL)/v1"
+        guard let modelURL, modelURL.contains("/sync"), !modelURL.contains("/predict") else { return nil }
+        let embeddingBaseURL = modelURL.contains("/sync/v1") ? modelURL : "\(modelURL)/v1"
         return ModelHTTPConfig(
             providerID: providerID,
             baseURL: embeddingBaseURL,
+            modelURL: modelURL,
             headers: headers,
             transport: transport,
             includeUsage: includeUsage,

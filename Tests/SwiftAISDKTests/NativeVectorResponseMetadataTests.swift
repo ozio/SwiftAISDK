@@ -83,7 +83,7 @@ import Testing
     """, headers: ["baseten-header": "embedding"]))
     let baseten = try AIProviders.baseten(settings: ProviderSettings(
         apiKey: "baseten-key",
-        baseURL: "https://model-abc.api.baseten.co/environments/prod/sync",
+        modelURL: "https://model-abc.api.baseten.co/environments/prod/sync",
         transport: basetenTransport
     ))
 

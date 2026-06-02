@@ -18,6 +18,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         self.config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? defaultBaseURL,
+            modelURL: settings.modelURL,
             headers: headers,
             transport: settings.transport,
             includeUsage: settings.includeUsage,
@@ -82,7 +83,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return AlibabaLanguageModel(modelID: modelID, config: config)
         }
         if providerID == "baseten" {
-            try validateBasetenChatBaseURL(config.baseURL)
+            return OpenAICompatibleChatModel(modelID: modelID, config: try basetenChatConfig(from: config))
         }
         if providerID == "mistral" {
             return MistralLanguageModel(modelID: modelID, config: config)
@@ -129,14 +130,14 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         guard providerID == "baseten" else {
             throw AIError.invalidArgument(argument: "modelID", message: "A model ID is required for \(providerID).")
         }
-        return try languageModel(basetenDefaultChatModelID(baseURL: config.baseURL))
+        return try languageModel(basetenDefaultChatModelID(config: config))
     }
 
     public func chatModel() throws -> any LanguageModel {
         guard providerID == "baseten" else {
             throw AIError.invalidArgument(argument: "modelID", message: "A model ID is required for \(providerID).")
         }
-        return try chatModel(basetenDefaultChatModelID(baseURL: config.baseURL))
+        return try chatModel(basetenDefaultChatModelID(config: config))
     }
 
     public func callAsFunction() throws -> any LanguageModel {
@@ -178,7 +179,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         }
         if providerID == "baseten" {
             guard let basetenConfig = config.basetenEmbeddingConfig else {
-                throw basetenEmbeddingConfigurationError(baseURL: config.baseURL)
+                throw basetenEmbeddingConfigurationError(modelURL: config.modelURL)
             }
             return BasetenEmbeddingModel(modelID: modelID, config: basetenConfig)
         }
@@ -375,21 +376,27 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
     }
 }
 
-private func basetenDefaultChatModelID(baseURL: String) -> String {
-    baseURL.contains("/sync/v1") ? "placeholder" : "chat"
+private func basetenDefaultChatModelID(config: ModelHTTPConfig) -> String {
+    config.modelURL?.contains("/sync/v1") == true ? "placeholder" : "chat"
 }
 
-private func validateBasetenChatBaseURL(_ baseURL: String) throws {
-    if baseURL.contains("/predict") {
-        throw AIError.invalidArgument(argument: "modelURL", message: "Not supported. You must use a /sync/v1 endpoint for chat models.")
+private func basetenChatConfig(from config: ModelHTTPConfig) throws -> ModelHTTPConfig {
+    if let modelURL = config.modelURL {
+        if modelURL.contains("/predict") {
+            throw AIError.invalidArgument(argument: "modelURL", message: "Not supported. You must use a /sync/v1 endpoint for chat models.")
+        }
+        if modelURL.contains("/sync/v1") {
+            return config.withBaseURL(modelURL).withProviderID("baseten.chat")
+        }
     }
-    if baseURL.contains("/sync"), !baseURL.contains("/sync/v1") {
-        throw AIError.invalidArgument(argument: "modelURL", message: "Not supported. You must use a /sync/v1 endpoint for chat models.")
-    }
+    return config.withProviderID("baseten.chat")
 }
 
-private func basetenEmbeddingConfigurationError(baseURL: String) -> AIError {
-    if baseURL.contains("/predict") {
+private func basetenEmbeddingConfigurationError(modelURL: String?) -> AIError {
+    guard let modelURL else {
+        return AIError.invalidArgument(argument: "modelURL", message: "No model URL provided for embeddings. Please set modelURL option for embeddings.")
+    }
+    if modelURL.contains("/predict") || !modelURL.contains("/sync") {
         return AIError.invalidArgument(argument: "modelURL", message: "Not supported. You must use a /sync or /sync/v1 endpoint for embeddings.")
     }
     return AIError.invalidArgument(argument: "modelURL", message: "No model URL provided for embeddings. Please set modelURL option for embeddings.")

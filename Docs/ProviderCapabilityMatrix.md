@@ -73,7 +73,7 @@ Legend:
 
 | Provider ID | Note |
 | --- | --- |
-| `baseten` | `ProviderSettings.modelURL` selects dedicated Baseten `/sync` or `/sync/v1` model endpoints; embeddings require one, and chat accepts only `/sync/v1` for dedicated endpoints. |
+| `baseten` | `ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1`. |
 | `gateway` | Gateway also exposes model, credits, spend, and generation metadata management APIs. |
 | `google.generative-ai` | Also exposes Gemini interactions models and agents. |
 | `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. |

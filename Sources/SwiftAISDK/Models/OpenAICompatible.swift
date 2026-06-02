@@ -221,6 +221,7 @@ public struct ProviderSettings: Sendable {
 struct ModelHTTPConfig: @unchecked Sendable {
     var providerID: String
     var baseURL: String
+    var modelURL: String?
     var headers: [String: String]
     var transport: any AITransport
     var includeUsage: Bool
@@ -233,6 +234,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     init(
         providerID: String,
         baseURL: String,
+        modelURL: String? = nil,
         headers: [String: String],
         transport: any AITransport,
         includeUsage: Bool = false,
@@ -245,6 +247,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.providerID = providerID
         let normalizedBaseURL = withoutTrailingSlash(baseURL)
         self.baseURL = normalizedBaseURL
+        self.modelURL = modelURL.map(withoutTrailingSlash)
         self.headers = headers
         self.transport = transport
         self.includeUsage = includeUsage
@@ -299,6 +302,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         ModelHTTPConfig(
             providerID: providerID,
             baseURL: baseURL,
+            modelURL: modelURL,
             headers: headers,
             transport: transport,
             includeUsage: includeUsage,
@@ -307,6 +311,21 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             transformRequestBody: transformRequestBody,
             url: url
+        )
+    }
+
+    func withBaseURL(_ baseURL: String) -> ModelHTTPConfig {
+        ModelHTTPConfig(
+            providerID: providerID,
+            baseURL: baseURL,
+            modelURL: modelURL,
+            headers: headers,
+            transport: transport,
+            includeUsage: includeUsage,
+            queryParams: queryParams,
+            supportsStructuredOutputs: supportsStructuredOutputs,
+            maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            transformRequestBody: transformRequestBody
         )
     }
 }
