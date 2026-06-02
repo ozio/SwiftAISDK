@@ -44,6 +44,23 @@ import Testing
     #expect(body["format"] == nil)
 }
 
+@Test func lmntSpeechMapsStandardSpeedAndLanguage() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mp3"], body: Data("lmnt".utf8)))
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
+    let model = try provider.speechModel("aurora")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Bonjour",
+        voice: "ava",
+        speed: 1.5,
+        language: "fr"
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["speed"]?.doubleValue == 1.5)
+    #expect(body["language"]?.stringValue == "fr")
+}
+
 @Test func lmntSpeechMapsNestedExtraBodyOptions() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/wav"], body: Data("lmnt".utf8)))
     let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
@@ -101,8 +118,10 @@ import Testing
                 "conversational": true,
                 "length": 11,
                 "format": "wav",
-                "model": "ignored-provider"
-            ])
+                "model": "ignored-provider",
+                "unsupportedProperty": "drop-me"
+            ]),
+            "openai": .object(["voice": "alloy"])
         ],
         extraBody: [
             "lmnt": .object([
@@ -131,6 +150,8 @@ import Testing
     #expect(body["conversational"]?.boolValue == true)
     #expect(body["length"]?.intValue == 11)
     #expect(body["lmnt"] == nil)
+    #expect(body["openai"] == nil)
+    #expect(body["unsupportedProperty"] == nil)
     #expect(body["sampleRate"] == nil)
     #expect(body["format"] == nil)
 }

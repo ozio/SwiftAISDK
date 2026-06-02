@@ -302,7 +302,10 @@ Progress:
   namespaces cannot leak into TTS bodies or STT multipart fields, while raw
   `extraBody` remains the explicit low-level escape hatch. ElevenLabs speech
   also maps standard `language` and `speed`, and returns the upstream
-  unsupported warning for `instructions`. Mistral and
+  unsupported warning for `instructions`. LMNT speech now follows the same
+  provider-option boundary for `providerOptions.lmnt`, maps standard `speed`
+  and `language`, and keeps provider `model`/`format` ignored like upstream
+  while `outputFormat` remains the source of `response_format`. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.

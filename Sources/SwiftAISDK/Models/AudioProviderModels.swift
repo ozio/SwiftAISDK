@@ -104,7 +104,13 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
             "voice": .string(request.voice ?? "ava"),
             "response_format": .string(lmntResponseFormat(request.format))
         ]
+        if let speed = request.speed {
+            body["speed"] = .number(speed)
+        }
         body.merge(lmntSpeechOptions(from: options)) { _, new in new }
+        if let language = request.language {
+            body["language"] = .string(language)
+        }
 
         let response = try await config.transport.send(config.request(
             path: "/v1/ai/speech/bytes",
@@ -1055,14 +1061,32 @@ private func lmntProviderOptions(from extraBody: [String: JSONValue]) -> [String
 }
 
 private func lmntProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    lmntProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    lmntProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: lmntSpeechProviderOptionKeys
+    )
 }
 
-private func lmntProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func lmntProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = lmntProviderOptions(from: extraBody)
-    output.merge(lmntProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["lmnt"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
     return output
 }
+
+private let lmntSpeechProviderOptionKeys: Set<String> = [
+    "model",
+    "format",
+    "sampleRate",
+    "speed",
+    "seed",
+    "conversational",
+    "length",
+    "topP",
+    "temperature"
+]
 
 private func lmntSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
     guard let format = request.format,
