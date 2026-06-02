@@ -156,6 +156,38 @@ import Testing
     #expect(body["format"] == nil)
 }
 
+@Test func lmntSpeechAppliesUpstreamProviderOptionDefaults() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mp3"], body: Data("lmnt".utf8)))
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
+    let model = try provider.speechModel("aurora")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hi",
+        voice: "ava",
+        speed: 1.5,
+        providerOptions: ["lmnt": .object([:])],
+        extraBody: [
+            "lmnt": .object([
+                "sampleRate": 8000,
+                "topP": 0.5,
+                "temperature": 0.5,
+                "speed": 0.75,
+                "conversational": true
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["sample_rate"]?.intValue == 24000)
+    #expect(body["top_p"]?.intValue == 1)
+    #expect(body["temperature"]?.intValue == 1)
+    #expect(body["speed"]?.intValue == 1)
+    #expect(body["conversational"]?.boolValue == false)
+    #expect(body["model"]?.stringValue == "aurora")
+    #expect(body["voice"]?.stringValue == "ava")
+    #expect(body["response_format"]?.stringValue == "mp3")
+}
+
 @Test func lmntSpeechWarnsAndFallsBackForUnsupportedOutputFormat() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("lmnt".utf8)))
     let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))

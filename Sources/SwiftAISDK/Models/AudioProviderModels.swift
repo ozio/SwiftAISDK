@@ -1190,11 +1190,12 @@ private func lmntProviderOptions(from extraBody: [String: JSONValue]) -> [String
 }
 
 private func lmntProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    lmntProviderOptions(
-        extraBody: request.extraBody,
-        providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: lmntSpeechProviderOptionKeys
-    )
+    var output = lmntProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["lmnt"]?.objectValue {
+        output.merge(lmntSpeechProviderOptionDefaults) { _, defaultValue in defaultValue }
+        output.merge(nested.filter { lmntSpeechProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
+    return output
 }
 
 private func lmntProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
@@ -1215,6 +1216,14 @@ private let lmntSpeechProviderOptionKeys: Set<String> = [
     "length",
     "topP",
     "temperature"
+]
+
+private let lmntSpeechProviderOptionDefaults: [String: JSONValue] = [
+    "sampleRate": .number(24_000),
+    "speed": .number(1),
+    "conversational": .bool(false),
+    "topP": .number(1),
+    "temperature": .number(1)
 ]
 
 private func lmntSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
