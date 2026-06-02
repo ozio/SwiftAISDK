@@ -18,16 +18,16 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             return try await editImage(request)
         }
 
-        let options = deepInfraProviderOptions(from: request.extraBody)
+        let options = deepInfraProviderOptions(from: request)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let count = request.count { body["num_images"] = .number(Double(count)) }
         if let size = request.size {
-            let dimensions = size.split(separator: "x").compactMap { Int($0) }
-            if dimensions.count == 2 {
-                body["width"] = .string(String(dimensions[0]))
+            let dimensions = size.split(separator: "x", omittingEmptySubsequences: false)
+            if let width = dimensions.first {
+                body["width"] = .string(String(width))
+            }
+            if dimensions.count > 1 {
                 body["height"] = .string(String(dimensions[1]))
-            } else {
-                body["aspect_ratio"] = .string(size)
             }
         }
         if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
@@ -62,7 +62,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
     }
 
     private func editImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = deepInfraProviderOptions(from: request.extraBody)
+        let options = deepInfraProviderOptions(from: request)
         var form = MultipartFormData()
         form.appendField(name: "model", value: modelID)
         form.appendField(name: "prompt", value: request.prompt)
@@ -116,6 +116,14 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
+}
+
+private func deepInfraProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    var output = deepInfraProviderOptions(from: request.extraBody)
+    if let nested = request.providerOptions["deepinfra"]?.objectValue {
+        output.merge(nested) { _, providerValue in providerValue }
+    }
+    return output
 }
 
 private func deepInfraProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
