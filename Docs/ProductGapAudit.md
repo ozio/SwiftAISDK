@@ -152,7 +152,9 @@ Impact:
   xAI Chat now uses upstream chat-specific request semantics for
   `max_completion_tokens`, `seed`, unsupported-setting warnings, call-level JSON
   response formats, and schema-validated `providerOptions.xai` chat/search
-  options instead of relying on generic OpenAI-compatible passthrough.
+  options instead of relying on generic OpenAI-compatible passthrough. Chat
+  usage also follows upstream xAI reasoning/cache token accounting for generate
+  and stream finishes.
   xAI Responses now schema-validates `providerOptions.xai` response options
   with upstream enum/range/nullish behavior, strips unknown typed keys, maps
   reasoning/top-logprobs/previous-response fields, and injects encrypted

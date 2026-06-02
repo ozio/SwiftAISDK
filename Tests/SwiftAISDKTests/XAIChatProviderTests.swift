@@ -184,3 +184,56 @@ import Testing
     let logprobsFalseBody = try decodeJSONBody(try #require((await logprobsFalseTransport.requests()).first?.body))
     #expect(logprobsFalseBody["logprobs"] == nil)
 }
+
+@Test func xAIChatUsageCountsReasoningAndCacheTokensLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"""
+    {
+      "choices":[{"message":{"content":"xai chat"},"finish_reason":"stop"}],
+      "usage":{
+        "prompt_tokens":12,
+        "completion_tokens":2,
+        "total_tokens":438,
+        "prompt_tokens_details":{"text_tokens":12,"audio_tokens":0,"image_tokens":0,"cached_tokens":3},
+        "completion_tokens_details":{"reasoning_tokens":424}
+      }
+    }
+    """#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.chat("grok-4")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.usage?.inputTokens == 12)
+    #expect(result.usage?.inputTokensNoCache == 9)
+    #expect(result.usage?.inputTokensCacheRead == 3)
+    #expect(result.usage?.outputTokens == 426)
+    #expect(result.usage?.outputTextTokens == 2)
+    #expect(result.usage?.outputReasoningTokens == 424)
+    #expect(result.usage?.totalTokens == 438)
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"content":"xai"},"finish_reason":null}]}
+
+    data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4142,"completion_tokens":254,"total_tokens":8724,"prompt_tokens_details":{"cached_tokens":4328}}}
+
+    data: [DONE]
+
+    """))
+    let streamProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: streamTransport))
+    let streamModel = try streamProvider.chat("grok-4")
+
+    var finishUsage: TokenUsage?
+    for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .finish(_, usage) = part {
+            finishUsage = usage
+        }
+    }
+
+    #expect(finishUsage?.inputTokens == 8_470)
+    #expect(finishUsage?.inputTokensNoCache == 4_142)
+    #expect(finishUsage?.inputTokensCacheRead == 4_328)
+    #expect(finishUsage?.outputTokens == 254)
+    #expect(finishUsage?.outputTextTokens == 254)
+    #expect(finishUsage?.outputReasoningTokens == 0)
+    #expect(finishUsage?.totalTokens == 8_724)
+}
