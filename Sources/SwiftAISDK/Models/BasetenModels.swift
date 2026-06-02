@@ -44,9 +44,7 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
 
 private func basetenEmbeddingOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
-    if let nested = output.removeValue(forKey: "baseten")?.objectValue {
-        output.merge(nested) { _, nested in nested }
-    }
+    output.removeValue(forKey: "baseten")
     return output
 }
 

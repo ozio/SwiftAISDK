@@ -700,7 +700,10 @@ import Testing
     let result = try await model.embed(EmbeddingRequest(
         values: ["hello"],
         dimensions: 128,
-        extraBody: ["baseten": .object(["encoding_format": .string("float")])]
+        extraBody: [
+            "encoding_format": .string("float"),
+            "baseten": .object(["input_type": .string("query")])
+        ]
     ))
 
     #expect(result.embeddings == [[0.1, 0.2]])
@@ -714,6 +717,7 @@ import Testing
     #expect(body["input"]?[0]?.stringValue == "hello")
     #expect(body["dimensions"]?.intValue == 128)
     #expect(body["encoding_format"]?.stringValue == "float")
+    #expect(body["input_type"] == nil)
     #expect(body["baseten"] == nil)
 }
 
