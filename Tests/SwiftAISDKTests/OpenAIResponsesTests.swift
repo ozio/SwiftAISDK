@@ -350,6 +350,35 @@ import Testing
     #expect(body["tool_choice"]?["name"]?.stringValue == "grammar_tool")
 }
 
+@Test func openAIResponsesMapsContextManagementCompactionLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.2")
+
+    for try await _ in model.stream(LanguageModelRequest(
+        messages: [.user("Compact context.")],
+        extraBody: [
+            "openai": [
+                "store": false,
+                "contextManagement": [
+                    ["type": "compaction", "compactThreshold": 50000]
+                ]
+            ]
+        ]
+    )) {}
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["store"]?.boolValue == false)
+    #expect(body["context_management"]?[0]?["type"]?.stringValue == "compaction")
+    #expect(body["context_management"]?[0]?["compact_threshold"]?.intValue == 50000)
+    #expect(body["contextManagement"] == nil)
+    #expect(body["context_management"]?[0]?["compactThreshold"] == nil)
+}
+
 @Test func openAIResponsesMapsProviderExecutedToolApprovalResponses() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#),
@@ -744,6 +773,30 @@ import Testing
     #expect(annotations[1]["type"]?.stringValue == "file_citation")
     #expect(annotations[2]["type"]?.stringValue == "container_file_citation")
     #expect(annotations[3]["type"]?.stringValue == "file_path")
+}
+
+@Test func openAIResponsesStreamsCompactionCustomPartLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"cmp_123","type":"compaction","encrypted_content":"encrypted_compaction"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.2")
+
+    var customParts: [(JSONValue, [String: JSONValue])] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Compact context.")])) {
+        if case let .custom(value, metadata) = part {
+            customParts.append((value, metadata))
+        }
+    }
+
+    let custom = try #require(customParts.first)
+    #expect(custom.0["kind"]?.stringValue == "openai.compaction")
+    #expect(custom.1["openai"]?["type"]?.stringValue == "compaction")
+    #expect(custom.1["openai"]?["itemId"]?.stringValue == "cmp_123")
+    #expect(custom.1["openai"]?["encryptedContent"]?.stringValue == "encrypted_compaction")
 }
 
 @Test func openAIResponsesStreamMapsIncompleteFinishReason() async throws {

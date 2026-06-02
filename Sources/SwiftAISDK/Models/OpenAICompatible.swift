@@ -424,6 +424,17 @@ private func openAIResponsesReasoningProviderMetadata(itemID: String, encryptedC
     return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
 }
 
+private func openAIResponsesCompactionProviderMetadata(itemID: String, encryptedContent: JSONValue?, providerID: String) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [
+        "type": .string("compaction"),
+        "itemId": .string(itemID)
+    ]
+    if let encryptedContent {
+        metadata["encryptedContent"] = encryptedContent
+    }
+    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+}
+
 private enum OpenAIResponsesReasoningSummaryState {
     case active
     case canConclude
@@ -1759,6 +1770,19 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             }
                             activeReasoning[itemID] = nil
                         }
+                        if raw["type"]?.stringValue == "response.output_item.done",
+                           let item = raw["item"],
+                           item["type"]?.stringValue == "compaction",
+                           let itemID = item["id"]?.stringValue {
+                            continuation.yield(.custom(
+                                .object(["kind": .string("openai.compaction")]),
+                                providerMetadata: openAIResponsesCompactionProviderMetadata(
+                                    itemID: itemID,
+                                    encryptedContent: item["encrypted_content"],
+                                    providerID: providerID
+                                )
+                            ))
+                        }
                         if raw["type"]?.stringValue == "response.completed" {
                             let response = raw["response"] ?? raw
                             let finishReason = openAIResponsesFinishReason(
@@ -1932,6 +1956,9 @@ private func openAIResponsesOptions(from extraBody: [String: JSONValue]) -> [Str
     openAIResponsesMoveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
     openAIResponsesMoveKey("serviceTier", to: "service_tier", in: &output)
     openAIResponsesMoveKey("maxToolCalls", to: "max_tool_calls", in: &output)
+    if let contextManagement = output.removeValue(forKey: "contextManagement") ?? output.removeValue(forKey: "context_management") {
+        output["context_management"] = openAIResponsesContextManagement(contextManagement)
+    }
     output.removeValue(forKey: "toolChoice")
     output.removeValue(forKey: "allowedTools")
 
@@ -1947,6 +1974,15 @@ private func openAIResponsesOptions(from extraBody: [String: JSONValue]) -> [Str
     }
 
     return output
+}
+
+private func openAIResponsesContextManagement(_ value: JSONValue) -> JSONValue {
+    guard let items = value.arrayValue else { return value }
+    return .array(items.map { item in
+        guard var object = item.objectValue else { return item }
+        openAIResponsesMoveKey("compactThreshold", to: "compact_threshold", in: &object)
+        return .object(object)
+    })
 }
 
 private func xaiResponsesOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
