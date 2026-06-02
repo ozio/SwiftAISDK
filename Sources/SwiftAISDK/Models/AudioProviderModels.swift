@@ -506,7 +506,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         let raw = finalResponse.json
         let status = raw["status"]?.stringValue
         if status == "error" {
-            throw AIError.invalidResponse(provider: providerID, message: raw["error"]?.stringValue ?? "AssemblyAI transcription failed.")
+            throw AIError.invalidResponse(provider: providerID, message: "Transcription failed: \(raw["error"]?.stringValue ?? "Unknown error")")
         }
         let segments = assemblyAITranscriptionSegments(from: raw)
         return TranscriptionResult(
@@ -922,9 +922,25 @@ private func assemblyAIProviderOptions(from request: AudioTranscriptionRequest) 
 private func assemblyAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = assemblyAIProviderOptions(from: extraBody)
     if let nested = providerOptions["assemblyai"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+        for (key, value) in nested where supportedProviderOptionKeys.contains(key) {
+            if value == .null {
+                output.removeValue(forKey: key)
+                continue
+            }
+            output[key] = assemblyAIProviderOption(key: key, value: value)
+        }
     }
     return output
+}
+
+private func assemblyAIProviderOption(key: String, value: JSONValue) -> JSONValue {
+    guard key == "customSpelling", let items = value.arrayValue else {
+        return value
+    }
+    return .array(items.map { item in
+        guard let object = item.objectValue else { return item }
+        return .object(object.filter { ["from", "to"].contains($0.key) && $0.value != .null })
+    })
 }
 
 private let assemblyAITranscriptionProviderOptionKeys: Set<String> = [

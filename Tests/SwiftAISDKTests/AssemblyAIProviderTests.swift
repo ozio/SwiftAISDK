@@ -170,3 +170,68 @@ import Testing
     #expect(submitBody["audioEndAt"] == nil)
     #expect(submitBody["languageCode"] == nil)
 }
+
+@Test func assemblyAITranscriptionScopesProviderOptionsLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+        jsonResponse(#"{"id":"job-123","status":"queued"}"#),
+        jsonResponse(#"{"id":"job-123","status":"completed","text":"scoped"}"#)
+    ])
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: transport))
+    let model = try provider.transcriptionModel("best")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        providerOptions: [
+            "assemblyai": .object([
+                "languageCode": .null,
+                "autoHighlights": .null,
+                "wordBoost": .null,
+                "customSpelling": [
+                    [
+                        "from": ["swift", "sdk"],
+                        "to": "Swift SDK",
+                        "unsupported": "drop-me"
+                    ],
+                    [
+                        "from": ["codex"],
+                        "to": .null,
+                        "unsupported": "drop-me"
+                    ]
+                ]
+            ])
+        ],
+        extraBody: [
+            "assemblyai": .object([
+                "languageCode": "ja",
+                "autoHighlights": true,
+                "wordBoost": ["legacy"]
+            ])
+        ]
+    ))
+
+    let submitBody = try decodeJSONBody(try #require((await transport.requests())[1].body))
+    #expect(submitBody["language_code"] == nil)
+    #expect(submitBody["auto_highlights"] == nil)
+    #expect(submitBody["word_boost"] == nil)
+    #expect(submitBody["custom_spelling"]?[0]?["from"]?[0]?.stringValue == "swift")
+    #expect(submitBody["custom_spelling"]?[0]?["to"]?.stringValue == "Swift SDK")
+    #expect(submitBody["custom_spelling"]?[0]?["unsupported"] == nil)
+    #expect(submitBody["custom_spelling"]?[1]?["from"]?[0]?.stringValue == "codex")
+    #expect(submitBody["custom_spelling"]?[1]?["to"] == nil)
+    #expect(submitBody["custom_spelling"]?[1]?["unsupported"] == nil)
+}
+
+@Test func assemblyAITranscriptionErrorMessageMatchesUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+        jsonResponse(#"{"id":"job-123","status":"queued"}"#),
+        jsonResponse(#"{"id":"job-123","status":"error","error":"bad audio"}"#)
+    ])
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: transport))
+    let model = try provider.transcriptionModel("best")
+
+    await #expect(throws: AIError.invalidResponse(provider: "assemblyai.transcription", message: "Transcription failed: bad audio")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
+    }
+}
