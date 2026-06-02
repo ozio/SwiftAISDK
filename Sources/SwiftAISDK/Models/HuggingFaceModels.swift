@@ -131,7 +131,7 @@ private struct HuggingFacePreparedCall {
 }
 
 private func huggingFacePreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> HuggingFacePreparedCall {
-    var options = huggingFaceProviderOptions(from: request)
+    var options = try huggingFaceProviderOptions(from: request)
     let responseFormat = huggingFaceResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
@@ -162,19 +162,20 @@ private func huggingFacePreparedCall(for request: LanguageModelRequest, modelID:
     return HuggingFacePreparedCall(body: body, warnings: huggingFaceWarnings(for: request))
 }
 
-private func huggingFaceProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+private func huggingFaceProviderOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
     var output = request.extraBody
     if let nested = output.removeValue(forKey: "huggingface")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
-    if let nested = request.providerOptions["huggingface"]?.objectValue {
-        for (key, value) in nested where huggingFaceResponsesProviderOptionKeys.contains(key) {
-            if value == .null {
-                output.removeValue(forKey: key)
-            } else {
-                output[key] = value
-            }
+    if let value = request.providerOptions["huggingface"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.huggingface", message: "Hugging Face provider options must be an object.")
         }
+        for key in huggingFaceResponsesProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try huggingFaceValidateResponsesProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
 }
@@ -185,6 +186,38 @@ private let huggingFaceResponsesProviderOptionKeys: Set<String> = [
     "strictJsonSchema",
     "reasoningEffort"
 ]
+
+private func huggingFaceValidateResponsesProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where huggingFaceResponsesProviderOptionKeys.contains(key) {
+        guard value != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.huggingface.\(key)", message: "Hugging Face \(key) cannot be null.")
+        }
+        switch key {
+        case "metadata":
+            guard let metadata = value.objectValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.huggingface.metadata", message: "Hugging Face metadata must be a string record.")
+            }
+            for metadataKey in metadata.keys.sorted() where metadata[metadataKey]?.stringValue == nil {
+                throw AIError.invalidArgument(argument: "providerOptions.huggingface.metadata.\(metadataKey)", message: "Hugging Face metadata values must be strings.")
+            }
+            output[key] = value
+        case "instructions", "reasoningEffort":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.huggingface.\(key)", message: "Hugging Face \(key) must be a string.")
+            }
+            output[key] = value
+        case "strictJsonSchema":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.huggingface.strictJsonSchema", message: "Hugging Face strictJsonSchema must be a boolean.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
 
 private func huggingFaceResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
     if let responseFormat = request.responseFormat {
@@ -288,30 +321,36 @@ private func huggingFaceInputContentPart(_ part: AIContentPart) throws -> JSONVa
 
 private func huggingFaceTools(from tools: [String: JSONValue]) -> [JSONValue] {
     tools.map { name, schema in
-        .object([
+        var tool: [String: JSONValue] = [
             "type": .string("function"),
             "name": .string(name),
             "parameters": schema
-        ])
+        ]
+        if let description = schema["description"]?.stringValue {
+            tool["description"] = .string(description)
+        }
+        return .object(tool)
     }
 }
 
 private func huggingFaceToolChoice(from value: JSONValue?) -> JSONValue? {
     guard let value else { return nil }
     if let string = value.stringValue { return .string(string) }
-    if let object = value.objectValue,
-       let type = object["type"]?.stringValue,
-       type == "tool",
-       let toolName = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue {
+    guard let object = value.objectValue else { return nil }
+    switch object["type"]?.stringValue {
+    case "auto", "required":
+        return object["type"]
+    case "none":
+        return nil
+    case "tool":
+        guard let toolName = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue else { return nil }
         return .object([
             "type": .string("function"),
             "function": .object(["name": .string(toolName)])
         ])
-    }
-    if value["type"]?.stringValue == "none" {
+    default:
         return nil
     }
-    return value
 }
 
 private func huggingFaceResponseContent(from raw: JSONValue) -> (text: String, reasoning: String, toolCalls: [AIToolCall], toolResults: [AIToolResult], sources: [AISource]) {
