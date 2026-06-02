@@ -320,7 +320,8 @@ Progress:
   as a no-op over raw `extraBody`, maps standard `speed` and `instructions`
   into the first utterance, keeps exact case-sensitive output-format fallback
   warnings, and returns the upstream unsupported warning for `language`. RevAI transcription now scopes
-  `providerOptions.revai` to the upstream job config schema, handles failed
+  `providerOptions.revai` to the upstream job config schema, treats a null
+  namespace as a no-op over raw `extraBody`, handles failed
   submissions before requiring an ID, and matches upstream's poll-before-delay
   status cadence. Gladia transcription now scopes `providerOptions.gladia` to
   the upstream initiation schema while retaining raw `extraBody` passthrough

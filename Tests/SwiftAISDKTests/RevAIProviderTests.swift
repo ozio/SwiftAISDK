@@ -156,6 +156,36 @@ import Testing
     #expect(!form.contains("\"rush\":false"))
 }
 
+@Test func revAITranscriptionTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"job-123","status":"transcribed","language":"ja"}"#),
+        jsonResponse(#"{"monologues":[{"elements":[{"type":"text","value":"null namespace","ts":0,"end_ts":0.5}]}]}"#)
+    ])
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
+    let model = try provider.transcriptionModel("machine")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        fileName: "clip.wav",
+        mimeType: "audio/wav",
+        providerOptions: ["revai": .null],
+        extraBody: [
+            "revai": .object([
+                "metadata": "extra-case",
+                "language": "ja",
+                "rush": true
+            ])
+        ]
+    ))
+
+    let form = String(data: try #require((await transport.requests()).first?.body), encoding: .utf8) ?? ""
+    #expect(form.contains("\"metadata\":\"extra-case\""))
+    #expect(form.contains("\"language\":\"ja\""))
+    #expect(form.contains("\"rush\":true"))
+    #expect(!form.contains("\"test_mode\":false"))
+    #expect(!form.contains("\"forced_alignment\":false"))
+}
+
 @Test func revAITranscriptionAppliesUpstreamProviderOptionDefaults() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"job-123","status":"transcribed","language":"en"}"#),
@@ -228,7 +258,7 @@ import Testing
     let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
     let model = try provider.transcriptionModel("machine")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.revai", message: "Rev.ai provider options must be an object.")) {
         _ = try await model.transcribe(AudioTranscriptionRequest(
             audio: Data("audio".utf8),
             providerOptions: ["revai": .string("invalid")]
