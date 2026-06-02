@@ -283,10 +283,12 @@ Progress:
   reranking now scope `providerOptions.voyage` to the upstream embedding/rerank
   option schemas while keeping raw `extraBody` passthrough; Voyage reranking also
   stringifies object documents with a compatibility warning, matching upstream
-  behavior. Native image/video models now also preserve safe request metadata for
-  provider JSON bodies or safe request snapshots, omitting inline/base64 media
-  payloads while retaining prompt, size/aspect, count, duration, URL, and option
-  fields. Native transcription models now
+  behavior. Cohere embedding and reranking now do the same for
+  `providerOptions.cohere`, including Cohere reranking object-document
+  stringification. Native image/video models now also preserve safe request
+  metadata for provider JSON bodies or safe request snapshots, omitting
+  inline/base64 media payloads while retaining prompt, size/aspect, count,
+  duration, URL, and option fields. Native transcription models now
   map upstream-style segments,
   language, and duration for Deepgram, ElevenLabs, Groq/OpenAI-compatible
   verbose JSON, AssemblyAI, Rev.ai, Gladia, fal, Gateway, and generic JSON

@@ -210,7 +210,11 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        let options = cohereProviderOptions(from: request.extraBody)
+        let options = cohereProviderOptions(
+            extraBody: request.extraBody,
+            providerOptions: request.providerOptions,
+            supportedProviderOptionKeys: cohereEmbeddingProviderOptionKeys
+        )
         guard request.values.count <= 96 else {
             throw AIError.invalidResponse(provider: providerID, message: "Cohere supports at most 96 embedding inputs per call.")
         }
@@ -257,11 +261,16 @@ public final class CohereRerankingModel: RerankingModel, @unchecked Sendable {
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
-        let options = cohereProviderOptions(from: request.extraBody)
+        let options = cohereProviderOptions(
+            extraBody: request.extraBody,
+            providerOptions: request.providerOptions,
+            supportedProviderOptionKeys: cohereRerankingProviderOptionKeys
+        )
+        let preparedDocuments = cohereRerankingDocuments(from: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "query": .string(request.query),
-            "documents": .array(request.documents)
+            "documents": .array(preparedDocuments.documents.map(JSONValue.string))
         ]
         if let topK = request.topK { body["top_n"] = .number(Double(topK)) }
         for (key, value) in options {
@@ -277,6 +286,7 @@ public final class CohereRerankingModel: RerankingModel, @unchecked Sendable {
         return RerankingResult(
             results: rerankingResults(from: raw["results"]),
             rawValue: raw,
+            warnings: preparedDocuments.warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -393,6 +403,45 @@ private func cohereProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
         output.merge(nested) { _, nested in nested }
     }
     return output
+}
+
+private let cohereEmbeddingProviderOptionKeys: Set<String> = ["inputType", "truncate", "outputDimension"]
+private let cohereRerankingProviderOptionKeys: Set<String> = ["maxTokensPerDoc", "priority"]
+
+private func cohereProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue],
+    supportedProviderOptionKeys: Set<String>
+) -> [String: JSONValue] {
+    var output = cohereProviderOptions(from: extraBody)
+    if let nested = providerOptions["cohere"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private struct CohereRerankingDocuments {
+    var documents: [String]
+    var warnings: [AIWarning]
+}
+
+private func cohereRerankingDocuments(from request: RerankingRequest) -> CohereRerankingDocuments {
+    guard let documentObjects = request.documentObjects else {
+        return CohereRerankingDocuments(documents: request.documents, warnings: [])
+    }
+    let documents = documentObjects.map { object in
+        cohereJSONString(.object(object)) ?? ""
+    }
+    return CohereRerankingDocuments(
+        documents: documents,
+        warnings: [
+            AIWarning(
+                type: "compatibility",
+                feature: "object documents",
+                message: "Object documents are converted to strings."
+            )
+        ]
+    )
 }
 
 private func voyageProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {

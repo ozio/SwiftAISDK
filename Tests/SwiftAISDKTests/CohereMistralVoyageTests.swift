@@ -884,11 +884,23 @@ import Testing
 
     _ = try await embeddingModel.embed(EmbeddingRequest(
         values: ["hello"],
+        providerOptions: [
+            "cohere": [
+                "inputType": "clustering",
+                "outputDimension": 1536,
+                "truncate": "NONE",
+                "priority": 999
+            ],
+            "voyage": [
+                "inputType": "query"
+            ]
+        ],
         extraBody: [
             "cohere": [
                 "inputType": "search_document",
                 "outputDimension": 1024,
-                "truncate": "START"
+                "truncate": "START",
+                "rawExtra": "keep-me"
             ]
         ]
     ))
@@ -896,30 +908,54 @@ import Testing
     let embeddingRequest = try #require(await embeddingTransport.requests().first)
     let embeddingBody = try decodeJSONBody(try #require(embeddingRequest.body))
     #expect(embeddingBody["cohere"] == nil)
-    #expect(embeddingBody["input_type"]?.stringValue == "search_document")
-    #expect(embeddingBody["output_dimension"]?.intValue == 1024)
-    #expect(embeddingBody["truncate"]?.stringValue == "START")
+    #expect(embeddingBody["voyage"] == nil)
+    #expect(embeddingBody["priority"] == nil)
+    #expect(embeddingBody["input_type"]?.stringValue == "clustering")
+    #expect(embeddingBody["output_dimension"]?.intValue == 1536)
+    #expect(embeddingBody["truncate"]?.stringValue == "NONE")
+    #expect(embeddingBody["rawExtra"]?.stringValue == "keep-me")
 
     let rerankTransport = RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.8}]}"#))
     let rerankProvider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: rerankTransport))
     let rerankModel = try rerankProvider.rerankingModel("rerank-v3.5")
 
-    _ = try await rerankModel.rerank(RerankingRequest(
+    let rerankResult = try await rerankModel.rerank(RerankingRequest(
         query: "q",
-        documents: ["a"],
+        documents: [["body": "a", "source": "doc-1"]],
+        providerOptions: [
+            "cohere": [
+                "maxTokensPerDoc": 512,
+                "priority": 2,
+                "truncate": "drop-me"
+            ],
+            "voyage": [
+                "returnDocuments": true
+            ]
+        ],
         extraBody: [
             "cohere": [
                 "maxTokensPerDoc": 128,
-                "priority": 1
+                "priority": 1,
+                "rawRerank": true
             ]
         ]
     ))
 
+    #expect(rerankResult.warnings == [
+        AIWarning(type: "compatibility", feature: "object documents", message: "Object documents are converted to strings.")
+    ])
     let rerankRequest = try #require(await rerankTransport.requests().first)
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["cohere"] == nil)
-    #expect(rerankBody["max_tokens_per_doc"]?.intValue == 128)
-    #expect(rerankBody["priority"]?.intValue == 1)
+    #expect(rerankBody["voyage"] == nil)
+    #expect(rerankBody["truncate"] == nil)
+    #expect(rerankBody["max_tokens_per_doc"]?.intValue == 512)
+    #expect(rerankBody["priority"]?.intValue == 2)
+    #expect(rerankBody["rawRerank"]?.boolValue == true)
+    let documentText = try #require(rerankBody["documents"]?[0]?.stringValue)
+    let documentJSON = try decodeJSONBody(Data(documentText.utf8))
+    #expect(documentJSON["body"]?.stringValue == "a")
+    #expect(documentJSON["source"]?.stringValue == "doc-1")
 }
 
 @Test func voyageEmbeddingAndRerankingUseNativeEndpoints() async throws {
