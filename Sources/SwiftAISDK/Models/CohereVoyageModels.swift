@@ -302,10 +302,9 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        let options = voyageProviderOptions(
+        let options = try voyageEmbeddingProviderOptions(
             extraBody: request.extraBody,
-            providerOptions: request.providerOptions,
-            supportedProviderOptionKeys: voyageEmbeddingProviderOptionKeys
+            providerOptions: request.providerOptions
         )
         guard request.values.count <= 128 else {
             throw AIError.invalidResponse(provider: providerID, message: "Voyage supports at most 128 embedding inputs per call.")
@@ -355,10 +354,9 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
-        let options = voyageProviderOptions(
+        let options = try voyageRerankingProviderOptions(
             extraBody: request.extraBody,
-            providerOptions: request.providerOptions,
-            supportedProviderOptionKeys: voyageRerankingProviderOptionKeys
+            providerOptions: request.providerOptions
         )
         let preparedDocuments = voyageRerankingDocuments(from: request)
         var body: [String: JSONValue] = [
@@ -560,16 +558,104 @@ private func voyageProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
 private let voyageEmbeddingProviderOptionKeys: Set<String> = ["inputType", "truncation", "outputDimension", "outputDtype"]
 private let voyageRerankingProviderOptionKeys: Set<String> = ["returnDocuments", "truncation"]
 
-private func voyageProviderOptions(
+private func voyageEmbeddingProviderOptions(
     extraBody: [String: JSONValue],
-    providerOptions: [String: JSONValue],
-    supportedProviderOptionKeys: Set<String>
-) -> [String: JSONValue] {
+    providerOptions: [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = voyageProviderOptions(from: extraBody)
-    if let nested = providerOptions["voyage"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    if let value = providerOptions["voyage"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.voyage", message: "Voyage provider options must be an object.")
+        }
+        for key in voyageEmbeddingProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try voyageValidateEmbeddingProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
+}
+
+private func voyageRerankingProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue]
+) throws -> [String: JSONValue] {
+    var output = voyageProviderOptions(from: extraBody)
+    if let value = providerOptions["voyage"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.voyage", message: "Voyage provider options must be an object.")
+        }
+        for key in voyageRerankingProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try voyageValidateRerankingProviderOptions(nested)) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private func voyageValidateEmbeddingProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where voyageEmbeddingProviderOptionKeys.contains(key) {
+        switch key {
+        case "inputType":
+            if value == .null {
+                output[key] = value
+                continue
+            }
+            guard let string = value.stringValue, ["query", "document"].contains(string) else {
+                throw AIError.invalidArgument(argument: "providerOptions.voyage.inputType", message: "Voyage inputType must be query, document, or null.")
+            }
+            output[key] = value
+        case "truncation":
+            guard value != .null else {
+                throw AIError.invalidArgument(argument: "providerOptions.voyage.truncation", message: "Voyage truncation cannot be null.")
+            }
+            try voyageRequireBoolean(value, argument: "providerOptions.voyage.truncation", message: "Voyage truncation must be a boolean.")
+            output[key] = value
+        case "outputDimension":
+            guard value != .null else {
+                throw AIError.invalidArgument(argument: "providerOptions.voyage.outputDimension", message: "Voyage outputDimension cannot be null.")
+            }
+            try voyageRequireNumber(value, argument: "providerOptions.voyage.outputDimension", message: "Voyage outputDimension must be a number.")
+            output[key] = value
+        case "outputDtype":
+            guard value != .null else {
+                throw AIError.invalidArgument(argument: "providerOptions.voyage.outputDtype", message: "Voyage outputDtype cannot be null.")
+            }
+            guard let string = value.stringValue, ["float", "int8", "uint8", "binary", "ubinary"].contains(string) else {
+                throw AIError.invalidArgument(argument: "providerOptions.voyage.outputDtype", message: "Voyage outputDtype must be one of float, int8, uint8, binary, ubinary.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func voyageValidateRerankingProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where voyageRerankingProviderOptionKeys.contains(key) {
+        guard value != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.voyage.\(key)", message: "Voyage \(key) cannot be null.")
+        }
+        try voyageRequireBoolean(value, argument: "providerOptions.voyage.\(key)", message: "Voyage \(key) must be a boolean.")
+        output[key] = value
+    }
+    return output
+}
+
+private func voyageRequireBoolean(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func voyageRequireNumber(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.doubleValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
 }
 
 private struct VoyageRerankingDocuments {
