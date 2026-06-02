@@ -69,6 +69,10 @@ import Testing
         toolChoice: ["type": "tool", "toolName": "lookup"],
         providerOptions: [
             "cohere": [
+                "thinking": [
+                    "type": "enabled",
+                    "tokenBudget": 64
+                ],
                 "safetyMode": "STRICT"
             ]
         ],
@@ -109,7 +113,7 @@ import Testing
     #expect(body["tools"]?[0]?["function"]?["description"]?.stringValue == "Look up a value.")
     #expect(body["tools"]?[0]?["function"]?["parameters"]?["properties"]?["value"]?["type"]?.stringValue == "string")
     #expect(body["tool_choice"]?.stringValue == "REQUIRED")
-    #expect(body["safetyMode"]?.stringValue == "STRICT")
+    #expect(body["safetyMode"] == nil)
     #expect(body["cohere"] == nil)
     #expect(body["responseFormat"] == nil)
     #expect(body["toolChoice"] == nil)
@@ -848,7 +852,7 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
     #expect(body["k"]?.intValue == 5)
-    #expect(body["priority"]?.intValue == 1)
+    #expect(body["priority"] == nil)
 }
 
 @Test func cohereLanguageStreamsToolCallEvents() async throws {

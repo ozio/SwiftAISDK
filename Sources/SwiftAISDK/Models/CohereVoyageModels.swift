@@ -11,7 +11,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = body(for: request, stream: false)
+        let prepared = try body(for: request, stream: false)
         let response = try await config.sendJSONResponse(
             path: "/chat",
             modelID: modelID,
@@ -47,7 +47,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = body(for: request, stream: true)
+                    let prepared = try body(for: request, stream: true)
                     let httpRequest = try config.request(
                         path: "/chat",
                         modelID: modelID,
@@ -148,8 +148,8 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) -> CoherePreparedCall {
-        var options = cohereProviderOptions(from: request)
+    private func body(for request: LanguageModelRequest, stream: Bool) throws -> CoherePreparedCall {
+        var options = try cohereProviderOptions(from: request)
         let responseFormat = cohereResolvedResponseFormat(request: request, options: &options)
         let toolChoice = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
         let prompt = coherePromptJSON(from: request.messages)
@@ -210,10 +210,9 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        let options = cohereProviderOptions(
+        let options = try cohereEmbeddingProviderOptions(
             extraBody: request.extraBody,
-            providerOptions: request.providerOptions,
-            supportedProviderOptionKeys: cohereEmbeddingProviderOptionKeys
+            providerOptions: request.providerOptions
         )
         guard request.values.count <= 96 else {
             throw AIError.invalidResponse(provider: providerID, message: "Cohere supports at most 96 embedding inputs per call.")
@@ -261,10 +260,9 @@ public final class CohereRerankingModel: RerankingModel, @unchecked Sendable {
     }
 
     public func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
-        let options = cohereProviderOptions(
+        let options = try cohereRerankingProviderOptions(
             extraBody: request.extraBody,
-            providerOptions: request.providerOptions,
-            supportedProviderOptionKeys: cohereRerankingProviderOptionKeys
+            providerOptions: request.providerOptions
         )
         let preparedDocuments = cohereRerankingDocuments(from: request)
         var body: [String: JSONValue] = [
@@ -389,10 +387,17 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
     }
 }
 
-private func cohereProviderOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+private func cohereProviderOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
     var output = cohereProviderOptions(from: request.extraBody)
-    if let nested = request.providerOptions["cohere"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+    if let value = request.providerOptions["cohere"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere", message: "Cohere provider options must be an object.")
+        }
+        for key in cohereLanguageProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try cohereValidateLanguageProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
 }
@@ -405,19 +410,119 @@ private func cohereProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
     return output
 }
 
+private let cohereLanguageProviderOptionKeys: Set<String> = ["thinking"]
 private let cohereEmbeddingProviderOptionKeys: Set<String> = ["inputType", "truncate", "outputDimension"]
 private let cohereRerankingProviderOptionKeys: Set<String> = ["maxTokensPerDoc", "priority"]
 
-private func cohereProviderOptions(
+private func cohereEmbeddingProviderOptions(
     extraBody: [String: JSONValue],
-    providerOptions: [String: JSONValue],
-    supportedProviderOptionKeys: Set<String>
-) -> [String: JSONValue] {
+    providerOptions: [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = cohereProviderOptions(from: extraBody)
-    if let nested = providerOptions["cohere"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    if let value = providerOptions["cohere"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere", message: "Cohere provider options must be an object.")
+        }
+        for key in cohereEmbeddingProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try cohereValidateEmbeddingProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
+}
+
+private func cohereRerankingProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue]
+) throws -> [String: JSONValue] {
+    var output = cohereProviderOptions(from: extraBody)
+    if let value = providerOptions["cohere"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere", message: "Cohere provider options must be an object.")
+        }
+        for key in cohereRerankingProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try cohereValidateRerankingProviderOptions(nested)) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private func cohereValidateLanguageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    guard let thinking = options["thinking"] else { return [:] }
+    guard thinking != .null else {
+        throw AIError.invalidArgument(argument: "providerOptions.cohere.thinking", message: "Cohere thinking cannot be null.")
+    }
+    guard let object = thinking.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.cohere.thinking", message: "Cohere thinking must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    if let type = object["type"] {
+        guard type != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere.thinking.type", message: "Cohere thinking.type cannot be null.")
+        }
+        guard let string = type.stringValue, ["enabled", "disabled"].contains(string) else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere.thinking.type", message: "Cohere thinking.type must be enabled or disabled.")
+        }
+        output["type"] = type
+    }
+    if let tokenBudget = object["tokenBudget"] {
+        guard tokenBudget != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere.thinking.tokenBudget", message: "Cohere thinking.tokenBudget cannot be null.")
+        }
+        try cohereRequireNumber(tokenBudget, argument: "providerOptions.cohere.thinking.tokenBudget", message: "Cohere thinking.tokenBudget must be a number.")
+        output["tokenBudget"] = tokenBudget
+    }
+    return ["thinking": .object(output)]
+}
+
+private func cohereValidateEmbeddingProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where cohereEmbeddingProviderOptionKeys.contains(key) {
+        guard value != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere.\(key)", message: "Cohere \(key) cannot be null.")
+        }
+        switch key {
+        case "inputType":
+            guard let string = value.stringValue, ["search_document", "search_query", "classification", "clustering"].contains(string) else {
+                throw AIError.invalidArgument(argument: "providerOptions.cohere.inputType", message: "Cohere inputType must be one of search_document, search_query, classification, clustering.")
+            }
+            output[key] = value
+        case "truncate":
+            guard let string = value.stringValue, ["NONE", "START", "END"].contains(string) else {
+                throw AIError.invalidArgument(argument: "providerOptions.cohere.truncate", message: "Cohere truncate must be one of NONE, START, END.")
+            }
+            output[key] = value
+        case "outputDimension":
+            guard let number = value.doubleValue, [256, 512, 1024, 1536].contains(Int(number)), number == Double(Int(number)) else {
+                throw AIError.invalidArgument(argument: "providerOptions.cohere.outputDimension", message: "Cohere outputDimension must be one of 256, 512, 1024, 1536.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func cohereValidateRerankingProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where cohereRerankingProviderOptionKeys.contains(key) {
+        guard value != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.cohere.\(key)", message: "Cohere \(key) cannot be null.")
+        }
+        try cohereRequireNumber(value, argument: "providerOptions.cohere.\(key)", message: "Cohere \(key) must be a number.")
+        output[key] = value
+    }
+    return output
+}
+
+private func cohereRequireNumber(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.doubleValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
 }
 
 private struct CohereRerankingDocuments {
