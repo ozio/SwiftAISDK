@@ -248,6 +248,7 @@ import Testing
                 ranking: ["ranker": "auto", "scoreThreshold": 0.2]
             ),
             "code_interpreter": OpenAITools.codeInterpreter(container: ["fileIds": ["file_1", "file_2"]]),
+            "computer_use": OpenAITools.computerUse(displayWidth: 1024, displayHeight: 768, environment: "browser"),
             "image_generation": OpenAITools.imageGeneration(
                 inputFidelity: "high",
                 inputImageMask: ["fileId": "file_mask", "imageUrl": "https://example.com/mask.png"],
@@ -278,7 +279,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     let tools = try #require(body["tools"]?.arrayValue)
-    #expect(tools.count == 8)
+    #expect(tools.count == 9)
 
     let functionTool = try #require(tools.first { $0["type"]?.stringValue == "function" })
     #expect(functionTool["name"]?.stringValue == "lookup")
@@ -302,6 +303,11 @@ import Testing
     let codeInterpreter = try #require(tools.first { $0["type"]?.stringValue == "code_interpreter" })
     #expect(codeInterpreter["container"]?["type"]?.stringValue == "auto")
     #expect(codeInterpreter["container"]?["file_ids"]?[1]?.stringValue == "file_2")
+
+    let computerUse = try #require(tools.first { $0["type"]?.stringValue == "computer_use" })
+    #expect(computerUse["display_width"]?.intValue == 1024)
+    #expect(computerUse["display_height"]?.intValue == 768)
+    #expect(computerUse["environment"]?.stringValue == "browser")
 
     let imageGeneration = try #require(tools.first { $0["type"]?.stringValue == "image_generation" })
     #expect(imageGeneration["input_fidelity"]?.stringValue == "high")
@@ -457,6 +463,49 @@ import Testing
     #expect(result.toolCalls[1].id == "ws_1")
     #expect(result.toolCalls[1].name == "web_search")
     #expect(result.toolCalls[1].providerExecuted == true)
+    #expect(result.toolCalls[0].providerMetadata["openai"]?["itemId"]?.stringValue == "fc_1")
+    #expect(result.toolResults.count == 1)
+    #expect(result.toolResults[0].toolCallID == "ws_1")
+    #expect(result.toolResults[0].toolName == "web_search")
+    #expect(result.toolResults[0].result["action"]?["type"]?.stringValue == "search")
+    #expect(result.toolResults[0].result["action"]?["query"]?.stringValue == "weather")
+}
+
+@Test func openAIResponsesParsesCustomAndComputerUseToolCallsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"resp-1","status":"completed","output":[{"type":"custom_tool_call","id":"ct_abc123def456","call_id":"call_custom_sql_001","name":"write_sql","input":"SELECT * FROM users WHERE age > 25"},{"type":"computer_call","id":"computer_67cf2b3051e88190b006770db6fdb13d","status":"completed"}],"usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4o-mini")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use tools.")],
+        tools: [
+            "write_sql": OpenAITools.customTool(name: "write_sql", format: ["type": "grammar", "syntax": "regex", "definition": "SELECT .+"]),
+            "computer_use": OpenAITools.computerUse()
+        ],
+        extraBody: ["toolChoice": ["type": "tool", "toolName": "computer_use"]]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["tool_choice"]?["type"]?.stringValue == "computer_use")
+
+    #expect(result.text == "")
+    #expect(result.toolCalls.count == 2)
+    #expect(result.toolCalls[0].id == "call_custom_sql_001")
+    #expect(result.toolCalls[0].name == "write_sql")
+    #expect(result.toolCalls[0].arguments == "\"SELECT * FROM users WHERE age > 25\"")
+    #expect(result.toolCalls[0].providerMetadata["openai"]?["itemId"]?.stringValue == "ct_abc123def456")
+    #expect(result.toolCalls[1].id == "computer_67cf2b3051e88190b006770db6fdb13d")
+    #expect(result.toolCalls[1].name == "computer_use")
+    #expect(result.toolCalls[1].arguments == "")
+    #expect(result.toolCalls[1].providerExecuted == true)
+    #expect(result.toolResults.count == 1)
+    #expect(result.toolResults[0].toolCallID == "computer_67cf2b3051e88190b006770db6fdb13d")
+    #expect(result.toolResults[0].toolName == "computer_use")
+    #expect(result.toolResults[0].result["type"]?.stringValue == "computer_use_tool_result")
+    #expect(result.toolResults[0].result["status"]?.stringValue == "completed")
 }
 
 @Test func openAIResponsesParsesMCPApprovalRequests() async throws {
@@ -531,6 +580,54 @@ import Testing
     #expect(toolCall?.id == "call_1")
     #expect(toolCall?.name == "lookup")
     #expect(toolCall?.arguments == #"{"query":"weather"}"#)
+    #expect(finishReason == "stop")
+}
+
+@Test func openAIResponsesStreamsComputerUseToolResultsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"type":"computer_call","id":"computer_67cf2b3051e88190b006770db6fdb13d","status":"in_progress"}}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"type":"computer_call","id":"computer_67cf2b3051e88190b006770db6fdb13d","status":"completed"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4o-mini")
+
+    var lifecycle: [String] = []
+    var toolCall: AIToolCall?
+    var toolResult: AIToolResult?
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Use the computer.")])) {
+        switch part {
+        case let .toolInputStart(id, name, providerExecuted, _, _, _):
+            lifecycle.append("start:\(id):\(name):\(providerExecuted)")
+        case let .toolInputEnd(id, _):
+            lifecycle.append("end:\(id)")
+        case let .toolCall(call):
+            toolCall = call
+        case let .toolResult(result):
+            toolResult = result
+        case let .finish(reason, _):
+            finishReason = reason
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == [
+        "start:computer_67cf2b3051e88190b006770db6fdb13d:computer_use:true",
+        "end:computer_67cf2b3051e88190b006770db6fdb13d"
+    ])
+    #expect(toolCall?.id == "computer_67cf2b3051e88190b006770db6fdb13d")
+    #expect(toolCall?.name == "computer_use")
+    #expect(toolCall?.arguments == "")
+    #expect(toolCall?.providerExecuted == true)
+    #expect(toolResult?.toolCallID == "computer_67cf2b3051e88190b006770db6fdb13d")
+    #expect(toolResult?.toolName == "computer_use")
+    #expect(toolResult?.result["type"]?.stringValue == "computer_use_tool_result")
+    #expect(toolResult?.result["status"]?.stringValue == "completed")
     #expect(finishReason == "stop")
 }
 
