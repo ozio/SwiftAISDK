@@ -6,11 +6,7 @@ public final class VercelProvider: AIProvider, @unchecked Sendable {
     private let chatProvider: OpenAICompatibleProvider
 
     public init(settings: ProviderSettings = ProviderSettings()) throws {
-        let headers = try OpenAICompatibleProvider.buildHeaders(
-            providerID: providerID,
-            authorization: .bearer(environmentVariables: ["VERCEL_API_KEY"]),
-            settings: settings
-        )
+        let headers = try vercelHeaders(settings: settings)
         let config = ModelHTTPConfig(
             providerID: "vercel.chat",
             baseURL: settings.baseURL ?? "https://api.v0.dev/v1",
@@ -27,6 +23,10 @@ public final class VercelProvider: AIProvider, @unchecked Sendable {
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
         try chatProvider.chatModel(modelID)
+    }
+
+    public func callAsFunction(_ modelID: String) throws -> any LanguageModel {
+        try languageModel(modelID)
     }
 
     public func chatModel(_ modelID: String) throws -> any LanguageModel {
@@ -56,4 +56,16 @@ public final class VercelProvider: AIProvider, @unchecked Sendable {
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
     }
+}
+
+private func vercelHeaders(settings: ProviderSettings) throws -> [String: String] {
+    var headers = settings.headers
+    if !headers.keys.contains(where: { $0.caseInsensitiveCompare("authorization") == .orderedSame }) {
+        let key = settings.apiKey ?? environmentValue(["VERCEL_API_KEY"])
+        guard let key else {
+            throw AIError.missingAPIKey(provider: "vercel", environmentVariables: ["VERCEL_API_KEY"])
+        }
+        headers["Authorization"] = "Bearer \(key)"
+    }
+    return withUserAgentSuffix(headers, "ai-sdk/vercel/0.0.0-test")
 }

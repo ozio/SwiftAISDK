@@ -316,7 +316,9 @@ Progress:
   for explicit low-level overrides. AssemblyAI transcription now scopes
   `providerOptions.assemblyai` to the upstream submit schema and uses the
   upstream 3s poll cadence while keeping raw `extraBody` passthrough for
-  explicit low-level overrides. Mistral and
+  explicit low-level overrides. Vercel now mirrors the upstream callable chat
+  provider wrapper, custom base URL/header behavior, and `ai-sdk/vercel`
+  user-agent suffix over OpenAI-compatible chat. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.
