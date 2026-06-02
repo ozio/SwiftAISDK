@@ -2661,16 +2661,36 @@ private func deepgramSpeechQuery(for outputFormat: String?) -> [String: String] 
         return ["encoding": "linear16", "container": "none"]
     default:
         let parts = lowercased.split(separator: "_").map(String.init)
-        guard parts.count >= 2, let sampleRate = Int(parts[1]) else { return [:] }
+        guard parts.count >= 2 else { return [:] }
         let first = parts[0]
         if first == "wav" {
+            guard let sampleRate = Int(parts[1]) else { return ["encoding": "linear16", "container": "wav"] }
             return ["encoding": "linear16", "container": "wav", "sample_rate": String(sampleRate)]
         }
         if first == "ogg" {
-            return ["encoding": "opus", "container": "ogg"]
+            guard let sampleRate = Int(parts[1]) else { return ["encoding": "opus", "container": "ogg"] }
+            return ["encoding": "opus", "container": "ogg", "sample_rate": String(sampleRate)]
         }
-        if ["linear16", "mulaw", "alaw"].contains(first) {
-            return ["encoding": first, "container": "wav", "sample_rate": String(sampleRate)]
+        if first == "linear16" {
+            var query = ["encoding": "linear16", "container": "wav"]
+            if let sampleRate = Int(parts[1]), [8000, 16000, 24000, 32000, 48000].contains(sampleRate) {
+                query["sample_rate"] = String(sampleRate)
+            }
+            return query
+        }
+        if first == "mulaw" || first == "alaw" {
+            var query = ["encoding": first, "container": "wav"]
+            if let sampleRate = Int(parts[1]), [8000, 16000].contains(sampleRate) {
+                query["sample_rate"] = String(sampleRate)
+            }
+            return query
+        }
+        if first == "flac" {
+            var query = ["encoding": "flac"]
+            if let sampleRate = Int(parts[1]), [8000, 16000, 22050, 32000, 48000].contains(sampleRate) {
+                query["sample_rate"] = String(sampleRate)
+            }
+            return query
         }
         if first == "opus" {
             return ["encoding": "opus", "container": "ogg"]
@@ -2678,7 +2698,7 @@ private func deepgramSpeechQuery(for outputFormat: String?) -> [String: String] 
         if ["mp3", "aac"].contains(first) {
             return ["encoding": first]
         }
-        return ["encoding": first, "sample_rate": String(sampleRate)]
+        return [:]
     }
 }
 

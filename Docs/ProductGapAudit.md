@@ -480,7 +480,9 @@ Impact:
   for `providerOptions.deepgram`, matching upstream schema parsing while keeping
   raw `extraBody` as the low-level escape hatch. This prevents unrelated
   provider namespaces and unsupported typed options from leaking into `/listen`
-  or `/speak` query strings.
+  or `/speak` query strings. Speech output-format parsing also mirrors
+  upstream's per-encoding sample-rate allow-lists and unknown-format no-op
+  behavior.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

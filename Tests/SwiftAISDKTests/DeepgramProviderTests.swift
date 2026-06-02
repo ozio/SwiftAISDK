@@ -79,7 +79,7 @@ import Testing
     let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
     let model = try provider.transcriptionModel("nova-3")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.deepgram", message: "Deepgram provider options must be an object.")) {
         _ = try await model.transcribe(AudioTranscriptionRequest(
             audio: Data("wav".utf8),
             providerOptions: ["deepgram": .string("invalid")]
@@ -113,6 +113,28 @@ import Testing
             providerOptions: ["deepgram": .object(["uttSplit": .string("0.8")])]
         ))
     }
+}
+
+@Test func deepgramTranscriptionTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"results":{"channels":[{"alternatives":[{"transcript":"nested","words":[]}]}]}}
+    """))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+    let model = try provider.transcriptionModel("nova-3")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        providerOptions: ["deepgram": .null],
+        extraBody: [
+            "deepgram": .object([
+                "language": .string("ja"),
+                "smartFormat": .bool(true)
+            ])
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?diarize=true&language=ja&model=nova-3&smart_format=true")
 }
 
 @Test func deepgramTranscriptionIgnoresStandardLanguageLikeUpstream() async throws {
@@ -204,6 +226,30 @@ import Testing
     #expect(body["text"]?.stringValue == "Hello")
 }
 
+@Test func deepgramSpeechParsesOutputFormatSampleRatesLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: Array(
+        repeating: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/wav"], body: Data("audio".utf8)),
+        count: 6
+    ))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+    let model = try provider.speechModel("aura-2-helena-en")
+
+    _ = try await model.speak(SpeechRequest(text: "Hello", format: "linear16_44100"))
+    _ = try await model.speak(SpeechRequest(text: "Hello", format: "linear16_48000"))
+    _ = try await model.speak(SpeechRequest(text: "Hello", format: "mulaw_24000"))
+    _ = try await model.speak(SpeechRequest(text: "Hello", format: "flac_44100"))
+    _ = try await model.speak(SpeechRequest(text: "Hello", format: "ogg_44100"))
+    _ = try await model.speak(SpeechRequest(text: "Hello", format: "unknown_24000"))
+
+    let requests = await transport.requests()
+    #expect(requests[0].url.absoluteString == "https://api.deepgram.com/v1/speak?container=wav&encoding=linear16&model=aura-2-helena-en")
+    #expect(requests[1].url.absoluteString == "https://api.deepgram.com/v1/speak?container=wav&encoding=linear16&model=aura-2-helena-en&sample_rate=48000")
+    #expect(requests[2].url.absoluteString == "https://api.deepgram.com/v1/speak?container=wav&encoding=mulaw&model=aura-2-helena-en")
+    #expect(requests[3].url.absoluteString == "https://api.deepgram.com/v1/speak?encoding=flac&model=aura-2-helena-en")
+    #expect(requests[4].url.absoluteString == "https://api.deepgram.com/v1/speak?container=ogg&encoding=opus&model=aura-2-helena-en&sample_rate=44100")
+    #expect(requests[5].url.absoluteString == "https://api.deepgram.com/v1/speak?model=aura-2-helena-en")
+}
+
 @Test func deepgramSpeechUsesProviderOptionsWarningsAndAbortSignal() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(
         statusCode: 200,
@@ -265,7 +311,7 @@ import Testing
     let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
     let model = try provider.speechModel("aura-2-helena-en")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.deepgram", message: "Deepgram provider options must be an object.")) {
         _ = try await model.speak(SpeechRequest(
             text: "Hello",
             providerOptions: ["deepgram": .number(1)]
@@ -313,6 +359,21 @@ import Testing
             providerOptions: ["deepgram": .object(["tag": .array([.string("ok"), .object(["bad": true])])])]
         ))
     }
+}
+
+@Test func deepgramSpeechTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("audio".utf8)))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+    let model = try provider.speechModel("aura-2-helena-en")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        providerOptions: ["deepgram": .null],
+        extraBody: ["deepgram": .object(["encoding": .string("linear16"), "sampleRate": .number(16000)])]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?container=wav&encoding=linear16&model=aura-2-helena-en&sample_rate=16000")
 }
 
 @Test func deepgramSpeechWarnsForUnsupportedStandardOptions() async throws {
