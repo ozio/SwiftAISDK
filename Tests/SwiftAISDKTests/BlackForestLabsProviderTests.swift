@@ -85,6 +85,112 @@ import Testing
     #expect(requests[2].headers["x-request-id"] == "req-1")
 }
 
+@Test func blackForestLabsProviderOptionsValidateAndMapUpstreamSchemaFields() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-schema","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"status":"Ready","result":{"sample":"https://bfl.example.com/schema.png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: [
+            "blackForestLabs": .object([
+                "imagePrompt": "style-image",
+                "imagePromptStrength": 0.75,
+                "inputImage": "input-1",
+                "inputImage2": "input-2",
+                "steps": 30,
+                "guidance": 2.5,
+                "width": 1024,
+                "height": 768,
+                "outputFormat": "jpeg",
+                "promptUpsampling": true,
+                "raw": false,
+                "safetyTolerance": 6,
+                "webhookSecret": "secret",
+                "webhookUrl": "https://hooks.example.com/bfl",
+                "pollIntervalMillis": 1,
+                "pollTimeoutMillis": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image_prompt"]?.stringValue == "style-image")
+    #expect(body["image_prompt_strength"]?.doubleValue == 0.75)
+    #expect(body["input_image"]?.stringValue == "input-1")
+    #expect(body["input_image_2"]?.stringValue == "input-2")
+    #expect(body["steps"]?.intValue == 30)
+    #expect(body["guidance"]?.doubleValue == 2.5)
+    #expect(body["width"]?.intValue == 1024)
+    #expect(body["height"]?.intValue == 768)
+    #expect(body["output_format"]?.stringValue == "jpeg")
+    #expect(body["prompt_upsampling"]?.boolValue == true)
+    #expect(body["raw"]?.boolValue == false)
+    #expect(body["safety_tolerance"]?.intValue == 6)
+    #expect(body["webhook_secret"]?.stringValue == "secret")
+    #expect(body["webhook_url"]?.stringValue == "https://hooks.example.com/bfl")
+    #expect(body["pollIntervalMillis"] == nil)
+    #expect(body["pollTimeoutMillis"] == nil)
+}
+
+@Test func blackForestLabsProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid strength",
+            providerOptions: ["blackForestLabs": .object(["imagePromptStrength": 1.5])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid steps",
+            providerOptions: ["blackForestLabs": .object(["steps": 1.5])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid width",
+            providerOptions: ["blackForestLabs": .object(["width": 128])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid output format",
+            providerOptions: ["blackForestLabs": .object(["outputFormat": "webp"])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid raw",
+            providerOptions: ["blackForestLabs": .object(["raw": "false"])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid webhook",
+            providerOptions: ["blackForestLabs": .object(["webhookUrl": "not-a-url"])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "invalid polling",
+            providerOptions: ["blackForestLabs": .object(["pollIntervalMillis": 0])]
+        ))
+    }
+}
+
 @Test func blackForestLabsImageMapsFilesMaskAndLegacyNestedOptions() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"bfl-fill-1","polling_url":"https://api.bfl.ai/v1/get_result"}"#),

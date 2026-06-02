@@ -442,7 +442,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = blackForestLabsProviderOptions(from: request)
+        let options = try blackForestLabsProviderOptions(from: request)
         let warnings = blackForestLabsWarnings(for: request)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let aspectRatio = request.aspectRatio {
@@ -514,10 +514,10 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
-private func blackForestLabsProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+private func blackForestLabsProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
     var output = blackForestLabsProviderOptions(from: request.extraBody)
     if let providerOptions = request.providerOptions["blackForestLabs"]?.objectValue {
-        output.merge(blackForestLabsSupportedProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+        output.merge(try blackForestLabsValidatedProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     }
     return output
 }
@@ -551,8 +551,52 @@ private func blackForestLabsOptions(from extraBody: [String: JSONValue]) -> [Str
     return output
 }
 
-private func blackForestLabsSupportedProviderOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
-    options.filter { blackForestLabsSupportedProviderOptionKeys.contains($0.key) }
+private func blackForestLabsValidatedProviderOptions(from options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where blackForestLabsSupportedProviderOptionKeys.contains(key) {
+        switch key {
+        case "imagePrompt", "inputImage", "inputImage2", "inputImage3", "inputImage4", "inputImage5", "inputImage6", "inputImage7", "inputImage8", "inputImage9", "inputImage10", "webhookSecret":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.\(key)", message: "Black Forest Labs \(key) must be a string.")
+            }
+        case "webhookUrl":
+            guard let url = value.stringValue, blackForestLabsIsURL(url) else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.webhookUrl", message: "Black Forest Labs webhookUrl must be a valid URL.")
+            }
+        case "imagePromptStrength":
+            guard let number = value.doubleValue, number >= 0, number <= 1 else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.imagePromptStrength", message: "Black Forest Labs imagePromptStrength must be between 0 and 1.")
+            }
+        case "steps", "pollIntervalMillis", "pollTimeoutMillis":
+            guard let number = value.doubleValue, blackForestLabsIsInteger(number), number > 0 else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.\(key)", message: "Black Forest Labs \(key) must be a positive integer.")
+            }
+        case "guidance":
+            guard let number = value.doubleValue, number >= 0 else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.guidance", message: "Black Forest Labs guidance must be greater than or equal to 0.")
+            }
+        case "width", "height":
+            guard let number = value.doubleValue, blackForestLabsIsInteger(number), number >= 256, number <= 1920 else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.\(key)", message: "Black Forest Labs \(key) must be an integer between 256 and 1920.")
+            }
+        case "outputFormat":
+            guard let format = value.stringValue, ["jpeg", "png"].contains(format) else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.outputFormat", message: "Black Forest Labs outputFormat must be one of jpeg, png.")
+            }
+        case "promptUpsampling", "raw":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.\(key)", message: "Black Forest Labs \(key) must be a boolean.")
+            }
+        case "safetyTolerance":
+            guard let number = value.doubleValue, blackForestLabsIsInteger(number), number >= 0, number <= 6 else {
+                throw AIError.invalidArgument(argument: "providerOptions.blackForestLabs.safetyTolerance", message: "Black Forest Labs safetyTolerance must be an integer between 0 and 6.")
+            }
+        default:
+            break
+        }
+        output[key] = value
+    }
+    return output
 }
 
 private let blackForestLabsSupportedProviderOptionKeys: Set<String> = [
@@ -649,6 +693,15 @@ private func blackForestLabsMoveKey(_ source: String, to destination: String, in
     if let value = values.removeValue(forKey: source) {
         values[destination] = value
     }
+}
+
+private func blackForestLabsIsInteger(_ value: Double) -> Bool {
+    value.isFinite && value.rounded(.towardZero) == value
+}
+
+private func blackForestLabsIsURL(_ value: String) -> Bool {
+    guard let components = URLComponents(string: value) else { return false }
+    return components.scheme != nil && components.host != nil
 }
 
 private func bflAspectRatio(from size: String) -> String? {
