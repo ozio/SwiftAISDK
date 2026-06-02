@@ -434,6 +434,14 @@ Impact:
   generation options, polling controls, and passthrough fields, unsupported
   `fps` returns a warning, and results preserve task usage/provider metadata,
   final poll response metadata, and abort signals.
+- Black Forest Labs image generation now follows the upstream provider more
+  closely: standard `size`, `aspectRatio`, and `seed` map into the task body
+  with upstream-style size warnings, `providerOptions.blackForestLabs` maps the
+  official option schema without leaking unsupported keys, fill models use the
+  native `image` field while other models use `input_image`, masks and multiple
+  input images are preserved, provider metadata includes seed/timing/cost and
+  megapixel fields, response metadata uses the final image download response,
+  and submit/poll/download requests forward abort signals.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

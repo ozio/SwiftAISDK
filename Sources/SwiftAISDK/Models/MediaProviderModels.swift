@@ -442,12 +442,12 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = blackForestLabsProviderOptions(from: request.extraBody)
+        let options = blackForestLabsProviderOptions(from: request)
+        let warnings = blackForestLabsWarnings(for: request)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
-        if let seed = options["seed"] {
-            body["seed"] = seed
-        }
-        if let aspectRatio = options["aspectRatio"] ?? options["aspect_ratio"] {
+        if let aspectRatio = request.aspectRatio {
+            body["aspect_ratio"] = .string(aspectRatio)
+        } else if let aspectRatio = options["aspectRatio"] ?? options["aspect_ratio"] {
             body["aspect_ratio"] = aspectRatio
         } else if let size = request.size, let aspectRatio = bflAspectRatio(from: size) {
             body["aspect_ratio"] = .string(aspectRatio)
@@ -457,10 +457,13 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             body["height"] = options["height"] ?? .number(Double(dimensions.height))
         }
         body.merge(blackForestLabsOptions(from: options)) { _, new in new }
+        if let seed = request.seed {
+            body["seed"] = .number(Double(seed))
+        }
         body.merge(try blackForestLabsImageInputs(files: request.files, mask: request.mask, modelID: modelID)) { _, new in new }
-        let submitted = try await config.sendJSON(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
-        guard let pollURL = submitted["polling_url"]?.stringValue,
-              let requestID = submitted["id"]?.stringValue else {
+        let submitted = try await config.sendJSONResponse(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        guard let pollURL = submitted.json["polling_url"]?.stringValue,
+              let requestID = submitted.json["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs submit response did not contain id and polling_url.")
         }
         let raw = try await pollBFL(
@@ -482,7 +485,10 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             urls: [url],
             base64Images: [image.body.base64EncodedString()],
             rawValue: raw,
-            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body))
+            warnings: warnings,
+            providerMetadata: blackForestLabsProviderMetadata(submit: submitted.json, poll: raw),
+            requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
+            responseMetadata: AIResponseMetadata(timestamp: Date(), modelID: modelID, headers: image.headers)
         )
     }
 
@@ -508,6 +514,14 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
+private func blackForestLabsProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    var output = blackForestLabsProviderOptions(from: request.extraBody)
+    if let providerOptions = request.providerOptions["blackForestLabs"]?.objectValue {
+        output.merge(blackForestLabsSupportedProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    }
+    return output
+}
+
 private func blackForestLabsProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     if let nested = extraBody["blackForestLabs"]?.objectValue {
         return nested
@@ -519,7 +533,8 @@ private func blackForestLabsProviderOptions(from extraBody: [String: JSONValue])
 
 private func blackForestLabsOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
-    blackForestLabsMoveKey("aspectRatio", to: "aspect_ratio", in: &output)
+    output.removeValue(forKey: "aspectRatio")
+    output.removeValue(forKey: "aspect_ratio")
     blackForestLabsMoveKey("imagePrompt", to: "image_prompt", in: &output)
     blackForestLabsMoveKey("imagePromptStrength", to: "image_prompt_strength", in: &output)
     blackForestLabsMoveKey("outputFormat", to: "output_format", in: &output)
@@ -534,6 +549,74 @@ private func blackForestLabsOptions(from extraBody: [String: JSONValue]) -> [Str
     output.removeValue(forKey: "pollIntervalMillis")
     output.removeValue(forKey: "pollTimeoutMillis")
     return output
+}
+
+private func blackForestLabsSupportedProviderOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
+    options.filter { blackForestLabsSupportedProviderOptionKeys.contains($0.key) }
+}
+
+private let blackForestLabsSupportedProviderOptionKeys: Set<String> = [
+    "imagePrompt",
+    "imagePromptStrength",
+    "inputImage",
+    "inputImage2",
+    "inputImage3",
+    "inputImage4",
+    "inputImage5",
+    "inputImage6",
+    "inputImage7",
+    "inputImage8",
+    "inputImage9",
+    "inputImage10",
+    "steps",
+    "guidance",
+    "width",
+    "height",
+    "outputFormat",
+    "promptUpsampling",
+    "raw",
+    "safetyTolerance",
+    "webhookSecret",
+    "webhookUrl",
+    "pollIntervalMillis",
+    "pollTimeoutMillis"
+]
+
+private func blackForestLabsWarnings(for request: ImageGenerationRequest) -> [AIWarning] {
+    guard request.size != nil else { return [] }
+    if request.aspectRatio == nil {
+        return [
+            AIWarning(
+                type: "unsupported",
+                feature: "size",
+                message: "Deriving aspect_ratio from size. Use the width and height provider options to specify dimensions for models that support them."
+            )
+        ]
+    }
+    return [
+        AIWarning(
+            type: "unsupported",
+            feature: "size",
+            message: "Black Forest Labs ignores size when aspectRatio is provided. Use the width and height provider options to specify dimensions for models that support them"
+        )
+    ]
+}
+
+private func blackForestLabsProviderMetadata(submit: JSONValue, poll: JSONValue) -> [String: JSONValue] {
+    let imageMetadata: JSONValue = .object([
+        "seed": poll["result"]?["seed"],
+        "start_time": poll["result"]?["start_time"],
+        "end_time": poll["result"]?["end_time"],
+        "duration": poll["result"]?["duration"],
+        "cost": submit["cost"],
+        "inputMegapixels": submit["input_mp"],
+        "outputMegapixels": submit["output_mp"]
+    ])
+    return [
+        "blackForestLabs": .object([
+            "images": .array([imageMetadata])
+        ])
+    ]
 }
 
 private func blackForestLabsImageInputs(files: [ImageInputFile], mask: ImageInputFile?, modelID: String) throws -> [String: JSONValue] {

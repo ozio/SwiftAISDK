@@ -1,0 +1,211 @@
+import Foundation
+import Testing
+@testable import SwiftAISDK
+
+@Test func blackForestLabsImageSubmitsPollsDownloadsAndPreservesMetadata() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-1","polling_url":"https://api.bfl.ai/v1/get_result","cost":0.01,"input_mp":0.5,"output_mp":0.75}"#),
+        jsonResponse(#"{"status":"Ready","result":{"sample":"https://bfl.example.com/image.png","seed":42,"start_time":1,"end_time":3,"duration":2}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png", "x-image": "yes"], body: Data("png".utf8))
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    let result = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        size: "1024x768",
+        seed: 123,
+        providerOptions: [
+            "blackForestLabs": .object([
+                "promptUpsampling": true,
+                "outputFormat": "png",
+                "imagePromptStrength": 0.4,
+                "safetyTolerance": 2,
+                "webhookUrl": "https://hooks.example.com/bfl",
+                "inputImage": "image-b64",
+                "unsupportedProperty": "drop-me",
+                "pollIntervalMillis": 1,
+                "pollTimeoutMillis": 1000
+            ]),
+            "openai": .object([
+                "promptUpsampling": false
+            ])
+        ],
+        headers: ["x-request-id": "req-1"]
+    ))
+
+    #expect(result.urls == ["https://bfl.example.com/image.png"])
+    #expect(result.base64Images == [Data("png".utf8).base64EncodedString()])
+    #expect(result.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "size",
+            message: "Deriving aspect_ratio from size. Use the width and height provider options to specify dimensions for models that support them."
+        )
+    ])
+    #expect(result.providerMetadata["blackForestLabs"]?["images"]?[0]?["seed"]?.intValue == 42)
+    #expect(result.providerMetadata["blackForestLabs"]?["images"]?[0]?["start_time"]?.intValue == 1)
+    #expect(result.providerMetadata["blackForestLabs"]?["images"]?[0]?["end_time"]?.intValue == 3)
+    #expect(result.providerMetadata["blackForestLabs"]?["images"]?[0]?["duration"]?.intValue == 2)
+    #expect(result.providerMetadata["blackForestLabs"]?["images"]?[0]?["cost"]?.doubleValue == 0.01)
+    #expect(result.providerMetadata["blackForestLabs"]?["images"]?[0]?["inputMegapixels"]?.doubleValue == 0.5)
+    #expect(result.providerMetadata["blackForestLabs"]?["images"]?[0]?["outputMegapixels"]?.doubleValue == 0.75)
+    #expect(result.responseMetadata.modelID == "flux-pro-1.1")
+    #expect(result.responseMetadata.headers["x-image"] == "yes")
+    #expect(result.responseMetadata.body == nil)
+    #expect(result.requestMetadata.headers["x-request-id"] == "req-1")
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests[0].method == "POST")
+    #expect(requests[0].url.absoluteString == "https://api.bfl.ai/v1/flux-pro-1.1")
+    #expect(requests[0].headers["x-key"] == "bfl-key")
+    #expect(requests[0].headers["x-request-id"] == "req-1")
+    let body = try decodeJSONBody(try #require(requests[0].body))
+    #expect(body["prompt"]?.stringValue == "cat")
+    #expect(body["aspect_ratio"]?.stringValue == "4:3")
+    #expect(body["width"]?.intValue == 1024)
+    #expect(body["height"]?.intValue == 768)
+    #expect(body["seed"]?.intValue == 123)
+    #expect(body["prompt_upsampling"]?.boolValue == true)
+    #expect(body["output_format"]?.stringValue == "png")
+    #expect(body["image_prompt_strength"]?.doubleValue == 0.4)
+    #expect(body["safety_tolerance"]?.intValue == 2)
+    #expect(body["webhook_url"]?.stringValue == "https://hooks.example.com/bfl")
+    #expect(body["input_image"]?.stringValue == "image-b64")
+    #expect(body["unsupportedProperty"] == nil)
+    #expect(body["openai"] == nil)
+    #expect(body["pollIntervalMillis"] == nil)
+    #expect(body["pollTimeoutMillis"] == nil)
+    #expect(requests[1].method == "GET")
+    #expect(requests[1].url.absoluteString == "https://api.bfl.ai/v1/get_result?id=bfl-1")
+    #expect(requests[1].headers["x-request-id"] == "req-1")
+    #expect(requests[2].method == "GET")
+    #expect(requests[2].url.absoluteString == "https://bfl.example.com/image.png")
+    #expect(requests[2].headers["x-request-id"] == "req-1")
+}
+
+@Test func blackForestLabsImageMapsFilesMaskAndLegacyNestedOptions() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-fill-1","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"status":"Ready","result":{"sample":"https://bfl.example.com/fill.png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("fill-png".utf8))
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.0-fill")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "replace background",
+        size: "1280x720",
+        files: [
+            ImageInputFile(url: "https://example.com/input.png"),
+            ImageInputFile(data: Data([1, 2, 3]), mediaType: "image/png")
+        ],
+        mask: ImageInputFile(data: Data([9, 8, 7]), mediaType: "image/png"),
+        extraBody: [
+            "blackForestLabs": .object([
+                "width": 640,
+                "height": 360,
+                "seed": 123,
+                "guidance": 2.5,
+                "promptUpsampling": true,
+                "outputFormat": "jpeg",
+                "pollIntervalMillis": 1,
+                "pollTimeoutMillis": 1000
+            ])
+        ]
+    ))
+
+    let requests = await transport.requests()
+    let body = try decodeJSONBody(try #require(requests[0].body))
+    #expect(body["prompt"]?.stringValue == "replace background")
+    #expect(body["aspect_ratio"]?.stringValue == "16:9")
+    #expect(body["width"]?.intValue == 640)
+    #expect(body["height"]?.intValue == 360)
+    #expect(body["seed"]?.intValue == 123)
+    #expect(body["guidance"]?.doubleValue == 2.5)
+    #expect(body["prompt_upsampling"]?.boolValue == true)
+    #expect(body["output_format"]?.stringValue == "jpeg")
+    #expect(body["image"]?.stringValue == "https://example.com/input.png")
+    #expect(body["image_2"]?.stringValue == Data([1, 2, 3]).base64EncodedString())
+    #expect(body["mask"]?.stringValue == Data([9, 8, 7]).base64EncodedString())
+    #expect(body["blackForestLabs"] == nil)
+    #expect(body["pollIntervalMillis"] == nil)
+    #expect(body["pollTimeoutMillis"] == nil)
+}
+
+@Test func blackForestLabsImageWarnsWhenSizeAndAspectRatioAreBothProvided() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-2","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"state":"Ready","result":{"sample":"https://bfl.example.com/image.png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    let result = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        size: "1920x1080",
+        aspectRatio: "1:1"
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "size",
+            message: "Black Forest Labs ignores size when aspectRatio is provided. Use the width and height provider options to specify dimensions for models that support them"
+        )
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["aspect_ratio"]?.stringValue == "1:1")
+    #expect(body["width"]?.intValue == 1920)
+    #expect(body["height"]?.intValue == 1080)
+}
+
+@Test func blackForestLabsImageRejectsTooManyInputImages() async throws {
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "too many",
+            files: (0..<11).map { ImageInputFile(url: "https://example.com/\($0).png") }
+        ))
+    }
+}
+
+@Test func blackForestLabsImageThrowsForMissingSubmitFields() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"bfl-missing"}"#))
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
+@Test func blackForestLabsImageThrowsWhenReadyPollHasNoSample() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-empty","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"status":"Ready","result":null}"#)
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
+@Test func blackForestLabsImageThrowsWhenPollFails() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-failed","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"status":"Failed"}"#)
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
