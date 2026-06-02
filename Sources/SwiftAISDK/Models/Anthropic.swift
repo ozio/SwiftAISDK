@@ -465,9 +465,10 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = try AnthropicLanguageModel.body(for: request, modelID: modelID, providerID: providerID)
+        let prepared = try await preparedCall(for: request)
         let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
-        let raw = try await config.sendJSON(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
         let toolCalls = anthropicToolCalls(from: raw["content"])
         let toolResults = anthropicToolResults(from: raw["content"], providerID: providerID)
         let sources = anthropicSources(from: raw["content"], citationDocuments: anthropicCitationDocuments(from: request.messages))
@@ -487,8 +488,10 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
             toolCalls: toolCalls,
             toolResults: toolResults,
             sources: sources,
+            providerMetadata: anthropicProviderMetadata(from: raw, providerID: providerID),
             rawValue: raw,
-            warnings: prepared.warnings
+            warnings: prepared.warnings,
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -496,16 +499,18 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = try AnthropicLanguageModel.body(for: request, modelID: modelID, providerID: providerID, stream: true)
+                    let prepared = try await preparedCall(for: request, stream: true)
                     let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
                     let response = try await config.transport.send(try config.request(
                         path: "/model/\(bedrockEncodeModelID(modelID))/invoke-with-response-stream",
                         body: .object(body),
-                        headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"])
+                        headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"]),
+                        abortSignal: request.abortSignal
                     ))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
                     continuation.yield(.streamStart(warnings: prepared.warnings))
 
                     var contentBlocks = AnthropicStreamingContentBlocks(providerID: providerID)
@@ -514,6 +519,10 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
                     for raw in try amazonBedrockAnthropicStreamEvents(from: response) {
+                        if raw["type"]?.stringValue == "error" {
+                            let message = raw["error"]?["message"]?.stringValue ?? raw["message"]?.stringValue ?? "Bedrock Anthropic stream returned an error event."
+                            throw AIError.invalidResponse(provider: providerID, message: message)
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
@@ -536,6 +545,19 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                 }
             }
         }
+    }
+
+    private func preparedCall(for request: LanguageModelRequest, stream: Bool = false) async throws -> AnthropicPreparedCall {
+        var resolvedRequest = request
+        resolvedRequest.messages = try await amazonBedrockAnthropicResolveURLContent(
+            in: request.messages,
+            transport: config.transport,
+            abortSignal: request.abortSignal,
+            providerID: providerID
+        )
+        var prepared = try AnthropicLanguageModel.body(for: resolvedRequest, modelID: modelID, providerID: providerID, stream: stream)
+        amazonBedrockAnthropicApplyStructuredOutputSupport(modelID: modelID, prepared: &prepared)
+        return prepared
     }
 }
 
@@ -935,6 +957,110 @@ private func amazonBedrockAnthropicBody(_ body: [String: JSONValue], betas: [Str
         output["anthropic_beta"] = .array(requiredBetas.map(JSONValue.string))
     }
     return output
+}
+
+private func amazonBedrockAnthropicResolveURLContent(
+    in messages: [AIMessage],
+    transport: AITransport,
+    abortSignal: AIAbortSignal?,
+    providerID: String
+) async throws -> [AIMessage] {
+    var resolvedMessages: [AIMessage] = []
+    resolvedMessages.reserveCapacity(messages.count)
+
+    for message in messages {
+        var resolvedParts: [AIContentPart] = []
+        resolvedParts.reserveCapacity(message.content.count)
+        for part in message.content {
+            switch part {
+            case let .imageURL(url):
+                let downloaded = try await amazonBedrockAnthropicDownloadContent(url, transport: transport, abortSignal: abortSignal, providerID: providerID)
+                resolvedParts.append(.data(mimeType: downloaded.mimeType, data: downloaded.data))
+            case .text, .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+                resolvedParts.append(part)
+            }
+        }
+        resolvedMessages.append(AIMessage(role: message.role, content: resolvedParts))
+    }
+
+    return resolvedMessages
+}
+
+private func amazonBedrockAnthropicDownloadContent(
+    _ url: String,
+    transport: AITransport,
+    abortSignal: AIAbortSignal?,
+    providerID: String
+) async throws -> (mimeType: String, data: Data) {
+    if let dataURL = amazonBedrockAnthropicDataURL(url) {
+        return dataURL
+    }
+
+    let response = try await downloadURL(url, transport: transport, abortSignal: abortSignal)
+    guard (200..<300).contains(response.statusCode) else {
+        throw httpStatusError(provider: providerID, response: response)
+    }
+    let mediaType = amazonBedrockAnthropicMediaType(
+        contentType: response.headerValue("content-type"),
+        data: response.body,
+        url: url
+    )
+    return (mediaType, response.body)
+}
+
+private func amazonBedrockAnthropicDataURL(_ url: String) -> (mimeType: String, data: Data)? {
+    guard url.lowercased().hasPrefix("data:"),
+          let commaIndex = url.firstIndex(of: ",") else {
+        return nil
+    }
+    let metadata = String(url[url.index(url.startIndex, offsetBy: 5)..<commaIndex])
+    let payload = String(url[url.index(after: commaIndex)...])
+    let parts = metadata.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
+    let mimeType = parts.first?.isEmpty == false ? parts[0] : "text/plain"
+    let data: Data?
+    if parts.dropFirst().contains(where: { $0.caseInsensitiveCompare("base64") == .orderedSame }) {
+        data = Data(base64Encoded: payload)
+    } else {
+        data = payload.removingPercentEncoding.map { Data($0.utf8) }
+    }
+    guard let data else { return nil }
+    return (mimeType, data)
+}
+
+private func amazonBedrockAnthropicMediaType(contentType: String?, data: Data, url: String) -> String {
+    if let contentType {
+        let mediaType = contentType.split(separator: ";", maxSplits: 1).first.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+        if isFullMediaType(mediaType) {
+            return mediaType
+        }
+    }
+    if let detected = detectMediaType(data: data) {
+        return detected
+    }
+    if url.lowercased().contains(".pdf") {
+        return "application/pdf"
+    }
+    return "application/octet-stream"
+}
+
+private func amazonBedrockAnthropicApplyStructuredOutputSupport(modelID: String, prepared: inout AnthropicPreparedCall) {
+    guard modelID.contains("claude-opus-4-7") || modelID.contains("claude-opus-4-8") else {
+        return
+    }
+    guard var outputConfig = prepared.body["output_config"]?.objectValue,
+          outputConfig.removeValue(forKey: "format") != nil else {
+        return
+    }
+    if outputConfig.isEmpty {
+        prepared.body.removeValue(forKey: "output_config")
+    } else {
+        prepared.body["output_config"] = .object(outputConfig)
+    }
+    prepared.warnings.append(AIWarning(
+        type: "unsupported",
+        feature: "responseFormat",
+        message: "Bedrock Anthropic does not support native structured output for \(modelID). The response format is ignored."
+    ))
 }
 
 private func amazonBedrockAnthropicTool(_ tool: JSONValue, betas: inout [String]) -> JSONValue {

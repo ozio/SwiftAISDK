@@ -305,6 +305,73 @@ import Testing
     #expect(body["anthropic_beta"]?.arrayValue?.contains(.string("computer-use-2025-01-24")) == true)
 }
 
+@Test func amazonBedrockAnthropicDownloadsURLContentAndPreservesMetadata() async throws {
+    let imageData = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])
+    let transport = RecordingTransport(responses: [
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png; charset=binary"], body: imageData),
+        jsonResponse("""
+        {"id":"msg-bedrock","model":"anthropic.claude-3-haiku-20240307-v1:0","content":[{"type":"text","text":"image ok"}],"stop_reason":"end_turn","usage":{"input_tokens":7,"output_tokens":3}}
+        """, headers: ["x-amzn-requestid": "bedrock-response-id"])
+    ])
+    let provider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.messages("anthropic.claude-3-haiku-20240307-v1:0")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .text("Describe it"),
+            .imageURL("https://assets.example.com/cat.png")
+        ])
+    ]))
+
+    #expect(result.text == "image ok")
+    #expect(result.responseMetadata.id == "msg-bedrock")
+    #expect(result.providerMetadata["bedrock.anthropic"]?["usage"]?["input_tokens"]?.intValue == 7)
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].method == "GET")
+    #expect(requests[0].url.absoluteString == "https://assets.example.com/cat.png")
+    #expect(requests[1].url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-haiku-20240307-v1%3A0/invoke")
+    let body = try decodeJSONBody(try #require(requests[1].body))
+    let content = try #require(body["messages"]?[0]?["content"]?.arrayValue)
+    #expect(content[0]["text"]?.stringValue == "Describe it")
+    #expect(content[1]["type"]?.stringValue == "image")
+    #expect(content[1]["source"]?["type"]?.stringValue == "base64")
+    #expect(content[1]["source"]?["media_type"]?.stringValue == "image/png")
+    #expect(content[1]["source"]?["data"]?.stringValue == imageData.base64EncodedString())
+}
+
+@Test func amazonBedrockAnthropicOmitsStructuredOutputForUnsupportedOpusModels() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"json-ish"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """))
+    let provider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.messages("anthropic.claude-opus-4-7")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Return JSON")],
+        responseFormat: .json(schema: .object([
+            "type": .string("object"),
+            "properties": .object(["answer": .object(["type": .string("string")])])
+        ]))
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["output_config"]?["format"] == nil)
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "responseFormat",
+        message: "Bedrock Anthropic does not support native structured output for anthropic.claude-opus-4-7. The response format is ignored."
+    )))
+}
+
 @Test func amazonBedrockAnthropicStreamsEventStreamAsAnthropicEvents() async throws {
     let event1 = #"{"type":"content_block_delta","delta":{"type":"text_delta","text":"bed"}}"#
     let event2 = #"{"type":"content_block_delta","delta":{"type":"text_delta","text":"rock"}}"#

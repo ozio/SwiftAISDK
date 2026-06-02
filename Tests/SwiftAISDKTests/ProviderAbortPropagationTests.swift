@@ -39,6 +39,38 @@ import Testing
     #expect(request.abortSignal === controller.signal)
 }
 
+@Test func amazonBedrockAnthropicForwardsAbortSignalToGenerateAndStreamRequests() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let generateProvider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: generateTransport
+    ))
+    let generateController = AIAbortController()
+
+    _ = try await generateProvider.languageModel("anthropic.claude-3-haiku-20240307-v1:0").generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
+
+    let generateRequest = try #require(await generateTransport.requests().first)
+    #expect(generateRequest.abortSignal === generateController.signal)
+
+    let streamTransport = RecordingTransport(response: amazonEventStreamResponse([
+        ("messageStop", #"{}"#)
+    ]))
+    let streamProvider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: streamTransport
+    ))
+    let streamController = AIAbortController()
+
+    for try await _ in try streamProvider.languageModel("anthropic.claude-3-haiku-20240307-v1:0").stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}
+
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.abortSignal === streamController.signal)
+}
+
 @Test func cohereLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
     {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"cohere"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
