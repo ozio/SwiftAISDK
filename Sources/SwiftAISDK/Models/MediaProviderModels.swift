@@ -407,7 +407,7 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
-        let options = falProviderOptions(from: request)
+        let options = try falProviderOptions(from: request)
         if let size = request.size {
             body["image_size"] = falImageSize(size)
         } else if let aspectRatio = request.aspectRatio
@@ -461,7 +461,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = falProviderOptions(from: request)
+        let options = try falProviderOptions(from: request)
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
         if let durationSeconds = request.durationSeconds { body["duration"] = .string("\(formatDuration(durationSeconds))s") }
@@ -2619,6 +2619,9 @@ private func falVideoOptions(from options: [String: JSONValue]) -> [String: JSON
     falMoveKey("negativePrompt", to: "negative_prompt", in: &output)
     falMoveKey("promptOptimizer", to: "prompt_optimizer", in: &output)
     falMoveKey("imageUrl", to: "image_url", in: &output)
+    for key in falVideoNullishProviderOptionKeys where output[key] == .null {
+        output.removeValue(forKey: key)
+    }
     output.removeValue(forKey: "pollIntervalMs")
     output.removeValue(forKey: "pollTimeoutMs")
     output.removeValue(forKey: "poll_interval_ms")
@@ -2636,16 +2639,7 @@ private func falMoveKey(_ source: String, to destination: String, in values: ino
 }
 
 private func falDeprecatedImageOptionWarnings(from options: [String: JSONValue]) -> [AIWarning] {
-    let deprecatedKeys: [(snake: String, camel: String)] = [
-        ("image_url", "imageUrl"),
-        ("mask_url", "maskUrl"),
-        ("guidance_scale", "guidanceScale"),
-        ("num_inference_steps", "numInferenceSteps"),
-        ("enable_safety_checker", "enableSafetyChecker"),
-        ("output_format", "outputFormat"),
-        ("sync_mode", "syncMode"),
-        ("safety_tolerance", "safetyTolerance")
-    ].filter { options[$0.snake] != nil }
+    let deprecatedKeys: [(snake: String, camel: String)] = falDeprecatedImageOptionKeys.filter { options[$0.snake] != nil && options[$0.snake] != .null }
     guard !deprecatedKeys.isEmpty else { return [] }
     let replacements = deprecatedKeys
         .map { "'\($0.snake)' (use '\($0.camel)')" }
@@ -2653,10 +2647,32 @@ private func falDeprecatedImageOptionWarnings(from options: [String: JSONValue])
     return [
         AIWarning(
             type: "other",
-            message: "fal image providerOptions use deprecated snake_case keys: \(replacements)."
+            message: "The following provider options use deprecated snake_case and will be removed in @ai-sdk/fal v2.0. Please use camelCase instead: \(replacements)"
         )
     ]
 }
+
+private let falDeprecatedImageOptionKeys: [(snake: String, camel: String)] = [
+    ("image_url", "imageUrl"),
+    ("mask_url", "maskUrl"),
+    ("guidance_scale", "guidanceScale"),
+    ("num_inference_steps", "numInferenceSteps"),
+    ("enable_safety_checker", "enableSafetyChecker"),
+    ("output_format", "outputFormat"),
+    ("sync_mode", "syncMode"),
+    ("safety_tolerance", "safetyTolerance")
+]
+
+private let falVideoNullishProviderOptionKeys: Set<String> = [
+    "loop",
+    "motionStrength",
+    "motion_strength",
+    "resolution",
+    "negativePrompt",
+    "negative_prompt",
+    "promptOptimizer",
+    "prompt_optimizer"
+]
 
 private func falPollInterval(_ options: [String: JSONValue]) -> UInt64 {
     let milliseconds = options["pollIntervalMs"]?.intValue ?? options["poll_interval_ms"]?.intValue ?? 2_000
@@ -2672,18 +2688,141 @@ private func falProviderOptions(from extraBody: [String: JSONValue]) -> [String:
     extraBody["fal"]?.objectValue ?? extraBody.filter { key, _ in key != "fal" }
 }
 
-private func falProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
-    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+private func falProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
+    try falProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        validateProviderOptions: falValidateImageProviderOptions
+    )
 }
 
-private func falProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
-    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+private func falProviderOptions(from request: VideoGenerationRequest) throws -> [String: JSONValue] {
+    try falProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        validateProviderOptions: falValidateVideoProviderOptions
+    )
 }
 
-private func falProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func falProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue],
+    validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = falProviderOptions(from: extraBody)
-    output.merge(falProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let value = providerOptions["fal"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.fal", message: "fal provider options must be an object.")
+        }
+        output.merge(try validateProviderOptions(nested)) { _, providerValue in providerValue }
+    }
     return output
+}
+
+private func falValidateImageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output = options
+    for (snake, camel) in falDeprecatedImageOptionKeys {
+        let snakeValue = output[snake]
+        let camelValue = output[camel]
+        if let snakeValue, snakeValue != .null {
+            output[camel] = snakeValue
+        } else if camelValue == .null {
+            output.removeValue(forKey: camel)
+        }
+    }
+    for (snake, _) in falDeprecatedImageOptionKeys where output[snake] == .null {
+        output.removeValue(forKey: snake)
+    }
+    for key in ["strength", "acceleration", "useMultipleImages"] where output[key] == .null {
+        output.removeValue(forKey: key)
+    }
+    for (key, value) in options {
+        switch key {
+        case "imageUrl", "image_url", "maskUrl", "mask_url":
+            try falRequireStringOrNull(value, argument: "providerOptions.fal.\(key)", label: key)
+        case "guidanceScale", "guidance_scale":
+            try falRequireNumberOrNull(value, argument: "providerOptions.fal.\(key)", label: key, min: 1, max: 20)
+        case "numInferenceSteps", "num_inference_steps":
+            try falRequireNumberOrNull(value, argument: "providerOptions.fal.\(key)", label: key, min: 1, max: 50)
+        case "enableSafetyChecker", "enable_safety_checker", "syncMode", "sync_mode", "useMultipleImages":
+            try falRequireBooleanOrNull(value, argument: "providerOptions.fal.\(key)", label: key)
+        case "outputFormat", "output_format":
+            try falRequireEnumOrNull(value, argument: "providerOptions.fal.\(key)", label: key, allowed: ["jpeg", "png"])
+        case "strength":
+            try falRequireNumberOrNull(value, argument: "providerOptions.fal.strength", label: "strength")
+        case "acceleration":
+            try falRequireEnumOrNull(value, argument: "providerOptions.fal.acceleration", label: "acceleration", allowed: ["none", "regular", "high"])
+        case "safetyTolerance", "safety_tolerance":
+            if value != .null, let string = value.stringValue {
+                guard ["1", "2", "3", "4", "5", "6"].contains(string) else {
+                    throw AIError.invalidArgument(argument: "providerOptions.fal.\(key)", message: "fal \(key) must be 1, 2, 3, 4, 5, or 6, as a string or number, or null.")
+                }
+            } else {
+                try falRequireNumberOrNull(value, argument: "providerOptions.fal.\(key)", label: key, min: 1, max: 6)
+            }
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func falValidateVideoProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    for (key, value) in options {
+        switch key {
+        case "loop", "promptOptimizer":
+            try falRequireBooleanOrNull(value, argument: "providerOptions.fal.\(key)", label: key)
+        case "motionStrength":
+            try falRequireNumberOrNull(value, argument: "providerOptions.fal.motionStrength", label: "motionStrength", min: 0, max: 1)
+        case "pollIntervalMs", "pollTimeoutMs":
+            try falRequirePositiveNumberOrNull(value, argument: "providerOptions.fal.\(key)", label: key)
+        case "resolution", "negativePrompt":
+            try falRequireStringOrNull(value, argument: "providerOptions.fal.\(key)", label: key)
+        default:
+            break
+        }
+    }
+    return options
+}
+
+private func falRequireStringOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be a string or null.")
+    }
+}
+
+private func falRequireBooleanOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be a boolean or null.")
+    }
+}
+
+private func falRequirePositiveNumberOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    try falRequireNumberOrNull(value, argument: argument, label: label, min: 0, exclusiveMin: true)
+}
+
+private func falRequireNumberOrNull(_ value: JSONValue, argument: String, label: String, min: Double? = nil, max: Double? = nil, exclusiveMin: Bool = false) throws {
+    guard value != .null else { return }
+    guard let number = value.doubleValue else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be a number or null.")
+    }
+    if let min, exclusiveMin ? number <= min : number < min {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be \(exclusiveMin ? "greater than" : "at least") \(falFormatNumber(min)) or null.")
+    }
+    if let max, number > max {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be at most \(falFormatNumber(max)) or null.")
+    }
+}
+
+private func falRequireEnumOrNull(_ value: JSONValue, argument: String, label: String, allowed: Set<String>) throws {
+    guard value != .null else { return }
+    guard let string = value.stringValue, allowed.contains(string) else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be one of \(allowed.sorted().joined(separator: ", ")) or null.")
+    }
+}
+
+private func falFormatNumber(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(value)
 }
 
 private func falImageInputs(from files: [ImageInputFile], mask: ImageInputFile?, useMultipleImages: Bool) throws -> (input: [String: JSONValue], warnings: [AIWarning]) {

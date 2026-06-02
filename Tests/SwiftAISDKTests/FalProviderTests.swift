@@ -89,6 +89,41 @@ import Testing
     #expect(body["num_inference_steps"]?.intValue == 50)
 }
 
+@Test func falImageProviderOptionsValidateAndScopeLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"image":{"url":"https://fal.example.com/image.png","content_type":"image/png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("fal-png".utf8))
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try provider.imageModel("fal-ai/qwen-image")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["fal": false]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["fal": ["guidanceScale": 0]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["fal": ["outputFormat": "webp"]]))
+    }
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: [
+            "openai": ["guidanceScale": 7.5],
+            "fal": [
+                "guidanceScale": nil,
+                "custom_param": "kept"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["guidance_scale"] == nil)
+    #expect(body["openai"] == nil)
+    #expect(body["custom_param"]?.stringValue == "kept")
+}
+
 @Test func falVideoUsesStandardImageSeedProviderOptionsAndMetadata() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"req-1","response_url":"https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-1"}"#),
@@ -133,6 +168,45 @@ import Testing
     #expect(body["fal"] == nil)
 }
 
+@Test func falVideoProviderOptionsValidateNullishAndPassthroughLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"req-1","response_url":"https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-1"}"#),
+        jsonResponse(#"{"video":{"url":"https://fal.example.com/video.mp4","content_type":"video/mp4"}}"#)
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try provider.videoModel("fal-ai/luma-dream-machine")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "Animate", providerOptions: ["fal": ["motionStrength": 1.5]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "Animate", providerOptions: ["fal": ["promptOptimizer": "yes"]]))
+    }
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "Animate",
+        providerOptions: [
+            "fal": [
+                "loop": nil,
+                "motionStrength": nil,
+                "negativePrompt": nil,
+                "customNull": nil,
+                "customValue": "kept",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["loop"] == nil)
+    #expect(body["motion_strength"] == nil)
+    #expect(body["negative_prompt"] == nil)
+    #expect(body["customNull"] == .null)
+    #expect(body["customValue"]?.stringValue == "kept")
+    #expect(body["pollIntervalMs"] == nil)
+}
+
 @Test func falSpeechUsesProviderOptionsAndWarnsForUnsupportedFormat() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"audio":{"url":"https://fal.example.com/audio.mp3"}}"#),
@@ -145,6 +219,8 @@ import Testing
         text: "hello",
         voice: "voice-id",
         format: "wav",
+        speed: 1.25,
+        language: "en",
         providerOptions: [
             "fal": .object([
                 "language_boost": .string("English"),
@@ -154,14 +230,37 @@ import Testing
     ))
 
     #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "language", message: "fal speech models don't support 'language' directly; consider providerOptions.fal.language_boost"),
         AIWarning(type: "unsupported", feature: "outputFormat", message: "Unsupported outputFormat: wav. Using 'url' instead.")
     ])
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["text"]?.stringValue == "hello")
     #expect(body["voice"]?.stringValue == "voice-id")
+    #expect(body["speed"]?.doubleValue == 1.25)
     #expect(body["output_format"]?.stringValue == "url")
     #expect(body["language_boost"]?.stringValue == "English")
     #expect(body["voice_setting"]?["speed"]?.doubleValue == 1.1)
+}
+
+@Test func falSpeechProviderOptionsValidateLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"audio":{"url":"https://fal.example.com/audio.mp3"}}"#))
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try provider.speechModel("fal-ai/minimax/speech-02-hd")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(text: "hello", providerOptions: ["fal": false]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(text: "hello", providerOptions: ["fal": ["language_boost": "Klingon"]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(text: "hello", providerOptions: ["fal": ["voice_setting": ["emotion": "bored"]]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(text: "hello", providerOptions: ["fal": ["pronunciation_dict": ["AI": 123]]]))
+    }
+
+    #expect((await transport.requests()).isEmpty)
 }
 
 @Test func falTranscriptionUsesProviderOptionsPollsInProgressAndMapsChunks() async throws {
@@ -206,4 +305,40 @@ import Testing
     #expect(body["batch_size"]?.intValue == 32)
     #expect(body["num_speakers"]?.intValue == 2)
     #expect(body["audio_url"]?.stringValue?.hasPrefix("data:audio/wav;base64,") == true)
+}
+
+@Test func falTranscriptionProviderOptionsValidateDefaultsAndStripUnknownLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"transcription-1"}"#),
+        jsonResponse(#"{"text":"fal transcript","chunks":[]}"#)
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try provider.transcriptionModel("fal-ai/wizper")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), providerOptions: ["fal": ["chunkLevel": "sentence"]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), providerOptions: ["fal": ["diarize": "yes"]]))
+    }
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        mimeType: "audio/wav",
+        providerOptions: [
+            "fal": [
+                "unknown": "stripped",
+                "numSpeakers": nil
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["language"]?.stringValue == "en")
+    #expect(body["diarize"]?.boolValue == true)
+    #expect(body["chunk_level"]?.stringValue == "segment")
+    #expect(body["version"]?.stringValue == "3")
+    #expect(body["batch_size"]?.intValue == 64)
+    #expect(body["num_speakers"] == nil)
+    #expect(body["unknown"] == nil)
 }

@@ -348,7 +348,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = falProviderOptions(from: request)
+        let options = try falProviderOptions(from: request)
         let outputFormat = request.format == "hex" ? "hex" : "url"
         let warnings = falSpeechWarnings(for: request)
         var body: [String: JSONValue] = [
@@ -356,6 +356,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
             "output_format": .string(outputFormat)
         ]
         if let voice = request.voice { body["voice"] = .string(voice) }
+        if let speed = request.speed { body["speed"] = .number(speed) }
         body.merge(options) { _, new in new }
 
         let submit = try await config.sendJSONResponse(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
@@ -388,7 +389,7 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = falProviderOptions(from: request)
+        let options = try falProviderOptions(from: request)
         var body: [String: JSONValue] = [
             "audio_url": .string("data:\(request.mimeType);base64,\(request.audio.base64EncodedString())"),
             "task": .string("transcribe"),
@@ -898,32 +899,227 @@ private func falProviderOptions(from extraBody: [String: JSONValue]) -> [String:
     return output
 }
 
-private func falProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+private func falProviderOptions(from request: SpeechRequest) throws -> [String: JSONValue] {
+    try falProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        validateProviderOptions: falValidateSpeechProviderOptions
+    )
 }
 
-private func falProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    falProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+private func falProviderOptions(from request: AudioTranscriptionRequest) throws -> [String: JSONValue] {
+    try falProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        validateProviderOptions: falValidateTranscriptionProviderOptions
+    )
 }
 
-private func falProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func falProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue],
+    validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = falProviderOptions(from: extraBody)
-    output.merge(falProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let value = providerOptions["fal"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.fal", message: "fal provider options must be an object.")
+        }
+        output.merge(try validateProviderOptions(nested)) { _, providerValue in providerValue }
+    }
     return output
 }
 
 private func falSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
-    guard let format = request.format, format != "url", format != "hex" else {
-        return []
+    var warnings: [AIWarning] = []
+    if request.language != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "language",
+            message: "fal speech models don't support 'language' directly; consider providerOptions.fal.language_boost"
+        ))
     }
-    return [
-        AIWarning(
+    if let format = request.format, format != "url", format != "hex" {
+        warnings.append(AIWarning(
             type: "unsupported",
             feature: "outputFormat",
             message: "Unsupported outputFormat: \(format). Using 'url' instead."
-        )
-    ]
+        ))
+    }
+    return warnings
 }
+
+private func falValidateSpeechProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    for (key, value) in options {
+        switch key {
+        case "voice_setting":
+            try falValidateVoiceSetting(value)
+        case "audio_setting":
+            guard value == .null || value.objectValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.fal.audio_setting", message: "fal audio_setting must be an object or null.")
+            }
+        case "language_boost":
+            try falRequireEnumOrNull(value, argument: "providerOptions.fal.language_boost", label: "language_boost", allowed: falLanguageBoosts)
+        case "pronunciation_dict":
+            try falRequireStringRecordOrNull(value, argument: "providerOptions.fal.pronunciation_dict", label: "pronunciation_dict")
+        default:
+            break
+        }
+    }
+    return options
+}
+
+private func falValidateTranscriptionProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [
+        "language": .string("en"),
+        "diarize": .bool(true),
+        "chunkLevel": .string("segment"),
+        "version": .string("3"),
+        "batchSize": .number(64)
+    ]
+    if let numSpeakers = options["numSpeakers"], numSpeakers != .null {
+        output["numSpeakers"] = numSpeakers
+    }
+    for (key, value) in options {
+        switch key {
+        case "language":
+            try falRequireStringOrNull(value, argument: "providerOptions.fal.language", label: "language")
+            output[key] = value
+        case "diarize":
+            try falRequireBooleanOrNull(value, argument: "providerOptions.fal.diarize", label: "diarize")
+            if value == .null {
+                output.removeValue(forKey: key)
+            } else {
+                output[key] = value
+            }
+        case "chunkLevel":
+            try falRequireEnumOrNull(value, argument: "providerOptions.fal.chunkLevel", label: "chunkLevel", allowed: ["segment", "word"])
+            if value == .null {
+                output.removeValue(forKey: key)
+            } else {
+                output[key] = value
+            }
+        case "version":
+            try falRequireEnumOrNull(value, argument: "providerOptions.fal.version", label: "version", allowed: ["3"])
+            if value == .null {
+                output.removeValue(forKey: key)
+            } else {
+                output[key] = value
+            }
+        case "batchSize":
+            try falRequireNumberOrNull(value, argument: "providerOptions.fal.batchSize", label: "batchSize")
+            if value == .null {
+                output.removeValue(forKey: key)
+            } else {
+                output[key] = value
+            }
+        case "numSpeakers":
+            try falRequireNumberOrNull(value, argument: "providerOptions.fal.numSpeakers", label: "numSpeakers")
+            if value == .null {
+                output.removeValue(forKey: key)
+            } else {
+                output[key] = value
+            }
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func falValidateVoiceSetting(_ value: JSONValue) throws {
+    guard value != .null else { return }
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.fal.voice_setting", message: "fal voice_setting must be an object or null.")
+    }
+    for (key, nested) in object {
+        switch key {
+        case "speed", "vol", "pitch":
+            try falRequireNumberOrNull(nested, argument: "providerOptions.fal.voice_setting.\(key)", label: "voice_setting.\(key)")
+        case "voice_id":
+            try falRequireStringOrNull(nested, argument: "providerOptions.fal.voice_setting.voice_id", label: "voice_setting.voice_id")
+        case "english_normalization":
+            try falRequireBooleanOrNull(nested, argument: "providerOptions.fal.voice_setting.english_normalization", label: "voice_setting.english_normalization")
+        case "emotion":
+            try falRequireEnumOrNull(nested, argument: "providerOptions.fal.voice_setting.emotion", label: "voice_setting.emotion", allowed: falEmotions)
+        default:
+            break
+        }
+    }
+}
+
+private func falRequireStringRecordOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value != .null else { return }
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be an object with string values or null.")
+    }
+    for (key, nested) in object where nested.stringValue == nil {
+        throw AIError.invalidArgument(argument: "\(argument).\(key)", message: "fal \(label) values must be strings.")
+    }
+}
+
+private func falRequireStringOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be a string or null.")
+    }
+}
+
+private func falRequireBooleanOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be a boolean or null.")
+    }
+}
+
+private func falRequireNumberOrNull(_ value: JSONValue, argument: String, label: String) throws {
+    guard value == .null || value.doubleValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be a number or null.")
+    }
+}
+
+private func falRequireEnumOrNull(_ value: JSONValue, argument: String, label: String, allowed: Set<String>) throws {
+    guard value != .null else { return }
+    guard let string = value.stringValue, allowed.contains(string) else {
+        throw AIError.invalidArgument(argument: argument, message: "fal \(label) must be one of \(allowed.sorted().joined(separator: ", ")) or null.")
+    }
+}
+
+private let falLanguageBoosts: Set<String> = [
+    "Chinese",
+    "Chinese,Yue",
+    "English",
+    "Arabic",
+    "Russian",
+    "Spanish",
+    "French",
+    "Portuguese",
+    "German",
+    "Turkish",
+    "Dutch",
+    "Ukrainian",
+    "Vietnamese",
+    "Indonesian",
+    "Japanese",
+    "Italian",
+    "Korean",
+    "Thai",
+    "Polish",
+    "Romanian",
+    "Greek",
+    "Czech",
+    "Finnish",
+    "Hindi",
+    "auto"
+]
+
+private let falEmotions: Set<String> = [
+    "happy",
+    "sad",
+    "angry",
+    "fearful",
+    "disgusted",
+    "surprised",
+    "neutral"
+]
 
 private func falTranscriptionSegments(from raw: JSONValue) -> [TranscriptionSegment] {
     raw["chunks"]?.arrayValue?.compactMap { chunk in
