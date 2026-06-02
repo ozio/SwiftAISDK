@@ -154,7 +154,9 @@ Impact:
   response formats, and schema-validated `providerOptions.xai` chat/search
   options instead of relying on generic OpenAI-compatible passthrough. Chat
   usage also follows upstream xAI reasoning/cache token accounting for generate
-  and stream finishes.
+  and stream finishes, and uploaded file provider references can now be passed
+  through `AIContentPart.providerReference` and resolved into xAI `file_id`
+  message parts.
   xAI Responses now schema-validates `providerOptions.xai` response options
   with upstream enum/range/nullish behavior, strips unknown typed keys, maps
   reasoning/top-logprobs/previous-response fields, and injects encrypted

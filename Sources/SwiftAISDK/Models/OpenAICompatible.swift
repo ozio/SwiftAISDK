@@ -548,7 +548,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
     }
 
     private func body(for request: LanguageModelRequest, stream: Bool) throws -> [String: JSONValue] {
-        var body = Self.body(
+        var body = try Self.body(
             for: request,
             modelID: modelID,
             providerID: providerID,
@@ -594,10 +594,10 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         stream: Bool,
         unwrapOpenAIProviderOptions: Bool,
         supportsStructuredOutputs: Bool
-    ) -> [String: JSONValue] {
+    ) throws -> [String: JSONValue] {
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "messages": .array(request.messages.map(Self.messageJSON))
+            "messages": .array(try request.messages.map { try Self.messageJSON($0, providerID: providerID) })
         ]
         if stream { body["stream"] = true }
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
@@ -618,7 +618,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         return body
     }
 
-    static func messageJSON(_ message: AIMessage) -> JSONValue {
+    static func messageJSON(_ message: AIMessage, providerID: String) throws -> JSONValue {
         if message.role == .tool,
            let result = message.content.compactMap({ part -> AIToolResult? in
                if case let .toolResult(result) = part { result } else { nil }
@@ -662,7 +662,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             ])
         }
 
-        let parts: [JSONValue] = message.content.map { part in
+        let parts: [JSONValue] = try message.content.map { part in
             switch part {
             case let .text(text):
                 return .object(["type": .string("text"), "text": .string(text)])
@@ -672,6 +672,13 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                 return .object([
                     "type": .string("image_url"),
                     "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
+                ])
+            case let .providerReference(_, reference):
+                return .object([
+                    "type": .string("file"),
+                    "file": .object([
+                        "file_id": .string(try resolveProviderReference(reference, provider: openAICompatibleProviderRoot(providerID)))
+                    ])
                 ])
             case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
                 return .object(["type": .string("text"), "text": .string("")])
@@ -1660,7 +1667,7 @@ private func openAIResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<
             "filename": .string(openAIResponsesFileName(for: mimeType, index: index)),
             "file_data": .string(dataURL)
         ])
-    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }

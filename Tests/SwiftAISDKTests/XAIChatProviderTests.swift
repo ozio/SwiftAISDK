@@ -237,3 +237,32 @@ import Testing
     #expect(finishUsage?.outputReasoningTokens == 0)
     #expect(finishUsage?.totalTokens == 8_724)
 }
+
+@Test func xAIChatConvertsProviderReferenceFilePartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"xai chat"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.chat("grok-4")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .text("Read this file"),
+            .providerReference(mimeType: "application/pdf", reference: ["xai": "file-pdf456", "openai": "file-openai"])
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["content"]?[0]?["type"]?.stringValue == "text")
+    #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Read this file")
+    #expect(body["messages"]?[0]?["content"]?[1]?["type"]?.stringValue == "file")
+    #expect(body["messages"]?[0]?["content"]?[1]?["file"]?["file_id"]?.stringValue == "file-pdf456")
+
+    let missingProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: RecordingTransport(responses: [])))
+    let missingModel = try missingProvider.chat("grok-4")
+    await #expect(throws: AINoSuchProviderReferenceError(provider: "xai", reference: ["openai": "file-openai"])) {
+        _ = try await missingModel.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .providerReference(mimeType: "image/png", reference: ["openai": "file-openai"])
+            ])
+        ]))
+    }
+}

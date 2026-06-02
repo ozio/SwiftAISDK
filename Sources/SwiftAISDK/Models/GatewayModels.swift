@@ -227,6 +227,12 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                             ]
                             if let filename { file["filename"] = .string(filename) }
                             return .object(file)
+                        case let .providerReference(mimeType, reference):
+                            return .object([
+                                "type": .string("file"),
+                                "mediaType": .string(mimeType),
+                                "data": .object(["type": .string("reference"), "reference": .object(reference.mapValues(JSONValue.string))])
+                            ])
                         case let .toolCall(call):
                             return .object([
                                 "type": .string("tool-call"),

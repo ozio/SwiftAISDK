@@ -110,6 +110,7 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
     case imageURL(String)
     case data(mimeType: String, data: Data)
     case file(mimeType: String, data: Data, filename: String? = nil)
+    case providerReference(mimeType: String, reference: AIProviderReference)
     case toolCall(AIToolCall)
     case toolResult(AIToolResult)
     case toolApprovalRequest(AIToolApprovalRequest)
@@ -125,7 +126,7 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
             return (mimeType, data, nil)
         case let .file(mimeType, data, filename):
             return (mimeType, data, filename)
-        case .text, .imageURL, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .text, .imageURL, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             return nil
         }
     }

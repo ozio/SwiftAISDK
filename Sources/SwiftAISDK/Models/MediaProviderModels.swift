@@ -3365,7 +3365,7 @@ private func prodiaInputImage(from messages: [AIMessage], transport: AITransport
             }
             let mediaType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value ?? "image/png"
             return (response.body, prodiaResolvedImageMediaType(mediaType: mediaType, data: response.body))
-        case .text, .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .text, .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             continue
         }
     }

@@ -106,6 +106,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         "data": .string(data.base64EncodedString())
                     ])
                 ])
+            case let .providerReference(_, reference):
+                return .object(["fileData": .object(["fileUri": .string((try? resolveProviderReference(reference, provider: "google")) ?? reference.values.first ?? "")])])
             case let .toolCall(call):
                 var output: [String: JSONValue] = [
                     "functionCall": .object([
@@ -748,6 +750,14 @@ private func googleInteractionsContent(_ content: [AIContentPart]) throws -> [JS
                 "type": .string(type),
                 "mime_type": .string(resolvedMimeType),
                 "data": .string(data.base64EncodedString())
+            ])
+        case let .providerReference(mimeType, reference):
+            let topLevel = mimeType.split(separator: "/").first.map(String.init) ?? "document"
+            let type = ["image", "audio", "video"].contains(topLevel) ? topLevel : "document"
+            return .object([
+                "type": .string(type),
+                "mime_type": .string(mimeType),
+                "uri": .string((try? resolveProviderReference(reference, provider: "google")) ?? reference.values.first ?? "")
             ])
         case let .toolCall(call):
             return .object([

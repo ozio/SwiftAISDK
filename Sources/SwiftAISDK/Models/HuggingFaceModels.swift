@@ -314,6 +314,11 @@ private func huggingFaceInputContentPart(_ part: AIContentPart) throws -> JSONVa
             "type": .string("input_image"),
             "image_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")
         ])
+    case let .providerReference(mimeType, _):
+        guard mimeType.lowercased().hasPrefix("image/") else {
+            throw AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API only supports image file parts; got \(mimeType).")
+        }
+        return nil
     case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }

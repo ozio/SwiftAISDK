@@ -273,7 +273,7 @@ private func groqPreparedCall(for request: LanguageModelRequest, modelID: String
     let responseFormat = groqResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
-        "messages": .array(request.messages.map(OpenAICompatibleChatModel.messageJSON))
+        "messages": .array(try request.messages.map { try OpenAICompatibleChatModel.messageJSON($0, providerID: "groq") })
     ]
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }

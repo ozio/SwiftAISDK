@@ -281,7 +281,7 @@ private func alibabaUserContentParts(_ content: [AIContentPart]) -> AlibabaPrepa
                 "type": .string("image_url"),
                 "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
             ])
-        case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             warnings.append(AIWarning(type: "unsupported", feature: alibabaUserPartFeature(part)))
             return nil
         }
@@ -291,7 +291,7 @@ private func alibabaUserContentParts(_ content: [AIContentPart]) -> AlibabaPrepa
 
 private func alibabaUserPartFeature(_ part: AIContentPart) -> String {
     switch part {
-    case .data, .file:
+    case .data, .file, .providerReference:
         return "user message part type: file"
     case .toolCall:
         return "user message part type: tool-call"

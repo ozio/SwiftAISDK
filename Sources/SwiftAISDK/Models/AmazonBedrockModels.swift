@@ -117,7 +117,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                                 "status": .string(result.isError ? "error" : "success")
                             ])
                         ])
-                    case .toolApprovalRequest, .toolApprovalResponse:
+                    case .providerReference, .toolApprovalRequest, .toolApprovalResponse:
                         return .object(["text": .string("")])
                     }
                 }

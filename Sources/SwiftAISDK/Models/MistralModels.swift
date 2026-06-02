@@ -470,7 +470,7 @@ private func mistralContentPartJSON(_ part: AIContentPart) -> JSONValue? {
     case let .data(mimeType, data) where mimeType == "application/pdf",
          let .file(mimeType, data, _) where mimeType == "application/pdf":
         return .object(["type": .string("document_url"), "document_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
-    case .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }

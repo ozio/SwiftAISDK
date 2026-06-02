@@ -153,7 +153,7 @@ private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: St
     let toolChoiceInput = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
     var body: [String: JSONValue] = [
         "model": .string(modelID),
-        "messages": .array(request.messages.map(OpenAICompatibleChatModel.messageJSON))
+        "messages": .array(try request.messages.map { try OpenAICompatibleChatModel.messageJSON($0, providerID: "cerebras") })
     ]
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }

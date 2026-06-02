@@ -180,6 +180,8 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
                     return .object(["fileData": .object(["fileUri": .string(url)])])
                 case let .data(mimeType, data), let .file(mimeType, data, _):
                     return .object(["inlineData": .object(["mimeType": .string(mimeType), "data": .string(data.base64EncodedString())])])
+                case let .providerReference(_, reference):
+                    return .object(["fileData": .object(["fileUri": .string((try? resolveProviderReference(reference, provider: "google")) ?? reference.values.first ?? "")])])
                 case let .toolCall(call):
                     return .object([
                         "functionCall": .object([

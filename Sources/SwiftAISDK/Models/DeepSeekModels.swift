@@ -277,7 +277,7 @@ private func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue
 
 private func deepSeekUserPartFeature(_ part: AIContentPart) -> String {
     switch part {
-    case .data, .file, .imageURL:
+    case .data, .file, .providerReference, .imageURL:
         return "user message part type: file"
     case .toolCall:
         return "user message part type: tool-call"

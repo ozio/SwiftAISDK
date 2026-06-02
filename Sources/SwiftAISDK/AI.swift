@@ -3441,6 +3441,8 @@ private func contentPartTelemetryJSON(_ part: AIContentPart) -> JSONValue {
         return .object(["type": .string("data"), "mimeType": .string(mimeType), "byteLength": .number(Double(data.count))])
     case let .file(mimeType, data, filename):
         return .object(["type": .string("file"), "mimeType": .string(mimeType), "byteLength": .number(Double(data.count)), "filename": filename.map(JSONValue.string)])
+    case let .providerReference(mimeType, reference):
+        return .object(["type": .string("provider-reference"), "mimeType": .string(mimeType), "reference": .object(reference.mapValues(JSONValue.string))])
     case let .toolCall(call):
         return .object(["type": .string("tool-call"), "id": .string(call.id), "name": .string(call.name), "arguments": .string(call.arguments)])
     case let .toolResult(result):
