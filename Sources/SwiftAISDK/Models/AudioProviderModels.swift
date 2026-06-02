@@ -143,7 +143,7 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = humeProviderOptions(from: request)
+        let options = try humeProviderOptions(from: request)
         let warnings = humeSpeechWarnings(for: request)
         let voice = request.voice ?? "d8ab67c6-953d-4bd8-9370-8fa53a0f1453"
         var utterance: [String: JSONValue] = [
@@ -1514,18 +1514,17 @@ private func humeProviderOptions(from extraBody: [String: JSONValue]) -> [String
     return output
 }
 
-private func humeProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    humeProviderOptions(
-        extraBody: request.extraBody,
-        providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: humeSpeechProviderOptionKeys
-    )
-}
-
-private func humeProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
-    var output = humeProviderOptions(from: extraBody)
-    if let nested = providerOptions["hume"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+private func humeProviderOptions(from request: SpeechRequest) throws -> [String: JSONValue] {
+    var output = humeProviderOptions(from: request.extraBody)
+    if let value = request.providerOptions["hume"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.hume", message: "Hume provider options must be an object.")
+        }
+        for key in humeSpeechProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try humeValidateSpeechProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
 }
@@ -1533,6 +1532,94 @@ private func humeProviderOptions(extraBody: [String: JSONValue], providerOptions
 private let humeSpeechProviderOptionKeys: Set<String> = [
     "context"
 ]
+
+private func humeValidateSpeechProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    if let context = options["context"] {
+        guard context != .null else { return output }
+        output["context"] = try humeValidatedContext(context)
+    }
+    return output
+}
+
+private func humeValidatedContext(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.hume.context", message: "Hume context must be an object.")
+    }
+    if let generationID = object["generationId"] {
+        guard generationID.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.hume.context.generationId", message: "Hume context.generationId must be a string.")
+        }
+        return .object(["generationId": generationID])
+    }
+    guard let utterances = object["utterances"]?.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.hume.context", message: "Hume context must include generationId or utterances.")
+    }
+    return .object([
+        "utterances": .array(try utterances.enumerated().map { index, utterance in
+            try humeValidatedContextUtterance(utterance, index: index)
+        })
+    ])
+}
+
+private func humeValidatedContextUtterance(_ value: JSONValue, index: Int) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.hume.context.utterances[\(index)]", message: "Hume context utterances must be objects.")
+    }
+    guard let text = object["text"], text.stringValue != nil else {
+        throw AIError.invalidArgument(argument: "providerOptions.hume.context.utterances[\(index)].text", message: "Hume context utterance text must be a string.")
+    }
+    var output: [String: JSONValue] = ["text": text]
+    if let description = object["description"] {
+        guard description.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.hume.context.utterances[\(index)].description", message: "Hume context utterance description must be a string.")
+        }
+        output["description"] = description
+    }
+    if let speed = object["speed"] {
+        guard speed.doubleValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.hume.context.utterances[\(index)].speed", message: "Hume context utterance speed must be a number.")
+        }
+        output["speed"] = speed
+    }
+    if let trailingSilence = object["trailingSilence"] {
+        guard trailingSilence.doubleValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.hume.context.utterances[\(index)].trailingSilence", message: "Hume context utterance trailingSilence must be a number.")
+        }
+        output["trailingSilence"] = trailingSilence
+    }
+    if let voice = object["voice"] {
+        output["voice"] = try humeValidatedVoice(voice, argument: "providerOptions.hume.context.utterances[\(index)].voice")
+    }
+    return .object(output)
+}
+
+private func humeValidatedVoice(_ value: JSONValue, argument: String) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: argument, message: "Hume voice must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    if let id = object["id"] {
+        guard id.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "\(argument).id", message: "Hume voice id must be a string.")
+        }
+        output["id"] = id
+    } else if let name = object["name"] {
+        guard name.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "\(argument).name", message: "Hume voice name must be a string.")
+        }
+        output["name"] = name
+    } else {
+        throw AIError.invalidArgument(argument: argument, message: "Hume voice must include id or name.")
+    }
+    if let provider = object["provider"] {
+        guard let providerName = provider.stringValue, ["HUME_AI", "CUSTOM_VOICE"].contains(providerName) else {
+            throw AIError.invalidArgument(argument: "\(argument).provider", message: "Hume voice provider must be HUME_AI or CUSTOM_VOICE.")
+        }
+        output["provider"] = provider
+    }
+    return .object(output)
+}
 
 private func humeSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
     var warnings: [AIWarning] = []

@@ -178,6 +178,74 @@ import Testing
     #expect(utterance["voice"]?["unsupportedVoice"] == nil)
 }
 
+@Test func humeSpeechProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
+    let model = try provider.speechModel("")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .string("invalid")]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .string("invalid")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .object([:])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .object(["generationId": .number(123)])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .object(["utterances": .string("invalid")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .object(["utterances": .array([.object(["description": .string("missing text")])])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .object(["utterances": .array([.object(["text": .string("Line"), "speed": .string("fast")])])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .object(["utterances": .array([.object(["text": .string("Line"), "voice": .object(["provider": .string("HUME_AI")])])])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["hume": .object(["context": .object(["utterances": .array([.object(["text": .string("Line"), "voice": .object(["id": .string("voice-id"), "provider": .string("OTHER")])])])])])]
+        ))
+    }
+}
+
 @Test func humeSpeechMapsStandardSpeedInstructionsAndWarnsForLanguage() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
     let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
