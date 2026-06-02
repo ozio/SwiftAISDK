@@ -313,7 +313,10 @@ Progress:
   submissions before requiring an ID, and matches upstream's poll-before-delay
   status cadence. Gladia transcription now scopes `providerOptions.gladia` to
   the upstream initiation schema while retaining raw `extraBody` passthrough
-  for explicit low-level overrides. Mistral and
+  for explicit low-level overrides. AssemblyAI transcription now scopes
+  `providerOptions.assemblyai` to the upstream submit schema and uses the
+  upstream 3s poll cadence while keeping raw `extraBody` passthrough for
+  explicit low-level overrides. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.

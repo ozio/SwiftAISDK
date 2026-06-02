@@ -129,8 +129,10 @@ import Testing
                 "sentimentAnalysis": true,
                 "webhookAuthHeaderName": "X-Assembly-Secret",
                 "webhookAuthHeaderValue": "secret",
-                "wordBoost": ["SwiftAISDK"]
-            ])
+                "wordBoost": ["SwiftAISDK"],
+                "unsupportedProperty": "drop-me"
+            ]),
+            "openai": .object(["timestampGranularities": ["word"]])
         ],
         extraBody: [
             "assemblyai": .object([
@@ -163,6 +165,8 @@ import Testing
     #expect(submitBody["webhook_auth_header_value"]?.stringValue == "secret")
     #expect(submitBody["word_boost"]?[0]?.stringValue == "SwiftAISDK")
     #expect(submitBody["assemblyai"] == nil)
+    #expect(submitBody["openai"] == nil)
+    #expect(submitBody["unsupportedProperty"] == nil)
     #expect(submitBody["audioEndAt"] == nil)
     #expect(submitBody["languageCode"] == nil)
 }

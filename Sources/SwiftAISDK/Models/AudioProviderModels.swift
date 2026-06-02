@@ -535,7 +535,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
                 if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                     throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI transcription polling timed out.")
                 }
-                try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
+                try await sleepWithAbortSignal(nanoseconds: 3_000_000_000, abortSignal: request.abortSignal)
             }
         }
     }
@@ -908,14 +908,57 @@ private func assemblyAIProviderOptions(from extraBody: [String: JSONValue]) -> [
 }
 
 private func assemblyAIProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    assemblyAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    assemblyAIProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: assemblyAITranscriptionProviderOptionKeys
+    )
 }
 
-private func assemblyAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func assemblyAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = assemblyAIProviderOptions(from: extraBody)
-    output.merge(assemblyAIProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["assemblyai"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
     return output
 }
+
+private let assemblyAITranscriptionProviderOptionKeys: Set<String> = [
+    "audioEndAt",
+    "audioStartFrom",
+    "autoChapters",
+    "autoHighlights",
+    "boostParam",
+    "contentSafety",
+    "contentSafetyConfidence",
+    "customSpelling",
+    "disfluencies",
+    "entityDetection",
+    "filterProfanity",
+    "formatText",
+    "iabCategories",
+    "languageCode",
+    "languageConfidenceThreshold",
+    "languageDetection",
+    "multichannel",
+    "punctuate",
+    "redactPii",
+    "redactPiiAudio",
+    "redactPiiAudioQuality",
+    "redactPiiPolicies",
+    "redactPiiSub",
+    "sentimentAnalysis",
+    "speakerLabels",
+    "speakersExpected",
+    "speechThreshold",
+    "summarization",
+    "summaryModel",
+    "summaryType",
+    "webhookAuthHeaderName",
+    "webhookAuthHeaderValue",
+    "webhookUrl",
+    "wordBoost"
+]
 
 private func revAIProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
