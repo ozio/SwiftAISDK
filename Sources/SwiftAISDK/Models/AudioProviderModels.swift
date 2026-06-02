@@ -563,7 +563,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
         let options = revAIProviderOptions(from: request)
         var form = MultipartFormData()
-        form.appendFile(name: "media", fileName: request.fileName, mimeType: request.mimeType, data: request.audio)
+        form.appendFile(name: "media", fileName: "audio.\(mediaTypeToExtension(request.mimeType))", mimeType: request.mimeType, data: request.audio)
         var configBody: [String: JSONValue] = ["transcriber": .string(modelID)]
         if let language = request.language { configBody["language"] = .string(language) }
         configBody.merge(options) { _, new in new }
@@ -980,9 +980,39 @@ private func revAIProviderOptions(from request: AudioTranscriptionRequest) -> [S
 private func revAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = revAIProviderOptions(from: extraBody)
     if let nested = providerOptions["revai"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+        output.merge(revAITranscriptionProviderOptionDefaults) { _, defaultValue in defaultValue }
+        for (key, value) in nested where supportedProviderOptionKeys.contains(key) {
+            if value == .null {
+                output.removeValue(forKey: key)
+                continue
+            }
+            output[key] = revAITranscriptionProviderOption(key: key, value: value)
+        }
     }
     return output
+}
+
+private func revAITranscriptionProviderOption(key: String, value: JSONValue) -> JSONValue {
+    guard let object = value.objectValue else { return value }
+    switch key {
+    case "summarization_config":
+        var output = object
+        if output["model"] == nil || output["model"] == .null {
+            output["model"] = "standard"
+        }
+        if output["type"] == nil || output["type"] == .null {
+            output["type"] = "paragraph"
+        }
+        return .object(output)
+    case "translation_config":
+        var output = object
+        if output["model"] == nil || output["model"] == .null {
+            output["model"] = "standard"
+        }
+        return .object(output)
+    default:
+        return value
+    }
 }
 
 private let revAITranscriptionProviderOptionKeys: Set<String> = [
@@ -1010,6 +1040,20 @@ private let revAITranscriptionProviderOptionKeys: Set<String> = [
     "translation_config",
     "language",
     "forced_alignment"
+]
+
+private let revAITranscriptionProviderOptionDefaults: [String: JSONValue] = [
+    "rush": .bool(false),
+    "test_mode": .bool(false),
+    "skip_diarization": .bool(false),
+    "skip_postprocessing": .bool(false),
+    "skip_punctuation": .bool(false),
+    "remove_disfluencies": .bool(false),
+    "remove_atmospherics": .bool(false),
+    "filter_profanity": .bool(false),
+    "diarization_type": .string("standard"),
+    "language": .string("en"),
+    "forced_alignment": .bool(false)
 ]
 
 private func gladiaProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {

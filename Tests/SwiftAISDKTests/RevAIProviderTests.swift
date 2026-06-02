@@ -19,7 +19,7 @@ import Testing
     #expect(requests[0].headers["Authorization"] == "Bearer rev-key")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let form = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
-    #expect(form.contains("name=\"media\"; filename=\"clip.wav\""))
+    #expect(form.contains("name=\"media\"; filename=\"audio.wav\""))
     #expect(form.contains("name=\"config\""))
     #expect(form.contains("\"transcriber\":\"machine\""))
     #expect(form.contains("\"language\":\"en\""))
@@ -153,6 +153,74 @@ import Testing
     #expect(!form.contains("drop-me"))
     #expect(!form.contains("extra-case"))
     #expect(!form.contains("\"rush\":false"))
+}
+
+@Test func revAITranscriptionAppliesUpstreamProviderOptionDefaults() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"job-123","status":"transcribed","language":"en"}"#),
+        jsonResponse(#"{"monologues":[{"elements":[{"type":"text","value":"defaults","ts":0,"end_ts":0.5}]}]}"#),
+        jsonResponse(#"{"id":"job-456","status":"transcribed","language":"en"}"#),
+        jsonResponse(#"{"monologues":[{"elements":[{"type":"text","value":"nested","ts":0,"end_ts":0.5}]}]}"#)
+    ])
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
+    let model = try provider.transcriptionModel("fusion")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        fileName: "caller-name.mp3",
+        mimeType: "audio/mpeg",
+        providerOptions: ["revai": .object([:])],
+        extraBody: [
+            "revai": .object([
+                "language": "ja",
+                "rush": true,
+                "forced_alignment": true
+            ])
+        ]
+    ))
+
+    var form = String(data: try #require((await transport.requests()).first?.body), encoding: .utf8) ?? ""
+    #expect(form.contains("name=\"media\"; filename=\"audio.mp3\""))
+    #expect(form.contains("\"transcriber\":\"fusion\""))
+    #expect(form.contains("\"rush\":false"))
+    #expect(form.contains("\"test_mode\":false"))
+    #expect(form.contains("\"skip_diarization\":false"))
+    #expect(form.contains("\"skip_postprocessing\":false"))
+    #expect(form.contains("\"skip_punctuation\":false"))
+    #expect(form.contains("\"remove_disfluencies\":false"))
+    #expect(form.contains("\"remove_atmospherics\":false"))
+    #expect(form.contains("\"filter_profanity\":false"))
+    #expect(form.contains("\"diarization_type\":\"standard\""))
+    #expect(form.contains("\"language\":\"en\""))
+    #expect(form.contains("\"forced_alignment\":false"))
+    #expect(!form.contains("\"language\":\"ja\""))
+    #expect(!form.contains("\"rush\":true"))
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        mimeType: "audio/wav",
+        providerOptions: [
+            "revai": .object([
+                "rush": .null,
+                "summarization_config": [
+                    "prompt": "short"
+                ],
+                "translation_config": [
+                    "target_languages": [["language": "de"]]
+                ]
+            ])
+        ]
+    ))
+
+    form = String(data: try #require((await transport.requests())[2].body), encoding: .utf8) ?? ""
+    #expect(!form.contains("\"rush\""))
+    #expect(form.contains("\"summarization_config\""))
+    #expect(form.contains("\"model\":\"standard\""))
+    #expect(form.contains("\"type\":\"paragraph\""))
+    #expect(form.contains("\"prompt\":\"short\""))
+    #expect(form.contains("\"translation_config\""))
+    #expect(form.contains("\"target_languages\""))
+    #expect(form.contains("\"language\":\"de\""))
 }
 
 @Test func revAITranscriptionThrowsForFailedSubmissionBeforeMissingID() async throws {
