@@ -1,0 +1,195 @@
+import Foundation
+import Testing
+@testable import SwiftAISDK
+
+@Test func byteDanceVideoSubmitsPollsAndPreservesMetadata() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-1"}"#),
+        jsonResponse(
+            #"{"id":"task-1","model":"seedance-final","status":"succeeded","content":{"video_url":"https://bytedance.example.com/video.mp4"},"usage":{"completion_tokens":42}}"#,
+            headers: ["x-bytedance": "yes"]
+        )
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        aspectRatio: "16:9",
+        durationSeconds: 4,
+        resolution: "1920x1080",
+        seed: 11,
+        providerOptions: [
+            "bytedance": .object([
+                "serviceTier": "flex"
+            ]),
+            "openai": .object([
+                "serviceTier": "should-not-leak"
+            ])
+        ],
+        headers: ["x-request-id": "req-1"]
+    ))
+
+    #expect(result.urls == ["https://bytedance.example.com/video.mp4"])
+    #expect(result.operationID == "task-1")
+    #expect(result.providerMetadata["bytedance"]?["taskId"]?.stringValue == "task-1")
+    #expect(result.providerMetadata["bytedance"]?["usage"]?["completion_tokens"]?.intValue == 42)
+    #expect(result.responseMetadata.id == "task-1")
+    #expect(result.responseMetadata.modelID == "seedance-final")
+    #expect(result.responseMetadata.headers["x-bytedance"] == "yes")
+    #expect(result.responseMetadata.body?["content"]?["video_url"]?.stringValue == "https://bytedance.example.com/video.mp4")
+    #expect(result.requestMetadata.headers["x-request-id"] == "req-1")
+    #expect(result.requestMetadata.body?["content"]?[0]?["text"]?.stringValue == "cat running")
+
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].method == "POST")
+    #expect(requests[0].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks")
+    #expect(requests[0].headers["Authorization"] == "Bearer ark-key")
+    #expect(requests[0].headers["x-request-id"] == "req-1")
+    let body = try decodeJSONBody(try #require(requests[0].body))
+    #expect(body["model"]?.stringValue == "seedance-1-0-pro")
+    #expect(body["content"]?[0]?["type"]?.stringValue == "text")
+    #expect(body["content"]?[0]?["text"]?.stringValue == "cat running")
+    #expect(body["ratio"]?.stringValue == "16:9")
+    #expect(body["duration"]?.intValue == 4)
+    #expect(body["seed"]?.intValue == 11)
+    #expect(body["resolution"]?.stringValue == "1080p")
+    #expect(body["service_tier"]?.stringValue == "flex")
+    #expect(body["openai"] == nil)
+    #expect(requests[1].method == "GET")
+    #expect(requests[1].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks/task-1")
+    #expect(requests[1].headers["Authorization"] == "Bearer ark-key")
+    #expect(requests[1].headers["x-request-id"] == "req-1")
+}
+
+@Test func byteDanceVideoMapsStandardImageAndReferenceMedia() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-2"}"#),
+        jsonResponse(#"{"id":"task-2","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/with-refs.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+    let imageData = Data([1, 2, 3])
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        image: ImageInputFile(data: imageData, mediaType: "image/png"),
+        providerOptions: [
+            "bytedance": .object([
+                "lastFrameImage": "https://example.com/end.png",
+                "referenceImages": [
+                    "https://example.com/ref-1.png",
+                    "https://example.com/ref-2.png"
+                ],
+                "referenceVideos": ["https://example.com/ref.mp4"],
+                "referenceAudio": [
+                    .object([
+                        "data": .string("data:audio/mpeg;base64,YXVkaW8=")
+                    ])
+                ]
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["content"]?[0]?["type"]?.stringValue == "text")
+    #expect(body["content"]?[1]?["type"]?.stringValue == "image_url")
+    #expect(body["content"]?[1]?["image_url"]?["url"]?.stringValue == "data:image/png;base64,\(imageData.base64EncodedString())")
+    #expect(body["content"]?[2]?["role"]?.stringValue == "last_frame")
+    #expect(body["content"]?[2]?["image_url"]?["url"]?.stringValue == "https://example.com/end.png")
+    #expect(body["content"]?[3]?["role"]?.stringValue == "reference_image")
+    #expect(body["content"]?[3]?["image_url"]?["url"]?.stringValue == "https://example.com/ref-1.png")
+    #expect(body["content"]?[4]?["role"]?.stringValue == "reference_image")
+    #expect(body["content"]?[4]?["image_url"]?["url"]?.stringValue == "https://example.com/ref-2.png")
+    #expect(body["content"]?[5]?["role"]?.stringValue == "reference_video")
+    #expect(body["content"]?[5]?["video_url"]?["url"]?.stringValue == "https://example.com/ref.mp4")
+    #expect(body["content"]?[6]?["role"]?.stringValue == "reference_audio")
+    #expect(body["content"]?[6]?["audio_url"]?["url"]?.stringValue == "data:audio/mpeg;base64,YXVkaW8=")
+}
+
+@Test func byteDanceVideoMapsProviderOptionsAndWarnings() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-3"}"#),
+        jsonResponse(#"{"id":"task-3","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/options.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        fps: 60,
+        providerOptions: [
+            "bytedance": .object([
+                "watermark": false,
+                "generateAudio": true,
+                "cameraFixed": true,
+                "returnLastFrame": true,
+                "serviceTier": "flex",
+                "draft": true,
+                "seed": 7,
+                "resolution": "1280x720",
+                "customFlag": "keep-me",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "fps",
+            message: "ByteDance video models do not support custom FPS. Frame rate is fixed at 24 fps."
+        )
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["watermark"]?.boolValue == false)
+    #expect(body["generate_audio"]?.boolValue == true)
+    #expect(body["camera_fixed"]?.boolValue == true)
+    #expect(body["return_last_frame"]?.boolValue == true)
+    #expect(body["service_tier"]?.stringValue == "flex")
+    #expect(body["draft"]?.boolValue == true)
+    #expect(body["seed"]?.intValue == 7)
+    #expect(body["resolution"]?.stringValue == "720p")
+    #expect(body["customFlag"]?.stringValue == "keep-me")
+    #expect(body["pollIntervalMs"] == nil)
+    #expect(body["pollTimeoutMs"] == nil)
+    #expect(body["bytedance"] == nil)
+}
+
+@Test func byteDanceVideoThrowsForMissingTaskID() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"model":"seedance"}"#))
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
+    }
+}
+
+@Test func byteDanceVideoThrowsForFailedTask() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-failed"}"#),
+        jsonResponse(#"{"id":"task-failed","status":"failed"}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
+    }
+}
+
+@Test func byteDanceVideoThrowsWhenFinalResponseHasNoVideoURL() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-empty"}"#),
+        jsonResponse(#"{"id":"task-empty","status":"succeeded","content":{}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
+    }
+}

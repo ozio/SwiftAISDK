@@ -1102,26 +1102,32 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = byteDanceProviderOptions(from: request.extraBody)
+        let options = byteDanceProviderOptions(from: request)
+        let warnings = byteDanceWarnings(for: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "content": .array(byteDanceContent(prompt: request.prompt, options: options))
+            "content": .array(try byteDanceContent(prompt: request.prompt, image: request.image, options: options))
         ]
         if let aspectRatio = request.aspectRatio { body["ratio"] = .string(aspectRatio) }
         if let duration = request.durationSeconds { body["duration"] = .number(duration) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+        if let resolution = request.resolution {
+            body["resolution"] = .string(byteDanceResolutionMap[resolution] ?? resolution)
+        }
         body.merge(byteDanceOptions(from: options)) { _, new in new }
 
-        let created = try await config.sendJSON(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
-        guard let taskID = created["id"]?.stringValue else {
+        let created = try await config.sendJSONResponse(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        guard let taskID = created.json["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "ByteDance create response did not contain id.")
         }
-        let raw = try await pollByteDance(
+        let finalResponse = try await pollByteDance(
             taskID: taskID,
             headers: request.headers,
             intervalNanoseconds: byteDancePollInterval(options),
             timeoutNanoseconds: byteDancePollTimeout(options),
             abortSignal: request.abortSignal
         )
+        let raw = finalResponse.raw
         guard let url = raw["content"]?["video_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "ByteDance status response did not contain content.video_url.")
         }
@@ -1129,11 +1135,19 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
             urls: [url],
             operationID: taskID,
             rawValue: raw,
-            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body))
+            warnings: warnings,
+            providerMetadata: [
+                "bytedance": .object([
+                    "taskId": .string(taskID),
+                    "usage": raw["usage"]
+                ])
+            ],
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
+            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
 
-    private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+    private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
@@ -1148,7 +1162,7 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {
             case "succeeded":
-                return raw
+                return (raw, response)
             case "failed":
                 throw AIError.invalidResponse(provider: providerID, message: "ByteDance video generation failed.")
             default:
@@ -1161,6 +1175,14 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
+private func byteDanceProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    var output = byteDanceProviderOptions(from: request.extraBody)
+    if let providerOptions = request.providerOptions["bytedance"]?.objectValue {
+        output.merge(providerOptions) { _, providerValue in providerValue }
+    }
+    return output
+}
+
 private func byteDanceProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     if let nested = extraBody["bytedance"]?.objectValue {
         return nested
@@ -1170,12 +1192,12 @@ private func byteDanceProviderOptions(from extraBody: [String: JSONValue]) -> [S
     return output
 }
 
-private func byteDanceContent(prompt: String, options: [String: JSONValue]) -> [JSONValue] {
+private func byteDanceContent(prompt: String, image: ImageInputFile?, options: [String: JSONValue]) throws -> [JSONValue] {
     var content: [JSONValue] = []
     if !prompt.isEmpty {
         content.append(.object(["type": .string("text"), "text": .string(prompt)]))
     }
-    if let image = byteDanceMediaURL(options["image"] ?? options["imageUrl"] ?? options["image_url"]) {
+    if let image = try byteDanceMediaURL(from: image) ?? byteDanceMediaURL(options["image"] ?? options["imageUrl"] ?? options["image_url"]) {
         content.append(.object(["type": .string("image_url"), "image_url": .object(["url": .string(image)])]))
     }
     if let lastFrameImage = byteDanceMediaURL(options["lastFrameImage"] ?? options["last_frame_image"]) {
@@ -1227,6 +1249,18 @@ private func byteDanceOptions(from options: [String: JSONValue]) -> [String: JSO
     return output
 }
 
+private func byteDanceWarnings(for request: VideoGenerationRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.fps != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "fps",
+            message: "ByteDance video models do not support custom FPS. Frame rate is fixed at 24 fps."
+        ))
+    }
+    return warnings
+}
+
 private let byteDanceHandledOptionKeys: Set<String> = [
     "bytedance",
     "image",
@@ -1276,6 +1310,18 @@ private func byteDanceMediaURL(_ value: JSONValue?) -> String? {
         return object["url"]?.stringValue ?? object["data"]?.stringValue
     }
     return nil
+}
+
+private func byteDanceMediaURL(from image: ImageInputFile?) throws -> String? {
+    guard let image else { return nil }
+    if let url = image.url {
+        return url
+    }
+    if let data = image.data {
+        let mediaType = image.mediaType ?? "application/octet-stream"
+        return "data:\(mediaType);base64,\(data.base64EncodedString())"
+    }
+    throw AIError.invalidArgument(argument: "image", message: "ByteDance video image input requires data or URL.")
 }
 
 private func byteDanceMediaURLs(_ value: JSONValue?) -> [String] {

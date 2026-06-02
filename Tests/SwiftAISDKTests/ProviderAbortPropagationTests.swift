@@ -633,6 +633,27 @@ import Testing
     #expect(requests[1].abortSignal === controller.signal)
 }
 
+@Test func byteDanceForwardsAbortSignalToCreateAndPollRequests() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bytedance-task"}"#),
+        jsonResponse(#"{"id":"bytedance-task","status":"succeeded","content":{"video_url":"https://bytedance.example.com/video.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+    let controller = AIAbortController()
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["bytedance": .object(["pollIntervalMs": .number(1)])],
+        abortSignal: controller.signal
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].abortSignal === controller.signal)
+    #expect(requests[1].abortSignal === controller.signal)
+}
+
 @Test func falForwardsAbortSignalToImageVideoAndTranscriptionRequests() async throws {
     let imageTransport = RecordingTransport(responses: [
         jsonResponse(#"{"image":{"url":"https://fal.example.com/image.png"}}"#),

@@ -427,6 +427,13 @@ Impact:
   covers polling, generation mode, negative prompts, camera, multi-shot, voice,
   element, mask, watermark, and passthrough fields; results preserve task/video
   provider metadata, final poll response metadata, JWT auth, and abort signals.
+- ByteDance video generation now follows the upstream Seedance provider more
+  closely: standard video fields map to the native task body, known
+  width/height strings map to upstream resolution tiers, data-backed image
+  input becomes a data URI, `providerOptions.bytedance` covers reference media,
+  generation options, polling controls, and passthrough fields, unsupported
+  `fps` returns a warning, and results preserve task usage/provider metadata,
+  final poll response metadata, and abort signals.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`
