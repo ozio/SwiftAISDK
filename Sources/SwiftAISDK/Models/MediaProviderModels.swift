@@ -1002,7 +1002,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let mode = try klingMode(modelID)
         let endpoint = klingEndpoint(mode)
-        let options = klingAIProviderOptions(from: request)
+        let options = try klingAIProviderOptions(from: request)
         let warnings = klingAIWarnings(for: request, mode: mode)
         var body: [String: JSONValue] = [
             "model_name": .string(klingAPIModelName(modelID, mode: mode))
@@ -1024,8 +1024,8 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             endpoint: endpoint,
             taskID: taskID,
             headers: request.headers,
-            intervalNanoseconds: klingAIPollInterval(options),
-            timeoutNanoseconds: klingAIPollTimeout(options),
+            intervalNanoseconds: klingAIPollInterval(options.known["pollIntervalMs"]),
+            timeoutNanoseconds: klingAIPollTimeout(options.known["pollTimeoutMs"]),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.raw
@@ -1079,64 +1079,76 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
-private func klingAIProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
-    var output = klingAIProviderOptions(from: request.extraBody)
+private struct KlingAIResolvedOptions {
+    var known: [String: JSONValue]
+    var passthrough: [String: JSONValue]
+}
+
+private func klingAIProviderOptions(from request: VideoGenerationRequest) throws -> KlingAIResolvedOptions {
+    var output = try klingAIExtraBodyOptions(from: request.extraBody)
     if let providerOptions = request.providerOptions["klingai"]?.objectValue {
-        output.merge(providerOptions) { _, providerValue in providerValue }
+        let parsed = try klingAIValidatedProviderOptions(from: providerOptions)
+        for (key, value) in parsed.known {
+            if value == .null {
+                output.known.removeValue(forKey: key)
+            } else {
+                output.known[key] = value
+            }
+        }
+        output.passthrough.merge(parsed.passthrough) { _, providerValue in providerValue }
     }
     return output
 }
 
-private func klingAIProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let nested = extraBody["klingai"]?.objectValue {
-        return nested
+private func klingAIExtraBodyOptions(from extraBody: [String: JSONValue]) throws -> KlingAIResolvedOptions {
+    var passthrough = extraBody["klingai"]?.objectValue ?? extraBody.filter { key, _ in key != "klingai" }
+    var known: [String: JSONValue] = [:]
+    for (key, canonicalKey) in klingAIExtraBodyOptionAliases {
+        if let value = passthrough.removeValue(forKey: key), value != .null {
+            known[canonicalKey] = value
+        }
     }
-    var output = extraBody
-    output.removeValue(forKey: "klingai")
-    return output
+    return KlingAIResolvedOptions(known: try klingAIValidateKnownOptions(known), passthrough: passthrough)
 }
 
-private func klingAIOptions(from options: [String: JSONValue], mode: String, requestImage: ImageInputFile?) throws -> [String: JSONValue] {
+private func klingAIOptions(from options: KlingAIResolvedOptions, mode: String, requestImage: ImageInputFile?) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
+    let known = options.known
     if mode == "motion-control" {
-        guard let videoURL = options["videoUrl"] ?? options["video_url"],
-              let characterOrientation = options["characterOrientation"] ?? options["character_orientation"],
-              let generationMode = options["mode"] else {
+        guard let videoURL = known["videoUrl"],
+              let characterOrientation = known["characterOrientation"],
+              let generationMode = known["mode"] else {
             throw AIError.invalidArgument(argument: "extraBody.klingai", message: "KlingAI Motion Control requires videoUrl, characterOrientation, and mode.")
         }
         output["video_url"] = videoURL
         output["character_orientation"] = characterOrientation
         output["mode"] = generationMode
-        if let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: options) {
+        if let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: known) {
             output["image_url"] = image
         }
-        if let keepOriginalSound = options["keepOriginalSound"] ?? options["keep_original_sound"] {
+        if let keepOriginalSound = known["keepOriginalSound"] {
             output["keep_original_sound"] = keepOriginalSound
         }
-        if let watermarkEnabled = options["watermarkEnabled"] {
+        if let watermarkEnabled = known["watermarkEnabled"] {
             output["watermark_info"] = .object(["enabled": watermarkEnabled])
-        } else if let watermarkInfo = options["watermark_info"] {
-            output["watermark_info"] = watermarkInfo
         }
-        if let elementList = options["elementList"] ?? options["element_list"] {
+        if let elementList = known["elementList"] {
             output["element_list"] = elementList
         }
     } else {
-        if mode == "i2v", let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: options) {
+        if mode == "i2v", let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: known) {
             output["image"] = image
         }
-        klingAIMoveSharedOptions(options, to: &output)
+        klingAIMoveSharedOptions(known, to: &output)
         if mode == "i2v" {
-            if let imageTail = options["imageTail"] ?? options["image_tail"] { output["image_tail"] = imageTail }
-            if let staticMask = options["staticMask"] ?? options["static_mask"] { output["static_mask"] = staticMask }
-            if let dynamicMasks = options["dynamicMasks"] ?? options["dynamic_masks"] { output["dynamic_masks"] = dynamicMasks }
-            if let elementList = options["elementList"] ?? options["element_list"] { output["element_list"] = elementList }
+            if let imageTail = known["imageTail"] { output["image_tail"] = imageTail }
+            if let staticMask = known["staticMask"] { output["static_mask"] = staticMask }
+            if let dynamicMasks = known["dynamicMasks"] { output["dynamic_masks"] = dynamicMasks }
+            if let elementList = known["elementList"] { output["element_list"] = elementList }
         }
     }
 
-    for (key, value) in options where !klingAIHandledOptionKeys.contains(key) {
-        output[key] = value
-    }
+    output.merge(options.passthrough) { _, new in new }
     return output
 }
 
@@ -1201,46 +1213,230 @@ private func klingAIWarnings(for request: VideoGenerationRequest, mode: String) 
     return warnings
 }
 
-private let klingAIHandledOptionKeys: Set<String> = [
-    "klingai",
+private let klingAIProviderOptionKeys: Set<String> = [
+    "mode",
     "pollIntervalMs",
     "pollTimeoutMs",
-    "image",
-    "imageUrl",
-    "image_url",
     "negativePrompt",
-    "negative_prompt",
     "sound",
     "cfgScale",
-    "cfg_scale",
-    "mode",
     "cameraControl",
-    "camera_control",
     "multiShot",
-    "multi_shot",
     "shotType",
-    "shot_type",
     "multiPrompt",
-    "multi_prompt",
     "elementList",
-    "element_list",
     "voiceList",
-    "voice_list",
     "imageTail",
-    "image_tail",
     "staticMask",
-    "static_mask",
     "dynamicMasks",
-    "dynamic_masks",
     "videoUrl",
-    "video_url",
     "characterOrientation",
-    "character_orientation",
     "keepOriginalSound",
-    "keep_original_sound",
-    "watermarkEnabled",
-    "watermark_info"
+    "watermarkEnabled"
 ]
+
+private let klingAIExtraBodyOptionAliases: [String: String] = [
+    "mode": "mode",
+    "pollIntervalMs": "pollIntervalMs",
+    "pollTimeoutMs": "pollTimeoutMs",
+    "image": "image",
+    "imageUrl": "image",
+    "image_url": "image",
+    "negativePrompt": "negativePrompt",
+    "negative_prompt": "negativePrompt",
+    "sound": "sound",
+    "cfgScale": "cfgScale",
+    "cfg_scale": "cfgScale",
+    "cameraControl": "cameraControl",
+    "camera_control": "cameraControl",
+    "multiShot": "multiShot",
+    "multi_shot": "multiShot",
+    "shotType": "shotType",
+    "shot_type": "shotType",
+    "multiPrompt": "multiPrompt",
+    "multi_prompt": "multiPrompt",
+    "elementList": "elementList",
+    "element_list": "elementList",
+    "voiceList": "voiceList",
+    "voice_list": "voiceList",
+    "imageTail": "imageTail",
+    "image_tail": "imageTail",
+    "staticMask": "staticMask",
+    "static_mask": "staticMask",
+    "dynamicMasks": "dynamicMasks",
+    "dynamic_masks": "dynamicMasks",
+    "videoUrl": "videoUrl",
+    "video_url": "videoUrl",
+    "characterOrientation": "characterOrientation",
+    "character_orientation": "characterOrientation",
+    "keepOriginalSound": "keepOriginalSound",
+    "keep_original_sound": "keepOriginalSound",
+    "watermarkEnabled": "watermarkEnabled"
+]
+
+private func klingAIValidatedProviderOptions(from providerOptions: [String: JSONValue]) throws -> KlingAIResolvedOptions {
+    var known: [String: JSONValue] = [:]
+    var valuesToValidate: [String: JSONValue] = [:]
+    var passthrough = providerOptions
+    for key in klingAIProviderOptionKeys {
+        if let value = passthrough.removeValue(forKey: key) {
+            if value == .null {
+                known[key] = .null
+            } else {
+                valuesToValidate[key] = value
+            }
+        }
+    }
+    known.merge(try klingAIValidateKnownOptions(valuesToValidate)) { _, validated in validated }
+    return KlingAIResolvedOptions(known: known, passthrough: passthrough)
+}
+
+private func klingAIValidateKnownOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options {
+        switch key {
+        case "mode":
+            output[key] = try klingAIStringEnum(value, key: key, allowed: ["std", "pro"])
+        case "pollIntervalMs", "pollTimeoutMs":
+            guard let number = value.doubleValue, number > 0 else {
+                throw AIError.invalidArgument(argument: "providerOptions.klingai.\(key)", message: "KlingAI \(key) must be a positive number.")
+            }
+            output[key] = value
+        case "negativePrompt", "imageTail", "staticMask", "videoUrl":
+            output[key] = try klingAIString(value, key: key)
+        case "sound":
+            output[key] = try klingAIStringEnum(value, key: key, allowed: ["on", "off"])
+        case "cfgScale":
+            guard value.doubleValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.klingai.cfgScale", message: "KlingAI cfgScale must be a number.")
+            }
+            output[key] = value
+        case "cameraControl":
+            output[key] = try klingAICameraControl(value)
+        case "multiShot", "watermarkEnabled":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.klingai.\(key)", message: "KlingAI \(key) must be a boolean.")
+            }
+            output[key] = value
+        case "shotType":
+            output[key] = try klingAIStringEnum(value, key: key, allowed: ["customize", "intelligence"])
+        case "multiPrompt":
+            output[key] = try klingAIMultiPrompt(value)
+        case "elementList":
+            output[key] = try klingAIElementList(value)
+        case "voiceList":
+            output[key] = try klingAIVoiceList(value)
+        case "dynamicMasks":
+            output[key] = try klingAIDynamicMasks(value)
+        case "characterOrientation":
+            output[key] = try klingAIStringEnum(value, key: key, allowed: ["image", "video"])
+        case "keepOriginalSound":
+            output[key] = try klingAIStringEnum(value, key: key, allowed: ["yes", "no"])
+        case "image":
+            output[key] = value
+        default:
+            output[key] = value
+        }
+    }
+    return output
+}
+
+private func klingAIString(_ value: JSONValue, key: String) throws -> JSONValue {
+    guard value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: "providerOptions.klingai.\(key)", message: "KlingAI \(key) must be a string.")
+    }
+    return value
+}
+
+private func klingAIStringEnum(_ value: JSONValue, key: String, allowed: Set<String>) throws -> JSONValue {
+    guard let string = value.stringValue, allowed.contains(string) else {
+        throw AIError.invalidArgument(argument: "providerOptions.klingai.\(key)", message: "KlingAI \(key) must be one of \(allowed.sorted().joined(separator: ", ")).")
+    }
+    return value
+}
+
+private func klingAICameraControl(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.klingai.cameraControl", message: "KlingAI cameraControl must be an object.")
+    }
+    _ = try klingAIStringEnum(object["type"] ?? .null, key: "cameraControl.type", allowed: ["simple", "down_back", "forward_up", "right_turn_forward", "left_turn_forward"])
+    if let config = object["config"], config != .null {
+        guard let configObject = config.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai.cameraControl.config", message: "KlingAI cameraControl.config must be an object.")
+        }
+        for key in ["horizontal", "vertical", "pan", "tilt", "roll", "zoom"] {
+            if let value = configObject[key], value != .null, value.doubleValue == nil {
+                throw AIError.invalidArgument(argument: "providerOptions.klingai.cameraControl.config.\(key)", message: "KlingAI cameraControl.config.\(key) must be a number.")
+            }
+        }
+    }
+    return value
+}
+
+private func klingAIMultiPrompt(_ value: JSONValue) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.klingai.multiPrompt", message: "KlingAI multiPrompt must be an array.")
+    }
+    for (index, item) in array.enumerated() {
+        guard let object = item.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai.multiPrompt", message: "KlingAI multiPrompt[\(index)] must be an object.")
+        }
+        guard object["index"]?.doubleValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai.multiPrompt[\(index)].index", message: "KlingAI multiPrompt index must be a number.")
+        }
+        _ = try klingAIString(object["prompt"] ?? .null, key: "multiPrompt[\(index)].prompt")
+        _ = try klingAIString(object["duration"] ?? .null, key: "multiPrompt[\(index)].duration")
+    }
+    return value
+}
+
+private func klingAIElementList(_ value: JSONValue) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.klingai.elementList", message: "KlingAI elementList must be an array.")
+    }
+    for (index, item) in array.enumerated() {
+        guard let object = item.objectValue, object["element_id"]?.doubleValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai.elementList[\(index)].element_id", message: "KlingAI element_id must be a number.")
+        }
+    }
+    return value
+}
+
+private func klingAIVoiceList(_ value: JSONValue) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.klingai.voiceList", message: "KlingAI voiceList must be an array.")
+    }
+    for (index, item) in array.enumerated() {
+        guard let object = item.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai.voiceList", message: "KlingAI voiceList[\(index)] must be an object.")
+        }
+        _ = try klingAIString(object["voice_id"] ?? .null, key: "voiceList[\(index)].voice_id")
+    }
+    return value
+}
+
+private func klingAIDynamicMasks(_ value: JSONValue) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.klingai.dynamicMasks", message: "KlingAI dynamicMasks must be an array.")
+    }
+    for (index, item) in array.enumerated() {
+        guard let object = item.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai.dynamicMasks", message: "KlingAI dynamicMasks[\(index)] must be an object.")
+        }
+        _ = try klingAIString(object["mask"] ?? .null, key: "dynamicMasks[\(index)].mask")
+        guard let trajectories = object["trajectories"]?.arrayValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai.dynamicMasks[\(index)].trajectories", message: "KlingAI dynamicMasks trajectories must be an array.")
+        }
+        for (trajectoryIndex, trajectory) in trajectories.enumerated() {
+            guard let point = trajectory.objectValue,
+                  point["x"]?.doubleValue != nil,
+                  point["y"]?.doubleValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.klingai.dynamicMasks[\(index)].trajectories[\(trajectoryIndex)]", message: "KlingAI trajectory x and y must be numbers.")
+            }
+        }
+    }
+    return value
+}
 
 private func klingAIVideoMetadata(from videos: [JSONValue]) -> [JSONValue] {
     videos.map { video in
@@ -1254,19 +1450,17 @@ private func klingAIVideoMetadata(from videos: [JSONValue]) -> [JSONValue] {
 }
 
 private func klingAIMoveSharedOptions(_ options: [String: JSONValue], to output: inout [String: JSONValue]) {
-    if let negativePrompt = options["negativePrompt"] ?? options["negative_prompt"] { output["negative_prompt"] = negativePrompt }
+    if let negativePrompt = options["negativePrompt"] { output["negative_prompt"] = negativePrompt }
     if let sound = options["sound"] { output["sound"] = sound }
-    if let cfgScale = options["cfgScale"] ?? options["cfg_scale"] { output["cfg_scale"] = cfgScale }
+    if let cfgScale = options["cfgScale"] { output["cfg_scale"] = cfgScale }
     if let mode = options["mode"] { output["mode"] = mode }
-    if let cameraControl = options["cameraControl"] ?? options["camera_control"] { output["camera_control"] = cameraControl }
-    if let multiShot = options["multiShot"] ?? options["multi_shot"] { output["multi_shot"] = multiShot }
-    if let shotType = options["shotType"] ?? options["shot_type"] { output["shot_type"] = shotType }
-    if let multiPrompt = options["multiPrompt"] ?? options["multi_prompt"] { output["multi_prompt"] = multiPrompt }
-    if let voiceList = options["voiceList"] ?? options["voice_list"] { output["voice_list"] = voiceList }
+    if let cameraControl = options["cameraControl"] { output["camera_control"] = cameraControl }
+    if let multiShot = options["multiShot"] { output["multi_shot"] = multiShot }
+    if let shotType = options["shotType"] { output["shot_type"] = shotType }
+    if let multiPrompt = options["multiPrompt"] { output["multi_prompt"] = multiPrompt }
+    if let voiceList = options["voiceList"] { output["voice_list"] = voiceList }
     if let watermarkEnabled = options["watermarkEnabled"] {
         output["watermark_info"] = .object(["enabled": watermarkEnabled])
-    } else if let watermarkInfo = options["watermark_info"] {
-        output["watermark_info"] = watermarkInfo
     }
 }
 
@@ -1289,13 +1483,13 @@ private func klingAIImageInput(from image: ImageInputFile?) throws -> JSONValue?
     throw AIError.invalidArgument(argument: "image", message: "KlingAI video image input requires data or URL.")
 }
 
-private func klingAIPollInterval(_ options: [String: JSONValue]) -> UInt64 {
-    let milliseconds = options["pollIntervalMs"]?.doubleValue ?? 5_000
+private func klingAIPollInterval(_ value: JSONValue?) -> UInt64 {
+    let milliseconds = value?.doubleValue ?? 5_000
     return UInt64(max(milliseconds, 1) * 1_000_000)
 }
 
-private func klingAIPollTimeout(_ options: [String: JSONValue]) -> UInt64 {
-    let milliseconds = options["pollTimeoutMs"]?.doubleValue ?? 600_000
+private func klingAIPollTimeout(_ value: JSONValue?) -> UInt64 {
+    let milliseconds = value?.doubleValue ?? 600_000
     return UInt64(max(milliseconds, 1) * 1_000_000)
 }
 
