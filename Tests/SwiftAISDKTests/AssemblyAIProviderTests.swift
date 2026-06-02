@@ -195,7 +195,7 @@ import Testing
                     ],
                     [
                         "from": ["codex"],
-                        "to": .null,
+                        "to": "Codex",
                         "unsupported": "drop-me"
                     ]
                 ]
@@ -218,8 +218,73 @@ import Testing
     #expect(submitBody["custom_spelling"]?[0]?["to"]?.stringValue == "Swift SDK")
     #expect(submitBody["custom_spelling"]?[0]?["unsupported"] == nil)
     #expect(submitBody["custom_spelling"]?[1]?["from"]?[0]?.stringValue == "codex")
-    #expect(submitBody["custom_spelling"]?[1]?["to"] == nil)
+    #expect(submitBody["custom_spelling"]?[1]?["to"]?.stringValue == "Codex")
     #expect(submitBody["custom_spelling"]?[1]?["unsupported"] == nil)
+}
+
+@Test func assemblyAITranscriptionValidatesProviderOptionsNamespaceObject() async throws {
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.transcriptionModel("best")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.assemblyai", message: "AssemblyAI provider options must be an object.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["assemblyai": "not-an-object"]
+        ))
+    }
+}
+
+@Test func assemblyAITranscriptionValidatesProviderOptionsSchema() async throws {
+    let provider = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.transcriptionModel("best")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.assemblyai.autoChapters", message: "AssemblyAI autoChapters must be a boolean.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["assemblyai": .object(["autoChapters": "true"])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.assemblyai.audioEndAt", message: "AssemblyAI audioEndAt must be an integer.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["assemblyai": .object(["audioEndAt": 12.5])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.assemblyai.contentSafetyConfidence", message: "AssemblyAI contentSafetyConfidence must be an integer between 25 and 100.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["assemblyai": .object(["contentSafetyConfidence": 101])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.assemblyai.speechThreshold", message: "AssemblyAI speechThreshold must be a number between 0 and 1.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["assemblyai": .object(["speechThreshold": 1.2])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.assemblyai.wordBoost", message: "AssemblyAI providerOptions.assemblyai.wordBoost values must be strings.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["assemblyai": .object(["wordBoost": ["SwiftAISDK", 42]])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.assemblyai.customSpelling[0].to", message: "AssemblyAI customSpelling to must be a string.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: [
+                "assemblyai": .object([
+                    "customSpelling": [
+                        ["from": ["swift"], "to": .null]
+                    ]
+                ])
+            ]
+        ))
+    }
 }
 
 @Test func assemblyAITranscriptionErrorMessageMatchesUpstream() async throws {

@@ -473,7 +473,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = assemblyAIProviderOptions(from: request)
+        let options = try assemblyAIProviderOptions(from: request)
         let uploadResponse = try await config.transport.send(config.rawRequest(
             path: "/v2/upload",
             modelID: modelID,
@@ -986,36 +986,125 @@ private func assemblyAIProviderOptions(from extraBody: [String: JSONValue]) -> [
     return output
 }
 
-private func assemblyAIProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    assemblyAIProviderOptions(
+private func assemblyAIProviderOptions(from request: AudioTranscriptionRequest) throws -> [String: JSONValue] {
+    try assemblyAIProviderOptions(
         extraBody: request.extraBody,
         providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: assemblyAITranscriptionProviderOptionKeys
+        supportedProviderOptionKeys: assemblyAITranscriptionProviderOptionKeys,
+        validateProviderOptions: assemblyAIValidateTranscriptionProviderOptions
     )
 }
 
-private func assemblyAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
+private func assemblyAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>, validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]) throws -> [String: JSONValue] {
     var output = assemblyAIProviderOptions(from: extraBody)
-    if let nested = providerOptions["assemblyai"]?.objectValue {
-        for (key, value) in nested where supportedProviderOptionKeys.contains(key) {
-            if value == .null {
-                output.removeValue(forKey: key)
-                continue
+    if let assemblyAIOptions = providerOptions["assemblyai"] {
+        guard assemblyAIOptions != .null else { return output }
+        guard let nested = assemblyAIOptions.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.assemblyai", message: "AssemblyAI provider options must be an object.")
+        }
+        for key in supportedProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try validateProviderOptions(nested)) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private func assemblyAIValidateTranscriptionProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where assemblyAITranscriptionProviderOptionKeys.contains(key) {
+        guard value != .null else { continue }
+        switch key {
+        case "audioEndAt", "audioStartFrom", "speakersExpected":
+            try assemblyAIRequireInteger(value, argument: "providerOptions.assemblyai.\(key)", message: "AssemblyAI \(key) must be an integer.")
+            output[key] = value
+        case "contentSafetyConfidence":
+            guard let number = value.doubleValue, assemblyAIIsInteger(number), number >= 25, number <= 100 else {
+                throw AIError.invalidArgument(argument: "providerOptions.assemblyai.contentSafetyConfidence", message: "AssemblyAI contentSafetyConfidence must be an integer between 25 and 100.")
             }
-            output[key] = assemblyAIProviderOption(key: key, value: value)
+            output[key] = value
+        case "autoChapters", "autoHighlights", "contentSafety", "disfluencies", "entityDetection", "filterProfanity", "formatText", "iabCategories", "languageDetection", "multichannel", "punctuate", "redactPii", "redactPiiAudio", "sentimentAnalysis", "speakerLabels", "summarization":
+            try assemblyAIRequireBoolean(value, argument: "providerOptions.assemblyai.\(key)", message: "AssemblyAI \(key) must be a boolean.")
+            output[key] = value
+        case "boostParam", "languageCode", "redactPiiAudioQuality", "redactPiiSub", "summaryModel", "summaryType", "webhookAuthHeaderName", "webhookAuthHeaderValue", "webhookUrl":
+            try assemblyAIRequireString(value, argument: "providerOptions.assemblyai.\(key)", message: "AssemblyAI \(key) must be a string.")
+            output[key] = value
+        case "languageConfidenceThreshold":
+            try assemblyAIRequireNumber(value, argument: "providerOptions.assemblyai.languageConfidenceThreshold", message: "AssemblyAI languageConfidenceThreshold must be a number.")
+            output[key] = value
+        case "speechThreshold":
+            guard let number = value.doubleValue, number >= 0, number <= 1 else {
+                throw AIError.invalidArgument(argument: "providerOptions.assemblyai.speechThreshold", message: "AssemblyAI speechThreshold must be a number between 0 and 1.")
+            }
+            output[key] = value
+        case "redactPiiPolicies", "wordBoost":
+            output[key] = try assemblyAIStringArray(value, argument: "providerOptions.assemblyai.\(key)")
+        case "customSpelling":
+            output[key] = try assemblyAIValidatedCustomSpelling(value)
+        default:
+            break
         }
     }
     return output
 }
 
-private func assemblyAIProviderOption(key: String, value: JSONValue) -> JSONValue {
-    guard key == "customSpelling", let items = value.arrayValue else {
-        return value
+private func assemblyAIValidatedCustomSpelling(_ value: JSONValue) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.assemblyai.customSpelling", message: "AssemblyAI customSpelling must be an array.")
     }
-    return .array(items.map { item in
-        guard let object = item.objectValue else { return item }
-        return .object(object.filter { ["from", "to"].contains($0.key) && $0.value != .null })
+    return .array(try array.enumerated().map { index, item in
+        guard let object = item.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.assemblyai.customSpelling[\(index)]", message: "AssemblyAI customSpelling items must be objects.")
+        }
+        guard let from = object["from"] else {
+            throw AIError.invalidArgument(argument: "providerOptions.assemblyai.customSpelling[\(index)].from", message: "AssemblyAI customSpelling from is required.")
+        }
+        guard let to = object["to"], to.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.assemblyai.customSpelling[\(index)].to", message: "AssemblyAI customSpelling to must be a string.")
+        }
+        return .object([
+            "from": try assemblyAIStringArray(from, argument: "providerOptions.assemblyai.customSpelling[\(index)].from"),
+            "to": to
+        ])
     })
+}
+
+private func assemblyAIStringArray(_ value: JSONValue, argument: String) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: argument, message: "AssemblyAI \(argument) must be an array of strings.")
+    }
+    for item in array where item.stringValue == nil {
+        throw AIError.invalidArgument(argument: argument, message: "AssemblyAI \(argument) values must be strings.")
+    }
+    return value
+}
+
+private func assemblyAIRequireString(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func assemblyAIRequireNumber(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.doubleValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func assemblyAIRequireInteger(_ value: JSONValue, argument: String, message: String) throws {
+    guard let number = value.doubleValue, assemblyAIIsInteger(number) else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func assemblyAIRequireBoolean(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func assemblyAIIsInteger(_ value: Double) -> Bool {
+    value.rounded() == value
 }
 
 private let assemblyAITranscriptionProviderOptionKeys: Set<String> = [
