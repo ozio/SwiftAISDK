@@ -228,6 +228,64 @@ import Testing
     }
 }
 
+@Test func anthropicRequestAddsAutomaticBetaHeadersForOptionFeatures() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "anthropic": [
+                "mcpServers": [
+                    [
+                        "type": "url",
+                        "name": "docs",
+                        "url": "https://mcp.example.com",
+                        "toolConfiguration": ["enabled": true]
+                    ]
+                ],
+                "contextManagement": [
+                    "edits": [
+                        [
+                            "type": "compact_20260112",
+                            "trigger": ["type": "input_tokens", "value": 100_000]
+                        ]
+                    ]
+                ],
+                "container": [
+                    "id": "container_123",
+                    "skills": [
+                        ["type": "anthropic", "skillId": "skill_123", "version": "v1"]
+                    ]
+                ],
+                "taskBudget": ["type": "tokens", "total": 40_000],
+                "speed": "fast"
+            ]
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let betaHeader = try #require(request.headers["anthropic-beta"])
+    #expect(betaHeader.contains("mcp-client-2025-04-04"))
+    #expect(betaHeader.contains("context-management-2025-06-27"))
+    #expect(betaHeader.contains("compact-2026-01-12"))
+    #expect(betaHeader.contains("code-execution-2025-08-25"))
+    #expect(betaHeader.contains("skills-2025-10-02"))
+    #expect(betaHeader.contains("files-api-2025-04-14"))
+    #expect(betaHeader.contains("task-budgets-2026-03-13"))
+    #expect(betaHeader.contains("fast-mode-2026-02-01"))
+
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["mcp_servers"]?[0]?["tool_configuration"]?["enabled"]?.boolValue == true)
+    #expect(body["context_management"]?["edits"]?[0]?["type"]?.stringValue == "compact_20260112")
+    #expect(body["container"]?["skills"]?[0]?["skill_id"]?.stringValue == "skill_123")
+    #expect(body["output_config"]?["task_budget"]?["total"]?.intValue == 40_000)
+    #expect(body["speed"]?.stringValue == "fast")
+}
+
 @Test func anthropicRequestConvertsProviderReferenceFilesLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}

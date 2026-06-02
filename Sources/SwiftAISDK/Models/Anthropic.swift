@@ -986,6 +986,7 @@ private func anthropicOptions(from request: LanguageModelRequest) throws -> Anth
     if let betaValue = request.extraBody["anthropicBeta"] {
         betas.append(contentsOf: try anthropicBetaValues(betaValue, argument: "extraBody.anthropicBeta"))
     }
+    betas.append(contentsOf: anthropicAutomaticBetas(from: output))
 
     return AnthropicMappedOptions(body: output, betas: betas)
 }
@@ -1009,6 +1010,45 @@ private func anthropicBetaValues(_ value: JSONValue?, argument: String) throws -
         }
         return string
     }
+}
+
+private func anthropicAutomaticBetas(from body: [String: JSONValue]) -> [String] {
+    var betas: [String] = []
+
+    func add(_ beta: String) {
+        if !betas.contains(beta) {
+            betas.append(beta)
+        }
+    }
+
+    if body["mcp_servers"]?.arrayValue?.isEmpty == false {
+        add("mcp-client-2025-04-04")
+    }
+
+    if let contextManagement = body["context_management"]?.objectValue {
+        add("context-management-2025-06-27")
+        if contextManagement["edits"]?.arrayValue?.contains(where: { edit in
+            edit["type"]?.stringValue == "compact_20260112"
+        }) == true {
+            add("compact-2026-01-12")
+        }
+    }
+
+    if body["container"]?["skills"]?.arrayValue?.isEmpty == false {
+        add("code-execution-2025-08-25")
+        add("skills-2025-10-02")
+        add("files-api-2025-04-14")
+    }
+
+    if body["output_config"]?["task_budget"] != nil {
+        add("task-budgets-2026-03-13")
+    }
+
+    if body["speed"]?.stringValue == "fast" {
+        add("fast-mode-2026-02-01")
+    }
+
+    return betas
 }
 
 private func anthropicOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
