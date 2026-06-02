@@ -178,6 +178,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         )
         let raw = response.json
         let toolCalls = anthropicToolCalls(from: raw["content"])
+        let toolResults = anthropicToolResults(from: raw["content"], providerID: providerID)
         let sources = anthropicSources(from: raw["content"], citationDocuments: anthropicCitationDocuments(from: request.messages))
         let text = raw["content"]?.arrayValue?.compactMap { part in
             part["text"]?.stringValue
@@ -193,6 +194,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                 outputTokens: raw["usage"]?["output_tokens"]?.intValue
             ),
             toolCalls: toolCalls,
+            toolResults: toolResults,
             sources: sources,
             providerMetadata: anthropicProviderMetadata(from: raw, providerID: providerID),
             rawValue: raw,
@@ -225,6 +227,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     }
                     continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
                     var contentBlocks = AnthropicStreamingContentBlocks(providerID: providerID)
+                    var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
                     var toolCalls = AnthropicStreamingToolCalls()
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
@@ -270,6 +273,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                             break
                         }
                         for part in contentBlocks.apply(event: raw) {
+                            continuation.yield(part)
+                        }
+                        for part in providerToolResults.apply(event: raw) {
                             continuation.yield(part)
                         }
                         for source in anthropicSources(from: raw, citationDocuments: citationDocuments, sourceCounter: &sourceCounter) {
@@ -439,6 +445,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
         let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
         let raw = try await config.sendJSON(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers)
         let toolCalls = anthropicToolCalls(from: raw["content"])
+        let toolResults = anthropicToolResults(from: raw["content"], providerID: providerID)
         let sources = anthropicSources(from: raw["content"], citationDocuments: anthropicCitationDocuments(from: request.messages))
         let text = raw["content"]?.arrayValue?.compactMap { part in
             part["text"]?.stringValue
@@ -454,6 +461,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                 outputTokens: raw["usage"]?["output_tokens"]?.intValue
             ),
             toolCalls: toolCalls,
+            toolResults: toolResults,
             sources: sources,
             rawValue: raw
         )
@@ -475,6 +483,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     }
 
                     var contentBlocks = AnthropicStreamingContentBlocks(providerID: providerID)
+                    var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
                     var toolCalls = AnthropicStreamingToolCalls()
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
@@ -483,6 +492,9 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                             continuation.yield(.raw(raw))
                         }
                         for part in contentBlocks.apply(event: raw) {
+                            continuation.yield(part)
+                        }
+                        for part in providerToolResults.apply(event: raw) {
                             continuation.yield(part)
                         }
                         for source in anthropicSources(from: raw, citationDocuments: citationDocuments, sourceCounter: &sourceCounter) {
@@ -608,6 +620,55 @@ private struct AnthropicStreamingContentBlocks {
 
 private func anthropicContentBlockProviderMetadata(_ metadata: [String: JSONValue?], providerID: String) -> [String: JSONValue] {
     [anthropicProviderMetadataKey(from: providerID): .object(metadata)]
+}
+
+private struct AnthropicStreamingProviderToolResults {
+    private var serverToolNames: [String: String] = [:]
+    private var mcpToolNames: [String: String] = [:]
+    private var mcpToolMetadata: [String: [String: JSONValue]] = [:]
+    private let providerID: String
+
+    init(providerID: String) {
+        self.providerID = providerID
+    }
+
+    mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
+        guard raw["type"]?.stringValue == "content_block_start",
+              let block = raw["content_block"] else {
+            return []
+        }
+        recordToolUse(block)
+        return anthropicToolResult(
+            from: block,
+            providerID: providerID,
+            serverToolNames: serverToolNames,
+            mcpToolNames: mcpToolNames,
+            mcpToolMetadata: mcpToolMetadata
+        ).map { [.toolResult($0)] } ?? []
+    }
+
+    private mutating func recordToolUse(_ block: JSONValue) {
+        guard let type = block["type"]?.stringValue,
+              let id = block["id"]?.stringValue else {
+            return
+        }
+        switch type {
+        case "server_tool_use":
+            if let name = block["name"]?.stringValue {
+                serverToolNames[id] = name
+            }
+        case "mcp_tool_use":
+            if let name = block["name"]?.stringValue {
+                mcpToolNames[id] = name
+            }
+            mcpToolMetadata[id] = anthropicContentBlockProviderMetadata([
+                "type": .string("mcp-tool-use"),
+                "serverName": block["server_name"] ?? .null
+            ], providerID: providerID)
+        default:
+            break
+        }
+    }
 }
 
 private struct AnthropicStreamingToolCalls {
@@ -905,6 +966,256 @@ private func amazonBedrockAnthropicStreamEvents(from response: AIHTTPResponse) t
 
 private func anthropicToolCalls(from value: JSONValue?) -> [AIToolCall] {
     value?.arrayValue?.compactMap(anthropicToolCall) ?? []
+}
+
+private func anthropicToolResults(from value: JSONValue?, providerID: String) -> [AIToolResult] {
+    var serverToolNames: [String: String] = [:]
+    var mcpToolNames: [String: String] = [:]
+    var mcpToolMetadata: [String: [String: JSONValue]] = [:]
+    var results: [AIToolResult] = []
+
+    for part in value?.arrayValue ?? [] {
+        switch part["type"]?.stringValue {
+        case "server_tool_use":
+            if let id = part["id"]?.stringValue, let name = part["name"]?.stringValue {
+                serverToolNames[id] = name
+            }
+        case "mcp_tool_use":
+            if let id = part["id"]?.stringValue {
+                if let name = part["name"]?.stringValue {
+                    mcpToolNames[id] = name
+                }
+                mcpToolMetadata[id] = anthropicContentBlockProviderMetadata([
+                    "type": .string("mcp-tool-use"),
+                    "serverName": part["server_name"] ?? .null
+                ], providerID: providerID)
+            }
+        default:
+            break
+        }
+
+        if let result = anthropicToolResult(
+            from: part,
+            providerID: providerID,
+            serverToolNames: serverToolNames,
+            mcpToolNames: mcpToolNames,
+            mcpToolMetadata: mcpToolMetadata
+        ) {
+            results.append(result)
+        }
+    }
+    return results
+}
+
+private func anthropicToolResult(
+    from part: JSONValue,
+    providerID: String,
+    serverToolNames: [String: String],
+    mcpToolNames: [String: String],
+    mcpToolMetadata: [String: [String: JSONValue]]
+) -> AIToolResult? {
+    guard let type = part["type"]?.stringValue else { return nil }
+    switch type {
+    case "web_fetch_tool_result":
+        guard let toolCallID = part["tool_use_id"]?.stringValue,
+              let content = part["content"],
+              let contentType = content["type"]?.stringValue else { return nil }
+        if contentType == "web_fetch_result" {
+            let source = content["content"]?["source"]
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "web_fetch",
+                result: .object([
+                    "type": .string("web_fetch_result"),
+                    "url": content["url"],
+                    "retrievedAt": content["retrieved_at"],
+                    "content": .object([
+                        "type": content["content"]?["type"],
+                        "title": content["content"]?["title"],
+                        "citations": content["content"]?["citations"],
+                        "source": .object([
+                            "type": source?["type"],
+                            "mediaType": source?["media_type"],
+                            "data": source?["data"]
+                        ])
+                    ])
+                ])
+            )
+        }
+        if contentType == "web_fetch_tool_result_error" {
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "web_fetch",
+                result: .object([
+                    "type": .string("web_fetch_tool_result_error"),
+                    "errorCode": content["error_code"]
+                ]),
+                isError: true
+            )
+        }
+        return nil
+    case "web_search_tool_result":
+        guard let toolCallID = part["tool_use_id"]?.stringValue,
+              let content = part["content"] else { return nil }
+        if let results = content.arrayValue {
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "web_search",
+                result: .array(results.map { result in
+                    .object([
+                        "url": result["url"],
+                        "title": result["title"],
+                        "pageAge": result["page_age"] ?? .null,
+                        "encryptedContent": result["encrypted_content"],
+                        "type": result["type"]
+                    ])
+                })
+            )
+        }
+        return AIToolResult(
+            toolCallID: toolCallID,
+            toolName: "web_search",
+            result: .object([
+                "type": .string("web_search_tool_result_error"),
+                "errorCode": content["error_code"]
+            ]),
+            isError: true
+        )
+    case "code_execution_tool_result":
+        guard let toolCallID = part["tool_use_id"]?.stringValue,
+              let content = part["content"],
+              let contentType = content["type"]?.stringValue else { return nil }
+        switch contentType {
+        case "code_execution_result":
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "code_execution",
+                result: .object([
+                    "type": .string(contentType),
+                    "stdout": content["stdout"],
+                    "stderr": content["stderr"],
+                    "return_code": content["return_code"],
+                    "content": content["content"] ?? .array([JSONValue]())
+                ])
+            )
+        case "encrypted_code_execution_result":
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "code_execution",
+                result: .object([
+                    "type": .string(contentType),
+                    "encrypted_stdout": content["encrypted_stdout"],
+                    "stderr": content["stderr"],
+                    "return_code": content["return_code"],
+                    "content": content["content"] ?? .array([JSONValue]())
+                ])
+            )
+        case "code_execution_tool_result_error":
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "code_execution",
+                result: .object([
+                    "type": .string("code_execution_tool_result_error"),
+                    "errorCode": content["error_code"]
+                ]),
+                isError: true
+            )
+        default:
+            return nil
+        }
+    case "bash_code_execution_tool_result", "text_editor_code_execution_tool_result":
+        guard let toolCallID = part["tool_use_id"]?.stringValue else { return nil }
+        return AIToolResult(
+            toolCallID: toolCallID,
+            toolName: "code_execution",
+            result: part["content"] ?? .null
+        )
+    case "tool_search_tool_result":
+        guard let toolCallID = part["tool_use_id"]?.stringValue,
+              let content = part["content"],
+              let contentType = content["type"]?.stringValue else { return nil }
+        let toolName = anthropicToolSearchToolName(serverToolNames[toolCallID])
+        if contentType == "tool_search_tool_search_result" {
+            let references = content["tool_references"]?.arrayValue ?? []
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: toolName,
+                result: .array(references.map { reference in
+                    .object([
+                        "type": reference["type"],
+                        "toolName": reference["tool_name"]
+                    ])
+                })
+            )
+        }
+        return AIToolResult(
+            toolCallID: toolCallID,
+            toolName: toolName,
+            result: .object([
+                "type": .string("tool_search_tool_result_error"),
+                "errorCode": content["error_code"]
+            ]),
+            isError: true
+        )
+    case "advisor_tool_result":
+        guard let toolCallID = part["tool_use_id"]?.stringValue,
+              let content = part["content"],
+              let contentType = content["type"]?.stringValue else { return nil }
+        switch contentType {
+        case "advisor_result":
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "advisor",
+                result: .object([
+                    "type": .string("advisor_result"),
+                    "text": content["text"]
+                ])
+            )
+        case "advisor_redacted_result":
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "advisor",
+                result: .object([
+                    "type": .string("advisor_redacted_result"),
+                    "encryptedContent": content["encrypted_content"]
+                ])
+            )
+        default:
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: "advisor",
+                result: .object([
+                    "type": .string("advisor_tool_result_error"),
+                    "errorCode": content["error_code"]
+                ]),
+                isError: true
+            )
+        }
+    case "mcp_tool_result":
+        guard let toolCallID = part["tool_use_id"]?.stringValue else { return nil }
+        return AIToolResult(
+            toolCallID: toolCallID,
+            toolName: mcpToolNames[toolCallID] ?? "mcp_tool",
+            result: part["content"] ?? .null,
+            isError: part["is_error"]?.boolValue ?? false,
+            dynamic: true,
+            providerMetadata: mcpToolMetadata[toolCallID] ?? anthropicContentBlockProviderMetadata([
+                "type": .string("mcp-tool-use"),
+                "serverName": .null
+            ], providerID: providerID)
+        )
+    default:
+        return nil
+    }
+}
+
+private func anthropicToolSearchToolName(_ providerToolName: String?) -> String {
+    switch providerToolName {
+    case "tool_search_tool_bm25", "tool_search_tool_regex":
+        return "tool_search"
+    default:
+        return "tool_search"
+    }
 }
 
 private func anthropicProviderMetadata(from raw: JSONValue, providerID: String) -> [String: JSONValue] {

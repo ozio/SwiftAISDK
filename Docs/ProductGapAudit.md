@@ -305,9 +305,11 @@ Progress:
   context management/compact edits, container skills, task budgets, and fast
   mode. Anthropic streams now emit upstream-style text/reasoning lifecycle
   parts, including `signature_delta` and redacted-thinking provider metadata,
-  while keeping legacy text/reasoning deltas. Anthropic generate results and
-  stream finish metadata now expose normalized provider metadata for raw usage,
-  stop sequence, containers, and context-management applied edits. xAI file uploads now read
+  while keeping legacy text/reasoning deltas. Anthropic provider-executed tool
+  results for web search/fetch, code execution, tool search, advisor, and MCP
+  now map into `AIToolResult` for generate and stream paths. Anthropic generate
+  results and stream finish metadata now expose normalized provider metadata for
+  raw usage, stop sequence, containers, and context-management applied edits. xAI file uploads now read
   schema-validated `providerOptions.xai.teamId` like upstream, treat a null
   namespace as a no-op over raw `extraBody`, and do not forward unrelated
   file options. Those upload results also preserve safe request metadata for

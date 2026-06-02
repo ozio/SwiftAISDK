@@ -432,6 +432,74 @@ import Testing
     #expect(finishReason == "tool-calls")
 }
 
+@Test func anthropicLanguageStreamsProviderExecutedToolResultsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: content_block_start
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srv_search_1","name":"web_search","input":{"query":"sdk"}}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":0}
+
+    event: content_block_start
+    data: {"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srv_search_1","content":[{"type":"web_search_result","url":"https://example.com/sdk","title":"SDK","encrypted_content":"enc","page_age":"today"}]}}
+
+    event: content_block_start
+    data: {"type":"content_block_start","index":2,"content_block":{"type":"code_execution_tool_result","tool_use_id":"srv_code_1","content":{"type":"code_execution_tool_result_error","error_code":"runtime_error"}}}
+
+    event: content_block_start
+    data: {"type":"content_block_start","index":3,"content_block":{"type":"mcp_tool_use","id":"mcp_1","name":"lookup","server_name":"docs","input":{"query":"sdk"}}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":3}
+
+    event: content_block_start
+    data: {"type":"content_block_start","index":4,"content_block":{"type":"mcp_tool_result","tool_use_id":"mcp_1","is_error":false,"content":[{"type":"text","text":"found"}]}}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var toolCalls: [AIToolCall] = []
+    var toolResults: [AIToolResult] = []
+    var sources: [AISource] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Use hosted tools.")])) {
+        switch part {
+        case let .toolCall(call):
+            toolCalls.append(call)
+        case let .toolResult(result):
+            toolResults.append(result)
+        case let .source(source):
+            sources.append(source)
+        default:
+            break
+        }
+    }
+
+    #expect(toolCalls.contains { $0.id == "srv_search_1" && $0.name == "web_search" && $0.providerExecuted })
+    #expect(toolCalls.contains { $0.id == "mcp_1" && $0.name == "lookup" && $0.providerExecuted })
+    #expect(toolResults.count == 3)
+    let webSearch = try #require(toolResults.first { $0.toolName == "web_search" })
+    #expect(webSearch.toolCallID == "srv_search_1")
+    #expect(webSearch.result[0]?["encryptedContent"]?.stringValue == "enc")
+    #expect(webSearch.result[0]?["pageAge"]?.stringValue == "today")
+    let code = try #require(toolResults.first { $0.toolName == "code_execution" })
+    #expect(code.isError == true)
+    #expect(code.result["errorCode"]?.stringValue == "runtime_error")
+    let mcp = try #require(toolResults.first { $0.toolName == "lookup" })
+    #expect(mcp.dynamic == true)
+    #expect(mcp.result[0]?["text"]?.stringValue == "found")
+    #expect(mcp.providerMetadata["anthropic"]?["serverName"]?.stringValue == "docs")
+    #expect(sources.count == 1)
+    #expect(sources[0].url == "https://example.com/sdk")
+    #expect(sources[0].providerMetadata["anthropic"]?["pageAge"]?.stringValue == "today")
+}
+
 @Test func anthropicLanguageStreamsCitationSources() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     event: content_block_delta

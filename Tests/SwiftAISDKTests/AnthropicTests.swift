@@ -526,4 +526,54 @@ import Testing
     #expect(result.sources[2].url == "https://example.com/ai-news")
     #expect(result.sources[2].providerMetadata["anthropic"]?["citedText"]?.stringValue == "AI continues to advance")
     #expect(result.sources[2].providerMetadata["anthropic"]?["encryptedIndex"]?.stringValue == "enc_1")
+    #expect(result.toolResults.count == 1)
+    #expect(result.toolResults[0].toolCallID == "srvtoolu_1")
+    #expect(result.toolResults[0].toolName == "web_search")
+    #expect(result.toolResults[0].result[0]?["encryptedContent"]?.stringValue == "encrypted_content_123")
+    #expect(result.toolResults[0].result[0]?["pageAge"]?.stringValue == "January 15, 2025")
+}
+
+@Test func anthropicLanguageMapsProviderExecutedToolResultsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "content":[
+        {"type":"server_tool_use","id":"srv_code_1","name":"code_execution","input":{"code":"print(1)"}},
+        {"type":"code_execution_tool_result","tool_use_id":"srv_code_1","content":{"type":"code_execution_result","stdout":"1\\n","stderr":"","return_code":0,"content":[{"type":"text","text":"ok"}]}},
+        {"type":"tool_search_tool_result","tool_use_id":"srv_search_1","content":{"type":"tool_search_tool_search_result","tool_references":[{"type":"tool","tool_name":"weather"}]}},
+        {"type":"advisor_tool_result","tool_use_id":"srv_advisor_1","content":{"type":"advisor_redacted_result","encrypted_content":"encrypted-advice"}},
+        {"type":"mcp_tool_use","id":"mcp_1","name":"lookup","server_name":"docs","input":{"query":"sdk"}},
+        {"type":"mcp_tool_result","tool_use_id":"mcp_1","is_error":true,"content":[{"type":"text","text":"failed"}]}
+      ],
+      "stop_reason":"end_turn",
+      "usage":{"input_tokens":5,"output_tokens":7}
+    }
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Use hosted tools.")]))
+
+    #expect(result.toolResults.count == 4)
+    let code = try #require(result.toolResults.first { $0.toolName == "code_execution" })
+    #expect(code.toolCallID == "srv_code_1")
+    #expect(code.result["type"]?.stringValue == "code_execution_result")
+    #expect(code.result["stdout"]?.stringValue == "1\n")
+    #expect(code.result["return_code"]?.intValue == 0)
+    #expect(code.result["content"]?[0]?["text"]?.stringValue == "ok")
+
+    let toolSearch = try #require(result.toolResults.first { $0.toolName == "tool_search" })
+    #expect(toolSearch.toolCallID == "srv_search_1")
+    #expect(toolSearch.result[0]?["toolName"]?.stringValue == "weather")
+
+    let advisor = try #require(result.toolResults.first { $0.toolName == "advisor" })
+    #expect(advisor.result["type"]?.stringValue == "advisor_redacted_result")
+    #expect(advisor.result["encryptedContent"]?.stringValue == "encrypted-advice")
+
+    let mcp = try #require(result.toolResults.first { $0.toolName == "lookup" })
+    #expect(mcp.toolCallID == "mcp_1")
+    #expect(mcp.isError == true)
+    #expect(mcp.dynamic == true)
+    #expect(mcp.result[0]?["text"]?.stringValue == "failed")
+    #expect(mcp.providerMetadata["anthropic"]?["type"]?.stringValue == "mcp-tool-use")
+    #expect(mcp.providerMetadata["anthropic"]?["serverName"]?.stringValue == "docs")
 }
