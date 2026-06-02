@@ -95,7 +95,7 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = lmntProviderOptions(from: request)
+        let options = try lmntProviderOptions(from: request)
         let warnings = lmntSpeechWarnings(for: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -1381,19 +1381,17 @@ private func lmntProviderOptions(from extraBody: [String: JSONValue]) -> [String
     return output
 }
 
-private func lmntProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+private func lmntProviderOptions(from request: SpeechRequest) throws -> [String: JSONValue] {
     var output = lmntProviderOptions(from: request.extraBody)
-    if let nested = request.providerOptions["lmnt"]?.objectValue {
-        output.merge(lmntSpeechProviderOptionDefaults) { _, defaultValue in defaultValue }
-        output.merge(nested.filter { lmntSpeechProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
-    }
-    return output
-}
-
-private func lmntProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
-    var output = lmntProviderOptions(from: extraBody)
-    if let nested = providerOptions["lmnt"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    if let value = request.providerOptions["lmnt"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.lmnt", message: "LMNT provider options must be an object.")
+        }
+        for key in lmntSpeechProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try lmntValidateSpeechProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
 }
@@ -1417,6 +1415,70 @@ private let lmntSpeechProviderOptionDefaults: [String: JSONValue] = [
     "topP": .number(1),
     "temperature": .number(1)
 ]
+
+private func lmntValidateSpeechProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output = lmntSpeechProviderOptionDefaults
+    for (key, value) in options where lmntSpeechProviderOptionKeys.contains(key) {
+        if value == .null {
+            output.removeValue(forKey: key)
+            continue
+        }
+        switch key {
+        case "model":
+            try lmntRequireString(value, argument: "providerOptions.lmnt.model", message: "LMNT model must be a string.")
+        case "format":
+            guard let format = value.stringValue, ["aac", "mp3", "mulaw", "raw", "wav"].contains(format) else {
+                throw AIError.invalidArgument(argument: "providerOptions.lmnt.format", message: "LMNT format must be one of aac, mp3, mulaw, raw, wav.")
+            }
+        case "sampleRate":
+            guard let sampleRate = value.doubleValue, [8_000, 16_000, 24_000].contains(sampleRate) else {
+                throw AIError.invalidArgument(argument: "providerOptions.lmnt.sampleRate", message: "LMNT sampleRate must be one of 8000, 16000, 24000.")
+            }
+        case "speed":
+            guard let speed = value.doubleValue, speed >= 0.25, speed <= 2 else {
+                throw AIError.invalidArgument(argument: "providerOptions.lmnt.speed", message: "LMNT speed must be a number between 0.25 and 2.")
+            }
+        case "seed":
+            guard let seed = value.doubleValue, lmntIsInteger(seed) else {
+                throw AIError.invalidArgument(argument: "providerOptions.lmnt.seed", message: "LMNT seed must be an integer.")
+            }
+        case "conversational":
+            try lmntRequireBoolean(value, argument: "providerOptions.lmnt.conversational", message: "LMNT conversational must be a boolean.")
+        case "length":
+            guard let length = value.doubleValue, length <= 300 else {
+                throw AIError.invalidArgument(argument: "providerOptions.lmnt.length", message: "LMNT length must be a number no greater than 300.")
+            }
+        case "topP":
+            guard let topP = value.doubleValue, topP >= 0, topP <= 1 else {
+                throw AIError.invalidArgument(argument: "providerOptions.lmnt.topP", message: "LMNT topP must be a number between 0 and 1.")
+            }
+        case "temperature":
+            guard let temperature = value.doubleValue, temperature >= 0 else {
+                throw AIError.invalidArgument(argument: "providerOptions.lmnt.temperature", message: "LMNT temperature must be a number no less than 0.")
+            }
+        default:
+            break
+        }
+        output[key] = value
+    }
+    return output
+}
+
+private func lmntRequireString(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func lmntRequireBoolean(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func lmntIsInteger(_ value: Double) -> Bool {
+    value.isFinite && value.rounded(.towardZero) == value
+}
 
 private func lmntSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
     guard let format = request.format,

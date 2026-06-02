@@ -188,6 +188,129 @@ import Testing
     #expect(body["response_format"]?.stringValue == "mp3")
 }
 
+@Test func lmntSpeechProviderOptionsNullishFieldsOmitDefaultsAndExtraBody() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/wav"], body: Data("lmnt".utf8)))
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
+    let model = try provider.speechModel("aurora")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hi",
+        voice: "ava",
+        format: "wav",
+        speed: 1.5,
+        providerOptions: [
+            "lmnt": .object([
+                "sampleRate": .null,
+                "speed": .null,
+                "topP": .null,
+                "temperature": .null,
+                "conversational": .null,
+                "length": .null,
+                "seed": .null,
+                "format": .null,
+                "model": .null
+            ])
+        ],
+        extraBody: [
+            "lmnt": .object([
+                "sampleRate": 8000,
+                "topP": 0.5,
+                "temperature": 0.5,
+                "speed": 0.75,
+                "seed": 1,
+                "conversational": true,
+                "length": 20
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?.stringValue == "wav")
+    #expect(body["speed"]?.doubleValue == 1.5)
+    #expect(body["sample_rate"] == nil)
+    #expect(body["top_p"] == nil)
+    #expect(body["temperature"] == nil)
+    #expect(body["conversational"] == nil)
+    #expect(body["length"] == nil)
+    #expect(body["seed"] == nil)
+    #expect(body["sampleRate"] == nil)
+}
+
+@Test func lmntSpeechProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
+    let model = try provider.speechModel("aurora")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .string("invalid")]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["model": .number(1)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["format": .string("flac")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["sampleRate": .number(44_100)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["speed": .number(0.1)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["seed": .number(1.5)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["conversational": .string("true")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["length": .number(301)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["topP": .number(1.5)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hi",
+            providerOptions: ["lmnt": .object(["temperature": .number(-0.1)])]
+        ))
+    }
+}
+
 @Test func lmntSpeechWarnsAndFallsBackForUnsupportedOutputFormat() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("lmnt".utf8)))
     let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))
