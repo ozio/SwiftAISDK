@@ -47,13 +47,34 @@ private struct QuiverAIImageOptions {
     var targetSize: JSONValue?
 }
 
+private let quiverAIProviderOptionKeys: Set<String> = [
+    "operation",
+    "instructions",
+    "temperature",
+    "topP",
+    "presencePenalty",
+    "maxOutputTokens",
+    "autoCrop",
+    "targetSize"
+]
+
+private let quiverAINullableProviderOptionKeys: Set<String> = [
+    "presencePenalty"
+]
+
 private func quiverAIImageOptions(from request: ImageGenerationRequest) -> QuiverAIImageOptions {
     quiverAIImageOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
 }
 
 private func quiverAIImageOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> QuiverAIImageOptions {
     var output = quiverAIOptionsDictionary(from: extraBody)
-    output.merge(quiverAIOptionsDictionary(from: providerOptions)) { _, providerValue in providerValue }
+    for (key, value) in providerOptions["quiverai"]?.objectValue ?? [:] where quiverAIProviderOptionKeys.contains(key) {
+        if value == .null && !quiverAINullableProviderOptionKeys.contains(key) {
+            output.removeValue(forKey: key)
+        } else {
+            output[key] = value
+        }
+    }
     return quiverAIImageOptions(from: output)
 }
 

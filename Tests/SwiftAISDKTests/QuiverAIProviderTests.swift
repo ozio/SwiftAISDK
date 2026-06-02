@@ -97,6 +97,55 @@ import Testing
     #expect(body["stream"]?.boolValue == false)
 }
 
+@Test func quiverAIProviderOptionsAreSchemaScopedLikeUpstream() async throws {
+    let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-schema"))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let model = try provider.imageModel("arrow-1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "Draw a crisp mark.",
+        count: 1,
+        providerOptions: [
+            "quiverai": .object([
+                "operation": "generate",
+                "instructions": "Use crisp geometry.",
+                "temperature": 0.4,
+                "topP": 0.8,
+                "presencePenalty": .null,
+                "maxOutputTokens": 256,
+                "autoCrop": true,
+                "targetSize": 1024,
+                "top_p": 0.1,
+                "presence_penalty": 0.9,
+                "max_output_tokens": 12,
+                "seed": 123,
+                "ignored": true
+            ])
+        ],
+        extraBody: [
+            "quiverai": .object([
+                "temperature": 1.2,
+                "topP": 0.2,
+                "presencePenalty": 0.5,
+                "maxOutputTokens": 100
+            ])
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.quiver.ai/v1/svgs/generations")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["instructions"]?.stringValue == "Use crisp geometry.")
+    #expect(body["temperature"]?.doubleValue == 0.4)
+    #expect(body["top_p"]?.doubleValue == 0.8)
+    #expect(body["presence_penalty"] == .null)
+    #expect(body["max_output_tokens"]?.intValue == 256)
+    #expect(body["seed"] == nil)
+    #expect(body["ignored"] == nil)
+    #expect(body["auto_crop"] == nil)
+    #expect(body["target_size"] == nil)
+}
+
 @Test func quiverAIWarnsForUnsupportedStandardImageOptions() async throws {
     let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-warnings"))
     let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
