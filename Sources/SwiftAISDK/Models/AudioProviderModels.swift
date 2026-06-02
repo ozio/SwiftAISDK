@@ -734,18 +734,60 @@ private func deepgramProviderOptions(from extraBody: [String: JSONValue]) -> [St
 }
 
 private func deepgramProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    deepgramProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    deepgramProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: deepgramTranscriptionProviderOptionKeys
+    )
 }
 
 private func deepgramProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    deepgramProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    deepgramProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: deepgramSpeechProviderOptionKeys
+    )
 }
 
-private func deepgramProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func deepgramProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = deepgramProviderOptions(from: extraBody)
-    output.merge(deepgramProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["deepgram"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
     return output
 }
+
+private let deepgramTranscriptionProviderOptionKeys: Set<String> = [
+    "language",
+    "detectLanguage",
+    "smartFormat",
+    "punctuate",
+    "paragraphs",
+    "summarize",
+    "topics",
+    "intents",
+    "sentiment",
+    "detectEntities",
+    "redact",
+    "replace",
+    "search",
+    "keyterm",
+    "diarize",
+    "utterances",
+    "uttSplit",
+    "fillerWords"
+]
+
+private let deepgramSpeechProviderOptionKeys: Set<String> = [
+    "bitRate",
+    "container",
+    "encoding",
+    "sampleRate",
+    "callback",
+    "callbackMethod",
+    "mipOptOut",
+    "tag"
+]
 
 private func falProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody

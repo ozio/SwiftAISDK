@@ -442,6 +442,11 @@ Impact:
   input images are preserved, provider metadata includes seed/timing/cost and
   megapixel fields, response metadata uses the final image download response,
   and submit/poll/download requests forward abort signals.
+- Deepgram transcription and speech now use provider-specific option whitelists
+  for `providerOptions.deepgram`, matching upstream schema parsing while keeping
+  raw `extraBody` as the low-level escape hatch. This prevents unrelated
+  provider namespaces and unsupported typed options from leaking into `/listen`
+  or `/speak` query strings.
 - `MCPClient` now covers the first official `@ai-sdk/mcp` bridge: initialize,
   `tools/list`, `tools/call`, cached `toolsFromDefinitions`, HTTP/custom
   transports, and conversion of MCP tool definitions into dynamic `AITool`

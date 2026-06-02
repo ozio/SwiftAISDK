@@ -57,8 +57,10 @@ import Testing
                 "sentiment": .bool(true),
                 "replace": .string("redacted"),
                 "keyterm": .string("SwiftAISDK"),
-                "smartFormat": .bool(true)
-            ])
+                "smartFormat": .bool(true),
+                "unsupportedProperty": .string("drop-me")
+            ]),
+            "openai": .string("should-not-leak")
         ]
     ))
 
@@ -168,8 +170,10 @@ import Testing
                 "callback": .string("https://example.com/callback"),
                 "callbackMethod": .string("POST"),
                 "mipOptOut": .bool(true),
-                "tag": .array([.string("tag1"), .string("tag2")])
-            ])
+                "tag": .array([.string("tag1"), .string("tag2")]),
+                "unsupportedProperty": .string("drop-me")
+            ]),
+            "openai": .string("should-not-leak")
         ],
         abortSignal: controller.signal
     ))
