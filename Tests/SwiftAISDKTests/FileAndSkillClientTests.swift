@@ -79,6 +79,75 @@ import Testing
     #expect(!bodyText.contains("Upload"))
 }
 
+@Test func xAIFilesUploadMapsProviderOptionsTeamIDLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"file_xai_456","object":"file","filename":"upload.json","bytes":2,"created_at":1700000001}
+    """))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+
+    let result = try await provider.files().uploadFile(FileUploadRequest(
+        data: Data("{}".utf8),
+        mediaType: "application/json",
+        filename: "upload.json",
+        providerOptions: ["xai": ["teamId": "team-provider", "filePath": "/tmp/upload.json", "unknown": "ignored"]]
+    ))
+
+    #expect(result.providerReference["xai"] == "file_xai_456")
+    #expect(result.requestMetadata.body?["teamId"]?.stringValue == "team-provider")
+    #expect(result.requestMetadata.body?["filePath"] == nil)
+    #expect(result.requestMetadata.body?["unknown"] == nil)
+    let bodyText = String(data: try #require((await transport.requests()).first?.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"file\"; filename=\"upload.json\""))
+    #expect(bodyText.contains("name=\"team_id\""))
+    #expect(bodyText.contains("team-provider"))
+    #expect(!bodyText.contains("filePath"))
+    #expect(!bodyText.contains("ignored"))
+}
+
+@Test func xAIFilesUploadValidatesProviderOptionsLikeUpstreamSchema() async throws {
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: RecordingTransport(responses: [])))
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI file provider options must be an object.")) {
+        _ = try await provider.files().uploadFile(FileUploadRequest(
+            data: Data("{}".utf8),
+            mediaType: "application/json",
+            providerOptions: ["xai": "bad"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.teamId", message: "xAI teamId must be a string.")) {
+        _ = try await provider.files().uploadFile(FileUploadRequest(
+            data: Data("{}".utf8),
+            mediaType: "application/json",
+            providerOptions: ["xai": ["teamId": 123]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.filePath", message: "xAI filePath must be a string.")) {
+        _ = try await provider.files().uploadFile(FileUploadRequest(
+            data: Data("{}".utf8),
+            mediaType: "application/json",
+            providerOptions: ["xai": ["filePath": .null]]
+        ))
+    }
+}
+
+@Test func xAIFilesUploadNullProviderOptionsNamespaceKeepsExtraBodyEscapeHatch() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"file_xai_789","object":"file","filename":"upload.txt","bytes":4,"created_at":1700000002}
+    """))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+
+    _ = try await provider.files().uploadFile(FileUploadRequest(
+        data: Data("text".utf8),
+        mediaType: "text/plain",
+        providerOptions: ["xai": .null],
+        extraBody: ["xai": ["teamId": "team-extra"]]
+    ))
+
+    #expect(String(data: try #require((await transport.requests()).first?.body), encoding: .utf8)?.contains("team-extra") == true)
+}
+
 @Test func openAISkillsUploadUsesMultipartSkillsEndpoint() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"skill_123","object":"skill","name":"capture-skill","description":"captures data","default_version":"1","latest_version":"2","created_at":1772078479,"updated_at":1772078480}

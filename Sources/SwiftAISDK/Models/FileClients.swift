@@ -154,7 +154,7 @@ public final class XAIFileClient: AIFileClient, @unchecked Sendable {
     }
 
     public func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
-        let options = xaiFileOptions(from: request.extraBody)
+        let options = try xaiFileOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
         var form = MultipartFormData()
         form.appendFile(name: "file", fileName: request.filename ?? "blob", mimeType: request.mediaType, data: request.data)
         if let teamID = options["teamId"]?.stringValue ?? options["team_id"]?.stringValue {
@@ -190,13 +190,29 @@ public final class XAIFileClient: AIFileClient, @unchecked Sendable {
     }
 }
 
-private func xaiFileOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let nested = extraBody["xai"]?.objectValue {
-        return nested
-    }
+private func xaiFileOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue]) throws -> [String: JSONValue] {
     var output = extraBody
-    output.removeValue(forKey: "xai")
+    if let nested = output.removeValue(forKey: "xai")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    if let value = providerOptions["xai"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI file provider options must be an object.")
+        }
+        output.merge(try xaiValidateFileProviderOptions(nested)) { _, nested in nested }
+    }
     return output
+}
+
+private func xaiValidateFileProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    for key in ["teamId", "filePath"] {
+        guard let value = options[key] else { continue }
+        guard value.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.xai.\(key)", message: "xAI \(key) must be a string.")
+        }
+    }
+    return options
 }
 
 private func fileMetadata(from raw: JSONValue) -> [String: JSONValue] {

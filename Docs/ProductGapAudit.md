@@ -271,12 +271,15 @@ Progress:
   flows keep the provider submit response as metadata rather than the
   SDK-managed asset download. File and skill clients now preserve response
   metadata for OpenAI-compatible multipart files, Google resumable files, xAI
-  files, and OpenAI/Anthropic skill uploads; those upload results also preserve
-  safe request metadata for file paths, media types, byte lengths, display
-  titles, and scalar options without storing raw uploaded bytes. File uploads
-  now also return upstream-style unsupported warnings when a provider ignores
-  options such as `displayName` or `purpose`, instead of dropping them
-  silently. Native embedding and reranking models for OpenAI-compatible,
+  files, and OpenAI/Anthropic skill uploads; xAI file uploads now read
+  schema-validated `providerOptions.xai.teamId` like upstream, treat a null
+  namespace as a no-op over raw `extraBody`, and do not forward unrelated
+  file options. Those upload results also preserve safe request metadata for
+  file paths, media types, byte lengths, display titles, and scalar options
+  without storing raw uploaded bytes. File uploads now also return
+  upstream-style unsupported warnings when a provider ignores options such as
+  `displayName` or `purpose`, instead of dropping them silently. Native
+  embedding and reranking models for OpenAI-compatible,
   Google Generative AI, Google Vertex, Cohere, Voyage, Mistral, Baseten,
   Gateway, Amazon Bedrock, TogetherAI, and generic JSON reranking wrappers now
   preserve safe request metadata for their provider JSON bodies alongside
