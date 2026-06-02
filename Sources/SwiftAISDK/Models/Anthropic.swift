@@ -194,6 +194,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             ),
             toolCalls: toolCalls,
             sources: sources,
+            providerMetadata: anthropicProviderMetadata(from: raw, providerID: providerID),
             rawValue: raw,
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -226,10 +227,46 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var toolCalls = AnthropicStreamingToolCalls()
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
+                    var finishReason: String?
+                    var finishUsage: TokenUsage?
+                    var rawUsage: JSONValue?
+                    var stopSequence: JSONValue = .null
+                    var container: JSONValue = .null
+                    var contextManagement: JSONValue = .null
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
+                        }
+                        switch raw["type"]?.stringValue {
+                        case "message_start":
+                            if let usage = raw["message"]?["usage"] {
+                                rawUsage = usage
+                            }
+                            if let value = anthropicContainerMetadata(from: raw["message"]?["container"]) {
+                                container = value
+                            }
+                            if let reason = raw["message"]?["stop_reason"]?.stringValue {
+                                finishReason = anthropicFinishReason(reason)
+                            }
+                        case "message_delta":
+                            finishReason = anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue)
+                            stopSequence = raw["delta"]?["stop_sequence"] ?? stopSequence
+                            finishUsage = TokenUsage(
+                                inputTokens: raw["usage"]?["input_tokens"]?.intValue,
+                                outputTokens: raw["usage"]?["output_tokens"]?.intValue
+                            )
+                            if let usage = raw["usage"] {
+                                rawUsage = rawUsage.map { anthropicMergedUsage($0, usage) } ?? usage
+                            }
+                            if let value = anthropicContainerMetadata(from: raw["delta"]?["container"]) {
+                                container = value
+                            }
+                            if let value = anthropicContextManagementMetadata(from: raw["context_management"]) {
+                                contextManagement = value
+                            }
+                        default:
+                            break
                         }
                         for part in anthropicStreamParts(from: raw) {
                             continuation.yield(part)
@@ -239,6 +276,19 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         }
                         for part in toolCalls.apply(event: raw) {
                             continuation.yield(part)
+                        }
+                        if raw["type"]?.stringValue == "message_stop" {
+                            continuation.yield(.finishMetadata(
+                                reason: finishReason,
+                                usage: finishUsage,
+                                providerMetadata: anthropicProviderMetadata(
+                                    usage: rawUsage,
+                                    stopSequence: stopSequence,
+                                    container: container,
+                                    contextManagement: contextManagement,
+                                    providerID: providerID
+                                )
+                            ))
                         }
                     }
                     continuation.finish()
@@ -752,6 +802,96 @@ private func amazonBedrockAnthropicStreamEvents(from response: AIHTTPResponse) t
 
 private func anthropicToolCalls(from value: JSONValue?) -> [AIToolCall] {
     value?.arrayValue?.compactMap(anthropicToolCall) ?? []
+}
+
+private func anthropicProviderMetadata(from raw: JSONValue, providerID: String) -> [String: JSONValue] {
+    anthropicProviderMetadata(
+        usage: raw["usage"],
+        stopSequence: raw["stop_sequence"] ?? .null,
+        container: anthropicContainerMetadata(from: raw["container"]) ?? .null,
+        contextManagement: anthropicContextManagementMetadata(from: raw["context_management"]) ?? .null,
+        providerID: providerID
+    )
+}
+
+private func anthropicProviderMetadata(
+    usage: JSONValue?,
+    stopSequence: JSONValue,
+    container: JSONValue,
+    contextManagement: JSONValue,
+    providerID: String
+) -> [String: JSONValue] {
+    let metadata: JSONValue = .object([
+        "usage": usage ?? .null,
+        "stopSequence": stopSequence,
+        "iterations": anthropicUsageIterations(from: usage?["iterations"]) ?? .null,
+        "container": container,
+        "contextManagement": contextManagement
+    ])
+    return [anthropicProviderMetadataKey(from: providerID): metadata]
+}
+
+private func anthropicProviderMetadataKey(from providerID: String) -> String {
+    if providerID.hasPrefix("anthropic-aws") {
+        return "anthropic-aws"
+    }
+    if providerID.hasPrefix("bedrock.anthropic") {
+        return "bedrock.anthropic"
+    }
+    if providerID.hasPrefix("googleVertex.anthropic") {
+        return "googleVertex.anthropic"
+    }
+    return "anthropic"
+}
+
+private func anthropicMergedUsage(_ existing: JSONValue, _ update: JSONValue) -> JSONValue {
+    var output = existing.objectValue ?? [:]
+    for (key, value) in update.objectValue ?? [:] {
+        output[key] = value
+    }
+    return .object(output)
+}
+
+private func anthropicUsageIterations(from value: JSONValue?) -> JSONValue? {
+    guard let iterations = value?.arrayValue else { return nil }
+    return .array(iterations.map { iteration in
+        var output: [String: JSONValue] = [:]
+        output["type"] = iteration["type"]
+        output["model"] = iteration["model"]
+        output["inputTokens"] = iteration["input_tokens"]
+        output["outputTokens"] = iteration["output_tokens"]
+        output["cacheCreationInputTokens"] = iteration["cache_creation_input_tokens"]
+        output["cacheReadInputTokens"] = iteration["cache_read_input_tokens"]
+        return .object(output.compactMapValues { $0 })
+    })
+}
+
+private func anthropicContainerMetadata(from value: JSONValue?) -> JSONValue? {
+    guard var object = value?.objectValue else { return nil }
+    anthropicMoveKey("expires_at", to: "expiresAt", in: &object)
+    if let skills = object["skills"]?.arrayValue {
+        object["skills"] = .array(skills.map { skill in
+            guard var skillObject = skill.objectValue else { return skill }
+            anthropicMoveKey("skill_id", to: "skillId", in: &skillObject)
+            return .object(skillObject)
+        })
+    } else if object["skills"] == nil {
+        object["skills"] = .null
+    }
+    return .object(object)
+}
+
+private func anthropicContextManagementMetadata(from value: JSONValue?) -> JSONValue? {
+    guard var object = value?.objectValue else { return nil }
+    if let edits = object.removeValue(forKey: "applied_edits")?.arrayValue {
+        object["appliedEdits"] = .array(edits.map { edit in
+            guard var editObject = edit.objectValue else { return edit }
+            anthropicMoveKey("cleared_tool_uses", to: "clearedToolUses", in: &editObject)
+            anthropicMoveKey("cleared_input_tokens", to: "clearedInputTokens", in: &editObject)
+            return .object(editObject)
+        })
+    }
+    return .object(object)
 }
 
 private struct AnthropicCitationDocument {

@@ -461,6 +461,40 @@ import Testing
     #expect(result.toolCalls[1].providerExecuted == true)
 }
 
+@Test func anthropicLanguageExposesContainerAndContextManagementProviderMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "id":"msg_123",
+      "model":"claude-sonnet-4-6",
+      "content":[{"type":"text","text":"metadata"}],
+      "stop_reason":"end_turn",
+      "stop_sequence":"done",
+      "usage":{"input_tokens":100,"output_tokens":50},
+      "container":{
+        "id":"container_123",
+        "expires_at":"2026-06-02T12:00:00Z",
+        "skills":[{"type":"anthropic","skill_id":"skill_123","version":"v1"}]
+      },
+      "context_management":{
+        "applied_edits":[{"type":"clear_tool_uses_20250919","cleared_tool_uses":5,"cleared_input_tokens":10000}]
+      }
+    }
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+    let metadata = try #require(result.providerMetadata["anthropic"])
+
+    #expect(metadata["usage"]?["input_tokens"]?.intValue == 100)
+    #expect(metadata["stopSequence"]?.stringValue == "done")
+    #expect(metadata["container"]?["id"]?.stringValue == "container_123")
+    #expect(metadata["container"]?["expiresAt"]?.stringValue == "2026-06-02T12:00:00Z")
+    #expect(metadata["container"]?["skills"]?[0]?["skillId"]?.stringValue == "skill_123")
+    #expect(metadata["contextManagement"]?["appliedEdits"]?[0]?["clearedToolUses"]?.intValue == 5)
+    #expect(metadata["contextManagement"]?["appliedEdits"]?[0]?["clearedInputTokens"]?.intValue == 10000)
+}
+
 @Test func anthropicLanguageMapsCitationAndWebSearchSources() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{"query":"latest AI news"}},{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[{"type":"web_search_result","url":"https://example.com/ai-news","title":"Latest AI Developments","encrypted_content":"encrypted_content_123","page_age":"January 15, 2025"}]},{"type":"text","text":"The report shows growth.","citations":[{"type":"page_location","cited_text":"Revenue increased by 25% year over year","document_index":0,"document_title":"Financial Report 2023","start_page_number":5,"end_page_number":6},{"type":"web_search_result_location","cited_text":"AI continues to advance","url":"https://example.com/ai-news","title":"Latest AI Developments","encrypted_index":"enc_1"}]}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":7}}

@@ -218,6 +218,41 @@ import Testing
     #expect(outputTokens == 3)
 }
 
+@Test func anthropicLanguageStreamsFinishProviderMetadata() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: message_start
+    data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-6","stop_reason":null,"usage":{"input_tokens":100,"output_tokens":1},"container":{"id":"container_123","expires_at":"2026-06-02T12:00:00Z"}}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":"stop"},"usage":{"output_tokens":5},"context_management":{"applied_edits":[{"type":"clear_tool_uses_20250919","cleared_tool_uses":3,"cleared_input_tokens":7000}]}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var finishMetadata: [String: JSONValue] = [:]
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .finishMetadata(_, _, providerMetadata) = part {
+            finishMetadata = providerMetadata
+        }
+    }
+
+    let metadata = try #require(finishMetadata["anthropic"])
+    #expect(metadata["usage"]?["input_tokens"]?.intValue == 100)
+    #expect(metadata["usage"]?["output_tokens"]?.intValue == 5)
+    #expect(metadata["stopSequence"]?.stringValue == "stop")
+    #expect(metadata["container"]?["id"]?.stringValue == "container_123")
+    #expect(metadata["container"]?["expiresAt"]?.stringValue == "2026-06-02T12:00:00Z")
+    #expect(metadata["contextManagement"]?["appliedEdits"]?[0]?["clearedToolUses"]?.intValue == 3)
+    #expect(metadata["contextManagement"]?["appliedEdits"]?[0]?["clearedInputTokens"]?.intValue == 7000)
+}
+
 @Test func anthropicLanguageStreamsToolUseDeltasAndFinalCall() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     event: content_block_start
