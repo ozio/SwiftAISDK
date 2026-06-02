@@ -1237,7 +1237,11 @@ private struct KlingAIResolvedOptions {
 
 private func klingAIProviderOptions(from request: VideoGenerationRequest) throws -> KlingAIResolvedOptions {
     var output = try klingAIExtraBodyOptions(from: request.extraBody)
-    if let providerOptions = request.providerOptions["klingai"]?.objectValue {
+    if let providerValue = request.providerOptions["klingai"] {
+        guard providerValue != .null else { return output }
+        guard let providerOptions = providerValue.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.klingai", message: "KlingAI provider options must be an object.")
+        }
         let parsed = try klingAIValidatedProviderOptions(from: providerOptions)
         for (key, value) in parsed.known {
             if value == .null {

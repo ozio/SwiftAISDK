@@ -106,6 +106,13 @@ import Testing
     let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: klingAITransport()))
     let model = try provider.videoModel("kling-v3.0-t2v")
 
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.klingai", message: "KlingAI provider options must be an object.")) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "invalid namespace",
+            providerOptions: ["klingai": .string("bad")]
+        ))
+    }
+
     await #expect(throws: AIError.self) {
         _ = try await model.generateVideo(VideoGenerationRequest(
             prompt: "invalid mode",
@@ -133,6 +140,29 @@ import Testing
             providerOptions: ["klingai": .object(["multiPrompt": .array([.object(["index": 1, "prompt": "intro", "duration": 5])])])]
         ))
     }
+}
+
+@Test func klingAIProviderOptionsNullNamespaceKeepsExtraBodyDefaults() async throws {
+    let transport = klingAITransport(taskID: "task-null-namespace", videoURL: "https://kling.example.com/null-namespace.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v3.0-t2v")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "scene",
+        providerOptions: ["klingai": .null],
+        extraBody: [
+            "klingai": .object([
+                "mode": "pro",
+                "negative_prompt": "extra blur",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["mode"]?.stringValue == "pro")
+    #expect(body["negative_prompt"]?.stringValue == "extra blur")
 }
 
 @Test func klingAIProviderOptionsUseUpstreamPassthroughForSnakeCase() async throws {
