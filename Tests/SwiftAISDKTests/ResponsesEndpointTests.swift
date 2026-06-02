@@ -242,7 +242,9 @@ import Testing
 }
 
 @Test func openResponsesProviderUsesConfiguredEndpointAndResponsesBody() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"custom text","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}"#))
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"resp-1","status":"completed","output":[{"type":"reasoning","content":[{"text":"thinking"}]},{"type":"message","content":[{"text":"custom text"}]}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}
+    """))
     let provider = try AIProviders.openResponses(
         name: "lmstudio",
         url: "https://open.example.test/custom/responses",
@@ -251,24 +253,102 @@ import Testing
     let model = try provider.languageModel("local-model")
 
     let result = try await model.generate(LanguageModelRequest(
-        messages: [.user("Hi")],
+        messages: [.system("Be terse."), .user("Hi")],
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 4,
+        presencePenalty: 0.3,
+        frequencyPenalty: 0.4,
+        seed: 42,
         maxOutputTokens: 12,
-        extraBody: ["previousResponseId": "resp-old"]
+        stopSequences: ["ignored"],
+        responseFormat: .json(schema: ["type": "object"], name: "answer", description: "Answer schema"),
+        tools: [
+            "lookup": ["type": "object", "description": "Lookup things", "strict": true],
+            "hosted": ["type": "provider", "id": "openai.web_search"]
+        ],
+        toolChoice: ["type": "tool", "toolName": "lookup"],
+        providerOptions: [
+            "lmstudio": [
+                "reasoningEffort": "xhigh",
+                "reasoningSummary": "auto",
+                "unknown": "dropped"
+            ]
+        ],
+        extraBody: ["previousResponseId": "ignored"]
     ))
 
     #expect(result.text == "custom text")
     #expect(result.usage?.totalTokens == 3)
+    #expect(model.providerID == "lmstudio.responses")
+    #expect(result.warnings.map(\.feature).contains("stopSequences"))
+    #expect(result.warnings.map(\.feature).contains("topK"))
+    #expect(result.warnings.map(\.feature).contains("seed"))
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://open.example.test/custom/responses")
-    #expect(request.headers["Authorization"] == "Bearer open-key")
-    #expect(request.headers["X-Custom"] == "yes")
+    #expect(request.headers["authorization"] == "Bearer open-key")
+    #expect(request.headers["x-custom"] == "yes")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/1.0.16")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "local-model")
+    #expect(body["instructions"]?.stringValue == "Be terse.")
+    #expect(body["input"]?[0]?["type"]?.stringValue == "message")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
     #expect(body["input"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
+    #expect(body["temperature"]?.doubleValue == 0.2)
+    #expect(body["top_p"]?.doubleValue == 0.9)
+    #expect(body["presence_penalty"]?.doubleValue == 0.3)
+    #expect(body["frequency_penalty"]?.doubleValue == 0.4)
     #expect(body["max_output_tokens"]?.intValue == 12)
-    #expect(body["previous_response_id"]?.stringValue == "resp-old")
+    #expect(body["reasoning"]?["effort"]?.stringValue == "xhigh")
+    #expect(body["reasoning"]?["summary"]?.stringValue == "auto")
+    #expect(body["tools"]?.arrayValue?.count == 1)
+    #expect(body["tools"]?[0]?["type"]?.stringValue == "function")
+    #expect(body["tools"]?[0]?["name"]?.stringValue == "lookup")
+    #expect(body["tools"]?[0]?["description"]?.stringValue == "Lookup things")
+    #expect(body["tools"]?[0]?["strict"]?.boolValue == true)
+    #expect(body["tools"]?[0]?["parameters"]?["strict"] == nil)
+    #expect(body["tool_choice"]?["type"]?.stringValue == "function")
+    #expect(body["tool_choice"]?["name"]?.stringValue == "lookup")
+    #expect(body["text"]?["format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["text"]?["format"]?["name"]?.stringValue == "answer")
+    #expect(body["text"]?["format"]?["description"]?.stringValue == "Answer schema")
+    #expect(body["text"]?["format"]?["schema"]?["type"]?.stringValue == "object")
+    #expect(body["text"]?["format"]?["strict"]?.boolValue == true)
+    #expect(body["previous_response_id"] == nil)
+    #expect(body["unknown"] == nil)
     #expect(body["messages"] == nil)
+}
+
+@Test func openResponsesProviderAllowsOptionalAPIKeyAndValidatesProviderOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"custom auth"}"#))
+    let provider = try AIProviders.openResponses(
+        name: "open-responses",
+        url: "https://open.example.test/responses",
+        settings: ProviderSettings(headers: ["Authorization": "Bearer custom-key"], transport: transport)
+    )
+    let model = try provider.languageModel("local-model")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(model.providerID == "open-responses.responses")
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer custom-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/1.0.16")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.open-responses", message: "Open Responses provider options must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["open-responses": "bad"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.open-responses.reasoningEffort", message: "Open Responses reasoningEffort must be none, low, medium, high, or xhigh.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["open-responses": ["reasoningEffort": "minimal"]]
+        ))
+    }
 }
 
 @Test func perplexityLanguageUsesNativeChatShapeAndKeepsMetadata() async throws {

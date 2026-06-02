@@ -67,5 +67,5 @@ private func vercelHeaders(settings: ProviderSettings) throws -> [String: String
     if !headers.keys.contains(where: { $0.caseInsensitiveCompare("authorization") == .orderedSame }) {
         headers["Authorization"] = "Bearer \(key)"
     }
-    return withUserAgentSuffix(headers, "ai-sdk/vercel/0.0.0-test")
+    return withUserAgentSuffix(headers, "ai-sdk/vercel/2.0.50")
 }

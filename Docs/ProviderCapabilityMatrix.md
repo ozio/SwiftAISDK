@@ -77,7 +77,7 @@ Legend:
 | `gateway` | Gateway also exposes model, credits, spend, and generation metadata management APIs. |
 | `google.generative-ai` | Also exposes Gemini interactions models and agents. |
 | `moonshotai` | Chat requests stream usage by default and maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema. |
-| `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. |
+| `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, and the caller supplied providerOptions namespace. |
 | `openai-compatible` | Generic OpenAI-compatible factory; caller supplies provider ID and base URL. |
 
 ## Reality Gates

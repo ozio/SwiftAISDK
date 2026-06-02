@@ -243,10 +243,15 @@ public enum AIProviders {
     }
 
     public static func openResponses(name: String, url: String, settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        let headers = settings.apiKey == nil && settings.headers["Authorization"] == nil ? settings.headers : try OpenAICompatibleProvider.buildHeaders(providerID: name, authorization: .bearer(environmentVariables: []), settings: settings)
+        var headers: [String: String] = [:]
+        if let apiKey = settings.apiKey {
+            headers["Authorization"] = "Bearer \(apiKey)"
+        }
+        headers.merge(settings.headers) { _, custom in custom }
+        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/1.0.16")
         let endpoint = try requireURL(url)
         let base = "\(endpoint.scheme ?? "https")://\(endpoint.host ?? "")"
-        let config = ModelHTTPConfig(providerID: name, baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody) { _, _ in endpoint }
+        let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
         return OpenAICompatibleProvider(providerID: "\(name).responses", supportedCapabilities: [.language], config: config)
     }
 
