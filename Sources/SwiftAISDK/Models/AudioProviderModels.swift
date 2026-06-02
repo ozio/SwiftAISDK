@@ -656,7 +656,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = gladiaProviderOptions(from: request)
+        let options = try gladiaProviderOptions(from: request)
         var form = MultipartFormData()
         form.appendFile(name: "audio", fileName: "audio.\(mediaTypeToExtension(request.mimeType))", mimeType: request.mimeType, data: request.audio)
         let uploadResponse = try await config.transport.send(config.rawRequest(
@@ -1363,74 +1363,19 @@ private func gladiaProviderOptions(from extraBody: [String: JSONValue]) -> [Stri
     return output
 }
 
-private func gladiaProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    gladiaProviderOptions(
-        extraBody: request.extraBody,
-        providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: gladiaTranscriptionProviderOptionKeys
-    )
-}
-
-private func gladiaProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
-    var output = gladiaProviderOptions(from: extraBody)
-    if let nested = providerOptions["gladia"]?.objectValue {
-        for (key, value) in nested where supportedProviderOptionKeys.contains(key) {
-            if value == .null {
-                output.removeValue(forKey: key)
-                continue
-            }
-            output[key] = gladiaProviderOption(key: key, value: value)
+private func gladiaProviderOptions(from request: AudioTranscriptionRequest) throws -> [String: JSONValue] {
+    var output = gladiaProviderOptions(from: request.extraBody)
+    if let value = request.providerOptions["gladia"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.gladia", message: "Gladia provider options must be an object.")
         }
+        for key in gladiaTranscriptionProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try gladiaValidateTranscriptionProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
-}
-
-private func gladiaProviderOption(key: String, value: JSONValue) -> JSONValue {
-    switch key {
-    case "customVocabularyConfig":
-        return gladiaCustomVocabularyConfig(value)
-    case "codeSwitchingConfig":
-        return gladiaScopedObject(value, allowedKeys: ["languages"])
-    case "callbackConfig":
-        return gladiaScopedObject(value, allowedKeys: ["url", "method"])
-    case "subtitlesConfig":
-        return gladiaScopedObject(value, allowedKeys: ["formats", "minimumDuration", "maximumDuration", "maximumCharactersPerRow", "maximumRowsPerCaption", "style"])
-    case "diarizationConfig":
-        return gladiaScopedObject(value, allowedKeys: ["numberOfSpeakers", "minSpeakers", "maxSpeakers", "enhanced"])
-    case "translationConfig":
-        return gladiaScopedObject(value, allowedKeys: ["targetLanguages", "model", "matchOriginalUtterances"])
-    case "summarizationConfig":
-        return gladiaScopedObject(value, allowedKeys: ["type"])
-    case "customSpellingConfig":
-        return gladiaScopedObject(value, allowedKeys: ["spellingDictionary"])
-    case "structuredDataExtractionConfig":
-        return gladiaScopedObject(value, allowedKeys: ["classes"])
-    case "audioToLlmConfig":
-        return gladiaScopedObject(value, allowedKeys: ["prompts"])
-    default:
-        return value
-    }
-}
-
-private func gladiaScopedObject(_ value: JSONValue, allowedKeys: Set<String>) -> JSONValue {
-    guard let object = value.objectValue else { return value }
-    return .object(object.filter { allowedKeys.contains($0.key) && $0.value != .null })
-}
-
-private func gladiaCustomVocabularyConfig(_ value: JSONValue) -> JSONValue {
-    guard var object = gladiaScopedObject(value, allowedKeys: ["vocabulary", "defaultIntensity"]).objectValue else {
-        return value
-    }
-    if object["defaultIntensity"] == .null {
-        object.removeValue(forKey: "defaultIntensity")
-    }
-    if let vocabulary = object["vocabulary"]?.arrayValue {
-        object["vocabulary"] = .array(vocabulary.map { item in
-            guard let itemObject = item.objectValue else { return item }
-            return gladiaScopedObject(.object(itemObject), allowedKeys: ["value", "intensity", "pronunciations", "language"])
-        })
-    }
-    return .object(object)
 }
 
 private let gladiaTranscriptionProviderOptionKeys: Set<String> = [
@@ -1467,6 +1412,295 @@ private let gladiaTranscriptionProviderOptionKeys: Set<String> = [
     "displayMode",
     "punctuationEnhanced"
 ]
+
+private func gladiaValidateTranscriptionProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where gladiaTranscriptionProviderOptionKeys.contains(key) {
+        guard value != .null else { continue }
+        switch key {
+        case "contextPrompt", "language":
+            try gladiaRequireString(value, argument: "providerOptions.gladia.\(key)", message: "Gladia \(key) must be a string.")
+            output[key] = value
+        case "customVocabulary":
+            output[key] = try gladiaValidatedCustomVocabulary(value)
+        case "customVocabularyConfig":
+            output[key] = try gladiaValidatedCustomVocabularyConfig(value)
+        case "detectLanguage", "enableCodeSwitching", "callback", "subtitles", "diarization", "translation", "summarization", "moderation", "namedEntityRecognition", "chapterization", "nameConsistency", "customSpelling", "structuredDataExtraction", "sentimentAnalysis", "audioToLlm", "sentences", "displayMode", "punctuationEnhanced":
+            try gladiaRequireBoolean(value, argument: "providerOptions.gladia.\(key)", message: "Gladia \(key) must be a boolean.")
+            output[key] = value
+        case "codeSwitchingConfig":
+            output[key] = try gladiaValidatedCodeSwitchingConfig(value)
+        case "callbackConfig":
+            output[key] = try gladiaValidatedCallbackConfig(value)
+        case "subtitlesConfig":
+            output[key] = try gladiaValidatedSubtitlesConfig(value)
+        case "diarizationConfig":
+            output[key] = try gladiaValidatedDiarizationConfig(value)
+        case "translationConfig":
+            output[key] = try gladiaValidatedTranslationConfig(value)
+        case "summarizationConfig":
+            output[key] = try gladiaValidatedSummarizationConfig(value)
+        case "customSpellingConfig":
+            output[key] = try gladiaValidatedCustomSpellingConfig(value)
+        case "structuredDataExtractionConfig":
+            output[key] = try gladiaValidatedStructuredDataExtractionConfig(value)
+        case "audioToLlmConfig":
+            output[key] = try gladiaValidatedAudioToLLMConfig(value)
+        case "customMetadata":
+            guard value.objectValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.gladia.customMetadata", message: "Gladia customMetadata must be an object.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func gladiaValidatedCustomVocabulary(_ value: JSONValue) throws -> JSONValue {
+    if value.boolValue != nil { return value }
+    guard value.arrayValue != nil else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.customVocabulary", message: "Gladia customVocabulary must be a boolean or array.")
+    }
+    return value
+}
+
+private func gladiaValidatedCustomVocabularyConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.customVocabularyConfig", message: "Gladia customVocabularyConfig must be an object.")
+    }
+    guard let vocabulary = object["vocabulary"] else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.customVocabularyConfig.vocabulary", message: "Gladia customVocabularyConfig.vocabulary is required.")
+    }
+    var output: [String: JSONValue] = ["vocabulary": try gladiaValidatedVocabulary(vocabulary)]
+    if let defaultIntensity = object["defaultIntensity"] {
+        if defaultIntensity != .null {
+            try gladiaRequireNumber(defaultIntensity, argument: "providerOptions.gladia.customVocabularyConfig.defaultIntensity", message: "Gladia customVocabularyConfig.defaultIntensity must be a number.")
+            output["defaultIntensity"] = defaultIntensity
+        }
+    }
+    return .object(output)
+}
+
+private func gladiaValidatedVocabulary(_ value: JSONValue) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.customVocabularyConfig.vocabulary", message: "Gladia customVocabularyConfig.vocabulary must be an array.")
+    }
+    return .array(try array.enumerated().map { index, item in
+        if item.stringValue != nil { return item }
+        guard let object = item.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.gladia.customVocabularyConfig.vocabulary[\(index)]", message: "Gladia vocabulary items must be strings or objects.")
+        }
+        guard let term = object["value"], term.stringValue != nil else {
+            throw AIError.invalidArgument(argument: "providerOptions.gladia.customVocabularyConfig.vocabulary[\(index)].value", message: "Gladia vocabulary item value must be a string.")
+        }
+        var output: [String: JSONValue] = ["value": term]
+        if let intensity = object["intensity"] {
+            if intensity != .null {
+                try gladiaRequireNumber(intensity, argument: "providerOptions.gladia.customVocabularyConfig.vocabulary[\(index)].intensity", message: "Gladia vocabulary intensity must be a number.")
+                output["intensity"] = intensity
+            }
+        }
+        if let pronunciations = object["pronunciations"] {
+            if pronunciations != .null {
+                output["pronunciations"] = try gladiaStringArray(pronunciations, argument: "providerOptions.gladia.customVocabularyConfig.vocabulary[\(index)].pronunciations")
+            }
+        }
+        if let language = object["language"] {
+            if language != .null {
+                try gladiaRequireString(language, argument: "providerOptions.gladia.customVocabularyConfig.vocabulary[\(index)].language", message: "Gladia vocabulary language must be a string.")
+                output["language"] = language
+            }
+        }
+        return .object(output)
+    })
+}
+
+private func gladiaValidatedCodeSwitchingConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.codeSwitchingConfig", message: "Gladia codeSwitchingConfig must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    if let languages = object["languages"] {
+        if languages != .null {
+            output["languages"] = try gladiaStringArray(languages, argument: "providerOptions.gladia.codeSwitchingConfig.languages")
+        }
+    }
+    return .object(output)
+}
+
+private func gladiaValidatedCallbackConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.callbackConfig", message: "Gladia callbackConfig must be an object.")
+    }
+    guard let url = object["url"], url.stringValue != nil else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.callbackConfig.url", message: "Gladia callbackConfig.url must be a string.")
+    }
+    var output: [String: JSONValue] = ["url": url]
+    if let method = object["method"] {
+        if method != .null {
+            guard let methodValue = method.stringValue, ["POST", "PUT"].contains(methodValue) else {
+                throw AIError.invalidArgument(argument: "providerOptions.gladia.callbackConfig.method", message: "Gladia callbackConfig.method must be POST or PUT.")
+            }
+            output["method"] = method
+        }
+    }
+    return .object(output)
+}
+
+private func gladiaValidatedSubtitlesConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.subtitlesConfig", message: "Gladia subtitlesConfig must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    if let formats = object["formats"] {
+        if formats != .null {
+            output["formats"] = try gladiaStringArray(formats, argument: "providerOptions.gladia.subtitlesConfig.formats", allowedValues: ["srt", "vtt"])
+        }
+    }
+    for key in ["minimumDuration", "maximumDuration", "maximumCharactersPerRow", "maximumRowsPerCaption"] {
+        if let number = object[key] {
+            guard number != .null else { continue }
+            try gladiaRequireNumber(number, argument: "providerOptions.gladia.subtitlesConfig.\(key)", message: "Gladia subtitlesConfig.\(key) must be a number.")
+            output[key] = number
+        }
+    }
+    if let style = object["style"] {
+        if style != .null {
+            guard let styleValue = style.stringValue, ["default", "compliance"].contains(styleValue) else {
+                throw AIError.invalidArgument(argument: "providerOptions.gladia.subtitlesConfig.style", message: "Gladia subtitlesConfig.style must be default or compliance.")
+            }
+            output["style"] = style
+        }
+    }
+    return .object(output)
+}
+
+private func gladiaValidatedDiarizationConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.diarizationConfig", message: "Gladia diarizationConfig must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    for key in ["numberOfSpeakers", "minSpeakers", "maxSpeakers"] {
+        if let number = object[key] {
+            guard number != .null else { continue }
+            try gladiaRequireNumber(number, argument: "providerOptions.gladia.diarizationConfig.\(key)", message: "Gladia diarizationConfig.\(key) must be a number.")
+            output[key] = number
+        }
+    }
+    if let enhanced = object["enhanced"] {
+        if enhanced != .null {
+            try gladiaRequireBoolean(enhanced, argument: "providerOptions.gladia.diarizationConfig.enhanced", message: "Gladia diarizationConfig.enhanced must be a boolean.")
+            output["enhanced"] = enhanced
+        }
+    }
+    return .object(output)
+}
+
+private func gladiaValidatedTranslationConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.translationConfig", message: "Gladia translationConfig must be an object.")
+    }
+    guard let targetLanguages = object["targetLanguages"] else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.translationConfig.targetLanguages", message: "Gladia translationConfig.targetLanguages is required.")
+    }
+    var output: [String: JSONValue] = [
+        "targetLanguages": try gladiaStringArray(targetLanguages, argument: "providerOptions.gladia.translationConfig.targetLanguages")
+    ]
+    if let model = object["model"] {
+        if model != .null {
+            guard let modelValue = model.stringValue, ["base", "enhanced"].contains(modelValue) else {
+                throw AIError.invalidArgument(argument: "providerOptions.gladia.translationConfig.model", message: "Gladia translationConfig.model must be base or enhanced.")
+            }
+            output["model"] = model
+        }
+    }
+    if let matchOriginalUtterances = object["matchOriginalUtterances"] {
+        if matchOriginalUtterances != .null {
+            try gladiaRequireBoolean(matchOriginalUtterances, argument: "providerOptions.gladia.translationConfig.matchOriginalUtterances", message: "Gladia translationConfig.matchOriginalUtterances must be a boolean.")
+            output["matchOriginalUtterances"] = matchOriginalUtterances
+        }
+    }
+    return .object(output)
+}
+
+private func gladiaValidatedSummarizationConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.summarizationConfig", message: "Gladia summarizationConfig must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    if let type = object["type"] {
+        if type != .null {
+            guard let typeValue = type.stringValue, ["general", "bullet_points", "concise"].contains(typeValue) else {
+                throw AIError.invalidArgument(argument: "providerOptions.gladia.summarizationConfig.type", message: "Gladia summarizationConfig.type is invalid.")
+            }
+            output["type"] = type
+        }
+    }
+    return .object(output)
+}
+
+private func gladiaValidatedCustomSpellingConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.customSpellingConfig", message: "Gladia customSpellingConfig must be an object.")
+    }
+    guard let dictionary = object["spellingDictionary"], let entries = dictionary.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.customSpellingConfig.spellingDictionary", message: "Gladia customSpellingConfig.spellingDictionary must be an object.")
+    }
+    var output: [String: JSONValue] = [:]
+    for (key, value) in entries {
+        output[key] = try gladiaStringArray(value, argument: "providerOptions.gladia.customSpellingConfig.spellingDictionary.\(key)")
+    }
+    return .object(["spellingDictionary": .object(output)])
+}
+
+private func gladiaValidatedStructuredDataExtractionConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue, let classes = object["classes"] else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.structuredDataExtractionConfig.classes", message: "Gladia structuredDataExtractionConfig.classes is required.")
+    }
+    return .object(["classes": try gladiaStringArray(classes, argument: "providerOptions.gladia.structuredDataExtractionConfig.classes")])
+}
+
+private func gladiaValidatedAudioToLLMConfig(_ value: JSONValue) throws -> JSONValue {
+    guard let object = value.objectValue, let prompts = object["prompts"] else {
+        throw AIError.invalidArgument(argument: "providerOptions.gladia.audioToLlmConfig.prompts", message: "Gladia audioToLlmConfig.prompts is required.")
+    }
+    return .object(["prompts": try gladiaStringArray(prompts, argument: "providerOptions.gladia.audioToLlmConfig.prompts")])
+}
+
+private func gladiaStringArray(_ value: JSONValue, argument: String, allowedValues: Set<String>? = nil) throws -> JSONValue {
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: argument, message: "Gladia \(argument) must be an array of strings.")
+    }
+    for item in array {
+        guard let string = item.stringValue else {
+            throw AIError.invalidArgument(argument: argument, message: "Gladia \(argument) values must be strings.")
+        }
+        if let allowedValues, !allowedValues.contains(string) {
+            throw AIError.invalidArgument(argument: argument, message: "Gladia \(argument) contains an unsupported value.")
+        }
+    }
+    return value
+}
+
+private func gladiaRequireString(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func gladiaRequireNumber(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.doubleValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func gladiaRequireBoolean(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
 
 private func gladiaTranscriptionOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]

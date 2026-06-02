@@ -371,6 +371,130 @@ import Testing
     #expect(initBody["audio_to_llm_config"]?["unsupportedConfig"] == nil)
 }
 
+@Test func gladiaTranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
+    let model = try provider.transcriptionModel("default")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .string("invalid")]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["contextPrompt": .number(1)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["customVocabulary": .string("term")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["customVocabularyConfig": .object(["defaultIntensity": .number(0.5)])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["customVocabularyConfig": .object(["vocabulary": .array([.object(["intensity": .number(0.5)])])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["detectLanguage": .string("true")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["codeSwitchingConfig": .object(["languages": .array([.number(1)])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["callbackConfig": .object(["method": .string("PATCH")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["subtitlesConfig": .object(["formats": .array([.string("ass")])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["diarizationConfig": .object(["enhanced": .string("true")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["translationConfig": .object(["model": .string("enhanced")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["translationConfig": .object(["targetLanguages": .array([.string("en")]), "model": .string("premium")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["summarizationConfig": .object(["type": .string("paragraph")])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["customSpellingConfig": .object(["spellingDictionary": .object(["Codex": .array([.number(1)])])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["structuredDataExtractionConfig": .object([:])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["audioToLlmConfig": .object(["prompts": .array([.number(1)])])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            providerOptions: ["gladia": .object(["customMetadata": .string("invalid")])]
+        ))
+    }
+}
+
 @Test func gladiaTranscriptionThrowsWhenDoneResultIsEmpty() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
