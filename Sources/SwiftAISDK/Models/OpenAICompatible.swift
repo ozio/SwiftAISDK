@@ -405,6 +405,14 @@ private func openAIResponsesOutputLogprobs(from raw: JSONValue) -> [JSONValue] {
     } ?? []
 }
 
+private func openAIResponsesTextProviderMetadata(itemID: String, phase: JSONValue?, providerID: String) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = ["itemId": .string(itemID)]
+    if let phase {
+        metadata["phase"] = phase
+    }
+    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+}
+
 private func openAICompatibleURL(_ string: String, queryParams: [String: String]) throws -> URL {
     guard !queryParams.isEmpty else { return try requireURL(string) }
     guard var components = URLComponents(string: string) else { throw AIError.invalidURL(string) }
@@ -1490,6 +1498,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
                     var toolCallBuffers = OpenAIResponsesStreamingToolCalls()
                     var providerMetadata: [String: JSONValue] = [:]
+                    var textItemPhases: [String: JSONValue] = [:]
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
@@ -1500,14 +1509,43 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             openAIResponsesProviderMetadata(from: responsePayload, providerID: providerID),
                             into: &providerMetadata
                         )
+                        if raw["type"]?.stringValue == "response.output_item.added",
+                           let item = raw["item"],
+                           item["type"]?.stringValue == "message",
+                           let itemID = item["id"]?.stringValue {
+                            if let phase = item["phase"] {
+                                textItemPhases[itemID] = phase
+                            }
+                            continuation.yield(.textStart(
+                                id: itemID,
+                                providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: item["phase"], providerID: providerID)
+                            ))
+                        }
                         if let delta = raw["delta"]?.stringValue ?? raw["output_text_delta"]?.stringValue, openAIResponsesIsTextDelta(raw) {
                             continuation.yield(.textDelta(delta))
+                            if let itemID = raw["item_id"]?.stringValue {
+                                continuation.yield(.textDeltaPart(
+                                    id: itemID,
+                                    delta: delta,
+                                    providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: textItemPhases[itemID], providerID: providerID)
+                                ))
+                            }
                         }
                         if let delta = raw["delta"]?.stringValue, raw["type"]?.stringValue == "response.reasoning_summary_text.delta" {
                             continuation.yield(.reasoningDelta(delta))
                         }
                         for eventPart in toolCallBuffers.apply(event: raw) {
                             continuation.yield(eventPart)
+                        }
+                        if raw["type"]?.stringValue == "response.output_item.done",
+                           let item = raw["item"],
+                           item["type"]?.stringValue == "message",
+                           let itemID = item["id"]?.stringValue {
+                            let phase = item["phase"] ?? textItemPhases[itemID]
+                            continuation.yield(.textEnd(
+                                id: itemID,
+                                providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: phase, providerID: providerID)
+                            ))
                         }
                         if raw["type"]?.stringValue == "response.completed" {
                             let response = raw["response"] ?? raw

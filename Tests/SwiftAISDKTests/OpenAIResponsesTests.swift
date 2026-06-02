@@ -531,6 +531,60 @@ import Testing
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
 }
 
+@Test func openAIResponsesStreamsTextLifecycleProviderMetadataLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_commentary","type":"message","status":"in_progress","content":[],"phase":"commentary","role":"assistant"}}
+
+    data: {"type":"response.output_text.delta","item_id":"msg_commentary","output_index":0,"content_index":0,"delta":"checking"}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_commentary","type":"message","status":"completed","content":[{"type":"output_text","text":"checking","annotations":[]}],"phase":"commentary","role":"assistant"}}
+
+    data: {"type":"response.output_item.added","output_index":1,"item":{"id":"msg_final","type":"message","status":"in_progress","content":[],"phase":"final_answer","role":"assistant"}}
+
+    data: {"type":"response.output_text.delta","item_id":"msg_final","output_index":1,"content_index":0,"delta":"answer"}
+
+    data: {"type":"response.output_item.done","output_index":1,"item":{"id":"msg_final","type":"message","status":"completed","content":[{"type":"output_text","text":"answer","annotations":[]}],"phase":"final_answer","role":"assistant"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.3-codex")
+
+    var textStarts: [(String, [String: JSONValue])] = []
+    var textDeltas: [(String, String, [String: JSONValue])] = []
+    var textEnds: [(String, [String: JSONValue])] = []
+    var legacyText: [String] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .textStart(id, metadata):
+            textStarts.append((id, metadata))
+        case let .textDelta(delta):
+            legacyText.append(delta)
+        case let .textDeltaPart(id, delta, metadata):
+            textDeltas.append((id, delta, metadata))
+        case let .textEnd(id, metadata):
+            textEnds.append((id, metadata))
+        default:
+            break
+        }
+    }
+
+    #expect(legacyText == ["checking", "answer"])
+    #expect(textStarts.map { $0.0 } == ["msg_commentary", "msg_final"])
+    #expect(textDeltas.map { $0.0 } == ["msg_commentary", "msg_final"])
+    #expect(textDeltas.map { $0.1 } == ["checking", "answer"])
+    #expect(textEnds.map { $0.0 } == ["msg_commentary", "msg_final"])
+    #expect(textStarts[0].1["openai"]?["itemId"]?.stringValue == "msg_commentary")
+    #expect(textStarts[0].1["openai"]?["phase"]?.stringValue == "commentary")
+    #expect(textDeltas[0].2["openai"]?["phase"]?.stringValue == "commentary")
+    #expect(textEnds[0].1["openai"]?["phase"]?.stringValue == "commentary")
+    #expect(textStarts[1].1["openai"]?["itemId"]?.stringValue == "msg_final")
+    #expect(textStarts[1].1["openai"]?["phase"]?.stringValue == "final_answer")
+    #expect(textDeltas[1].2["openai"]?["phase"]?.stringValue == "final_answer")
+    #expect(textEnds[1].1["openai"]?["phase"]?.stringValue == "final_answer")
+}
+
 @Test func openAIResponsesStreamMapsIncompleteFinishReason() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"type":"response.output_text.delta","delta":"partial"}

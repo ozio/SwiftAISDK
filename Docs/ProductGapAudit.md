@@ -270,8 +270,9 @@ Progress:
   prompts, created/model option metadata, and distributed input token details;
   Anthropic language and Google/Vertex language plus embedding
   models now do the same for their native response headers/bodies and stream
-  response metadata. OpenAI-compatible chat streams now also emit v4-shaped
-  text/reasoning lifecycle parts while retaining legacy deltas for existing
+  response metadata. OpenAI-compatible chat streams and OpenAI Responses
+  message-item streams now also emit v4-shaped text/reasoning lifecycle parts
+  with provider metadata where upstream exposes it, while retaining legacy deltas for existing
   consumers. Core video requests now expose upstream-style optional `image`,
   `resolution`, `fps`, and `seed` fields so provider ports do not have to hide
   standard video call settings inside `extraBody`. Google Generative AI
