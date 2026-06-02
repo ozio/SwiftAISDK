@@ -669,6 +669,103 @@ import Testing
     #expect(finishReason == "stop")
 }
 
+@Test func openAIResponsesStreamsCodeInterpreterInputLifecycleLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"type":"code_interpreter_call","id":"ci_1","status":"in_progress","container_id":"cntr_1"}}
+
+    data: {"type":"response.code_interpreter_call_code.delta","output_index":0,"delta":"print(\\\"hi\\\")\\n"}
+
+    data: {"type":"response.code_interpreter_call_code.done","output_index":0,"code":"print(\\\"hi\\\")\\n"}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"type":"code_interpreter_call","id":"ci_1","status":"completed","code":"print(\\\"hi\\\")\\n","container_id":"cntr_1","outputs":[{"type":"logs","logs":"hi\\n"}]}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5-nano")
+
+    var lifecycle: [String] = []
+    var inputDeltas: [String] = []
+    var toolCall: AIToolCall?
+    var toolResult: AIToolResult?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Run code.")])) {
+        switch part {
+        case let .toolInputStart(id, name, providerExecuted, _, _, _):
+            lifecycle.append("start:\(id):\(name):\(providerExecuted)")
+        case let .toolInputDelta(id, delta, _):
+            lifecycle.append("delta:\(id)")
+            inputDeltas.append(delta)
+        case let .toolInputEnd(id, _):
+            lifecycle.append("end:\(id)")
+        case let .toolCall(call):
+            toolCall = call
+        case let .toolResult(result):
+            toolResult = result
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == ["start:ci_1:code_interpreter:true", "delta:ci_1", "delta:ci_1", "delta:ci_1", "end:ci_1"])
+    let streamedInput = try decodeJSONBody(Data(inputDeltas.joined().utf8))
+    #expect(streamedInput["containerId"]?.stringValue == "cntr_1")
+    #expect(streamedInput["code"]?.stringValue == "print(\"hi\")\n")
+    #expect(toolCall?.id == "ci_1")
+    #expect(toolCall?.name == "code_interpreter")
+    #expect(toolCall?.providerExecuted == true)
+    let finalInput = try decodeJSONBody(Data(try #require(toolCall?.arguments).utf8))
+    #expect(finalInput["containerId"]?.stringValue == "cntr_1")
+    #expect(finalInput["code"]?.stringValue == "print(\"hi\")\n")
+    #expect(toolResult?.toolCallID == "ci_1")
+    #expect(toolResult?.toolName == "code_interpreter")
+    #expect(toolResult?.result["outputs"]?[0]?["logs"]?.stringValue == "hi\n")
+}
+
+@Test func openAIResponsesStreamsImageGenerationPartialResultsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"type":"image_generation_call","id":"ig_1","status":"in_progress"}}
+
+    data: {"type":"response.image_generation_call.partial_image","item_id":"ig_1","partial_image_index":0,"partial_image_b64":"partial-image"}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"type":"image_generation_call","id":"ig_1","status":"completed","result":"final-image"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-image-1")
+
+    var sawInputLifecycle = false
+    var toolCall: AIToolCall?
+    var toolResults: [AIToolResult] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Generate an image.")])) {
+        switch part {
+        case .toolInputStart, .toolInputDelta, .toolInputEnd:
+            sawInputLifecycle = true
+        case let .toolCall(call):
+            toolCall = call
+        case let .toolResult(result):
+            toolResults.append(result)
+        default:
+            break
+        }
+    }
+
+    #expect(sawInputLifecycle == false)
+    #expect(toolCall?.id == "ig_1")
+    #expect(toolCall?.name == "image_generation")
+    #expect(toolCall?.arguments == "{}")
+    #expect(toolCall?.providerExecuted == true)
+    #expect(toolResults.count == 2)
+    #expect(toolResults[0].toolCallID == "ig_1")
+    #expect(toolResults[0].toolName == "image_generation")
+    #expect(toolResults[0].preliminary == true)
+    #expect(toolResults[0].result["result"]?.stringValue == "partial-image")
+    #expect(toolResults[1].preliminary == false)
+    #expect(toolResults[1].result["result"]?.stringValue == "final-image")
+}
+
 @Test func openAIResponsesStreamsToolSearchOutputWithFinalCallIDLikeUpstream() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"type":"response.output_item.added","output_index":0,"item":{"type":"tool_search_call","id":"tsc_client_1","execution":"client","call_id":"call_provisional","status":"completed","arguments":{"goal":"Find the weather tool"}}}

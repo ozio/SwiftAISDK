@@ -1409,6 +1409,7 @@ private struct OpenAICompatibleToolCallBuffer {
     var name: String?
     var arguments: String = ""
     var inputStarted = false
+    var codeInterpreterContainerID: String?
     var rawValue: JSONValue?
 }
 
@@ -2391,6 +2392,14 @@ private struct OpenAIResponsesStreamingToolCalls {
         case "response.output_item.added":
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
             switch item["type"]?.stringValue {
+            case "web_search_call":
+                return handleImmediateHostedToolAdded(item: item, index: index, emitInputLifecycle: true)
+            case "file_search_call", "image_generation_call":
+                return handleImmediateHostedToolAdded(item: item, index: index, emitInputLifecycle: false)
+            case "computer_call":
+                return handleComputerUseAdded(item: item, index: index)
+            case "code_interpreter_call":
+                return handleCodeInterpreterAdded(item: item, index: index)
             case "tool_search_call":
                 return handleToolSearchAdded(item: item, index: index)
             case "tool_search_output", "mcp_call", "mcp_list_tools", "mcp_approval_request":
@@ -2422,9 +2431,50 @@ private struct OpenAIResponsesStreamingToolCalls {
                 parts.append(.toolInputDelta(id: id, delta: delta))
             }
             return parts
+        case "response.code_interpreter_call_code.delta":
+            guard let index = raw["output_index"]?.intValue,
+                  let buffer = buffers[index],
+                  let id = buffer.id else { return [] }
+            return [.toolInputDelta(id: id, delta: openAIResponsesEscapeJSONStringFragment(raw["delta"]?.stringValue ?? ""))]
+        case "response.code_interpreter_call_code.done":
+            guard let index = raw["output_index"]?.intValue,
+                  let buffer = buffers[index],
+                  let id = buffer.id,
+                  let containerID = buffer.codeInterpreterContainerID else { return [] }
+            let code = raw["code"]?.stringValue ?? ""
+            return [
+                .toolInputDelta(id: id, delta: "\"}"),
+                .toolInputEnd(id: id),
+                .toolCall(AIToolCall(
+                    id: id,
+                    name: "code_interpreter",
+                    arguments: openAIResponsesJSONString(.object([
+                        "code": .string(code),
+                        "containerId": .string(containerID)
+                    ])) ?? "{}",
+                    providerExecuted: true,
+                    rawValue: raw
+                ))
+            ]
+        case "response.image_generation_call.partial_image":
+            guard let itemID = raw["item_id"]?.stringValue,
+                  let image = raw["partial_image_b64"] else { return [] }
+            return [
+                .toolResult(AIToolResult(
+                    toolCallID: itemID,
+                    toolName: "image_generation",
+                    result: .object(["result": image]),
+                    preliminary: true
+                ))
+            ]
         case "response.output_item.done":
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
             switch item["type"]?.stringValue {
+            case "web_search_call", "file_search_call", "image_generation_call", "code_interpreter_call":
+                buffers[index] = nil
+                return openAIResponsesToolResult(from: item, providerID: providerID).map { [.toolResult($0)] } ?? []
+            case "computer_call":
+                return handleComputerUseDone(item: item, index: index)
             case "tool_search_call":
                 return handleToolSearchDone(item: item, index: index)
             case "tool_search_output":
@@ -2474,6 +2524,71 @@ private struct OpenAIResponsesStreamingToolCalls {
         guard isHosted else { return [] }
         return [
             .toolInputStart(id: toolCallID, name: "tool_search", providerExecuted: true)
+        ]
+    }
+
+    private mutating func handleImmediateHostedToolAdded(item: JSONValue, index: Int, emitInputLifecycle: Bool) -> [LanguageStreamPart] {
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        buffers[index] = OpenAICompatibleToolCallBuffer(
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+            inputStarted: emitInputLifecycle,
+            rawValue: item
+        )
+        var parts: [LanguageStreamPart] = []
+        if emitInputLifecycle {
+            parts.append(.toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted, dynamic: toolCall.dynamic, providerMetadata: toolCall.providerMetadata))
+            parts.append(.toolInputEnd(id: toolCall.id))
+        }
+        parts.append(.toolCall(toolCall))
+        return parts
+    }
+
+    private mutating func handleComputerUseAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        buffers[index] = OpenAICompatibleToolCallBuffer(
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+            inputStarted: true,
+            rawValue: item
+        )
+        return [
+            .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: true)
+        ]
+    }
+
+    private mutating func handleComputerUseDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        buffers[index] = nil
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        var parts: [LanguageStreamPart] = [
+            .toolInputEnd(id: toolCall.id),
+            .toolCall(toolCall)
+        ]
+        if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID) {
+            parts.append(.toolResult(toolResult))
+        }
+        return parts
+    }
+
+    private mutating func handleCodeInterpreterAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        let containerID = item["container_id"]?.stringValue ?? ""
+        buffers[index] = OpenAICompatibleToolCallBuffer(
+            id: toolCall.id,
+            name: toolCall.name,
+            arguments: "",
+            inputStarted: true,
+            codeInterpreterContainerID: containerID,
+            rawValue: item
+        )
+        return [
+            .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: true),
+            .toolInputDelta(
+                id: toolCall.id,
+                delta: "{\"containerId\":\"\(openAIResponsesEscapeJSONStringFragment(containerID))\",\"code\":\""
+            )
         ]
     }
 
@@ -2772,6 +2887,11 @@ private func openAIResponsesHostedToolCall(item: JSONValue, name: String, idKey:
 private func openAIResponsesJSONString(_ value: JSONValue) -> String? {
     guard let data = try? encodeJSONBody(value) else { return nil }
     return String(data: data, encoding: .utf8)
+}
+
+private func openAIResponsesEscapeJSONStringFragment(_ value: String) -> String {
+    let encoded = openAIResponsesJSONString(.string(value)) ?? "\"\""
+    return String(encoded.dropFirst().dropLast())
 }
 
 private func openAIResponsesIsTextDelta(_ raw: JSONValue) -> Bool {
