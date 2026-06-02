@@ -88,14 +88,38 @@ private func togetherAIProviderOptions(from request: ImageGenerationRequest) -> 
 }
 
 private func togetherAIProviderOptions(from request: RerankingRequest) -> [String: JSONValue] {
-    togetherAIProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    togetherAIProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: togetherAIRerankingProviderOptionKeys
+    )
 }
 
-private func togetherAIProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func togetherAIProviderOptions(
+    extraBody: [String: JSONValue],
+    providerOptions: [String: JSONValue],
+    supportedProviderOptionKeys: Set<String>? = nil
+) -> [String: JSONValue] {
     var output = togetherAIProviderOptions(from: extraBody)
-    output.merge(togetherAIProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    var scopedProviderOptions = togetherAIProviderOptions(fromProviderOptions: providerOptions)
+    if let supportedProviderOptionKeys {
+        scopedProviderOptions = scopedProviderOptions.filter { supportedProviderOptionKeys.contains($0.key) }
+    }
+    output.merge(scopedProviderOptions) { _, providerValue in providerValue }
     return output
 }
+
+private func togetherAIProviderOptions(fromProviderOptions providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+    if let nested = providerOptions["togetherai"]?.objectValue {
+        return nested
+    }
+    if let nested = providerOptions["togetherAI"]?.objectValue {
+        return nested
+    }
+    return [:]
+}
+
+private let togetherAIRerankingProviderOptionKeys: Set<String> = ["rankFields"]
 
 private func togetherAIImageOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var options: [String: JSONValue] = [:]

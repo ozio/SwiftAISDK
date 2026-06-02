@@ -66,6 +66,9 @@ import Testing
             "togetherai": .object([
                 "guidance": 4.5,
                 "provider_only": "option"
+            ]),
+            "openai": .object([
+                "quality": "hd"
             ])
         ],
         extraBody: [
@@ -87,6 +90,7 @@ import Testing
     #expect(imageBody["custom"]?.stringValue == "value")
     #expect(imageBody["provider_only"]?.stringValue == "option")
     #expect(imageBody["image_url"]?.stringValue == "https://example.com/input.png")
+    #expect(imageBody["openai"] == nil)
     #expect(imageBody["togetherai"] == nil)
 
     let rerankTransport = RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}]}"#))
@@ -97,11 +101,26 @@ import Testing
         query: "q",
         documents: ["a"],
         topK: 1,
-        extraBody: ["togetherai": .object(["rankFields": ["title"]])]
+        providerOptions: [
+            "togetherai": .object([
+                "rankFields": ["text"],
+                "return_documents": true
+            ]),
+            "openai": .object([
+                "rankFields": ["drop-me"]
+            ])
+        ],
+        extraBody: ["togetherai": .object([
+            "rankFields": ["title"],
+            "rawRerank": "keep-me"
+        ])]
     ))
 
     let rerankBody = try decodeJSONBody(try #require((await rerankTransport.requests()).first?.body))
-    #expect(rerankBody["rank_fields"]?[0]?.stringValue == "title")
+    #expect(rerankBody["rank_fields"]?[0]?.stringValue == "text")
+    #expect(rerankBody["return_documents"]?.boolValue == false)
+    #expect(rerankBody["rawRerank"]?.stringValue == "keep-me")
+    #expect(rerankBody["openai"] == nil)
     #expect(rerankBody["togetherai"] == nil)
 }
 

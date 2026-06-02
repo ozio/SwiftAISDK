@@ -281,7 +281,9 @@ Progress:
   preserve safe request metadata for their provider JSON bodies alongside
   provider response headers and raw JSON bodies. TogetherAI reranking now also
   preserves upstream-style JSON object documents so `rankFields` can target
-  object keys instead of only plain text documents. Voyage embedding and
+  object keys instead of only plain text documents; TogetherAI image/rerank
+  `providerOptions.togetherai` are now namespace-scoped to upstream schemas while
+  raw `extraBody` remains the low-level passthrough. Voyage embedding and
   reranking now scope `providerOptions.voyage` to the upstream embedding/rerank
   option schemas while keeping raw `extraBody` passthrough; Voyage reranking also
   stringifies object documents with a compatibility warning, matching upstream
