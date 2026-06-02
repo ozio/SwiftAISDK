@@ -28,8 +28,16 @@ public final class HuggingFaceProvider: AIProvider, @unchecked Sendable {
         HuggingFaceResponsesLanguageModel(modelID: modelID, config: config)
     }
 
+    public func callAsFunction(_ modelID: String) throws -> any LanguageModel {
+        try languageModel(modelID)
+    }
+
     public func responsesModel(_ modelID: String) throws -> any LanguageModel {
         try languageModel(modelID)
+    }
+
+    public func responses(_ modelID: String) throws -> any LanguageModel {
+        try responsesModel(modelID)
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {

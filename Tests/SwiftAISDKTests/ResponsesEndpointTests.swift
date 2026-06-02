@@ -160,10 +160,14 @@ import Testing
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"hf text"}"#))
     let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
     let model = try provider.responsesModel("openai/gpt-oss-120b")
+    let callableModel = try provider("openai/gpt-oss-120b")
+    let responsesAliasModel = try provider.responses("openai/gpt-oss-120b")
 
     _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     #expect(model.providerID == "huggingface.responses")
+    #expect(callableModel.providerID == "huggingface.responses")
+    #expect(responsesAliasModel.providerID == "huggingface.responses")
     #expect(throws: AIError.unsupportedModel(provider: "huggingface", capability: .embedding, modelID: "embed")) {
         _ = try provider.embeddingModel("embed")
     }
@@ -185,8 +189,7 @@ import Testing
             AIMessage(role: .user, content: [
                 .text("Use the image."),
                 .imageURL("https://example.com/image.png"),
-                .file(mimeType: "image/png", data: Data([0, 1, 2, 3]), filename: "inline.png"),
-                .file(mimeType: "text/plain", data: Data("ignored".utf8), filename: "ignored.txt")
+                .file(mimeType: "image/png", data: Data([0, 1, 2, 3]), filename: "inline.png")
             ])
         ],
         temperature: 0.4,
@@ -209,8 +212,10 @@ import Testing
         tools: ["weather": ["type": "object", "properties": ["city": ["type": "string"]]]],
         providerOptions: [
             "huggingface": [
-                "strictJsonSchema": true
-            ]
+                "strictJsonSchema": true,
+                "unsupportedProperty": "drop-me"
+            ],
+            "openai": .object(["reasoningEffort": "high"])
         ],
         extraBody: [
             "huggingface": .object([
@@ -285,10 +290,29 @@ import Testing
     #expect(body["tools"]?[0]?["type"]?.stringValue == "function")
     #expect(body["tools"]?[0]?["name"]?.stringValue == "weather")
     #expect(body["tool_choice"]?["type"]?.stringValue == "function")
-    #expect(body["tool_choice"]?["name"]?.stringValue == "weather")
+    #expect(body["tool_choice"]?["function"]?["name"]?.stringValue == "weather")
     #expect(body["responseFormat"] == nil)
     #expect(body["strictJsonSchema"] == nil)
+    #expect(body["unsupportedProperty"] == nil)
+    #expect(body["openai"] == nil)
     #expect(body["huggingface"] == nil)
+}
+
+@Test func huggingFaceLanguageRejectsUnsupportedFilePartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-hf-1","status":"completed","output_text":"hf text"}"#))
+    let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
+    let model = try provider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+
+    await #expect(throws: AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API only supports image file parts; got text/plain.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .file(mimeType: "text/plain", data: Data("unsupported".utf8), filename: "notes.txt")
+            ])
+        ]))
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.isEmpty)
 }
 
 @Test func huggingFaceLanguageStreamsReasoningTextAndToolCalls() async throws {

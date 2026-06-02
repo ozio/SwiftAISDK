@@ -11,7 +11,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = huggingFacePreparedCall(for: request, modelID: modelID, stream: false)
+        let prepared = try huggingFacePreparedCall(for: request, modelID: modelID, stream: false)
         let response = try await config.sendJSONResponse(
             path: "/responses",
             modelID: modelID,
@@ -48,7 +48,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = huggingFacePreparedCall(for: request, modelID: modelID, stream: true)
+                    let prepared = try huggingFacePreparedCall(for: request, modelID: modelID, stream: true)
                     let httpRequest = try config.request(
                         path: "/responses",
                         modelID: modelID,
@@ -130,12 +130,12 @@ private struct HuggingFacePreparedCall {
     var warnings: [AIWarning]
 }
 
-private func huggingFacePreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> HuggingFacePreparedCall {
+private func huggingFacePreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> HuggingFacePreparedCall {
     var options = huggingFaceProviderOptions(from: request)
     let responseFormat = huggingFaceResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
-        "input": .array(request.messages.compactMap(huggingFaceInputMessage))
+        "input": .array(try request.messages.compactMap(huggingFaceInputMessage))
     ]
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
@@ -168,10 +168,17 @@ private func huggingFaceProviderOptions(from request: LanguageModelRequest) -> [
         output.merge(nested) { _, nested in nested }
     }
     if let nested = request.providerOptions["huggingface"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+        output.merge(nested.filter { huggingFaceResponsesProviderOptionKeys.contains($0.key) }) { _, nested in nested }
     }
     return output
 }
+
+private let huggingFaceResponsesProviderOptionKeys: Set<String> = [
+    "metadata",
+    "instructions",
+    "strictJsonSchema",
+    "reasoningEffort"
+]
 
 private func huggingFaceResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
     if let responseFormat = request.responseFormat {
@@ -229,17 +236,20 @@ private func huggingFaceWarnings(for request: LanguageModelRequest) -> [AIWarnin
     if !request.stopSequences.isEmpty {
         warnings.append(AIWarning(type: "unsupported", feature: "stopSequences"))
     }
+    if request.messages.contains(where: { $0.role == .tool }) {
+        warnings.append(AIWarning(type: "unsupported", feature: "tool messages"))
+    }
     return warnings
 }
 
-private func huggingFaceInputMessage(_ message: AIMessage) -> JSONValue? {
+private func huggingFaceInputMessage(_ message: AIMessage) throws -> JSONValue? {
     switch message.role {
     case .system:
         return .object(["role": .string("system"), "content": .string(message.combinedText)])
     case .user:
         return .object([
             "role": .string("user"),
-            "content": .array(message.content.compactMap(huggingFaceInputContentPart))
+            "content": .array(try message.content.compactMap(huggingFaceInputContentPart))
         ])
     case .assistant:
         return .object([
@@ -251,14 +261,16 @@ private func huggingFaceInputMessage(_ message: AIMessage) -> JSONValue? {
     }
 }
 
-private func huggingFaceInputContentPart(_ part: AIContentPart) -> JSONValue? {
+private func huggingFaceInputContentPart(_ part: AIContentPart) throws -> JSONValue? {
     switch part {
     case let .text(text):
         return .object(["type": .string("input_text"), "text": .string(text)])
     case let .imageURL(url):
         return .object(["type": .string("input_image"), "image_url": .string(url)])
     case let .data(mimeType, data), let .file(mimeType, data, _):
-        guard mimeType.lowercased().hasPrefix("image/") else { return nil }
+        guard mimeType.lowercased().hasPrefix("image/") else {
+            throw AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API only supports image file parts; got \(mimeType).")
+        }
         return .object([
             "type": .string("input_image"),
             "image_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")
@@ -285,7 +297,13 @@ private func huggingFaceToolChoice(from value: JSONValue?) -> JSONValue? {
        let type = object["type"]?.stringValue,
        type == "tool",
        let toolName = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue {
-        return .object(["type": .string("function"), "name": .string(toolName)])
+        return .object([
+            "type": .string("function"),
+            "function": .object(["name": .string(toolName)])
+        ])
+    }
+    if value["type"]?.stringValue == "none" {
+        return nil
     }
     return value
 }

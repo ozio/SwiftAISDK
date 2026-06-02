@@ -318,7 +318,10 @@ Progress:
   upstream 3s poll cadence while keeping raw `extraBody` passthrough for
   explicit low-level overrides. Vercel now mirrors the upstream callable chat
   provider wrapper, custom base URL/header behavior, and `ai-sdk/vercel`
-  user-agent suffix over OpenAI-compatible chat. Mistral and
+  user-agent suffix over OpenAI-compatible chat. Hugging Face Responses now
+  mirrors the upstream callable/responses wrapper, scopes
+  `providerOptions.huggingface` to the responses option schema, and rejects
+  unsupported non-image file parts during message conversion. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.
