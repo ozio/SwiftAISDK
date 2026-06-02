@@ -75,6 +75,46 @@ import Testing
     #expect(request.body == Data("wav".utf8))
 }
 
+@Test func deepgramTranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
+    let model = try provider.transcriptionModel("nova-3")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("wav".utf8),
+            providerOptions: ["deepgram": .string("invalid")]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("wav".utf8),
+            providerOptions: ["deepgram": .object(["detectLanguage": .string("true")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("wav".utf8),
+            providerOptions: ["deepgram": .object(["summarize": .bool(true)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("wav".utf8),
+            providerOptions: ["deepgram": .object(["redact": .array([.string("ssn"), .number(123)])])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("wav".utf8),
+            providerOptions: ["deepgram": .object(["uttSplit": .string("0.8")])]
+        ))
+    }
+}
+
 @Test func deepgramTranscriptionIgnoresStandardLanguageLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"results":{"channels":[{"alternatives":[{"transcript":"hello","words":[]}]}]}}
@@ -219,6 +259,60 @@ import Testing
     #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?bit_rate=48000&callback=https%3A%2F%2Fexample.com%2Fcallback&callback_method=POST&encoding=mp3&mip_opt_out=true&model=aura-2-helena-en&tag=tag1%2Ctag2")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
+}
+
+@Test func deepgramSpeechProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
+    let model = try provider.speechModel("aura-2-helena-en")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["deepgram": .number(1)]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["deepgram": .object(["bitRate": .bool(true)])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["deepgram": .object(["sampleRate": .string("24000")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["deepgram": .object(["callback": .string("not-a-url")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["deepgram": .object(["callbackMethod": .string("PATCH")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["deepgram": .object(["mipOptOut": .string("true")])]
+        ))
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.speak(SpeechRequest(
+            text: "Hello",
+            providerOptions: ["deepgram": .object(["tag": .array([.string("ok"), .object(["bad": true])])])]
+        ))
+    }
 }
 
 @Test func deepgramSpeechWarnsForUnsupportedStandardOptions() async throws {

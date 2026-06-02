@@ -12,7 +12,7 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
-        let options = deepgramProviderOptions(from: request)
+        let options = try deepgramProviderOptions(from: request)
         var query: [String: String] = [
             "model": modelID,
             "diarize": "true"
@@ -56,7 +56,7 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = deepgramProviderOptions(from: request)
+        let options = try deepgramProviderOptions(from: request)
         var query = deepgramSpeechQuery(for: request.format)
         query["model"] = modelID
         let prepared = deepgramSpeechOptions(from: options, current: query, request: request, modelID: modelID)
@@ -759,26 +759,101 @@ private func deepgramProviderOptions(from extraBody: [String: JSONValue]) -> [St
     return output
 }
 
-private func deepgramProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    deepgramProviderOptions(
+private func deepgramProviderOptions(from request: AudioTranscriptionRequest) throws -> [String: JSONValue] {
+    try deepgramProviderOptions(
         extraBody: request.extraBody,
         providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: deepgramTranscriptionProviderOptionKeys
+        supportedProviderOptionKeys: deepgramTranscriptionProviderOptionKeys,
+        validateProviderOptions: deepgramValidateTranscriptionProviderOptions
     )
 }
 
-private func deepgramProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    deepgramProviderOptions(
+private func deepgramProviderOptions(from request: SpeechRequest) throws -> [String: JSONValue] {
+    try deepgramProviderOptions(
         extraBody: request.extraBody,
         providerOptions: request.providerOptions,
-        supportedProviderOptionKeys: deepgramSpeechProviderOptionKeys
+        supportedProviderOptionKeys: deepgramSpeechProviderOptionKeys,
+        validateProviderOptions: deepgramValidateSpeechProviderOptions
     )
 }
 
-private func deepgramProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
+private func deepgramProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>, validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]) throws -> [String: JSONValue] {
     var output = deepgramProviderOptions(from: extraBody)
-    if let nested = providerOptions["deepgram"]?.objectValue {
-        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    if let deepgramOptions = providerOptions["deepgram"] {
+        guard deepgramOptions != .null else { return output }
+        guard let nested = deepgramOptions.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.deepgram", message: "Deepgram provider options must be an object.")
+        }
+        let validated = try validateProviderOptions(nested)
+        output.merge(validated.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
+    return output
+}
+
+private func deepgramValidateTranscriptionProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where deepgramTranscriptionProviderOptionKeys.contains(key) {
+        if value == .null {
+            output[key] = value
+            continue
+        }
+        switch key {
+        case "language", "replace", "search", "keyterm":
+            try deepgramRequireString(value, argument: "providerOptions.deepgram.\(key)", message: "Deepgram \(key) must be a string.")
+        case "detectLanguage", "smartFormat", "punctuate", "paragraphs", "topics", "intents", "sentiment", "detectEntities", "diarize", "utterances", "fillerWords":
+            try deepgramRequireBoolean(value, argument: "providerOptions.deepgram.\(key)", message: "Deepgram \(key) must be a boolean.")
+        case "summarize":
+            guard value == .bool(false) || value.stringValue == "v2" else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepgram.summarize", message: "Deepgram summarize must be v2 or false.")
+            }
+        case "redact":
+            try deepgramRequireStringOrStringArray(value, argument: "providerOptions.deepgram.redact", message: "Deepgram redact must be a string or an array of strings.")
+        case "uttSplit":
+            guard value.doubleValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepgram.uttSplit", message: "Deepgram uttSplit must be a number.")
+            }
+        default:
+            break
+        }
+        output[key] = value
+    }
+    return output
+}
+
+private func deepgramValidateSpeechProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where deepgramSpeechProviderOptionKeys.contains(key) {
+        if value == .null {
+            output[key] = value
+            continue
+        }
+        switch key {
+        case "bitRate":
+            guard value.doubleValue != nil || value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepgram.bitRate", message: "Deepgram bitRate must be a number or string.")
+            }
+        case "container", "encoding":
+            try deepgramRequireString(value, argument: "providerOptions.deepgram.\(key)", message: "Deepgram \(key) must be a string.")
+        case "sampleRate":
+            guard value.doubleValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepgram.sampleRate", message: "Deepgram sampleRate must be a number.")
+            }
+        case "callback":
+            guard let callback = value.stringValue, deepgramIsURL(callback) else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepgram.callback", message: "Deepgram callback must be a valid URL.")
+            }
+        case "callbackMethod":
+            guard let method = value.stringValue, ["POST", "PUT"].contains(method) else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepgram.callbackMethod", message: "Deepgram callbackMethod must be POST or PUT.")
+            }
+        case "mipOptOut":
+            try deepgramRequireBoolean(value, argument: "providerOptions.deepgram.mipOptOut", message: "Deepgram mipOptOut must be a boolean.")
+        case "tag":
+            try deepgramRequireStringOrStringArray(value, argument: "providerOptions.deepgram.tag", message: "Deepgram tag must be a string or an array of strings.")
+        default:
+            break
+        }
+        output[key] = value
     }
     return output
 }
@@ -1663,6 +1738,33 @@ private func deepgramQueryValue(_ value: JSONValue) -> String? {
         return scalar
     }
     return value.arrayValue?.compactMap(jsonScalarString).joined(separator: ",")
+}
+
+private func deepgramRequireString(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.stringValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func deepgramRequireBoolean(_ value: JSONValue, argument: String, message: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func deepgramRequireStringOrStringArray(_ value: JSONValue, argument: String, message: String) throws {
+    if value.stringValue != nil { return }
+    guard let array = value.arrayValue else {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+    for item in array where item.stringValue == nil {
+        throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func deepgramIsURL(_ value: String) -> Bool {
+    guard let components = URLComponents(string: value) else { return false }
+    return components.scheme != nil && components.host != nil
 }
 
 private func deepgramSpeechQuery(for outputFormat: String?) -> [String: String] {
