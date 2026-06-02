@@ -278,8 +278,8 @@ Progress:
   and OpenAI Responses output-text annotations now surface as `AISource`
   values plus text-end annotation metadata for both generate and stream paths,
   with context-management compaction requests, compaction custom stream parts,
-  function/custom tool item metadata, and computer-use hosted tool-call/tool-result
-  parity covered as well,
+  function/custom tool item metadata, computer-use hosted tool-call/tool-result
+  parity, tool-search output pairing, and MCP call/result parity covered as well,
   while retaining legacy deltas for existing consumers. Core video requests now expose upstream-style optional `image`,
   `resolution`, `fps`, and `seed` fields so provider ports do not have to hide
   standard video call settings inside `extraBody`. Google Generative AI

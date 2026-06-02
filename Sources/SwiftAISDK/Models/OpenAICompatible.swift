@@ -2379,6 +2379,7 @@ private func openAIResponsesSnakeCasedKey(_ key: String) -> String {
 private struct OpenAIResponsesStreamingToolCalls {
     let providerID: String
     private var buffers: [Int: OpenAICompatibleToolCallBuffer] = [:]
+    private var hostedToolSearchCallIDs: [String] = []
 
     init(providerID: String) {
         self.providerID = providerID
@@ -2389,6 +2390,14 @@ private struct OpenAIResponsesStreamingToolCalls {
         switch type {
         case "response.output_item.added":
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
+            switch item["type"]?.stringValue {
+            case "tool_search_call":
+                return handleToolSearchAdded(item: item, index: index)
+            case "tool_search_output", "mcp_call", "mcp_list_tools", "mcp_approval_request":
+                return []
+            default:
+                break
+            }
             guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
             buffers[index] = OpenAICompatibleToolCallBuffer(
                 id: toolCall.id,
@@ -2415,6 +2424,25 @@ private struct OpenAIResponsesStreamingToolCalls {
             return parts
         case "response.output_item.done":
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
+            switch item["type"]?.stringValue {
+            case "tool_search_call":
+                return handleToolSearchDone(item: item, index: index)
+            case "tool_search_output":
+                return handleToolSearchOutputDone(item: item, index: index)
+            case "mcp_call":
+                buffers[index] = nil
+                guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+                var parts: [LanguageStreamPart] = [.toolCall(toolCall)]
+                if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID) {
+                    parts.append(.toolResult(toolResult))
+                }
+                return parts
+            case "mcp_list_tools":
+                buffers[index] = nil
+                return []
+            default:
+                break
+            }
             buffers[index] = nil
             guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
             var parts: [LanguageStreamPart] = [
@@ -2432,6 +2460,51 @@ private struct OpenAIResponsesStreamingToolCalls {
             return []
         }
     }
+
+    private mutating func handleToolSearchAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        let toolCallID = item["id"]?.stringValue ?? item["call_id"]?.stringValue ?? "tool-search-call"
+        let isHosted = item["execution"]?.stringValue == "server"
+        buffers[index] = OpenAICompatibleToolCallBuffer(
+            id: toolCallID,
+            name: "tool_search",
+            arguments: "",
+            inputStarted: isHosted,
+            rawValue: item
+        )
+        guard isHosted else { return [] }
+        return [
+            .toolInputStart(id: toolCallID, name: "tool_search", providerExecuted: true)
+        ]
+    }
+
+    private mutating func handleToolSearchDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        let buffer = buffers[index]
+        let isHosted = item["execution"]?.stringValue == "server"
+        let toolCallID = isHosted
+            ? (buffer?.id ?? item["id"]?.stringValue ?? item["call_id"]?.stringValue ?? "tool-search-call")
+            : (item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? buffer?.id ?? "tool-search-call")
+        if isHosted {
+            hostedToolSearchCallIDs.append(toolCallID)
+        }
+        buffers[index] = nil
+
+        var parts: [LanguageStreamPart] = []
+        if !isHosted {
+            parts.append(.toolInputStart(id: toolCallID, name: "tool_search"))
+        }
+        parts.append(.toolInputEnd(id: toolCallID))
+        parts.append(.toolCall(openAIResponsesToolSearchCall(from: item, id: toolCallID, providerID: providerID, providerExecuted: isHosted)))
+        return parts
+    }
+
+    private mutating func handleToolSearchOutputDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
+        buffers[index] = nil
+        let toolCallID = item["call_id"]?.stringValue ?? (hostedToolSearchCallIDs.isEmpty ? nil : hostedToolSearchCallIDs.removeFirst()) ?? item["id"]?.stringValue
+        guard let toolResult = openAIResponsesToolResult(from: item, providerID: providerID, toolCallIDOverride: toolCallID) else {
+            return []
+        }
+        return [.toolResult(toolResult)]
+    }
 }
 
 private func openAIResponsesToolCalls(from raw: JSONValue, providerID: String) -> [AIToolCall] {
@@ -2439,7 +2512,20 @@ private func openAIResponsesToolCalls(from raw: JSONValue, providerID: String) -
 }
 
 private func openAIResponsesToolResults(from raw: JSONValue, providerID: String) -> [AIToolResult] {
-    raw["output"]?.arrayValue?.compactMap { openAIResponsesToolResult(from: $0, providerID: providerID) } ?? []
+    var hostedToolSearchCallIDs: [String] = []
+    return raw["output"]?.arrayValue?.compactMap { item in
+        if item["type"]?.stringValue == "tool_search_call",
+           item["execution"]?.stringValue == "server",
+           let toolCallID = item["call_id"]?.stringValue ?? item["id"]?.stringValue {
+            hostedToolSearchCallIDs.append(toolCallID)
+            return nil
+        }
+        if item["type"]?.stringValue == "tool_search_output" {
+            let toolCallID = item["call_id"]?.stringValue ?? (hostedToolSearchCallIDs.isEmpty ? nil : hostedToolSearchCallIDs.removeFirst()) ?? item["id"]?.stringValue
+            return openAIResponsesToolResult(from: item, providerID: providerID, toolCallIDOverride: toolCallID)
+        }
+        return openAIResponsesToolResult(from: item, providerID: providerID)
+    } ?? []
 }
 
 private func openAIResponsesToolApprovalRequests(from raw: JSONValue, providerID: String) -> [AIToolApprovalRequest] {
@@ -2493,15 +2579,16 @@ private func openAIResponsesToolCall(from item: JSONValue, providerID: String) -
             rawValue: item
         )
     case "tool_search_call":
-        var input: [String: JSONValue] = [:]
-        if let arguments = item["arguments"] { input["arguments"] = arguments }
-        if let callID = item["call_id"] { input["call_id"] = callID }
+        let toolCallID = item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "tool-search-call"
+        return openAIResponsesToolSearchCall(from: item, id: toolCallID, providerID: providerID, providerExecuted: item["execution"]?.stringValue == "server")
+    case "mcp_call":
+        guard let name = item["name"]?.stringValue else { return nil }
         return AIToolCall(
-            id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "tool-search-call",
-            name: "tool_search",
-            arguments: openAIResponsesJSONString(.object(input)) ?? "{}",
-            providerExecuted: item["execution"]?.stringValue == "server",
-            providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID),
+            id: item["id"]?.stringValue ?? "mcp-call",
+            name: "mcp.\(name)",
+            arguments: item["arguments"]?.stringValue ?? "{}",
+            providerExecuted: true,
+            dynamic: true,
             rawValue: item
         )
     case "local_shell_call":
@@ -2531,7 +2618,21 @@ private func openAIResponsesToolCall(from item: JSONValue, providerID: String) -
     }
 }
 
-private func openAIResponsesToolResult(from item: JSONValue, providerID: String) -> AIToolResult? {
+private func openAIResponsesToolSearchCall(from item: JSONValue, id: String, providerID: String, providerExecuted: Bool) -> AIToolCall {
+    var input: [String: JSONValue] = [:]
+    if let arguments = item["arguments"] { input["arguments"] = arguments }
+    input["call_id"] = providerExecuted ? .null : .string(id)
+    return AIToolCall(
+        id: id,
+        name: "tool_search",
+        arguments: openAIResponsesJSONString(.object(input)) ?? "{}",
+        providerExecuted: providerExecuted,
+        providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID),
+        rawValue: item
+    )
+}
+
+private func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCallIDOverride: String? = nil) -> AIToolResult? {
     guard let type = item["type"]?.stringValue else { return nil }
     switch type {
     case "web_search_call":
@@ -2572,7 +2673,7 @@ private func openAIResponsesToolResult(from item: JSONValue, providerID: String)
         )
     case "tool_search_output":
         return AIToolResult(
-            toolCallID: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "tool-search-output",
+            toolCallID: toolCallIDOverride ?? item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "tool-search-output",
             toolName: "tool_search",
             result: .object(["tools": item["tools"] ?? .array([JSONValue]())]),
             providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID)

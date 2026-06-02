@@ -508,6 +508,44 @@ import Testing
     #expect(result.toolResults[0].result["status"]?.stringValue == "completed")
 }
 
+@Test func openAIResponsesParsesToolSearchAndMCPResultsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"resp-1","status":"completed","output":[{"type":"tool_search_call","id":"tsc_server_1","execution":"server","status":"completed","arguments":{"goal":"Find the weather tool"}},{"type":"tool_search_output","id":"tso_server_1","execution":"server","status":"completed","tools":[{"type":"function","name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"location":{"type":"string"}}},"strict":true,"defer_loading":true}]},{"type":"mcp_call","id":"mcp_1","server_label":"docs","name":"search","arguments":"{\\"query\\":\\"swift\\"}","output":"found docs"}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.4")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Find a tool and use MCP.")]))
+
+    #expect(result.text == "")
+    #expect(result.toolCalls.count == 2)
+    #expect(result.toolCalls[0].id == "tsc_server_1")
+    #expect(result.toolCalls[0].name == "tool_search")
+    #expect(result.toolCalls[0].providerExecuted == true)
+    let toolSearchInput = try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))
+    #expect(toolSearchInput["arguments"]?["goal"]?.stringValue == "Find the weather tool")
+    #expect(toolSearchInput["call_id"] == .null)
+    #expect(result.toolCalls[0].providerMetadata["openai"]?["itemId"]?.stringValue == "tsc_server_1")
+    #expect(result.toolCalls[1].id == "mcp_1")
+    #expect(result.toolCalls[1].name == "mcp.search")
+    #expect(result.toolCalls[1].providerExecuted == true)
+    #expect(result.toolCalls[1].dynamic == true)
+
+    #expect(result.toolResults.count == 2)
+    #expect(result.toolResults[0].toolCallID == "tsc_server_1")
+    #expect(result.toolResults[0].toolName == "tool_search")
+    #expect(result.toolResults[0].result["tools"]?[0]?["name"]?.stringValue == "get_weather")
+    #expect(result.toolResults[0].providerMetadata["openai"]?["itemId"]?.stringValue == "tso_server_1")
+    #expect(result.toolResults[1].toolCallID == "mcp_1")
+    #expect(result.toolResults[1].toolName == "mcp.search")
+    #expect(result.toolResults[1].dynamic == true)
+    #expect(result.toolResults[1].result["type"]?.stringValue == "call")
+    #expect(result.toolResults[1].result["serverLabel"]?.stringValue == "docs")
+    #expect(result.toolResults[1].result["name"]?.stringValue == "search")
+    #expect(result.toolResults[1].result["output"]?.stringValue == "found docs")
+    #expect(result.toolResults[1].providerMetadata["openai"]?["itemId"]?.stringValue == "mcp_1")
+}
+
 @Test func openAIResponsesParsesMCPApprovalRequests() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"resp-1","status":"completed","output":[{"type":"mcp_approval_request","id":"mcpr_1","approval_request_id":"approval-1","name":"create_short_url","arguments":"{\\"url\\":\\"https://example.com\\"}"}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}
@@ -629,6 +667,102 @@ import Testing
     #expect(toolResult?.result["type"]?.stringValue == "computer_use_tool_result")
     #expect(toolResult?.result["status"]?.stringValue == "completed")
     #expect(finishReason == "stop")
+}
+
+@Test func openAIResponsesStreamsToolSearchOutputWithFinalCallIDLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"type":"tool_search_call","id":"tsc_client_1","execution":"client","call_id":"call_provisional","status":"completed","arguments":{"goal":"Find the weather tool"}}}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call","id":"tsc_client_1","execution":"client","call_id":"call_final","status":"completed","arguments":{"goal":"Find the weather tool"}}}
+
+    data: {"type":"response.output_item.added","output_index":1,"item":{"type":"tool_search_output","id":"tso_client_1","execution":"client","call_id":"call_final","status":"completed","tools":[{"type":"function","name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"location":{"type":"string"}}},"strict":true,"defer_loading":true}]}}
+
+    data: {"type":"response.output_item.done","output_index":1,"item":{"type":"tool_search_output","id":"tso_client_1","execution":"client","call_id":"call_final","status":"completed","tools":[{"type":"function","name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"location":{"type":"string"}}},"strict":true,"defer_loading":true}]}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.4")
+
+    var lifecycle: [String] = []
+    var toolCall: AIToolCall?
+    var toolResult: AIToolResult?
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Search for a tool.")])) {
+        switch part {
+        case let .toolInputStart(id, name, providerExecuted, _, _, _):
+            lifecycle.append("start:\(id):\(name):\(providerExecuted)")
+        case let .toolInputEnd(id, _):
+            lifecycle.append("end:\(id)")
+        case let .toolCall(call):
+            toolCall = call
+        case let .toolResult(result):
+            toolResult = result
+        case let .finish(reason, _):
+            finishReason = reason
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == [
+        "start:call_final:tool_search:false",
+        "end:call_final"
+    ])
+    #expect(toolCall?.id == "call_final")
+    #expect(toolCall?.name == "tool_search")
+    #expect(toolCall?.providerExecuted == false)
+    let toolSearchInput = try decodeJSONBody(Data(try #require(toolCall?.arguments).utf8))
+    #expect(toolSearchInput["arguments"]?["goal"]?.stringValue == "Find the weather tool")
+    #expect(toolSearchInput["call_id"]?.stringValue == "call_final")
+    #expect(toolCall?.providerMetadata["openai"]?["itemId"]?.stringValue == "tsc_client_1")
+    #expect(toolResult?.toolCallID == "call_final")
+    #expect(toolResult?.toolName == "tool_search")
+    #expect(toolResult?.result["tools"]?[0]?["name"]?.stringValue == "get_weather")
+    #expect(toolResult?.providerMetadata["openai"]?["itemId"]?.stringValue == "tso_client_1")
+    #expect(finishReason == "stop")
+}
+
+@Test func openAIResponsesStreamsMCPCallResultsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"type":"mcp_call","id":"mcp_1","server_label":"docs","name":"search","arguments":"{\\"query\\":\\"swift\\"}","output":"found docs"}}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"type":"mcp_call","id":"mcp_1","server_label":"docs","name":"search","arguments":"{\\"query\\":\\"swift\\"}","output":"found docs"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.4")
+
+    var sawInputLifecycle = false
+    var toolCall: AIToolCall?
+    var toolResult: AIToolResult?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Use MCP.")])) {
+        switch part {
+        case .toolInputStart, .toolInputDelta, .toolInputEnd:
+            sawInputLifecycle = true
+        case let .toolCall(call):
+            toolCall = call
+        case let .toolResult(result):
+            toolResult = result
+        default:
+            break
+        }
+    }
+
+    #expect(sawInputLifecycle == false)
+    #expect(toolCall?.id == "mcp_1")
+    #expect(toolCall?.name == "mcp.search")
+    #expect(toolCall?.providerExecuted == true)
+    #expect(toolCall?.dynamic == true)
+    #expect(toolResult?.toolCallID == "mcp_1")
+    #expect(toolResult?.toolName == "mcp.search")
+    #expect(toolResult?.dynamic == true)
+    #expect(toolResult?.result["serverLabel"]?.stringValue == "docs")
+    #expect(toolResult?.result["output"]?.stringValue == "found docs")
+    #expect(toolResult?.providerMetadata["openai"]?["itemId"]?.stringValue == "mcp_1")
 }
 
 @Test func openAIResponsesStreamsMCPApprovalRequests() async throws {
