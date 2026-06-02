@@ -161,6 +161,94 @@ import Testing
     #expect(body["reasoning_effort"]?.stringValue == "xhigh")
 }
 
+@Test func deepSeekProviderOptionsValidateAndStripLikeUpstreamSchema() async throws {
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.deepseek", message: "DeepSeek provider options must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["deepseek": "not-an-object"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.deepseek.reasoningEffort", message: "DeepSeek reasoningEffort must be low, medium, high, xhigh, or max.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["deepseek": ["reasoningEffort": "minimal"]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.deepseek.thinking", message: "DeepSeek thinking must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["deepseek": ["thinking": "enabled"]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.deepseek.thinking.type", message: "DeepSeek thinking.type must be adaptive, enabled, or disabled.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["deepseek": ["thinking": ["type": "on"]]]
+        ))
+    }
+}
+
+@Test func deepSeekProviderOptionsStripUnknownKeysAndFilterNestedThinking() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "deepseek": [
+                "thinking": [
+                    "type": "adaptive",
+                    "unsupported": "drop-me"
+                ],
+                "reasoningEffort": "max",
+                "unsupportedProperty": "drop-me"
+            ]
+        ],
+        extraBody: [
+            "deepseek": [
+                "thinking": ["type": "enabled"],
+                "reasoningEffort": "low"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["thinking"]?["type"]?.stringValue == "adaptive")
+    #expect(body["thinking"]?["unsupported"] == nil)
+    #expect(body["reasoning_effort"]?.stringValue == "max")
+    #expect(body["unsupportedProperty"] == nil)
+    #expect(body["reasoningEffort"] == nil)
+    #expect(body["deepseek"] == nil)
+}
+
+@Test func deepSeekProviderOptionsNullNamespaceKeepsExtraBodyEscapeHatch() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["deepseek": .null],
+        extraBody: [
+            "deepseek": [
+                "thinking": ["type": "enabled"],
+                "reasoningEffort": "high"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["reasoning_effort"]?.stringValue == "high")
+}
+
 @Test func deepSeekReasoningNoneDisablesThinkingAndDropsEffort() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
     let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))

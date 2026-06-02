@@ -127,7 +127,8 @@ Impact:
   structured outputs disabled, and unsupported provider-defined tools.
   DeepSeek now requests `json_object`, injects the upstream JSON
   system instruction or schema instruction, returns compatibility and
-  unsupported-setting warnings, maps nested `deepseek` provider options plus
+  unsupported-setting warnings, schema-validates nested `deepseek` provider
+  options with upstream unknown-key stripping/null namespace behavior, maps
   top-level reasoning/frequency/presence settings, preserves
   response/provider metadata, forwards abort signals, emits text/reasoning
   stream lifecycle parts, and sends OpenAI-style function tools/tool choice.
@@ -411,7 +412,9 @@ Impact:
   about unsupported file/image user parts instead of sending OpenAI-style
   `image_url` content, provider-defined tools and unsupported tool choices
   return warnings instead of disappearing silently, `providerOptions.deepseek`
-  `reasoningEffort` passes through as upstream expects, and cache/read plus
+  schema validation strips unknown keys, filters `thinking`, rejects invalid
+  values, treats a null namespace as raw `extraBody` passthrough, and
+  `reasoningEffort` passes through as upstream expects. Cache/read plus
   reasoning token usage is preserved in rich `TokenUsage` fields.
 - Perplexity language now follows the upstream native model path more closely:
   mapped finish reasons, response/provider metadata for usage, cost, and

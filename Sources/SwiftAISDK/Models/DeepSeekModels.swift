@@ -11,7 +11,7 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = deepSeekPreparedCall(for: request, modelID: modelID, stream: false)
+        let prepared = try deepSeekPreparedCall(for: request, modelID: modelID, stream: false)
         let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
@@ -43,7 +43,7 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = deepSeekPreparedCall(for: request, modelID: modelID, stream: true)
+                    let prepared = try deepSeekPreparedCall(for: request, modelID: modelID, stream: true)
                     let response = try await config.transport.send(config.request(
                         path: "/chat/completions",
                         modelID: modelID,
@@ -149,8 +149,8 @@ private struct DeepSeekPreparedTools {
     var warnings: [AIWarning]
 }
 
-private func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> DeepSeekPreparedCall {
-    var options = deepSeekOptions(from: request)
+private func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> DeepSeekPreparedCall {
+    var options = try deepSeekOptions(from: request)
     let responseFormat = deepSeekResolvedResponseFormat(request: request, options: &options)
     let optionToolChoice = options.removeValue(forKey: "toolChoice")
     let toolChoice = request.toolChoice ?? optionToolChoice
@@ -292,15 +292,61 @@ private func deepSeekUserPartFeature(_ part: AIContentPart) -> String {
     }
 }
 
-private func deepSeekOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+private func deepSeekOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
     var output = request.extraBody
     if let nested = output.removeValue(forKey: "deepseek")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
-    if let nested = request.providerOptions["deepseek"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+    if let value = request.providerOptions["deepseek"] {
+        guard value != .null else {
+            deepSeekMoveKey("reasoningEffort", to: "reasoning_effort", in: &output)
+            return output
+        }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.deepseek", message: "DeepSeek provider options must be an object.")
+        }
+        for key in deepSeekProviderOptionKeys {
+            output.removeValue(forKey: key)
+        }
+        output.merge(try deepSeekValidateProviderOptions(nested)) { _, nested in nested }
     }
     deepSeekMoveKey("reasoningEffort", to: "reasoning_effort", in: &output)
+    return output
+}
+
+private let deepSeekProviderOptionKeys: Set<String> = ["thinking", "reasoningEffort"]
+
+private func deepSeekValidateProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where deepSeekProviderOptionKeys.contains(key) {
+        guard value != .null else {
+            throw AIError.invalidArgument(argument: "providerOptions.deepseek.\(key)", message: "DeepSeek \(key) cannot be null.")
+        }
+        switch key {
+        case "thinking":
+            guard let object = value.objectValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepseek.thinking", message: "DeepSeek thinking must be an object.")
+            }
+            var thinking: [String: JSONValue] = [:]
+            if let type = object["type"] {
+                guard type != .null else {
+                    throw AIError.invalidArgument(argument: "providerOptions.deepseek.thinking.type", message: "DeepSeek thinking.type cannot be null.")
+                }
+                guard let typeValue = type.stringValue, ["adaptive", "enabled", "disabled"].contains(typeValue) else {
+                    throw AIError.invalidArgument(argument: "providerOptions.deepseek.thinking.type", message: "DeepSeek thinking.type must be adaptive, enabled, or disabled.")
+                }
+                thinking["type"] = type
+            }
+            output[key] = .object(thinking)
+        case "reasoningEffort":
+            guard let effort = value.stringValue, ["low", "medium", "high", "xhigh", "max"].contains(effort) else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepseek.reasoningEffort", message: "DeepSeek reasoningEffort must be low, medium, high, xhigh, or max.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
     return output
 }
 
