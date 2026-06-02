@@ -3,7 +3,7 @@ import Testing
 @testable import SwiftAISDK
 
 @Test func lumaImageSubmitsPollsAndDownloadsImage() async throws {
-    let transport = lumaTransport(headers: ["luma-header": "poll"])
+    let transport = lumaTransport(submitHeaders: ["luma-header": "submit"], pollHeaders: ["luma-header": "poll"])
     let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
     let model = try provider.imageModel("photon-1")
 
@@ -24,7 +24,7 @@ import Testing
     #expect(result.base64Images == [Data("luma-png".utf8).base64EncodedString()])
     #expect(result.responseMetadata.id == "lum-1")
     #expect(result.responseMetadata.modelID == "photon-1")
-    #expect(result.responseMetadata.headers["luma-header"] == "poll")
+    #expect(result.responseMetadata.headers["luma-header"] == "submit")
     #expect(result.responseMetadata.body?["assets"]?["image"]?.stringValue == "https://luma.example.com/image.png")
 
     let requests = await transport.requests()
@@ -203,10 +203,10 @@ import Testing
     }
 }
 
-private func lumaTransport(headers: [String: String] = [:]) -> RecordingTransport {
+private func lumaTransport(submitHeaders: [String: String] = [:], pollHeaders: [String: String] = [:]) -> RecordingTransport {
     RecordingTransport(responses: [
-        jsonResponse(#"{"id":"lum-1","state":"queued","model":"photon-1"}"#),
-        jsonResponse(#"{"id":"lum-1","state":"completed","model":"photon-1","assets":{"image":"https://luma.example.com/image.png"}}"#, headers: headers),
+        jsonResponse(#"{"id":"lum-1","state":"queued","model":"photon-1"}"#, headers: submitHeaders),
+        jsonResponse(#"{"id":"lum-1","state":"completed","model":"photon-1","assets":{"image":"https://luma.example.com/image.png"}}"#, headers: pollHeaders),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("luma-png".utf8))
     ])
 }

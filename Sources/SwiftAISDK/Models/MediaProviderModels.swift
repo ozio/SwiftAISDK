@@ -748,7 +748,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
             rawValue: raw,
             warnings: warnings,
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
-            responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(from: raw, response: submitted.response, modelID: modelID)
         )
     }
 
