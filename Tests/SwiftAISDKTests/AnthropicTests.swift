@@ -170,6 +170,70 @@ import Testing
     #expect(body["messages"]?[0]?["content"]?[1]?["source"]?["data"]?.stringValue == Data("%PDF".utf8).base64EncodedString())
 }
 
+@Test func anthropicRequestConvertsProviderReferenceFilesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .text("Read these"),
+            .providerReference(mimeType: "application/pdf", reference: ["anthropic": "file_pdf", "openai": "file_openai"]),
+            .providerReference(mimeType: "image/png", reference: ["anthropic": "file_image"])
+        ])
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let betaHeader = try #require(request.headers["anthropic-beta"])
+    #expect(betaHeader.contains("files-api-2025-04-14"))
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["messages"]?[0]?["content"]?[0]?["type"]?.stringValue == "text")
+    #expect(body["messages"]?[0]?["content"]?[1]?["type"]?.stringValue == "document")
+    #expect(body["messages"]?[0]?["content"]?[1]?["source"]?["type"]?.stringValue == "file")
+    #expect(body["messages"]?[0]?["content"]?[1]?["source"]?["file_id"]?.stringValue == "file_pdf")
+    #expect(body["messages"]?[0]?["content"]?[2]?["type"]?.stringValue == "image")
+    #expect(body["messages"]?[0]?["content"]?[2]?["source"]?["type"]?.stringValue == "file")
+    #expect(body["messages"]?[0]?["content"]?[2]?["source"]?["file_id"]?.stringValue == "file_image")
+
+    let missingProvider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: RecordingTransport(responses: [])))
+    let missingModel = try missingProvider.languageModel("claude-sonnet-4-6")
+    await #expect(throws: AINoSuchProviderReferenceError(provider: "anthropic", reference: ["xai": "file_xai"])) {
+        _ = try await missingModel.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .providerReference(mimeType: "application/pdf", reference: ["xai": "file_xai"])
+            ])
+        ]))
+    }
+}
+
+@Test func anthropicAWSRequestUsesAWSProviderReferenceKeyForUploadedFiles() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"aws"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropicAWS(settings: AnthropicAWSProviderSettings(
+        region: "us-west-2",
+        workspaceID: "wrkspc_test",
+        apiKey: "aws-api-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .providerReference(mimeType: "application/pdf", reference: ["anthropic-aws": "file_aws"])
+        ])
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["anthropic-beta"]?.contains("files-api-2025-04-14") == true)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["messages"]?[0]?["content"]?[0]?["type"]?.stringValue == "document")
+    #expect(body["messages"]?[0]?["content"]?[0]?["source"]?["type"]?.stringValue == "file")
+    #expect(body["messages"]?[0]?["content"]?[0]?["source"]?["file_id"]?.stringValue == "file_aws")
+}
+
 @Test func anthropicToolsHelpersMirrorProviderExecutedToolFactories() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"tools"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}

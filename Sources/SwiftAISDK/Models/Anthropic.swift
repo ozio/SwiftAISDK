@@ -159,7 +159,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let preparedRequest = Self.body(for: request, modelID: modelID)
+        let preparedRequest = try Self.body(for: request, modelID: modelID, providerID: providerID)
         var body = preparedRequest.body
         body["stream"] = nil
         let path: String
@@ -203,7 +203,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let preparedRequest = Self.body(for: request, modelID: modelID, stream: true)
+                    let preparedRequest = try Self.body(for: request, modelID: modelID, providerID: providerID, stream: true)
                     var body = preparedRequest.body
                     let path: String
                     if providerID == "googleVertex.anthropic.messages" {
@@ -249,14 +249,15 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    fileprivate static func body(for request: LanguageModelRequest, modelID: String, stream: Bool = false) -> (body: [String: JSONValue], betas: [String]) {
+    fileprivate static func body(for request: LanguageModelRequest, modelID: String, providerID: String, stream: Bool = false) throws -> (body: [String: JSONValue], betas: [String]) {
         let systemText = request.messages
             .filter { $0.role == .system }
             .map(\.combinedText)
             .joined(separator: "\n")
-        let messages = request.messages
+        var betas: [String] = []
+        let messages = try request.messages
             .filter { $0.role != .system }
-            .map(Self.messageJSON)
+            .map { try Self.messageJSON($0, providerID: providerID, betas: &betas) }
 
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -274,12 +275,15 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         }
         body.merge(anthropicOptions(from: request.extraBody)) { _, new in new }
         applyAnthropicThinkingRules(to: &body, requestedMaxTokens: request.maxOutputTokens)
-        return (body, preparedTools.betas)
+        for beta in preparedTools.betas where !betas.contains(beta) {
+            betas.append(beta)
+        }
+        return (body, betas)
     }
 
-    private static func messageJSON(_ message: AIMessage) -> JSONValue {
+    private static func messageJSON(_ message: AIMessage, providerID: String, betas: inout [String]) throws -> JSONValue {
         let role = message.role == .assistant ? "assistant" : "user"
-        let parts = message.content.map { part -> JSONValue in
+        let parts = try message.content.map { part -> JSONValue in
             switch part {
             case let .text(text):
                 return .object(["type": .string("text"), "text": .string(text)])
@@ -330,6 +334,20 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         "data": .string(data.base64EncodedString())
                     ])
                 ])
+            case let .providerReference(mimeType, reference):
+                let provider = anthropicProviderReferenceKey(from: providerID)
+                let fileID = try resolveProviderReference(reference, provider: provider)
+                if !betas.contains("files-api-2025-04-14") {
+                    betas.append("files-api-2025-04-14")
+                }
+                let type = mimeType.lowercased().hasPrefix("image/") ? "image" : "document"
+                return .object([
+                    "type": .string(type),
+                    "source": .object([
+                        "type": .string("file"),
+                        "file_id": .string(fileID)
+                    ])
+                ])
             case let .toolCall(call):
                 return .object([
                     "type": .string("tool_use"),
@@ -343,7 +361,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     "tool_use_id": .string(result.toolCallID),
                     "content": .string(anthropicJSONString(result.modelOutput ?? result.result) ?? result.modelOutput?.stringValue ?? result.result.stringValue ?? "")
                 ])
-            case .providerReference, .toolApprovalRequest, .toolApprovalResponse:
+            case .toolApprovalRequest, .toolApprovalResponse:
                 return .object(["type": .string("text"), "text": .string("")])
             }
         }
@@ -362,7 +380,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = AnthropicLanguageModel.body(for: request, modelID: modelID)
+        let prepared = try AnthropicLanguageModel.body(for: request, modelID: modelID, providerID: providerID)
         let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
         let raw = try await config.sendJSON(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers)
         let toolCalls = anthropicToolCalls(from: raw["content"])
@@ -390,7 +408,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = AnthropicLanguageModel.body(for: request, modelID: modelID, stream: true)
+                    let prepared = try AnthropicLanguageModel.body(for: request, modelID: modelID, providerID: providerID, stream: true)
                     let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
                     let response = try await config.transport.send(try config.request(
                         path: "/model/\(bedrockEncodeModelID(modelID))/invoke-with-response-stream",
@@ -636,6 +654,13 @@ private func anthropicHeaders(_ requestHeaders: [String: String], configHeaders:
     var headers = requestHeaders
     headers["anthropic-beta"] = betaValues.joined(separator: ",")
     return headers
+}
+
+private func anthropicProviderReferenceKey(from providerID: String) -> String {
+    if providerID.hasPrefix("anthropic-aws") {
+        return "anthropic-aws"
+    }
+    return "anthropic"
 }
 
 private func amazonBedrockAnthropicBody(_ body: [String: JSONValue], betas: [String]) -> [String: JSONValue] {

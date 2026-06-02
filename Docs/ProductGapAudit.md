@@ -283,7 +283,10 @@ Progress:
   flows keep the provider submit response as metadata rather than the
   SDK-managed asset download. File and skill clients now preserve response
   metadata for OpenAI-compatible multipart files, Google resumable files, xAI
-  files, and OpenAI/Anthropic skill uploads; xAI file uploads now read
+  files, and OpenAI/Anthropic skill uploads. Anthropic and Anthropic AWS
+  messages can now consume those uploaded file provider references as
+  upstream-style image/document file-source blocks with the files API beta
+  enabled. xAI file uploads now read
   schema-validated `providerOptions.xai.teamId` like upstream, treat a null
   namespace as a no-op over raw `extraBody`, and do not forward unrelated
   file options. Those upload results also preserve safe request metadata for
