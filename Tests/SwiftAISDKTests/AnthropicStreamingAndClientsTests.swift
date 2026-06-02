@@ -218,6 +218,46 @@ import Testing
     #expect(outputTokens == 3)
 }
 
+@Test func anthropicLanguageStreamStartCarriesRequestWarnings() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var startWarnings: [AIWarning] = []
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        temperature: 0.7,
+        topP: 0.8,
+        frequencyPenalty: 0.2,
+        seed: 7
+    )) {
+        if case let .streamStart(warnings) = part {
+            startWarnings = warnings
+        }
+    }
+
+    #expect(startWarnings.contains(AIWarning(type: "unsupported", feature: "frequencyPenalty")))
+    #expect(startWarnings.contains(AIWarning(type: "unsupported", feature: "seed")))
+    #expect(startWarnings.contains {
+        $0.type == "unsupported" && $0.feature == "topP" && $0.message == "topP is not supported when temperature is set. topP is ignored."
+    })
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["top_p"] == nil)
+    #expect(body["frequency_penalty"] == nil)
+    #expect(body["seed"] == nil)
+}
+
 @Test func anthropicLanguageStreamsTextAndReasoningLifecycleLikeUpstream() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     event: content_block_start

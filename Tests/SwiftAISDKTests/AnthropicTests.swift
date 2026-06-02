@@ -168,6 +168,88 @@ import Testing
     #expect(body["messages"]?[0]?["content"]?[1]?["type"]?.stringValue == "document")
     #expect(body["messages"]?[0]?["content"]?[1]?["source"]?["media_type"]?.stringValue == "application/pdf")
     #expect(body["messages"]?[0]?["content"]?[1]?["source"]?["data"]?.stringValue == Data("%PDF".utf8).base64EncodedString())
+    #expect(result.warnings.contains {
+        $0.type == "compatibility" && $0.feature == "extended thinking"
+    })
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "temperature" && $0.message == "temperature is not supported when thinking is enabled"
+    })
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "topK" && $0.message == "topK is not supported when thinking is enabled"
+    })
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "topP" && $0.message == "topP is not supported when thinking is enabled"
+    })
+}
+
+@Test func anthropicRequestWarnsAndOmitsUnsupportedStandardSettingsLikeUpstream() async throws {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "answer": ["type": "string"]
+        ],
+        "required": ["answer"]
+    ]
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"{\\"answer\\":\\"ok\\"}"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Return JSON.")],
+        temperature: 1.4,
+        topP: 0.8,
+        topK: 12,
+        presencePenalty: 0.1,
+        frequencyPenalty: 0.2,
+        seed: 42,
+        responseFormat: .json(schema: schema),
+        extraBody: [
+            "responseFormat": ["type": "json", "schema": schema]
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["temperature"]?.doubleValue == 1)
+    #expect(body["top_p"] == nil)
+    #expect(body["top_k"]?.intValue == 12)
+    #expect(body["presence_penalty"] == nil)
+    #expect(body["frequency_penalty"] == nil)
+    #expect(body["seed"] == nil)
+    #expect(body["responseFormat"] == nil)
+    #expect(body["output_config"]?["format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["output_config"]?["format"]?["schema"]?["properties"]?["answer"]?["type"]?.stringValue == "string")
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "frequencyPenalty")))
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "presencePenalty")))
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "seed")))
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "temperature" && $0.message == "1.4 exceeds anthropic maximum of 1.0. clamped to 1.0"
+    })
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "topP" && $0.message == "topP is not supported when temperature is set. topP is ignored."
+    })
+}
+
+@Test func anthropicRequestWarnsWhenSchemaLessJSONResponseFormatIsIgnored() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Return JSON.")],
+        responseFormat: .json()
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["output_config"]?["format"] == nil)
+    #expect(result.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "responseFormat" && $0.message == "JSON response format requires a schema. The response format is ignored."
+    })
 }
 
 @Test func anthropicRequestMapsNestedProviderOptionsAndBetaHeaderLikeUpstream() async throws {
@@ -235,7 +317,7 @@ import Testing
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
     let model = try provider.languageModel("claude-sonnet-4-6")
 
-    _ = try await model.generate(LanguageModelRequest(
+    let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Hi")],
         providerOptions: [
             "anthropic": [
@@ -284,6 +366,9 @@ import Testing
     #expect(body["container"]?["skills"]?[0]?["skill_id"]?.stringValue == "skill_123")
     #expect(body["output_config"]?["task_budget"]?["total"]?.intValue == 40_000)
     #expect(body["speed"]?.stringValue == "fast")
+    #expect(result.warnings.contains {
+        $0.type == "other" && $0.message == "code execution tool is required when using skills"
+    })
 }
 
 @Test func anthropicRequestConvertsProviderReferenceFilesLikeUpstream() async throws {

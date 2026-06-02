@@ -198,6 +198,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             sources: sources,
             providerMetadata: anthropicProviderMetadata(from: raw, providerID: providerID),
             rawValue: raw,
+            warnings: preparedRequest.warnings,
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -226,6 +227,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         throw httpStatusError(provider: providerID, response: response)
                     }
                     continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    continuation.yield(.streamStart(warnings: preparedRequest.warnings))
                     var contentBlocks = AnthropicStreamingContentBlocks(providerID: providerID)
                     var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
                     var toolCalls = AnthropicStreamingToolCalls()
@@ -306,16 +308,18 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    fileprivate static func body(for request: LanguageModelRequest, modelID: String, providerID: String, stream: Bool = false) throws -> (body: [String: JSONValue], betas: [String]) {
+    fileprivate static func body(for request: LanguageModelRequest, modelID: String, providerID: String, stream: Bool = false) throws -> AnthropicPreparedCall {
         let systemText = request.messages
             .filter { $0.role == .system }
             .map(\.combinedText)
             .joined(separator: "\n")
         var betas: [String] = []
+        var warnings = anthropicStandardWarnings(for: request)
         let messages = try request.messages
             .filter { $0.role != .system }
             .map { try Self.messageJSON($0, providerID: providerID, betas: &betas) }
 
+        let temperature = anthropicClampedTemperature(request.temperature, warnings: &warnings)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "messages": .array(messages),
@@ -323,7 +327,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         ]
         if stream { body["stream"] = true }
         if !systemText.isEmpty { body["system"] = .string(systemText) }
-        if let temperature = request.temperature { body["temperature"] = .number(min(max(temperature, 0), 1)) }
+        if let temperature { body["temperature"] = .number(temperature) }
+        if let topK = request.topK { body["top_k"] = .number(Double(topK)) }
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if !request.stopSequences.isEmpty { body["stop_sequences"] = .array(request.stopSequences) }
         let preparedTools = anthropicPrepareTools(from: request.tools)
@@ -332,14 +337,27 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         }
         let providerOptions = try anthropicOptions(from: request)
         body.merge(providerOptions.body) { _, new in new }
-        applyAnthropicThinkingRules(to: &body, requestedMaxTokens: request.maxOutputTokens)
+        anthropicApplyResponseFormat(request.responseFormat, to: &body, warnings: &warnings)
+        applyAnthropicThinkingRules(
+            to: &body,
+            requestedMaxTokens: request.maxOutputTokens,
+            requestTemperature: temperature,
+            requestTopP: request.topP,
+            warnings: &warnings
+        )
+        if anthropicContainerHasSkills(body), !preparedTools.hasCodeExecution {
+            warnings.append(AIWarning(
+                type: "other",
+                message: "code execution tool is required when using skills"
+            ))
+        }
         for beta in providerOptions.betas where !betas.contains(beta) {
             betas.append(beta)
         }
         for beta in preparedTools.betas where !betas.contains(beta) {
             betas.append(beta)
         }
-        return (body, betas)
+        return AnthropicPreparedCall(body: body, betas: betas, warnings: warnings)
     }
 
     private static func messageJSON(_ message: AIMessage, providerID: String, betas: inout [String]) throws -> JSONValue {
@@ -430,6 +448,12 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
     }
 }
 
+fileprivate struct AnthropicPreparedCall {
+    var body: [String: JSONValue]
+    var betas: [String]
+    var warnings: [AIWarning]
+}
+
 public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecked Sendable {
     public let providerID = "bedrock.anthropic.messages"
     public let modelID: String
@@ -463,7 +487,8 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
             toolCalls: toolCalls,
             toolResults: toolResults,
             sources: sources,
-            rawValue: raw
+            rawValue: raw,
+            warnings: prepared.warnings
         )
     }
 
@@ -481,6 +506,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.streamStart(warnings: prepared.warnings))
 
                     var contentBlocks = AnthropicStreamingContentBlocks(providerID: providerID)
                     var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
@@ -735,6 +761,7 @@ private struct AnthropicStreamingToolCalls {
 private struct AnthropicPreparedTools {
     var tools: [JSONValue] = []
     var betas: [String] = []
+    var hasCodeExecution = false
 }
 
 private func anthropicPrepareTools(from tools: [String: JSONValue]) -> AnthropicPreparedTools {
@@ -759,11 +786,14 @@ private func anthropicPrepareTools(from tools: [String: JSONValue]) -> Anthropic
         switch id {
         case "anthropic.code_execution_20250522":
             addBeta("code-execution-2025-05-22")
+            prepared.hasCodeExecution = true
             prepared.tools.append(.object(["type": "code_execution_20250522", "name": "code_execution"]))
         case "anthropic.code_execution_20250825":
             addBeta("code-execution-2025-08-25")
+            prepared.hasCodeExecution = true
             prepared.tools.append(.object(["type": "code_execution_20250825", "name": "code_execution"]))
         case "anthropic.code_execution_20260120":
+            prepared.hasCodeExecution = true
             prepared.tools.append(.object(["type": "code_execution_20260120", "name": "code_execution"]))
         case "anthropic.computer_20241022":
             addBeta("computer-use-2024-10-22")
@@ -1641,6 +1671,7 @@ private func anthropicOptions(from extraBody: [String: JSONValue]) -> [String: J
 
     output.removeValue(forKey: "sendReasoning")
     output.removeValue(forKey: "structuredOutputMode")
+    output.removeValue(forKey: "responseFormat")
     output.removeValue(forKey: "disableParallelToolUse")
     output.removeValue(forKey: "toolStreaming")
     output.removeValue(forKey: "anthropicBeta")
@@ -1710,26 +1741,128 @@ private func anthropicContainer(_ value: JSONValue) -> JSONValue {
     return .object(object)
 }
 
-private func applyAnthropicThinkingRules(to body: inout [String: JSONValue], requestedMaxTokens: Int?) {
+private func anthropicStandardWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.frequencyPenalty != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
+    }
+    if request.presencePenalty != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty"))
+    }
+    if request.seed != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "seed"))
+    }
+    return warnings
+}
+
+private func anthropicClampedTemperature(_ temperature: Double?, warnings: inout [AIWarning]) -> Double? {
+    guard let temperature else { return nil }
+    if temperature > 1 {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "temperature",
+            message: "\(temperature) exceeds anthropic maximum of 1.0. clamped to 1.0"
+        ))
+        return 1
+    }
+    if temperature < 0 {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "temperature",
+            message: "\(temperature) is below anthropic minimum of 0. clamped to 0"
+        ))
+        return 0
+    }
+    return temperature
+}
+
+private func anthropicApplyResponseFormat(_ responseFormat: AIResponseFormat?, to body: inout [String: JSONValue], warnings: inout [AIWarning]) {
+    guard let responseFormat else { return }
+    switch responseFormat {
+    case .text:
+        return
+    case let .json(schema, _, _):
+        guard let schema else {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "responseFormat",
+                message: "JSON response format requires a schema. The response format is ignored."
+            ))
+            return
+        }
+        var outputConfig = body["output_config"]?.objectValue ?? [:]
+        outputConfig["format"] = .object([
+            "type": .string("json_schema"),
+            "schema": schema
+        ])
+        body["output_config"] = .object(outputConfig)
+    }
+}
+
+private func applyAnthropicThinkingRules(
+    to body: inout [String: JSONValue],
+    requestedMaxTokens: Int?,
+    requestTemperature: Double?,
+    requestTopP: Double?,
+    warnings: inout [AIWarning]
+) {
     guard var thinking = body["thinking"]?.objectValue,
           let type = thinking["type"]?.stringValue,
           type == "enabled" || type == "adaptive" else {
+        if requestTemperature != nil, requestTopP != nil {
+            body["top_p"] = nil
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "topP",
+                message: "topP is not supported when temperature is set. topP is ignored."
+            ))
+        }
         return
     }
 
     if type == "enabled", thinking["budget_tokens"] == nil {
         thinking["budget_tokens"] = 1024
         body["thinking"] = .object(thinking)
+        warnings.append(AIWarning(
+            type: "compatibility",
+            feature: "extended thinking",
+            message: "thinking budget is required when thinking is enabled. using default budget of 1024 tokens."
+        ))
     }
 
-    body["temperature"] = nil
-    body["top_k"] = nil
-    body["top_p"] = nil
+    if body["temperature"] != nil {
+        body["temperature"] = nil
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "temperature",
+            message: "temperature is not supported when thinking is enabled"
+        ))
+    }
+    if body["top_k"] != nil {
+        body["top_k"] = nil
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "topK",
+            message: "topK is not supported when thinking is enabled"
+        ))
+    }
+    if body["top_p"] != nil {
+        body["top_p"] = nil
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "topP",
+            message: "topP is not supported when thinking is enabled"
+        ))
+    }
 
     if type == "enabled" {
         let budget = thinking["budget_tokens"]?.intValue ?? 1024
         body["max_tokens"] = .number(Double((requestedMaxTokens ?? 1024) + budget))
     }
+}
+
+private func anthropicContainerHasSkills(_ body: [String: JSONValue]) -> Bool {
+    body["container"]?["skills"]?.arrayValue?.isEmpty == false
 }
 
 private func anthropicMoveKey(_ source: String, to destination: String, in values: inout [String: JSONValue]) {

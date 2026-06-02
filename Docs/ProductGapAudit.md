@@ -303,9 +303,15 @@ Progress:
   `providerOptions.anthropic` fields and route `anthropicBeta` values into the
   `anthropic-beta` header, including automatic beta headers for MCP servers,
   context management/compact edits, container skills, task budgets, and fast
-  mode. Anthropic streams now emit upstream-style text/reasoning lifecycle
-  parts, including `signature_delta` and redacted-thinking provider metadata,
-  while keeping legacy text/reasoning deltas. Anthropic provider-executed tool
+  mode. Anthropic language calls now return upstream-style warnings for
+  unsupported standard settings, temperature clamping, schema-less JSON response
+  formats, thinking/sampling conflicts, container skills without code execution,
+  and `temperature` plus `topP`; the same pass omits ignored fields from the
+  provider body and maps schema response formats into `output_config.format`.
+  Anthropic streams now emit upstream-style stream-start warnings plus
+  text/reasoning lifecycle parts, including `signature_delta` and
+  redacted-thinking provider metadata, while keeping legacy text/reasoning
+  deltas. Anthropic provider-executed tool
   results for web search/fetch, code execution, tool search, advisor, and MCP
   now map into `AIToolResult` for generate and stream paths. Anthropic generate
   results and stream finish metadata now expose normalized provider metadata for
