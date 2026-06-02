@@ -494,8 +494,8 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
 
     private func pollBFL(url: String, id: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let pollURL = appendQueryItemIfMissing(url: url, name: "id", value: id)
-        let started = DispatchTime.now().uptimeNanoseconds
-        while true {
+        let maxPollAttempts = bflMaxPollAttempts(intervalNanoseconds: intervalNanoseconds, timeoutNanoseconds: timeoutNanoseconds)
+        for attempt in 0..<maxPollAttempts {
             let response = try await downloadURL(pollURL, transport: config.transport, headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
@@ -506,11 +506,11 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             if status == "Error" || status == "Failed" {
                 throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation failed.")
             }
-            if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
-                throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation timed out.")
+            if attempt < maxPollAttempts - 1 {
+                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
-            try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
         }
+        throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation timed out.")
     }
 }
 
@@ -684,6 +684,12 @@ private func bflPollInterval(_ extraBody: [String: JSONValue]) -> UInt64 {
 private func bflPollTimeout(_ extraBody: [String: JSONValue]) -> UInt64 {
     let milliseconds = extraBody["pollTimeoutMillis"]?.intValue ?? 60_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
+}
+
+private func bflMaxPollAttempts(intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) -> Int {
+    let interval = max(intervalNanoseconds, 1)
+    let attempts = (timeoutNanoseconds + interval - 1) / interval
+    return max(Int(attempts), 1)
 }
 
 public final class LumaImageModel: ImageModel, @unchecked Sendable {

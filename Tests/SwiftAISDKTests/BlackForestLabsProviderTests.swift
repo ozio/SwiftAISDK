@@ -209,3 +209,31 @@ import Testing
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
     }
 }
+
+@Test func blackForestLabsImageTimesOutAfterUpstreamPollAttemptCount() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-timeout","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"status":"Pending"}"#)
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            providerOptions: [
+                "blackForestLabs": .object([
+                    "pollIntervalMillis": 1,
+                    "pollTimeoutMillis": 3
+                ])
+            ]
+        ))
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 4)
+    #expect(requests[0].method == "POST")
+    let pollRequests = requests.dropFirst()
+    #expect(pollRequests.allSatisfy { $0.method == "GET" })
+    #expect(pollRequests.allSatisfy { $0.url.absoluteString == "https://api.bfl.ai/v1/get_result?id=bfl-timeout" })
+}
