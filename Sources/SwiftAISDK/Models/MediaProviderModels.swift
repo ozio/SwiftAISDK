@@ -936,6 +936,10 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
     private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
+            try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
+            if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
+                throw AIError.invalidResponse(provider: providerID, message: "KlingAI video generation timed out.")
+            }
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
                 url: try requireURL("\(withoutTrailingSlash(config.baseURL))\(endpoint)/\(taskID)"),
@@ -952,10 +956,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             case "failed":
                 throw AIError.invalidResponse(provider: providerID, message: raw["data"]?["task_status_msg"]?.stringValue ?? "KlingAI task failed.")
             default:
-                if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
-                    throw AIError.invalidResponse(provider: providerID, message: "KlingAI video generation timed out.")
-                }
-                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
+                continue
             }
         }
     }

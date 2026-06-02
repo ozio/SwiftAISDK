@@ -184,6 +184,30 @@ import Testing
     #expect(body["duration"] == nil)
 }
 
+@Test func klingAIPollsOnlyAfterConfiguredIntervalLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "delayed-task", videoURL: "https://kling.example.com/delayed.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-t2v")
+
+    let task = Task {
+        try await model.generateVideo(VideoGenerationRequest(
+            prompt: "delayed poll",
+            providerOptions: ["klingai": .object([
+                "mode": .string("std"),
+                "pollIntervalMs": .number(100),
+                "pollTimeoutMs": .number(1_000)
+            ])]
+        ))
+    }
+
+    try await Task.sleep(nanoseconds: 20_000_000)
+    #expect((await transport.requests()).count == 1)
+
+    let result = try await task.value
+    #expect(result.urls == ["https://kling.example.com/delayed.mp4"])
+    #expect((await transport.requests()).count == 2)
+}
+
 @Test func klingAIRejectsUnknownModelsAndMissingMotionOptions() async throws {
     let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: klingAITransport()))
     let unknownModel = try provider.videoModel("unknown-model")
