@@ -2348,7 +2348,7 @@ private func humeValidatedVoice(_ value: JSONValue, argument: String) throws -> 
 private func humeSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if let format = request.format,
-       !["mp3", "pcm", "wav"].contains(format.lowercased()) {
+       !["mp3", "pcm", "wav"].contains(format) {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "outputFormat",
@@ -2716,10 +2716,10 @@ private func lmntResponseFormat(_ outputFormat: String?) -> String {
 }
 
 private func humeFormat(_ outputFormat: String?) -> String {
-    guard let outputFormat, ["mp3", "pcm", "wav"].contains(outputFormat.lowercased()) else {
+    guard let outputFormat, ["mp3", "pcm", "wav"].contains(outputFormat) else {
         return "mp3"
     }
-    return outputFormat.lowercased()
+    return outputFormat
 }
 
 private func elevenLabsOutputFormat(_ outputFormat: String?) -> String {

@@ -125,6 +125,30 @@ import Testing
     #expect(body["unsupportedProperty"] == nil)
 }
 
+@Test func humeSpeechTreatsNullProviderOptionsNamespaceAsNoop() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mp3"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        voice: "voice-id",
+        providerOptions: ["hume": .null],
+        extraBody: [
+            "hume": .object([
+                "speed": 0.8,
+                "description": "calm",
+                "context": ["generationId": "gen-123"]
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["utterances"]?[0]?["speed"]?.doubleValue == 0.8)
+    #expect(body["utterances"]?[0]?["description"]?.stringValue == "calm")
+    #expect(body["context"]?["generation_id"]?.stringValue == "gen-123")
+}
+
 @Test func humeSpeechScopesContextLikeUpstreamSchema() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/wav"], body: Data("hume".utf8)))
     let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
@@ -182,7 +206,7 @@ import Testing
     let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: RecordingTransport(response: AIHTTPResponse(statusCode: 200, body: Data()))))
     let model = try provider.speechModel("")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.hume", message: "Hume provider options must be an object.")) {
         _ = try await model.speak(SpeechRequest(
             text: "Hello",
             providerOptions: ["hume": .string("invalid")]
@@ -270,6 +294,20 @@ import Testing
     #expect(body["utterances"]?[0]?["speed"]?.doubleValue == 1.4)
     #expect(body["utterances"]?[0]?["description"]?.stringValue == "speak warmly")
     #expect(body["language"] == nil)
+}
+
+@Test func humeSpeechTreatsOutputFormatCaseSensitivelyLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("")
+
+    let result = try await model.speak(SpeechRequest(text: "Hello", format: "WAV"))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "outputFormat", message: "Unsupported output format: WAV. Using mp3 instead.")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["format"]?["type"]?.stringValue == "mp3")
 }
 
 @Test func humeSpeechWarnsAndFallsBackForUnsupportedOutputFormat() async throws {
