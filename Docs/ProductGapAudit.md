@@ -1,7 +1,7 @@
 # Product Gap Audit
 
-Snapshot date: 2026-06-01
-Upstream commit: `ab6d66482d31afe15f4973a51c5f7cfa09c92ea6`
+Snapshot date: 2026-06-02
+Upstream commit: `43e84c8e39e540aa23e25986031183227a77d531`
 
 This audit looks at the package from the top down. The provider ports are broad,
 but the product is not yet equivalent to the AI SDK experience because the
@@ -296,7 +296,13 @@ Progress:
   without storing raw audio bytes. The AI facade also fills safe fallback request
   metadata for custom embedding, media, audio, reranking, file, and skill models
   or clients that return empty metadata, keeping product-level telemetry
-  consistent across built-in and user-provided implementations. Mistral and
+  consistent across built-in and user-provided implementations. ElevenLabs
+  speech/transcription now keep `providerOptions.elevenlabs` scoped to the
+  upstream option schemas so unsupported typed keys and unrelated provider
+  namespaces cannot leak into TTS bodies or STT multipart fields, while raw
+  `extraBody` remains the explicit low-level escape hatch. ElevenLabs speech
+  also maps standard `language` and `speed`, and returns the upstream
+  unsupported warning for `instructions`. Mistral and
   Cohere chat now preserve native response metadata and stream response metadata
   for language calls, and follow the richer v4 stream lifecycle for text and
   reasoning chunks.

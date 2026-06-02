@@ -192,6 +192,7 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
         let options = elevenLabsProviderOptions(from: request)
+        let warnings = elevenLabsSpeechWarnings(for: request)
         let voice = request.voice ?? "21m00Tcm4TlvDq8ikWAM"
         var query: [String: String] = [
             "output_format": elevenLabsOutputFormat(request.format)
@@ -204,10 +205,13 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
             "text": .string(request.text),
             "model_id": .string(modelID)
         ]
-        if let language = options["languageCode"]?.stringValue ?? options["language_code"]?.stringValue {
+        if let language = request.language ?? options["languageCode"]?.stringValue ?? options["language_code"]?.stringValue {
             body["language_code"] = .string(language)
         }
         var voiceSettings: [String: JSONValue] = [:]
+        if let speed = request.speed {
+            voiceSettings["speed"] = .number(speed)
+        }
         if let speed = options["speed"] {
             voiceSettings["speed"] = speed
         }
@@ -254,6 +258,7 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
+            warnings: warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
@@ -1437,17 +1442,61 @@ private func elevenLabsProviderOptions(from extraBody: [String: JSONValue]) -> [
 }
 
 private func elevenLabsProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
-    elevenLabsProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    elevenLabsProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: elevenLabsSpeechProviderOptionKeys
+    )
 }
 
 private func elevenLabsProviderOptions(from request: AudioTranscriptionRequest) -> [String: JSONValue] {
-    elevenLabsProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+    elevenLabsProviderOptions(
+        extraBody: request.extraBody,
+        providerOptions: request.providerOptions,
+        supportedProviderOptionKeys: elevenLabsTranscriptionProviderOptionKeys
+    )
 }
 
-private func elevenLabsProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> [String: JSONValue] {
+private func elevenLabsProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue], supportedProviderOptionKeys: Set<String>) -> [String: JSONValue] {
     var output = elevenLabsProviderOptions(from: extraBody)
-    output.merge(elevenLabsProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
+    if let nested = providerOptions["elevenlabs"]?.objectValue {
+        output.merge(nested.filter { supportedProviderOptionKeys.contains($0.key) }) { _, providerValue in providerValue }
+    }
     return output
+}
+
+private let elevenLabsSpeechProviderOptionKeys: Set<String> = [
+    "languageCode",
+    "voiceSettings",
+    "pronunciationDictionaryLocators",
+    "seed",
+    "previousText",
+    "nextText",
+    "previousRequestIds",
+    "nextRequestIds",
+    "applyTextNormalization",
+    "applyLanguageTextNormalization",
+    "enableLogging"
+]
+
+private let elevenLabsTranscriptionProviderOptionKeys: Set<String> = [
+    "languageCode",
+    "tagAudioEvents",
+    "numSpeakers",
+    "timestampsGranularity",
+    "diarize",
+    "fileFormat"
+]
+
+private func elevenLabsSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
+    guard request.instructions != nil else { return [] }
+    return [
+        AIWarning(
+            type: "unsupported",
+            feature: "instructions",
+            message: "ElevenLabs speech models do not support instructions. Instructions parameter was ignored."
+        )
+    ]
 }
 
 private func elevenLabsVoiceSettings(_ value: JSONValue) -> JSONValue {

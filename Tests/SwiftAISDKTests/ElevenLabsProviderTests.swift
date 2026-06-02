@@ -31,6 +31,33 @@ import Testing
     #expect(body["voice_settings"]?["use_speaker_boost"]?.boolValue == true)
 }
 
+@Test func elevenLabsSpeechMapsStandardLanguageSpeedAndInstructionsWarning() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("eleven-audio".utf8)))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.speechModel("eleven_multilingual_v2")
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Hola",
+        voice: "voice-123",
+        speed: 1.5,
+        language: "es",
+        instructions: "Speak slowly"
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "instructions",
+            message: "ElevenLabs speech models do not support instructions. Instructions parameter was ignored."
+        )
+    ])
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["language_code"]?.stringValue == "es")
+    #expect(body["voice_settings"]?["speed"]?.doubleValue == 1.5)
+    #expect(body["instructions"] == nil)
+}
+
 @Test func elevenLabsSpeechMapsNestedExtraBodyOptionsAndMergesVoiceSettings() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("eleven-audio".utf8)))
     let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
@@ -114,8 +141,11 @@ import Testing
                 "nextRequestIds": ["next-provider"],
                 "applyTextNormalization": "on",
                 "applyLanguageTextNormalization": false,
-                "enableLogging": true
-            ])
+                "enableLogging": true,
+                "speed": 2.5,
+                "unsupportedProperty": "drop-me"
+            ]),
+            "openai": .object(["parallelToolCalls": true])
         ],
         extraBody: [
             "elevenlabs": .object([
@@ -145,6 +175,9 @@ import Testing
     #expect(body["apply_text_normalization"]?.stringValue == "on")
     #expect(body["apply_language_text_normalization"]?.boolValue == false)
     #expect(body["elevenlabs"] == nil)
+    #expect(body["openai"] == nil)
+    #expect(body["voice_settings"]?["speed"] == nil)
+    #expect(body["unsupportedProperty"] == nil)
 }
 
 @Test func elevenLabsTranscriptionUsesSpeechToTextMultipartEndpoint() async throws {
@@ -232,8 +265,10 @@ import Testing
                 "numSpeakers": 2,
                 "timestampsGranularity": "character",
                 "fileFormat": "pcm_s16le_16",
-                "diarize": true
-            ])
+                "diarize": true,
+                "unsupportedProperty": "drop-me"
+            ]),
+            "openai": .object(["timestampGranularities": ["word"]])
         ],
         extraBody: [
             "elevenlabs": .object([
@@ -262,4 +297,7 @@ import Testing
     #expect(body.contains("name=\"diarize\""))
     #expect(body.contains("true"))
     #expect(!body.contains("elevenlabs"))
+    #expect(!body.contains("unsupportedProperty"))
+    #expect(!body.contains("drop-me"))
+    #expect(!body.contains("openai"))
 }
