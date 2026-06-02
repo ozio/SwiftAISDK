@@ -1159,7 +1159,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let response = try await config.sendJSONResponse(path: "/responses", modelID: modelID, body: .object(body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
+        let response = try await config.sendJSONResponse(path: "/responses", modelID: modelID, body: .object(try body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let toolCalls = openAIResponsesToolCalls(from: raw)
         let toolApprovalRequests = openAIResponsesToolApprovalRequests(from: raw)
@@ -1188,7 +1188,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let body = body(for: request, stream: true)
+                    let body = try body(for: request, stream: true)
                     let response = try await config.transport.send(config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
@@ -1249,12 +1249,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) -> [String: JSONValue] {
+    private func body(for request: LanguageModelRequest, stream: Bool) throws -> [String: JSONValue] {
         let extraBody: [String: JSONValue]
         if isOpenAIBackedProvider(providerID) {
             extraBody = openAIResponsesProviderOptions(from: request.extraBody, providerID: providerID)
         } else if providerID.hasPrefix("xai.") {
-            extraBody = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+            extraBody = try xaiResponsesProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID)
         } else {
             extraBody = request.extraBody
         }
@@ -1419,6 +1419,71 @@ private func xaiResponsesOptions(from extraBody: [String: JSONValue]) -> [String
             include.append(.string("reasoning.encrypted_content"))
         }
         output["include"] = .array(include)
+    } else if output["include"] == .null {
+        output.removeValue(forKey: "include")
+    }
+    return output
+}
+
+private func xaiResponsesProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String) throws -> [String: JSONValue] {
+    var output = openAICompatibleProviderOptions(from: extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+    if let value = providerOptions["xai"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI responses provider options must be an object.")
+        }
+        output.merge(try xaiValidateResponsesProviderOptions(nested)) { _, nested in nested }
+    }
+    return output
+}
+
+private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    let allowedKeys: Set<String> = [
+        "reasoningEffort",
+        "reasoningSummary",
+        "logprobs",
+        "topLogprobs",
+        "store",
+        "previousResponseId",
+        "include"
+    ]
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where allowedKeys.contains(key) {
+        switch key {
+        case "reasoningEffort":
+            guard let effort = value.stringValue, ["none", "low", "medium", "high"].contains(effort) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")
+            }
+        case "reasoningSummary":
+            guard let summary = value.stringValue, ["auto", "concise", "detailed"].contains(summary) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningSummary", message: "xAI reasoningSummary must be auto, concise, or detailed.")
+            }
+        case "logprobs", "store":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.\(key)", message: "xAI \(key) must be a boolean.")
+            }
+        case "topLogprobs":
+            guard let topLogprobs = value.intValue,
+                  value.doubleValue == Double(topLogprobs),
+                  (0...8).contains(topLogprobs) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.topLogprobs", message: "xAI topLogprobs must be an integer from 0 to 8.")
+            }
+        case "previousResponseId":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.previousResponseId", message: "xAI previousResponseId must be a string.")
+            }
+        case "include":
+            if value == .null {
+                break
+            }
+            guard let values = value.arrayValue,
+                  values.allSatisfy({ $0.stringValue == "file_search_call.results" }) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.include", message: "xAI include must contain only file_search_call.results or be null.")
+            }
+        default:
+            break
+        }
+        output[key] = value
     }
     return output
 }

@@ -149,6 +149,10 @@ Impact:
   `text.format.type=json_schema`, honors `strictJsonSchema`, returns upstream
   unsupported-setting warnings, preserves response metadata, and emits
   v4-shaped stream lifecycle parts for text, reasoning, and tool inputs.
+  xAI Responses now schema-validates `providerOptions.xai` response options
+  with upstream enum/range/nullish behavior, strips unknown typed keys, maps
+  reasoning/top-logprobs/previous-response fields, and injects encrypted
+  reasoning includes when `store` is false.
   Cohere chat now maps v4 sampling settings, `response_format.type=json_object`,
   provider-scoped thinking options, function tools, and tool choice into the
   native `/v2/chat` request, returns reasoning text, preserves response

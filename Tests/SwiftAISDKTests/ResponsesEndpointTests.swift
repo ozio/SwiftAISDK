@@ -67,6 +67,112 @@ import Testing
     #expect(chatBody["xai"] == nil)
 }
 
+@Test func xAIResponsesProviderOptionsValidateAndMapLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai responses"}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.responses("grok-4")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "xai": [
+                "reasoningEffort": "high",
+                "reasoningSummary": "detailed",
+                "logprobs": false,
+                "topLogprobs": 8,
+                "store": false,
+                "previousResponseId": "resp-old",
+                "include": ["file_search_call.results"],
+                "unknown": "drop-me"
+            ]
+        ],
+        extraBody: [
+            "xai": [
+                "reasoningEffort": "low",
+                "topLogprobs": 1,
+                "unknown": "raw-kept"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["reasoning"]?["effort"]?.stringValue == "high")
+    #expect(body["reasoning"]?["summary"]?.stringValue == "detailed")
+    #expect(body["top_logprobs"]?.intValue == 8)
+    #expect(body["logprobs"]?.boolValue == false)
+    #expect(body["store"]?.boolValue == false)
+    #expect(body["previous_response_id"]?.stringValue == "resp-old")
+    #expect(body["include"]?[0]?.stringValue == "file_search_call.results")
+    #expect(body["include"]?[1]?.stringValue == "reasoning.encrypted_content")
+    #expect(body["unknown"]?.stringValue == "raw-kept")
+    #expect(body["reasoningEffort"] == nil)
+    #expect(body["reasoningSummary"] == nil)
+    #expect(body["topLogprobs"] == nil)
+    #expect(body["previousResponseId"] == nil)
+    #expect(body["xai"] == nil)
+}
+
+@Test func xAIResponsesProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.responses("grok-4")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI responses provider options must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["xai": "bad"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["xai": ["reasoningEffort": "minimal"]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.topLogprobs", message: "xAI topLogprobs must be an integer from 0 to 8.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["xai": ["topLogprobs": 9]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.include", message: "xAI include must contain only file_search_call.results or be null.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["xai": ["include": ["reasoning.encrypted_content"]]]
+        ))
+    }
+}
+
+@Test func xAIResponsesProviderOptionsNullNamespaceAndIncludeNullMatchUpstream() async throws {
+    let nullNamespaceTransport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai responses"}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: nullNamespaceTransport))
+    let model = try provider.responses("grok-4")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["xai": .null],
+        extraBody: ["xai": ["topLogprobs": 2, "store": false]]
+    ))
+
+    let nullNamespaceBody = try decodeJSONBody(try #require((await nullNamespaceTransport.requests()).first?.body))
+    #expect(nullNamespaceBody["top_logprobs"]?.intValue == 2)
+    #expect(nullNamespaceBody["include"]?[0]?.stringValue == "reasoning.encrypted_content")
+
+    let includeNullTransport = RecordingTransport(response: jsonResponse(#"{"id":"resp-2","status":"completed","output_text":"xai responses"}"#))
+    let includeNullProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: includeNullTransport))
+    let includeNullModel = try includeNullProvider.responses("grok-4")
+
+    _ = try await includeNullModel.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["xai": ["include": .null]]
+    ))
+
+    let includeNullBody = try decodeJSONBody(try #require((await includeNullTransport.requests()).first?.body))
+    #expect(includeNullBody["include"] == nil)
+}
+
 @Test func xAIToolsHelpersMirrorResponsesToolFactories() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai tools"}"#))
     let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
