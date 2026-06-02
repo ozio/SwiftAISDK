@@ -3563,6 +3563,7 @@ private func videoRequestTelemetryInput(_ request: VideoGenerationRequest) -> JS
         "resolution": request.resolution.map(JSONValue.string),
         "fps": request.fps.map(JSONValue.number),
         "seed": request.seed.map { .number(Double($0)) },
+        "count": request.count.map { .number(Double($0)) },
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
         "headers": headersTelemetryJSON(request.headers)

@@ -63,6 +63,7 @@ import Testing
         resolution: "1080p",
         fps: 30,
         seed: 42,
+        count: 2,
         providerOptions: [
             "klingai": .object([
                 "mode": "pro",
@@ -83,7 +84,7 @@ import Testing
         ]
     ))
 
-    #expect(result.warnings.map(\.feature) == ["image", "resolution", "seed", "fps"])
+    #expect(result.warnings.map(\.feature) == ["image", "resolution", "seed", "fps", "n"])
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["model_name"]?.stringValue == "kling-v3")
     #expect(body["negative_prompt"]?.stringValue == "blur")
@@ -98,6 +99,7 @@ import Testing
     #expect(body["extra_passthrough"]?.stringValue == "kept")
     #expect(body["element_list"] == nil)
     #expect(body["image"] == nil)
+    #expect(body["n"] == nil)
 }
 
 @Test func klingAII2VMapsStandardImageAndModeOptions() async throws {

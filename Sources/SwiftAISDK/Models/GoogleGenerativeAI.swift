@@ -606,7 +606,12 @@ private func googleVideoInstance(for request: VideoGenerationRequest) -> [String
 }
 
 private func googleVideoParameters(for request: VideoGenerationRequest) -> [String: JSONValue] {
-    var parameters: [String: JSONValue] = ["sampleCount": request.extraBody["sampleCount"] ?? request.extraBody["n"] ?? .number(1)]
+    var parameters: [String: JSONValue] = [:]
+    if let count = request.count {
+        parameters["sampleCount"] = .number(Double(count))
+    } else if let sampleCount = request.extraBody["sampleCount"] ?? request.extraBody["n"] {
+        parameters["sampleCount"] = sampleCount
+    }
     if let aspectRatio = request.aspectRatio {
         parameters["aspectRatio"] = .string(aspectRatio)
     }

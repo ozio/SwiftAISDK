@@ -1443,10 +1443,12 @@ private actor PrepareStepCapture {
     #expect(speechModel.requests.first?.instructions == "Warm")
 
     let videoModel = MockVideoModel(result: VideoGenerationResult(urls: ["https://example.com/video.mp4"], rawValue: .object([:])))
-    let video = try await AI.generateVideo(model: videoModel, request: VideoGenerationRequest(prompt: "clip"))
+    let video = try await AI.generateVideo(model: videoModel, request: VideoGenerationRequest(prompt: "clip", count: 2))
     #expect(video.urls == ["https://example.com/video.mp4"])
     #expect(video.requestMetadata.body?["prompt"]?.stringValue == "clip")
+    #expect(video.requestMetadata.body?["count"]?.intValue == 2)
     #expect(videoModel.requests.first?.prompt == "clip")
+    #expect(videoModel.requests.first?.count == 2)
 
     let rerankingModel = MockRerankingModel(result: RerankingResult(results: [RerankedDocument(index: 1, score: 0.9)], rawValue: .object([:])))
     let ranking = try await AI.rerank(model: rerankingModel, request: RerankingRequest(query: "q", documents: ["a", "b"], topK: 1))

@@ -308,13 +308,14 @@ import Testing
     let videoProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", baseURL: "https://api.example.com", transport: videoTransport))
     let videoModel = try videoProvider.videoModel("veo-2.0-generate-001")
     #expect(videoModel.providerID == "google.vertex.video")
-    let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat running", aspectRatio: "16:9", durationSeconds: 4))
+    let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat running", aspectRatio: "16:9", durationSeconds: 4, count: 3))
     #expect(video.operationID == "operations/123")
     let videoRequest = try #require(await videoTransport.requests().first)
     #expect(videoRequest.url.absoluteString == "https://api.example.com/models/veo-2.0-generate-001:predictLongRunning")
     let videoBody = try decodeJSONBody(try #require(videoRequest.body))
     #expect(videoBody["parameters"]?["aspectRatio"]?.stringValue == "16:9")
     #expect(videoBody["parameters"]?["durationSeconds"]?.intValue == 4)
+    #expect(videoBody["parameters"]?["sampleCount"]?.intValue == 3)
 }
 
 @Test func googleVertexImagenEditUsesReferenceImagesAndMaskOptions() async throws {

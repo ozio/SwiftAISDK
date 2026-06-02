@@ -125,6 +125,7 @@ import Testing
     let result = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
         fps: 60,
+        count: 2,
         providerOptions: [
             "bytedance": .object([
                 "watermark": false,
@@ -147,6 +148,11 @@ import Testing
             type: "unsupported",
             feature: "fps",
             message: "ByteDance video models do not support custom FPS. Frame rate is fixed at 24 fps."
+        ),
+        AIWarning(
+            type: "unsupported",
+            feature: "n",
+            message: "ByteDance video models do not support generating multiple videos per call. Only 1 video will be generated."
         )
     ])
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
@@ -161,6 +167,7 @@ import Testing
     #expect(body["customFlag"]?.stringValue == "keep-me")
     #expect(body["pollIntervalMs"] == nil)
     #expect(body["pollTimeoutMs"] == nil)
+    #expect(body["n"] == nil)
     #expect(body["bytedance"] == nil)
 }
 

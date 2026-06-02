@@ -1619,6 +1619,7 @@ public struct VideoGenerationRequest: Sendable {
     public var resolution: String?
     public var fps: Double?
     public var seed: Int?
+    public var count: Int?
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
@@ -1632,6 +1633,7 @@ public struct VideoGenerationRequest: Sendable {
         resolution: String? = nil,
         fps: Double? = nil,
         seed: Int? = nil,
+        count: Int? = nil,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
@@ -1644,6 +1646,7 @@ public struct VideoGenerationRequest: Sendable {
         self.resolution = resolution
         self.fps = fps
         self.seed = seed
+        self.count = count
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers

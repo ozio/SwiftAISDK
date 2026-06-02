@@ -1080,6 +1080,13 @@ private func klingAIWarnings(for request: VideoGenerationRequest, mode: String) 
             message: "KlingAI video models do not support custom FPS."
         ))
     }
+    if let count = request.count, count > 1 {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "n",
+            message: "KlingAI video models do not support generating multiple videos per call. Only 1 video will be generated."
+        ))
+    }
     return warnings
 }
 
@@ -1346,6 +1353,13 @@ private func byteDanceWarnings(for request: VideoGenerationRequest) -> [AIWarnin
             type: "unsupported",
             feature: "fps",
             message: "ByteDance video models do not support custom FPS. Frame rate is fixed at 24 fps."
+        ))
+    }
+    if let count = request.count, count > 1 {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "n",
+            message: "ByteDance video models do not support generating multiple videos per call. Only 1 video will be generated."
         ))
     }
     return warnings
@@ -2273,6 +2287,13 @@ private func alibabaVideoWarnings(for request: VideoGenerationRequest) -> [AIWar
             type: "unsupported",
             feature: "fps",
             message: "Alibaba video models do not support custom FPS."
+        ))
+    }
+    if let count = request.count, count > 1 {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "n",
+            message: "Alibaba video models only support generating 1 video per call."
         ))
     }
     return warnings

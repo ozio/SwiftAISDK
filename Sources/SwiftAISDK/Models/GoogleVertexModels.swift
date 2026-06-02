@@ -144,6 +144,7 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         var parameters: [String: JSONValue] = [:]
+        if let count = request.count { parameters["sampleCount"] = .number(Double(count)) }
         if let aspectRatio = request.aspectRatio { parameters["aspectRatio"] = .string(aspectRatio) }
         if let duration = request.durationSeconds { parameters["durationSeconds"] = .number(duration) }
         var body: [String: JSONValue] = [

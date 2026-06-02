@@ -303,13 +303,15 @@ import Testing
         resolution: "854x480",
         fps: 30,
         seed: 7,
+        count: 2,
         providerOptions: ["xai": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1000])]
     ))
 
     #expect(video.urls == ["https://x.ai/generated.mp4"])
     #expect(video.warnings == [
         AIWarning(type: "unsupported", feature: "fps", message: "xAI video models do not support custom FPS."),
-        AIWarning(type: "unsupported", feature: "seed", message: "xAI video models do not support seed.")
+        AIWarning(type: "unsupported", feature: "seed", message: "xAI video models do not support seed."),
+        AIWarning(type: "unsupported", feature: "n", message: "xAI video models do not support generating multiple videos per call. Only 1 video will be generated.")
     ])
     #expect(video.providerMetadata["xai"]?["requestId"]?.stringValue == "video-opts")
     #expect(video.providerMetadata["xai"]?["videoUrl"]?.stringValue == "https://x.ai/generated.mp4")
@@ -321,6 +323,7 @@ import Testing
     #expect(videoBody["image"]?["url"]?.stringValue == "data:image/png;base64,\(Data([137, 80, 78, 71]).base64EncodedString())")
     #expect(videoBody["fps"] == nil)
     #expect(videoBody["seed"] == nil)
+    #expect(videoBody["n"] == nil)
     #expect(videoBody["xai"] == nil)
 }
 

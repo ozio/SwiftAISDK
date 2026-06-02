@@ -13,10 +13,14 @@ import Testing
     let result = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
         durationSeconds: 5,
+        count: 2,
         extraBody: ["resolution": "1280x720", "promptExtend": true, "watermark": false]
     ))
 
     #expect(result.urls == ["https://dashscope.example.com/video.mp4"])
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "n", message: "Alibaba video models only support generating 1 video per call.")
+    ])
     #expect(result.operationID == "task-1")
     let requests = await transport.requests()
     #expect(requests.count == 2)
@@ -30,6 +34,7 @@ import Testing
     #expect(body["parameters"]?["size"]?.stringValue == "1280*720")
     #expect(body["parameters"]?["prompt_extend"]?.boolValue == true)
     #expect(body["parameters"]?["watermark"]?.boolValue == false)
+    #expect(body["parameters"]?["n"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://dashscope-intl.aliyuncs.com/api/v1/tasks/task-1")
 }

@@ -324,6 +324,13 @@ private func xaiVideoWarnings(for request: VideoGenerationRequest, options: [Str
             message: "xAI video models do not support seed."
         ))
     }
+    if let count = request.count, count > 1 {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "n",
+            message: "xAI video models do not support generating multiple videos per call. Only 1 video will be generated."
+        ))
+    }
     if mode == "edit-video", request.durationSeconds != nil {
         warnings.append(AIWarning(
             type: "unsupported",

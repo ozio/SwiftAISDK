@@ -342,6 +342,7 @@ import Testing
         prompt: "cat running",
         aspectRatio: "16:9",
         durationSeconds: 5,
+        count: 2,
         extraBody: ["sampleCount": 1, "resolution": "1920x1080", "seed": 42, "negativePrompt": "rain", "pollIntervalMs": 0]
     ))
 
@@ -352,7 +353,7 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["instances"]?[0]?["prompt"]?.stringValue == "cat running")
-    #expect(body["parameters"]?["sampleCount"]?.intValue == 1)
+    #expect(body["parameters"]?["sampleCount"]?.intValue == 2)
     #expect(body["parameters"]?["aspectRatio"]?.stringValue == "16:9")
     #expect(body["parameters"]?["durationSeconds"]?.intValue == 5)
     #expect(body["parameters"]?["resolution"]?.stringValue == "1080p")
