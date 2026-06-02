@@ -146,6 +146,52 @@ import Testing
     #expect(body["target_size"] == nil)
 }
 
+@Test func quiverAIProviderOptionsValidateLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-schema-validation"))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let model = try provider.imageModel("arrow-1")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.quiverai", message: "QuiverAI provider options must be an object.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": "bad"]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["operation": "paint"]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["instructions": ""]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["temperature": 3]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["topP": -0.1]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["presencePenalty": -3]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["maxOutputTokens": 1.5]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["autoCrop": "true"]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["targetSize": 127]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["temperature": nil]]))
+    }
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "Draw",
+        providerOptions: ["quiverai": .null],
+        extraBody: ["quiverai": ["temperature": 1.2]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["temperature"]?.doubleValue == 1.2)
+}
+
 @Test func quiverAIWarnsForUnsupportedStandardImageOptions() async throws {
     let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-warnings"))
     let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))

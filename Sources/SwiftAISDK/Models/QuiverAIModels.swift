@@ -11,7 +11,7 @@ public final class QuiverAIImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = quiverAIImageOptions(from: request)
+        let options = try quiverAIImageOptions(from: request)
         let operation = options.operation ?? "generate"
         let body = try quiverAIRequestBody(modelID: modelID, request: request, options: options, operation: operation)
         let path = operation == "vectorize" ? "/svgs/vectorizations" : "/svgs/generations"
@@ -58,22 +58,20 @@ private let quiverAIProviderOptionKeys: Set<String> = [
     "targetSize"
 ]
 
-private let quiverAINullableProviderOptionKeys: Set<String> = [
-    "presencePenalty"
-]
-
-private func quiverAIImageOptions(from request: ImageGenerationRequest) -> QuiverAIImageOptions {
-    quiverAIImageOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+private func quiverAIImageOptions(from request: ImageGenerationRequest) throws -> QuiverAIImageOptions {
+    try quiverAIImageOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
 }
 
-private func quiverAIImageOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) -> QuiverAIImageOptions {
+private func quiverAIImageOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) throws -> QuiverAIImageOptions {
     var output = quiverAIOptionsDictionary(from: extraBody)
-    for (key, value) in providerOptions["quiverai"]?.objectValue ?? [:] where quiverAIProviderOptionKeys.contains(key) {
-        if value == .null && !quiverAINullableProviderOptionKeys.contains(key) {
-            output.removeValue(forKey: key)
-        } else {
-            output[key] = value
+    if let value = providerOptions["quiverai"] {
+        guard value != .null else {
+            return quiverAIImageOptions(from: output)
         }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.quiverai", message: "QuiverAI provider options must be an object.")
+        }
+        output.merge(try quiverAIValidateProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return quiverAIImageOptions(from: output)
 }
@@ -98,6 +96,79 @@ private func quiverAIImageOptions(from extraBody: [String: JSONValue]) -> Quiver
         autoCrop: extraBody["autoCrop"] ?? extraBody["auto_crop"],
         targetSize: extraBody["targetSize"] ?? extraBody["target_size"]
     )
+}
+
+private func quiverAIValidateProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options where quiverAIProviderOptionKeys.contains(key) {
+        switch key {
+        case "operation":
+            try quiverAIRequireEnum(value, argument: "providerOptions.quiverai.operation", label: "operation", allowed: ["generate", "vectorize"])
+        case "instructions":
+            try quiverAIRequireNonEmptyString(value, argument: "providerOptions.quiverai.instructions", label: "instructions")
+        case "temperature":
+            try quiverAIRequireNumber(value, argument: "providerOptions.quiverai.temperature", label: "temperature", min: 0, max: 2)
+        case "topP":
+            try quiverAIRequireNumber(value, argument: "providerOptions.quiverai.topP", label: "topP", min: 0, max: 1)
+        case "presencePenalty":
+            try quiverAIRequireNumberOrNull(value, argument: "providerOptions.quiverai.presencePenalty", label: "presencePenalty", min: -2, max: 2)
+        case "maxOutputTokens":
+            try quiverAIRequireInteger(value, argument: "providerOptions.quiverai.maxOutputTokens", label: "maxOutputTokens", min: 1, max: 131_072)
+        case "autoCrop":
+            try quiverAIRequireBoolean(value, argument: "providerOptions.quiverai.autoCrop", label: "autoCrop")
+        case "targetSize":
+            try quiverAIRequireInteger(value, argument: "providerOptions.quiverai.targetSize", label: "targetSize", min: 128, max: 4096)
+        default:
+            break
+        }
+        output[key] = value
+    }
+    return output
+}
+
+private func quiverAIRequireNonEmptyString(_ value: JSONValue, argument: String, label: String) throws {
+    guard let string = value.stringValue, !string.isEmpty else {
+        throw AIError.invalidArgument(argument: argument, message: "QuiverAI \(label) must be a non-empty string.")
+    }
+}
+
+private func quiverAIRequireBoolean(_ value: JSONValue, argument: String, label: String) throws {
+    guard value.boolValue != nil else {
+        throw AIError.invalidArgument(argument: argument, message: "QuiverAI \(label) must be a boolean.")
+    }
+}
+
+private func quiverAIRequireNumber(_ value: JSONValue, argument: String, label: String, min: Double, max: Double) throws {
+    guard let number = value.doubleValue, number.isFinite else {
+        throw AIError.invalidArgument(argument: argument, message: "QuiverAI \(label) must be a number.")
+    }
+    if number < min || number > max {
+        throw AIError.invalidArgument(argument: argument, message: "QuiverAI \(label) must be between \(quiverAIFormatNumber(min)) and \(quiverAIFormatNumber(max)).")
+    }
+}
+
+private func quiverAIRequireNumberOrNull(_ value: JSONValue, argument: String, label: String, min: Double, max: Double) throws {
+    guard value != .null else { return }
+    try quiverAIRequireNumber(value, argument: argument, label: label, min: min, max: max)
+}
+
+private func quiverAIRequireInteger(_ value: JSONValue, argument: String, label: String, min: Int, max: Int) throws {
+    guard let number = value.doubleValue, number.isFinite, number.rounded() == number else {
+        throw AIError.invalidArgument(argument: argument, message: "QuiverAI \(label) must be an integer.")
+    }
+    if number < Double(min) || number > Double(max) {
+        throw AIError.invalidArgument(argument: argument, message: "QuiverAI \(label) must be an integer between \(min) and \(max).")
+    }
+}
+
+private func quiverAIRequireEnum(_ value: JSONValue, argument: String, label: String, allowed: Set<String>) throws {
+    guard let string = value.stringValue, allowed.contains(string) else {
+        throw AIError.invalidArgument(argument: argument, message: "QuiverAI \(label) must be one of \(allowed.sorted().joined(separator: ", ")).")
+    }
+}
+
+private func quiverAIFormatNumber(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(value)
 }
 
 private func quiverAIRequestBody(modelID: String, request: ImageGenerationRequest, options: QuiverAIImageOptions, operation: String) throws -> [String: JSONValue] {
