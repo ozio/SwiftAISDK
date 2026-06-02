@@ -224,6 +224,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         throw httpStatusError(provider: providerID, response: response)
                     }
                     continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    var contentBlocks = AnthropicStreamingContentBlocks(providerID: providerID)
                     var toolCalls = AnthropicStreamingToolCalls()
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
@@ -268,7 +269,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         default:
                             break
                         }
-                        for part in anthropicStreamParts(from: raw) {
+                        for part in contentBlocks.apply(event: raw) {
                             continuation.yield(part)
                         }
                         for source in anthropicSources(from: raw, citationDocuments: citationDocuments, sourceCounter: &sourceCounter) {
@@ -473,6 +474,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                         throw httpStatusError(provider: providerID, response: response)
                     }
 
+                    var contentBlocks = AnthropicStreamingContentBlocks(providerID: providerID)
                     var toolCalls = AnthropicStreamingToolCalls()
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
@@ -480,7 +482,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
-                        for part in anthropicStreamParts(from: raw) {
+                        for part in contentBlocks.apply(event: raw) {
                             continuation.yield(part)
                         }
                         for source in anthropicSources(from: raw, citationDocuments: citationDocuments, sourceCounter: &sourceCounter) {
@@ -505,6 +507,107 @@ private struct AnthropicToolCallBuffer {
     var arguments: String
     var providerExecuted: Bool
     var rawValue: JSONValue
+}
+
+private enum AnthropicStreamingContentBlock {
+    case text(providerMetadata: [String: JSONValue] = [:])
+    case reasoning(providerMetadata: [String: JSONValue] = [:])
+}
+
+private struct AnthropicStreamingContentBlocks {
+    private var blocks: [Int: AnthropicStreamingContentBlock] = [:]
+    private let providerID: String
+
+    init(providerID: String) {
+        self.providerID = providerID
+    }
+
+    mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
+        switch raw["type"]?.stringValue {
+        case "content_block_start":
+            guard let index = raw["index"]?.intValue,
+                  let block = raw["content_block"],
+                  let type = block["type"]?.stringValue else {
+                return []
+            }
+            let id = String(index)
+            switch type {
+            case "text":
+                blocks[index] = .text()
+                return [.textStart(id: id)]
+            case "thinking":
+                blocks[index] = .reasoning()
+                return [.reasoningStart(id: id)]
+            case "redacted_thinking":
+                let metadata = anthropicContentBlockProviderMetadata([
+                    "redactedData": block["data"] ?? .null
+                ], providerID: providerID)
+                blocks[index] = .reasoning(providerMetadata: metadata)
+                return [.reasoningStart(id: id, providerMetadata: metadata)]
+            case "compaction":
+                let metadata = anthropicContentBlockProviderMetadata([
+                    "type": .string("compaction")
+                ], providerID: providerID)
+                blocks[index] = .text(providerMetadata: metadata)
+                return [.textStart(id: id, providerMetadata: metadata)]
+            default:
+                return []
+            }
+        case "content_block_delta":
+            let index = raw["index"]?.intValue ?? 0
+            let id = String(index)
+            let delta = raw["delta"]
+            switch delta?["type"]?.stringValue {
+            case "text_delta":
+                guard let text = delta?["text"]?.stringValue else { return [] }
+                return [.textDelta(text), .textDeltaPart(id: id, delta: text)]
+            case "thinking_delta":
+                guard let thinking = delta?["thinking"]?.stringValue else { return [] }
+                return [.reasoningDelta(thinking), .reasoningDeltaPart(id: id, delta: thinking)]
+            case "signature_delta":
+                guard case .reasoning = blocks[index],
+                      let signature = delta?["signature"] else {
+                    return []
+                }
+                return [.reasoningDeltaPart(
+                    id: id,
+                    delta: "",
+                    providerMetadata: anthropicContentBlockProviderMetadata(["signature": signature], providerID: providerID)
+                )]
+            case "compaction_delta":
+                guard let content = delta?["content"]?.stringValue else { return [] }
+                return [.textDelta(content), .textDeltaPart(id: id, delta: content)]
+            default:
+                return []
+            }
+        case "content_block_stop":
+            guard let index = raw["index"]?.intValue,
+                  let block = blocks.removeValue(forKey: index) else {
+                return []
+            }
+            let id = String(index)
+            switch block {
+            case let .text(metadata):
+                return [.textEnd(id: id, providerMetadata: metadata)]
+            case let .reasoning(metadata):
+                return [.reasoningEnd(id: id, providerMetadata: metadata)]
+            }
+        case "message_delta":
+            return [.finish(
+                reason: anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue),
+                usage: TokenUsage(
+                    inputTokens: raw["usage"]?["input_tokens"]?.intValue,
+                    outputTokens: raw["usage"]?["output_tokens"]?.intValue
+                )
+            )]
+        default:
+            return []
+        }
+    }
+}
+
+private func anthropicContentBlockProviderMetadata(_ metadata: [String: JSONValue?], providerID: String) -> [String: JSONValue] {
+    [anthropicProviderMetadataKey(from: providerID): .object(metadata)]
 }
 
 private struct AnthropicStreamingToolCalls {

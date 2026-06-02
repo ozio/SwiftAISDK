@@ -218,6 +218,120 @@ import Testing
     #expect(outputTokens == 3)
 }
 
+@Test func anthropicLanguageStreamsTextAndReasoningLifecycleLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: content_block_start
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"think"}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig_123"}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":0}
+
+    event: content_block_start
+    data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"answer"}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":1}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var lifecycle: [String] = []
+    var legacyReasoning: [String] = []
+    var legacyText: [String] = []
+    var signature: String?
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Think, then answer.")])) {
+        switch part {
+        case let .reasoningStart(id, _):
+            lifecycle.append("reasoning-start:\(id)")
+        case let .reasoningDelta(delta):
+            legacyReasoning.append(delta)
+        case let .reasoningDeltaPart(id, delta, providerMetadata):
+            lifecycle.append("reasoning-delta:\(id):\(delta)")
+            signature = providerMetadata["anthropic"]?["signature"]?.stringValue ?? signature
+        case let .reasoningEnd(id, _):
+            lifecycle.append("reasoning-end:\(id)")
+        case let .textStart(id, _):
+            lifecycle.append("text-start:\(id)")
+        case let .textDelta(delta):
+            legacyText.append(delta)
+        case let .textDeltaPart(id, delta, _):
+            lifecycle.append("text-delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            lifecycle.append("text-end:\(id)")
+        case let .finish(reason, _):
+            finishReason = reason
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == [
+        "reasoning-start:0",
+        "reasoning-delta:0:think",
+        "reasoning-delta:0:",
+        "reasoning-end:0",
+        "text-start:1",
+        "text-delta:1:answer",
+        "text-end:1"
+    ])
+    #expect(legacyReasoning == ["think"])
+    #expect(legacyText == ["answer"])
+    #expect(signature == "sig_123")
+    #expect(finishReason == "stop")
+}
+
+@Test func anthropicLanguageStreamsRedactedThinkingLifecycleMetadataLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: content_block_start
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"encrypted-thinking"}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":0}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var startMetadata: [String: JSONValue] = [:]
+    var endMetadata: [String: JSONValue] = [:]
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Use hidden reasoning.")])) {
+        switch part {
+        case let .reasoningStart(_, providerMetadata):
+            startMetadata = providerMetadata
+        case let .reasoningEnd(_, providerMetadata):
+            endMetadata = providerMetadata
+        default:
+            break
+        }
+    }
+
+    #expect(startMetadata["anthropic"]?["redactedData"]?.stringValue == "encrypted-thinking")
+    #expect(endMetadata["anthropic"]?["redactedData"]?.stringValue == "encrypted-thinking")
+}
+
 @Test func anthropicLanguageStreamsFinishProviderMetadata() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     event: message_start

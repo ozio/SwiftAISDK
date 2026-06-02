@@ -303,9 +303,11 @@ Progress:
   `providerOptions.anthropic` fields and route `anthropicBeta` values into the
   `anthropic-beta` header, including automatic beta headers for MCP servers,
   context management/compact edits, container skills, task budgets, and fast
-  mode. Anthropic generate results and stream finish metadata now expose
-  normalized provider metadata for raw usage, stop sequence, containers, and
-  context-management applied edits. xAI file uploads now read
+  mode. Anthropic streams now emit upstream-style text/reasoning lifecycle
+  parts, including `signature_delta` and redacted-thinking provider metadata,
+  while keeping legacy text/reasoning deltas. Anthropic generate results and
+  stream finish metadata now expose normalized provider metadata for raw usage,
+  stop sequence, containers, and context-management applied edits. xAI file uploads now read
   schema-validated `providerOptions.xai.teamId` like upstream, treat a null
   namespace as a no-op over raw `extraBody`, and do not forward unrelated
   file options. Those upload results also preserve safe request metadata for

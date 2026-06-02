@@ -82,35 +82,6 @@ struct OpenAIStyleStreamingToolCalls {
     }
 }
 
-func anthropicStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
-    switch raw["type"]?.stringValue {
-    case "content_block_delta":
-        let delta = raw["delta"]
-        switch delta?["type"]?.stringValue {
-        case "text_delta":
-            return delta?["text"]?.stringValue.map { [.textDelta($0)] } ?? []
-        case "thinking_delta":
-            return delta?["thinking"]?.stringValue.map { [.reasoningDelta($0)] } ?? []
-        case "compaction_delta":
-            return delta?["content"]?.stringValue.map { [.textDelta($0)] } ?? []
-        default:
-            return []
-        }
-    case "message_delta":
-        return [.finish(
-            reason: anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue),
-            usage: TokenUsage(
-                inputTokens: raw["usage"]?["input_tokens"]?.intValue,
-                outputTokens: raw["usage"]?["output_tokens"]?.intValue
-            )
-        )]
-    case "message_stop":
-        return []
-    default:
-        return []
-    }
-}
-
 func googleStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
     var parts: [LanguageStreamPart] = []
     let contentParts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
