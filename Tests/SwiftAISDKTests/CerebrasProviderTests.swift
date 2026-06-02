@@ -89,6 +89,101 @@ import Testing
     #expect(body["strictJsonSchema"] == nil)
 }
 
+@Test func cerebrasProviderOptionsValidateKnownOpenAICompatibleSchema() async throws {
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cerebras", message: "Cerebras provider options must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["cerebras": "not-an-object"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cerebras.user", message: "Cerebras user cannot be null.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["cerebras": ["user": .null]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.openaiCompatible.reasoningEffort", message: "Cerebras reasoningEffort must be a string.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["openaiCompatible": ["reasoningEffort": 7]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cerebras.strictJsonSchema", message: "Cerebras strictJsonSchema must be a boolean.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["cerebras": ["strictJsonSchema": "yes"]]
+        ))
+    }
+}
+
+@Test func cerebrasProviderOptionsStripKnownKeysButKeepUnknownPassthrough() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-opts","model":"zai-glm-4.7","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "openaiCompatible": [
+                "user": "compat-user",
+                "customOption": "compat-extra"
+            ],
+            "cerebras": [
+                "user": "cerebras-user",
+                "reasoningEffort": "high",
+                "textVerbosity": "low",
+                "strictJsonSchema": false,
+                "customOption": "cerebras-extra"
+            ]
+        ],
+        extraBody: [
+            "customOption": "raw-extra"
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["user"]?.stringValue == "cerebras-user")
+    #expect(body["reasoning_effort"]?.stringValue == "high")
+    #expect(body["verbosity"]?.stringValue == "low")
+    #expect(body["customOption"]?.stringValue == "cerebras-extra")
+    #expect(body["reasoningEffort"] == nil)
+    #expect(body["textVerbosity"] == nil)
+    #expect(body["strictJsonSchema"] == nil)
+    #expect(body["openaiCompatible"] == nil)
+    #expect(body["cerebras"] == nil)
+}
+
+@Test func cerebrasProviderOptionsNullNamespaceKeepsExtraBodyEscapeHatch() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-opts","model":"zai-glm-4.7","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":5}}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["cerebras": .null],
+        extraBody: [
+            "cerebras": [
+                "user": "raw-user",
+                "reasoningEffort": "medium",
+                "textVerbosity": "high",
+                "customOption": "raw-extra"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["user"]?.stringValue == "raw-user")
+    #expect(body["reasoning_effort"]?.stringValue == "medium")
+    #expect(body["verbosity"]?.stringValue == "high")
+    #expect(body["customOption"]?.stringValue == "raw-extra")
+}
+
 @Test func cerebrasLanguageMapsTopLevelReasoningWhenProviderOptionAbsent() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
     let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))

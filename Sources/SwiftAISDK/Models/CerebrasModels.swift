@@ -11,7 +11,7 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = cerebrasPreparedCall(for: request, modelID: modelID, stream: false)
+        let prepared = try cerebrasPreparedCall(for: request, modelID: modelID, stream: false)
         let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
@@ -44,7 +44,7 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = cerebrasPreparedCall(for: request, modelID: modelID, stream: true)
+                    let prepared = try cerebrasPreparedCall(for: request, modelID: modelID, stream: true)
                     let response = try await config.transport.send(config.request(
                         path: "/chat/completions",
                         modelID: modelID,
@@ -147,8 +147,8 @@ private struct CerebrasPreparedTools {
     var warnings: [AIWarning]
 }
 
-private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> CerebrasPreparedCall {
-    var options = cerebrasOptions(from: request)
+private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> CerebrasPreparedCall {
+    var options = try cerebrasOptions(from: request)
     let responseFormat = cerebrasResolvedResponseFormat(request: request, options: &options)
     let toolChoiceInput = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
     var body: [String: JSONValue] = [
@@ -190,16 +190,49 @@ private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: St
     )
 }
 
-private func cerebrasOptions(from request: LanguageModelRequest) -> [String: JSONValue] {
+private func cerebrasOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
     var output = cerebrasOptions(from: request.extraBody)
-    if let deprecated = request.providerOptions["openai-compatible"]?.objectValue {
-        output.merge(deprecated) { _, nested in nested }
+    for key in ["openai-compatible", "openaiCompatible", "cerebras"] {
+        guard let value = request.providerOptions[key] else { continue }
+        guard value != .null else { continue }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.\(key)", message: "Cerebras provider options must be an object.")
+        }
+        let known = try cerebrasValidateOpenAICompatibleOptions(nested, argumentPrefix: "providerOptions.\(key)")
+        let passthrough = nested.filter { !cerebrasOpenAICompatibleOptionKeys.contains($0.key) }
+        output.merge(passthrough) { _, nested in nested }
+        output.merge(known) { _, nested in nested }
     }
-    if let compatible = request.providerOptions["openaiCompatible"]?.objectValue {
-        output.merge(compatible) { _, nested in nested }
-    }
-    if let nested = request.providerOptions["cerebras"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+    return output
+}
+
+private let cerebrasOpenAICompatibleOptionKeys: Set<String> = [
+    "user",
+    "reasoningEffort",
+    "textVerbosity",
+    "strictJsonSchema"
+]
+
+private func cerebrasValidateOpenAICompatibleOptions(_ options: [String: JSONValue], argumentPrefix: String) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for key in cerebrasOpenAICompatibleOptionKeys {
+        guard let value = options[key] else { continue }
+        guard value != .null else {
+            throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "Cerebras \(key) cannot be null.")
+        }
+        switch key {
+        case "user", "reasoningEffort", "textVerbosity":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "Cerebras \(key) must be a string.")
+            }
+        case "strictJsonSchema":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).strictJsonSchema", message: "Cerebras strictJsonSchema must be a boolean.")
+            }
+        default:
+            break
+        }
+        output[key] = value
     }
     return output
 }
