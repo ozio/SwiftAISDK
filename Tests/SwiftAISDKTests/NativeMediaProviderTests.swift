@@ -187,10 +187,12 @@ import Testing
     let imageProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: imageTransport))
     let imageModel = try imageProvider.imageModel("grok-2-image")
 
-    let image = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", size: "16:9", count: 2, extraBody: ["quality": "high", "output_format": "png"]))
+    let image = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", aspectRatio: "16:9", count: 2, extraBody: ["quality": "high", "output_format": "png"]))
 
     #expect(image.urls == ["https://x.ai/image.png"])
     #expect(image.base64Images == [Data("xai-png".utf8).base64EncodedString()])
+    #expect(image.providerMetadata["xai"]?["images"]?[0]?["revisedPrompt"]?.stringValue == "cat!")
+    #expect(image.providerMetadata["xai"]?["costInUsdTicks"]?.intValue == 123)
     let imageRequests = await imageTransport.requests()
     #expect(imageRequests.count == 2)
     let imageRequest = try #require(imageRequests.first)
@@ -214,10 +216,14 @@ import Testing
     let videoProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: videoTransport))
     let videoModel = try videoProvider.videoModel("grok-2-video")
 
-    let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat running", aspectRatio: "16:9", durationSeconds: 6, extraBody: ["resolution": "720p", "pollIntervalMs": 1]))
+    let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat running", aspectRatio: "16:9", durationSeconds: 6, resolution: "1280x720", extraBody: ["pollIntervalMs": 1]))
 
     #expect(video.urls == ["https://x.ai/video.mp4"])
     #expect(video.operationID == "vid-1")
+    #expect(video.providerMetadata["xai"]?["requestId"]?.stringValue == "vid-1")
+    #expect(video.providerMetadata["xai"]?["videoUrl"]?.stringValue == "https://x.ai/video.mp4")
+    #expect(video.providerMetadata["xai"]?["duration"]?.intValue == 6)
+    #expect(video.providerMetadata["xai"]?["progress"]?.intValue == 100)
     let requests = await videoTransport.requests()
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.x.ai/v1/videos/generations")
@@ -245,12 +251,77 @@ import Testing
     ))
 
     #expect(edit.urls == ["https://x.ai/edit.mp4"])
+    #expect(edit.warnings.contains(AIWarning(type: "unsupported", feature: "duration", message: "xAI video editing does not support custom duration.")))
+    #expect(edit.warnings.contains(AIWarning(type: "unsupported", feature: "aspectRatio", message: "xAI video editing does not support custom aspect ratio.")))
     let editRequests = await editTransport.requests()
     #expect(editRequests[0].url.absoluteString == "https://api.x.ai/v1/videos/edits")
     let editBody = try decodeJSONBody(try #require(editRequests[0].body))
     #expect(editBody["video"]?["url"]?.stringValue == "https://x.ai/source.mp4")
     #expect(editBody["aspect_ratio"] == nil)
     #expect(editBody["duration"] == nil)
+}
+
+@Test func xAIImageAndVideoWarningsProviderOptionsAndStandardInputsMatchUpstream() async throws {
+    let imageTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"xai-image","revised_prompt":"revised"}],"usage":{"cost_in_usd_ticks":321}}"#))
+    let imageProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: imageTransport))
+    let imageModel = try imageProvider.imageModel("grok-2-image")
+
+    let image = try await imageModel.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        size: "1024x1024",
+        seed: 42,
+        mask: ImageInputFile(data: Data([9, 9]), mediaType: "image/png"),
+        providerOptions: ["xai": .object(["aspect_ratio": "1:1", "quality": "high"])]
+    ))
+
+    #expect(image.base64Images == ["xai-image"])
+    #expect(image.warnings == [
+        AIWarning(type: "unsupported", feature: "size", message: "This model does not support the `size` option. Use `aspectRatio` instead."),
+        AIWarning(type: "unsupported", feature: "seed"),
+        AIWarning(type: "unsupported", feature: "mask")
+    ])
+    #expect(image.providerMetadata["xai"]?["images"]?[0]?["revisedPrompt"]?.stringValue == "revised")
+    #expect(image.providerMetadata["xai"]?["costInUsdTicks"]?.intValue == 321)
+    let imageBody = try decodeJSONBody(try #require((await imageTransport.requests()).first?.body))
+    #expect(imageBody["aspect_ratio"]?.stringValue == "1:1")
+    #expect(imageBody["quality"]?.stringValue == "high")
+    #expect(imageBody["size"] == nil)
+    #expect(imageBody["seed"] == nil)
+    #expect(imageBody["mask"] == nil)
+    #expect(imageBody["xai"] == nil)
+
+    let videoTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"video-opts"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/generated.mp4","duration":7,"respect_moderation":true},"usage":{"cost_in_usd_ticks":654},"progress":99}"#)
+    ])
+    let videoProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: videoTransport))
+    let videoModel = try videoProvider.videoModel("grok-2-video")
+
+    let video = try await videoModel.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        image: ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png"),
+        resolution: "854x480",
+        fps: 30,
+        seed: 7,
+        providerOptions: ["xai": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+    ))
+
+    #expect(video.urls == ["https://x.ai/generated.mp4"])
+    #expect(video.warnings == [
+        AIWarning(type: "unsupported", feature: "fps", message: "xAI video models do not support custom FPS."),
+        AIWarning(type: "unsupported", feature: "seed", message: "xAI video models do not support seed.")
+    ])
+    #expect(video.providerMetadata["xai"]?["requestId"]?.stringValue == "video-opts")
+    #expect(video.providerMetadata["xai"]?["videoUrl"]?.stringValue == "https://x.ai/generated.mp4")
+    #expect(video.providerMetadata["xai"]?["duration"]?.intValue == 7)
+    #expect(video.providerMetadata["xai"]?["costInUsdTicks"]?.intValue == 654)
+    #expect(video.providerMetadata["xai"]?["progress"]?.intValue == 99)
+    let videoBody = try decodeJSONBody(try #require((await videoTransport.requests()).first?.body))
+    #expect(videoBody["resolution"]?.stringValue == "480p")
+    #expect(videoBody["image"]?["url"]?.stringValue == "data:image/png;base64,\(Data([137, 80, 78, 71]).base64EncodedString())")
+    #expect(videoBody["fps"] == nil)
+    #expect(videoBody["seed"] == nil)
+    #expect(videoBody["xai"] == nil)
 }
 
 @Test func xAIMapsNestedImageEditAndVideoOptions() async throws {

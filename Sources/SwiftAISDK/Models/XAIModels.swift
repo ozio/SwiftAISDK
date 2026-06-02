@@ -94,7 +94,8 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count, count > 3 {
             throw AIError.invalidResponse(provider: providerID, message: "xAI supports at most 3 images per call.")
         }
-        let options = xaiProviderOptions(from: request.extraBody)
+        let options = xaiProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
+        let warnings = xaiImageWarnings(for: request)
         let endpoint = request.files.isEmpty ? "/images/generations" : "/images/edits"
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -102,10 +103,10 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
             "response_format": .string("b64_json")
         ]
         if let count = request.count { body["n"] = .number(Double(count)) }
-        if let aspectRatio = options["aspectRatio"] ?? options["aspect_ratio"] {
+        if let aspectRatio = request.aspectRatio {
+            body["aspect_ratio"] = .string(aspectRatio)
+        } else if let aspectRatio = options["aspectRatio"] ?? options["aspect_ratio"] {
             body["aspect_ratio"] = aspectRatio
-        } else if let size = request.size, size.contains(":") {
-            body["aspect_ratio"] = .string(size)
         }
         body.merge(xaiImageOptions(from: options)) { _, new in new }
         body.merge(xaiImageEditInputs(from: request.files)) { _, new in new }
@@ -125,6 +126,8 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
             urls: urls,
             base64Images: base64Images,
             rawValue: raw,
+            warnings: warnings,
+            providerMetadata: xaiImageProviderMetadata(from: raw),
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -154,7 +157,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = xaiProviderOptions(from: request.extraBody)
+        let options = xaiProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
         let mode = xaiVideoMode(from: options)
         let endpoint: String
         if mode == "edit-video" {
@@ -169,15 +172,31 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             "model": .string(modelID),
             "prompt": .string(request.prompt)
         ]
+        var warnings = xaiVideoWarnings(for: request, options: options, mode: mode)
         if let duration = request.durationSeconds, mode != "edit-video" {
             body["duration"] = .number(duration)
         }
         if let aspectRatio = request.aspectRatio, mode != "edit-video", mode != "extend-video" {
             body["aspect_ratio"] = .string(aspectRatio)
         }
+        if mode != "edit-video", mode != "extend-video" {
+            if let resolution = options["resolution"] {
+                body["resolution"] = resolution
+            } else if let resolution = request.resolution {
+                if let mapped = xaiVideoResolutionMap[resolution] {
+                    body["resolution"] = .string(mapped)
+                } else {
+                    warnings.append(AIWarning(
+                        type: "unsupported",
+                        feature: "resolution",
+                        message: "Unrecognized resolution \"\(resolution)\". Use providerOptions.xai.resolution with \"480p\" or \"720p\" instead."
+                    ))
+                }
+            }
+        }
         for (key, value) in options {
             switch key {
-            case "mode", "pollIntervalMs", "pollTimeoutMs":
+            case "mode", "pollIntervalMs", "pollTimeoutMs", "resolution":
                 continue
             case "videoUrl", "video_url":
                 body["video"] = .object(["url": value])
@@ -193,6 +212,9 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         }
         if let image = xaiVideoImageInput(from: options), body["image"] == nil {
             body["image"] = .object(["url": image])
+        }
+        if let image = request.image, body["image"] == nil {
+            body["image"] = .object(["url": .string(xaiImageFileURL(image))])
         }
 
         let created = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
@@ -217,6 +239,8 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             urls: [url],
             operationID: requestID,
             rawValue: raw,
+            warnings: warnings,
+            providerMetadata: xaiVideoProviderMetadata(from: raw, requestID: requestID, url: url),
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
@@ -249,13 +273,93 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
-private func xaiProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let nested = extraBody["xai"]?.objectValue {
-        return nested
-    }
+private let xaiVideoResolutionMap = [
+    "1280x720": "720p",
+    "854x480": "480p",
+    "640x480": "480p"
+]
+
+private func xaiProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
-    output.removeValue(forKey: "xai")
+    if let nested = output.removeValue(forKey: "xai")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    if let nested = providerOptions["xai"]?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
     return output
+}
+
+private func xaiImageWarnings(for request: ImageGenerationRequest) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.size != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "size",
+            message: "This model does not support the `size` option. Use `aspectRatio` instead."
+        ))
+    }
+    if request.seed != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "seed"))
+    }
+    if request.mask != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "mask"))
+    }
+    return warnings
+}
+
+private func xaiVideoWarnings(for request: VideoGenerationRequest, options: [String: JSONValue], mode: String?) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if request.fps != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "fps",
+            message: "xAI video models do not support custom FPS."
+        ))
+    }
+    if request.seed != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "seed",
+            message: "xAI video models do not support seed."
+        ))
+    }
+    if mode == "edit-video", request.durationSeconds != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "duration",
+            message: "xAI video editing does not support custom duration."
+        ))
+    }
+    if mode == "edit-video", request.aspectRatio != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "aspectRatio",
+            message: "xAI video editing does not support custom aspect ratio."
+        ))
+    }
+    if mode == "edit-video", request.resolution != nil || options["resolution"] != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "resolution",
+            message: "xAI video editing does not support custom resolution."
+        ))
+    }
+    if mode == "extend-video", request.aspectRatio != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "aspectRatio",
+            message: "xAI video extension does not support custom aspect ratio."
+        ))
+    }
+    if mode == "extend-video", request.resolution != nil || options["resolution"] != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "resolution",
+            message: "xAI video extension does not support custom resolution."
+        ))
+    }
+    return warnings
 }
 
 private func xaiImageOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
@@ -319,6 +423,39 @@ private func xaiVideoMode(from extraBody: [String: JSONValue]) -> String? {
         return "reference-to-video"
     }
     return nil
+}
+
+private func xaiImageProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [
+        "images": .array((raw["data"]?.arrayValue ?? []).map { item in
+            var image: [String: JSONValue] = [:]
+            if let revisedPrompt = item["revised_prompt"]?.stringValue {
+                image["revisedPrompt"] = .string(revisedPrompt)
+            }
+            return .object(image)
+        })
+    ]
+    if let cost = raw["usage"]?["cost_in_usd_ticks"] {
+        metadata["costInUsdTicks"] = cost
+    }
+    return ["xai": .object(metadata)]
+}
+
+private func xaiVideoProviderMetadata(from raw: JSONValue, requestID: String, url: String) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [
+        "requestId": .string(requestID),
+        "videoUrl": .string(url)
+    ]
+    if let duration = raw["video"]?["duration"] {
+        metadata["duration"] = duration
+    }
+    if let cost = raw["usage"]?["cost_in_usd_ticks"] {
+        metadata["costInUsdTicks"] = cost
+    }
+    if let progress = raw["progress"] {
+        metadata["progress"] = progress
+    }
+    return ["xai": .object(metadata)]
 }
 
 private func xaiPollTimeout(_ extraBody: [String: JSONValue]) -> UInt64 {
