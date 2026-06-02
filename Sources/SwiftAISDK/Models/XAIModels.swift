@@ -94,7 +94,7 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count, count > 3 {
             throw AIError.invalidResponse(provider: providerID, message: "xAI supports at most 3 images per call.")
         }
-        let options = xaiProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
+        let options = try xaiProviderOptions(from: request)
         let warnings = xaiImageWarnings(for: request)
         let endpoint = request.files.isEmpty ? "/images/generations" : "/images/edits"
         var body: [String: JSONValue] = [
@@ -157,7 +157,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = xaiProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
+        let options = try xaiProviderOptions(from: request)
         let mode = xaiVideoMode(from: options)
         let endpoint: String
         if mode == "edit-video" {
@@ -180,7 +180,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             body["aspect_ratio"] = .string(aspectRatio)
         }
         if mode != "edit-video", mode != "extend-video" {
-            if let resolution = options["resolution"] {
+            if let resolution = options["resolution"], resolution != .null {
                 body["resolution"] = resolution
             } else if let resolution = request.resolution {
                 if let mapped = xaiVideoResolutionMap[resolution] {
@@ -279,15 +279,99 @@ private let xaiVideoResolutionMap = [
     "640x480": "480p"
 ]
 
-private func xaiProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue]) -> [String: JSONValue] {
+private func xaiProviderOptions(from request: ImageGenerationRequest) throws -> [String: JSONValue] {
+    try xaiProviderOptions(
+        providerOptions: request.providerOptions,
+        extraBody: request.extraBody,
+        validateProviderOptions: xaiValidateImageProviderOptions
+    )
+}
+
+private func xaiProviderOptions(from request: VideoGenerationRequest) throws -> [String: JSONValue] {
+    try xaiProviderOptions(
+        providerOptions: request.providerOptions,
+        extraBody: request.extraBody,
+        validateProviderOptions: xaiValidateVideoProviderOptions
+    )
+}
+
+private func xaiProviderOptions(
+    providerOptions: [String: JSONValue],
+    extraBody: [String: JSONValue],
+    validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
     var output = extraBody
     if let nested = output.removeValue(forKey: "xai")?.objectValue {
         output.merge(nested) { _, nested in nested }
     }
-    if let nested = providerOptions["xai"]?.objectValue {
-        output.merge(nested) { _, nested in nested }
+    if let value = providerOptions["xai"] {
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI provider options must be an object.")
+        }
+        output.merge(try validateProviderOptions(nested)) { _, nested in nested }
     }
     return output
+}
+
+private func xaiValidateImageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options {
+        switch key {
+        case "aspect_ratio", "output_format", "user":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.\(key)", message: "xAI \(key) must be a string.")
+            }
+            output[key] = value
+        case "sync_mode":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.sync_mode", message: "xAI sync_mode must be a boolean.")
+            }
+            output[key] = value
+        case "resolution":
+            guard let resolution = value.stringValue, ["1k", "2k"].contains(resolution) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 1k or 2k.")
+            }
+            output[key] = value
+        case "quality":
+            guard let quality = value.stringValue, ["low", "medium", "high"].contains(quality) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.quality", message: "xAI quality must be low, medium, or high.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func xaiValidateVideoProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    for (key, value) in options {
+        switch key {
+        case "mode":
+            guard let mode = value.stringValue, ["edit-video", "extend-video", "reference-to-video"].contains(mode) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.mode", message: "xAI mode must be edit-video, extend-video, or reference-to-video.")
+            }
+        case "videoUrl":
+            guard let videoURL = value.stringValue, !videoURL.isEmpty else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.videoUrl", message: "xAI videoUrl must be a non-empty string.")
+            }
+        case "referenceImageUrls":
+            guard let urls = value.arrayValue, (1...7).contains(urls.count), urls.allSatisfy({ ($0.stringValue ?? "").isEmpty == false }) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.referenceImageUrls", message: "xAI referenceImageUrls must contain 1 to 7 non-empty strings.")
+            }
+        case "pollIntervalMs", "pollTimeoutMs":
+            guard value == .null || (value.doubleValue ?? 0) > 0 else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.\(key)", message: "xAI \(key) must be a positive number or null.")
+            }
+        case "resolution":
+            guard value == .null || ["480p", "720p"].contains(value.stringValue ?? "") else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 480p, 720p, or null.")
+            }
+        default:
+            break
+        }
+    }
+    return options
 }
 
 private func xaiImageWarnings(for request: ImageGenerationRequest) -> [AIWarning] {
