@@ -117,6 +117,75 @@ import Testing
     #expect(body["strict_json_schema"] == nil)
 }
 
+@Test func groqLanguageValidatesProviderOptionsNamespaceAndSchema() async throws {
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.languageModel("openai/gpt-oss-20b")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq", message: "Groq provider options must be an object.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["groq": "not-an-object"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.reasoningFormat", message: "Groq reasoningFormat must be parsed, raw, or hidden.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["groq": .object(["reasoningFormat": "visible"])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.reasoningEffort", message: "Groq reasoningEffort must be none, default, low, medium, or high.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["groq": .object(["reasoningEffort": "minimal"])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.parallelToolCalls", message: "Groq parallelToolCalls must be a boolean.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["groq": .object(["parallelToolCalls": "false"])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.serviceTier", message: "Groq serviceTier must be on_demand, performance, flex, or auto.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["groq": .object(["serviceTier": "priority"])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.user", message: "Groq user cannot be null.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["groq": .object(["user": .null])]
+        ))
+    }
+}
+
+@Test func groqLanguageStripsUnknownProviderOptionsKeys() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"openai/gpt-oss-20b","choices":[{"message":{"content":"answer"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.languageModel("openai/gpt-oss-20b")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "groq": .object([
+                "user": "user-123",
+                "serviceTier": "auto",
+                "unsupportedProperty": "drop-me"
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["user"]?.stringValue == "user-123")
+    #expect(body["service_tier"]?.stringValue == "auto")
+    #expect(body["unsupportedProperty"] == nil)
+}
+
 @Test func groqLanguageMapsStandardStructuredResponseFormat() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":4}}"#))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
@@ -421,4 +490,75 @@ import Testing
     #expect(bodyText.contains("verbose_json"))
     #expect(bodyText.contains("name=\"timestamp_granularities[]\""))
     #expect(bodyText.contains("segment"))
+}
+
+@Test func groqTranscriptionProviderOptionsNullishFieldsClearExtraBodyDefaults() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"nullish transcript"}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.transcriptionModel("whisper-large-v3-turbo")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("mp3".utf8),
+        fileName: "clip.mp3",
+        mimeType: "audio/mpeg",
+        providerOptions: [
+            "groq": .object([
+                "language": .null,
+                "prompt": .null,
+                "responseFormat": .null,
+                "temperature": .null,
+                "timestampGranularities": .null
+            ])
+        ],
+        extraBody: [
+            "groq": [
+                "language": "ja",
+                "prompt": "legacy prompt",
+                "responseFormat": "verbose_json",
+                "temperature": 0.4,
+                "timestampGranularities": ["word"]
+            ]
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(!bodyText.contains("name=\"language\""))
+    #expect(!bodyText.contains("name=\"prompt\""))
+    #expect(!bodyText.contains("name=\"response_format\""))
+    #expect(!bodyText.contains("name=\"temperature\""))
+    #expect(!bodyText.contains("name=\"timestamp_granularities[]\""))
+}
+
+@Test func groqTranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.transcriptionModel("whisper-large-v3")
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq", message: "Groq provider options must be an object.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["groq": "not-an-object"]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.language", message: "Groq language must be a string.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["groq": .object(["language": true])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.temperature", message: "Groq temperature must be a number between 0 and 1.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["groq": .object(["temperature": 1.2])]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.groq.timestampGranularities", message: "Groq providerOptions.groq.timestampGranularities values must be strings.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("mp3".utf8),
+            providerOptions: ["groq": .object(["timestampGranularities": ["word", 42]])]
+        ))
+    }
 }
