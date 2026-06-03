@@ -35,7 +35,8 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.prodia.com/v2/job?price=true")
-    #expect(request.headers["Authorization"] == "Bearer prodia-token")
+    #expect(request.headers["authorization"] == "Bearer prodia-token")
+    #expect(request.headers["user-agent"] == "ai-sdk/prodia/1.0.31")
     #expect(request.headers["Accept"] == "multipart/form-data")
     #expect(request.headers["Content-Type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(decoding: try #require(request.body), as: UTF8.self)
@@ -44,6 +45,25 @@ import Testing
     #expect(bodyText.contains(#""include_messages":true"#))
     #expect(bodyText.contains(#""aspect_ratio":"1:1""#))
     #expect(bodyText.contains("name=\"input\"; filename=\"input.png\""))
+}
+
+@Test func prodiaAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: prodiaMultipartResponse(parts: [
+        (name: "job", contentType: "application/json", body: Data(#"{"id":"job-custom","state":{"current":"succeeded"}}"#.utf8)),
+        (name: "output", contentType: "text/plain", body: Data("ok".utf8))
+    ], headers: [:]))
+    let provider = try AIProviders.prodia(settings: ProviderSettings(
+        apiKey: "prodia-token",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("inference.nano-banana.img2img.v2")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Describe")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer prodia-token")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/prodia/1.0.31")
 }
 
 @Test func prodiaLanguageWarnsAndStreamsGeneratedFiles() async throws {
@@ -161,7 +181,8 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.prodia.com/v2/job?price=true")
-    #expect(request.headers["Authorization"] == "Bearer prodia-token")
+    #expect(request.headers["authorization"] == "Bearer prodia-token")
+    #expect(request.headers["user-agent"] == "ai-sdk/prodia/1.0.31")
     #expect(request.headers["Accept"] == "multipart/form-data; image/png")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["type"]?.stringValue == "sdxl")
@@ -294,7 +315,8 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.prodia.com/v2/job?price=true")
-    #expect(request.headers["Authorization"] == "Bearer prodia-token")
+    #expect(request.headers["authorization"] == "Bearer prodia-token")
+    #expect(request.headers["user-agent"] == "ai-sdk/prodia/1.0.31")
     #expect(request.headers["Accept"] == "multipart/form-data; video/mp4")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["type"]?.stringValue == "veo")
