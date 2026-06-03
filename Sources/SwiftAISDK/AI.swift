@@ -242,6 +242,73 @@ public enum AI {
         )
     }
 
+    public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> AIOutputGenerationResult<FinalOutput> {
+        try await output.generateFromRequest(
+            model,
+            request,
+            retryPolicy,
+            telemetry,
+            jsonInstruction,
+            repairText
+        )
+    }
+
+    public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> AIOutputGenerationResult<FinalOutput> {
+        try await generateText(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers,
+                abortSignal: abortSignal
+            ),
+            output: output,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
+            repairText: repairText
+        )
+    }
+
     public static func generateObject<Object: Decodable & Sendable>(
         model: any LanguageModel,
         request: LanguageModelRequest,
@@ -597,6 +664,8 @@ public enum AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         values: [String],
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
         callbacks: AIObjectGenerationCallbacks<String>? = nil,
@@ -610,8 +679,8 @@ public enum AI {
         let objectRequest = objectRequest(
             from: request,
             schema: schema,
-            schemaName: nil,
-            schemaDescription: nil,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             jsonInstruction: jsonInstruction
         )
 
@@ -620,8 +689,8 @@ public enum AI {
             request: objectRequest,
             outputKind: "enum",
             schema: schema,
-            schemaName: nil,
-            schemaDescription: nil,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
             callbacks: callbacks
@@ -651,6 +720,8 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
         callbacks: AIObjectGenerationCallbacks<String>? = nil,
@@ -669,13 +740,19 @@ public enum AI {
                 seed: seed,
                 maxOutputTokens: maxOutputTokens,
                 stopSequences: stopSequences,
-                responseFormat: .json(schema: enumOutputSchema(values: values)),
+                responseFormat: .json(
+                    schema: enumOutputSchema(values: values),
+                    name: schemaName,
+                    description: schemaDescription
+                ),
                 reasoning: reasoning,
                 providerOptions: providerOptions,
                 extraBody: extraBody,
                 headers: headers
             ),
             values: values,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
             callbacks: callbacks,
@@ -687,6 +764,8 @@ public enum AI {
     public static func generateJSON(
         model: any LanguageModel,
         request: LanguageModelRequest,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
         callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
@@ -696,8 +775,8 @@ public enum AI {
         let objectRequest = objectRequest(
             from: request,
             schema: nil,
-            schemaName: nil,
-            schemaDescription: nil,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             jsonInstruction: jsonInstruction
         )
 
@@ -706,8 +785,8 @@ public enum AI {
             request: objectRequest,
             outputKind: "no-schema",
             schema: nil,
-            schemaName: nil,
-            schemaDescription: nil,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
             callbacks: callbacks
@@ -735,6 +814,8 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
         callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
@@ -753,12 +834,14 @@ public enum AI {
                 seed: seed,
                 maxOutputTokens: maxOutputTokens,
                 stopSequences: stopSequences,
-                responseFormat: .json(),
+                responseFormat: .json(name: schemaName, description: schemaDescription),
                 reasoning: reasoning,
                 providerOptions: providerOptions,
                 extraBody: extraBody,
                 headers: headers
             ),
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
             callbacks: callbacks,
@@ -1040,6 +1123,77 @@ public enum AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry
+        )
+    }
+
+    public static func streamText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
+        output.streamFromRequest(
+            model,
+            request,
+            timeoutNanoseconds,
+            retryPolicy,
+            telemetry,
+            jsonInstruction,
+            repairText
+        )
+    }
+
+    public static func streamText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: AITelemetryOptions? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
+        streamText(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers,
+                abortSignal: abortSignal
+            ),
+            output: output,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
+            repairText: repairText
         )
     }
 
@@ -1547,6 +1701,8 @@ public enum AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         values: [String],
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
@@ -1564,6 +1720,8 @@ public enum AI {
                 request: request,
                 as: AIEnumEnvelope.self,
                 schema: schema,
+                schemaName: schemaName,
+                schemaDescription: schemaDescription,
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
@@ -1591,6 +1749,8 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
@@ -1610,13 +1770,19 @@ public enum AI {
                 seed: seed,
                 maxOutputTokens: maxOutputTokens,
                 stopSequences: stopSequences,
-                responseFormat: .json(schema: enumOutputSchema(values: values)),
+                responseFormat: .json(
+                    schema: enumOutputSchema(values: values),
+                    name: schemaName,
+                    description: schemaDescription
+                ),
                 reasoning: reasoning,
                 providerOptions: providerOptions,
                 extraBody: extraBody,
                 headers: headers
             ),
             values: values,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
@@ -1629,6 +1795,8 @@ public enum AI {
     public static func streamJSON(
         model: any LanguageModel,
         request: LanguageModelRequest,
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
@@ -1640,6 +1808,8 @@ public enum AI {
             model: model,
             request: request,
             as: JSONValue.self,
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
@@ -1664,6 +1834,8 @@ public enum AI {
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
+        schemaName: String? = nil,
+        schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: AITelemetryOptions? = nil,
@@ -1683,12 +1855,14 @@ public enum AI {
                 seed: seed,
                 maxOutputTokens: maxOutputTokens,
                 stopSequences: stopSequences,
-                responseFormat: .json(),
+                responseFormat: .json(name: schemaName, description: schemaDescription),
                 reasoning: reasoning,
                 providerOptions: providerOptions,
                 extraBody: extraBody,
                 headers: headers
             ),
+            schemaName: schemaName,
+            schemaDescription: schemaDescription,
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry,

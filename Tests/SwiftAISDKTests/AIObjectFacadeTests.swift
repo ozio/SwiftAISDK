@@ -1093,6 +1093,157 @@ import Testing
     #expect(request.extraBody["responseFormat"]?["schema"] == nil)
 }
 
+@Test func outputTextRoutesThroughGenerateText() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: "plain output",
+        finishReason: "stop",
+        usage: TokenUsage(totalTokens: 2),
+        rawValue: .object([:])
+    ))
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Say hi.",
+        output: Output.text()
+    )
+
+    #expect(result.output == "plain output")
+    #expect(result.text == "plain output")
+    #expect(result.rawOutput == .string("plain output"))
+    #expect(result.finishReason == "stop")
+    #expect(result.usage?.totalTokens == 2)
+    #expect(model.requests.first?.responseFormat == nil)
+}
+
+@Test func outputObjectRoutesThroughGenerateTextAndValidatesSchema() async throws {
+    let model = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"value":"output-object","count":4}"#,
+        rawValue: .object([:])
+    ))
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Return an object.",
+        output: Output.object(
+            schema: objectFacadeAnswerSchema(),
+            name: "answer",
+            description: "Answer object.",
+            as: ObjectFacadeAnswer.self
+        )
+    )
+
+    #expect(result.output == ObjectFacadeAnswer(value: "output-object", count: 4))
+    #expect(result.rawOutput["value"]?.stringValue == "output-object")
+    #expect(result.textResult.text == #"{"value":"output-object","count":4}"#)
+
+    let request = try #require(model.requests.first)
+    #expect(request.responseFormat == .json(
+        schema: objectFacadeAnswerSchema(),
+        name: "answer",
+        description: "Answer object."
+    ))
+    #expect(request.extraBody["responseFormat"]?["name"]?.stringValue == "answer")
+}
+
+@Test func outputArrayChoiceAndJSONRouteThroughGenerateText() async throws {
+    let arrayModel = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"elements":[{"value":"one","count":1}]}"#,
+        rawValue: .object([:])
+    ))
+    let arrayResult = try await AI.generateText(
+        model: arrayModel,
+        prompt: "Return answers.",
+        output: Output.array(element: objectFacadeAnswerSchema(), as: ObjectFacadeAnswer.self)
+    )
+
+    #expect(arrayResult.output == [ObjectFacadeAnswer(value: "one", count: 1)])
+    #expect(arrayResult.rawOutput[0]?["value"]?.stringValue == "one")
+
+    let choiceModel = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"result":"fast"}"#,
+        rawValue: .object([:])
+    ))
+    let choiceResult = try await AI.generateText(
+        model: choiceModel,
+        prompt: "Choose speed.",
+        output: Output.choice(
+            options: ["slow", "fast"],
+            name: "speed",
+            description: "Speed choice."
+        )
+    )
+
+    #expect(choiceResult.output == "fast")
+    #expect(choiceResult.rawOutput == .string("fast"))
+    let choiceRequest = try #require(choiceModel.requests.first)
+    #expect(choiceRequest.responseFormat == .json(
+        schema: enumOutputSchemaForTest(values: ["slow", "fast"]),
+        name: "speed",
+        description: "Speed choice."
+    ))
+    #expect(choiceRequest.extraBody["responseFormat"]?["name"]?.stringValue == "speed")
+    #expect(choiceRequest.extraBody["responseFormat"]?["description"]?.stringValue == "Speed choice.")
+
+    let jsonModel = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"loose":true}"#,
+        rawValue: .object([:])
+    ))
+    let jsonResult = try await AI.generateText(
+        model: jsonModel,
+        prompt: "Return JSON.",
+        output: Output.json(name: "loose", description: "Loose JSON.")
+    )
+
+    #expect(jsonResult.output["loose"]?.boolValue == true)
+    #expect(jsonResult.rawOutput["loose"]?.boolValue == true)
+    let jsonRequest = try #require(jsonModel.requests.first)
+    #expect(jsonRequest.responseFormat == .json(name: "loose", description: "Loose JSON."))
+    #expect(jsonRequest.extraBody["responseFormat"]?["name"]?.stringValue == "loose")
+    #expect(jsonRequest.extraBody["responseFormat"]?["description"]?.stringValue == "Loose JSON.")
+}
+
+@Test func outputObjectStreamsThroughStreamText() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textDelta(#"{"value":"stream-output","#),
+            .textDelta(#""count":12}"#),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 6))
+        ]
+    )
+
+    var text = ""
+    var partials: [JSONValue] = []
+    var output: AIOutputGenerationResult<ObjectFacadeAnswer>?
+    var finish: (reason: String?, usage: TokenUsage?)?
+
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Stream an object.",
+        output: Output.object(schema: objectFacadeAnswerSchema(), as: ObjectFacadeAnswer.self)
+    ) {
+        switch part {
+        case let .textDelta(delta):
+            text += delta
+        case let .partialOutput(partial):
+            partials.append(partial)
+        case let .output(result):
+            output = result
+        case let .finish(reason, usage):
+            finish = (reason, usage)
+        default:
+            break
+        }
+    }
+
+    #expect(text == #"{"value":"stream-output","count":12}"#)
+    #expect(partials.contains { $0["value"]?.stringValue == "stream-output" })
+    #expect(output?.output == ObjectFacadeAnswer(value: "stream-output", count: 12))
+    #expect(output?.rawOutput["count"]?.intValue == 12)
+    #expect(finish?.reason == "stop")
+    #expect(finish?.usage?.totalTokens == 6)
+}
+
 private func objectFacadeAnswerSchema(
     includeDraftSchema: Bool = false,
     countMaximum: Int? = nil,

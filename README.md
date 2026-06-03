@@ -112,9 +112,23 @@ let result = try await AI.generateObject(
 print(result.object.title)
 ```
 
-Streaming and upstream-style JSON strategies are also available through
-`streamObject`, `generateObjectArray`, `streamObjectArray`, `generateEnum`,
-`streamEnum`, `generateJSON`, and `streamJSON`.
+The upstream-style `Output` entry point is available on `generateText` and
+`streamText` when you want one facade for text, object, array, choice, and
+schema-free JSON output:
+
+```swift
+let result = try await AI.generateText(
+    model: model,
+    prompt: "Summarize this changelog.",
+    output: Output.object(schema: schema)
+)
+
+print(result.output.title)
+```
+
+Streaming and JSON strategies are also available through `streamObject`,
+`generateObjectArray`, `streamObjectArray`, `generateEnum`, `streamEnum`,
+`generateJSON`, and `streamJSON`.
 
 ## Tools
 
