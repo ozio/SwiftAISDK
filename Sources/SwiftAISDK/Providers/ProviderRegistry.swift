@@ -314,7 +314,7 @@ public enum AIProviders {
     }
 
     public static func lmnt(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "lmnt", defaultBaseURL: "https://api.lmnt.com", authorization: .apiKeyHeader(name: "X-API-Key", environmentVariables: ["LMNT_API_KEY"]), supportedCapabilities: [.speech], settings: settings)
+        try OpenAICompatibleProvider(providerID: "lmnt", defaultBaseURL: "https://api.lmnt.com", authorization: .apiKeyHeader(name: "x-api-key", environmentVariables: ["LMNT_API_KEY"]), supportedCapabilities: [.speech], settings: settings)
     }
 
     public static func blackForestLabs(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {

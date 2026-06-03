@@ -27,7 +27,7 @@ import Testing
     #expect(result.warnings == [])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.lmnt.com/v1/ai/speech/bytes")
-    #expect(request.headers["X-API-Key"] == "lmnt-key")
+    #expect(request.headers["x-api-key"] == "lmnt-key")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "aurora")
     #expect(body["text"]?.stringValue == "Hi")
