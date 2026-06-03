@@ -142,6 +142,7 @@ record and passes tests, it leaves the active queue.
 | Package | Baseline | Evidence |
 | --- | --- | --- |
 | `@ai-sdk/gateway` | `3.0.123` | `3294e3d`, `b8f35cb`, `08b36ed`: v3 base URL, headers/user agent, OIDC fallback, typed Gateway errors. |
+| `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/huggingface` | `1.0.50` | `e6ce75a`: provider-defined tools skipped with upstream-style warning after package re-read. |
 | `@ai-sdk/fal` | `2.0.34` | `b8ebeaa`: image metadata NSFW/prompt normalization after package re-read. |
 | `@ai-sdk/quiverai` | `1.0.0` | Re-read package and local implementation; no safe remaining gap found after existing QuiverAI option/schema/response tests. |
@@ -161,6 +162,20 @@ Known Swift differences / out of scope: Async Vercel OIDC refresh/request-contex
 Tests run: GatewayTests-focused tests during the pass, then full swift test in later provider rounds.
 Commit evidence: 3294e3d, b8f35cb, 08b36ed.
 Reopen only if: gateway npm version changes, Vercel OIDC behavior becomes async-required, Gateway error schema changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/anthropic-aws`
+
+```text
+Package: @ai-sdk/anthropic-aws
+Baseline: 1.0.3
+Upstream inspected: anthropic-aws-provider.ts, anthropic-aws-fetch.ts, index.ts, version.ts, plus Anthropic core generateId call sites that the AWS wrapper forwards through.
+Swift files inspected: AnthropicAWSProvider.swift, Anthropic.swift, AnthropicTests.swift, AnthropicStreamingAndClientsTests.swift, ProviderRegistryVercelTests.swift.
+Surfaces checked: provider factory, callable/chat/messages aliases, model identity, base URL trimming, workspace/API-key headers, API-key precedence over custom x-api-key, default and custom user-agent behavior, static SigV4 signing, async dynamic credential provider, session-token signing header, file and skill helpers, provider reference keys, inherited URL/PDF support, unsupported embeddings/images and broader Swift unsupported model families.
+Known Swift differences / out of scope: Swift keeps acronym-style names such as workspaceID/accessKeyID; Swift exposes extra AIProvider families beyond upstream ProviderV3 and marks them unsupported; Anthropic core does not expose upstream generateId customization yet and currently emits deterministic source IDs, which is a cross-cutting Anthropic core follow-up rather than an Anthropic AWS wrapper gap.
+Tests run: swift test --filter Anthropic; swift test with 868 tests.
+Commit evidence: 135ceb6.
+Reopen only if: anthropic-aws npm version changes, AWS wrapper auth/header/signing behavior changes, new wrapper-level settings or model families appear, Anthropic core generateId becomes in-scope, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/huggingface`
@@ -265,7 +280,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Why still here |
 | --- | --- | --- |
-| `@ai-sdk/anthropic-aws` | `1.0.3` | Implemented as provider wrapper, but not yet tracked as its own full package sweep. |
 | `@ai-sdk/google-vertex` | `4.0.141` | Strong tests exist, but it needs a standalone package-level pass separate from Google Generative AI. |
 | `@ai-sdk/mcp` | `1.0.45` | MCP client/transport/OAuth are implemented and tested, but this is a protocol package rather than a model provider and needs its own sweep criteria. |
 
