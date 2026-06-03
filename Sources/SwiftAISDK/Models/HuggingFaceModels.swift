@@ -149,9 +149,9 @@ private func huggingFacePreparedCall(for request: LanguageModelRequest, modelID:
     if let reasoningEffort = options["reasoningEffort"] ?? options["reasoning_effort"] {
         body["reasoning"] = .object(["effort": reasoningEffort])
     }
-    let tools = huggingFaceTools(from: request.tools)
-    if !tools.isEmpty {
-        body["tools"] = .array(tools)
+    let preparedTools = huggingFaceTools(from: request.tools)
+    if !preparedTools.tools.isEmpty {
+        body["tools"] = .array(preparedTools.tools)
         if let toolChoice = huggingFaceToolChoice(from: request.toolChoice ?? options["toolChoice"] ?? options["tool_choice"]) {
             body["tool_choice"] = toolChoice
         }
@@ -159,7 +159,7 @@ private func huggingFacePreparedCall(for request: LanguageModelRequest, modelID:
     for (key, value) in options where !["metadata", "instructions", "reasoningEffort", "reasoning_effort", "toolChoice", "tool_choice", "responseFormat", "strictJsonSchema"].contains(key) {
         body[key] = value
     }
-    return HuggingFacePreparedCall(body: body, warnings: huggingFaceWarnings(for: request))
+    return HuggingFacePreparedCall(body: body, warnings: huggingFaceWarnings(for: request) + preparedTools.warnings)
 }
 
 private func huggingFaceProviderOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
@@ -324,8 +324,14 @@ private func huggingFaceInputContentPart(_ part: AIContentPart) throws -> JSONVa
     }
 }
 
-private func huggingFaceTools(from tools: [String: JSONValue]) -> [JSONValue] {
-    tools.map { name, schema in
+private func huggingFaceTools(from tools: [String: JSONValue]) -> (tools: [JSONValue], warnings: [AIWarning]) {
+    var output: [JSONValue] = []
+    var warnings: [AIWarning] = []
+    for (name, schema) in tools {
+        if schema["type"]?.stringValue == "provider" || schema["id"]?.stringValue != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "provider-defined tool \(schema["id"]?.stringValue ?? name)"))
+            continue
+        }
         var tool: [String: JSONValue] = [
             "type": .string("function"),
             "name": .string(name),
@@ -334,8 +340,9 @@ private func huggingFaceTools(from tools: [String: JSONValue]) -> [JSONValue] {
         if let description = schema["description"]?.stringValue {
             tool["description"] = .string(description)
         }
-        return .object(tool)
+        output.append(.object(tool))
     }
+    return (output, warnings)
 }
 
 private func huggingFaceToolChoice(from value: JSONValue?) -> JSONValue? {

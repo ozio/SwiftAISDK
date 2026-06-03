@@ -256,6 +256,27 @@ import Testing
     }
 }
 
+@Test func huggingFaceProviderDefinedToolsAreSkippedWithWarningLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-hf-provider-tools","status":"completed","output_text":"ok"}"#))
+    let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
+    let model = try provider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use tools.")],
+        tools: [
+            "weather": ["type": "object", "properties": ["city": ["type": "string"]]],
+            "huggingface.search": ["type": "provider", "id": "huggingface.search", "name": "search"]
+        ]
+    ))
+
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "provider-defined tool huggingface.search")))
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let tools = body["tools"]?.arrayValue ?? []
+    #expect(tools.count == 1)
+    #expect(tools.first?["name"]?.stringValue == "weather")
+    #expect(tools.first?["type"]?.stringValue == "function")
+}
+
 @Test func huggingFaceLanguageRejectsUnsupportedFilePartsLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-hf-1","status":"completed","output_text":"hf text"}"#))
     let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
