@@ -21,6 +21,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         )
         let raw = response.json
+        try validatePerplexityGenerateResponse(raw, providerID: providerID)
         let choice = raw["choices"]?[0]
         guard let text = choice?["message"]?["content"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Perplexity response.")
@@ -51,7 +52,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
-                    var finishReason: String?
+                    var finishReason: String? = "other"
                     var providerMetadata = perplexityEmptyProviderMetadata()
                     var didEmitResponseMetadata = false
                     var didEmitSources = false
@@ -289,10 +290,50 @@ private func perplexityFinishReason(_ reason: String?) -> String? {
     switch reason {
     case "stop", "length":
         return reason
-    case nil:
-        return nil
     default:
         return "other"
+    }
+}
+
+private func validatePerplexityGenerateResponse(_ raw: JSONValue, providerID: String) throws {
+    guard raw["id"]?.stringValue != nil,
+          raw["created"]?.doubleValue != nil,
+          raw["model"]?.stringValue != nil,
+          let choices = raw["choices"]?.arrayValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "Perplexity response is invalid.")
+    }
+    for choice in choices {
+        guard choice["message"]?["role"]?.stringValue == "assistant",
+              choice["message"]?["content"]?.stringValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Perplexity response is invalid.")
+        }
+        if let finishReason = choice["finish_reason"], finishReason != .null, finishReason.stringValue == nil {
+            throw AIError.invalidResponse(provider: providerID, message: "Perplexity response is invalid.")
+        }
+    }
+    if let citations = raw["citations"], citations != .null {
+        guard citations.arrayValue?.allSatisfy({ $0.stringValue != nil }) == true else {
+            throw AIError.invalidResponse(provider: providerID, message: "Perplexity response is invalid.")
+        }
+    }
+    if let images = raw["images"], images != .null {
+        guard let array = images.arrayValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Perplexity response is invalid.")
+        }
+        for image in array {
+            guard image["image_url"]?.stringValue != nil,
+                  image["origin_url"]?.stringValue != nil,
+                  image["height"]?.doubleValue != nil,
+                  image["width"]?.doubleValue != nil else {
+                throw AIError.invalidResponse(provider: providerID, message: "Perplexity response is invalid.")
+            }
+        }
+    }
+    if let usage = raw["usage"], usage != .null {
+        guard usage["prompt_tokens"]?.doubleValue != nil,
+              usage["completion_tokens"]?.doubleValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Perplexity response is invalid.")
+        }
     }
 }
 

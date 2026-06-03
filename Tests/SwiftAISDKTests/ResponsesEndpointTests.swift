@@ -535,6 +535,50 @@ import Testing
     }
 }
 
+@Test func perplexityLanguageMapsMissingFinishReasonToOtherLikeUpstream() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"id":"ppl-no-finish","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":null}]}
+    """))
+    let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: generateTransport))
+    let model = try provider.languageModel("sonar")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.finishReason == "other")
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"id":"ppl-no-finish","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}
+
+    data: [DONE]
+
+    """))
+    let streamProvider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("sonar")
+
+    var finishReason: String?
+    for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .finishMetadata(reason, _, _) = part {
+            finishReason = reason
+        }
+    }
+
+    #expect(finishReason == "other")
+}
+
+@Test func perplexityGenerateResponseValidationMatchesUpstreamSchema() async throws {
+    let provider = try AIProviders.perplexity(settings: ProviderSettings(
+        apiKey: "pplx-key",
+        transport: RecordingTransport(response: jsonResponse("""
+        {"id":"ppl-invalid","model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}
+        """))
+    ))
+    let model = try provider.languageModel("sonar")
+
+    await #expect(throws: AIError.invalidResponse(provider: "perplexity", message: "Perplexity response is invalid.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+    }
+}
+
 @Test func perplexityLanguageStreamsNativeChunksWithUsage() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"hel"},"finish_reason":null}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3},"citations":["https://example.com/a"]}
