@@ -38,7 +38,8 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.quiver.ai/v1/svgs/generations")
-    #expect(request.headers["Authorization"] == "Bearer quiver-key")
+    #expect(request.headers["authorization"] == "Bearer quiver-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/1.0.0")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "arrow-1")
     #expect(body["prompt"]?.stringValue == "Draw a square icon.")
@@ -51,6 +52,22 @@ import Testing
     #expect(body["max_output_tokens"]?.intValue == 4096)
     #expect(body["references"]?[0]?["url"]?.stringValue == "https://example.com/reference-1.png")
     #expect(body["references"]?[1]?["base64"]?.stringValue == "BAUG")
+}
+
+@Test func quiverAIAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-custom"))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(
+        apiKey: "quiver-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.imageModel("arrow-1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw a square."))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer quiver-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/quiverai/1.0.0")
 }
 
 @Test func quiverAIVectorizesSingleImage() async throws {
