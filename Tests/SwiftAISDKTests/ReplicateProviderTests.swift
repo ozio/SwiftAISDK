@@ -28,7 +28,8 @@ import Testing
     #expect(requests.count == 2)
     let request = try #require(requests.first)
     #expect(request.url.absoluteString == "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions")
-    #expect(request.headers["Authorization"] == "Bearer replicate-key")
+    #expect(request.headers["authorization"] == "Bearer replicate-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/replicate/2.0.33")
     #expect(request.headers["prefer"] == "wait=30")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["input"]?["prompt"]?.stringValue == "cat")
@@ -38,6 +39,31 @@ import Testing
     #expect(body["input"]?["maxWaitTimeInSeconds"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://replicate.example.com/image.png")
+    #expect(requests[1].headers["authorization"] == nil)
+    #expect(requests[1].headers["user-agent"] == nil)
+}
+
+@Test func replicateAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}
+        """),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("replicate-png".utf8))
+    ])
+    let provider = try AIProviders.replicate(settings: ProviderSettings(
+        apiKey: "replicate-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+
+    let requests = await transport.requests()
+    #expect(requests[0].headers["authorization"] == "Bearer replicate-key")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/replicate/2.0.33")
+    #expect(requests[1].headers["authorization"] == nil)
+    #expect(requests[1].headers["user-agent"] == nil)
 }
 
 @Test func replicateImageUsesStandardOptionsProviderOptionsAndWarnings() async throws {
@@ -215,7 +241,8 @@ import Testing
             "maxWaitTimeInSeconds": .number(30),
             "pollIntervalMs": .number(1),
             "pollTimeoutMs": .number(1_000)
-        ]
+        ],
+        headers: ["X-Request-Header": "submit-only"]
     ))
 
     #expect(result.urls == ["https://replicate.example.com/video.mp4"])
@@ -224,7 +251,10 @@ import Testing
     #expect(requests.count == 2)
     let request = try #require(requests.first)
     #expect(request.url.absoluteString == "https://api.replicate.com/v1/models/owner/video-model/predictions")
+    #expect(request.headers["authorization"] == "Bearer replicate-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/replicate/2.0.33")
     #expect(request.headers["prefer"] == "wait=30")
+    #expect(request.headers["X-Request-Header"] == "submit-only")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["input"]?["prompt"]?.stringValue == "cat running")
     #expect(body["input"]?["aspect_ratio"]?.stringValue == "16:9")
@@ -235,6 +265,10 @@ import Testing
     #expect(body["input"]?["pollTimeoutMs"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.replicate.com/v1/predictions/pred-video")
+    #expect(requests[1].headers["authorization"] == "Bearer replicate-key")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/replicate/2.0.33")
+    #expect(requests[1].headers["prefer"] == nil)
+    #expect(requests[1].headers["X-Request-Header"] == nil)
 }
 
 @Test func replicateVideoMapsNestedOptionsAndImageInput() async throws {

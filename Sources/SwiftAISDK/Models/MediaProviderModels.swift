@@ -34,7 +34,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         )
         let raw = response.json
         let urls = mediaURLs(from: raw["output"])
-        let base64Images = try await downloadReplicateImages(urls: urls, headers: request.headers, abortSignal: request.abortSignal)
+        let base64Images = try await downloadReplicateImages(urls: urls, abortSignal: request.abortSignal)
         return ImageGenerationResult(
             urls: urls,
             base64Images: base64Images,
@@ -45,10 +45,10 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         )
     }
 
-    private func downloadReplicateImages(urls: [String], headers: [String: String], abortSignal: AIAbortSignal?) async throws -> [String] {
+    private func downloadReplicateImages(urls: [String], abortSignal: AIAbortSignal?) async throws -> [String] {
         var images: [String] = []
         for url in urls {
-            let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal)
+            let response = try await downloadURL(url, transport: config.transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
@@ -107,7 +107,6 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
         let finalResponse = try await pollReplicatePredictionResponse(
             createResponse.json,
             initialResponse: createResponse.response,
-            headers: request.headers,
             intervalNanoseconds: replicatePollInterval(from: options),
             timeoutNanoseconds: replicatePollTimeout(from: options),
             abortSignal: request.abortSignal
@@ -126,7 +125,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
         )
     }
 
-    private func pollReplicatePredictionResponse(_ initial: JSONValue, initialResponse: AIHTTPResponse, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
+    private func pollReplicatePredictionResponse(_ initial: JSONValue, initialResponse: AIHTTPResponse, intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         var prediction = initial
         var metadataResponse = initialResponse
         let started = DispatchTime.now().uptimeNanoseconds
@@ -136,7 +135,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
                 throw AIError.invalidResponse(provider: providerID, message: "Replicate video generation timed out.")
             }
             try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
-            let response = try await downloadURL(getURL, transport: config.transport, headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal)
+            let response = try await downloadURL(getURL, transport: config.transport, headers: config.headers, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw httpStatusError(provider: providerID, response: response)
             }
