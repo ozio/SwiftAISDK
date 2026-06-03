@@ -28,6 +28,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.lmnt.com/v1/ai/speech/bytes")
     #expect(request.headers["x-api-key"] == "lmnt-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/lmnt/2.0.33")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "aurora")
     #expect(body["text"]?.stringValue == "Hi")
@@ -42,6 +43,21 @@ import Testing
     #expect(body["sampleRate"] == nil)
     #expect(body["topP"] == nil)
     #expect(body["format"] == nil)
+}
+
+@Test func lmntSpeechAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mp3"], body: Data("lmnt".utf8)))
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(
+        apiKey: "lmnt-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.speech("aurora")
+
+    _ = try await model.speak(SpeechRequest(text: "Hi"))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/lmnt/2.0.33")
 }
 
 @Test func lmntSpeechMapsStandardSpeedAndLanguage() async throws {
