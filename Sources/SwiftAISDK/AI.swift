@@ -3884,6 +3884,7 @@ private func speechTelemetryOutput(_ result: SpeechResult) -> JSONValue {
 private func videoTelemetryOutput(_ result: VideoGenerationResult) -> JSONValue {
     .object([
         "urls": .array(result.urls.map(JSONValue.string)),
+        "base64VideoCount": .number(Double(result.base64Videos.count)),
         "operationID": result.operationID.map(JSONValue.string),
         "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue

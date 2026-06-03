@@ -58,6 +58,35 @@ import Testing
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hi")
 }
 
+@Test func googleVertexOAuthUsesRegionalRepHostsLikeUpstream() async throws {
+    let languageTransport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"eu"}]},"finishReason":"STOP"}]}
+    """))
+    let languageProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "eu",
+        accessToken: "token",
+        transport: languageTransport
+    ))
+    _ = try await languageProvider.languageModel("gemini-2.5-pro").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let languageRequest = try #require(await languageTransport.requests().first)
+    #expect(languageRequest.url.absoluteString == "https://aiplatform.eu.rep.googleapis.com/v1beta1/projects/test-project/locations/eu/publishers/google/models/gemini-2.5-pro:generateContent")
+
+    let anthropicTransport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"us"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let anthropicProvider = try AIProviders.googleVertexAnthropic(
+        project: "test-project",
+        location: "us",
+        settings: ProviderSettings(apiKey: "vertex-token", transport: anthropicTransport)
+    )
+    _ = try await anthropicProvider.languageModel("claude-sonnet-4@20250514").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let anthropicRequest = try #require(await anthropicTransport.requests().first)
+    #expect(anthropicRequest.url.absoluteString == "https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/anthropic/models/claude-sonnet-4@20250514:rawPredict")
+}
+
 @Test func googleVertexGemmaPrependsSystemInstructionToFirstUserMessage() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"vertex gemma"}]},"finishReason":"STOP"}]}
@@ -465,22 +494,42 @@ import Testing
     let transport = RecordingTransport(response: jsonResponse("""
     {"predictions":[{"embeddings":{"values":[0.4,0.5],"statistics":{"token_count":2}}}]}
     """))
-    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", transport: transport))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        apiKey: "vertex-key",
+        headers: ["x-goog-api-key": "custom-key"],
+        transport: transport
+    ))
     let model = try provider.embeddingModel("text-embedding-005")
 
     #expect(model.providerID == "google.vertex.embedding")
-    let result = try await model.embed(EmbeddingRequest(values: ["hello"], dimensions: 128))
+    let result = try await model.embed(EmbeddingRequest(
+        values: ["hello"],
+        dimensions: 128,
+        providerOptions: [
+            "googleVertex": .object([
+                "taskType": "RETRIEVAL_DOCUMENT",
+                "title": "Vertex Doc",
+                "autoTruncate": false,
+                "outputDimensionality": 256
+            ])
+        ]
+    ))
 
     #expect(result.embeddings == [[0.4, 0.5]])
+    #expect(result.usage?.totalTokens == 2)
     #expect(result.requestMetadata.body?["instances"]?[0]?["content"]?.stringValue == "hello")
-    #expect(result.requestMetadata.body?["parameters"]?["outputDimensionality"]?.intValue == 128)
+    #expect(result.requestMetadata.body?["instances"]?[0]?["task_type"]?.stringValue == "RETRIEVAL_DOCUMENT")
+    #expect(result.requestMetadata.body?["instances"]?[0]?["title"]?.stringValue == "Vertex Doc")
+    #expect(result.requestMetadata.body?["parameters"]?["outputDimensionality"]?.intValue == 256)
+    #expect(result.requestMetadata.body?["parameters"]?["autoTruncate"]?.boolValue == false)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/text-embedding-005:predict")
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
     #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/4.0.141")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["instances"]?[0]?["content"]?.stringValue == "hello")
-    #expect(body["parameters"]?["outputDimensionality"]?.intValue == 128)
+    #expect(body["instances"]?[0]?["task_type"]?.stringValue == "RETRIEVAL_DOCUMENT")
+    #expect(body["parameters"]?["outputDimensionality"]?.intValue == 256)
 }
 
 @Test func googleVertexAppendsVersionedUserAgentToCustomHeader() async throws {
@@ -516,20 +565,62 @@ import Testing
     #expect(imageBody["instances"]?[0]?["prompt"]?.stringValue == "cat")
     #expect(imageBody["parameters"]?["sampleCount"]?.intValue == 2)
 
-    let videoTransport = RecordingTransport(response: jsonResponse("""
-    {"name":"operations/123"}
-    """))
+    let videoTransport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"name":"operations/123","done":false}
+        """),
+        jsonResponse("""
+        {"name":"operations/123","done":true,"response":{"videos":[{"gcsUri":"gs://bucket/video.mp4","mimeType":"video/mp4"},{"bytesBase64Encoded":"base64-video","mimeType":"video/mp4"}]}}
+        """, headers: ["poll-header": "value"])
+    ])
     let videoProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", baseURL: "https://api.example.com", transport: videoTransport))
     let videoModel = try videoProvider.videoModel("veo-2.0-generate-001")
     #expect(videoModel.providerID == "google.vertex.video")
-    let video = try await videoModel.generateVideo(VideoGenerationRequest(prompt: "cat running", aspectRatio: "16:9", durationSeconds: 4, count: 3))
+    let video = try await videoModel.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        aspectRatio: "16:9",
+        durationSeconds: 4,
+        image: ImageInputFile(data: Data("frame".utf8), mediaType: "image/png"),
+        resolution: "1920x1080",
+        seed: 42,
+        count: 3,
+        providerOptions: [
+            "googleVertex": .object([
+                "negativePrompt": "rain",
+                "generateAudio": true,
+                "referenceImages": [
+                    ["gcsUri": "gs://bucket/ref.png"]
+                ],
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ])
+        ]
+    ))
     #expect(video.operationID == "operations/123")
-    let videoRequest = try #require(await videoTransport.requests().first)
+    #expect(video.urls == ["gs://bucket/video.mp4"])
+    #expect(video.base64Videos == ["base64-video"])
+    #expect(video.providerMetadata["google-vertex"]?["videos"]?[0]?["gcsUri"]?.stringValue == "gs://bucket/video.mp4")
+    #expect(video.responseMetadata.headers["poll-header"] == "value")
+    let videoRequests = await videoTransport.requests()
+    #expect(videoRequests.count == 2)
+    let videoRequest = try #require(videoRequests.first)
     #expect(videoRequest.url.absoluteString == "https://api.example.com/models/veo-2.0-generate-001:predictLongRunning")
     let videoBody = try decodeJSONBody(try #require(videoRequest.body))
+    #expect(videoBody["instances"]?[0]?["image"]?["bytesBase64Encoded"]?.stringValue == Data("frame".utf8).base64EncodedString())
+    #expect(videoBody["instances"]?[0]?["referenceImages"]?[0]?["gcsUri"]?.stringValue == "gs://bucket/ref.png")
     #expect(videoBody["parameters"]?["aspectRatio"]?.stringValue == "16:9")
     #expect(videoBody["parameters"]?["durationSeconds"]?.intValue == 4)
+    #expect(videoBody["parameters"]?["resolution"]?.stringValue == "1080p")
+    #expect(videoBody["parameters"]?["seed"]?.intValue == 42)
     #expect(videoBody["parameters"]?["sampleCount"]?.intValue == 3)
+    #expect(videoBody["parameters"]?["negativePrompt"]?.stringValue == "rain")
+    #expect(videoBody["parameters"]?["generateAudio"]?.boolValue == true)
+    #expect(videoBody["parameters"]?["pollIntervalMs"] == nil)
+    #expect(videoBody["parameters"]?["pollTimeoutMs"] == nil)
+    let pollRequest = try #require(videoRequests.last)
+    #expect(pollRequest.url.absoluteString == "https://api.example.com/models/veo-2.0-generate-001:fetchPredictOperation")
+    let pollBody = try decodeJSONBody(try #require(pollRequest.body))
+    #expect(pollBody["operationName"]?.stringValue == "operations/123")
 }
 
 @Test func googleVertexImagenEditUsesReferenceImagesAndMaskOptions() async throws {

@@ -392,8 +392,18 @@ private func googleVertexAnthropicBaseURL(project: String?, location: String?) t
         throw AIError.invalidURL("Google Vertex Anthropic mode requires project or GOOGLE_VERTEX_PROJECT.")
     }
     let location = location ?? environmentValue(["GOOGLE_VERTEX_LOCATION"]) ?? "global"
-    let host = location == "global" ? "aiplatform.googleapis.com" : "\(location)-aiplatform.googleapis.com"
+    let host = googleVertexRegionalHost(location: location)
     return "https://\(host)/v1/projects/\(project)/locations/\(location)/publishers/anthropic/models"
+}
+
+private func googleVertexRegionalHost(location: String) -> String {
+    if location == "global" {
+        return "aiplatform.googleapis.com"
+    }
+    if location == "eu" || location == "us" {
+        return "aiplatform.\(location).rep.googleapis.com"
+    }
+    return "\(location)-aiplatform.googleapis.com"
 }
 
 private func perplexityHeaders(settings: ProviderSettings) throws -> [String: String] {

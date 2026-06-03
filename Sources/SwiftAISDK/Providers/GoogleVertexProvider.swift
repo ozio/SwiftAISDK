@@ -76,7 +76,7 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
             guard let project, let location else {
                 throw AIError.invalidURL("Google Vertex OAuth mode requires project/location or baseURL.")
             }
-            let host = location == "global" ? "aiplatform.googleapis.com" : "\(location)-aiplatform.googleapis.com"
+            let host = googleVertexRegionalHost(location: location)
             baseURL = "https://\(host)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         }
 
@@ -152,7 +152,7 @@ struct GoogleVertexConfig: @unchecked Sendable {
         mergedHeaders["content-type"] = mergedHeaders["content-type"] ?? "application/json"
         switch auth {
         case let .apiKey(apiKey):
-            mergedHeaders["x-goog-api-key"] = mergedHeaders["x-goog-api-key"] ?? apiKey
+            mergedHeaders["x-goog-api-key"] = apiKey
         case let .accessToken(token):
             mergedHeaders["Authorization"] = mergedHeaders["Authorization"] ?? "Bearer \(token)"
         case let .serviceAccount(credentials):
@@ -172,6 +172,16 @@ struct GoogleVertexConfig: @unchecked Sendable {
             date: date
         )
     }
+}
+
+private func googleVertexRegionalHost(location: String) -> String {
+    if location == "global" {
+        return "aiplatform.googleapis.com"
+    }
+    if location == "eu" || location == "us" {
+        return "aiplatform.\(location).rep.googleapis.com"
+    }
+    return "\(location)-aiplatform.googleapis.com"
 }
 
 enum GoogleServiceAccountTokenGenerator {

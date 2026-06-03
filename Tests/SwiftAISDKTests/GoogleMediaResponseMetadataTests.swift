@@ -100,7 +100,7 @@ import Testing
     #expect(geminiImage.responseMetadata.headers["vertex-header"] == "gemini-image")
 
     let videoTransport = RecordingTransport(response: jsonResponse(
-        #"{"name":"operations/vertex-video","response":{"videos":[{"gcsUri":"gs://bucket/video.mp4"}]}}"#,
+        #"{"name":"operations/vertex-video","done":true,"response":{"videos":[{"gcsUri":"gs://bucket/video.mp4"}]}}"#,
         headers: ["vertex-header": "video"]
     ))
     let videoProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", baseURL: "https://api.example.com", transport: videoTransport))

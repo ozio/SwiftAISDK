@@ -1667,6 +1667,7 @@ public struct VideoGenerationRequest: Sendable {
 
 public struct VideoGenerationResult: Sendable {
     public var urls: [String]
+    public var base64Videos: [String]
     public var operationID: String?
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
@@ -1676,6 +1677,7 @@ public struct VideoGenerationResult: Sendable {
 
     public init(
         urls: [String],
+        base64Videos: [String] = [],
         operationID: String? = nil,
         rawValue: JSONValue,
         warnings: [AIWarning] = [],
@@ -1684,6 +1686,7 @@ public struct VideoGenerationResult: Sendable {
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.urls = urls
+        self.base64Videos = base64Videos
         self.operationID = operationID
         self.rawValue = rawValue
         self.warnings = warnings
