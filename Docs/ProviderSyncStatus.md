@@ -95,7 +95,7 @@ record and passes tests, it leaves the active queue.
 | Package | Provider-specific DoD |
 | --- | --- |
 | `@ai-sdk/alibaba` | Chat request/stream bodies, thinking options, tool calls, provider options, usage-only chunks, reasoning text, unsupported settings, abort propagation, and user-agent behavior are covered. |
-| `@ai-sdk/amazon-bedrock` | Converse, InvokeModel/Anthropic, Bedrock Mantle, SigV4 signing, event-stream parsing, reasoning/tool-use blocks, cache/metadata, unsupported models, region/credential handling, and abort propagation are covered. |
+| `@ai-sdk/amazon-bedrock` | Converse, InvokeModel/Anthropic, Bedrock Mantle, SigV4 signing, event-stream parsing, reasoning/tool-use blocks, structured output, embeddings, image generation/editing, reranking, cache/metadata, unsupported models, region/credential handling, and abort propagation are covered. |
 | `@ai-sdk/anthropic` | Messages requests/streams, thinking/redacted thinking, citations, hosted tools, provider-defined tools, file references, beta headers, container/context metadata, warnings, usage, and abort propagation are covered. |
 | `@ai-sdk/anthropic-aws` | AWS Anthropic wrapper routes, workspace/API-key headers, base URL/auth differences, unsupported capabilities, model identity, and parity with the tiny upstream wrapper are covered. |
 | `@ai-sdk/assemblyai` | Upload, submit, poll, transcript schema, error statuses, provider options, segments, language/duration metadata, abort propagation across all requests, and response metadata are covered. |
@@ -143,6 +143,7 @@ record and passes tests, it leaves the active queue.
 | --- | --- | --- |
 | `@ai-sdk/gateway` | `3.0.123` | `3294e3d`, `b8f35cb`, `08b36ed`: v3 base URL, headers/user agent, OIDC fallback, typed Gateway errors. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
+| `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
 | `@ai-sdk/google-vertex` | `4.0.141` | `83ef81d`: regional REP hosts, express API-key precedence, embedding options/usage/limit, Veo polling/base64 videos, and subprovider URL parity after package re-read. |
 | `@ai-sdk/google` | `3.0.80` | `09bfd11`: Gemini/Imagen/Veo/embeddings parity sweep: providerOptions, multimodal content, editing warnings, video polling/options, metadata, and abort propagation after package re-read. |
@@ -179,6 +180,20 @@ Known Swift differences / out of scope: Swift keeps acronym-style names such as 
 Tests run: swift test --filter Anthropic; swift test with 868 tests.
 Commit evidence: 135ceb6.
 Reopen only if: anthropic-aws npm version changes, AWS wrapper auth/header/signing behavior changes, new wrapper-level settings or model families appear, Anthropic core generateId becomes in-scope, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/amazon-bedrock`
+
+```text
+Package: @ai-sdk/amazon-bedrock
+Baseline: 4.0.112
+Upstream inspected: bedrock-provider.ts, bedrock-sigv4-fetch.ts, bedrock-chat-language-model.ts, bedrock-chat-options.ts, bedrock-prepare-tools.ts, convert-to-bedrock-chat-messages.ts, bedrock-embedding-model.ts, bedrock-embedding-options.ts, bedrock-image-model.ts, bedrock-image-settings.ts, reranking/bedrock-reranking-model.ts, reranking/bedrock-reranking-options.ts, anthropic/bedrock-anthropic-provider.ts, anthropic/bedrock-anthropic-fetch.ts, anthropic/bedrock-anthropic-options.ts, mantle/bedrock-mantle-provider.ts, mantle/bedrock-mantle-options.ts, event-stream/usage/finish helpers, index.ts, version.ts.
+Swift files inspected: AmazonBedrockProvider.swift, AmazonBedrockModels.swift, LanguageStreamParsing.swift, Anthropic.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, Core.swift, AI.swift, AmazonBedrockTests.swift.
+Surfaces checked: main provider factory and capability routing, Bedrock Anthropic subprovider, Bedrock Mantle chat/responses subprovider, runtime and agent-runtime base URLs, bearer auth, static SigV4 auth, async dynamic credential provider, session-token signing behavior, user-agent suffixes, Converse request bodies, providerOptions.bedrock and providerOptions.amazonBedrock merging, extraBody passthrough filtering, unsupported frequency/presence/seed warnings, responseFormat JSON tool behavior, native Anthropic structured output with thinking, function/provider tools, tool choice, reasoningConfig transforms, document/image inputs and citations, response text/reasoning/tool calls, finish reasons, cache/trace/performance/service-tier metadata, event-stream text/reasoning/tool/raw/metadata/final usage, Titan/Cohere/Nova embedding bodies and response shapes, image text/edit modes, image moderation/no-image errors, aspectRatio warning, Nova Canvas count limit, reranking body/options/response, Bedrock Anthropic invoke/stream/download/structured-output behavior, Mantle OpenAI-compatible routes, and abort propagation through focused existing tests.
+Known Swift differences / out of scope: Swift defaults Bedrock region to `us-east-1` when no region/env is supplied, while upstream relies on `AWS_REGION` loading for SigV4 credential resolution and then has fallback URL defaults; Swift settings headers are static dictionaries rather than upstream async Resolvable headers; Swift keeps `extraBody` and both `bedrock`/`amazonBedrock` provider option namespaces as compatibility escape hatches; Swift exposes Bedrock Anthropic and Bedrock Mantle as explicit provider factories instead of npm subpath factory exports; `generateId` customization is not exposed for Bedrock-generated source/tool IDs yet.
+Tests run: swift test --filter AmazonBedrock with 28 tests; swift test with 889 tests.
+Commit evidence: e2cb97e.
+Reopen only if: @ai-sdk/amazon-bedrock npm version changes, Bedrock auth/credential/session-token behavior changes, Converse/InvokeModel/agent-runtime schemas change, embedding/image/reranking providerOptions schemas change, generateId or async header behavior becomes required in Swift core, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/anthropic`
@@ -289,7 +304,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/open-responses` | `1.0.16` | `b3d4e27`, `fa5e36d`, `6832d59`, `866bd78`, `f8aeb19`, `002a70a`, `c61a3b4`, `998e27b`, `0d6b140`: lifecycle, reasoning, annotations, hosted tools, compaction, apply-patch streaming. |
 | `@ai-sdk/openai` | `3.0.67` | `b363c3f`, `1c45140`, `e2ea865`, `b2a1dcc`: provider naming, shell tools, image metadata, user agent; broad OpenAI tests exist. |
 | `@ai-sdk/openai-compatible` | `2.0.48` | `7aa1c55`: provider surfaces; broad OpenAI-compatible request/stream/warning tests exist. |
-| `@ai-sdk/amazon-bedrock` | `4.0.112` | `85b8875`, `50d2289`, `1acd167`: converse options, Anthropic invoke parity, user agent. |
 | `@ai-sdk/groq` | `3.0.39` | `55faaac`, `6627b3d`, `2fe28f0`: option schema, transcription response, chat parity. |
 | `@ai-sdk/mistral` | `3.0.37` | `9ea7375`, `d4e5aab`: option schema and chat parity. |
 | `@ai-sdk/cohere` | `3.0.36` | `5d2c1d9`, `6b81b90`: option schema and chat parity. |
@@ -330,7 +344,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Promote the central heavy providers from `substantial parity coverage` to
-   `fresh deep pass`: OpenAI/OpenAI-compatible/Open Responses, Amazon Bedrock.
+   `fresh deep pass`: OpenAI/OpenAI-compatible/Open Responses.
 2. Do final package sweeps for the already-covered language providers:
    Groq, Mistral, Cohere, Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI,
    Alibaba.
