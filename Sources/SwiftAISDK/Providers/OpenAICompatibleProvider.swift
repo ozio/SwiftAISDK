@@ -449,6 +449,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "replicate" {
             return withUserAgentSuffix(headers, "ai-sdk/replicate/2.0.33")
         }
+        if providerID == "black-forest-labs" {
+            return withUserAgentSuffix(headers, "ai-sdk/black-forest-labs/1.0.34")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }
