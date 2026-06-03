@@ -173,6 +173,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/fireworks` | `2.0.53` | Current final provider audit: package re-read across provider/chat/completion/embedding/image/options; Fireworks error schema, thinking transform, workflow/image-generation/async image routing, polling/downloads, warnings, metadata, and user-agent behavior verified. |
 | `@ai-sdk/togetherai` | `2.0.53` | Current final provider audit: package re-read across provider/chat/completion/embedding/image/reranking/options; image warning condition, option schema, rerank request/response shape, env fallback, metadata, and user-agent behavior aligned. |
 | `@ai-sdk/voyage` | `1.0.4` | Current final provider audit: package re-read across provider/embedding/reranking/options/errors; native request bodies, provider option schemas, `{detail}` error schema, 128-value preflight, object-document warnings, metadata, and user-agent behavior aligned. |
+| `@ai-sdk/mcp` | `1.0.45` | Current MCP protocol-client audit: package re-read across client/transports/OAuth/types/errors; protocol versions, initialize/initialized, tools/resources/templates/prompts, elicitation, HTTP/SSE/Stdio transports, OAuth discovery/PKCE/token/register flows, and abort/close behavior verified. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -184,6 +185,20 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/mcp`
+
+```text
+Package: @ai-sdk/mcp
+Baseline: 1.0.45
+Upstream inspected: index.ts, types.ts, mcp-client.ts, mcp-transport.ts, mcp-http-transport.ts, mcp-sse-transport.ts, mcp-stdio-transport.ts, oauth.ts, oauth-types.ts, error files.
+Swift files inspected: MCPClient.swift, MCPOAuth.swift, MCPClientTests.swift, MCPStdioTransportTests.swift, MCPOAuthTests.swift.
+Surfaces checked: exported client API and deprecated aliases mapping, latest/supported protocol versions, initialize handshake and initialized notification, serverInfo/instructions, tool listing/calling and cached definitions, model-output conversion for text/image/resource/unknown content, resource list/read/templates, prompt list/get, capability checks, incoming ping and elicitation/create handling, closed-client behavior, HTTP JSON/SSE transport modes, session IDs, inbound SSE reconnect/Last-Event-ID, 401 OAuth retry, Stdio line-delimited transport, OAuth protected-resource and authorization-server discovery, PKCE authorization URL, token exchange/refresh/register, custom client authentication, OAuth error parsing, abort propagation.
+Known Swift differences / out of scope: Swift does not mirror TypeScript's `tools({ schemas })` generic overload or runtime outputSchema validation API; Swift exposes dynamic `AITool` definitions and keeps raw MCP results. Swift keeps stable MCPClientError/AIError cases instead of upstream AISDKError subclasses.
+Tests run: swift test --filter 'MCP|OAuth|Stdio'; full swift test in the current final provider audit batch.
+Commit evidence: Current MCP protocol-client audit batch.
+Reopen only if: mcp npm version changes, MCP protocol version list changes, client/transport/OAuth exported API changes, TS schema overload becomes necessary for Swift ergonomics, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/fireworks`
 
@@ -764,14 +779,11 @@ a live/user report identifies a concrete mismatch.
 
 ## Needs Explicit Deep Pass
 
-| Package | Baseline | Why still here |
-| --- | --- | --- |
-| `@ai-sdk/mcp` | `1.0.45` | MCP client/transport/OAuth are implemented and tested, but this is a protocol package rather than a model provider and needs its own sweep criteria. |
+No package is currently waiting for an explicit deep pass.
 
 ## Practical Remaining Queue
 
 The remaining product work is now outside the ordinary model-provider sweep:
 
-1. Give MCP its own protocol-client completion audit instead of treating it like a model provider.
-2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
-3. Run a final completion audit against npm provider discovery and the sync docs before declaring the overall port complete.
+1. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
+2. Run a final completion audit against npm provider discovery and the sync docs before declaring the overall port complete.
