@@ -19,13 +19,14 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         guard text != nil || !reasoning.isEmpty || !toolCalls.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Bedrock Converse response.")
         }
+        let jsonResponseToolCall = prepared.usesJsonResponseTool ? toolCalls.first { $0.name == "json" } : nil
         return TextGenerationResult(
-            text: text ?? "",
+            text: jsonResponseToolCall?.arguments ?? text ?? "",
             reasoning: reasoning,
-            finishReason: bedrockFinishReason(raw["stopReason"]?.stringValue),
+            finishReason: bedrockFinishReason(raw["stopReason"]?.stringValue, isJsonResponseFromTool: jsonResponseToolCall != nil),
             usage: bedrockUsage(from: raw["usage"]),
-            toolCalls: toolCalls,
-            providerMetadata: bedrockProviderMetadata(from: raw),
+            toolCalls: jsonResponseToolCall == nil ? toolCalls : [],
+            providerMetadata: bedrockProviderMetadata(from: raw, isJsonResponseFromTool: jsonResponseToolCall != nil),
             rawValue: raw,
             warnings: prepared.warnings
         )
@@ -42,8 +43,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"]),
                         abortSignal: request.abortSignal
                     )
-                    let response = try await config.transport.send(httpRequest)
-                    let parts = try streamFromBedrockResponse(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks, warnings: prepared.warnings)
+                    let response = try await config.sendRequest(httpRequest)
+                    let parts = try streamFromBedrockResponse(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks, warnings: prepared.warnings, jsonResponseToolName: prepared.usesJsonResponseTool ? "json" : nil)
                     for part in parts {
                         continuation.yield(part)
                     }
@@ -64,9 +65,38 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         let enableDocumentCitations = bedrockDocumentCitationsEnabled(providerOptions)
         var documentCounter = 0
         var warnings: [AIWarning] = []
+        if request.frequencyPenalty != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
+        }
+        if request.presencePenalty != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty"))
+        }
+        if request.seed != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "seed"))
+        }
+        var effectiveTools = request.tools
+        var effectiveToolChoice = request.toolChoice ?? providerOptions["toolChoice"] ?? request.extraBody["toolChoice"]
+        let responseJSONSchema = bedrockResponseJSONSchema(from: request.responseFormat)
+        let useNativeStructuredOutput = responseJSONSchema != nil
+            && modelID.contains("anthropic")
+            && bedrockReasoningConfigEnabled(providerOptions["reasoningConfig"])
+        let usesJsonResponseTool = responseJSONSchema != nil && !useNativeStructuredOutput
+        if let responseJSONSchema, useNativeStructuredOutput {
+            bedrockMergeAdditionalModelRequestFields([
+                "output_config": .object([
+                    "format": .object([
+                        "type": .string("json_schema"),
+                        "schema": responseJSONSchema
+                    ])
+                ])
+            ], into: &providerOptions)
+        } else if let responseJSONSchema {
+            effectiveTools["json"] = responseJSONSchema
+            effectiveToolChoice = .object(["type": .string("required")])
+        }
         let preparedTools = bedrockPrepareTools(
-            from: request.tools,
-            toolChoice: request.toolChoice ?? providerOptions["toolChoice"] ?? request.extraBody["toolChoice"],
+            from: effectiveTools,
+            toolChoice: effectiveToolChoice,
             modelID: modelID
         )
         warnings.append(contentsOf: preparedTools.warnings)
@@ -176,13 +206,14 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         }
         bedrockApplyRequestProviderOptions(providerOptions, to: &body)
         body.merge(bedrockPassthroughExtraBody(request.extraBody)) { _, new in new }
-        return BedrockPreparedConverseCall(body: .object(body), warnings: bedrockDeduplicatedWarnings(warnings))
+        return BedrockPreparedConverseCall(body: .object(body), warnings: bedrockDeduplicatedWarnings(warnings), usesJsonResponseTool: usesJsonResponseTool)
     }
 }
 
 private struct BedrockPreparedConverseCall {
     var body: JSONValue
     var warnings: [AIWarning]
+    var usesJsonResponseTool: Bool
 }
 
 private func bedrockToolArguments(_ arguments: String) -> JSONValue {
@@ -203,30 +234,75 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
         guard let value = request.values.first else {
             return EmbeddingResult(embeddings: [], rawValue: .object([:]))
         }
+        guard request.values.count <= 1 else {
+            throw AIError.invalidArgument(
+                argument: "values",
+                message: "Amazon Bedrock embedding models support at most 1 value per call."
+            )
+        }
+        let providerOptions = try bedrockEmbeddingProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
         var body: [String: JSONValue]
         if modelID.starts(with: "cohere.embed-") {
-            body = ["input_type": "search_query", "texts": .array([.string(value)])]
+            body = [
+                "input_type": .string(try bedrockEmbeddingStringOption(
+                    providerOptions["inputType"],
+                    argument: "providerOptions.bedrock.inputType",
+                    allowed: ["search_document", "search_query", "classification", "clustering"]
+                ) ?? "search_query"),
+                "texts": .array([.string(value)])
+            ]
+            if let truncate = try bedrockEmbeddingStringOption(providerOptions["truncate"], argument: "providerOptions.bedrock.truncate", allowed: ["NONE", "START", "END"]) {
+                body["truncate"] = .string(truncate)
+            }
+            if let outputDimension = try bedrockEmbeddingIntOption(providerOptions["outputDimension"], argument: "providerOptions.bedrock.outputDimension", allowed: [256, 512, 1024, 1536]) {
+                body["output_dimension"] = .number(Double(outputDimension))
+            }
         } else if modelID.starts(with: "amazon.nova-"), modelID.contains("embed") {
+            let embeddingPurpose = try bedrockEmbeddingStringOption(
+                providerOptions["embeddingPurpose"],
+                argument: "providerOptions.bedrock.embeddingPurpose",
+                allowed: [
+                    "GENERIC_INDEX",
+                    "TEXT_RETRIEVAL",
+                    "IMAGE_RETRIEVAL",
+                    "VIDEO_RETRIEVAL",
+                    "DOCUMENT_RETRIEVAL",
+                    "AUDIO_RETRIEVAL",
+                    "GENERIC_RETRIEVAL",
+                    "CLASSIFICATION",
+                    "CLUSTERING"
+                ]
+            ) ?? "GENERIC_INDEX"
+            let embeddingDimension = try bedrockEmbeddingIntOption(providerOptions["embeddingDimension"], argument: "providerOptions.bedrock.embeddingDimension", allowed: [256, 384, 1024, 3072]) ?? 1024
+            let truncate = try bedrockEmbeddingStringOption(providerOptions["truncate"], argument: "providerOptions.bedrock.truncate", allowed: ["NONE", "START", "END"]) ?? "END"
             body = [
                 "taskType": "SINGLE_EMBEDDING",
                 "singleEmbeddingParams": .object([
-                    "embeddingPurpose": "GENERIC_INDEX",
-                    "text": .object(["value": .string(value), "truncationMode": "END"])
+                    "embeddingPurpose": .string(embeddingPurpose),
+                    "embeddingDimension": .number(Double(embeddingDimension)),
+                    "text": .object(["value": .string(value), "truncationMode": .string(truncate)])
                 ])
             ]
         } else {
             body = ["inputText": .string(value)]
-            if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
+            let providerDimensions = try bedrockEmbeddingIntOption(providerOptions["dimensions"], argument: "providerOptions.bedrock.dimensions", allowed: [256, 512, 1024])
+            if let dimensions = request.dimensions ?? providerDimensions {
+                body["dimensions"] = .number(Double(dimensions))
+            }
+            if let normalize = try bedrockEmbeddingBoolOption(providerOptions["normalize"], argument: "providerOptions.bedrock.normalize") {
+                body["normalize"] = .bool(normalize)
+            }
         }
-        body.merge(request.extraBody) { _, new in new }
+        body.merge(bedrockEmbeddingPassthroughExtraBody(request.extraBody)) { _, new in new }
         let response = try await config.sendJSONResponse(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        let embedding = raw["embedding"]?.arrayValue?.compactMap(\.doubleValue)
-            ?? raw["embeddings"]?[0]?.arrayValue?.compactMap(\.doubleValue)
-            ?? raw["embeddings"]?[0]?["embedding"]?.arrayValue?.compactMap(\.doubleValue)
-            ?? []
+        guard let embedding = bedrockEmbeddingVector(from: raw) else {
+            throw AIError.invalidResponse(provider: providerID, message: "No embedding vector found in Bedrock response.")
+        }
+        let tokenCount = raw["inputTextTokenCount"]?.intValue ?? raw["inputTokenCount"]?.intValue
         return EmbeddingResult(
             embeddings: [embedding],
+            usage: tokenCount.map { TokenUsage(inputTokens: $0, totalTokens: $0) },
             rawValue: raw,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
@@ -236,6 +312,76 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
     private var encodedModelID: String {
         bedrockEncodeModelID(modelID)
     }
+}
+
+private func bedrockEmbeddingVector(from raw: JSONValue) -> [Double]? {
+    raw["embedding"]?.arrayValue?.compactMap(\.doubleValue)
+        ?? raw["embeddings"]?[0]?.arrayValue?.compactMap(\.doubleValue)
+        ?? raw["embeddings"]?[0]?["embedding"]?.arrayValue?.compactMap(\.doubleValue)
+        ?? raw["embeddings"]?["float"]?[0]?.arrayValue?.compactMap(\.doubleValue)
+}
+
+private let bedrockEmbeddingProviderOptionKeys: Set<String> = [
+    "dimensions",
+    "normalize",
+    "embeddingDimension",
+    "embeddingPurpose",
+    "inputType",
+    "truncate",
+    "outputDimension"
+]
+
+private func bedrockEmbeddingProviderOptions(extraBody: [String: JSONValue], providerOptions: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output = extraBody.filter { key, _ in bedrockEmbeddingProviderOptionKeys.contains(key) }
+    if let bedrock = extraBody["bedrock"]?.objectValue {
+        output.merge(bedrock) { _, new in new }
+    }
+    if let amazonBedrock = extraBody["amazonBedrock"]?.objectValue {
+        output.merge(amazonBedrock) { _, new in new }
+    }
+    if let bedrock = providerOptions["bedrock"] {
+        guard let object = bedrock.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.bedrock", message: "Bedrock provider options must be an object.")
+        }
+        output.merge(object) { _, new in new }
+    }
+    if let amazonBedrock = providerOptions["amazonBedrock"] {
+        guard let object = amazonBedrock.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.amazonBedrock", message: "Amazon Bedrock provider options must be an object.")
+        }
+        output.merge(object) { _, new in new }
+    }
+    return output
+}
+
+private func bedrockEmbeddingPassthroughExtraBody(_ extraBody: [String: JSONValue]) -> [String: JSONValue] {
+    extraBody.filter { key, _ in
+        key != "amazonBedrock" && key != "bedrock" && !bedrockEmbeddingProviderOptionKeys.contains(key)
+    }
+}
+
+private func bedrockEmbeddingStringOption(_ value: JSONValue?, argument: String, allowed: Set<String>) throws -> String? {
+    guard let value else { return nil }
+    guard let string = value.stringValue, allowed.contains(string) else {
+        throw AIError.invalidArgument(argument: argument, message: "Value must be one of: \(allowed.sorted().joined(separator: ", ")).")
+    }
+    return string
+}
+
+private func bedrockEmbeddingIntOption(_ value: JSONValue?, argument: String, allowed: Set<Int>) throws -> Int? {
+    guard let value else { return nil }
+    guard let int = value.intValue, allowed.contains(int) else {
+        throw AIError.invalidArgument(argument: argument, message: "Value must be one of: \(allowed.sorted().map(String.init).joined(separator: ", ")).")
+    }
+    return int
+}
+
+private func bedrockEmbeddingBoolOption(_ value: JSONValue?, argument: String) throws -> Bool? {
+    guard let value else { return nil }
+    guard let bool = value.boolValue else {
+        throw AIError.invalidArgument(argument: argument, message: "Value must be a boolean.")
+    }
+    return bool
 }
 
 public final class AmazonBedrockImageModel: ImageModel, @unchecked Sendable {
@@ -249,7 +395,19 @@ public final class AmazonBedrockImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+        if let count = request.count, count > maxImagesPerCall {
+            throw AIError.invalidArgument(argument: "count", message: "Amazon Bedrock image model \(modelID) supports at most \(maxImagesPerCall) image(s) per call.")
+        }
+
         let providerOptions = try bedrockImageProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
+        var warnings: [AIWarning] = []
+        if request.aspectRatio != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "aspectRatio",
+                message: "This model does not support aspect ratio. Use size instead."
+            ))
+        }
         let size = request.size?.split(separator: "x").compactMap { Int($0) } ?? []
         var imageGenerationConfig: [String: JSONValue] = [:]
         if size.count == 2 {
@@ -276,16 +434,30 @@ public final class AmazonBedrockImageModel: ImageModel, @unchecked Sendable {
         )
         let response = try await config.sendJSONResponse(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
+        if raw["status"]?.stringValue == "Request Moderated" {
+            let reasons = raw["details"]?["Moderation Reasons"]?.arrayValue?.compactMap(\.stringValue)
+            let message = (reasons?.isEmpty == false ? reasons ?? [] : ["Unknown"]).joined(separator: ", ")
+            throw AIError.invalidResponse(provider: providerID, message: "Amazon Bedrock request was moderated: \(message).")
+        }
         let base64Images = raw["images"]?.arrayValue?.compactMap(\.stringValue)
             ?? raw["artifacts"]?.arrayValue?.compactMap { $0["base64"]?.stringValue }
             ?? []
+        guard !base64Images.isEmpty else {
+            let statusSuffix = raw["status"]?.stringValue.map { " Status: \($0)" } ?? ""
+            throw AIError.invalidResponse(provider: providerID, message: "Amazon Bedrock returned no images.\(statusSuffix)")
+        }
         return ImageGenerationResult(
             urls: [],
             base64Images: base64Images,
             rawValue: raw,
+            warnings: warnings,
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
+    }
+
+    private var maxImagesPerCall: Int {
+        modelID == "amazon.nova-canvas-v1:0" ? 5 : 1
     }
 
     private var encodedModelID: String {
@@ -463,6 +635,16 @@ private func bedrockPassthroughExtraBody(_ extraBody: [String: JSONValue]) -> [S
 
 private func bedrockDocumentCitationsEnabled(_ providerOptions: [String: JSONValue]) -> Bool {
     providerOptions["citations"]?["enabled"]?.boolValue ?? false
+}
+
+private func bedrockResponseJSONSchema(from responseFormat: AIResponseFormat?) -> JSONValue? {
+    guard case let .json(schema, _, _) = responseFormat else { return nil }
+    return schema
+}
+
+private func bedrockReasoningConfigEnabled(_ value: JSONValue?) -> Bool {
+    let type = value?["type"]?.stringValue
+    return type == "enabled" || type == "adaptive"
 }
 
 private func bedrockApplyRequestProviderOptions(_ providerOptions: [String: JSONValue], to body: inout [String: JSONValue]) {
@@ -782,7 +964,7 @@ func bedrockReasoningText(from value: JSONValue?) -> String {
     }.joined() ?? ""
 }
 
-func bedrockProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
+func bedrockProviderMetadata(from raw: JSONValue, isJsonResponseFromTool: Bool = false) -> [String: JSONValue] {
     var payload: [String: JSONValue] = [:]
     if let trace = raw["trace"] {
         payload["trace"] = trace
@@ -805,6 +987,9 @@ func bedrockProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
     }
     if !usage.isEmpty {
         payload["usage"] = .object(usage)
+    }
+    if isJsonResponseFromTool {
+        payload["isJsonResponseFromTool"] = .bool(true)
     }
     guard !payload.isEmpty else { return [:] }
     return [
@@ -842,7 +1027,7 @@ func bedrockProviderMetadata(fromStreamMetadata raw: JSONValue?) -> [String: JSO
     ]
 }
 
-func bedrockFinishReason(_ reason: String?) -> String? {
+func bedrockFinishReason(_ reason: String?, isJsonResponseFromTool: Bool = false) -> String? {
     switch reason {
     case "stop_sequence", "end_turn":
         return "stop"
@@ -851,7 +1036,7 @@ func bedrockFinishReason(_ reason: String?) -> String? {
     case "content_filtered", "guardrail_intervened":
         return "content-filter"
     case "tool_use":
-        return "tool-calls"
+        return isJsonResponseFromTool ? "stop" : "tool-calls"
     case nil:
         return nil
     default:

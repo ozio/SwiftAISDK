@@ -753,6 +753,8 @@ private struct BedrockStreamState {
     var toolCalls: [Int: BedrockStreamingToolCall] = [:]
     var latestFinishReason: String?
     var latestUsage: TokenUsage?
+    var jsonResponseToolName: String?
+    var isJsonResponseFromTool = false
 
     mutating func parts(from raw: JSONValue) -> [LanguageStreamPart] {
         var parts: [LanguageStreamPart] = []
@@ -776,6 +778,10 @@ private struct BedrockStreamState {
             let id = toolUse["toolUseId"]?.stringValue ?? "tool-call-\(index)"
             let name = toolUse["name"]?.stringValue ?? "tool-\(index)"
             toolCalls[index] = BedrockStreamingToolCall(id: id, name: name, rawValue: toolUse)
+            if name == jsonResponseToolName {
+                isJsonResponseFromTool = true
+                return parts
+            }
             parts.append(.toolInputStart(id: id, name: name))
         }
         if let delta = raw["contentBlockDelta"],
@@ -786,6 +792,10 @@ private struct BedrockStreamState {
             toolCall.arguments += argumentsDelta
             toolCall.rawValue = toolUse
             toolCalls[index] = toolCall
+            if toolCall.name == jsonResponseToolName {
+                parts.append(.textDelta(argumentsDelta))
+                return parts
+            }
             parts.append(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: argumentsDelta, index: index))
             if !argumentsDelta.isEmpty {
                 parts.append(.toolInputDelta(id: toolCall.id, delta: argumentsDelta))
@@ -794,6 +804,9 @@ private struct BedrockStreamState {
         if let stop = raw["contentBlockStop"],
            let index = stop["contentBlockIndex"]?.intValue,
            let toolCall = toolCalls[index] {
+            if toolCall.name == jsonResponseToolName {
+                return parts
+            }
             parts.append(.toolInputEnd(id: toolCall.id))
             parts.append(.toolCall(AIToolCall(
                 id: toolCall.id,
@@ -803,7 +816,7 @@ private struct BedrockStreamState {
             )))
         }
         if let stopReason = raw["messageStop"]?["stopReason"]?.stringValue {
-            latestFinishReason = bedrockFinishReason(stopReason)
+            latestFinishReason = bedrockFinishReason(stopReason, isJsonResponseFromTool: isJsonResponseFromTool)
         }
         if let usage = bedrockUsage(from: raw["metadata"]?["usage"]) {
             latestUsage = usage
@@ -819,7 +832,7 @@ private struct BedrockStreamState {
     }
 }
 
-func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, warnings: [AIWarning] = []) throws -> [LanguageStreamPart] {
+func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, warnings: [AIWarning] = [], jsonResponseToolName: String? = nil) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
         throw httpStatusError(provider: providerID, response: response)
     }
@@ -835,7 +848,7 @@ func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, inc
     }
 
     var parts: [LanguageStreamPart] = [.streamStart(warnings: warnings)]
-    var state = BedrockStreamState()
+    var state = BedrockStreamState(jsonResponseToolName: jsonResponseToolName)
     for raw in rawChunks {
         if includeRawChunks {
             parts.append(.raw(raw))

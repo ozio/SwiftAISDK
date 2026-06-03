@@ -89,6 +89,71 @@ import Testing
     #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.112")
 }
 
+@Test func amazonBedrockCredentialProviderSignsAllProviderSurfaces() async throws {
+    let fixedDate = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        timeZone: TimeZone(secondsFromGMT: 0),
+        year: 2024,
+        month: 3,
+        day: 15,
+        hour: 0,
+        minute: 0,
+        second: 0
+    ).date!
+
+    let converseTransport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"bedrock"}]}},"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2}}
+    """))
+    let converseProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        credentialProvider: {
+            AmazonBedrockCredentials(accessKeyID: "DYNAMIC-CONVERSE", secretAccessKey: "secret", sessionToken: "session-converse")
+        },
+        transport: converseTransport,
+        date: { fixedDate }
+    ))
+    _ = try await converseProvider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let anthropicTransport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"anthropic"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let anthropicProvider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        credentialProvider: {
+            AmazonBedrockCredentials(accessKeyID: "DYNAMIC-ANTHROPIC", secretAccessKey: "secret", sessionToken: "session-anthropic")
+        },
+        transport: anthropicTransport,
+        date: { fixedDate }
+    ))
+    _ = try await anthropicProvider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let mantleTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"mantle"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}
+    """))
+    let mantleProvider = try AIProviders.bedrockMantle(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        credentialProvider: {
+            AmazonBedrockCredentials(accessKeyID: "DYNAMIC-MANTLE", secretAccessKey: "secret", sessionToken: "session-mantle")
+        },
+        transport: mantleTransport,
+        date: { fixedDate }
+    ))
+    _ = try await mantleProvider.languageModel("openai.gpt-oss-20b")
+        .generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let converseRequest = try #require(await converseTransport.requests().first)
+    let anthropicRequest = try #require(await anthropicTransport.requests().first)
+    let mantleRequest = try #require(await mantleTransport.requests().first)
+    #expect(converseRequest.headers["authorization"]?.contains("Credential=DYNAMIC-CONVERSE/20240315/us-east-1/bedrock/aws4_request") == true)
+    #expect(converseRequest.headers["x-amz-security-token"] == "session-converse")
+    #expect(anthropicRequest.headers["authorization"]?.contains("Credential=DYNAMIC-ANTHROPIC/20240315/us-east-1/bedrock/aws4_request") == true)
+    #expect(anthropicRequest.headers["x-amz-security-token"] == "session-anthropic")
+    #expect(mantleRequest.headers["authorization"]?.contains("Credential=DYNAMIC-MANTLE/20240315/us-east-1/bedrock-mantle/aws4_request") == true)
+    #expect(mantleRequest.headers["x-amz-security-token"] == "session-mantle")
+}
+
 @Test func amazonBedrockConverseMapsDocumentDataAndProviderOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"output":{"message":{"content":[{"text":"ok"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
@@ -234,6 +299,75 @@ import Testing
     #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported when thinking is enabled")))
     #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "topP", message: "topP is not supported when thinking is enabled")))
     #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "topK", message: "topK is not supported when thinking is enabled")))
+}
+
+@Test func amazonBedrockConverseMapsJSONResponseFormatThroughToolLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"toolUse":{"toolUseId":"json-tool","name":"json","input":{"answer":"ok"}}}]}},"stopReason":"tool_use","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": ["answer": ["type": "string"]],
+        "required": ["answer"]
+    ]
+    let model = try provider.languageModel("cohere.command-r-v1:0")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Reply as JSON")],
+        presencePenalty: 0.5,
+        frequencyPenalty: 0.5,
+        seed: 42,
+        responseFormat: .json(schema: schema)
+    ))
+
+    #expect(try decodeJSONBody(Data(result.text.utf8))["answer"]?.stringValue == "ok")
+    #expect(result.finishReason == "stop")
+    #expect(result.toolCalls.isEmpty)
+    #expect(result.providerMetadata["amazonBedrock"]?["isJsonResponseFromTool"]?.boolValue == true)
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "frequencyPenalty")))
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "presencePenalty")))
+    #expect(result.warnings.contains(AIWarning(type: "unsupported", feature: "seed")))
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["toolConfig"]?["tools"]?[0]?["toolSpec"]?["name"]?.stringValue == "json")
+    #expect(body["toolConfig"]?["tools"]?[0]?["toolSpec"]?["inputSchema"]?["json"] == schema)
+    #expect(body["toolConfig"]?["toolChoice"]?["any"] != nil)
+}
+
+@Test func amazonBedrockConverseUsesNativeStructuredOutputForAnthropicThinking() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"ok"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": ["answer": ["type": "string"]]
+    ]
+    let model = try provider.languageModel("anthropic.claude-3-7-sonnet-20250219-v1:0")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Reply as JSON")],
+        maxOutputTokens: 10,
+        responseFormat: .json(schema: schema),
+        providerOptions: ["bedrock": ["reasoningConfig": ["type": "enabled", "budgetTokens": 8]]]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["toolConfig"] == nil)
+    let outputConfig = body["additionalModelRequestFields"]?["output_config"]
+    #expect(outputConfig?["format"]?["type"]?.stringValue == "json_schema")
+    #expect(outputConfig?["format"]?["schema"] == schema)
+    #expect(body["additionalModelRequestFields"]?["thinking"]?["type"]?.stringValue == "enabled")
 }
 
 @Test func amazonBedrockConverseMapsReasoningEffortForOpenAIAndNovaModels() async throws {
@@ -782,6 +916,79 @@ import Testing
     #expect(body["dimensions"]?.intValue == 256)
 }
 
+@Test func amazonBedrockEmbeddingMapsProviderOptionsAndResponseShapesLikeUpstream() async throws {
+    let titanTransport = RecordingTransport(response: jsonResponse("""
+    {"embedding":[0.1,0.2],"inputTextTokenCount":4}
+    """))
+    let titanProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(region: "us-west-2", apiKey: "bearer-key", transport: titanTransport))
+    let titanResult = try await titanProvider.embeddingModel("amazon.titan-embed-text-v2:0").embed(EmbeddingRequest(
+        values: ["hello"],
+        providerOptions: ["bedrock": ["dimensions": 512, "normalize": false]]
+    ))
+
+    #expect(titanResult.embeddings == [[0.1, 0.2]])
+    #expect(titanResult.usage?.totalTokens == 4)
+    let titanBody = try decodeJSONBody(try #require((await titanTransport.requests()).first?.body))
+    #expect(titanBody["inputText"]?.stringValue == "hello")
+    #expect(titanBody["dimensions"]?.intValue == 512)
+    #expect(titanBody["normalize"]?.boolValue == false)
+    #expect(titanBody["bedrock"] == nil)
+
+    let cohereTransport = RecordingTransport(response: jsonResponse("""
+    {"embeddings":[[0.3,0.4]]}
+    """))
+    let cohereProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(region: "us-west-2", apiKey: "bearer-key", transport: cohereTransport))
+    let cohereResult = try await cohereProvider.embeddingModel("cohere.embed-english-v3").embed(EmbeddingRequest(
+        values: ["hello"],
+        providerOptions: ["bedrock": ["inputType": "search_document", "truncate": "START", "outputDimension": 1024]]
+    ))
+
+    #expect(cohereResult.embeddings == [[0.3, 0.4]])
+    let cohereBody = try decodeJSONBody(try #require((await cohereTransport.requests()).first?.body))
+    #expect(cohereBody["input_type"]?.stringValue == "search_document")
+    #expect(cohereBody["texts"]?[0]?.stringValue == "hello")
+    #expect(cohereBody["truncate"]?.stringValue == "START")
+    #expect(cohereBody["output_dimension"]?.intValue == 1024)
+
+    let novaTransport = RecordingTransport(response: jsonResponse("""
+    {"embeddings":[{"embeddingType":"float","embedding":[0.5,0.6]}],"inputTokenCount":5}
+    """))
+    let novaProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(region: "us-west-2", apiKey: "bearer-key", transport: novaTransport))
+    let novaResult = try await novaProvider.embeddingModel("amazon.nova-embed-text-v1:0").embed(EmbeddingRequest(
+        values: ["hello"],
+        providerOptions: ["bedrock": ["embeddingPurpose": "TEXT_RETRIEVAL", "embeddingDimension": 3072, "truncate": "NONE"]]
+    ))
+
+    #expect(novaResult.embeddings == [[0.5, 0.6]])
+    #expect(novaResult.usage?.totalTokens == 5)
+    let novaBody = try decodeJSONBody(try #require((await novaTransport.requests()).first?.body))
+    #expect(novaBody["taskType"]?.stringValue == "SINGLE_EMBEDDING")
+    let novaParams = novaBody["singleEmbeddingParams"]
+    #expect(novaParams?["embeddingPurpose"]?.stringValue == "TEXT_RETRIEVAL")
+    #expect(novaParams?["embeddingDimension"]?.intValue == 3072)
+    #expect(novaParams?["text"]?["truncationMode"]?.stringValue == "NONE")
+
+    let cohereV4Transport = RecordingTransport(response: jsonResponse("""
+    {"embeddings":{"float":[[0.7,0.8]]}}
+    """))
+    let cohereV4Provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(region: "us-west-2", apiKey: "bearer-key", transport: cohereV4Transport))
+    let cohereV4Result = try await cohereV4Provider.embeddingModel("cohere.embed-v4:0").embed(EmbeddingRequest(values: ["hello"]))
+    #expect(cohereV4Result.embeddings == [[0.7, 0.8]])
+}
+
+@Test func amazonBedrockEmbeddingRejectsTooManyValuesLikeUpstream() async throws {
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-west-2",
+        apiKey: "bearer-key",
+        transport: RecordingTransport(response: jsonResponse("{}"))
+    ))
+    let model = try provider.embeddingModel("amazon.titan-embed-text-v2:0")
+
+    await #expect(throws: AIError.invalidArgument(argument: "values", message: "Amazon Bedrock embedding models support at most 1 value per call.")) {
+        _ = try await model.embed(EmbeddingRequest(values: ["hello", "world"]))
+    }
+}
+
 @Test func amazonBedrockRerankingUsesAgentRuntimeShapeAndNestedOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"results":[{"index":1,"relevanceScore":0.81},{"index":0,"relevanceScore":0.42}]}
@@ -837,6 +1044,7 @@ import Testing
     let result = try await model.generateImage(ImageGenerationRequest(
         prompt: "A studio portrait",
         size: "1024x768",
+        aspectRatio: "4:3",
         count: 2,
         extraBody: [
             "bedrock": .object([
@@ -850,6 +1058,7 @@ import Testing
     ))
 
     #expect(result.base64Images == ["image-1"])
+    #expect(result.warnings == [AIWarning(type: "unsupported", feature: "aspectRatio", message: "This model does not support aspect ratio. Use size instead.")])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.nova-canvas-v1%3A0/invoke")
     let body = try decodeJSONBody(try #require(request.body))
@@ -864,6 +1073,32 @@ import Testing
     #expect(body["imageGenerationConfig"]?["cfgScale"]?.intValue == 7)
     #expect(body["imageGenerationConfig"]?["seed"]?.intValue == 1234)
     #expect(body["bedrock"] == nil)
+}
+
+@Test func amazonBedrockImageValidatesModerationEmptyImagesAndCountLikeUpstream() async throws {
+    let moderatedProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: RecordingTransport(response: jsonResponse(#"{"status":"Request Moderated","details":{"Moderation Reasons":["SAFETY"]}}"#))
+    ))
+    let moderatedModel = try moderatedProvider.imageModel("amazon.nova-canvas-v1:0")
+    await #expect(throws: AIError.invalidResponse(provider: "amazon-bedrock", message: "Amazon Bedrock request was moderated: SAFETY.")) {
+        _ = try await moderatedModel.generateImage(ImageGenerationRequest(prompt: "blocked"))
+    }
+
+    let emptyProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: RecordingTransport(response: jsonResponse(#"{"status":"Completed","images":[]}"#))
+    ))
+    let emptyModel = try emptyProvider.imageModel("amazon.nova-canvas-v1:0")
+    await #expect(throws: AIError.invalidResponse(provider: "amazon-bedrock", message: "Amazon Bedrock returned no images. Status: Completed")) {
+        _ = try await emptyModel.generateImage(ImageGenerationRequest(prompt: "empty"))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "count", message: "Amazon Bedrock image model amazon.nova-canvas-v1:0 supports at most 5 image(s) per call.")) {
+        _ = try await emptyModel.generateImage(ImageGenerationRequest(prompt: "too many", count: 6))
+    }
 }
 
 @Test func amazonBedrockImageMapsEditModes() async throws {

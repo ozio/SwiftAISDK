@@ -3,12 +3,25 @@ import Foundation
 
 private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/4.0.112"
 
+public struct AmazonBedrockCredentials: Sendable {
+    public var accessKeyID: String
+    public var secretAccessKey: String
+    public var sessionToken: String?
+
+    public init(accessKeyID: String, secretAccessKey: String, sessionToken: String? = nil) {
+        self.accessKeyID = accessKeyID
+        self.secretAccessKey = secretAccessKey
+        self.sessionToken = sessionToken
+    }
+}
+
 public struct AmazonBedrockProviderSettings: Sendable {
     public var region: String?
     public var apiKey: String?
     public var accessKeyID: String?
     public var secretAccessKey: String?
     public var sessionToken: String?
+    public var credentialProvider: (@Sendable () async throws -> AmazonBedrockCredentials)?
     public var baseURL: String?
     public var headers: [String: String]
     public var transport: any AITransport
@@ -20,6 +33,7 @@ public struct AmazonBedrockProviderSettings: Sendable {
         accessKeyID: String? = nil,
         secretAccessKey: String? = nil,
         sessionToken: String? = nil,
+        credentialProvider: (@Sendable () async throws -> AmazonBedrockCredentials)? = nil,
         baseURL: String? = nil,
         headers: [String: String] = [:],
         transport: any AITransport = URLSessionTransport.shared,
@@ -30,6 +44,7 @@ public struct AmazonBedrockProviderSettings: Sendable {
         self.accessKeyID = accessKeyID
         self.secretAccessKey = secretAccessKey
         self.sessionToken = sessionToken
+        self.credentialProvider = credentialProvider
         self.baseURL = baseURL
         self.headers = headers
         self.transport = transport
@@ -53,23 +68,7 @@ public final class AmazonBedrockProvider: AIProvider, @unchecked Sendable {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
         let runtimeBaseURL = settings.baseURL ?? "https://bedrock-runtime.\(region).amazonaws.com"
         let agentBaseURL = settings.baseURL ?? "https://bedrock-agent-runtime.\(region).amazonaws.com"
-
-        let auth: BedrockAuth
-        let rawAPIKey = settings.apiKey ?? environmentValue(["AWS_BEARER_TOKEN_BEDROCK"])
-        if let apiKey = rawAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
-            auth = .bearer(apiKey)
-        } else {
-            let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
-            let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
-            guard let accessKeyID, let secretAccessKey else {
-                throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
-            }
-            auth = .sigV4(AWSCredentials(
-                accessKeyID: accessKeyID,
-                secretAccessKey: secretAccessKey,
-                sessionToken: settings.sessionToken ?? environmentValue(["AWS_SESSION_TOKEN"])
-            ))
-        }
+        let auth = try bedrockAuth(settings: settings, providerID: providerID, fallbackToEnvironmentSessionTokenForExplicitKeys: false)
 
         let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
         runtimeConfig = BedrockRuntimeConfig(providerID: providerID, region: region, service: "bedrock", baseURL: runtimeBaseURL, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
@@ -113,23 +112,7 @@ public final class AmazonBedrockAnthropicProvider: AIProvider, @unchecked Sendab
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
         let runtimeBaseURL = settings.baseURL ?? "https://bedrock-runtime.\(region).amazonaws.com"
-
-        let auth: BedrockAuth
-        let rawAPIKey = settings.apiKey ?? environmentValue(["AWS_BEARER_TOKEN_BEDROCK"])
-        if let apiKey = rawAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
-            auth = .bearer(apiKey)
-        } else {
-            let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
-            let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
-            guard let accessKeyID, let secretAccessKey else {
-                throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
-            }
-            auth = .sigV4(AWSCredentials(
-                accessKeyID: accessKeyID,
-                secretAccessKey: secretAccessKey,
-                sessionToken: settings.sessionToken ?? environmentValue(["AWS_SESSION_TOKEN"])
-            ))
-        }
+        let auth = try bedrockAuth(settings: settings, providerID: providerID)
 
         let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
         runtimeConfig = BedrockRuntimeConfig(providerID: providerID, region: region, service: "bedrock", baseURL: runtimeBaseURL, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
@@ -177,23 +160,7 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
         let baseURL = settings.baseURL ?? "https://bedrock-mantle.\(region).api.aws/v1"
-
-        let auth: BedrockAuth
-        let rawAPIKey = settings.apiKey ?? environmentValue(["AWS_BEARER_TOKEN_BEDROCK"])
-        if let apiKey = rawAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
-            auth = .bearer(apiKey)
-        } else {
-            let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
-            let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
-            guard let accessKeyID, let secretAccessKey else {
-                throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
-            }
-            auth = .sigV4(AWSCredentials(
-                accessKeyID: accessKeyID,
-                secretAccessKey: secretAccessKey,
-                sessionToken: settings.sessionToken ?? environmentValue(["AWS_SESSION_TOKEN"])
-            ))
-        }
+        let auth = try bedrockAuth(settings: settings, providerID: providerID)
 
         let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
         let transport = BedrockSigningTransport(
@@ -258,7 +225,43 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
 
 enum BedrockAuth: Sendable {
     case bearer(String)
-    case sigV4(AWSCredentials)
+    case sigV4(@Sendable () async throws -> AWSCredentials)
+}
+
+private func bedrockAuth(settings: AmazonBedrockProviderSettings, providerID: String, fallbackToEnvironmentSessionTokenForExplicitKeys: Bool = true) throws -> BedrockAuth {
+    let rawAPIKey = settings.apiKey ?? environmentValue(["AWS_BEARER_TOKEN_BEDROCK"])
+    if let apiKey = rawAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty {
+        return .bearer(apiKey)
+    }
+
+    if let credentialProvider = settings.credentialProvider {
+        return .sigV4 {
+            do {
+                let credentials = try await credentialProvider()
+                return AWSCredentials(
+                    accessKeyID: credentials.accessKeyID,
+                    secretAccessKey: credentials.secretAccessKey,
+                    sessionToken: credentials.sessionToken
+                )
+            } catch {
+                throw AIError.invalidArgument(
+                    argument: "credentialProvider",
+                    message: "AWS credential provider failed: \(error). Please ensure it returns accessKeyID and secretAccessKey values."
+                )
+            }
+        }
+    }
+
+    let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
+    let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
+    guard let accessKeyID, let secretAccessKey else {
+        throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
+    }
+    let shouldLoadEnvironmentSessionToken = fallbackToEnvironmentSessionTokenForExplicitKeys || settings.accessKeyID == nil || settings.secretAccessKey == nil
+    let sessionToken = settings.sessionToken ?? (shouldLoadEnvironmentSessionToken ? environmentValue(["AWS_SESSION_TOKEN"]) : nil)
+    return .sigV4 {
+        AWSCredentials(accessKeyID: accessKeyID, secretAccessKey: secretAccessKey, sessionToken: sessionToken)
+    }
 }
 
 private final class BedrockSigningTransport: AITransport, @unchecked Sendable {
@@ -282,7 +285,8 @@ private final class BedrockSigningTransport: AITransport, @unchecked Sendable {
             var signed = request
             signed.headers["Authorization"] = signed.headers["Authorization"] ?? "Bearer \(apiKey)"
             return try await transport.send(signed)
-        case let .sigV4(credentials):
+        case let .sigV4(credentialsProvider):
+            let credentials = try await credentialsProvider()
             let signed = try AWSSigV4.sign(
                 request: request,
                 body: request.body ?? Data(),
@@ -311,26 +315,37 @@ struct BedrockRuntimeConfig: @unchecked Sendable {
     }
 
     func sendJSONResponse(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> (json: JSONValue, response: AIHTTPResponse) {
-        let response = try await transport.send(try request(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal))
+        let response = try await sendRequest(try request(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
             throw httpStatusError(provider: providerID, response: response)
         }
         return (try response.jsonValue(), response)
     }
 
-    func request(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {
-        let bodyData = try encodeJSONBody(body)
-        var mergedHeaders = headers.mergingHeaders(requestHeaders)
-        mergedHeaders["content-type"] = mergedHeaders["content-type"] ?? "application/json"
-        let request = AIHTTPRequest(method: "POST", url: try requireURL("\(withoutTrailingSlash(baseURL))\(path)"), headers: mergedHeaders, body: bodyData, abortSignal: abortSignal)
+    func sendRequest(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
         switch auth {
         case let .bearer(apiKey):
             var signed = request
             signed.headers["Authorization"] = signed.headers["Authorization"] ?? "Bearer \(apiKey)"
-            return signed
-        case let .sigV4(credentials):
-            return try AWSSigV4.sign(request: request, body: bodyData, credentials: credentials, region: region, service: service, date: date())
+            return try await transport.send(signed)
+        case let .sigV4(credentialsProvider):
+            let signed = try AWSSigV4.sign(
+                request: request,
+                body: request.body ?? Data(),
+                credentials: try await credentialsProvider(),
+                region: region,
+                service: service,
+                date: date()
+            )
+            return try await transport.send(signed)
         }
+    }
+
+    func request(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {
+        let bodyData = try encodeJSONBody(body)
+        var mergedHeaders = headers.mergingHeaders(requestHeaders)
+        mergedHeaders["content-type"] = mergedHeaders["content-type"] ?? "application/json"
+        return AIHTTPRequest(method: "POST", url: try requireURL("\(withoutTrailingSlash(baseURL))\(path)"), headers: mergedHeaders, body: bodyData, abortSignal: abortSignal)
     }
 }
 
