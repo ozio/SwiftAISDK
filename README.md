@@ -608,5 +608,6 @@ generate/stream tool loops, and representative embeddings. Override model IDs wi
 `LIVE_OPENAI_EMBEDDING_MODEL`, and `LIVE_GOOGLE_EMBEDDING_MODEL`.
 
 See [Docs/UpstreamSync.md](Docs/UpstreamSync.md) for the upstream porting
-workflow and [Docs/ProductGapAudit.md](Docs/ProductGapAudit.md) for remaining
-product-level gaps.
+workflow, [Docs/ProviderVersionLedger.md](Docs/ProviderVersionLedger.md) for
+tracked npm baselines, and [Docs/ProductGapAudit.md](Docs/ProductGapAudit.md)
+for remaining product-level gaps.

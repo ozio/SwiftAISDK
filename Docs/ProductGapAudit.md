@@ -4,9 +4,9 @@ Snapshot date: 2026-06-03
 
 This document is the product-level gap list for SwiftAISDK. It should stay short
 and decision-oriented. Historical provider progress belongs in tests, the
-capability matrix, and `Docs/UpstreamSync.md`; this file should describe what
-still prevents the package from feeling like a complete Swift equivalent of the
-provider-facing Vercel AI SDK.
+capability matrix, `Docs/ProviderVersionLedger.md`, and `Docs/UpstreamSync.md`;
+this file should describe what still prevents the package from feeling like a
+complete Swift equivalent of the provider-facing Vercel AI SDK.
 
 ## Current Product Shape
 
@@ -22,8 +22,9 @@ SwiftAISDK is now more than a set of low-level provider models:
   provider coverage across official `@ai-sdk/*` model-provider packages.
 - `Docs/ProviderCapabilityMatrix.md` is generated from
   `AIProviderCapabilities` and guarded by tests.
-- `Docs/UpstreamSync.md` now contains the provider sync workflow and npm package
-  version baselines used for future upstream diffs.
+- `Docs/UpstreamSync.md` contains the provider sync workflow, and
+  `Docs/ProviderVersionLedger.md` records npm package version baselines for
+  future upstream diffs.
 
 The main product risk is no longer "there is no facade" or "there is no core v4
 shape". Those foundations exist. The current risk is that provider fidelity,
@@ -34,7 +35,7 @@ area.
 
 | Priority | Gap | Current evidence | Next concrete pass |
 | --- | --- | --- | --- |
-| P0 | Provider-complete parity is uneven. | Provider coverage is broad, but many rows represent first-pass behavior while only some providers have been re-read against current npm versions end to end. | Continue one-provider-at-a-time passes using the version ledger in `UpstreamSync.md`; each pass should close request options, provider options, warnings, usage, metadata, stream lifecycle, abort propagation, unsupported routes, and focused tests before moving on. |
+| P0 | Provider-complete parity is uneven. | Provider coverage is broad, but many rows represent first-pass behavior while only some providers have been re-read against current npm versions end to end. | Continue one-provider-at-a-time passes using `Docs/ProviderVersionLedger.md`; each pass should close request options, provider options, warnings, usage, metadata, stream lifecycle, abort propagation, unsupported routes, and focused tests before moving on. |
 | P0 | Live verification is too narrow for the provider surface. | `LiveProviderSmokeTests.swift` currently covers representative OpenAI, Anthropic, and Gemini calls only. Most providers are validated through mock transports. | Add opt-in live smoke slices by provider family: OpenAI-compatible language, native language, embeddings/reranking, transcription/speech, image/video, files/skills. Keep it cheap and disabled by default. |
 | P1 | Provider option ergonomics are still hard to discover. | Provider-specific options exist through `providerOptions` and `extraBody`, but users need to inspect tests or upstream docs to know the valid namespace and fields. | Add per-provider option examples only where Swift differs or where schemas are non-obvious. Prefer compact examples linked from the capability matrix instead of long README sections. |
 | P1 | Tooling is functionally broad but not fully product-polished. | `AITool`, dynamic tools, tool loops, approval hooks, MCP tools, and provider-defined tools exist, but typed validation errors and provider-native multimodal `modelOutput` handling still need tightening. | Do a tool-product pass: typed validation diagnostics, richer tool result/error surfaces, provider-defined tool adapters as first-class Swift helpers, and non-OpenAI provider-executed approval mapping where supported upstream. |
@@ -71,17 +72,17 @@ Use these files when deciding whether a gap is still real:
 | Facade calls, retries, tool loops, object generation, telemetry | `Sources/SwiftAISDK/AI.swift`, `Tests/SwiftAISDKTests/AIFacadeTests.swift`, `Tests/SwiftAISDKTests/AIObjectFacadeTests.swift`, `Tests/SwiftAISDKTests/WarningLoggingTests.swift` |
 | Core request/result/stream contract | `Sources/SwiftAISDK/Core.swift`, `Tests/SwiftAISDKTests/CoreContractTests.swift`, `Tests/SwiftAISDKTests/RawChunkStreamTests.swift` |
 | Provider inventory and generated docs | `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`, `Docs/ProviderCapabilityMatrix.md`, `Tests/SwiftAISDKTests/ProviderCapabilityMatrixTests.swift` |
-| Provider sync process and npm version baselines | `Docs/UpstreamSync.md` |
-| Provider-specific parity | Closest provider test file under `Tests/SwiftAISDKTests/*ProviderTests.swift` or the split family file listed in `Docs/UpstreamSync.md` |
+| Provider sync process and npm version baselines | `Docs/UpstreamSync.md`, `Docs/ProviderVersionLedger.md` |
+| Provider-specific parity | Closest provider test file under `Tests/SwiftAISDKTests/*ProviderTests.swift`, or the evidence file listed in `Docs/ProviderVersionLedger.md` and `Docs/ProviderCapabilityMatrix.md` |
 | Live smoke coverage | `Tests/SwiftAISDKTests/LiveProviderSmokeTests.swift` |
 | MCP bridge | `Sources/SwiftAISDK/MCPClient.swift`, `Sources/SwiftAISDK/MCPOAuth.swift`, `Sources/SwiftAISDK/MCPStdioTransport.swift`, `Tests/SwiftAISDKTests/MCP*Tests.swift` |
 
 ## Next Rounds
 
 1. **Provider parity round: one provider at a time.**
-   Pick one provider package from the version ledger, read its current npm
-   tarball or upstream source, close all request/response/stream/tool gaps for
-   that provider, add focused tests, then commit and push.
+   Pick one provider package from `Docs/ProviderVersionLedger.md`, read its
+   current npm tarball or upstream source, close all request/response/stream/tool
+   gaps for that provider, add focused tests, then commit and push.
 
 2. **Live smoke matrix round.**
    Add opt-in live tests behind `LIVE_AI_TESTS=1` and provider-specific env
