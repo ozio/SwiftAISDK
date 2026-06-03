@@ -32,6 +32,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_entities=true&detect_language=false&diarize=true&filler_words=true&model=nova-3&redact=ssn%2Cpci&search=Codex&smart_format=true&summarize=v2&topics=true&utt_split=0.8&utterances=true")
     #expect(request.headers["authorization"] == "Token deepgram-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/2.0.33")
     #expect(request.headers["content-type"] == "audio/wav")
     #expect(request.body == Data("wav".utf8))
 }
@@ -222,6 +223,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?callback=https%3A%2F%2Fexample.com%2Fhook&callback_method=PUT&container=wav&encoding=linear16&mip_opt_out=true&model=aura-2-helena-en&sample_rate=24000&tag=test%2Cswift")
     #expect(request.headers["authorization"] == "Token deepgram-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/2.0.33")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
 }

@@ -403,6 +403,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "assemblyai" {
             return withUserAgentSuffix(headers, "ai-sdk/assemblyai/2.0.33")
         }
+        if providerID == "deepgram" {
+            return withUserAgentSuffix(headers, "ai-sdk/deepgram/2.0.33")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }
