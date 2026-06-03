@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
 
+private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/4.0.112"
+
 public struct AmazonBedrockProviderSettings: Sendable {
     public var region: String?
     public var apiKey: String?
@@ -69,8 +71,7 @@ public final class AmazonBedrockProvider: AIProvider, @unchecked Sendable {
             ))
         }
 
-        var headers = settings.headers
-        headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
+        let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
         runtimeConfig = BedrockRuntimeConfig(providerID: providerID, region: region, service: "bedrock", baseURL: runtimeBaseURL, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
         agentRuntimeConfig = BedrockRuntimeConfig(providerID: providerID, region: region, service: "bedrock", baseURL: agentBaseURL, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
     }
@@ -130,8 +131,7 @@ public final class AmazonBedrockAnthropicProvider: AIProvider, @unchecked Sendab
             ))
         }
 
-        var headers = settings.headers
-        headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
+        let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
         runtimeConfig = BedrockRuntimeConfig(providerID: providerID, region: region, service: "bedrock", baseURL: runtimeBaseURL, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
     }
 
@@ -195,8 +195,7 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
             ))
         }
 
-        var headers = settings.headers
-        headers["user-agent"] = headers["user-agent"] ?? userAgent("amazon-bedrock")
+        let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
         let transport = BedrockSigningTransport(
             region: region,
             service: "bedrock-mantle",

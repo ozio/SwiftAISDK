@@ -37,10 +37,56 @@ import Testing
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-east-1/bedrock/aws4_request") == true)
     #expect(request.headers["authorization"]?.contains("SignedHeaders=") == true)
     #expect(request.headers["custom-header"] == "value")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.112")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?[0]?["text"]?.stringValue == "Brief.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
     #expect(body["inferenceConfig"]?["temperature"]?.doubleValue == 1)
+}
+
+@Test func amazonBedrockAppendsVersionedUserAgentToCustomHeaders() async throws {
+    let converseTransport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"bedrock"}]}},"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2}}
+    """))
+    let converseProvider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: converseTransport
+    ))
+    _ = try await converseProvider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let anthropicTransport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"anthropic"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let anthropicProvider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: anthropicTransport
+    ))
+    _ = try await anthropicProvider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let mantleTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"mantle"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}
+    """))
+    let mantleProvider = try AIProviders.bedrockMantle(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "mantle-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: mantleTransport
+    ))
+    _ = try await mantleProvider.languageModel("openai.gpt-oss-20b")
+        .generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let converseRequest = try #require(await converseTransport.requests().first)
+    let anthropicRequest = try #require(await anthropicTransport.requests().first)
+    let mantleRequest = try #require(await mantleTransport.requests().first)
+    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.112")
+    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.112")
+    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.112")
 }
 
 @Test func amazonBedrockConverseMapsDocumentDataAndProviderOptions() async throws {
@@ -288,6 +334,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke")
     #expect(request.headers["Authorization"] == "Bearer bedrock-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.112")
     #expect(request.headers["anthropic-beta"] == nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"] == nil)
@@ -424,7 +471,7 @@ import Testing
     #expect(request.url.absoluteString == "https://bedrock-mantle.us-west-2.api.aws/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer mantle-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "SwiftAISDK/amazon-bedrock")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.112")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai.gpt-oss-20b")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")
