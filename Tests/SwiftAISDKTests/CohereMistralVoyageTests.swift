@@ -284,6 +284,12 @@ import Testing
             toolCallID: "call_weather",
             toolName: "weather",
             result: ["forecast": "sunny"]
+        )),
+        .toolResult(AIToolResult(
+            toolCallID: "call_denied",
+            toolName: "deny",
+            result: ["raw": "fallback"],
+            modelOutput: ["type": "execution-denied"]
         ))
     ]))
 
@@ -296,6 +302,9 @@ import Testing
     #expect(body["messages"]?[1]?["role"]?.stringValue == "tool")
     #expect(body["messages"]?[1]?["tool_call_id"]?.stringValue == "call_weather")
     #expect(body["messages"]?[1]?["content"]?.stringValue == #"{"forecast":"sunny"}"#)
+    #expect(body["messages"]?[2]?["role"]?.stringValue == "tool")
+    #expect(body["messages"]?[2]?["tool_call_id"]?.stringValue == "call_denied")
+    #expect(body["messages"]?[2]?["content"]?.stringValue == "Tool execution denied.")
 }
 
 @Test func cohereLanguageMapsCitationSources() async throws {
@@ -1060,9 +1069,9 @@ import Testing
 
 @Test func cohereLanguageStreamsToolCallEvents() async throws {
     let transport = RecordingTransport(response: sseResponse(#"""
-    data: {"type":"tool-call-start","delta":{"message":{"tool_calls":{"id":"weather_dqgshstja6p9","type":"function","function":{"name":"weather","arguments":"{\"location\":"}}}}}
+    data: {"type":"tool-call-start","delta":{"message":{"tool_calls":{"id":"weather_dqgshstja6p9","type":"function","function":{"name":"weather","arguments":"{ \"location\" :"}}}}}
 
-    data: {"type":"tool-call-delta","delta":{"message":{"tool_calls":{"function":{"arguments":"\"San Francisco\"}"}}}}}
+    data: {"type":"tool-call-delta","delta":{"message":{"tool_calls":{"function":{"arguments":" \"San Francisco\" }"}}}}}
 
     data: {"type":"tool-call-end"}
 
@@ -1098,18 +1107,46 @@ import Testing
     }
 
     let call = try #require(finalCall)
-    #expect(deltas == ["{\"location\":", "\"San Francisco\"}"])
+    #expect(deltas == ["{ \"location\" :", " \"San Francisco\" }"])
     #expect(inputLifecycle == [
         "start:weather_dqgshstja6p9:weather",
-        "delta:weather_dqgshstja6p9:{\"location\":",
-        "delta:weather_dqgshstja6p9:\"San Francisco\"}",
+        "delta:weather_dqgshstja6p9:{ \"location\" :",
+        "delta:weather_dqgshstja6p9: \"San Francisco\" }",
         "end:weather_dqgshstja6p9"
     ])
     #expect(call.id == "weather_dqgshstja6p9")
     #expect(call.name == "weather")
+    #expect(call.arguments == #"{"location":"San Francisco"}"#)
     #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")
     #expect(finishReason == "tool-calls")
     #expect(totalTokens == 5)
+}
+
+@Test func cohereLanguageStreamsParseErrorsAsErrorPartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"message-start","id":"msg-err"}
+
+    data: not-json
+
+    """))
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
+    let model = try provider.languageModel("command-a-03-2025")
+
+    var errors: [String] = []
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .error(message, _):
+            errors.append(message)
+        case let .finish(reason, _):
+            finishReason = reason
+        default:
+            break
+        }
+    }
+
+    #expect(errors.count == 1)
+    #expect(finishReason == "error")
 }
 
 @Test func cohereEmbeddingAndRerankingUseNativeEndpoints() async throws {

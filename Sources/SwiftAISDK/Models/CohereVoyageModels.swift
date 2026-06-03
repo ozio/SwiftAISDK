@@ -65,8 +65,15 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                     var usage: TokenUsage?
                     var pendingToolCall: CoherePendingToolCall?
                     var activeReasoningID: String?
-                    for event in parseServerSentEvents(response.body) {
-                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                        let raw: JSONValue
+                        do {
+                            raw = try decodeJSONBody(Data(event.data.utf8))
+                        } catch {
+                            finishReason = "error"
+                            continuation.yield(.error(message: String(describing: error)))
+                            continue
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
@@ -910,7 +917,7 @@ private func cohereToolResultContent(_ result: AIToolResult) -> String {
     case "text", "error-text":
         return output["value"]?.stringValue ?? ""
     case "execution-denied":
-        return output["reason"]?.stringValue ?? "Tool call execution denied."
+        return output["reason"]?.stringValue ?? "Tool execution denied."
     case "content", "json", "error-json":
         if let value = output["value"] {
             return cohereJSONString(value) ?? value.stringValue ?? ""
@@ -1024,6 +1031,10 @@ private func cohereToolArguments(_ arguments: String) -> String {
     let trimmed = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.isEmpty || trimmed == "null" {
         return "{}"
+    }
+    if let json = try? decodeJSONBody(Data(trimmed.utf8)),
+       let canonical = cohereJSONString(json) {
+        return canonical
     }
     return trimmed
 }
