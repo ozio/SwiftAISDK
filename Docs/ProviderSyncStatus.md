@@ -143,6 +143,7 @@ record and passes tests, it leaves the active queue.
 | --- | --- | --- |
 | `@ai-sdk/gateway` | `3.0.123` | `3294e3d`, `b8f35cb`, `08b36ed`: v3 base URL, headers/user agent, OIDC fallback, typed Gateway errors. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
+| `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
 | `@ai-sdk/google-vertex` | `4.0.141` | `83ef81d`: regional REP hosts, express API-key precedence, embedding options/usage/limit, Veo polling/base64 videos, and subprovider URL parity after package re-read. |
 | `@ai-sdk/google` | `3.0.80` | `09bfd11`: Gemini/Imagen/Veo/embeddings parity sweep: providerOptions, multimodal content, editing warnings, video polling/options, metadata, and abort propagation after package re-read. |
 | `@ai-sdk/huggingface` | `1.0.50` | `e6ce75a`: provider-defined tools skipped with upstream-style warning after package re-read. |
@@ -178,6 +179,20 @@ Known Swift differences / out of scope: Swift keeps acronym-style names such as 
 Tests run: swift test --filter Anthropic; swift test with 868 tests.
 Commit evidence: 135ceb6.
 Reopen only if: anthropic-aws npm version changes, AWS wrapper auth/header/signing behavior changes, new wrapper-level settings or model families appear, Anthropic core generateId becomes in-scope, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/anthropic`
+
+```text
+Package: @ai-sdk/anthropic
+Baseline: 3.0.81
+Upstream inspected: anthropic-provider.ts, anthropic-messages-language-model.ts, anthropic-messages-options.ts, anthropic-prepare-tools.ts, convert-to-anthropic-messages-prompt.ts, anthropic-message-metadata.ts, anthropic-messages-api.ts, anthropic-tools.ts, tool helper files, get-cache-control.ts, forward-anthropic-container-id-from-last-step.ts, index.ts, version.ts.
+Swift files inspected: Anthropic.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, Core.swift, AI.swift, ProviderRegistry.swift, AnthropicTests.swift, AnthropicStreamingAndClientsTests.swift, NativeResponseMetadataTests.swift.
+Surfaces checked: provider factory, callable/chat/messages aliases, default and custom base URL, API-key auth, Bearer auth token, explicit apiKey/authToken conflict, custom provider name for language models, custom providerOptions key merging, header/user-agent precedence, unsupported embedding/image/audio/video/rerank surfaces, Messages request body, Gemini-style not applicable, system/messages conversion, URL/image/PDF/file/provider-reference parts, file citation metadata, structured output, thinking/adaptive thinking rules, max-token adjustment, unsupported standard option warnings, metadata/context-management/container/mcp/output-config/speed/inference options, automatic beta headers, file and skill clients, Anthropic provider tools, unsupported provider-tool warnings, tool choice, disable_parallel_tool_use, stream eager_input_streaming defaults and opt-out, hosted tool result parsing, MCP tool result parsing, citations/sources, redacted thinking, compaction metadata, stream lifecycle/deltas/raw chunks/metadata, response metadata, and abort propagation through generate and stream.
+Known Swift differences / out of scope: Swift keeps `extraBody` as a legacy escape hatch alongside typed `providerOptions.anthropic`; Swift exposes files/skills as additional provider capabilities even though the upstream ProviderV3 wrapper only exposes language/tools; Swift settings headers are static dictionaries rather than upstream async Resolvable headers; `generateId` customization is not exposed yet for Anthropic source IDs; Swift file/skill provider IDs remain `anthropic.messages`/`anthropic.skills` even when a custom language provider name is configured.
+Tests run: swift test --filter Anthropic; swift test with 883 tests.
+Commit evidence: 30c3272.
+Reopen only if: @ai-sdk/anthropic npm version changes, Messages/Files/Skills/tool schemas change, providerOptions schemas change, generateId or async header behavior becomes required in Swift core, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/google-vertex`
@@ -274,7 +289,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/open-responses` | `1.0.16` | `b3d4e27`, `fa5e36d`, `6832d59`, `866bd78`, `f8aeb19`, `002a70a`, `c61a3b4`, `998e27b`, `0d6b140`: lifecycle, reasoning, annotations, hosted tools, compaction, apply-patch streaming. |
 | `@ai-sdk/openai` | `3.0.67` | `b363c3f`, `1c45140`, `e2ea865`, `b2a1dcc`: provider naming, shell tools, image metadata, user agent; broad OpenAI tests exist. |
 | `@ai-sdk/openai-compatible` | `2.0.48` | `7aa1c55`: provider surfaces; broad OpenAI-compatible request/stream/warning tests exist. |
-| `@ai-sdk/anthropic` | `3.0.81` | `a64c969`, `0b2cd03`, `762f3e3`, `2ee70ed`, `0870130`, `7d62183`: streams, hosted tool results, warnings, provider-option betas, file refs, provider metadata. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `85b8875`, `50d2289`, `1acd167`: converse options, Anthropic invoke parity, user agent. |
 | `@ai-sdk/groq` | `3.0.39` | `55faaac`, `6627b3d`, `2fe28f0`: option schema, transcription response, chat parity. |
 | `@ai-sdk/mistral` | `3.0.37` | `9ea7375`, `d4e5aab`: option schema and chat parity. |
@@ -316,8 +330,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Promote the central heavy providers from `substantial parity coverage` to
-   `fresh deep pass`: OpenAI/OpenAI-compatible/Open Responses, Anthropic,
-   Amazon Bedrock.
+   `fresh deep pass`: OpenAI/OpenAI-compatible/Open Responses, Amazon Bedrock.
 2. Do final package sweeps for the already-covered language providers:
    Groq, Mistral, Cohere, Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI,
    Alibaba.
