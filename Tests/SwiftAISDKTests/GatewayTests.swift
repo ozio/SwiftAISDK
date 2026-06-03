@@ -13,13 +13,33 @@ import Testing
 
     #expect(result.text == "via gateway")
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/language-model")
-    #expect(request.headers["Authorization"] == "Bearer gateway-key")
+    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/language-model")
+    #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
+    #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.123")
     #expect(request.headers["ai-language-model-id"] == "openai/gpt-4.1-mini")
     #expect(request.headers["ai-language-model-streaming"] == "false")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
+}
+
+@Test func gatewayAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"custom gateway"}],"finishReason":"stop"}
+    """))
+    let provider = try AIProviders.gateway(settings: ProviderSettings(
+        apiKey: "gateway-key",
+        headers: ["User-Agent": "CustomApp/1.0", "X-Client": "swift"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("openai/gpt-4.1-mini")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer gateway-key")
+    #expect(request.headers["x-client"] == "swift")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/3.0.123")
 }
 
 @Test func gatewayLanguageMapsToolsToolChoiceAndContentToolCalls() async throws {
@@ -238,7 +258,7 @@ import Testing
     #expect(embeddings.embeddings == [[0.1, 0.2]])
     #expect(embeddings.usage?.totalTokens == 3)
     let embeddingRequest = try #require(await embeddingTransport.requests().first)
-    #expect(embeddingRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/embedding-model")
+    #expect(embeddingRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/embedding-model")
     #expect(embeddingRequest.headers["ai-model-id"] == "text-embedding")
 
     let rerankTransport = RecordingTransport(response: jsonResponse("""
@@ -248,7 +268,7 @@ import Testing
     let ranking = try await rerankGateway.rerankingModel("reranker").rerank(RerankingRequest(query: "q", documents: ["a", "b"], topK: 1))
     #expect(ranking.results == [RerankedDocument(index: 1, score: 0.9)])
     let rerankRequest = try #require(await rerankTransport.requests().first)
-    #expect(rerankRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/reranking-model")
+    #expect(rerankRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/reranking-model")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["topN"]?.intValue == 1)
 }
@@ -322,9 +342,10 @@ import Testing
     #expect(reportItems["tags"] == "production,api")
     #expect(requests[3].url.absoluteString == "https://custom-gateway.example.com/v1/generation?id=gen_01")
     for request in requests {
-        #expect(request.headers["Authorization"] == "Bearer gateway-key")
+        #expect(request.headers["authorization"] == "Bearer gateway-key")
         #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.123")
     }
 }
 
@@ -361,7 +382,7 @@ import Testing
     #expect(result.requestMetadata.body?["files"]?[1]?["url"]?.stringValue == "https://example.com/reference.png")
     #expect(result.requestMetadata.body?["mask"]?["data"]?["type"]?.stringValue == "omitted-media")
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/image-model")
+    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/image-model")
     #expect(request.headers["ai-image-model-specification-version"] == "4")
     #expect(request.headers["ai-model-id"] == "google/imagen-4.0-generate")
     let body = try decodeJSONBody(try #require(request.body))
@@ -414,7 +435,7 @@ import Testing
     }
 
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/video-model")
+    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/video-model")
     #expect(request.headers["ai-video-model-specification-version"] == "4")
     #expect(request.headers["ai-model-id"] == "fal/luma-ray-2")
     #expect(request.headers["accept"] == "text/event-stream")

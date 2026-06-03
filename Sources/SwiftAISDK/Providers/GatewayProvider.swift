@@ -115,10 +115,10 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
         }
         settings.headers["ai-gateway-protocol-version"] = settings.headers["ai-gateway-protocol-version"] ?? "0.0.1"
         settings.headers["ai-gateway-auth-method"] = settings.headers["ai-gateway-auth-method"] ?? "api-key"
-        let headers = try OpenAICompatibleProvider.buildHeaders(providerID: providerID, authorization: .bearer(environmentVariables: ["AI_GATEWAY_API_KEY"]), settings: settings)
+        let headers = try OpenAICompatibleProvider.buildHeaders(providerID: providerID, authorization: .bearer(environmentVariables: ["AI_GATEWAY_API_KEY"]), settings: settings, userAgentSuffix: "ai-sdk/gateway/3.0.123")
         config = ModelHTTPConfig(
             providerID: providerID,
-            baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v4/ai",
+            baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v3/ai",
             headers: headers,
             transport: settings.transport,
             includeUsage: settings.includeUsage,
