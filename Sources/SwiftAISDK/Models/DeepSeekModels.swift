@@ -56,17 +56,33 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
                     }
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))
-                    var latestUsage: TokenUsage?
+                    var latestUsage: TokenUsage? = TokenUsage()
                     var finishReason: String? = "other"
                     var providerMetadata: [String: JSONValue] = [:]
                     var toolCalls = DeepSeekStreamingToolCalls()
                     var didEmitResponseMetadata = false
                     var activeReasoningID: String?
                     var activeTextID: String?
+                    var startedToolCallIndices: Set<Int> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
-                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                        let raw: JSONValue
+                        do {
+                            raw = try decodeJSONBody(Data(event.data.utf8))
+                        } catch {
+                            finishReason = "error"
+                            continuation.yield(.error(message: error.localizedDescription))
+                            continue
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
+                        }
+                        if let error = raw["error"] {
+                            finishReason = "error"
+                            continuation.yield(.error(
+                                message: error["message"]?.stringValue ?? deepSeekJSONString(error) ?? "DeepSeek stream error.",
+                                rawValue: error
+                            ))
+                            continue
                         }
                         if !didEmitResponseMetadata {
                             didEmitResponseMetadata = true
@@ -100,6 +116,16 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
                                 activeReasoningID = nil
                             }
                             for toolCallDelta in toolCallDeltas {
+                                let index = toolCallDelta["index"]?.intValue ?? 0
+                                if !startedToolCallIndices.contains(index) {
+                                    guard toolCallDelta["id"]?.stringValue != nil else {
+                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'id' to be a string.")
+                                    }
+                                    guard toolCallDelta["function"]?["name"]?.stringValue != nil else {
+                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
+                                    }
+                                    startedToolCallIndices.insert(index)
+                                }
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)
                                 }
@@ -266,11 +292,10 @@ private func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue
         case .tool:
             for part in message.content {
                 guard case let .toolResult(result) = part else { continue }
-                let value = result.modelOutput ?? result.result
                 output.append(.object([
                     "role": .string("tool"),
                     "tool_call_id": .string(result.toolCallID),
-                    "content": .string(deepSeekJSONString(value) ?? value.stringValue ?? "")
+                    "content": .string(deepSeekToolResultContent(result))
                 ]))
             }
         }
@@ -546,7 +571,7 @@ private func deepSeekJSONString(_ value: JSONValue) -> String? {
 }
 
 private func deepSeekUsage(from raw: JSONValue) -> TokenUsage? {
-    guard let usage = raw["usage"] else { return nil }
+    guard let usage = raw["usage"] else { return TokenUsage() }
     let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue ?? 0
     let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue ?? 0
     let cacheReadTokens = usage["prompt_cache_hit_tokens"]?.intValue ?? 0
@@ -563,6 +588,28 @@ private func deepSeekUsage(from raw: JSONValue) -> TokenUsage? {
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )
+}
+
+private func deepSeekToolResultContent(_ result: AIToolResult) -> String {
+    let output = result.modelOutput ?? result.result
+    if let text = output.stringValue {
+        return text
+    }
+    guard let object = output.objectValue, let type = object["type"]?.stringValue else {
+        return deepSeekJSONString(output) ?? ""
+    }
+    switch type {
+    case "text", "error-text":
+        return object["value"]?.stringValue ?? ""
+    case "execution-denied":
+        return object["reason"]?.stringValue ?? "Tool execution denied."
+    case "json", "error-json":
+        return deepSeekJSONString(object["value"] ?? .object([:])) ?? ""
+    case "content":
+        return deepSeekJSONString(object["value"] ?? JSONValue.array([JSONValue]())) ?? ""
+    default:
+        return deepSeekJSONString(output) ?? ""
+    }
 }
 
 private func deepSeekToolCalls(from value: JSONValue?) -> [AIToolCall] {

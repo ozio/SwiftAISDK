@@ -108,6 +108,51 @@ import Testing
     #expect(result.finishReason == "other")
 }
 
+@Test func deepSeekLanguageMapsMissingUsageToEmptyUsageLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"ds-generate","model":"deepseek-chat","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-chat")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "ok")
+    #expect(result.usage == TokenUsage())
+}
+
+@Test func deepSeekLanguageSerializesToolResultOutputsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-chat")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .tool, content: [
+            .toolResult(AIToolResult(
+                toolCallID: "call-denied",
+                toolName: "lookup",
+                result: .object(["type": .string("execution-denied")])
+            )),
+            .toolResult(AIToolResult(
+                toolCallID: "call-json",
+                toolName: "lookup",
+                result: .object(["type": .string("json"), "value": .object(["ok": .bool(true)])])
+            )),
+            .toolResult(AIToolResult(
+                toolCallID: "call-content",
+                toolName: "lookup",
+                result: .object(["type": .string("content"), "value": .array([.object(["type": .string("text"), "text": .string("found")])])])
+            ))
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let messages = try #require(body["messages"]?.arrayValue)
+    #expect(messages[0]["content"]?.stringValue == "Tool execution denied.")
+    #expect(messages[1]["content"]?.stringValue == #"{"ok":true}"#)
+    let contentValue = try decodeJSONBody(Data(try #require(messages[2]["content"]?.stringValue).utf8))
+    #expect(contentValue[0]?["type"]?.stringValue == "text")
+    #expect(contentValue[0]?["text"]?.stringValue == "found")
+}
+
 @Test func deepSeekProviderAddsVersionedUserAgentSuffix() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
     let provider = try AIProviders.deepSeek(settings: ProviderSettings(
@@ -122,6 +167,39 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepseek-key")
     #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/2.0.35")
+}
+
+@Test func deepSeekLanguageStreamsErrorChunksAndParseErrorsAsErrorPartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"error":{"message":"quota exhausted","type":"rate_limit_error","code":"rate_limit"}}
+
+    data: not-json
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-chat")
+
+    var errors: [String] = []
+    var finishReason: String?
+    var finishUsage: TokenUsage?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .error(message, _):
+            errors.append(message)
+        case let .finish(reason, usage):
+            finishReason = reason
+            finishUsage = usage
+        default:
+            break
+        }
+    }
+
+    #expect(errors.first == "quota exhausted")
+    #expect(errors.count == 2)
+    #expect(finishReason == "error")
+    #expect(finishUsage == TokenUsage())
 }
 
 @Test func deepSeekChatModelUsesNativeReasoningMapping() async throws {
@@ -484,6 +562,21 @@ import Testing
     #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")
     #expect(finishReason == "tool-calls")
     #expect(totalTokens == 13)
+}
+
+@Test func deepSeekLanguageStreamRequiresFirstToolDeltaIDAndNameLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"id":"ds-1","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":null}]}
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    await #expect(throws: AIError.invalidResponse(provider: "deepseek.chat", message: "Expected 'id' to be a string.")) {
+        for try await _ in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {}
+    }
 }
 
 @Test func deepSeekV4AssistantMessagesIncludeEmptyReasoningContent() async throws {
