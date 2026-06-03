@@ -147,6 +147,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/open-responses` | `1.0.16` | `d0d881f`: package re-read against upstream request/input/stream/finish schemas; file names, rich tool-result content, Open Responses finish mapping, and failed stream events closed. |
 | `@ai-sdk/groq` | `3.0.39` | `e67562f`: package re-read across provider/chat/messages/tools/transcription; Groq-specific usage details aligned after existing providerOptions/tool/transcription coverage. |
 | `@ai-sdk/mistral` | `3.0.37` | `54733c8`: package re-read across provider/chat/messages/tools/embedding; Mistral finish/error mapping and tool execution-denied output aligned after existing native chat/embedding parity coverage. |
+| `@ai-sdk/cohere` | `3.0.36` | `5f0bd7f`: package re-read across provider/chat/prompt/tools/embedding/reranking; Cohere stream error chunks, tool-call argument canonicalization, and execution-denied output aligned after existing native parity coverage. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -241,6 +242,20 @@ Known Swift differences / out of scope: Swift exposes `extraBody` as an addition
 Tests run: swift test --filter Mistral; swift test with 900 tests.
 Commit evidence: 54733c8.
 Reopen only if: mistral npm version changes, chat/embedding providerOptions schemas change, Mistral response/usage schemas change, Swift core adds async settings/generateId/supportedUrls hooks, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/cohere`
+
+```text
+Package: @ai-sdk/cohere
+Baseline: 3.0.36
+Upstream inspected: cohere-provider.ts, cohere-chat-language-model.ts, cohere-chat-options.ts, convert-to-cohere-chat-prompt.ts, cohere-chat-prompt.ts, cohere-prepare-tools.ts, cohere-embedding-model.ts, cohere-embedding-options.ts, reranking/cohere-reranking-model.ts, reranking/cohere-reranking-options.ts, reranking/cohere-reranking-api.ts, convert-cohere-usage.ts, map-cohere-finish-reason.ts, cohere-error.ts, index.ts, version.ts.
+Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, CohereVoyageModels.swift, CohereMistralVoyageTests.swift, CohereProviderOptionSchemaTests.swift, ProviderAbortPropagationTests.swift, NativeVectorResponseMetadataTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
+Surfaces checked: provider factory, callable/language routing, embedding aliases, reranking/rerankingModel aliases, unsupported image capability, default base URL, COHERE_API_KEY auth, custom header precedence, user-agent suffix, chat request body, frequency/presence penalties, max tokens, temperature, p/topP, k/topK, seed, stop sequences, JSON response_format schema mapping, providerOptions.cohere.thinking schema/defaulting, image URL/inline image prompt conversion, image media type defaults, text and JSON document extraction, unsupported document rejection, assistant/tool message conversion, tool-result serialization, function tools, provider-defined tool warnings, tool choice none/required/tool filtering, generate text/reasoning/tool calls/citations/finish/usage/metadata, stream lifecycle text/reasoning/tool-input/tool-call/error/raw/finish usage, embedding body/limits/float type/default input_type/truncate/output dimension/usage, reranking text/object document conversion/options/response metadata/warnings, and abort propagation for chat generate/stream.
+Known Swift differences / out of scope: Swift exposes `extraBody` as an additional compatibility escape hatch beside upstream providerOptions, including embedding/reranking raw passthrough; Swift settings are static dictionaries rather than upstream async resolvable header functions; upstream `generateId` customization for citation source IDs and `supportedUrls` metadata are not public Swift hooks yet; Swift stream parts may include additional compatibility `toolCallDelta` events while preserving upstream tool-input lifecycle.
+Tests run: swift test --filter Cohere; swift test with 901 tests.
+Commit evidence: 5f0bd7f.
+Reopen only if: cohere npm version changes, chat/embedding/reranking providerOptions schemas change, Cohere stream event or usage schemas change, Swift core adds async settings/generateId/supportedUrls hooks, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/anthropic-aws`
@@ -376,7 +391,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/cohere` | `3.0.36` | `5d2c1d9`, `6b81b90`: option schema and chat parity. |
 | `@ai-sdk/perplexity` | `3.0.33` | `361673a`, `cac1cc7`: provider parity, finish/response validation. |
 | `@ai-sdk/xai` | `3.0.93` | `b9cbbd3`, `4a63a9f`, `62183f0`, `b6543e7`, `899bb80`, `f5f3639`: image/video/options/responses/files/chat usage/provider refs/user agent. |
 | `@ai-sdk/deepseek` | `2.0.35` | `cf03d70`, `9b1abb6`: provider options and reasoning history. |
@@ -414,7 +428,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Do final package sweeps for the already-covered language providers:
-   Cohere, Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI, Alibaba.
+   Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI, Alibaba.
 2. Do final package sweeps for media/audio providers that already have option
    schema work: Replicate, Luma, KlingAI, Black Forest Labs, ByteDance, Prodia,
    Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.
