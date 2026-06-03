@@ -17,7 +17,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             path: "/models/\(modelID):generateContent",
             modelID: modelID,
             body: prepared.body,
-            headers: request.headers.mergingHeaders(prepared.headers)
+            headers: request.headers.mergingHeaders(prepared.headers),
+            abortSignal: request.abortSignal
         )
         let raw = response.json
         let text = googleGenerateContentText(from: raw)
@@ -49,7 +50,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         modelID: modelID,
                         body: prepared.body,
-                        headers: request.headers.mergingHeaders(prepared.headers)
+                        headers: request.headers.mergingHeaders(prepared.headers),
+                        abortSignal: request.abortSignal
                     ))
                     let parts = try streamFromGoogleGenerateContent(
                         providerID: providerID,
@@ -134,27 +136,55 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
+        guard request.values.count <= 2048 else {
+            throw AIError.invalidArgument(argument: "values", message: "Google embedding models support at most 2048 values per call.")
+        }
+        let options = googleEmbeddingProviderOptions(from: request)
+        let multimodalContent = options["content"]?.arrayValue
+        if let multimodalContent, multimodalContent.count != request.values.count {
+            throw AIError.invalidArgument(
+                argument: "providerOptions.google.content",
+                message: "The number of multimodal content entries (\(multimodalContent.count)) must match the number of values (\(request.values.count))."
+            )
+        }
         let path = request.values.count == 1
             ? "/models/\(modelID):embedContent"
             : "/models/\(modelID):batchEmbedContents"
         let body: JSONValue
         if request.values.count == 1 {
-            body = .object([
+            var object: [String: JSONValue] = [
                 "model": .string("models/\(modelID)"),
-                "content": .object(["parts": .array([.object(["text": .string(request.values[0])])])])
-            ])
+                "content": .object(["parts": .array(googleEmbeddingParts(text: request.values[0], content: multimodalContent?.first))])
+            ]
+            if let outputDimensionality = options["outputDimensionality"] {
+                object["outputDimensionality"] = outputDimensionality
+            }
+            if let taskType = options["taskType"] {
+                object["taskType"] = taskType
+            }
+            body = .object(object)
         } else {
             body = .object([
-                "requests": .array(request.values.map { value in
-                    .object([
+                "requests": .array(request.values.enumerated().map { index, value in
+                    var object: [String: JSONValue] = [
                         "model": .string("models/\(modelID)"),
-                        "content": .object(["parts": .array([.object(["text": .string(value)])])])
-                    ])
+                        "content": .object([
+                            "role": .string("user"),
+                            "parts": .array(googleEmbeddingParts(text: value, content: multimodalContent?[index]))
+                        ])
+                    ]
+                    if let outputDimensionality = options["outputDimensionality"] {
+                        object["outputDimensionality"] = outputDimensionality
+                    }
+                    if let taskType = options["taskType"] {
+                        object["taskType"] = taskType
+                    }
+                    return .object(object)
                 })
             ])
         }
 
-        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: body, headers: request.headers)
+        let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let embeddings: [[Double]]
         if let values = raw["embedding"]?["values"]?.arrayValue {
@@ -193,13 +223,39 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
 
     private func generateImagen(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         if !request.files.isEmpty {
-            return try await editImagen(request)
+            throw AIError.invalidArgument(argument: "files", message: "Google Generative AI does not support image editing with Imagen models. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities.")
+        }
+        if request.mask != nil {
+            throw AIError.invalidArgument(argument: "mask", message: "Google Generative AI does not support image editing with masks. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities.")
+        }
+        var warnings: [AIWarning] = []
+        if request.size != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "size",
+                message: "This model does not support the `size` option. Use `aspectRatio` instead."
+            ))
+        }
+        if request.seed != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "seed",
+                message: "This model does not support the `seed` option through this provider."
+            ))
+        }
+        let options = googleImageProviderOptions(from: request)
+        if options["googleSearch"] != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "googleSearch",
+                message: "Google Search grounding is only supported on Gemini image models."
+            ))
         }
         let body = JSONValue.object([
             "instances": .array([.object(["prompt": .string(request.prompt)])]),
-            "parameters": .object(googleImagenParameters(for: request))
+            "parameters": .object(googleImagenParameters(for: request, options: options))
         ])
-        let response = try await config.sendJSONResponse(path: "/models/\(modelID):predict", modelID: modelID, body: body, headers: request.headers)
+        let response = try await config.sendJSONResponse(path: "/models/\(modelID):predict", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let images = raw["predictions"]?.arrayValue?.compactMap { $0["bytesBase64Encoded"]?.stringValue } ?? []
         guard !images.isEmpty else {
@@ -209,6 +265,10 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: images,
             rawValue: raw,
+            warnings: warnings,
+            providerMetadata: ["google": .object([
+                "images": .array(images.map { _ in .object([:]) })
+            ])],
             requestMetadata: imageGenerationRequestMetadata(request, body: body),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -269,8 +329,45 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
     }
 
     private func generateGeminiImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        var body = GoogleGenerativeLanguageModel.imageGenerationContentBody(prompt: request.prompt, aspectRatio: googleAspectRatio(from: request))
-        body.merge(request.extraBody) { _, new in new }
+        if request.mask != nil {
+            throw AIError.invalidArgument(argument: "mask", message: "Gemini image models do not support mask-based image editing.")
+        }
+        if let count = request.count, count > 1 {
+            throw AIError.invalidArgument(argument: "count", message: "Gemini image models do not support generating a set number of images per call. Use n=1 or omit the n parameter.")
+        }
+        var warnings: [AIWarning] = []
+        if request.size != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "size",
+                message: "This model does not support the `size` option. Use `aspectRatio` instead."
+            ))
+        }
+        let options = googleImageProviderOptions(from: request)
+        var body = try GoogleGenerativeLanguageModel.imageGenerationContentBody(
+            prompt: request.prompt,
+            aspectRatio: googleAspectRatio(from: request),
+            files: request.files
+        )
+        var generationConfig = body["generationConfig"]?.objectValue ?? [:]
+        googleApplyProviderGenerationOptions(options, to: &generationConfig)
+        body["generationConfig"] = .object(generationConfig)
+        body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
+        body.merge(googleExtraBodyWithoutToolChoice(options).filter { $0.key != "googleSearch" }) { _, new in new }
+        if let googleSearch = options["googleSearch"] {
+            let preparedTools = googlePrepareTools(
+                from: ["google.google_search": GoogleTools.googleSearch(searchTypes: googleSearch["searchTypes"], timeRangeFilter: googleSearch["timeRangeFilter"])],
+                toolChoice: nil,
+                modelID: modelID,
+                isVertexProvider: false
+            )
+            if let preparedTools, !preparedTools.tools.isEmpty {
+                body["tools"] = .array(preparedTools.tools)
+            }
+            if let preparedTools {
+                warnings.append(contentsOf: preparedTools.warnings)
+            }
+        }
         let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let parts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
@@ -284,6 +381,14 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             urls: [],
             base64Images: images,
             rawValue: raw,
+            warnings: warnings,
+            providerMetadata: googleGenerateContentProviderMetadata(from: raw).merging(["google": .object([
+                "images": .array(images.map { _ in .object([:]) })
+            ])]) { old, new in
+                var object = old.objectValue ?? [:]
+                object.merge(new.objectValue ?? [:]) { _, incoming in incoming }
+                return .object(object)
+            },
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -302,16 +407,18 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
+        let options = googleVideoProviderOptions(from: request)
+        let preparedInstance = googleVideoInstance(for: request, options: options)
         let body = JSONValue.object([
-            "instances": .array([.object(googleVideoInstance(for: request))]),
-            "parameters": .object(googleVideoParameters(for: request))
+            "instances": .array([.object(preparedInstance.instance)]),
+            "parameters": .object(googleVideoParameters(for: request, options: options))
         ])
         let operation = try await config.sendJSON(path: "/models/\(modelID):predictLongRunning", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
         guard let operationName = operation["name"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Google video create response did not contain an operation name.")
         }
 
-        let finalResponse = try await pollOperationResponse(named: operationName, headers: request.headers, timeoutNanoseconds: googlePollTimeout(request.extraBody), intervalNanoseconds: googlePollInterval(request.extraBody), abortSignal: request.abortSignal)
+        let finalResponse = try await pollOperationResponse(named: operationName, headers: request.headers, timeoutNanoseconds: googlePollTimeout(options), intervalNanoseconds: googlePollInterval(options), abortSignal: request.abortSignal)
         let finalOperation = finalResponse.json
         let samples = finalOperation["response"]?["generateVideoResponse"]?["generatedSamples"]?.arrayValue ?? []
         let urls = samples.compactMap { sample in
@@ -324,6 +431,13 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
             urls: urls,
             operationID: operationName,
             rawValue: finalOperation,
+            warnings: preparedInstance.warnings,
+            providerMetadata: ["google": .object([
+                "videos": .array(samples.compactMap { sample in
+                    guard let uri = sample["video"]?["uri"]?.stringValue else { return nil }
+                    return .object(["uri": .string(uri)])
+                })
+            ])],
             requestMetadata: videoGenerationRequestMetadata(request, body: body),
             responseMetadata: aiResponseMetadata(from: finalOperation, response: finalResponse.response, modelID: modelID)
         )
@@ -519,16 +633,37 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
 }
 
 extension GoogleGenerativeLanguageModel {
-    static func imageGenerationContentBody(prompt: String, aspectRatio: String?) -> [String: JSONValue] {
+    static func imageGenerationContentBody(prompt: String, aspectRatio: String?, files: [ImageInputFile] = []) throws -> [String: JSONValue] {
         var generationConfig: [String: JSONValue] = ["responseModalities": .array(["IMAGE"])]
         if let aspectRatio {
             generationConfig["imageConfig"] = .object(["aspectRatio": .string(aspectRatio)])
+        }
+        var parts: [JSONValue] = []
+        if !prompt.isEmpty {
+            parts.append(.object(["text": .string(prompt)]))
+        }
+        for file in files {
+            if let url = file.url {
+                parts.append(.object([
+                    "fileData": .object([
+                        "fileUri": .string(url),
+                        "mimeType": .string(file.mediaType ?? "image/*")
+                    ])
+                ]))
+            } else if let data = file.data {
+                parts.append(.object([
+                    "inlineData": .object([
+                        "mimeType": .string(try resolveFullMediaType(mediaType: file.mediaType ?? "image/*", data: data)),
+                        "data": .string(data.base64EncodedString())
+                    ])
+                ]))
+            }
         }
         return [
             "contents": .array([
                 .object([
                     "role": .string("user"),
-                    "parts": .array([.object(["text": .string(prompt)])])
+                    "parts": .array(parts.isEmpty ? [.object(["text": .string("")])] : parts)
                 ])
             ]),
             "generationConfig": .object(generationConfig)
@@ -536,20 +671,19 @@ extension GoogleGenerativeLanguageModel {
     }
 }
 
-private func googleImagenParameters(for request: ImageGenerationRequest) -> [String: JSONValue] {
+private func googleImagenParameters(for request: ImageGenerationRequest, options: [String: JSONValue]) -> [String: JSONValue] {
     var parameters: [String: JSONValue] = ["sampleCount": .number(Double(request.count ?? 1))]
-    if let aspectRatio = googleAspectRatio(from: request) {
+    if let aspectRatio = request.aspectRatio ?? options["aspectRatio"]?.stringValue ?? request.extraBody["aspectRatio"]?.stringValue {
         parameters["aspectRatio"] = .string(aspectRatio)
+    } else {
+        parameters["aspectRatio"] = .string("1:1")
     }
-    parameters.merge(googleOptionsWithoutPoll(googleImageProviderOptions(from: request.extraBody), excluding: ["googleSearch", "edit"])) { _, new in new }
-    if let seed = request.extraBody["seed"] {
-        parameters["seed"] = seed
-    }
+    parameters.merge(googleOptionsWithoutPoll(options, excluding: ["googleSearch", "edit", "aspectRatio"])) { _, new in new }
     return parameters
 }
 
 private func googleImagenEditParameters(for request: ImageGenerationRequest, options: [String: JSONValue], edit: [String: JSONValue]) -> [String: JSONValue] {
-    var parameters = googleImagenParameters(for: request)
+    var parameters = googleImagenParameters(for: request, options: options)
     parameters["editMode"] = edit["mode"] ?? .string("EDIT_MODE_INPAINT_INSERTION")
     if let baseSteps = edit["baseSteps"] {
         parameters["editConfig"] = .object(["baseSteps": baseSteps])
@@ -557,14 +691,19 @@ private func googleImagenEditParameters(for request: ImageGenerationRequest, opt
     return parameters
 }
 
+private func googleImageProviderOptions(from request: ImageGenerationRequest) -> [String: JSONValue] {
+    var options = googleImageProviderOptions(from: request.extraBody)
+    if let google = request.providerOptions["google"]?.objectValue {
+        options.merge(google) { _, new in new }
+    }
+    return options
+}
+
 private func googleImageProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    if let googleVertex = extraBody["googleVertex"]?.objectValue {
-        return googleVertex
+    if let google = extraBody["google"]?.objectValue {
+        return google
     }
-    if let vertex = extraBody["vertex"]?.objectValue {
-        return vertex
-    }
-    return extraBody.filter { $0.key != "googleVertex" && $0.key != "vertex" }
+    return extraBody.filter { $0.key != "google" && $0.key != "googleVertex" && $0.key != "vertex" }
 }
 
 private func googleImageEditBase64(_ file: ImageInputFile) throws -> String {
@@ -577,9 +716,51 @@ private func googleImageEditBase64(_ file: ImageInputFile) throws -> String {
     return data.base64EncodedString()
 }
 
-private func googleVideoInstance(for request: VideoGenerationRequest) -> [String: JSONValue] {
+private func googleEmbeddingProviderOptions(from request: EmbeddingRequest) -> [String: JSONValue] {
+    request.providerOptions["google"]?.objectValue ?? [:]
+}
+
+private func googleEmbeddingParts(text: String, content: JSONValue?) -> [JSONValue] {
+    let textPart: [JSONValue] = text.isEmpty ? [] : [.object(["text": .string(text)])]
+    guard let content else {
+        return textPart.isEmpty ? [.object(["text": .string(text)])] : textPart
+    }
+    if content == .null {
+        return textPart.isEmpty ? [.object(["text": .string(text)])] : textPart
+    }
+    if let parts = content.arrayValue {
+        return textPart + parts
+    }
+    return textPart.isEmpty ? [.object(["text": .string(text)])] : textPart
+}
+
+private func googleVideoProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {
+    var options = request.extraBody
+    if let google = request.providerOptions["google"]?.objectValue {
+        options.merge(google) { _, new in new }
+    }
+    return options
+}
+
+private func googleVideoInstance(for request: VideoGenerationRequest, options: [String: JSONValue]) -> (instance: [String: JSONValue], warnings: [AIWarning]) {
     var instance: [String: JSONValue] = ["prompt": .string(request.prompt)]
-    if let image = request.extraBody["image"]?.objectValue {
+    var warnings: [AIWarning] = []
+    if let image = request.image {
+        if image.url != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "URL-based image input",
+                message: "Google Generative AI video models require base64-encoded images. URL will be ignored."
+            ))
+        } else if let data = image.data {
+            instance["image"] = .object([
+                "inlineData": .object([
+                    "mimeType": .string(image.mediaType ?? "image/png"),
+                    "data": .string(data.base64EncodedString())
+                ])
+            ])
+        }
+    } else if let image = options["image"]?.objectValue {
         if let data = image["data"]?.stringValue {
             instance["image"] = .object([
                 "inlineData": .object([
@@ -589,32 +770,48 @@ private func googleVideoInstance(for request: VideoGenerationRequest) -> [String
             ])
         }
     }
-    if let referenceImages = request.extraBody["referenceImages"] {
-        instance["referenceImages"] = referenceImages
+    if let referenceImages = options["referenceImages"]?.arrayValue {
+        instance["referenceImages"] = .array(referenceImages.map { reference in
+            guard let object = reference.objectValue else { return reference }
+            if let bytesBase64Encoded = object["bytesBase64Encoded"]?.stringValue {
+                return .object([
+                    "inlineData": .object([
+                        "mimeType": .string("image/png"),
+                        "data": .string(bytesBase64Encoded)
+                    ])
+                ])
+            }
+            if let gcsUri = object["gcsUri"] {
+                return .object(["gcsUri": gcsUri])
+            }
+            return reference
+        })
     }
-    return instance
+    return (instance, warnings)
 }
 
-private func googleVideoParameters(for request: VideoGenerationRequest) -> [String: JSONValue] {
+private func googleVideoParameters(for request: VideoGenerationRequest, options: [String: JSONValue]) -> [String: JSONValue] {
     var parameters: [String: JSONValue] = [:]
     if let count = request.count {
         parameters["sampleCount"] = .number(Double(count))
-    } else if let sampleCount = request.extraBody["sampleCount"] ?? request.extraBody["n"] {
+    } else if let sampleCount = options["sampleCount"] ?? options["n"] {
         parameters["sampleCount"] = sampleCount
     }
     if let aspectRatio = request.aspectRatio {
         parameters["aspectRatio"] = .string(aspectRatio)
     }
-    if let resolution = request.extraBody["resolution"]?.stringValue {
+    if let resolution = request.resolution ?? options["resolution"]?.stringValue {
         parameters["resolution"] = .string(googleVideoResolution(resolution))
     }
     if let duration = request.durationSeconds {
         parameters["durationSeconds"] = .number(duration)
     }
-    if let seed = request.extraBody["seed"] {
+    if let seed = request.seed {
+        parameters["seed"] = .number(Double(seed))
+    } else if let seed = options["seed"] {
         parameters["seed"] = seed
     }
-    parameters.merge(googleOptionsWithoutPoll(request.extraBody, excluding: ["sampleCount", "n", "resolution", "seed", "pollIntervalMs", "pollTimeoutMs", "image", "referenceImages"])) { _, new in new }
+    parameters.merge(googleOptionsWithoutPoll(options, excluding: ["sampleCount", "n", "resolution", "seed", "pollIntervalMs", "pollTimeoutMs", "image", "referenceImages"])) { _, new in new }
     return parameters
 }
 

@@ -40,6 +40,23 @@ import Testing
     #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/3.0.80")
 }
 
+@Test func googleCustomXGoogAPIKeyOverridesConfiguredAPIKeyLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(
+        apiKey: "configured-key",
+        headers: ["x-goog-api-key": "custom-key"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Ping")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["x-goog-api-key"] == "custom-key")
+}
+
 @Test func googleGenerateContentResolvesTopLevelInlineMediaType() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"saw image"}]},"finishReason":"STOP"}]}
@@ -238,6 +255,61 @@ import Testing
     #expect(result.requestMetadata.body?["content"]?["parts"]?[0]?["text"]?.stringValue == "hello")
     #expect(result.requestMetadata.headers["x-client"] == "swift")
     #expect(result.requestMetadata.headers["x-goog-api-key"] == nil)
+}
+
+@Test func googleEmbeddingMapsProviderOptionsAndMultimodalContentLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"embeddings":[{"values":[0.1,0.2]},{"values":[0.3,0.4]}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.embeddingModel("gemini-embedding-001")
+
+    let result = try await model.embed(EmbeddingRequest(
+        values: ["first", ""],
+        providerOptions: [
+            "google": .object([
+                "outputDimensionality": 128,
+                "taskType": "RETRIEVAL_DOCUMENT",
+                "content": [
+                    [
+                        ["inlineData": ["mimeType": "image/png", "data": "image-data"]]
+                    ],
+                    [
+                        ["fileData": ["fileUri": "https://generativelanguage.googleapis.com/v1beta/files/file-1", "mimeType": "application/pdf"]]
+                    ]
+                ]
+            ])
+        ]
+    ))
+
+    #expect(result.embeddings == [[0.1, 0.2], [0.3, 0.4]])
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["requests"]?[0]?["content"]?["role"]?.stringValue == "user")
+    #expect(body["requests"]?[0]?["content"]?["parts"]?[0]?["text"]?.stringValue == "first")
+    #expect(body["requests"]?[0]?["content"]?["parts"]?[1]?["inlineData"]?["data"]?.stringValue == "image-data")
+    #expect(body["requests"]?[0]?["outputDimensionality"]?.intValue == 128)
+    #expect(body["requests"]?[0]?["taskType"]?.stringValue == "RETRIEVAL_DOCUMENT")
+    #expect(body["requests"]?[1]?["content"]?["parts"]?[0]?["fileData"]?["fileUri"]?.stringValue == "https://generativelanguage.googleapis.com/v1beta/files/file-1")
+}
+
+@Test func googleEmbeddingRejectsTooManyValuesAndMismatchedMultimodalContentLikeUpstream() async throws {
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: RecordingTransport(response: jsonResponse("{}"))))
+    let model = try provider.embeddingModel("gemini-embedding-001")
+
+    await #expect(throws: AIError.invalidArgument(argument: "values", message: "Google embedding models support at most 2048 values per call.")) {
+        _ = try await model.embed(EmbeddingRequest(values: Array(repeating: "x", count: 2049)))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.google.content",
+        message: "The number of multimodal content entries (1) must match the number of values (2)."
+    )) {
+        _ = try await model.embed(EmbeddingRequest(
+            values: ["a", "b"],
+            providerOptions: ["google": ["content": [[["text": "extra"]]]]]
+        ))
+    }
 }
 
 @Test func googleLanguageMapsFunctionToolsAndToolChoice() async throws {
@@ -631,12 +703,13 @@ import Testing
 
     let result = try await model.generateImage(ImageGenerationRequest(
         prompt: "cat",
-        size: "16:9",
+        aspectRatio: "16:9",
         count: 2,
         extraBody: ["negativePrompt": "blur", "personGeneration": "allow_adult"]
     ))
 
     #expect(result.base64Images == ["image-1", "image-2"])
+    #expect(result.providerMetadata["google"]?["images"]?.arrayValue?.count == 2)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
@@ -646,6 +719,32 @@ import Testing
     #expect(body["parameters"]?["aspectRatio"]?.stringValue == "16:9")
     #expect(body["parameters"]?["negativePrompt"]?.stringValue == "blur")
     #expect(body["parameters"]?["personGeneration"]?.stringValue == "allow_adult")
+}
+
+@Test func googleImagenRejectsEditingAndWarnsForUnsupportedSizeSeedLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"predictions":[{"bytesBase64Encoded":"image"}]}"#))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.imageModel("imagen-4.0-generate-001")
+
+    await #expect(throws: AIError.invalidArgument(argument: "files", message: "Google Generative AI does not support image editing with Imagen models. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "edit",
+            files: [ImageInputFile(data: Data("image".utf8), mediaType: "image/png")]
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(argument: "mask", message: "Google Generative AI does not support image editing with masks. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "edit",
+            mask: ImageInputFile(data: Data("mask".utf8), mediaType: "image/png")
+        ))
+    }
+
+    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "16:9", seed: 42))
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "size" })
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "seed" })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["parameters"]?["aspectRatio"]?.stringValue == "1:1")
+    #expect(body["parameters"]?["seed"] == nil)
 }
 
 @Test func googleGeminiImageUsesGenerateContentImageModality() async throws {
@@ -663,6 +762,83 @@ import Testing
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "cat")
     #expect(body["generationConfig"]?["responseModalities"]?[0]?.stringValue == "IMAGE")
     #expect(body["generationConfig"]?["imageConfig"]?["aspectRatio"]?.stringValue == "1:1")
+}
+
+@Test func googleGeminiImageMapsFilesAndGoogleSearchOptionLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"edited-image"}}]},"groundingMetadata":{"webSearchQueries":["cat"]}}]}"#))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.imageModel("gemini-2.5-flash-image")
+
+    let result = try await model.generateImage(ImageGenerationRequest(
+        prompt: "Make it cinematic",
+        files: [
+            ImageInputFile(data: Data([0x89, 0x50, 0x4E, 0x47]), mediaType: "image/*"),
+            ImageInputFile(url: "https://example.com/source.png")
+        ],
+        providerOptions: [
+            "google": [
+                "googleSearch": ["searchTypes": ["webSearch": [:]]],
+                "thinkingConfig": ["includeThoughts": true],
+                "safetySettings": [["category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE"]],
+                "labels": ["scene": "edit"]
+            ]
+        ]
+    ))
+
+    #expect(result.base64Images == ["edited-image"])
+    #expect(result.providerMetadata["google"]?["groundingMetadata"]?["webSearchQueries"]?[0]?.stringValue == "cat")
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let parts = try #require(body["contents"]?[0]?["parts"]?.arrayValue)
+    #expect(parts[0]["text"]?.stringValue == "Make it cinematic")
+    #expect(parts[1]["inlineData"]?["mimeType"]?.stringValue == "image/png")
+    #expect(parts[2]["fileData"]?["fileUri"]?.stringValue == "https://example.com/source.png")
+    #expect(body["generationConfig"]?["responseModalities"]?[0]?.stringValue == "IMAGE")
+    #expect(body["generationConfig"]?["thinkingConfig"]?["includeThoughts"]?.boolValue == true)
+    #expect(body["safetySettings"]?[0]?["category"]?.stringValue == "HARM_CATEGORY_DANGEROUS_CONTENT")
+    #expect(body["labels"]?["scene"]?.stringValue == "edit")
+    #expect(body["tools"]?[0]?["googleSearch"]?["searchTypes"]?["webSearch"] != nil)
+    #expect(body["googleSearch"] == nil)
+}
+
+@Test func googleModelsForwardAbortSignalToLanguageEmbeddingAndImageRequests() async throws {
+    let languageTransport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}
+        """),
+        sseResponse("""
+        data: {"candidates":[{"content":{"parts":[{"text":"gem"}],"role":"model"},"finishReason":"STOP","index":0}]}
+
+        """)
+    ])
+    let languageProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: languageTransport))
+    let languageModel = try languageProvider.languageModel("gemini-2.5-flash")
+    let languageController = AIAbortController()
+
+    _ = try await languageModel.generate(LanguageModelRequest(messages: [.user("Ping")], abortSignal: languageController.signal))
+    for try await _ in languageModel.stream(LanguageModelRequest(messages: [.user("Ping")], abortSignal: languageController.signal)) {}
+
+    let languageRequests = await languageTransport.requests()
+    #expect(languageRequests.count == 2)
+    #expect(languageRequests[0].abortSignal === languageController.signal)
+    #expect(languageRequests[1].abortSignal === languageController.signal)
+
+    let embeddingTransport = RecordingTransport(response: jsonResponse(#"{"embedding":{"values":[0.1,0.2]}}"#))
+    let embeddingProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: embeddingTransport))
+    let embeddingModel = try embeddingProvider.embeddingModel("gemini-embedding-001")
+    let embeddingController = AIAbortController()
+
+    _ = try await embeddingModel.embed(EmbeddingRequest(values: ["hello"], abortSignal: embeddingController.signal))
+
+    #expect((await embeddingTransport.requests()).first?.abortSignal === embeddingController.signal)
+
+    let imageTransport = RecordingTransport(response: jsonResponse(#"{"predictions":[{"bytesBase64Encoded":"image"}]}"#))
+    let imageProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: imageTransport))
+    let imageModel = try imageProvider.imageModel("imagen-4.0-generate-001")
+    let imageController = AIAbortController()
+
+    _ = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: imageController.signal))
+
+    #expect((await imageTransport.requests()).first?.abortSignal === imageController.signal)
 }
 
 @Test func googleVeoCreatesLongRunningOperationAndPollsVideoURL() async throws {
@@ -697,6 +873,62 @@ import Testing
     #expect(body["parameters"]?["negativePrompt"]?.stringValue == "rain")
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/operations/video-1")
+}
+
+@Test func googleVideoMapsStandardImageAndProviderOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"name":"operations/video-2","done":false}"#),
+        jsonResponse(#"{"name":"operations/video-2","done":true,"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media"}}]}}}"#)
+    ])
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.videoModel("veo-3.1-generate-preview")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        image: ImageInputFile(data: Data("frame".utf8), mediaType: "image/png"),
+        resolution: "1280x720",
+        seed: 7,
+        providerOptions: [
+            "google": [
+                "referenceImages": [
+                    ["bytesBase64Encoded": "reference-image"],
+                    ["gcsUri": "gs://bucket/reference.png"]
+                ],
+                "personGeneration": "allow_adult",
+                "negativePrompt": "rain",
+                "pollIntervalMs": 0
+            ]
+        ]
+    ))
+
+    #expect(result.urls == ["https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media&key=gemini-key"])
+    #expect(result.providerMetadata["google"]?["videos"]?[0]?["uri"]?.stringValue == "https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media")
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["instances"]?[0]?["image"]?["inlineData"]?["data"]?.stringValue == Data("frame".utf8).base64EncodedString())
+    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["inlineData"]?["data"]?.stringValue == "reference-image")
+    #expect(body["instances"]?[0]?["referenceImages"]?[1]?["gcsUri"]?.stringValue == "gs://bucket/reference.png")
+    #expect(body["parameters"]?["resolution"]?.stringValue == "720p")
+    #expect(body["parameters"]?["seed"]?.intValue == 7)
+    #expect(body["parameters"]?["personGeneration"]?.stringValue == "allow_adult")
+    #expect(body["parameters"]?["negativePrompt"]?.stringValue == "rain")
+    #expect(body["parameters"]?["pollIntervalMs"] == nil)
+}
+
+@Test func googleVideoWarnsAndIgnoresURLImageLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"name":"operations/video-url","done":true,"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"https://generativelanguage.googleapis.com/files/video-url.mp4?alt=media"}}]}}}"#)
+    ])
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.videoModel("veo-3.1-generate-preview")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        image: ImageInputFile(url: "https://example.com/frame.png")
+    ))
+
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "URL-based image input" })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["instances"]?[0]?["image"] == nil)
 }
 
 @Test func googleInteractionsUsesInteractionsEndpointAndInputShape() async throws {
