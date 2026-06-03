@@ -30,7 +30,8 @@ import Testing
     #expect(result.warnings == [])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.hume.ai/v0/tts/file")
-    #expect(request.headers["X-Hume-Api-Key"] == "hume-key")
+    #expect(request.headers["x-hume-api-key"] == "hume-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/hume/2.0.33")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["utterances"]?[0]?["text"]?.stringValue == "Hello")
     #expect(body["utterances"]?[0]?["voice"]?["id"]?.stringValue == "voice-id")
@@ -39,6 +40,23 @@ import Testing
     #expect(body["context"]?["utterances"]?[0]?["trailing_silence"]?.doubleValue == 0.25)
     #expect(body["context"]?["utterances"]?[0]?["trailingSilence"] == nil)
     #expect(body["context"]?["utterances"]?[0]?["voice"]?["id"]?.stringValue == "prior-voice")
+}
+
+@Test func humeSpeechNoArgFactoryAndCustomUserAgentMirrorUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(
+        apiKey: "hume-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.speech()
+
+    let result = try await model.speak(SpeechRequest(text: "Hello"))
+
+    #expect(model.modelID == "")
+    #expect(result.responseMetadata.modelID == "")
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/hume/2.0.33")
 }
 
 @Test func humeSpeechIgnoresModelIDLikeUpstreamNoArgFactory() async throws {

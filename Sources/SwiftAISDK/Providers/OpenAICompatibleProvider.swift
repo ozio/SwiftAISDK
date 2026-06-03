@@ -298,6 +298,17 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         return OpenAICompatibleSpeechModel(modelID: modelID, config: modelConfig(surface: "speech"))
     }
 
+    public func speechModel() throws -> any SpeechModel {
+        guard providerID == "hume" else {
+            throw AIError.invalidArgument(argument: "modelID", message: "A model ID is required for \(providerID).")
+        }
+        return try speechModel("")
+    }
+
+    public func speech() throws -> any SpeechModel {
+        try speechModel()
+    }
+
     public func videoModel(_ modelID: String) throws -> any VideoModel {
         guard supportedCapabilities.contains(.video) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .video, modelID: modelID)
@@ -408,6 +419,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         }
         if providerID == "lmnt" {
             return withUserAgentSuffix(headers, "ai-sdk/lmnt/2.0.33")
+        }
+        if providerID == "hume" {
+            return withUserAgentSuffix(headers, "ai-sdk/hume/2.0.33")
         }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
