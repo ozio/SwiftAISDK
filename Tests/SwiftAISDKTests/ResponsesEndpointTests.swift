@@ -413,6 +413,51 @@ import Testing
     #expect(content?[2]?["file_name"]?.stringValue == "brief.pdf")
 }
 
+@Test func perplexityLanguageAppliesTransformRequestBodyToGenerateAndStream() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"id":"ppl-transform","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.perplexity(settings: ProviderSettings(
+        apiKey: "pplx-key",
+        transport: generateTransport,
+        transformRequestBody: { body in
+            var body = body
+            body["search_mode"] = .string("academic")
+            return body
+        }
+    ))
+    let model = try provider.languageModel("sonar")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "answer")
+    let generateBody = try decodeJSONBody(try #require((await generateTransport.requests()).first?.body))
+    #expect(generateBody["search_mode"]?.stringValue == "academic")
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"id":"ppl-transform","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}
+
+    data: [DONE]
+
+    """))
+    let streamProvider = try AIProviders.perplexity(settings: ProviderSettings(
+        apiKey: "pplx-key",
+        transport: streamTransport,
+        transformRequestBody: { body in
+            var body = body
+            body["search_domain_filter"] = .array([.string("example.com")])
+            return body
+        }
+    ))
+    let streamModel = try streamProvider.languageModel("sonar")
+
+    for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {}
+
+    let streamBody = try decodeJSONBody(try #require((await streamTransport.requests()).first?.body))
+    #expect(streamBody["stream"]?.boolValue == true)
+    #expect(streamBody["search_domain_filter"]?[0]?.stringValue == "example.com")
+}
+
 @Test func perplexityLanguageMapsStructuredFormatWarningsAndMetadata() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"ppl-structured","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"{\\"ok\\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":6,"total_tokens":11}}

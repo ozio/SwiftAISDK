@@ -12,10 +12,11 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let prepared = try perplexityPreparedCall(for: request, modelID: modelID, stream: false)
+        let body = config.transformRequestBody?(prepared.body) ?? prepared.body
         let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
-            body: .object(prepared.body),
+            body: .object(body),
             headers: request.headers,
             abortSignal: request.abortSignal
         )
@@ -41,7 +42,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
             Task {
                 do {
                     let prepared = try perplexityPreparedCall(for: request, modelID: modelID, stream: true)
-                    let body = JSONValue.object(prepared.body)
+                    let body = JSONValue.object(config.transformRequestBody?(prepared.body) ?? prepared.body)
                     let response = try await config.transport.send(config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
