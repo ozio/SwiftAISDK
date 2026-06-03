@@ -330,9 +330,8 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
         }
         let response = try await config.sendJSONResponse(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        let items = raw["data"]?.arrayValue ?? []
-        let embeddings = items.sorted { ($0["index"]?.intValue ?? 0) < ($1["index"]?.intValue ?? 0) }
-            .map { $0["embedding"]?.arrayValue?.compactMap(\.doubleValue) ?? [] }
+        try validateVoyageEmbeddingResponse(raw, providerID: providerID)
+        let embeddings = raw["data"]?.arrayValue?.map { $0["embedding"]?.arrayValue?.compactMap(\.doubleValue) ?? [] } ?? []
         return EmbeddingResult(
             embeddings: embeddings,
             usage: TokenUsage(totalTokens: raw["usage"]?["total_tokens"]?.intValue),
@@ -375,6 +374,7 @@ public final class VoyageRerankingModel: RerankingModel, @unchecked Sendable {
         }
         let response = try await config.sendJSONResponse(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
+        try validateVoyageRerankingResponse(raw, providerID: providerID)
         return RerankingResult(
             results: rerankingResults(from: raw["data"]),
             rawValue: raw,
@@ -655,6 +655,33 @@ private func voyageRequireBoolean(_ value: JSONValue, argument: String, message:
 private func voyageRequireNumber(_ value: JSONValue, argument: String, message: String) throws {
     guard value.doubleValue != nil else {
         throw AIError.invalidArgument(argument: argument, message: message)
+    }
+}
+
+private func validateVoyageEmbeddingResponse(_ raw: JSONValue, providerID: String) throws {
+    guard raw["usage"]?["total_tokens"]?.doubleValue != nil,
+          let data = raw["data"]?.arrayValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "Voyage embedding response is invalid.")
+    }
+    for item in data {
+        guard item["index"]?.doubleValue != nil,
+              let embedding = item["embedding"]?.arrayValue,
+              embedding.allSatisfy({ $0.doubleValue != nil }) else {
+            throw AIError.invalidResponse(provider: providerID, message: "Voyage embedding response is invalid.")
+        }
+    }
+}
+
+private func validateVoyageRerankingResponse(_ raw: JSONValue, providerID: String) throws {
+    guard raw["usage"]?["total_tokens"]?.doubleValue != nil,
+          let data = raw["data"]?.arrayValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "Voyage reranking response is invalid.")
+    }
+    for item in data {
+        guard item["index"]?.doubleValue != nil,
+              item["relevance_score"]?.doubleValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Voyage reranking response is invalid.")
+        }
     }
 }
 

@@ -52,7 +52,7 @@ import Testing
     #expect(voyageEmbedding.responseMetadata.body?["data"]?[0]?["embedding"]?[0]?.doubleValue == 0.3)
 
     let voyageRerankTransport = RecordingTransport(response: jsonResponse("""
-    {"id":"voyage-rerank","data":[{"index":0,"relevance_score":0.8}]}
+    {"id":"voyage-rerank","data":[{"index":0,"relevance_score":0.8}],"usage":{"total_tokens":3}}
     """, headers: ["voyage-header": "rerank"]))
     let voyageRerankProvider = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key", transport: voyageRerankTransport))
 

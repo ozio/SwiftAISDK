@@ -77,3 +77,27 @@ import Testing
         _ = try await model.rerank(RerankingRequest(query: "q", documents: ["a"], providerOptions: ["voyage": ["truncation": "true"]]))
     }
 }
+
+@Test func voyageEmbeddingResponseValidationMatchesUpstreamSchema() async throws {
+    let provider = try AIProviders.voyage(settings: ProviderSettings(
+        apiKey: "voyage-key",
+        transport: RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"embedding":[0.1]}]}"#))
+    ))
+    let model = try provider.embeddingModel("voyage-4")
+
+    await #expect(throws: AIError.invalidResponse(provider: "voyage.embedding", message: "Voyage embedding response is invalid.")) {
+        _ = try await model.embed(EmbeddingRequest(values: ["hello"]))
+    }
+}
+
+@Test func voyageRerankingResponseValidationMatchesUpstreamSchema() async throws {
+    let provider = try AIProviders.voyage(settings: ProviderSettings(
+        apiKey: "voyage-key",
+        transport: RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"relevance_score":0.8}]}"#))
+    ))
+    let model = try provider.rerankingModel("rerank-2.5")
+
+    await #expect(throws: AIError.invalidResponse(provider: "voyage.reranking", message: "Voyage reranking response is invalid.")) {
+        _ = try await model.rerank(RerankingRequest(query: "q", documents: ["a"]))
+    }
+}

@@ -1055,7 +1055,7 @@ import Testing
 
     let embedding = try await embeddingModel.embed(EmbeddingRequest(values: ["a", "b"], dimensions: 256, extraBody: ["inputType": "query", "truncation": true, "outputDtype": "float"]))
 
-    #expect(embedding.embeddings == [[0.1, 0.2], [0.3, 0.4]])
+    #expect(embedding.embeddings == [[0.3, 0.4], [0.1, 0.2]])
     #expect(embedding.usage?.totalTokens == 9)
     let embeddingRequest = try #require(await embeddingTransport.requests().first)
     #expect(embeddingRequest.url.absoluteString == "https://api.voyageai.com/v1/embeddings")
@@ -1067,7 +1067,7 @@ import Testing
     #expect(embeddingBody["output_dimension"]?.intValue == 256)
     #expect(embeddingBody["output_dtype"]?.stringValue == "float")
 
-    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"relevance_score":0.7},{"index":1,"relevance_score":0.2}]}"#))
+    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"relevance_score":0.7},{"index":1,"relevance_score":0.2}],"usage":{"total_tokens":5}}"#))
     let rerankProvider = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key", transport: rerankTransport))
     let rerankModel = try rerankProvider.rerankingModel("rerank-2.5")
 
@@ -1122,7 +1122,7 @@ import Testing
     #expect(embeddingBody["output_dimension"]?.intValue == 768)
     #expect(embeddingBody["output_dtype"]?.stringValue == "binary")
 
-    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"relevance_score":0.7}]}"#))
+    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"relevance_score":0.7}],"usage":{"total_tokens":3}}"#))
     let rerankProvider = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key", transport: rerankTransport))
     let rerankModel = try rerankProvider.rerankingModel("rerank-2.5")
 
