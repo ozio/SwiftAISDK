@@ -150,6 +150,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/cohere` | `3.0.36` | `5f0bd7f`: package re-read across provider/chat/prompt/tools/embedding/reranking; Cohere stream error chunks, tool-call argument canonicalization, and execution-denied output aligned after existing native parity coverage. |
 | `@ai-sdk/perplexity` | `3.0.33` | `3b96637`: package re-read across provider/language/messages/options/usage/finish schemas; stream parse errors now surface as error parts after existing search/citation/metadata parity coverage. |
 | `@ai-sdk/xai` | `3.0.93` | `7d689df`: package re-read across provider/chat/responses/tools/image/video/files; xAI Responses request prep now owns option/input/tool mapping instead of riding the OpenAI-compatible builder, and chat/Responses reasoning option schemas were aligned. |
+| `@ai-sdk/deepseek` | `2.0.35` | `e25563e`: package re-read across provider/chat/options/messages/tools/usage/stream; missing usage, tool-result output serialization, stream error parts, and strict first tool-delta validation aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -288,6 +289,20 @@ Commit evidence: 7d689df.
 Reopen only if: xai npm version changes, xAI chat/Responses providerOptions schemas change, xAI tool or media/file schemas change, Swift core adds URL file parts/async settings/generateId hooks, live smoke or user bug reports a concrete mismatch.
 ```
 
+#### `@ai-sdk/deepseek`
+
+```text
+Package: @ai-sdk/deepseek
+Baseline: 2.0.35
+Upstream inspected: deepseek-provider.ts, chat/deepseek-chat-language-model.ts, chat/deepseek-chat-options.ts, chat/convert-to-deepseek-chat-messages.ts, chat/deepseek-prepare-tools.ts, chat/convert-to-deepseek-usage.ts, chat/map-deepseek-finish-reason.ts, chat/deepseek-chat-api-types.ts, chat/get-response-metadata.ts, index.ts, version.ts.
+Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, DeepSeekModels.swift, DeepSeekProviderTests.swift, ProviderAbortPropagationTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
+Surfaces checked: factory aliases, provider IDs, default base URL, DEEPSEEK_API_KEY auth, custom header precedence, user-agent suffix, unsupported embedding/image capabilities, chat route, request body standard options, providerOptions.deepseek schema/null handling, thinking/reasoningEffort mapping, topK/seed warnings, JSON response format and schema instruction injection, system/user/assistant/tool message conversion, R1/V4 reasoning history behavior, function tools, provider-defined tool warnings, tool choice mapping, tool-result serialization, generate response text/reasoning/tool calls/finish/usage/metadata, stream lifecycle text/reasoning/tool-input/tool-call/raw/error/finish usage, strict first tool-call delta validation, response metadata, and abort propagation through generate/stream.
+Known Swift differences / out of scope: Swift exposes `extraBody` as an additional compatibility escape hatch beside upstream providerOptions; Swift settings are static dictionaries rather than upstream async resolvable header functions; upstream `generateId` customization for generated missing tool-call IDs is not exposed as a public Swift hook, while DeepSeek stream now follows upstream strict first-delta validation before the shared Swift stream buffer can fall back.
+Tests run: swift test --filter DeepSeek; swift test with 907 tests.
+Commit evidence: e25563e.
+Reopen only if: deepseek npm version changes, DeepSeek chat/providerOptions/message/usage/stream schemas change, Swift core adds async settings/generateId hooks, live smoke or user bug reports a concrete mismatch.
+```
+
 #### `@ai-sdk/anthropic-aws`
 
 ```text
@@ -421,7 +436,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/deepseek` | `2.0.35` | `cf03d70`, `9b1abb6`: provider options and reasoning history. |
 | `@ai-sdk/cerebras` | `2.0.54` | `7583bf4`, `e271d29`, `7279a9a`: options, structured finish, user agent. |
 | `@ai-sdk/moonshotai` | `2.0.23` | `80bcd36`, `2b244c6`, `c58f369`: options, chat parity, user agent. |
 | `@ai-sdk/alibaba` | `1.0.25` | `5584aa1`, `24f2732`: provider options and user agent. |
@@ -456,7 +470,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Do final package sweeps for the already-covered language providers:
-   DeepSeek, Cerebras, MoonshotAI, Alibaba.
+   Cerebras, MoonshotAI, Alibaba.
 2. Do final package sweeps for media/audio providers that already have option
    schema work: Replicate, Luma, KlingAI, Black Forest Labs, ByteDance, Prodia,
    Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.
