@@ -1756,8 +1756,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             throw AIError.invalidResponse(provider: providerID, message: "No output text found in responses API response.")
         }
         let finishReason: String?
-        if case .openResponses = config.responsesRequestMode, !toolCalls.isEmpty {
-            finishReason = "tool-calls"
+        if case .openResponses = config.responsesRequestMode {
+            finishReason = openResponsesFinishReason(
+                incompleteReason: raw["incomplete_details"]?["reason"]?.stringValue,
+                hasToolCalls: !toolCalls.isEmpty
+            )
         } else {
             finishReason = openAIResponsesFinishReason(
                 status: raw["status"]?.stringValue,
@@ -1799,6 +1802,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     var textItemPhases: [String: JSONValue] = [:]
                     var textItemAnnotations: [String: [JSONValue]] = [:]
                     var activeReasoning: [String: OpenAIResponsesActiveReasoning] = [:]
+                    var openResponsesHasToolCalls = false
                     var sourceCounter = 0
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -1896,6 +1900,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             ))
                         }
                         for eventPart in toolCallBuffers.apply(event: raw) {
+                            if case .toolCall = eventPart {
+                                openResponsesHasToolCalls = true
+                            }
                             continuation.yield(eventPart)
                         }
                         if raw["type"]?.stringValue == "response.output_item.done",
@@ -1959,9 +1966,10 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         }
                         if raw["type"]?.stringValue == "response.completed" {
                             let response = raw["response"] ?? raw
-                            let finishReason = openAIResponsesFinishReason(
-                                status: response["status"]?.stringValue,
-                                incompleteReason: response["incomplete_details"]?["reason"]?.stringValue
+                            let finishReason = openResponsesStreamFinishReason(
+                                response: response,
+                                hasToolCalls: openResponsesHasToolCalls,
+                                mode: config.responsesRequestMode
                             )
                             let finishUsage = tokenUsage(from: response)
                             if providerMetadata.isEmpty {
@@ -1971,15 +1979,24 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             }
                         } else if raw["type"]?.stringValue == "response.incomplete" {
                             let response = raw["response"] ?? raw
-                            let finishReason = openAIResponsesFinishReason(
-                                status: response["status"]?.stringValue ?? "incomplete",
-                                incompleteReason: response["incomplete_details"]?["reason"]?.stringValue
+                            let finishReason = openResponsesStreamFinishReason(
+                                response: response,
+                                hasToolCalls: openResponsesHasToolCalls,
+                                mode: config.responsesRequestMode
                             )
                             let finishUsage = tokenUsage(from: response)
                             if providerMetadata.isEmpty {
                                 continuation.yield(.finish(reason: finishReason, usage: finishUsage))
                             } else {
                                 continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
+                            }
+                        } else if raw["type"]?.stringValue == "response.failed" {
+                            let response = raw["response"] ?? raw
+                            let finishUsage = tokenUsage(from: response)
+                            if providerMetadata.isEmpty {
+                                continuation.yield(.finish(reason: "error", usage: finishUsage))
+                            } else {
+                                continuation.yield(.finishMetadata(reason: "error", usage: finishUsage, providerMetadata: providerMetadata))
                             }
                         }
                     }
@@ -2083,6 +2100,7 @@ private struct OpenResponsesPreparedInput {
 private func openResponsesInput(from messages: [AIMessage]) -> OpenResponsesPreparedInput {
     var input: [JSONValue] = []
     var systemMessages: [String] = []
+    var warnings: [AIWarning] = []
 
     for message in messages {
         switch message.role {
@@ -2121,7 +2139,7 @@ private func openResponsesInput(from messages: [AIMessage]) -> OpenResponsesPrep
                 input.append(.object([
                     "type": .string("function_call_output"),
                     "call_id": .string(result.toolCallID),
-                    "output": openResponsesToolResultOutput(result)
+                    "output": openResponsesToolResultOutput(result, warnings: &warnings)
                 ]))
             }
         }
@@ -2130,25 +2148,35 @@ private func openResponsesInput(from messages: [AIMessage]) -> OpenResponsesPrep
     return OpenResponsesPreparedInput(
         input: .array(input),
         instructions: systemMessages.isEmpty ? nil : systemMessages.joined(separator: "\n"),
-        warnings: []
+        warnings: warnings
     )
 }
 
 private func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContentPart]>.Element) -> JSONValue? {
-    let (index, part) = indexAndPart
+    let (_, part) = indexAndPart
     switch part {
     case let .text(text):
         return .object(["type": .string("input_text"), "text": .string(text)])
     case let .imageURL(url):
         return .object(["type": .string("input_image"), "image_url": .string(url)])
-    case let .data(mimeType, data), let .file(mimeType, data, _):
+    case let .data(mimeType, data):
         let dataURL = "data:\(mimeType);base64,\(data.base64EncodedString())"
         if mimeType.lowercased().hasPrefix("image/") {
             return .object(["type": .string("input_image"), "image_url": .string(dataURL)])
         }
         return .object([
             "type": .string("input_file"),
-            "filename": .string(openAIResponsesFileName(for: mimeType, index: index)),
+            "filename": .string("data"),
+            "file_data": .string(dataURL)
+        ])
+    case let .file(mimeType, data, filename):
+        let dataURL = "data:\(mimeType);base64,\(data.base64EncodedString())"
+        if mimeType.lowercased().hasPrefix("image/") {
+            return .object(["type": .string("input_image"), "image_url": .string(dataURL)])
+        }
+        return .object([
+            "type": .string("input_file"),
+            "filename": .string(filename ?? "data"),
             "file_data": .string(dataURL)
         ])
     case .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
@@ -2156,16 +2184,52 @@ private func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[A
     }
 }
 
-private func openResponsesToolResultOutput(_ result: AIToolResult) -> JSONValue {
+private func openResponsesToolResultOutput(_ result: AIToolResult, warnings: inout [AIWarning]) -> JSONValue {
     if let text = result.modelOutput?.stringValue ?? result.result.stringValue {
         return .string(text)
     }
     if let object = (result.modelOutput ?? result.result).objectValue,
-       let type = object["type"]?.stringValue,
-       type == "execution-denied" {
-        return .string(object["reason"]?.stringValue ?? "Tool execution denied.")
+       let type = object["type"]?.stringValue {
+        if type == "execution-denied" {
+            return .string(object["reason"]?.stringValue ?? "Tool execution denied.")
+        }
+        if type == "content" {
+            let content = object["value"]?.arrayValue ?? []
+            return .array(content.compactMap { item in
+                openResponsesToolResultContentPart(item, warnings: &warnings)
+            })
+        }
     }
     return .string(openAIResponsesJSONString(result.modelOutput ?? result.result) ?? "")
+}
+
+private func openResponsesToolResultContentPart(_ item: JSONValue, warnings: inout [AIWarning]) -> JSONValue? {
+    switch item["type"]?.stringValue {
+    case "text":
+        return .object([
+            "type": .string("input_text"),
+            "text": item["text"] ?? .string("")
+        ])
+    case "image-data":
+        return .object([
+            "type": .string("input_image"),
+            "image_url": .string("data:\(item["mediaType"]?.stringValue ?? "image/jpeg");base64,\(item["data"]?.stringValue ?? "")")
+        ])
+    case "image-url":
+        return .object([
+            "type": .string("input_image"),
+            "image_url": item["url"] ?? .string("")
+        ])
+    case "file-data":
+        return .object([
+            "type": .string("input_file"),
+            "filename": item["filename"] ?? .string("data"),
+            "file_data": .string("data:\(item["mediaType"]?.stringValue ?? "application/octet-stream");base64,\(item["data"]?.stringValue ?? "")")
+        ])
+    default:
+        warnings.append(AIWarning(type: "other", message: "unsupported tool content part type: \(item["type"]?.stringValue ?? "unknown")"))
+        return nil
+    }
 }
 
 private func openResponsesProviderOptions(providerOptions: [String: JSONValue], providerOptionsName: String) throws -> [String: JSONValue] {
@@ -3414,6 +3478,34 @@ private func openAIResponsesFinishReason(status: String?, incompleteReason: Stri
     default:
         return status
     }
+}
+
+private func openResponsesFinishReason(incompleteReason: String?, hasToolCalls: Bool) -> String {
+    switch incompleteReason {
+    case nil:
+        return hasToolCalls ? "tool-calls" : "stop"
+    case "max_output_tokens":
+        return "length"
+    case "content_filter":
+        return "content-filter"
+    default:
+        return hasToolCalls ? "tool-calls" : "other"
+    }
+}
+
+private func openResponsesStreamFinishReason(
+    response: JSONValue,
+    hasToolCalls: Bool,
+    mode: ResponsesRequestMode
+) -> String? {
+    let incompleteReason = response["incomplete_details"]?["reason"]?.stringValue
+    if case .openResponses = mode {
+        return openResponsesFinishReason(incompleteReason: incompleteReason, hasToolCalls: hasToolCalls)
+    }
+    return openAIResponsesFinishReason(
+        status: response["status"]?.stringValue,
+        incompleteReason: incompleteReason
+    )
 }
 
 private func isOpenAIBackedProvider(_ providerID: String) -> Bool {
