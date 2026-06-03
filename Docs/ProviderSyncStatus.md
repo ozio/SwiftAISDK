@@ -126,7 +126,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/moonshotai` | Chat/stream bodies, thinking options, tool calls, provider options, unsupported capabilities, usage variants, finish mapping, user-agent behavior, and abort propagation are covered. |
 | `@ai-sdk/open-responses` | Custom Responses endpoint factory, optional API key/custom headers, provider options namespace, request conversion, function tools/tool choice, structured text format, file/tool-result content conversion, finish/usage mapping, text/reasoning/function-call streaming, failed stream events, warnings, and raw chunks are covered. |
 | `@ai-sdk/openai` | Chat, Responses, completions, embeddings, images, speech, transcription, files, skills, tool helpers, provider aliases, organization/project headers, structured output, metadata, warnings, and abort propagation are covered. |
-| `@ai-sdk/openai-compatible` | Chat/completion/embedding/image/audio/video/rerank surfaces, route selection, stream parsing, provider surface IDs, warning behavior, provider option passthrough, response metadata, and abort propagation are covered. |
+| `@ai-sdk/openai-compatible` | Chat/completion/embedding/image surfaces, route selection, stream parsing, provider surface IDs, warning behavior, provider option passthrough, response metadata, and abort propagation are covered. |
 | `@ai-sdk/perplexity` | Chat request/stream bodies, search/sources/citations, provider options, unsupported settings, finish/usage validation, response metadata, and abort propagation are covered. |
 | `@ai-sdk/prodia` | Language/media routes, streaming generated files, image provider options, size warnings, response validation, headers/user-agent, and abort propagation are covered. |
 | `@ai-sdk/quiverai` | SVG generate/vectorize endpoints, provider option schema, reference limits, response schema/usage, SVG base64 conversion, warnings, metadata, and abort propagation are covered. |
@@ -143,6 +143,7 @@ record and passes tests, it leaves the active queue.
 | --- | --- | --- |
 | `@ai-sdk/gateway` | `3.0.123` | `3294e3d`, `b8f35cb`, `08b36ed`: v3 base URL, headers/user agent, OIDC fallback, typed Gateway errors. |
 | `@ai-sdk/openai` | `3.0.67` | `e12b20e`: package re-read across provider/config/chat/responses/completion/embedding/image/speech/transcription/tools; typed providerOptions, Responses automatic includes, completion/audio/embedding parity gaps, shell skills, and tool-choice behavior closed. |
+| `@ai-sdk/openai-compatible` | `2.0.48` | `0badc3c`: package re-read across provider/chat/completion/embedding/image; generic providerOptions namespaces, completion prompt conversion, embedding metadata/default encoding, and generic-vs-specialized passthrough boundaries closed. |
 | `@ai-sdk/open-responses` | `1.0.16` | `d0d881f`: package re-read against upstream request/input/stream/finish schemas; file names, rich tool-result content, Open Responses finish mapping, and failed stream events closed. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
@@ -182,6 +183,20 @@ Known Swift differences / out of scope: Swift keeps files and skills as first-cl
 Tests run: swift test --filter OpenAI; swift test --filter ResponsesEndpoint && swift test --filter OpenAI; swift test with 898 tests.
 Commit evidence: e12b20e.
 Reopen only if: openai npm version changes, OpenAI Responses/chat/completion/image/audio/tool schemas change, providerOptions schemas add/remove fields, Swift core tool/media contracts change, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/openai-compatible`
+
+```text
+Package: @ai-sdk/openai-compatible
+Baseline: 2.0.48
+Upstream inspected: openai-compatible-provider.ts, chat/openai-compatible-chat-language-model.ts, chat/openai-compatible-chat-options.ts, chat/openai-compatible-prepare-tools.ts, chat/convert-to-openai-compatible-chat-messages.ts, completion/openai-compatible-completion-language-model.ts, completion/convert-to-openai-compatible-completion-prompt.ts, embedding/openai-compatible-embedding-model.ts, image/openai-compatible-image-model.ts, openai-compatible-error.ts, utils/to-camel-case.ts, index.ts, version.ts.
+Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, OpenAICompatibleTests.swift, OpenAICompatibleWarningTests.swift, OpenAICompatibleResponseMetadataTests.swift, OpenAIChatTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
+Surfaces checked: generic factory aliases, required name/baseURL, optional API key, custom headers, query params, user-agent suffix, upstream provider surface IDs, chat/completion/embedding/image routing, chat providerOptions namespaces including deprecated openai-compatible/openaiCompatible/raw/camel provider keys, completion providerOptions namespaces and upstream chat-like completion prompt/stop sequence conversion, embedding default encoding_format float, embedding providerMetadata passthrough, image raw/camel provider options and b64_json response_format precedence, warnings for deprecated providerOptions keys and unsupported settings, stream metadata/raw-chunk coverage through existing tests, response metadata, transformRequestBody, includeUsage, abort propagation through shared HTTP transport, and generic providerOptions isolation from specialized OpenAI-compatible-backed provider wrappers such as MoonshotAI.
+Known Swift differences / out of scope: Swift exposes `extraBody` as an additional escape hatch beside upstream `providerOptions`; Swift provider settings are static dictionaries rather than upstream async resolvable header functions; upstream `metadataExtractor`, `convertUsage`, `supportedUrls`, and embedding `supportsParallelCalls` hooks are not exposed as public Swift settings yet.
+Tests run: swift test --filter OpenAICompatible; swift test --filter moonshotLanguageTransformsThinkingOptions; swift test --filter OpenAI; swift test with 899 tests.
+Commit evidence: 0badc3c.
+Reopen only if: openai-compatible npm version changes, providerOptions namespace or completion prompt semantics change, embedding/image response schemas change, Swift core adds async settings/hooks for metadataExtractor/convertUsage/supportedUrls/supportsParallelCalls, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/open-responses`
@@ -331,7 +346,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/openai-compatible` | `2.0.48` | `7aa1c55`: provider surfaces; broad OpenAI-compatible request/stream/warning tests exist. |
 | `@ai-sdk/groq` | `3.0.39` | `55faaac`, `6627b3d`, `2fe28f0`: option schema, transcription response, chat parity. |
 | `@ai-sdk/mistral` | `3.0.37` | `9ea7375`, `d4e5aab`: option schema and chat parity. |
 | `@ai-sdk/cohere` | `3.0.36` | `5d2c1d9`, `6b81b90`: option schema and chat parity. |
