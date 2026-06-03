@@ -120,6 +120,14 @@ public enum OpenAITools {
         ]
     }
 
+    public static func shellSkillReference(skillID: String, version: String? = nil) -> JSONValue {
+        JSONValue.object([
+            "type": .string("skillReference"),
+            "skillId": .string(skillID),
+            "version": version.map(JSONValue.string)
+        ])
+    }
+
     public static func shellSkillReference(providerReference: [String: String], version: String? = nil) -> JSONValue {
         JSONValue.object([
             "type": .string("skillReference"),
@@ -864,7 +872,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             }
         }
         let extraBody = unwrapOpenAIProviderOptions
-            ? openAIProviderOptions(from: request.extraBody, providerID: providerID, providerRoot: openAIProviderOptionsRoot)
+            ? openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: openAIProviderOptionsRoot)
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         body.merge(openAICompatibleChatOptions(from: extraBody, supportsStructuredOutputs: supportsStructuredOutputs)) { _, new in new }
         return body
@@ -1199,6 +1207,20 @@ private func openAICompatibleChatToolChoice(from value: JSONValue?) -> JSONValue
 private func openAICompatibleChatOptions(from extraBody: [String: JSONValue], supportsStructuredOutputs: Bool) -> [String: JSONValue] {
     var output = extraBody
     output.removeValue(forKey: "toolChoice")
+    openAIResponsesMoveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
+    openAIResponsesMoveKey("maxCompletionTokens", to: "max_completion_tokens", in: &output)
+    openAIResponsesMoveKey("serviceTier", to: "service_tier", in: &output)
+    openAIResponsesMoveKey("promptCacheKey", to: "prompt_cache_key", in: &output)
+    openAIResponsesMoveKey("promptCacheRetention", to: "prompt_cache_retention", in: &output)
+    openAIResponsesMoveKey("safetyIdentifier", to: "safety_identifier", in: &output)
+    if let logprobs = output["logprobs"] {
+        if let count = logprobs.intValue, logprobs.doubleValue == Double(count) {
+            output["logprobs"] = count > 0 ? .bool(true) : .bool(false)
+            if count > 0 { output["top_logprobs"] = .number(Double(count)) }
+        } else if logprobs.boolValue == true {
+            output["top_logprobs"] = output["top_logprobs"] ?? .number(0)
+        }
+    }
     if let reasoningEffort = output.removeValue(forKey: "reasoningEffort") {
         output["reasoning_effort"] = reasoningEffort
     }
@@ -1652,10 +1674,8 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let warnings = isOpenAIBackedProvider(providerID, config: config)
-            ? []
-            : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
-        let body = body(for: request, stream: false)
+        let prepared = body(for: request, stream: false)
+        let body = prepared.body
         let response = try await config.sendJSONResponse(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         guard let text = raw["choices"]?[0]?["text"]?.stringValue else {
@@ -1667,7 +1687,8 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
             usage: tokenUsage(from: raw),
             providerMetadata: openAICompatibleCompletionProviderMetadata(from: raw["choices"]?[0], providerID: providerID),
             rawValue: raw,
-            warnings: warnings,
+            warnings: prepared.warnings,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -1676,12 +1697,14 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let body = JSONValue.object(body(for: request, stream: true))
+                    let prepared = body(for: request, stream: true)
+                    let body = JSONValue.object(prepared.body)
                     let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
                     }
+                    continuation.yield(.streamStart(warnings: prepared.warnings))
                     continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
                     var providerMetadata: [String: JSONValue] = [:]
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -1715,7 +1738,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) -> [String: JSONValue] {
+    private func body(for request: LanguageModelRequest, stream: Bool) -> (body: [String: JSONValue], warnings: [AIWarning]) {
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "prompt": .string(request.messages.map(\.combinedText).joined(separator: "\n"))
@@ -1723,12 +1746,17 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         if stream { body["stream"] = .bool(true) }
         if stream, config.includeUsage { body["stream_options"] = .object(["include_usage": .bool(true)]) }
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
+        if let topP = request.topP { body["top_p"] = .number(topP) }
+        if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
+        if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
+        if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
         let extraBody = isOpenAIBackedProvider(providerID, config: config)
-            ? openAICompletionProviderOptions(from: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
+            ? openAICompletionProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
-        body.merge(extraBody) { _, new in new }
-        return body
+        body.merge(openAICompletionOptions(from: extraBody)) { _, new in new }
+        return (body, openAICompletionWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot))
     }
 }
 
@@ -2020,7 +2048,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     private func openAICompatiblePreparedRequest(for request: LanguageModelRequest, stream: Bool) throws -> OpenAICompatibleResponsesPreparedRequest {
         let extraBody: [String: JSONValue]
         if isOpenAIBackedProvider(providerID, config: config) {
-            extraBody = openAIResponsesProviderOptions(from: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
+            extraBody = openAIResponsesProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
         } else if providerID.hasPrefix("xai.") {
             extraBody = try xaiResponsesProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID)
         } else {
@@ -2029,6 +2057,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         var options = openAIResponsesOptions(from: extraBody)
         if providerID.hasPrefix("xai.") {
             options = xaiResponsesOptions(from: options)
+        }
+        let isOpenAIBacked = isOpenAIBackedProvider(providerID, config: config)
+        let warnings = isOpenAIBacked ? openAIResponsesOpenAIBackedWarnings(options: options) : []
+        if isOpenAIBacked {
+            openAIResponsesApplyAutomaticOptions(to: &options, tools: request.tools, modelID: modelID)
         }
         let store = options["store"]?.boolValue ?? true
         var processedApprovalIDs: Set<String> = []
@@ -2043,14 +2076,29 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
         body.merge(options) { _, new in new }
+        if let textVerbosity = body.removeValue(forKey: "textVerbosity") {
+            var text = body["text"]?.objectValue ?? [:]
+            text["verbosity"] = textVerbosity
+            body["text"] = .object(text)
+        }
+        let strictJsonSchema = body.removeValue(forKey: "strictJsonSchema")
+        if let textFormat = openAIResponsesTextFormat(from: request.responseFormat, strictJsonSchema: strictJsonSchema) {
+            var text = body["text"]?.objectValue ?? [:]
+            text["format"] = textFormat
+            body["text"] = .object(text)
+        }
         let preparedTools = openAIResponsesTools(from: request.tools)
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)
-            if let toolChoice = openAIResponsesToolChoice(from: request.extraBody["toolChoice"], customToolNames: preparedTools.customToolNames) {
+            if let allowedTools = options["allowedTools"] ?? options["allowed_tools"] {
+                body["tool_choice"] = openAIResponsesAllowedToolsChoice(from: allowedTools)
+            } else if let toolChoice = openAIResponsesToolChoice(from: request.toolChoice ?? request.extraBody["toolChoice"], customToolNames: preparedTools.customToolNames) {
                 body["tool_choice"] = toolChoice
             }
         }
-        return OpenAICompatibleResponsesPreparedRequest(body: config.transformRequestBody?(body) ?? body, warnings: [])
+        body.removeValue(forKey: "allowedTools")
+        body.removeValue(forKey: "allowed_tools")
+        return OpenAICompatibleResponsesPreparedRequest(body: config.transformRequestBody?(body) ?? body, warnings: warnings)
     }
 
     private func openResponsesPreparedRequest(for request: LanguageModelRequest, stream: Bool, providerOptionsName: String) throws -> OpenAICompatibleResponsesPreparedRequest {
@@ -2317,6 +2365,21 @@ private func openResponsesTextFormat(from responseFormat: AIResponseFormat?) -> 
     return .object(format)
 }
 
+private func openAIResponsesTextFormat(from responseFormat: AIResponseFormat?, strictJsonSchema: JSONValue?) -> JSONValue? {
+    guard let responseFormat, case let .json(schema, name, description) = responseFormat else { return nil }
+    guard let schema else {
+        return .object(["type": .string("json_object")])
+    }
+    var format: [String: JSONValue] = [
+        "type": .string("json_schema"),
+        "name": .string(name ?? "response"),
+        "schema": schema,
+        "strict": strictJsonSchema ?? .bool(true)
+    ]
+    if let description { format["description"] = .string(description) }
+    return .object(format)
+}
+
 private func openResponsesWarnings(for request: LanguageModelRequest) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if !request.stopSequences.isEmpty { warnings.append(AIWarning(type: "unsupported", feature: "stopSequences")) }
@@ -2434,15 +2497,19 @@ private func openAIResponsesFileName(for mimeType: String, index: Int) -> String
 
 private func openAIResponsesOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
     var output = extraBody
+    openAIResponsesMoveKey("conversation", to: "conversation", in: &output)
     openAIResponsesMoveKey("previousResponseId", to: "previous_response_id", in: &output)
     openAIResponsesMoveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
     openAIResponsesMoveKey("serviceTier", to: "service_tier", in: &output)
     openAIResponsesMoveKey("maxToolCalls", to: "max_tool_calls", in: &output)
+    openAIResponsesMoveKey("promptCacheKey", to: "prompt_cache_key", in: &output)
+    openAIResponsesMoveKey("promptCacheRetention", to: "prompt_cache_retention", in: &output)
+    openAIResponsesMoveKey("safetyIdentifier", to: "safety_identifier", in: &output)
+    openAIResponsesMoveKey("textVerbosity", to: "textVerbosity", in: &output)
     if let contextManagement = output.removeValue(forKey: "contextManagement") ?? output.removeValue(forKey: "context_management") {
         output["context_management"] = openAIResponsesContextManagement(contextManagement)
     }
     output.removeValue(forKey: "toolChoice")
-    output.removeValue(forKey: "allowedTools")
 
     var reasoning = output["reasoning"]?.objectValue ?? [:]
     if let effort = output.removeValue(forKey: "reasoningEffort") {
@@ -2456,6 +2523,74 @@ private func openAIResponsesOptions(from extraBody: [String: JSONValue]) -> [Str
     }
 
     return output
+}
+
+private func openAIResponsesOpenAIBackedWarnings(options: [String: JSONValue]) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if options["conversation"] != nil, options["previous_response_id"] != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "conversation",
+            message: "conversation and previousResponseId cannot be used together"
+        ))
+    }
+    return warnings
+}
+
+private func openAIResponsesApplyAutomaticOptions(to options: inout [String: JSONValue], tools: [String: JSONValue], modelID: String) {
+    if let logprobs = options.removeValue(forKey: "logprobs") {
+        if let count = logprobs.intValue, logprobs.doubleValue == Double(count), count > 0 {
+            options["top_logprobs"] = .number(Double(count))
+            openAIResponsesAppendInclude("message.output_text.logprobs", to: &options)
+        } else if logprobs.boolValue == true {
+            options["top_logprobs"] = .number(20)
+            openAIResponsesAppendInclude("message.output_text.logprobs", to: &options)
+        }
+    }
+
+    if tools.contains(where: { _, schema in
+        let id = schema["id"]?.stringValue
+        return id == "openai.web_search" || id == "openai.web_search_preview"
+    }) {
+        openAIResponsesAppendInclude("web_search_call.action.sources", to: &options)
+    }
+
+    if tools.contains(where: { _, schema in schema["id"]?.stringValue == "openai.code_interpreter" }) {
+        openAIResponsesAppendInclude("code_interpreter_call.outputs", to: &options)
+    }
+
+    if options["store"]?.boolValue == false, openAIIsReasoningModel(modelID) {
+        openAIResponsesAppendInclude("reasoning.encrypted_content", to: &options)
+    }
+}
+
+private func openAIResponsesAppendInclude(_ value: String, to options: inout [String: JSONValue]) {
+    var include = options["include"]?.arrayValue ?? []
+    let item = JSONValue.string(value)
+    if !include.contains(item) {
+        include.append(item)
+    }
+    options["include"] = .array(include)
+}
+
+private func openAIIsReasoningModel(_ modelID: String) -> Bool {
+    modelID.hasPrefix("o1")
+        || modelID.hasPrefix("o3")
+        || modelID.hasPrefix("o4-mini")
+        || (modelID.hasPrefix("gpt-5") && !modelID.hasPrefix("gpt-5-chat"))
+}
+
+private func openAIResponsesAllowedToolsChoice(from value: JSONValue) -> JSONValue {
+    let object = value.objectValue ?? [:]
+    let toolNames = object["toolNames"]?.arrayValue ?? object["tool_names"]?.arrayValue ?? []
+    return .object([
+        "type": .string("allowed_tools"),
+        "mode": object["mode"] ?? .string("auto"),
+        "tools": .array(toolNames.compactMap { name in
+            guard let name = name.stringValue else { return nil }
+            return .object(["type": .string("function"), "name": .string(name)])
+        })
+    ])
 }
 
 private func openAIResponsesContextManagement(_ value: JSONValue) -> JSONValue {
@@ -2741,7 +2876,7 @@ private func openAIResponsesToolChoice(from value: JSONValue?, customToolNames: 
         return object["type"]
     case "tool":
         guard let name = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue else { return nil }
-        let providerToolTypes: Set<String> = ["code_interpreter", "computer_use", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch", "tool_search"]
+        let providerToolTypes: Set<String> = ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"]
         if providerToolTypes.contains(name) {
             return .object(["type": .string(name)])
         }
@@ -2788,13 +2923,48 @@ private func openAIResponsesShellEnvironment(_ environment: [String: JSONValue])
         if let networkPolicy = environment["networkPolicy"]?.objectValue ?? environment["network_policy"]?.objectValue {
             mapped["network_policy"] = openAIResponsesShellNetworkPolicy(networkPolicy)
         }
-        if let skills = environment["skills"] { mapped["skills"] = skills }
+        if let skills = environment["skills"]?.arrayValue {
+            mapped["skills"] = .array(skills.map(openAIResponsesShellSkill))
+        }
         return .object(mapped)
     default:
         var mapped: [String: JSONValue] = ["type": .string("local")]
         if let skills = environment["skills"] { mapped["skills"] = skills }
         return .object(mapped)
     }
+}
+
+private func openAIResponsesShellSkill(_ skill: JSONValue) -> JSONValue {
+    guard let object = skill.objectValue else { return skill }
+    if object["type"]?.stringValue == "skillReference" {
+        var mapped: [String: JSONValue] = ["type": .string("skill_reference")]
+        if let skillID = object["skillId"] ?? object["skill_id"] {
+            mapped["skill_id"] = skillID
+        } else if let providerReference = object["providerReference"]?.objectValue ?? object["provider_reference"]?.objectValue {
+            mapped["skill_id"] = providerReference["openai"] ?? providerReference.values.first
+        }
+        if let version = object["version"] {
+            mapped["version"] = version
+        }
+        return .object(mapped)
+    }
+    if object["type"]?.stringValue == "inline" {
+        var mapped: [String: JSONValue] = ["type": .string("inline")]
+        if let name = object["name"] {
+            mapped["name"] = name
+        }
+        if let description = object["description"] {
+            mapped["description"] = description
+        }
+        if var source = object["source"]?.objectValue {
+            if let mediaType = source.removeValue(forKey: "mediaType") {
+                source["media_type"] = mediaType
+            }
+            mapped["source"] = .object(source)
+        }
+        return .object(mapped)
+    }
+    return skill
 }
 
 private func openAIResponsesShellNetworkPolicy(_ policy: [String: JSONValue]) -> JSONValue {
@@ -3539,6 +3709,31 @@ private func openAIProviderOptions(from extraBody: [String: JSONValue], provider
     return output
 }
 
+private func openAIProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String = "openai", providerRoot: String? = nil) -> [String: JSONValue] {
+    var output = openAIProviderOptions(from: extraBody, providerID: providerID, providerRoot: providerRoot)
+    let roots = openAIProviderOptionNamespaceKeys(providerID: providerID, providerRoot: providerRoot)
+    for root in roots {
+        guard let value = providerOptions[root], value != .null else { continue }
+        if let nested = value.objectValue {
+            output.merge(nested) { _, providerValue in providerValue }
+        }
+    }
+    return output
+}
+
+private func openAIProviderOptionNamespaceKeys(providerID: String, providerRoot: String?) -> [String] {
+    var keys: [String] = []
+    func append(_ key: String?) {
+        guard let key, !keys.contains(key) else { return }
+        keys.append(key)
+    }
+    append(providerRoot ?? openAIBackedProviderRoot(providerID))
+    append(openAIBackedProviderRoot(providerID))
+    append(providerID)
+    append("openai")
+    return keys
+}
+
 private func openAIBackedProviderRoot(_ providerID: String) -> String? {
     if providerID == "openai" || providerID.hasPrefix("openai.") {
         return "openai"
@@ -3650,12 +3845,60 @@ private func openAICompletionProviderOptions(from extraBody: [String: JSONValue]
     openAIProviderOptions(from: extraBody, providerID: providerID, providerRoot: providerRoot)
 }
 
+private func openAICompletionProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String, providerRoot: String? = nil) -> [String: JSONValue] {
+    openAIProviderOptions(providerOptions: providerOptions, extraBody: extraBody, providerID: providerID, providerRoot: providerRoot)
+}
+
+private func openAICompletionOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
+    var output = extraBody
+    openAIResponsesMoveKey("logitBias", to: "logit_bias", in: &output)
+    if let logprobs = output["logprobs"] {
+        if logprobs.boolValue == true {
+            output["logprobs"] = .number(0)
+        } else if logprobs.boolValue == false {
+            output.removeValue(forKey: "logprobs")
+        }
+    }
+    return output
+}
+
+private func openAICompletionWarnings(for request: LanguageModelRequest, providerID: String, openAIBackedProviderRoot: String? = nil) -> [AIWarning] {
+    var warnings = isOpenAIBackedProvider(providerID) || openAIBackedProviderRoot != nil
+        ? []
+        : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+    if request.topK != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "topK"))
+    }
+    if !request.tools.isEmpty {
+        warnings.append(AIWarning(type: "unsupported", feature: "tools"))
+    }
+    if request.toolChoice != nil || request.extraBody["toolChoice"] != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "toolChoice"))
+    }
+    if let responseFormat = request.responseFormat, responseFormat != .text {
+        warnings.append(AIWarning(type: "unsupported", feature: "responseFormat", message: "JSON response format is not supported."))
+    }
+    return warnings
+}
+
 private func openAIResponsesProviderOptions(from extraBody: [String: JSONValue], providerID: String, providerRoot: String? = nil) -> [String: JSONValue] {
     openAIProviderOptions(from: extraBody, providerID: providerID, providerRoot: providerRoot)
 }
 
+private func openAIResponsesProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String, providerRoot: String? = nil) -> [String: JSONValue] {
+    openAIProviderOptions(providerOptions: providerOptions, extraBody: extraBody, providerID: providerID, providerRoot: providerRoot)
+}
+
 private func openAIImageOptions(from extraBody: [String: JSONValue], providerID: String = "openai", providerRoot: String? = nil) -> [String: JSONValue] {
     var output = openAIProviderOptions(from: extraBody, providerID: providerID, providerRoot: providerRoot)
+    openAIResponsesMoveKey("outputFormat", to: "output_format", in: &output)
+    openAIResponsesMoveKey("outputCompression", to: "output_compression", in: &output)
+    openAIResponsesMoveKey("inputFidelity", to: "input_fidelity", in: &output)
+    return output
+}
+
+private func openAIImageOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String = "openai", providerRoot: String? = nil) -> [String: JSONValue] {
+    var output = openAIProviderOptions(providerOptions: providerOptions, extraBody: extraBody, providerID: providerID, providerRoot: providerRoot)
     openAIResponsesMoveKey("outputFormat", to: "output_format", in: &output)
     openAIResponsesMoveKey("outputCompression", to: "output_compression", in: &output)
     openAIResponsesMoveKey("inputFidelity", to: "input_fidelity", in: &output)
@@ -3677,6 +3920,19 @@ private func openAIImageMaxImagesPerCall(_ modelID: String) -> Int {
 
 private func openAITranscriptionOptions(from extraBody: [String: JSONValue], providerID: String = "openai", providerRoot: String? = nil, modelID: String) -> [String: JSONValue] {
     var output = openAIProviderOptions(from: extraBody, providerID: providerID, providerRoot: providerRoot)
+    let hadProviderOptions = !output.isEmpty
+    openAIResponsesMoveKey("timestampGranularities", to: "timestamp_granularities", in: &output)
+    openAIResponsesMoveKey("responseFormat", to: "response_format", in: &output)
+
+    if modelID != "whisper-1", hadProviderOptions, output["response_format"] == nil {
+        output["response_format"] = .string(openAITranscriptionUsesJSONResponseFormat(modelID) ? "json" : "verbose_json")
+    }
+
+    return output
+}
+
+private func openAITranscriptionOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String = "openai", providerRoot: String? = nil, modelID: String) -> [String: JSONValue] {
+    var output = openAIProviderOptions(providerOptions: providerOptions, extraBody: extraBody, providerID: providerID, providerRoot: providerRoot)
     let hadProviderOptions = !output.isEmpty
     openAIResponsesMoveKey("timestampGranularities", to: "timestamp_granularities", in: &output)
     openAIResponsesMoveKey("responseFormat", to: "response_format", in: &output)
@@ -3717,8 +3973,11 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             "input": .array(request.values)
         ]
         if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
+        if isOpenAIBackedProvider(providerID, config: config) {
+            body["encoding_format"] = .string("float")
+        }
         let extraBody = isOpenAIBackedProvider(providerID, config: config)
-            ? openAIProviderOptions(from: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
+            ? openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
             : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         body.merge(extraBody) { _, new in new }
 
@@ -3772,7 +4031,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         ]
         if let size = request.size { body["size"] = .string(size) }
         if let count = request.count { body["n"] = .number(Double(count)) }
-        body.merge(isOpenAIBackedProvider(providerID, config: config) ? openAIImageOptions(from: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)) { _, new in new }
+        body.merge(isOpenAIBackedProvider(providerID, config: config) ? openAIImageOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)) { _, new in new }
         if isOpenAIBackedProvider(providerID, config: config), body["response_format"] == nil, !openAIImageHasDefaultResponseFormat(modelID) {
             body["response_format"] = .string("b64_json")
         } else if !isOpenAIBackedProvider(providerID, config: config) {
@@ -3815,7 +4074,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             form.appendField(name: "size", value: size)
         }
 
-        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAIImageOptions(from: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAIImageOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
         for (key, value) in extraBody {
             if case let .array(items) = value {
                 for item in items {
@@ -3970,18 +4229,31 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
+        var warnings: [AIWarning] = []
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "input": .string(request.text)
         ]
         if isOpenAIBackedProvider(providerID, config: config) {
             body["voice"] = .string(request.voice ?? "alloy")
-            body["response_format"] = .string(request.format ?? "mp3")
+            let outputFormat = request.format ?? "mp3"
+            if openAISpeechSupportedOutputFormats.contains(outputFormat) {
+                body["response_format"] = .string(outputFormat)
+            } else {
+                body["response_format"] = .string("mp3")
+                warnings.append(AIWarning(type: "unsupported", feature: "outputFormat", message: "Unsupported output format: \(outputFormat). Using mp3 instead."))
+            }
+            if let language = request.language {
+                warnings.append(AIWarning(type: "unsupported", feature: "language", message: "OpenAI speech models do not support language selection. Language parameter \"\(language)\" was ignored."))
+            }
         } else {
             if let voice = request.voice { body["voice"] = .string(voice) }
             if let format = request.format { body["response_format"] = .string(format) }
+            if let language = request.language { body["language"] = .string(language) }
         }
-        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAIProviderOptions(from: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : request.extraBody
+        if let speed = request.speed { body["speed"] = .number(speed) }
+        if let instructions = request.instructions { body["instructions"] = .string(instructions) }
+        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : request.extraBody
         body.merge(extraBody) { _, new in new }
 
         let response = try await config.transport.send(config.request(path: "/audio/speech", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
@@ -3991,6 +4263,7 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
         return SpeechResult(
             audio: response.body,
             contentType: response.headers["content-type"] ?? response.headers["Content-Type"],
+            warnings: warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(response: response, modelID: modelID)
         )
@@ -4029,7 +4302,7 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
             form.appendField(name: "prompt", value: prompt)
             metadataBody["prompt"] = .string(prompt)
         }
-        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAITranscriptionOptions(from: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot, modelID: modelID) : request.extraBody
+        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAITranscriptionOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot, modelID: modelID) : request.extraBody
         for (key, value) in extraBody {
             if case let .array(items) = value {
                 metadataBody[key] = value
@@ -4065,10 +4338,77 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
             text: text,
             rawValue: raw,
             segments: segments,
-            language: raw["language"]?.stringValue,
+            language: openAITranscriptionLanguageCode(raw["language"]?.stringValue),
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
             requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
 }
+
+private let openAISpeechSupportedOutputFormats: Set<String> = ["mp3", "opus", "aac", "flac", "wav", "pcm"]
+
+private func openAITranscriptionLanguageCode(_ language: String?) -> String? {
+    guard let language else { return nil }
+    return openAITranscriptionLanguageMap[language] ?? language
+}
+
+private let openAITranscriptionLanguageMap: [String: String] = [
+    "afrikaans": "af",
+    "arabic": "ar",
+    "armenian": "hy",
+    "azerbaijani": "az",
+    "belarusian": "be",
+    "bosnian": "bs",
+    "bulgarian": "bg",
+    "catalan": "ca",
+    "chinese": "zh",
+    "croatian": "hr",
+    "czech": "cs",
+    "danish": "da",
+    "dutch": "nl",
+    "english": "en",
+    "estonian": "et",
+    "finnish": "fi",
+    "french": "fr",
+    "galician": "gl",
+    "german": "de",
+    "greek": "el",
+    "hebrew": "he",
+    "hindi": "hi",
+    "hungarian": "hu",
+    "icelandic": "is",
+    "indonesian": "id",
+    "italian": "it",
+    "japanese": "ja",
+    "kannada": "kn",
+    "kazakh": "kk",
+    "korean": "ko",
+    "latvian": "lv",
+    "lithuanian": "lt",
+    "macedonian": "mk",
+    "malay": "ms",
+    "marathi": "mr",
+    "maori": "mi",
+    "nepali": "ne",
+    "norwegian": "no",
+    "persian": "fa",
+    "polish": "pl",
+    "portuguese": "pt",
+    "romanian": "ro",
+    "russian": "ru",
+    "serbian": "sr",
+    "slovak": "sk",
+    "slovenian": "sl",
+    "spanish": "es",
+    "swahili": "sw",
+    "swedish": "sv",
+    "tagalog": "tl",
+    "tamil": "ta",
+    "thai": "th",
+    "turkish": "tr",
+    "ukrainian": "uk",
+    "urdu": "ur",
+    "vietnamese": "vi",
+    "welsh": "cy"
+]

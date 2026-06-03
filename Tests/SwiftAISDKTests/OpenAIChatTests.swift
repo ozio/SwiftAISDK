@@ -63,6 +63,51 @@ import Testing
     #expect(body["textVerbosity"] == nil)
 }
 
+@Test func openAIChatMapsTypedProviderOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.chatModel("gpt-5.1")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "openai": [
+                "parallelToolCalls": false,
+                "maxCompletionTokens": 123,
+                "serviceTier": "priority",
+                "promptCacheKey": "cache-key",
+                "promptCacheRetention": "24h",
+                "safetyIdentifier": "safe-user",
+                "reasoningEffort": "none",
+                "textVerbosity": "high",
+                "logprobs": 4
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["parallel_tool_calls"]?.boolValue == false)
+    #expect(body["max_completion_tokens"]?.intValue == 123)
+    #expect(body["service_tier"]?.stringValue == "priority")
+    #expect(body["prompt_cache_key"]?.stringValue == "cache-key")
+    #expect(body["prompt_cache_retention"]?.stringValue == "24h")
+    #expect(body["safety_identifier"]?.stringValue == "safe-user")
+    #expect(body["reasoning_effort"]?.stringValue == "none")
+    #expect(body["verbosity"]?.stringValue == "high")
+    #expect(body["logprobs"]?.boolValue == true)
+    #expect(body["top_logprobs"]?.intValue == 4)
+    #expect(body["parallelToolCalls"] == nil)
+    #expect(body["maxCompletionTokens"] == nil)
+    #expect(body["serviceTier"] == nil)
+    #expect(body["promptCacheKey"] == nil)
+    #expect(body["promptCacheRetention"] == nil)
+    #expect(body["safetyIdentifier"] == nil)
+    #expect(body["textVerbosity"] == nil)
+    #expect(body["openai"] == nil)
+}
+
 @Test func openAICompletionAndEmbeddingMapNestedProviderOptions() async throws {
     let completionTransport = RecordingTransport(response: jsonResponse("""
     {"choices":[{"text":"done","finish_reason":"stop"}],"usage":{"total_tokens":3}}
@@ -105,6 +150,84 @@ import Testing
     #expect(embeddingBody["dimensions"]?.intValue == 64)
     #expect(embeddingBody["encoding_format"]?.stringValue == "float")
     #expect(embeddingBody["openai"] == nil)
+}
+
+@Test func openAICompletionMapsStandardSettingsAndTypedProviderOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"text":"done","finish_reason":"stop","logprobs":{"tokens":["done"]}}],"usage":{"total_tokens":3}}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.completionModel("gpt-3.5-turbo-instruct")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.system("Prefix."), .user("Finish")],
+        temperature: 0.4,
+        topP: 0.8,
+        topK: 3,
+        presencePenalty: 0.1,
+        frequencyPenalty: 0.2,
+        seed: 42,
+        maxOutputTokens: 12,
+        stopSequences: ["END"],
+        responseFormat: .json(schema: ["type": "object"]),
+        tools: ["lookup": ["type": "object", "properties": [:]]],
+        toolChoice: "required",
+        providerOptions: [
+            "openai": [
+                "echo": true,
+                "logitBias": ["50256": -100],
+                "logprobs": true,
+                "suffix": "tail",
+                "user": "user-123"
+            ]
+        ]
+    ))
+
+    #expect(result.warnings.map(\.feature).contains("topK"))
+    #expect(result.warnings.map(\.feature).contains("tools"))
+    #expect(result.warnings.map(\.feature).contains("toolChoice"))
+    #expect(result.warnings.map(\.feature).contains("responseFormat"))
+    #expect(result.providerMetadata["openai"]?["logprobs"]?["tokens"]?[0]?.stringValue == "done")
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["model"]?.stringValue == "gpt-3.5-turbo-instruct")
+    #expect(body["prompt"]?.stringValue == "Prefix.\nFinish")
+    #expect(body["temperature"]?.doubleValue == 0.4)
+    #expect(body["top_p"]?.doubleValue == 0.8)
+    #expect(body["presence_penalty"]?.doubleValue == 0.1)
+    #expect(body["frequency_penalty"]?.doubleValue == 0.2)
+    #expect(body["seed"]?.intValue == 42)
+    #expect(body["max_tokens"]?.intValue == 12)
+    #expect(body["stop"]?[0]?.stringValue == "END")
+    #expect(body["echo"]?.boolValue == true)
+    #expect(body["logit_bias"]?["50256"]?.intValue == -100)
+    #expect(body["logprobs"]?.intValue == 0)
+    #expect(body["suffix"]?.stringValue == "tail")
+    #expect(body["user"]?.stringValue == "user-123")
+    #expect(body["openai"] == nil)
+    #expect(body["logitBias"] == nil)
+    #expect(body["tools"] == nil)
+    #expect(body["tool_choice"] == nil)
+    #expect(body["response_format"] == nil)
+}
+
+@Test func openAIEmbeddingUsesFloatEncodingAndTypedProviderOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"data":[{"embedding":[0.1,0.2]}],"usage":{"prompt_tokens":2}}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.embeddingModel("text-embedding-3-small")
+
+    _ = try await model.embed(EmbeddingRequest(
+        values: ["hello"],
+        providerOptions: ["openai": ["dimensions": 128, "user": "user-123"]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["encoding_format"]?.stringValue == "float")
+    #expect(body["dimensions"]?.intValue == 128)
+    #expect(body["user"]?.stringValue == "user-123")
+    #expect(body["openai"] == nil)
 }
 
 @Test func openAICompatibleChatMapsFunctionToolsAndToolChoice() async throws {

@@ -78,6 +78,41 @@ import Testing
     #expect(!bodyText.contains("name=\"openai\""))
 }
 
+@Test func openAITranscriptionMapsTypedProviderOptionsAndLanguageLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"transcribed","language":"english","duration":1.5}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.transcriptionModel("gpt-4o-transcribe")
+
+    let result = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("abc".utf8),
+        mimeType: "audio/wav",
+        providerOptions: [
+            "openai": [
+                "timestampGranularities": ["word"],
+                "temperature": 0.1,
+                "include": ["logprobs"],
+                "prompt": "Names"
+            ]
+        ]
+    ))
+
+    #expect(result.language == "en")
+    #expect(result.durationInSeconds == 1.5)
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"response_format\""))
+    #expect(bodyText.contains("json"))
+    #expect(bodyText.contains("name=\"timestamp_granularities[]\""))
+    #expect(bodyText.contains("word"))
+    #expect(bodyText.contains("name=\"temperature\""))
+    #expect(bodyText.contains("0.1"))
+    #expect(bodyText.contains("name=\"include[]\""))
+    #expect(bodyText.contains("logprobs"))
+    #expect(bodyText.contains("name=\"prompt\""))
+    #expect(bodyText.contains("Names"))
+    #expect(!bodyText.contains("name=\"openai\""))
+}
+
 @Test func openAISpeechUsesDefaultVoiceAndResponseFormat() async throws {
     let audio = Data("mp3".utf8)
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: audio))
@@ -96,6 +131,35 @@ import Testing
     #expect(body["response_format"]?.stringValue == "mp3")
     #expect(body["speed"]?.doubleValue == 1.25)
     #expect(body["instructions"]?.stringValue == "Calm")
+}
+
+@Test func openAISpeechMapsTypedProviderOptionsAndWarningsLikeUpstream() async throws {
+    let audio = Data("mp3".utf8)
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: audio))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.speechModel("tts-1")
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Hello",
+        format: "ogg",
+        language: "ja",
+        providerOptions: [
+            "openai": [
+                "speed": 1.25,
+                "instructions": "Calm"
+            ]
+        ]
+    ))
+
+    #expect(result.warnings.map(\.feature).contains("outputFormat"))
+    #expect(result.warnings.map(\.feature).contains("language"))
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["response_format"]?.stringValue == "mp3")
+    #expect(body["language"] == nil)
+    #expect(body["speed"]?.doubleValue == 1.25)
+    #expect(body["instructions"]?.stringValue == "Calm")
+    #expect(body["openai"] == nil)
 }
 
 @Test func openAISpeechMapsNestedProviderOptions() async throws {

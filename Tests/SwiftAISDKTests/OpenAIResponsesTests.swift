@@ -245,6 +245,74 @@ import Testing
     #expect(body["reasoningSummary"] == nil)
 }
 
+@Test func openAIResponsesMapsTypedProviderOptionsAndAutomaticIncludesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done","usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use tools and structured output.")],
+        responseFormat: .json(schema: ["type": "object"], name: "answer", description: "Answer schema"),
+        tools: [
+            "lookup": [
+                "type": "object",
+                "description": "Look up a value.",
+                "properties": ["query": ["type": "string"]]
+            ],
+            "web_search": OpenAITools.webSearch(),
+            "code_interpreter": OpenAITools.codeInterpreter()
+        ],
+        providerOptions: [
+            "openai": [
+                "store": false,
+                "logprobs": 3,
+                "textVerbosity": "high",
+                "strictJsonSchema": false,
+                "allowedTools": ["toolNames": ["lookup"], "mode": "required"],
+                "promptCacheKey": "cache-key",
+                "promptCacheRetention": "24h",
+                "safetyIdentifier": "safe-user",
+                "conversation": "conv-1",
+                "previousResponseId": "resp-old",
+                "truncation": "disabled"
+            ]
+        ],
+        extraBody: ["toolChoice": ["type": "tool", "toolName": "web_search"]]
+    ))
+
+    #expect(result.text == "done")
+    #expect(result.warnings.contains { $0.feature == "conversation" })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["store"]?.boolValue == false)
+    #expect(body["conversation"]?.stringValue == "conv-1")
+    #expect(body["previous_response_id"]?.stringValue == "resp-old")
+    #expect(body["prompt_cache_key"]?.stringValue == "cache-key")
+    #expect(body["prompt_cache_retention"]?.stringValue == "24h")
+    #expect(body["safety_identifier"]?.stringValue == "safe-user")
+    #expect(body["truncation"]?.stringValue == "disabled")
+    #expect(body["top_logprobs"]?.intValue == 3)
+    let includeValues = try #require(body["include"]?.arrayValue)
+    let include = includeValues.compactMap(\.stringValue)
+    #expect(include.contains("message.output_text.logprobs"))
+    #expect(include.contains("web_search_call.action.sources"))
+    #expect(include.contains("code_interpreter_call.outputs"))
+    #expect(include.contains("reasoning.encrypted_content"))
+    #expect(body["text"]?["verbosity"]?.stringValue == "high")
+    #expect(body["text"]?["format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["text"]?["format"]?["name"]?.stringValue == "answer")
+    #expect(body["text"]?["format"]?["description"]?.stringValue == "Answer schema")
+    #expect(body["text"]?["format"]?["strict"]?.boolValue == false)
+    #expect(body["tool_choice"]?["type"]?.stringValue == "allowed_tools")
+    #expect(body["tool_choice"]?["mode"]?.stringValue == "required")
+    #expect(body["tool_choice"]?["tools"]?[0]?["name"]?.stringValue == "lookup")
+    #expect(body["toolChoice"] == nil)
+    #expect(body["allowedTools"] == nil)
+    #expect(body["strictJsonSchema"] == nil)
+    #expect(body["logprobs"] == nil)
+    #expect(body["textVerbosity"] == nil)
+    #expect(body["openai"] == nil)
+}
+
 @Test func openAIResponsesGenerateMapsIncompleteFinishReason() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output_text":"partial","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
@@ -414,8 +482,9 @@ import Testing
     #expect(shell["environment"]?["network_policy"]?["type"]?.stringValue == "allowlist")
     #expect(shell["environment"]?["network_policy"]?["allowed_domains"]?[0]?.stringValue == "example.com")
     #expect(shell["environment"]?["network_policy"]?["domain_secrets"]?[0]?["name"]?.stringValue == "TOKEN")
-    #expect(shell["environment"]?["skills"]?[0]?["type"]?.stringValue == "skillReference")
-    #expect(shell["environment"]?["skills"]?[0]?["providerReference"]?["openai"]?.stringValue == "skill_123")
+    #expect(shell["environment"]?["skills"]?[0]?["type"]?.stringValue == "skill_reference")
+    #expect(shell["environment"]?["skills"]?[0]?["skill_id"]?.stringValue == "skill_123")
+    #expect(shell["environment"]?["skills"]?[0]?["version"]?.stringValue == "1")
 
     let imageGeneration = try #require(tools.first { $0["type"]?.stringValue == "image_generation" })
     #expect(imageGeneration["input_fidelity"]?.stringValue == "high")
@@ -597,7 +666,8 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["tool_choice"]?["type"]?.stringValue == "computer_use")
+    #expect(body["tool_choice"]?["type"]?.stringValue == "function")
+    #expect(body["tool_choice"]?["name"]?.stringValue == "computer_use")
 
     #expect(result.text == "")
     #expect(result.toolCalls.count == 2)
