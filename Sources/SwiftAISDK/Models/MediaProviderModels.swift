@@ -25,13 +25,17 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
         let path = version == nil ? "/models/\(model)/predictions" : "/predictions"
-        let response = try await config.sendJSONResponse(
+        let httpResponse = try await config.transport.send(config.request(
             path: path,
             modelID: modelID,
             body: .object(body),
             headers: request.headers.mergingHeaders(replicatePreferHeaders(from: options)),
             abortSignal: request.abortSignal
-        )
+        ))
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw replicateHTTPStatusError(provider: providerID, response: httpResponse)
+        }
+        let response = (json: try httpResponse.jsonValue(), response: httpResponse)
         let raw = response.json
         let urls = mediaURLs(from: raw["output"])
         let base64Images = try await downloadReplicateImages(urls: urls, abortSignal: request.abortSignal)
@@ -50,7 +54,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
         for url in urls {
             let response = try await downloadURL(url, transport: config.transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw replicateHTTPStatusError(provider: providerID, response: response)
             }
             images.append(response.body.base64EncodedString())
         }
@@ -97,13 +101,17 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
         var body: [String: JSONValue] = ["input": .object(input)]
         if let version { body["version"] = .string(version) }
         let path = version == nil ? "/models/\(model)/predictions" : "/predictions"
-        let createResponse = try await config.sendJSONResponse(
+        let createHTTPResponse = try await config.transport.send(config.request(
             path: path,
             modelID: modelID,
             body: .object(body),
             headers: request.headers.mergingHeaders(replicatePreferHeaders(from: options)),
             abortSignal: request.abortSignal
-        )
+        ))
+        guard (200..<300).contains(createHTTPResponse.statusCode) else {
+            throw replicateHTTPStatusError(provider: providerID, response: createHTTPResponse)
+        }
+        let createResponse = (json: try createHTTPResponse.jsonValue(), response: createHTTPResponse)
         let finalResponse = try await pollReplicatePredictionResponse(
             createResponse.json,
             initialResponse: createResponse.response,
@@ -112,8 +120,16 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.json
-        if ["failed", "canceled"].contains(raw["status"]?.stringValue ?? "") {
-            throw AIError.invalidResponse(provider: providerID, message: "Replicate video generation \(raw["status"]?.stringValue ?? "failed").")
+        switch raw["status"]?.stringValue {
+        case "failed":
+            throw AIError.invalidResponse(provider: providerID, message: "Video generation failed: \(raw["error"]?.stringValue ?? "Unknown error")")
+        case "canceled":
+            throw AIError.invalidResponse(provider: providerID, message: "Video generation was canceled")
+        default:
+            break
+        }
+        if mediaURLs(from: raw["output"]).isEmpty {
+            throw AIError.invalidResponse(provider: providerID, message: "No video URL in response")
         }
         return VideoGenerationResult(
             urls: mediaURLs(from: raw["output"]),
@@ -137,7 +153,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
             try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             let response = try await downloadURL(getURL, transport: config.transport, headers: config.headers, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw replicateHTTPStatusError(provider: providerID, response: response)
             }
             prediction = try response.jsonValue()
             metadataResponse = response
@@ -220,12 +236,31 @@ private func replicateProviderOptions(
 ) throws -> [String: JSONValue] {
     var output = replicateProviderOptions(from: extraBody)
     if let value = providerOptions["replicate"] {
+        guard value != .null else { return output }
         guard let nested = value.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.replicate", message: "Replicate provider options must be an object.")
         }
         output.merge(try validateProviderOptions(nested)) { _, providerValue in providerValue }
     }
     return output
+}
+
+private func replicateHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = replicateErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+private func replicateErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    return json["detail"]?.stringValue ?? json["error"]?.stringValue
 }
 
 private let replicateVideoNullishProviderOptionKeys: Set<String> = [
@@ -879,7 +914,11 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
             body["aspect_ratio"] = aspectRatio
         }
         body.merge(try lumaOptions(from: options, files: request.files, mask: request.mask)) { _, new in new }
-        let submitted = try await config.sendJSONResponse(path: "/dream-machine/v1/generations/image", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let submitResponse = try await config.transport.send(config.request(path: "/dream-machine/v1/generations/image", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
+        guard (200..<300).contains(submitResponse.statusCode) else {
+            throw lumaHTTPStatusError(provider: providerID, response: submitResponse)
+        }
+        let submitted = (json: try submitResponse.jsonValue(), response: submitResponse)
         guard let id = submitted.json["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Luma submit response did not contain id.")
         }
@@ -892,7 +931,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
         )
         let raw = finalResponse.raw
         guard let url = raw["assets"]?["image"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "Luma completed response did not contain assets.image.")
+            throw AIError.invalidResponse(provider: providerID, message: "Image generation completed but no image was found.")
         }
         let image = try await downloadURL(url, transport: config.transport, abortSignal: request.abortSignal)
         guard (200..<300).contains(image.statusCode) else {
@@ -917,19 +956,19 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw lumaHTTPStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["state"]?.stringValue {
             case "completed":
                 return (raw, response)
             case "failed":
-                throw AIError.invalidResponse(provider: providerID, message: raw["failure_reason"]?.stringValue ?? "Luma image generation failed.")
+                throw AIError.invalidResponse(provider: providerID, message: "Image generation failed.")
             default:
                 try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
         }
-        throw AIError.invalidResponse(provider: providerID, message: "Luma image generation timed out.")
+        throw AIError.invalidResponse(provider: providerID, message: "Image generation timed out after 120 attempts.")
     }
 }
 
@@ -1143,6 +1182,23 @@ private func lumaMaxPollAttempts(_ value: JSONValue?) -> Int {
     return max(Int(attempts.rounded(.up)), 0)
 }
 
+private func lumaHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = lumaErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
+}
+
+private func lumaErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data),
+          let details = json["detail"]?.arrayValue,
+          let first = details.first?.objectValue else {
+        return nil
+    }
+    return first["msg"]?.stringValue
+}
+
 public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
     public let providerID = "klingai.video"
     public let modelID: String
@@ -1170,9 +1226,13 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         }
         body.merge(try klingAIOptions(from: options, mode: mode, requestImage: request.image)) { _, new in new }
 
-        let created = try await config.sendJSONResponse(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let createResponse = try await config.transport.send(config.request(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
+        guard (200..<300).contains(createResponse.statusCode) else {
+            throw klingAIHTTPStatusError(provider: providerID, response: createResponse)
+        }
+        let created = (json: try createResponse.jsonValue(), response: createResponse)
         guard let taskID = created.json["data"]?["task_id"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "KlingAI create response did not contain data.task_id.")
+            throw AIError.invalidResponse(provider: providerID, message: "No task_id returned from KlingAI API. Response: \(created.json)")
         }
         let finalResponse = try await pollKling(
             endpoint: endpoint,
@@ -1180,13 +1240,17 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             headers: request.headers,
             intervalNanoseconds: klingAIPollInterval(options.known["pollIntervalMs"]),
             timeoutNanoseconds: klingAIPollTimeout(options.known["pollTimeoutMs"]),
+            timeoutMilliseconds: klingAIPollTimeoutMilliseconds(options.known["pollTimeoutMs"]),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.raw
         let videos = raw["data"]?["task_result"]?["videos"]?.arrayValue ?? []
+        guard !videos.isEmpty else {
+            throw AIError.invalidResponse(provider: providerID, message: "No videos in response. Response: \(raw)")
+        }
         let urls = videos.compactMap { $0["url"]?.stringValue }
         guard !urls.isEmpty else {
-            throw AIError.invalidResponse(provider: providerID, message: "KlingAI task response did not contain video URLs.")
+            throw AIError.invalidResponse(provider: providerID, message: "No valid video URLs in response")
         }
         return VideoGenerationResult(
             urls: urls,
@@ -1204,12 +1268,12 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         )
     }
 
-    private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
+    private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, timeoutMilliseconds: Double, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
-                throw AIError.invalidResponse(provider: providerID, message: "KlingAI video generation timed out.")
+                throw AIError.invalidResponse(provider: providerID, message: "Video generation timed out after \(formatKlingAIMilliseconds(timeoutMilliseconds))ms")
             }
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
@@ -1218,14 +1282,14 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw klingAIHTTPStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["data"]?["task_status"]?.stringValue {
             case "succeed":
                 return (raw, response)
             case "failed":
-                throw AIError.invalidResponse(provider: providerID, message: raw["data"]?["task_status_msg"]?.stringValue ?? "KlingAI task failed.")
+                throw AIError.invalidResponse(provider: providerID, message: "Video generation failed: \(raw["data"]?["task_status_msg"]?.stringValue ?? "Unknown error")")
             default:
                 continue
             }
@@ -1647,8 +1711,29 @@ private func klingAIPollInterval(_ value: JSONValue?) -> UInt64 {
 }
 
 private func klingAIPollTimeout(_ value: JSONValue?) -> UInt64 {
+    UInt64(klingAIPollTimeoutMilliseconds(value) * 1_000_000)
+}
+
+private func klingAIPollTimeoutMilliseconds(_ value: JSONValue?) -> Double {
     let milliseconds = value?.doubleValue ?? 600_000
-    return UInt64(max(milliseconds, 1) * 1_000_000)
+    return max(milliseconds, 1)
+}
+
+private func formatKlingAIMilliseconds(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(value)
+}
+
+private func klingAIHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = klingAIErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
+}
+
+private func klingAIErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    return json["message"]?.stringValue
 }
 
 public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {

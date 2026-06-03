@@ -66,6 +66,38 @@ import Testing
     #expect(requests[1].headers["user-agent"] == nil)
 }
 
+@Test func replicateImageUsesUpstreamErrorMessageSchema() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 422,
+        headers: ["x-replicate": "bad"],
+        body: Data(#"{"detail":"Invalid image request"}"#.utf8)
+    ))
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "replicate",
+        statusCode: 422,
+        body: "Invalid image request",
+        headers: ["x-replicate": "bad"]
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
+@Test func replicateImageDownloadUsesUpstreamErrorMessageSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}"#),
+        AIHTTPResponse(statusCode: 500, body: Data(#"{"error":"download failed"}"#.utf8))
+    ])
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+    await #expect(throws: AIError.httpStatus(provider: "replicate", statusCode: 500, body: "download failed")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
 @Test func replicateImageUsesStandardOptionsProviderOptionsAndWarnings() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
@@ -390,6 +422,21 @@ import Testing
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.replicate.strength", message: "Replicate strength must be at least 0 or null.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["replicate": ["strength": -0.1]]))
     }
+
+    let nullNamespaceTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+    ])
+    let nullNamespaceProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: nullNamespaceTransport))
+    let nullNamespaceModel = try nullNamespaceProvider.imageModel("black-forest-labs/flux-schnell")
+    _ = try await nullNamespaceModel.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["replicate": .null],
+        extraBody: ["replicate": ["guidance_scale": 5]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await nullNamespaceTransport.requests()).first?.body))
+    #expect(body["input"]?["guidance_scale"]?.intValue == 5)
 }
 
 @Test func replicateProviderOptionsValidateLikeUpstreamVideoSchemaAndNullishOmit() async throws {
@@ -420,4 +467,64 @@ import Testing
     let body = try decodeJSONBody(try #require((await nullishTransport.requests()).first?.body))
     #expect(body["input"]?["guidance_scale"] == nil)
     #expect(body["input"]?["customFlag"]?.boolValue == true)
+
+    let nullNamespaceTransport = RecordingTransport(response: jsonResponse(#"{"id":"pred-video","status":"succeeded","output":"https://replicate.example.com/video.mp4","urls":{"get":"https://api.replicate.com/v1/predictions/pred-video"}}"#))
+    let nullNamespaceProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: nullNamespaceTransport))
+    let nullNamespaceModel = try nullNamespaceProvider.videoModel("owner/video-model")
+    _ = try await nullNamespaceModel.generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["replicate": .null],
+        extraBody: ["replicate": ["guidance_scale": 6]]
+    ))
+
+    let nullNamespaceBody = try decodeJSONBody(try #require((await nullNamespaceTransport.requests()).first?.body))
+    #expect(nullNamespaceBody["input"]?["guidance_scale"]?.intValue == 6)
+}
+
+@Test func replicateVideoUsesUpstreamErrorAndFailureMessages() async throws {
+    let submitTransport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 422,
+        headers: ["x-replicate": "bad"],
+        body: Data(#"{"error":"Invalid video request"}"#.utf8)
+    ))
+    let submitProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: submitTransport))
+    let submitModel = try submitProvider.videoModel("owner/video-model")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "replicate.video",
+        statusCode: 422,
+        body: "Invalid video request",
+        headers: ["x-replicate": "bad"]
+    )) {
+        _ = try await submitModel.generateVideo(VideoGenerationRequest(prompt: "cat"))
+    }
+
+    let pollTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"pred-video","status":"starting","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pred-video"}}"#),
+        AIHTTPResponse(statusCode: 500, body: Data(#"{"detail":"poll failed"}"#.utf8))
+    ])
+    let pollProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: pollTransport))
+    let pollModel = try pollProvider.videoModel("owner/video-model")
+
+    await #expect(throws: AIError.httpStatus(provider: "replicate.video", statusCode: 500, body: "poll failed")) {
+        _ = try await pollModel.generateVideo(VideoGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["replicate": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+        ))
+    }
+
+    let failedProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"pred-video","status":"failed","error":"bad prompt","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pred-video"}}"#))))
+    await #expect(throws: AIError.invalidResponse(provider: "replicate.video", message: "Video generation failed: bad prompt")) {
+        _ = try await failedProvider.videoModel("owner/video-model").generateVideo(VideoGenerationRequest(prompt: "cat"))
+    }
+
+    let canceledProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"pred-video","status":"canceled","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pred-video"}}"#))))
+    await #expect(throws: AIError.invalidResponse(provider: "replicate.video", message: "Video generation was canceled")) {
+        _ = try await canceledProvider.videoModel("owner/video-model").generateVideo(VideoGenerationRequest(prompt: "cat"))
+    }
+
+    let noOutputProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"pred-video","status":"succeeded","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pred-video"}}"#))))
+    await #expect(throws: AIError.invalidResponse(provider: "replicate.video", message: "No video URL in response")) {
+        _ = try await noOutputProvider.videoModel("owner/video-model").generateVideo(VideoGenerationRequest(prompt: "cat"))
+    }
 }

@@ -154,6 +154,9 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/cerebras` | `2.0.54` | Current OpenAI-compatible batch: package re-read across provider/chat/options; flat Cerebras error schema, missing usage, stream error parts, and strict first tool-delta validation aligned. |
 | `@ai-sdk/moonshotai` | `2.0.23` | Current OpenAI-compatible batch: package re-read across provider/chat/options/usage; generic OpenAI-compatible stream/HTTP error handling and strict first tool-delta validation aligned for MoonshotAI. |
 | `@ai-sdk/alibaba` | `1.0.25` | Current OpenAI-compatible batch: package re-read across provider/chat/messages/options/usage/video; chat/video error schemas, null provider namespace, missing usage, stream error parts, and strict first tool-delta validation aligned. |
+| `@ai-sdk/replicate` | `2.0.33` | Current media batch: package re-read across provider/image/video/options/errors; versioned/unversioned routes, error schemas, null namespace, video lifecycle messages, polling, downloads, and prefer headers aligned. |
+| `@ai-sdk/luma` | `2.0.33` | Current media batch: package re-read across provider/image/options/errors/polling; Luma detail error schema, failure/no-image/timeout messages, nullish provider options, reference image flows, and download behavior aligned. |
+| `@ai-sdk/klingai` | `3.0.18` | Current media batch: package re-read across provider/auth/video/options/errors/polling; `{code,message}` error schema, failure/timeout/missing-video messages, T2V/I2V/motion-control bodies, and poll timing aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -165,6 +168,48 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/replicate`
+
+```text
+Package: @ai-sdk/replicate
+Baseline: 2.0.33
+Upstream inspected: replicate-provider.ts, replicate-error.ts, replicate-image-model.ts, replicate-image-settings.ts, replicate-video-model.ts, replicate-video-settings.ts.
+Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ReplicateProviderTests.swift.
+Surfaces checked: provider factory, default base URL, REPLICATE_API_TOKEN auth, user-agent suffix, versioned/unversioned prediction routes, image/video request bodies, Flux-2 multi-image inputs, prefer wait headers, providerOptions schema/null namespace/nullish fields, polling, output URL download, response metadata, video failed/canceled/no-output messages, HTTP error schemas, abort propagation.
+Known Swift differences / out of scope: Swift also allows `settings.apiKey` as the standard local API-key override. Swift keeps stable `AIError` cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter Replicate; full swift test in the current media batch.
+Commit evidence: Current media batch.
+Reopen only if: replicate npm version changes, prediction routes/error schema/options schema changes, media output format changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/luma`
+
+```text
+Package: @ai-sdk/luma
+Baseline: 2.0.33
+Upstream inspected: luma-provider.ts, luma-image-model.ts, luma-image-settings.ts.
+Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, LumaProviderTests.swift.
+Surfaces checked: provider factory, default base URL, LUMA_API_KEY auth, user-agent suffix, image generation route, submit/poll/download sequence, aspect ratio mapping, unsupported seed/size warnings, reference image/style/character/modify_image flows, providerOptions schema/null namespace/nullish fields, Luma detail error schema, failed/no-image/timeout messages, response metadata, abort propagation.
+Known Swift differences / out of scope: Swift keeps stable `AIError` cases instead of upstream's exact JS error classes. Swift supports extraBody as an explicit escape hatch around providerOptions.
+Tests run: swift test --filter Luma; full swift test in the current media batch.
+Commit evidence: Current media batch.
+Reopen only if: luma npm version changes, image generation/error schema/reference image options change, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/klingai`
+
+```text
+Package: @ai-sdk/klingai
+Baseline: 3.0.18
+Upstream inspected: klingai-provider.ts, klingai-auth.ts, klingai-error.ts, klingai-video-model.ts, klingai-video-settings.ts.
+Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, KlingAIProviderTests.swift.
+Surfaces checked: provider factory, default Singapore base URL, KLINGAI_API_KEY shortcut plus KLINGAI_ACCESS_KEY/KLINGAI_SECRET_KEY JWT auth, user-agent suffix, T2V/I2V/motion-control endpoint detection, model_name derivation, standard prompt/image/aspect/duration mapping, providerOptions schema/null namespace/nullish fields, passthrough options, poll timing, required motion options, unsupported warnings, provider metadata, `{code,message}` HTTP error schema, failed/timeout/no-video/no-valid-url messages, abort propagation.
+Known Swift differences / out of scope: Upstream settings expose `accessKey`/`secretKey` separately; Swift's public `ProviderSettings` exposes `apiKey` and environment-based access/secret JWT generation. Swift keeps stable `AIError` cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter KlingAI; full swift test in the current media batch.
+Commit evidence: Current media batch.
+Reopen only if: klingai npm version changes, JWT/auth behavior changes, video body/error/status schema changes, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/cerebras`
 
@@ -483,9 +528,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/deepinfra` | `2.0.52` | `45b7c7a`, `6eaf86d`: provider parity and user agent. |
 | `@ai-sdk/fireworks` | `2.0.53` | `b007be4`, `2ea4fb3`: image provider parity and user agent. |
 | `@ai-sdk/togetherai` | `2.0.53` | `7511a6f`, `ee8e15f`, `8a1c02d`: provider/media validation/user agent. |
-| `@ai-sdk/replicate` | `2.0.33` | `8daa1f2`, `accb711`: provider options and media headers. |
-| `@ai-sdk/luma` | `2.0.33` | `dc57b58`, `b3748dc`, `4ba33a7`: option parsing/options/user agent. |
-| `@ai-sdk/klingai` | `3.0.18` | `0427e53`, `231fd57`, `24f2732`: option schema/options/user agent. |
 | `@ai-sdk/black-forest-labs` | `1.0.34` | `85a7d8a`, `90e0eea`, `8870500`: option schema/options/user agent. |
 | `@ai-sdk/bytedance` | `1.0.14` | `1dc15dd`, `380ceac`: option schema/options. |
 | `@ai-sdk/prodia` | `1.0.31` | `d568b7a`, `8f7bee3`, `e1c6a8a`: option schema/options/user agent. |
@@ -509,6 +551,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Do final package sweeps for media/audio providers that already have option
-   schema work: Replicate, Luma, KlingAI, Black Forest Labs, ByteDance, Prodia,
-   Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.
+   schema work: Black Forest Labs, ByteDance, Prodia, Deepgram, ElevenLabs,
+   AssemblyAI, Gladia, RevAI, Hume, LMNT.
 2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.

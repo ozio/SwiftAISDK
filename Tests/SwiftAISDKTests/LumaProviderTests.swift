@@ -75,6 +75,75 @@ import Testing
     #expect(requests[2].headers["user-agent"] == nil)
 }
 
+@Test func lumaImageUsesUpstreamErrorMessageSchema() async throws {
+    let provider = try AIProviders.luma(settings: ProviderSettings(
+        apiKey: "luma-key",
+        transport: RecordingTransport(responses: [
+            AIHTTPResponse(statusCode: 422, headers: ["x-luma": "bad"], body: Data(#"{"detail":[{"type":"value_error","loc":["body","prompt"],"msg":"Prompt is invalid","input":"bad"}]}"#.utf8))
+        ])
+    ))
+    let model = try provider.imageModel("photon-1")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "luma.image",
+        statusCode: 422,
+        body: "Prompt is invalid",
+        headers: ["x-luma": "bad"]
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "bad"))
+    }
+}
+
+@Test func lumaImageUsesUpstreamPollErrorAndFailureMessages() async throws {
+    let provider = try AIProviders.luma(settings: ProviderSettings(
+        apiKey: "luma-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"lum-1","state":"queued"}"#),
+            AIHTTPResponse(statusCode: 500, headers: [:], body: Data(#"{"detail":[{"type":"value_error","loc":["body"],"msg":"Poll failed","input":"bad"}]}"#.utf8))
+        ])
+    ))
+    let model = try provider.imageModel("photon-1")
+
+    await #expect(throws: AIError.httpStatus(
+        provider: "luma.image",
+        statusCode: 500,
+        body: "Poll failed"
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "poll error",
+            providerOptions: ["luma": .object(["pollIntervalMillis": .number(1)])]
+        ))
+    }
+
+    let failedProvider = try AIProviders.luma(settings: ProviderSettings(
+        apiKey: "luma-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"lum-2","state":"queued"}"#),
+            jsonResponse(#"{"id":"lum-2","state":"failed","failure_reason":"provider-specific"}"#)
+        ])
+    ))
+    await #expect(throws: AIError.invalidResponse(provider: "luma.image", message: "Image generation failed.")) {
+        _ = try await failedProvider.imageModel("photon-1").generateImage(ImageGenerationRequest(
+            prompt: "failed",
+            providerOptions: ["luma": .object(["pollIntervalMillis": .number(1)])]
+        ))
+    }
+
+    let missingImageProvider = try AIProviders.luma(settings: ProviderSettings(
+        apiKey: "luma-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"lum-3","state":"queued"}"#),
+            jsonResponse(#"{"id":"lum-3","state":"completed","assets":null}"#)
+        ])
+    ))
+    await #expect(throws: AIError.invalidResponse(provider: "luma.image", message: "Image generation completed but no image was found.")) {
+        _ = try await missingImageProvider.imageModel("photon-1").generateImage(ImageGenerationRequest(
+            prompt: "missing",
+            providerOptions: ["luma": .object(["pollIntervalMillis": .number(1)])]
+        ))
+    }
+}
+
 @Test func lumaImageReturnsWarningsForUnsupportedSizeAndSeed() async throws {
     let transport = lumaTransport()
     let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
@@ -184,7 +253,7 @@ import Testing
     let provider = try AIProviders.luma(settings: ProviderSettings(apiKey: "luma-key", transport: transport))
     let model = try provider.imageModel("photon-1")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidResponse(provider: "luma.image", message: "Image generation timed out after 120 attempts.")) {
         _ = try await model.generateImage(ImageGenerationRequest(
             prompt: "No polling",
             providerOptions: ["luma": .object(["maxPollAttempts": .number(0)])]

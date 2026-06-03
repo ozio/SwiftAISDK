@@ -365,6 +365,87 @@ import Testing
     }
 }
 
+@Test func klingAIUsesUpstreamErrorMessageSchema() async throws {
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(
+        apiKey: "kling-token",
+        transport: RecordingTransport(responses: [
+            AIHTTPResponse(statusCode: 401, headers: ["x-kling": "bad"], body: Data(#"{"code":1001,"message":"Invalid token"}"#.utf8))
+        ])
+    ))
+    let model = try provider.videoModel("kling-v2.1-t2v")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "klingai.video",
+        statusCode: 401,
+        body: "Invalid token",
+        headers: ["x-kling": "bad"]
+    )) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "bad auth"))
+    }
+
+    let pollErrorProvider = try AIProviders.klingAI(settings: ProviderSettings(
+        apiKey: "kling-token",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"task-poll","task_status":"submitted"}}"#),
+            AIHTTPResponse(statusCode: 500, headers: [:], body: Data(#"{"code":5000,"message":"Poll failed"}"#.utf8))
+        ])
+    ))
+    await #expect(throws: AIError.httpStatus(
+        provider: "klingai.video",
+        statusCode: 500,
+        body: "Poll failed"
+    )) {
+        _ = try await pollErrorProvider.videoModel("kling-v2.1-t2v").generateVideo(VideoGenerationRequest(
+            prompt: "poll error",
+            providerOptions: ["klingai": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+        ))
+    }
+}
+
+@Test func klingAIUsesUpstreamFailureTimeoutAndMissingVideoMessages() async throws {
+    let failedProvider = try AIProviders.klingAI(settings: ProviderSettings(
+        apiKey: "kling-token",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"task-failed","task_status":"submitted"}}"#),
+            jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"task-failed","task_status":"failed","task_status_msg":"bad prompt"}}"#)
+        ])
+    ))
+    await #expect(throws: AIError.invalidResponse(provider: "klingai.video", message: "Video generation failed: bad prompt")) {
+        _ = try await failedProvider.videoModel("kling-v2.1-t2v").generateVideo(VideoGenerationRequest(
+            prompt: "failed",
+            providerOptions: ["klingai": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+        ))
+    }
+
+    let noURLProvider = try AIProviders.klingAI(settings: ProviderSettings(
+        apiKey: "kling-token",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"task-no-url","task_status":"submitted"}}"#),
+            jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"task-no-url","task_status":"succeed","task_result":{"videos":[{"id":"vid-1"}]}}}"#)
+        ])
+    ))
+    await #expect(throws: AIError.invalidResponse(provider: "klingai.video", message: "No valid video URLs in response")) {
+        _ = try await noURLProvider.videoModel("kling-v2.1-t2v").generateVideo(VideoGenerationRequest(
+            prompt: "no url",
+            providerOptions: ["klingai": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+        ))
+    }
+
+    let timeoutProvider = try AIProviders.klingAI(settings: ProviderSettings(
+        apiKey: "kling-token",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"task-timeout","task_status":"submitted"}}"#),
+            jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"task-timeout","task_status":"processing"}}"#)
+        ])
+    ))
+    await #expect(throws: AIError.invalidResponse(provider: "klingai.video", message: "Video generation timed out after 1ms")) {
+        _ = try await timeoutProvider.videoModel("kling-v2.1-t2v").generateVideo(VideoGenerationRequest(
+            prompt: "timeout",
+            providerOptions: ["klingai": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1])]
+        ))
+    }
+}
+
 private func klingAITransport(taskID: String = "task-1", videoID: String = "vid-1", videoURL: String = "https://kling.example.com/video.mp4", headers: [String: String] = [:]) -> RecordingTransport {
     RecordingTransport(responses: [
         jsonResponse(#"{"code":0,"message":"ok","data":{"task_id":"\#(taskID)","task_status":"submitted"}}"#),
