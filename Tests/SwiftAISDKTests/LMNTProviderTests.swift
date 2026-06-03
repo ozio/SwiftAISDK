@@ -60,6 +60,27 @@ import Testing
     #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/lmnt/2.0.33")
 }
 
+@Test func lmntSpeechUsesUpstreamHTTPErrorMessageSchema() async throws {
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(
+        apiKey: "lmnt-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 429,
+            headers: ["content-type": "application/json", "x-lmnt": "rate"],
+            body: Data(#"{"error":{"message":"speech rate limited","code":429}}"#.utf8)
+        ))
+    ))
+    let model = try provider.speechModel("aurora")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "lmnt.speech",
+        statusCode: 429,
+        body: "speech rate limited",
+        headers: ["content-type": "application/json", "x-lmnt": "rate"]
+    )) {
+        _ = try await model.speak(SpeechRequest(text: "Hi"))
+    }
+}
+
 @Test func lmntSpeechMapsStandardSpeedAndLanguage() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mp3"], body: Data("lmnt".utf8)))
     let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key", transport: transport))

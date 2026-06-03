@@ -71,6 +71,27 @@ import Testing
     #expect(request.url.absoluteString == "https://api.hume.ai/v0/tts/file")
 }
 
+@Test func humeSpeechUsesUpstreamHTTPErrorMessageSchema() async throws {
+    let provider = try AIProviders.hume(settings: ProviderSettings(
+        apiKey: "hume-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 422,
+            headers: ["content-type": "application/json", "x-hume": "bad"],
+            body: Data(#"{"error":{"message":"voice is invalid","code":422}}"#.utf8)
+        ))
+    ))
+    let model = try provider.speechModel("")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "hume.speech",
+        statusCode: 422,
+        body: "voice is invalid",
+        headers: ["content-type": "application/json", "x-hume": "bad"]
+    )) {
+        _ = try await model.speak(SpeechRequest(text: "Hello"))
+    }
+}
+
 @Test func humeSpeechMapsNestedExtraBodyOptionsAndUtteranceFields() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
     let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))

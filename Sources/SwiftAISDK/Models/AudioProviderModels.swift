@@ -119,7 +119,7 @@ public final class LMNTSpeechModel: SpeechModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
         }
         return SpeechResult(
             audio: response.body,
@@ -179,7 +179,7 @@ public final class HumeSpeechModel: SpeechModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
         }
         return SpeechResult(
             audio: response.body,

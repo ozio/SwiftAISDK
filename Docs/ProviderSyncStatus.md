@@ -165,6 +165,8 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/assemblyai` | `2.0.33` | Current audio batch: package re-read across provider/transcription/options/errors/upload-submit-poll; `{error:{message,code}}` HTTP errors on upload/submit/poll, submit response handling, status/result schemas, metadata, and abort propagation aligned. |
 | `@ai-sdk/gladia` | `2.0.33` | Current transcription batch: package re-read across provider/transcription/options/errors/upload-init-poll; `{error:{message,code}}` HTTP errors on upload/init/poll, upstream lifecycle messages, option schema, status/result schemas, metadata, and abort propagation aligned. |
 | `@ai-sdk/revai` | `2.0.33` | Current transcription batch: package re-read across provider/transcription/options/errors/submit-poll-transcript; `{error:{message,code}}` HTTP errors, upstream lifecycle messages, multipart config/options, result schema, metadata, and abort propagation aligned. |
+| `@ai-sdk/hume` | `2.0.33` | Current speech batch: package re-read across provider/speech/options/errors; `{error:{message,code}}` HTTP errors, TTS file body, context/voice mappings, output/language warnings, metadata, and abort propagation aligned. |
+| `@ai-sdk/lmnt` | `2.0.33` | Current speech batch: package re-read across provider/speech/options/errors; `{error:{message,code}}` HTTP errors, speech bytes body, provider option defaults/nullish fields, format/language/speed mapping, metadata, and abort propagation aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -176,6 +178,34 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/hume`
+
+```text
+Package: @ai-sdk/hume
+Baseline: 2.0.33
+Upstream inspected: hume-provider.ts, hume-error.ts, hume-speech-model.ts, API/config files.
+Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, HumeProviderTests.swift.
+Surfaces checked: provider factory, default base URL, HUME_API_KEY auth, user-agent suffix, no-arg speech model, default voice, TTS file endpoint, utterance body, output format fallback/warnings, language warning, providerOptions context schema/null namespace, generationId and context utterance/voice mappings, HTTP error schema, metadata, abort propagation.
+Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Hume|LMNT'; full swift test in the current speech batch.
+Commit evidence: Current speech batch.
+Reopen only if: hume npm version changes, TTS body/error schema changes, context/voice option schema changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/lmnt`
+
+```text
+Package: @ai-sdk/lmnt
+Baseline: 2.0.33
+Upstream inspected: lmnt-provider.ts, lmnt-error.ts, lmnt-speech-model.ts, API/options/config files.
+Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, LMNTProviderTests.swift.
+Surfaces checked: provider factory, default base URL, LMNT_API_KEY auth, user-agent suffix, speech bytes endpoint, model/voice/text/response_format body, output format fallback/warnings, language passthrough, providerOptions schema/defaults/nullish fields, sampleRate/topP mapping, HTTP error schema, metadata, abort propagation.
+Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Hume|LMNT'; full swift test in the current speech batch.
+Commit evidence: Current speech batch.
+Reopen only if: lmnt npm version changes, speech body/error schema changes, provider option defaults change, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/gladia`
 
@@ -648,8 +678,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/deepinfra` | `2.0.52` | `45b7c7a`, `6eaf86d`: provider parity and user agent. |
 | `@ai-sdk/fireworks` | `2.0.53` | `b007be4`, `2ea4fb3`: image provider parity and user agent. |
 | `@ai-sdk/togetherai` | `2.0.53` | `7511a6f`, `ee8e15f`, `8a1c02d`: provider/media validation/user agent. |
-| `@ai-sdk/hume` | `2.0.33` | `3a601dd`, `afd5ac3`, `0003f86`, `ab29ac4`: option schema/options/model identity/speech parity. |
-| `@ai-sdk/lmnt` | `2.0.33` | `63361fb`, `24606d0`, `e93b4fc`, `d1597d0`: option schema/options/auth casing/user agent. |
 | `@ai-sdk/voyage` | `1.0.4` | `d8f3617`, `b805d56`: option schema and response parity. |
 
 ## Needs Explicit Deep Pass
@@ -660,8 +688,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 ## Practical Remaining Queue
 
-The realistic remaining provider work is not "all providers". It is:
+The previous final package sweep queue is empty after the speech batch.
 
-1. Do final package sweeps for media/audio providers that already have option
-   schema work: Hume, LMNT.
-2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
+1. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
+2. Run a final completion audit against npm provider discovery and the sync docs before declaring the overall port complete.
