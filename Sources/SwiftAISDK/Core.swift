@@ -7,6 +7,7 @@ public enum AIError: Error, Equatable, CustomStringConvertible, Sendable {
     case invalidResponse(provider: String, message: String)
     case httpStatus(provider: String, statusCode: Int, body: String)
     case httpStatusWithHeaders(provider: String, statusCode: Int, body: String, headers: [String: String])
+    case gateway(GatewayError)
     case invalidURL(String)
     case timeout(durationNanoseconds: UInt64)
 
@@ -24,6 +25,8 @@ public enum AIError: Error, Equatable, CustomStringConvertible, Sendable {
             return "\(provider) request failed with HTTP \(statusCode): \(body)"
         case let .httpStatusWithHeaders(provider, statusCode, body, _):
             return "\(provider) request failed with HTTP \(statusCode): \(body)"
+        case let .gateway(error):
+            return error.description
         case let .invalidURL(url):
             return "Invalid URL: \(url)"
         case let .timeout(durationNanoseconds):

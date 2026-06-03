@@ -3306,6 +3306,9 @@ private func isRetryable(_ error: Error) -> Bool {
         if case let .httpStatusWithHeaders(_, statusCode, _, _) = error {
             return isRetryableHTTPStatus(statusCode)
         }
+        if case let .gateway(gatewayError) = error {
+            return gatewayError.isRetryable
+        }
         return false
     }
     if let error = error as? URLError {
@@ -3333,6 +3336,9 @@ private func httpHeaders(from error: Error) -> [String: String]? {
     if let error = error as? AIError {
         if case let .httpStatusWithHeaders(_, _, _, headers) = error {
             return headers
+        }
+        if case let .gateway(gatewayError) = error {
+            return gatewayError.headers
         }
     }
     return nil

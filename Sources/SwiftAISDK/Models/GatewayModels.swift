@@ -405,10 +405,17 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
             raw = try response.jsonValue()
         }
         if raw["type"]?.stringValue == "error" {
+            let errorBody = JSONValue.object([
+                "error": .object([
+                    "message": raw["message"] ?? .string("Gateway request failed"),
+                    "type": raw["errorType"] ?? .string("internal_server_error"),
+                    "param": raw["param"] ?? .null
+                ])
+            ])
             throw httpStatusError(
                 provider: providerID,
                 statusCode: raw["statusCode"]?.intValue ?? response.statusCode,
-                body: raw["message"]?.stringValue ?? String(describing: raw),
+                body: String(data: try encodeJSONBody(errorBody), encoding: .utf8) ?? raw["message"]?.stringValue ?? String(describing: raw),
                 headers: response.headers
             )
         }

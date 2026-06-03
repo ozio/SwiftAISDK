@@ -63,6 +63,35 @@ import Testing
     }
 }
 
+@Test func gatewayMapsErrorResponsesToTypedGatewayErrors() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 404,
+        headers: ["content-type": "application/json"],
+        body: Data("""
+        {"error":{"message":"Model not found","type":"model_not_found","param":{"modelId":"missing-model"}},"generationId":"gen_123"}
+        """.utf8)
+    ))
+    let provider = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key", transport: transport))
+    let model = try provider.languageModel("missing-model")
+
+    do {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+        Issue.record("Expected Gateway model_not_found error.")
+    } catch let error as AIError {
+        guard case let .gateway(gatewayError) = error else {
+            Issue.record("Expected AIError.gateway, got \(error).")
+            return
+        }
+        #expect(gatewayError.name == "GatewayModelNotFoundError")
+        #expect(gatewayError.type == .modelNotFound)
+        #expect(gatewayError.statusCode == 404)
+        #expect(gatewayError.message == "Model not found")
+        #expect(gatewayError.generationID == "gen_123")
+        #expect(gatewayError.modelID == "missing-model")
+        #expect(!gatewayError.isRetryable)
+    }
+}
+
 @Test func gatewayLanguageMapsToolsToolChoiceAndContentToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"checking"},{"type":"source","sourceType":"url","id":"src_1","url":"https://example.com/a","title":"Example A","providerMetadata":{"gateway":{"rank":1}}},{"type":"tool-call","toolCallId":"call_1","toolName":"lookup","input":"{\\"query\\":\\"weather\\"}"},{"type":"tool-call","toolCallId":"gateway_search","toolName":"perplexity_search","input":{"query":"latest news"},"providerExecuted":true}],"finishReason":"stop","usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}
@@ -447,12 +476,16 @@ import Testing
         ))
         Issue.record("Expected Gateway video error event to throw.")
     } catch let error as AIError {
-        #expect(error == .httpStatusWithHeaders(
-            provider: "gateway",
-            statusCode: 429,
-            body: "Rate limit exceeded",
-            headers: ["content-type": "text/event-stream"]
-        ))
+        guard case let .gateway(gatewayError) = error else {
+            Issue.record("Expected AIError.gateway, got \(error).")
+            return
+        }
+        #expect(gatewayError.name == "GatewayRateLimitError")
+        #expect(gatewayError.type == .rateLimitExceeded)
+        #expect(gatewayError.statusCode == 429)
+        #expect(gatewayError.message == "Rate limit exceeded")
+        #expect(gatewayError.isRetryable)
+        #expect(gatewayError.headers["content-type"] == "text/event-stream")
     }
 
     let request = try #require(await transport.requests().first)

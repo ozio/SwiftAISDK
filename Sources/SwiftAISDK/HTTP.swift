@@ -472,6 +472,9 @@ func httpStatusError(
     body: String,
     headers: [String: String] = [:]
 ) -> AIError {
+    if provider == "gateway" {
+        return .gateway(gatewayErrorFromHTTPStatus(statusCode: statusCode, body: body, headers: headers))
+    }
     guard !headers.isEmpty else {
         return .httpStatus(provider: provider, statusCode: statusCode, body: body)
     }
