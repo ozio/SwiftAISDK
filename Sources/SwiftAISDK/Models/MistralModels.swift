@@ -457,7 +457,7 @@ private func mistralToolResultContent(_ result: AIToolResult) -> String {
     case "text", "error-text":
         return output["value"]?.stringValue ?? ""
     case "execution-denied":
-        return output["reason"]?.stringValue ?? "Tool call execution denied."
+        return output["reason"]?.stringValue ?? "Tool execution denied."
     case "content", "json", "error-json":
         if let value = output["value"] {
             return mistralJSONString(value) ?? value.stringValue ?? ""
@@ -529,6 +529,8 @@ private func mapMistralFinishReason(_ reason: String?) -> String? {
         return "stop"
     case "length", "model_length":
         return "length"
+    case "error":
+        return "error"
     case "tool_calls":
         return "tool-calls"
     default:

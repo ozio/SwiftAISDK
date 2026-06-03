@@ -597,6 +597,18 @@ import Testing
     #expect(body["tools"] == nil)
 }
 
+@Test func mistralErrorFinishReasonMapsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-large-latest","choices":[{"index":0,"message":{"role":"assistant","content":"failed"},"finish_reason":"error"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-large-latest")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.finishReason == "error")
+}
+
 @Test func mistralProviderDefinedToolsAreSkippedWithWarning() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
@@ -694,6 +706,14 @@ import Testing
                     "type": "text",
                     "value": "Good"
                 ]
+            ),
+            AIToolResult(
+                toolCallID: "call_denied",
+                toolName: "deny",
+                result: ["raw": "fallback"],
+                modelOutput: [
+                    "type": "execution-denied"
+                ]
             )
         ])
     ]))
@@ -713,6 +733,10 @@ import Testing
     #expect(messages[3]["name"]?.stringValue == "airQuality")
     #expect(messages[3]["tool_call_id"]?.stringValue == "call_air")
     #expect(messages[3]["content"]?.stringValue == "Good")
+    #expect(messages[4]["role"]?.stringValue == "tool")
+    #expect(messages[4]["name"]?.stringValue == "deny")
+    #expect(messages[4]["tool_call_id"]?.stringValue == "call_denied")
+    #expect(messages[4]["content"]?.stringValue == "Tool execution denied.")
 
     let content = try #require(messages[2]["content"]?.stringValue)
     let contentJSON = try decodeJSONBody(Data(content.utf8))
