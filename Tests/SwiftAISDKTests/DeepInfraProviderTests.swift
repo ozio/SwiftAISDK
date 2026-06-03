@@ -18,6 +18,9 @@ import Testing
     #expect(result.usage?.outputReasoningTokens == 1081)
     #expect(result.usage?.totalTokens == 2265)
     #expect(result.usage?.rawValue?["completion_tokens"]?.intValue == 1165)
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer deepinfra-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.52")
 }
 
 @Test func deepInfraChatCorrectsGemmaReasoningUsageOnStreamFinish() async throws {
@@ -60,7 +63,8 @@ import Testing
     #expect(result.base64Images == ["deepinfra-image"])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepinfra.com/v1/inference/black-forest-labs/FLUX-1-schnell")
-    #expect(request.headers["Authorization"] == "Bearer deepinfra-key")
+    #expect(request.headers["authorization"] == "Bearer deepinfra-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.52")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["num_images"]?.intValue == 1)
@@ -155,7 +159,8 @@ import Testing
     #expect(result.base64Images == ["edited-image"])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepinfra.com/v1/openai/images/edits")
-    #expect(request.headers["Authorization"] == "Bearer deepinfra-key")
+    #expect(request.headers["authorization"] == "Bearer deepinfra-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.52")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = try #require(request.body)
     #expect(body.range(of: Data(#"name="model""#.utf8)) != nil)
@@ -168,6 +173,22 @@ import Testing
     #expect(body.range(of: Data("1024x1024".utf8)) != nil)
     #expect(body.range(of: Data(#"name="guidance""#.utf8)) != nil)
     #expect(body.range(of: Data("7.5".utf8)) != nil)
+}
+
+@Test func deepInfraAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"images":["data:image/png;base64,image"]}"#))
+    let provider = try AIProviders.deepInfra(settings: ProviderSettings(
+        apiKey: "deepinfra-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.imageModel("black-forest-labs/FLUX-1-schnell")
+
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer deepinfra-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/deepinfra/2.0.52")
 }
 
 @Test func deepInfraImageSizeMappingMatchesUpstreamSplit() async throws {
