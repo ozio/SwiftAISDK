@@ -73,6 +73,40 @@ import Testing
     #expect(body["seed"]?.intValue == 42)
 }
 
+@Test func deepInfraCustomBaseURLAddsUpstreamOpenAIAndInferencePrefixes() async throws {
+    let chatTransport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"choices":[{"message":{"content":"custom"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+        """),
+        jsonResponse(#"{"data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#)
+    ])
+    let chatProvider = try AIProviders.deepInfra(settings: ProviderSettings(
+        apiKey: "deepinfra-key",
+        baseURL: "https://proxy.example.test/deepinfra/v1",
+        queryParams: ["trace": "1"],
+        transport: chatTransport
+    ))
+
+    _ = try await chatProvider.chatModel("meta-llama/Llama-3.3-70B-Instruct").generate(LanguageModelRequest(messages: [.user("Hi")]))
+    _ = try await chatProvider.embeddingModel("BAAI/bge-base-en-v1.5").embed(EmbeddingRequest(values: ["Hi"]))
+
+    let chatRequests = await chatTransport.requests()
+    #expect(chatRequests[0].url.absoluteString == "https://proxy.example.test/deepinfra/v1/openai/chat/completions?trace=1")
+    #expect(chatRequests[1].url.absoluteString == "https://proxy.example.test/deepinfra/v1/openai/embeddings?trace=1")
+
+    let imageTransport = RecordingTransport(response: jsonResponse(#"{"images":["data:image/png;base64,custom-image"]}"#))
+    let imageProvider = try AIProviders.deepInfra(settings: ProviderSettings(
+        apiKey: "deepinfra-key",
+        baseURL: "https://proxy.example.test/deepinfra/v1",
+        transport: imageTransport
+    ))
+
+    _ = try await imageProvider.imageModel("black-forest-labs/FLUX-1-schnell").generateImage(ImageGenerationRequest(prompt: "cat"))
+
+    let imageRequest = try #require(await imageTransport.requests().first)
+    #expect(imageRequest.url.absoluteString == "https://proxy.example.test/deepinfra/v1/inference/black-forest-labs/FLUX-1-schnell")
+}
+
 @Test func deepInfraImageMapsProviderOptions() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse(#"{"images":["data:image/png;base64,nested-image"]}"#))
     let generateProvider = try AIProviders.deepInfra(settings: ProviderSettings(apiKey: "deepinfra-key", transport: generateTransport))

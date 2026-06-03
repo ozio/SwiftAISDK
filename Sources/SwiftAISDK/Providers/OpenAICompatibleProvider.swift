@@ -22,9 +22,19 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         self.routesLikeOpenAI = routesLikeOpenAI
         self.usesOpenAICompatibleSurfaceIDs = usesOpenAICompatibleSurfaceIDs
         let headers = try Self.buildHeaders(providerID: providerID, authorization: authorization, settings: settings, userAgentSuffix: userAgentSuffix)
+        let resolvedBaseURL = settings.baseURL ?? defaultBaseURL
+        let deepInfraRoot = providerID == "deepinfra" ? deepInfraRootBaseURL(resolvedBaseURL) : nil
+        let urlBuilder: (@Sendable (String, String) throws -> URL)?
+        if let deepInfraRoot {
+            urlBuilder = { _, path in
+                try deepInfraOpenAIURL(root: deepInfraRoot, path: path, queryParams: settings.queryParams)
+            }
+        } else {
+            urlBuilder = nil
+        }
         self.config = ModelHTTPConfig(
             providerID: providerID,
-            baseURL: settings.baseURL ?? defaultBaseURL,
+            baseURL: deepInfraRoot ?? resolvedBaseURL,
             modelURL: settings.modelURL,
             headers: headers,
             transport: settings.transport,
@@ -34,7 +44,8 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
             transformRequestBody: settings.transformRequestBody,
             openAIBackedProviderRoot: routesLikeOpenAI ? providerID : nil,
-            usesGenericOpenAICompatibleProviderOptions: usesOpenAICompatibleSurfaceIDs
+            usesGenericOpenAICompatibleProviderOptions: usesOpenAICompatibleSurfaceIDs,
+            url: urlBuilder
         )
     }
 
@@ -523,6 +534,30 @@ private func basetenEmbeddingConfigurationError(modelURL: String?) -> AIError {
         return AIError.invalidArgument(argument: "modelURL", message: "Not supported. You must use a /sync or /sync/v1 endpoint for embeddings.")
     }
     return AIError.invalidArgument(argument: "modelURL", message: "No model URL provided for embeddings. Please set modelURL option for embeddings.")
+}
+
+func deepInfraRootBaseURL(_ baseURL: String) -> String {
+    let normalized = withoutTrailingSlash(baseURL)
+    if normalized.hasSuffix("/openai") {
+        return String(normalized.dropLast("/openai".count))
+    }
+    if normalized.hasSuffix("/inference") {
+        return String(normalized.dropLast("/inference".count))
+    }
+    return normalized
+}
+
+private func deepInfraOpenAIURL(root: String, path: String, queryParams: [String: String]) throws -> URL {
+    let string = "\(root)/openai\(path)"
+    guard !queryParams.isEmpty else { return try requireURL(string) }
+    guard var components = URLComponents(string: string) else { throw AIError.invalidURL(string) }
+    var items = components.queryItems ?? []
+    for key in queryParams.keys.sorted() {
+        items.append(URLQueryItem(name: key, value: queryParams[key]))
+    }
+    components.queryItems = items
+    guard let url = components.url else { throw AIError.invalidURL(string) }
+    return url
 }
 
 public final class AnthropicProvider: AIProvider, @unchecked Sendable {

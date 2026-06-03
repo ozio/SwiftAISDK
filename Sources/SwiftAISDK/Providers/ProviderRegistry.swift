@@ -217,7 +217,7 @@ public enum AIProviders {
     }
 
     public static func deepInfra(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "deepinfra", defaultBaseURL: "https://api.deepinfra.com/v1/openai", authorization: .bearer(environmentVariables: ["DEEPINFRA_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image], settings: settings)
+        try OpenAICompatibleProvider(providerID: "deepinfra", defaultBaseURL: "https://api.deepinfra.com/v1", authorization: .bearer(environmentVariables: ["DEEPINFRA_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image], settings: settings)
     }
 
     public static func deepinfra(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {

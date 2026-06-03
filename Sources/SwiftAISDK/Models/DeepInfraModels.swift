@@ -34,8 +34,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
         if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         body.merge(options) { _, new in new }
 
-        let base = withoutTrailingSlash(config.baseURL)
-            .replacingOccurrences(of: "/openai", with: "/inference")
+        let base = "\(deepInfraRootBaseURL(config.baseURL))/inference"
         let response = try await config.transport.send(AIHTTPRequest(
             method: "POST",
             url: try requireURL("\(base)/\(modelID)"),
@@ -92,8 +91,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             }
         }
 
-        let base = withoutTrailingSlash(config.baseURL)
-            .replacingOccurrences(of: "/inference", with: "/openai")
+        let base = "\(deepInfraRootBaseURL(config.baseURL))/openai"
         let response = try await config.transport.send(AIHTTPRequest(
             method: "POST",
             url: try requireURL("\(base)/images/edits"),
