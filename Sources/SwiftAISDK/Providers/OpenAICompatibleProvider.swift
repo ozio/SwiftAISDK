@@ -388,6 +388,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "deepseek" {
             return withUserAgentSuffix(headers, "ai-sdk/deepseek/2.0.35")
         }
+        if providerID == "groq" {
+            return withUserAgentSuffix(headers, "ai-sdk/groq/3.0.39")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

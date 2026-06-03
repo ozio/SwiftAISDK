@@ -68,13 +68,52 @@ import Testing
     #expect(totalTokens == 5)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.groq.com/openai/v1/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer groq-key")
+    #expect(request.headers["authorization"] == "Bearer groq-key")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
     #expect(body["reasoning_format"]?.stringValue == "parsed")
     #expect(body["reasoning_effort"]?.stringValue == "high")
     #expect(body["parallel_tool_calls"]?.boolValue == false)
     #expect(body["service_tier"]?.stringValue == "flex")
+}
+
+@Test func groqProviderAddsVersionedUserAgentSuffix() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"index":0,"message":{"content":"done"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(
+        apiKey: "groq-key",
+        headers: ["User-Agent": "custom-client/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemma2-9b-it")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer groq-key")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/3.0.39")
+}
+
+@Test func groqLanguageMapsMissingFinishReasonToOther() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"index":0,"message":{"content":"ok"},"finish_reason":null}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.languageModel("gemma2-9b-it")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "ok")
+    #expect(result.finishReason == "other")
+}
+
+@Test func groqLanguageAcceptsReasoningOnlyResponseLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"qwen/qwen3-32b","choices":[{"index":0,"message":{"content":null,"reasoning":"thinking only"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.languageModel("qwen/qwen3-32b")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Think.")]))
+
+    #expect(result.text == "")
+    #expect(result.reasoning == "thinking only")
+    #expect(result.finishReason == "stop")
 }
 
 @Test func groqLanguageMapsNestedProviderOptions() async throws {
@@ -115,6 +154,48 @@ import Testing
     #expect(body["service_tier"]?.stringValue == "performance")
     #expect(body["strictJsonSchema"] == nil)
     #expect(body["strict_json_schema"] == nil)
+}
+
+@Test func groqLanguageMapsImagesAndAssistantReasoningHistoryLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"openai/gpt-oss-20b","choices":[{"index":0,"message":{"content":"answer"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.languageModel("openai/gpt-oss-20b")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .text("Look"),
+            .imageURL("https://example.com/image.png"),
+            .data(mimeType: "image/*", data: Data([0, 1, 2]))
+        ]),
+        .assistant(
+            text: "Prior answer",
+            reasoning: "Prior reasoning",
+            toolCalls: [AIToolCall(id: "call_lookup", name: "lookup", arguments: #"{"query":"x"}"#)]
+        )
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let messages = try #require(body["messages"]?.arrayValue)
+    let userContent = try #require(messages[0]["content"]?.arrayValue)
+    #expect(userContent[0]["type"]?.stringValue == "text")
+    #expect(userContent[0]["text"]?.stringValue == "Look")
+    #expect(userContent[1]["image_url"]?["url"]?.stringValue == "https://example.com/image.png")
+    #expect(userContent[2]["image_url"]?["url"]?.stringValue == "data:image/jpeg;base64,AAEC")
+    #expect(messages[1]["role"]?.stringValue == "assistant")
+    #expect(messages[1]["content"]?.stringValue == "Prior answer")
+    #expect(messages[1]["reasoning"]?.stringValue == "Prior reasoning")
+    #expect(messages[1]["tool_calls"]?[0]?["function"]?["name"]?.stringValue == "lookup")
+}
+
+@Test func groqLanguageRejectsNonImageFilePartsLikeUpstream() async throws {
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.languageModel("gemma2-9b-it")
+
+    await #expect(throws: AIError.invalidArgument(argument: "files", message: "Groq chat API only supports image file parts; got application/pdf.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [.file(mimeType: "application/pdf", data: Data([0]), filename: "doc.pdf")])
+        ]))
+    }
 }
 
 @Test func groqLanguageValidatesProviderOptionsNamespaceAndSchema() async throws {
@@ -426,7 +507,7 @@ import Testing
     #expect(result.text == "groq transcript")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.groq.com/openai/v1/audio/transcriptions")
-    #expect(request.headers["Authorization"] == "Bearer groq-key")
+    #expect(request.headers["authorization"] == "Bearer groq-key")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"model\""))
     #expect(bodyText.contains("whisper-large-v3"))

@@ -33,12 +33,13 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
         let raw = response.json
         let choice = raw["choices"]?[0]
         let toolCalls = groqToolCalls(from: choice?["message"]?["tool_calls"])
-        guard let text = choice?["message"]?["content"]?.stringValue ?? (toolCalls.isEmpty ? nil : "") else {
+        let reasoning = choice?["message"]?["reasoning"]?.stringValue ?? ""
+        guard let text = choice?["message"]?["content"]?.stringValue ?? (!toolCalls.isEmpty || !reasoning.isEmpty ? "" : nil) else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Groq response.")
         }
         return TextGenerationResult(
             text: text,
-            reasoning: choice?["message"]?["reasoning"]?.stringValue ?? "",
+            reasoning: reasoning,
             finishReason: groqFinishReason(choice?["finish_reason"]?.stringValue),
             usage: tokenUsage(from: raw),
             toolCalls: toolCalls,
@@ -65,7 +66,7 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                     }
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
-                    var finishReason: String?
+                    var finishReason: String? = "other"
                     var toolCalls = GroqStreamingToolCalls()
                     var didEmitResponseMetadata = false
                     var activeReasoningID: String?
@@ -111,8 +112,8 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                                 }
                             }
                         }
-                        if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
-                            finishReason = groqFinishReason(reason)
+                        if let finishReasonValue = raw["choices"]?[0]?["finish_reason"], finishReasonValue != .null {
+                            finishReason = groqFinishReason(finishReasonValue.stringValue)
                         }
                     }
                     if let reasoningID = activeReasoningID {
@@ -273,7 +274,7 @@ private func groqPreparedCall(for request: LanguageModelRequest, modelID: String
     let responseFormat = groqResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
-        "messages": .array(try request.messages.map { try OpenAICompatibleChatModel.messageJSON($0, providerID: "groq") })
+        "messages": .array(try request.messages.flatMap(groqMessageJSON))
     ]
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
@@ -526,6 +527,86 @@ private func groqRequireBoolean(_ value: JSONValue, argument: String, message: S
     }
 }
 
+private func groqMessageJSON(_ message: AIMessage) throws -> [JSONValue] {
+    switch message.role {
+    case .system:
+        return [.object(["role": .string("system"), "content": .string(message.combinedText)])]
+    case .user:
+        if message.content.count == 1, case let .text(text) = message.content[0] {
+            return [.object(["role": .string("user"), "content": .string(text)])]
+        }
+        return [.object([
+            "role": .string("user"),
+            "content": .array(try message.content.map(groqUserContentPart))
+        ])]
+    case .assistant:
+        var object: [String: JSONValue] = [
+            "role": .string("assistant"),
+            "content": .string(groqText(from: message))
+        ]
+        if let reasoning = message.reasoning, !reasoning.isEmpty {
+            object["reasoning"] = .string(reasoning)
+        }
+        let toolCalls = message.content.compactMap { part -> AIToolCall? in
+            if case let .toolCall(call) = part { call } else { nil }
+        }
+        if !toolCalls.isEmpty {
+            object["tool_calls"] = .array(toolCalls.map { call in
+                .object([
+                    "id": .string(call.id),
+                    "type": .string("function"),
+                    "function": .object([
+                        "name": .string(call.name),
+                        "arguments": .string(call.arguments)
+                    ])
+                ])
+            })
+        }
+        return [.object(object)]
+    case .tool:
+        return message.content.compactMap { part in
+            guard case let .toolResult(result) = part else { return nil }
+            let value = result.modelOutput ?? result.result
+            return .object([
+                "role": .string("tool"),
+                "tool_call_id": .string(result.toolCallID),
+                "content": .string(groqJSONString(value) ?? value.stringValue ?? "")
+            ])
+        }
+    }
+}
+
+private func groqUserContentPart(_ part: AIContentPart) throws -> JSONValue {
+    switch part {
+    case let .text(text):
+        return .object(["type": .string("text"), "text": .string(text)])
+    case let .imageURL(url):
+        return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
+    case let .data(mimeType, data), let .file(mimeType, data, _):
+        guard mimeType.hasPrefix("image/") else {
+            throw AIError.invalidArgument(argument: "files", message: "Groq chat API only supports image file parts; got \(mimeType).")
+        }
+        let mediaType = mimeType == "image/*" ? "image/jpeg" : mimeType
+        return .object([
+            "type": .string("image_url"),
+            "image_url": .object(["url": .string("data:\(mediaType);base64,\(data.base64EncodedString())")])
+        ])
+    case .providerReference:
+        throw AIError.invalidArgument(argument: "files", message: "Groq chat API only supports image URL and inline image file parts.")
+    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        throw AIError.invalidArgument(argument: "messages", message: "Groq user messages only support text and image file parts.")
+    }
+}
+
+private func groqText(from message: AIMessage) -> String {
+    message.content.compactMap(\.text).joined()
+}
+
+private func groqJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? encodeJSONBody(value) else { return nil }
+    return String(data: data, encoding: .utf8)
+}
+
 private func groqTools(from tools: [String: JSONValue], modelID: String) -> GroqPreparedTools {
     var warnings: [AIWarning] = []
     let values: [JSONValue] = tools.compactMap { name, schema in
@@ -614,8 +695,6 @@ private func groqFinishReason(_ reason: String?) -> String? {
         return "content-filter"
     case "function_call", "tool_calls":
         return "tool-calls"
-    case nil:
-        return nil
     default:
         return "other"
     }
