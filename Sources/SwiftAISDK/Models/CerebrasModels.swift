@@ -26,13 +26,20 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Cerebras response.")
         }
         let rawFinishReason = choice?["finish_reason"]?.stringValue
-        let finishReason = cerebrasFinishReason(rawFinishReason, hasText: !text.isEmpty, body: prepared.body)
+        let finishReason = cerebrasFinishReason(
+            rawFinishReason,
+            hasText: !text.isEmpty,
+            normalizeStructuredToolCalls: prepared.normalizesStructuredToolCalls
+        )
         return TextGenerationResult(
             text: text,
             reasoning: choice?["message"]?["reasoning"]?.stringValue ?? "",
             finishReason: finishReason,
             usage: cerebrasUsage(from: raw),
-            toolCalls: cerebrasShouldDropStructuredToolCalls(hasText: !text.isEmpty, body: prepared.body) ? [] : toolCalls,
+            toolCalls: cerebrasShouldDropStructuredToolCalls(
+                hasText: !text.isEmpty,
+                normalizeStructuredToolCalls: prepared.normalizesStructuredToolCalls
+            ) ? [] : toolCalls,
             providerMetadata: cerebrasProviderMetadata(from: raw, choice: choice),
             rawValue: raw,
             warnings: prepared.warnings,
@@ -59,7 +66,7 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
                     var hasText = false
-                    var finishReason: String?
+                    var finishReason: String? = "other"
                     var toolCalls = CerebrasStreamingToolCalls()
                     var emittedResponseMetadata = false
                     var providerMetadata: [String: JSONValue] = [:]
@@ -101,7 +108,10 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                             continuation.yield(.textDeltaPart(id: "0", delta: delta))
                         }
                         if let toolCallDeltas = raw["choices"]?[0]?["delta"]?["tool_calls"]?.arrayValue,
-                           !cerebrasShouldDropStructuredToolCalls(hasText: hasText, body: prepared.body) {
+                           !cerebrasShouldDropStructuredToolCalls(
+                               hasText: hasText,
+                               normalizeStructuredToolCalls: prepared.normalizesStructuredToolCalls
+                           ) {
                             for toolCallDelta in toolCallDeltas {
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)
@@ -109,7 +119,11 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                         }
                         if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
-                            finishReason = cerebrasFinishReason(reason, hasText: hasText, body: prepared.body)
+                            finishReason = cerebrasFinishReason(
+                                reason,
+                                hasText: hasText,
+                                normalizeStructuredToolCalls: prepared.normalizesStructuredToolCalls
+                            )
                         }
                     }
                     if let reasoningID = activeReasoningID {
@@ -140,6 +154,7 @@ private typealias CerebrasStreamingToolCalls = OpenAIStyleStreamingToolCalls
 private struct CerebrasPreparedCall {
     var body: [String: JSONValue]
     var warnings: [AIWarning]
+    var normalizesStructuredToolCalls: Bool
 }
 
 private struct CerebrasPreparedTools {
@@ -186,7 +201,8 @@ private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: St
         warnings: cerebrasWarnings(for: request)
             + cerebrasCallWarnings(for: request)
             + preparedTools.warnings
-            + (request.tools.isEmpty ? [] : cerebrasToolChoiceWarnings(from: toolChoiceInput))
+            + (request.tools.isEmpty ? [] : cerebrasToolChoiceWarnings(from: toolChoiceInput)),
+        normalizesStructuredToolCalls: cerebrasUsesStandardJSONResponseFormat(request.responseFormat)
     )
 }
 
@@ -421,8 +437,12 @@ private func cerebrasMessageTransform(_ message: JSONValue) -> JSONValue {
     return .object(object)
 }
 
-private func cerebrasFinishReason(_ raw: String?, hasText: Bool, body: [String: JSONValue]) -> String? {
-    if raw == "tool_calls", cerebrasShouldDropStructuredToolCalls(hasText: hasText, body: body) {
+private func cerebrasFinishReason(_ raw: String?, hasText: Bool, normalizeStructuredToolCalls: Bool) -> String? {
+    if raw == "tool_calls",
+       cerebrasShouldDropStructuredToolCalls(
+           hasText: hasText,
+           normalizeStructuredToolCalls: normalizeStructuredToolCalls
+       ) {
         return "stop"
     }
     switch raw {
@@ -434,16 +454,18 @@ private func cerebrasFinishReason(_ raw: String?, hasText: Bool, body: [String: 
         return "content-filter"
     case "function_call", "tool_calls":
         return "tool-calls"
-    case nil:
-        return nil
     default:
         return "other"
     }
 }
 
-private func cerebrasShouldDropStructuredToolCalls(hasText: Bool, body: [String: JSONValue]) -> Bool {
-    let responseFormatType = body["response_format"]?["type"]?.stringValue
-    return hasText && (responseFormatType == "json_schema" || responseFormatType == "json_object" || responseFormatType == "json")
+private func cerebrasShouldDropStructuredToolCalls(hasText: Bool, normalizeStructuredToolCalls: Bool) -> Bool {
+    hasText && normalizeStructuredToolCalls
+}
+
+private func cerebrasUsesStandardJSONResponseFormat(_ responseFormat: AIResponseFormat?) -> Bool {
+    guard case .json = responseFormat else { return false }
+    return true
 }
 
 private func cerebrasProviderMetadata(from raw: JSONValue, choice: JSONValue?) -> [String: JSONValue] {

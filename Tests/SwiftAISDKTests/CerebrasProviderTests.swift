@@ -10,8 +10,8 @@ import Testing
 
     let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Magic number?")],
+        responseFormat: .json(schema: ["type": "object"], name: "answer"),
         extraBody: [
-            "response_format": .object(["type": "json_schema"]),
             "messages": .array([
                 .object(["role": "user", "content": "Magic number?"]),
                 .object(["role": "assistant", "content": .null, "reasoning_content": "I should call a tool."])
@@ -42,6 +42,31 @@ import Testing
     #expect(body["messages"]?[1]?["reasoning"]?.stringValue == "I should call a tool.")
     #expect(body["messages"]?[1]?["reasoning_content"] == nil)
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+}
+
+@Test func cerebrasRawResponseFormatDoesNotTriggerStructuredToolCallFilterLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-gen-1","model":"zai-glm-4.7","choices":[{"message":{"content":"{\"result\":\"2026\"}","tool_calls":[{"id":"repeat_call","index":0,"type":"function","function":{"name":"nonUsefulTool","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Magic number?")],
+        extraBody: ["response_format": .object(["type": "json_schema"])]
+    ))
+
+    #expect(result.text == "{\"result\":\"2026\"}")
+    #expect(result.finishReason == "tool-calls")
+    #expect(result.toolCalls.map(\.id) == ["repeat_call"])
+}
+
+@Test func cerebrasMissingFinishReasonMapsToOtherLikeOpenAICompatible() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-gen-1","model":"zai-glm-4.7","choices":[{"message":{"content":"done"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.finishReason == "other")
 }
 
 @Test func cerebrasLanguageAppendsUpstreamUserAgentSuffixToCustomHeaders() async throws {
@@ -398,6 +423,35 @@ import Testing
     #expect(body["stream"] == true)
 }
 
+@Test func cerebrasStreamMissingFinishReasonDefaultsToOtherLikeOpenAICompatible() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"id":"cerebras-1","model":"zai-glm-4.7","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    var finishReason: String?
+    var totalTokens: Int?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .finish(reason, usage):
+            finishReason = reason
+            totalTokens = usage?.totalTokens
+        case let .finishMetadata(reason, usage, _):
+            finishReason = reason
+            totalTokens = usage?.totalTokens
+        default:
+            break
+        }
+    }
+
+    #expect(finishReason == "other")
+    #expect(totalTokens == 2)
+}
+
 @Test func cerebrasLanguageStreamsToolCallsAndDropsStructuredRepeat() async throws {
     let transport = RecordingTransport(response: sseResponse(#"""
     data: {"id":"cerebras-1","model":"zai-glm-4.7","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_magic","type":"function","function":{"name":"nonUsefulTool","arguments":"{}"}}]},"finish_reason":null}]}
@@ -419,7 +473,7 @@ import Testing
     var usage: TokenUsage?
     for try await part in model.stream(LanguageModelRequest(
         messages: [.user("Magic number?")],
-        extraBody: ["response_format": .object(["type": "json_schema"])]
+        responseFormat: .json(schema: ["type": "object"], name: "answer")
     )) {
         switch part {
         case let .textStart(id, _):
