@@ -423,6 +423,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "hume" {
             return withUserAgentSuffix(headers, "ai-sdk/hume/2.0.33")
         }
+        if providerID == "revai" {
+            return withUserAgentSuffix(headers, "ai-sdk/revai/2.0.33")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

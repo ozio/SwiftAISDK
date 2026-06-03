@@ -16,7 +16,8 @@ import Testing
     let requests = await transport.requests()
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.rev.ai/speechtotext/v1/jobs")
-    #expect(requests[0].headers["Authorization"] == "Bearer rev-key")
+    #expect(requests[0].headers["authorization"] == "Bearer rev-key")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/revai/2.0.33")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let form = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(form.contains("name=\"media\"; filename=\"audio.wav\""))
@@ -26,6 +27,26 @@ import Testing
 
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.rev.ai/speechtotext/v1/jobs/job-123/transcript")
+}
+
+@Test func revAITranscriptionAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"job-123","status":"transcribed","language":"en"}"#),
+        jsonResponse(#"{"monologues":[{"elements":[{"type":"text","value":"custom","ts":0,"end_ts":0.5}]}]}"#)
+    ])
+    let provider = try AIProviders.revAI(settings: ProviderSettings(
+        apiKey: "rev-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.transcription("machine")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+
+    let requests = await transport.requests()
+    #expect(requests[0].headers["authorization"] == "Bearer rev-key")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/revai/2.0.33")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/revai/2.0.33")
 }
 
 @Test func revAITranscriptionMapsNestedExtraBodyOptions() async throws {
