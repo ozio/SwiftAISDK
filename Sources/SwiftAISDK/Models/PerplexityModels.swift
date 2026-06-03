@@ -58,7 +58,13 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                     var didEmitSources = false
                     var activeTextID: String?
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
-                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                        let raw: JSONValue
+                        do {
+                            raw = try decodeJSONBody(Data(event.data.utf8))
+                        } catch {
+                            continuation.yield(.error(message: String(describing: error)))
+                            continue
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
