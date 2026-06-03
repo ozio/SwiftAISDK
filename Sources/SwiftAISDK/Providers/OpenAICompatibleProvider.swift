@@ -443,6 +443,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "fal" {
             return withUserAgentSuffix(headers, "ai-sdk/fal/2.0.34")
         }
+        if providerID == "luma" {
+            return withUserAgentSuffix(headers, "ai-sdk/luma/2.0.33")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

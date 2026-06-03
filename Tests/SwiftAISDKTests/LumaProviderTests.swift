@@ -31,7 +31,8 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://api.lumalabs.ai/dream-machine/v1/generations/image")
-    #expect(requests[0].headers["Authorization"] == "Bearer luma-key")
+    #expect(requests[0].headers["authorization"] == "Bearer luma-key")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/luma/2.0.33")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["prompt"]?.stringValue == "A cute baby sea otter")
     #expect(body["model"]?.stringValue == "photon-1")
@@ -43,8 +44,35 @@ import Testing
     #expect(body["openai"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.lumalabs.ai/dream-machine/v1/generations/lum-1")
+    #expect(requests[1].headers["authorization"] == "Bearer luma-key")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/luma/2.0.33")
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://luma.example.com/image.png")
+    #expect(requests[2].headers["authorization"] == nil)
+    #expect(requests[2].headers["user-agent"] == nil)
+}
+
+@Test func lumaAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = lumaTransport()
+    let provider = try AIProviders.luma(settings: ProviderSettings(
+        apiKey: "luma-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.imageModel("photon-1")
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "A cute baby sea otter",
+        providerOptions: ["luma": .object(["pollIntervalMillis": .number(1)])]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[0].headers["authorization"] == "Bearer luma-key")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/luma/2.0.33")
+    #expect(requests[1].headers["authorization"] == "Bearer luma-key")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/luma/2.0.33")
+    #expect(requests[2].headers["authorization"] == nil)
+    #expect(requests[2].headers["user-agent"] == nil)
 }
 
 @Test func lumaImageReturnsWarningsForUnsupportedSizeAndSeed() async throws {
