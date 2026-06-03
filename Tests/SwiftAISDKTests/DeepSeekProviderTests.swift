@@ -63,7 +63,7 @@ import Testing
     #expect(providerMetadata["deepseek"]?["promptCacheMissTokens"]?.intValue == 1)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepseek.com/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer deepseek-key")
+    #expect(request.headers["authorization"] == "Bearer deepseek-key")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
     #expect(body["stream_options"]?["include_usage"]?.boolValue == true)
@@ -95,6 +95,33 @@ import Testing
     #expect(result.toolCalls[0].id == "call_weather")
     #expect(result.toolCalls[0].name == "weather")
     #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
+}
+
+@Test func deepSeekLanguageMapsMissingFinishReasonToOther() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"ds-generate","model":"deepseek-chat","choices":[{"message":{"content":"ok"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-chat")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "ok")
+    #expect(result.finishReason == "other")
+}
+
+@Test func deepSeekProviderAddsVersionedUserAgentSuffix() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        headers: ["User-Agent": "custom-client/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("deepseek-chat")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer deepseek-key")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/2.0.35")
 }
 
 @Test func deepSeekChatModelUsesNativeReasoningMapping() async throws {
@@ -464,10 +491,42 @@ import Testing
     let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
     let model = try provider.languageModel("deepseek-v4")
 
-    let result = try await model.generate(LanguageModelRequest(messages: [.assistant("Previous answer"), .user("Continue")]))
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        .assistant("Previous answer", reasoning: "prior hidden chain"),
+        .user("Continue")
+    ]))
 
     #expect(result.text == "ok")
     #expect(result.reasoning == "r")
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "assistant")
+    #expect(body["messages"]?[0]?["reasoning_content"]?.stringValue == "prior hidden chain")
+}
+
+@Test func deepSeekReasonerDropsPriorAssistantReasoningBeforeLastUserMessage() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-reasoner")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .assistant("Earlier answer", reasoning: "drop this reasoning"),
+        .user("Continue")
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["messages"]?[0]?["role"]?.stringValue == "assistant")
+    #expect(body["messages"]?[0]?["reasoning_content"] == nil)
+}
+
+@Test func deepSeekV4AssistantMessagesBackfillEmptyReasoningContent() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-v4")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.assistant("Previous answer"), .user("Continue")]))
+
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "assistant")

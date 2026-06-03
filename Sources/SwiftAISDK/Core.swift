@@ -135,10 +135,12 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
 public struct AIMessage: Equatable, Hashable, Sendable {
     public var role: MessageRole
     public var content: [AIContentPart]
+    public var reasoning: String?
 
-    public init(role: MessageRole, content: [AIContentPart]) {
+    public init(role: MessageRole, content: [AIContentPart], reasoning: String? = nil) {
         self.role = role
         self.content = content
+        self.reasoning = reasoning
     }
 
     public static func system(_ text: String) -> AIMessage {
@@ -149,12 +151,13 @@ public struct AIMessage: Equatable, Hashable, Sendable {
         AIMessage(role: .user, content: [.text(text)])
     }
 
-    public static func assistant(_ text: String) -> AIMessage {
-        AIMessage(role: .assistant, content: [.text(text)])
+    public static func assistant(_ text: String, reasoning: String? = nil) -> AIMessage {
+        AIMessage(role: .assistant, content: [.text(text)], reasoning: reasoning)
     }
 
     public static func assistant(
         text: String = "",
+        reasoning: String? = nil,
         toolCalls: [AIToolCall],
         toolApprovalRequests: [AIToolApprovalRequest] = []
     ) -> AIMessage {
@@ -162,7 +165,8 @@ public struct AIMessage: Equatable, Hashable, Sendable {
             role: .assistant,
             content: (text.isEmpty ? [] : [.text(text)])
                 + toolCalls.map(AIContentPart.toolCall)
-                + toolApprovalRequests.map(AIContentPart.toolApprovalRequest)
+                + toolApprovalRequests.map(AIContentPart.toolApprovalRequest),
+            reasoning: reasoning
         )
     }
 

@@ -57,7 +57,7 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
-                    var finishReason: String?
+                    var finishReason: String? = "other"
                     var providerMetadata: [String: JSONValue] = [:]
                     var toolCalls = DeepSeekStreamingToolCalls()
                     var didEmitResponseMetadata = false
@@ -105,8 +105,8 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
                                 }
                             }
                         }
-                        if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
-                            finishReason = deepSeekFinishReason(reason)
+                        if let finishReasonValue = raw["choices"]?[0]?["finish_reason"], finishReasonValue != .null {
+                            finishReason = deepSeekFinishReason(finishReasonValue.stringValue)
                         }
                     }
                     if let reasoningID = activeReasoningID {
@@ -199,6 +199,7 @@ private func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue
     var output: [JSONValue] = []
     var warnings: [AIWarning] = []
     let isDeepSeekV4 = modelID.contains("deepseek-v4")
+    let lastUserMessageIndex = messages.lastIndex { $0.role == .user } ?? -1
 
     if responseFormat?["type"]?.stringValue == "json" {
         if let schema = responseFormat?["schema"] {
@@ -215,7 +216,7 @@ private func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue
         }
     }
 
-    for message in messages {
+    for (index, message) in messages.enumerated() {
         switch message.role {
         case .system:
             output.append(.object([
@@ -239,12 +240,15 @@ private func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue
             let toolCalls = message.content.compactMap { part -> AIToolCall? in
                 if case let .toolCall(call) = part { call } else { nil }
             }
+            let reasoning = (index <= lastUserMessageIndex && !isDeepSeekV4) ? nil : message.reasoning
             var object: [String: JSONValue] = [
                 "role": .string("assistant"),
-                "content": .string(message.combinedText)
+                "content": .string(deepSeekText(from: message))
             ]
             if isDeepSeekV4 {
-                object["reasoning_content"] = .string("")
+                object["reasoning_content"] = .string(reasoning ?? "")
+            } else if let reasoning {
+                object["reasoning_content"] = .string(reasoning)
             }
             if !toolCalls.isEmpty {
                 object["tool_calls"] = .array(toolCalls.map { call in
@@ -290,6 +294,10 @@ private func deepSeekUserPartFeature(_ part: AIContentPart) -> String {
     case .text:
         return "user message part type: text"
     }
+}
+
+private func deepSeekText(from message: AIMessage) -> String {
+    message.content.compactMap(\.text).joined()
 }
 
 private func deepSeekOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
@@ -581,8 +589,6 @@ private func deepSeekFinishReason(_ reason: String?) -> String? {
         return "tool-calls"
     case "insufficient_system_resource":
         return "error"
-    case nil:
-        return nil
     default:
         return "other"
     }
