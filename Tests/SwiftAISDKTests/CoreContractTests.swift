@@ -87,8 +87,14 @@ import Testing
     let providerMetadata: [String: JSONValue] = ["provider": .object(["detail": .string("kept")])]
     let warning = AIWarning(type: "unsupported", feature: "seed")
 
-    let text = TextGenerationResult(text: "hello", rawValue: .object([:]))
-    #expect(text.responseMetadata == AIResponseMetadata())
+    let text = TextGenerationResult(
+        text: "hello",
+        rawValue: .object([:]),
+        requestMetadata: request,
+        responseMetadata: response
+    )
+    #expect(text.requestMetadata == request)
+    #expect(text.responseMetadata == response)
     #expect(text.warnings.isEmpty)
 
     let embedding = EmbeddingResult(

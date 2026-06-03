@@ -22,7 +22,11 @@ public enum AI {
             responseMetadata: { $0.responseMetadata },
             wrapLanguageModelCall: true
         ) {
-            try await model.generate(request)
+            var result = try await model.generate(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: languageRequestMetadataBody(request), headers: request.headers)
+            }
+            return result
         }
     }
 
@@ -1175,6 +1179,7 @@ public enum AI {
                         providerMetadata: providerMetadata,
                         rawValue: rawValues.isEmpty ? parsed.rawObject : .array(rawValues),
                         warnings: warnings,
+                        requestMetadata: AIRequestMetadata(body: languageRequestMetadataBody(streamRequest), headers: streamRequest.headers),
                         responseMetadata: responseMetadata
                     )
                     let objectResult = ObjectGenerationResult(
@@ -2605,6 +2610,7 @@ private func streamTextWithTelemetry(
                             providerMetadata: step.providerMetadata,
                             rawValue: .object([:]),
                             warnings: step.warnings,
+                            requestMetadata: input.map { AIRequestMetadata(body: $0) } ?? AIRequestMetadata(),
                             responseMetadata: step.responseMetadata
                         )
                         if await terminalState.claimTerminalEvent() {
@@ -3409,6 +3415,41 @@ private func languageRequestTelemetryInput(_ request: LanguageModelRequest) -> J
     ])
 }
 
+private func languageRequestMetadataBody(_ request: LanguageModelRequest) -> JSONValue {
+    .object([
+        "messages": .array(request.messages.map(messageTelemetryJSON)),
+        "temperature": request.temperature.map(JSONValue.number),
+        "topP": request.topP.map(JSONValue.number),
+        "topK": request.topK.map { .number(Double($0)) },
+        "presencePenalty": request.presencePenalty.map(JSONValue.number),
+        "frequencyPenalty": request.frequencyPenalty.map(JSONValue.number),
+        "seed": request.seed.map { .number(Double($0)) },
+        "maxOutputTokens": request.maxOutputTokens.map { .number(Double($0)) },
+        "stopSequences": request.stopSequences.isEmpty ? nil : .array(request.stopSequences.map(JSONValue.string)),
+        "responseFormat": request.responseFormat.map(responseFormatTelemetryJSON),
+        "reasoning": request.reasoning.map(JSONValue.string),
+        "tools": request.tools.isEmpty ? nil : .object(request.tools),
+        "toolChoice": request.toolChoice,
+        "includeRawChunks": request.includeRawChunks ? .bool(true) : nil,
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
+    ])
+}
+
+private func responseFormatTelemetryJSON(_ responseFormat: AIResponseFormat) -> JSONValue {
+    switch responseFormat {
+    case .text:
+        return .object(["type": .string("text")])
+    case let .json(schema, name, description):
+        return .object([
+            "type": .string("json"),
+            "schema": schema,
+            "name": name.map(JSONValue.string),
+            "description": description.map(JSONValue.string)
+        ])
+    }
+}
+
 private func objectGenerationTelemetryInput(
     _ request: LanguageModelRequest,
     outputKind: String,
@@ -3769,6 +3810,7 @@ private func textGenerationTelemetryOutput(_ result: TextGenerationResult) -> JS
         "toolCallCount": .number(Double(result.toolCalls.count)),
         "toolResultCount": .number(Double(result.toolResults.count)),
         "sourceCount": .number(Double(result.sources.count)),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])
 }

@@ -533,6 +533,7 @@ public struct TextGenerationResult: Sendable {
     public var providerMetadata: [String: JSONValue]
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
+    public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
 
     public init(
@@ -549,6 +550,7 @@ public struct TextGenerationResult: Sendable {
         providerMetadata: [String: JSONValue] = [:],
         rawValue: JSONValue,
         warnings: [AIWarning] = [],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.text = text
@@ -564,6 +566,7 @@ public struct TextGenerationResult: Sendable {
         self.providerMetadata = providerMetadata
         self.rawValue = rawValue
         self.warnings = warnings
+        self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
     }
 }

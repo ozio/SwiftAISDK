@@ -18,6 +18,12 @@ import Testing
     )
 
     #expect(result.text == "done")
+    #expect(result.requestMetadata.body?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hello")
+    #expect(result.requestMetadata.body?["temperature"]?.doubleValue == 0.2)
+    #expect(result.requestMetadata.body?["topK"]?.intValue == 20)
+    #expect(result.requestMetadata.body?["responseFormat"]?["name"]?.stringValue == "Answer")
+    #expect(result.requestMetadata.body?["providerOptions"]?["openai"]?["parallelToolCalls"]?.boolValue == false)
+    #expect(result.requestMetadata.body?["extraBody"]?["user"]?.stringValue == "user-1")
     #expect(model.requests.count == 1)
     let request = try #require(model.requests.first)
     #expect(request.messages == [.user("Hello")])
@@ -105,6 +111,7 @@ import Testing
     #expect(events[1].delayNanoseconds == 0)
     #expect(events[1].errorDescription?.contains("HTTP 503") == true)
     #expect(events[2].output?["text"]?.stringValue == "recovered")
+    #expect(events[2].output?["requestMetadata"]?["body"]?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Telemetry")
     #expect(events[2].usage == TokenUsage(inputTokens: 1, outputTokens: 2, totalTokens: 3))
 }
 

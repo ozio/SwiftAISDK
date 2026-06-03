@@ -33,6 +33,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
             providerMetadata: perplexityProviderMetadata(from: raw),
             rawValue: raw,
             warnings: prepared.warnings,
+            requestMetadata: aiRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

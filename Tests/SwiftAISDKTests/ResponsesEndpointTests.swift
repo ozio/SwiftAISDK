@@ -392,6 +392,8 @@ import Testing
     #expect(result.providerMetadata["perplexity"]?["usage"]?["numSearchQueries"]?.intValue == 1)
     #expect(result.providerMetadata["perplexity"]?["cost"]?["requestCost"]?.doubleValue == 0.01)
     #expect(result.providerMetadata["perplexity"]?["cost"]?["totalCost"]?.doubleValue == 0.02)
+    #expect(result.requestMetadata.body?["model"]?.stringValue == "sonar")
+    #expect(result.requestMetadata.body?["messages"]?[1]?["content"]?[2]?["file_name"]?.stringValue == "brief.pdf")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.perplexity.ai/chat/completions")
     #expect(request.headers["authorization"] == "Bearer pplx-key")
@@ -431,6 +433,7 @@ import Testing
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     #expect(result.text == "answer")
+    #expect(result.requestMetadata.body?["search_mode"]?.stringValue == "academic")
     let generateBody = try decodeJSONBody(try #require((await generateTransport.requests()).first?.body))
     #expect(generateBody["search_mode"]?.stringValue == "academic")
 
