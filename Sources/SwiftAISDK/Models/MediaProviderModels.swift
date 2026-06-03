@@ -2672,7 +2672,7 @@ private func falImageProviderMetadata(from raw: JSONValue) -> [String: JSONValue
         fal["images"] = .array(images.map(JSONValue.object))
     }
     for (key, value) in raw.objectValue ?? [:] {
-        guard key != "image" && key != "images" else { continue }
+        guard !["image", "images", "prompt", "has_nsfw_concepts", "nsfw_content_detected"].contains(key) else { continue }
         fal[falMetadataKey(key)] = value
     }
     return fal.isEmpty ? [:] : ["fal": .object(fal)]
@@ -2680,19 +2680,25 @@ private func falImageProviderMetadata(from raw: JSONValue) -> [String: JSONValue
 
 private func falImageMetadataObjects(from raw: JSONValue) -> [[String: JSONValue]] {
     if let images = raw["images"]?.arrayValue {
-        return images.compactMap { falSingleImageMetadata(from: $0) }
+        return images.enumerated().compactMap { index, image in
+            falSingleImageMetadata(from: image, index: index, raw: raw)
+        }
     }
     if let image = raw["image"], image.objectValue != nil {
-        return [falSingleImageMetadata(from: image)].compactMap { $0 }
+        return [falSingleImageMetadata(from: image, index: 0, raw: raw)].compactMap { $0 }
     }
     return []
 }
 
-private func falSingleImageMetadata(from image: JSONValue) -> [String: JSONValue]? {
+private func falSingleImageMetadata(from image: JSONValue, index: Int, raw: JSONValue) -> [String: JSONValue]? {
     guard let object = image.objectValue else { return nil }
     var metadata: [String: JSONValue] = [:]
     for (key, value) in object where key != "url" {
         metadata[falMetadataKey(key)] = value
+    }
+    if let nsfw = raw["has_nsfw_concepts"]?[index]?.boolValue
+        ?? raw["nsfw_content_detected"]?[index]?.boolValue {
+        metadata["nsfw"] = .bool(nsfw)
     }
     return metadata.isEmpty ? nil : metadata
 }

@@ -5,7 +5,7 @@ import Testing
 @Test func falImageUsesStandardFieldsProviderOptionsWarningsAndMetadata() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"images":[{"url":"https://fal.example.com/image.png","width":1024,"height":1024,"content_type":"image/png","nsfw":false}],"seed":123,"timings":{"inference":1.5},"num_inference_steps":24}
+        {"images":[{"url":"https://fal.example.com/image.png","width":1024,"height":1024,"content_type":"image/png"}],"seed":123,"timings":{"inference":1.5},"num_inference_steps":24,"has_nsfw_concepts":[false],"prompt":"cat"}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("fal-png".utf8))
     ])
@@ -39,9 +39,12 @@ import Testing
     ])
     #expect(result.providerMetadata["fal"]?["images"]?[0]?["contentType"]?.stringValue == "image/png")
     #expect(result.providerMetadata["fal"]?["images"]?[0]?["width"]?.intValue == 1024)
+    #expect(result.providerMetadata["fal"]?["images"]?[0]?["nsfw"]?.boolValue == false)
     #expect(result.providerMetadata["fal"]?["seed"]?.intValue == 123)
     #expect(result.providerMetadata["fal"]?["timings"]?["inference"]?.doubleValue == 1.5)
     #expect(result.providerMetadata["fal"]?["numInferenceSteps"]?.intValue == 24)
+    #expect(result.providerMetadata["fal"]?["prompt"] == nil)
+    #expect(result.providerMetadata["fal"]?["hasNsfwConcepts"] == nil)
 
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
