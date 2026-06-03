@@ -145,6 +145,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/openai` | `3.0.67` | `e12b20e`: package re-read across provider/config/chat/responses/completion/embedding/image/speech/transcription/tools; typed providerOptions, Responses automatic includes, completion/audio/embedding parity gaps, shell skills, and tool-choice behavior closed. |
 | `@ai-sdk/openai-compatible` | `2.0.48` | `0badc3c`: package re-read across provider/chat/completion/embedding/image; generic providerOptions namespaces, completion prompt conversion, embedding metadata/default encoding, and generic-vs-specialized passthrough boundaries closed. |
 | `@ai-sdk/open-responses` | `1.0.16` | `d0d881f`: package re-read against upstream request/input/stream/finish schemas; file names, rich tool-result content, Open Responses finish mapping, and failed stream events closed. |
+| `@ai-sdk/groq` | `3.0.39` | `e67562f`: package re-read across provider/chat/messages/tools/transcription; Groq-specific usage details aligned after existing providerOptions/tool/transcription coverage. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -211,6 +212,20 @@ Known Swift differences / out of scope: Swift uses `AIProviders.openResponses(na
 Tests run: swift test --filter openResponses; swift test --filter ResponsesEndpoint; swift test --filter OpenAIResponses; swift test with 892 tests.
 Commit evidence: d0d881f.
 Reopen only if: open-responses npm version changes, Open Responses request/input/stream schemas change, Swift core response/tool contracts change, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/groq`
+
+```text
+Package: @ai-sdk/groq
+Baseline: 3.0.39
+Upstream inspected: groq-provider.ts, groq-config.ts, groq-chat-language-model.ts, groq-chat-options.ts, convert-to-groq-chat-messages.ts, groq-prepare-tools.ts, groq-tools.ts, tool/browser-search.ts, groq-browser-search-models.ts, groq-transcription-model.ts, groq-transcription-options.ts, groq-api-types.ts, convert-groq-usage.ts, get-response-metadata.ts, map-groq-finish-reason.ts, groq-error.ts, index.ts, version.ts.
+Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, GroqModels.swift, LanguageStreamParsing.swift, Core.swift, GroqProviderTests.swift, ProviderAbortPropagationTests.swift, NativeAudioRequestMetadataTests.swift, NativeAudioResponseMetadataTests.swift, NativeTranscriptionDetailTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
+Surfaces checked: provider factory, callable/language/chat routing, transcription routing, unsupported embedding/image capabilities, default base URL, GROQ_API_KEY auth, custom header precedence, user-agent suffix, Groq browserSearch tool helper, browser-search supported model gating, function tools, tool choice, provider-defined tool warnings, providerOptions.groq schema validation/nullish behavior, extraBody legacy namespace behavior, structured output and strict JSON schema behavior, reasoning format/effort, parallel tool calls, service tier, user option, topK/structured-output warnings, system/user/assistant/tool message conversion, image URL and inline image parts, non-image rejection, assistant reasoning/tool-call history, tool-result serialization, generate response text/reasoning/tool calls/finish/metadata, stream lifecycle text/reasoning/tool-call/raw chunks/final usage, Groq-specific usage conversion, transcription multipart body and timestamp_granularities[] fields, transcription providerOptions schema/nullish behavior, transcript response validation/details, response metadata, and abort propagation for chat generate/stream and transcription.
+Known Swift differences / out of scope: Swift exposes `extraBody` as an additional compatibility escape hatch beside upstream `providerOptions.groq`; Swift settings are static dictionaries rather than upstream async resolvable header functions; upstream `generateId` customization for missing generate tool-call IDs is not exposed in Swift, while streaming keeps upstream's stricter first-delta ID/name expectations through the shared OpenAI-style stream buffer contract where current tests cover normal Groq chunks.
+Tests run: swift test --filter Groq; swift test with 899 tests.
+Commit evidence: e67562f.
+Reopen only if: groq npm version changes, chat/transcription providerOptions schemas change, browser-search model support changes, usage schema changes, stream tool-call chunk requirements change, Swift core adds async settings/generateId hooks, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/anthropic-aws`
@@ -346,7 +361,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/groq` | `3.0.39` | `55faaac`, `6627b3d`, `2fe28f0`: option schema, transcription response, chat parity. |
 | `@ai-sdk/mistral` | `3.0.37` | `9ea7375`, `d4e5aab`: option schema and chat parity. |
 | `@ai-sdk/cohere` | `3.0.36` | `5d2c1d9`, `6b81b90`: option schema and chat parity. |
 | `@ai-sdk/perplexity` | `3.0.33` | `361673a`, `cac1cc7`: provider parity, finish/response validation. |
