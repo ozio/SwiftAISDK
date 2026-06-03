@@ -716,7 +716,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     var didEmitResponseMetadata = false
                     var activeReasoningID: String?
                     var activeTextID: String?
-                    var finishReason: String?
+                    var finishReason: String? = "other"
                     var finishUsage: TokenUsage?
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -732,6 +732,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                             openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID),
                             into: &providerMetadata
                         )
+                        finishUsage = usage(from: raw) ?? finishUsage
                         let delta = choice?["delta"]
                         if let reasoning = delta?["reasoning_content"]?.stringValue ?? delta?["reasoning"]?.stringValue {
                             let id = activeReasoningID ?? "reasoning-0"
@@ -768,7 +769,6 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                         }
                         if let reason = choice?["finish_reason"]?.stringValue {
                             finishReason = openAICompatibleFinishReason(reason)
-                            finishUsage = usage(from: raw)
                         }
                     }
                     if let reasoningID = activeReasoningID {
@@ -852,10 +852,11 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
         if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
+        let toolChoiceInput = request.toolChoice ?? request.extraBody["toolChoice"]
         let tools = openAICompatibleChatTools(from: request.tools)
         if !tools.isEmpty {
             body["tools"] = .array(tools)
-            if let toolChoice = openAICompatibleChatToolChoice(from: request.extraBody["toolChoice"]) {
+            if let toolChoice = openAICompatibleChatToolChoice(from: toolChoiceInput) {
                 body["tool_choice"] = toolChoice
             }
         }
@@ -1013,16 +1014,20 @@ private func moonshotChatBody(from input: [String: JSONValue], request: Language
 private func moonshotProviderOptions(from providerOptions: [String: JSONValue]) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
     if let value = providerOptions["moonshotai"] {
-        guard let nested = value.objectValue else {
-            throw AIError.invalidArgument(argument: "providerOptions.moonshotai", message: "MoonshotAI provider options must be an object.")
+        if value != .null {
+            guard let nested = value.objectValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.moonshotai", message: "MoonshotAI provider options must be an object.")
+            }
+            output.merge(try moonshotValidateLanguageProviderOptions(nested, argumentPrefix: "providerOptions.moonshotai")) { _, providerValue in providerValue }
         }
-        output.merge(try moonshotValidateLanguageProviderOptions(nested, argumentPrefix: "providerOptions.moonshotai")) { _, providerValue in providerValue }
     }
     if let value = providerOptions["moonshotAI"] {
-        guard let nested = value.objectValue else {
-            throw AIError.invalidArgument(argument: "providerOptions.moonshotAI", message: "MoonshotAI provider options must be an object.")
+        if value != .null {
+            guard let nested = value.objectValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.moonshotAI", message: "MoonshotAI provider options must be an object.")
+            }
+            output.merge(try moonshotValidateLanguageProviderOptions(nested, argumentPrefix: "providerOptions.moonshotAI")) { _, providerValue in providerValue }
         }
-        output.merge(try moonshotValidateLanguageProviderOptions(nested, argumentPrefix: "providerOptions.moonshotAI")) { _, providerValue in providerValue }
     }
     return output
 }
@@ -1210,8 +1215,42 @@ private func openAICompatibleChatOptions(from extraBody: [String: JSONValue], su
 private func openAICompatibleChatWarnings(for request: LanguageModelRequest, providerID: String, openAIBackedProviderRoot: String? = nil) -> [AIWarning] {
     guard openAIBackedProviderRoot == nil, !isOpenAIBackedProvider(providerID) else { return [] }
     var warnings = openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+    warnings.append(contentsOf: openAICompatibleChatToolWarnings(for: request))
     if providerID.hasPrefix("xai.") {
         warnings.append(contentsOf: xaiChatWarnings(for: request))
+    }
+    return warnings
+}
+
+private func openAICompatibleChatToolWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+    guard !request.tools.isEmpty else { return [] }
+    var warnings = request.tools.compactMap { name, schema -> AIWarning? in
+        let object = schema.objectValue
+        guard object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil else {
+            return nil
+        }
+        return AIWarning(
+            type: "unsupported",
+            feature: "provider-defined tool \(object?["id"]?.stringValue ?? name)"
+        )
+    }
+    let toolChoiceInput = request.toolChoice ?? request.extraBody["toolChoice"]
+    if let string = toolChoiceInput?.stringValue {
+        switch string {
+        case "auto", "none", "required":
+            break
+        default:
+            warnings.append(AIWarning(type: "unsupported", feature: "tool choice type: \(string)"))
+        }
+    } else if let object = toolChoiceInput?.objectValue {
+        switch object["type"]?.stringValue {
+        case "auto", "none", "required", "tool":
+            break
+        case let type?:
+            warnings.append(AIWarning(type: "unsupported", feature: "tool choice type: \(type)"))
+        case nil:
+            warnings.append(AIWarning(type: "unsupported", feature: "tool choice type: undefined"))
+        }
     }
     return warnings
 }
@@ -1593,8 +1632,6 @@ private func openAICompatibleFinishReason(_ reason: String?) -> String? {
         return "content-filter"
     case "tool_calls", "function_call":
         return "tool-calls"
-    case nil:
-        return nil
     default:
         return "other"
     }

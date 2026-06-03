@@ -90,6 +90,68 @@ import Testing
     #expect(body["thinking"]?["budget_tokens"] == nil)
 }
 
+@Test func moonshotNullProviderOptionsNamespaceKeepsExtraBodyEscapeHatch() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"moon"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
+    """))
+    let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
+    let model = try provider.languageModel("kimi-k2-thinking")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["moonshotai": .null],
+        extraBody: [
+            "moonshotai": [
+                "thinking": [
+                    "type": "enabled",
+                    "budgetTokens": 2048
+                ],
+                "reasoningHistory": "interleaved"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(body["thinking"]?["budget_tokens"]?.intValue == 2048)
+    #expect(body["reasoning_history"]?.stringValue == "interleaved")
+    #expect(body["moonshotai"] == nil)
+}
+
+@Test func moonshotLanguageUsesStandardToolChoiceAndProviderToolWarnings() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"moon"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
+    """))
+    let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
+    let model = try provider.languageModel("kimi-k2")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Lookup.")],
+        tools: [
+            "lookup": [
+                "type": "object",
+                "description": "Look up a value.",
+                "properties": ["value": ["type": "string"]]
+            ],
+            "moonshot.search": [
+                "type": "provider",
+                "id": "moonshot.search"
+            ]
+        ],
+        toolChoice: ["type": "tool", "toolName": "lookup"]
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "provider-defined tool moonshot.search")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools.count == 1)
+    #expect(tools[0]["function"]?["name"]?.stringValue == "lookup")
+    #expect(body["tool_choice"]?["type"]?.stringValue == "function")
+    #expect(body["tool_choice"]?["function"]?["name"]?.stringValue == "lookup")
+}
+
 @Test func moonshotLanguageProviderOptionsValidateLikeUpstreamSchema() async throws {
     let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: RecordingTransport(response: jsonResponse("{}"))))
     let model = try provider.languageModel("kimi-k2-thinking")
@@ -112,6 +174,36 @@ import Testing
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.moonshotai.reasoningHistory", message: "MoonshotAI reasoningHistory must be disabled, interleaved, or preserved.")) {
         _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], providerOptions: ["moonshotai": ["reasoningHistory": "auto"]]))
     }
+}
+
+@Test func moonshotMissingFinishReasonMapsToOtherLikeOpenAICompatible() async throws {
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"moon"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
+    """))
+    let generateProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: generateTransport))
+    let generate = try await generateProvider.languageModel("kimi-k2").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(generate.finishReason == "other")
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"content":"moon"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
+
+    data: [DONE]
+
+    """))
+    let streamProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: streamTransport))
+    let streamModel = try streamProvider.languageModel("kimi-k2")
+    var finishReason: String?
+    var usage: TokenUsage?
+    for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .finish(reason, finalUsage) = part {
+            finishReason = reason
+            usage = finalUsage
+        }
+    }
+
+    #expect(finishReason == "other")
+    #expect(usage?.totalTokens == 2)
 }
 
 @Test func moonshotLanguageStreamsUsageWithoutTotalTokens() async throws {
