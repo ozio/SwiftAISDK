@@ -33,7 +33,8 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             supportsStructuredOutputs: settings.supportsStructuredOutputs,
             maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
             transformRequestBody: settings.transformRequestBody,
-            openAIBackedProviderRoot: routesLikeOpenAI ? providerID : nil
+            openAIBackedProviderRoot: routesLikeOpenAI ? providerID : nil,
+            usesGenericOpenAICompatibleProviderOptions: usesOpenAICompatibleSurfaceIDs
         )
     }
 

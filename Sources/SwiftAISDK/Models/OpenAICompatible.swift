@@ -335,6 +335,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
     var responsesRequestMode: ResponsesRequestMode
     var openAIBackedProviderRoot: String?
+    var usesGenericOpenAICompatibleProviderOptions: Bool
     var url: @Sendable (String, String) throws -> URL
 
     init(
@@ -350,6 +351,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
         responsesRequestMode: ResponsesRequestMode = .openAICompatible,
         openAIBackedProviderRoot: String? = nil,
+        usesGenericOpenAICompatibleProviderOptions: Bool = false,
         url: (@Sendable (String, String) throws -> URL)? = nil
     ) {
         self.providerID = providerID
@@ -365,6 +367,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.transformRequestBody = transformRequestBody
         self.responsesRequestMode = responsesRequestMode
         self.openAIBackedProviderRoot = openAIBackedProviderRoot
+        self.usesGenericOpenAICompatibleProviderOptions = usesGenericOpenAICompatibleProviderOptions
         self.url = url ?? { _, path in
             try openAICompatibleURL("\(normalizedBaseURL)\(path)", queryParams: queryParams)
         }
@@ -422,6 +425,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
+            usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             url: url
         )
     }
@@ -439,7 +443,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
-            openAIBackedProviderRoot: openAIBackedProviderRoot
+            openAIBackedProviderRoot: openAIBackedProviderRoot,
+            usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions
         )
     }
 }
@@ -686,7 +691,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot)
+        let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions)
         let response = try await config.sendJSONResponse(path: "/chat/completions", modelID: modelID, body: .object(try body(for: request, stream: false)), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let choice = raw["choices"]?[0]
@@ -714,7 +719,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot)
+                    let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions)
                     let body = JSONValue.object(try body(for: request, stream: true))
                     let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
@@ -812,7 +817,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             stream: stream,
             unwrapOpenAIProviderOptions: isOpenAIBackedProvider(providerID, config: config),
             openAIProviderOptionsRoot: config.openAIBackedProviderRoot,
-            supportsStructuredOutputs: config.supportsStructuredOutputs
+            supportsStructuredOutputs: config.supportsStructuredOutputs,
+            usesGenericOpenAICompatibleProviderOptions: config.usesGenericOpenAICompatibleProviderOptions
         )
         if stream, config.includeUsage {
             body["stream_options"] = .object(["include_usage": .bool(true)])
@@ -852,7 +858,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         stream: Bool,
         unwrapOpenAIProviderOptions: Bool,
         openAIProviderOptionsRoot: String?,
-        supportsStructuredOutputs: Bool
+        supportsStructuredOutputs: Bool,
+        usesGenericOpenAICompatibleProviderOptions: Bool
     ) throws -> [String: JSONValue] {
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -871,9 +878,14 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                 body["tool_choice"] = toolChoice
             }
         }
-        let extraBody = unwrapOpenAIProviderOptions
-            ? openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: openAIProviderOptionsRoot)
-            : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+        let extraBody: [String: JSONValue]
+        if unwrapOpenAIProviderOptions {
+            extraBody = openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: openAIProviderOptionsRoot)
+        } else if usesGenericOpenAICompatibleProviderOptions {
+            extraBody = openAICompatibleProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+        } else {
+            extraBody = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+        }
         body.merge(openAICompatibleChatOptions(from: extraBody, supportsStructuredOutputs: supportsStructuredOutputs)) { _, new in new }
         return body
     }
@@ -1237,9 +1249,15 @@ private func openAICompatibleChatOptions(from extraBody: [String: JSONValue], su
     return output
 }
 
-private func openAICompatibleChatWarnings(for request: LanguageModelRequest, providerID: String, openAIBackedProviderRoot: String? = nil) -> [AIWarning] {
+private func openAICompatibleChatWarnings(for request: LanguageModelRequest, providerID: String, openAIBackedProviderRoot: String? = nil, usesGenericProviderOptions: Bool = false) -> [AIWarning] {
     guard openAIBackedProviderRoot == nil, !isOpenAIBackedProvider(providerID) else { return [] }
-    var warnings = openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+    let providerOptionWarnings: [AIWarning]
+    if usesGenericProviderOptions {
+        providerOptionWarnings = openAICompatibleProviderOptionWarnings(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+    } else {
+        providerOptionWarnings = openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+    }
+    var warnings = providerOptionWarnings
     warnings.append(contentsOf: openAICompatibleChatToolWarnings(for: request))
     if providerID.hasPrefix("xai.") {
         warnings.append(contentsOf: xaiChatWarnings(for: request))
@@ -1674,7 +1692,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = body(for: request, stream: false)
+        let prepared = try body(for: request, stream: false)
         let body = prepared.body
         let response = try await config.sendJSONResponse(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
@@ -1697,7 +1715,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = body(for: request, stream: true)
+                    let prepared = try body(for: request, stream: true)
                     let body = JSONValue.object(prepared.body)
                     let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
@@ -1738,10 +1756,13 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) -> (body: [String: JSONValue], warnings: [AIWarning]) {
+    private func body(for request: LanguageModelRequest, stream: Bool) throws -> (body: [String: JSONValue], warnings: [AIWarning]) {
+        let prompt = try openAICompatibleCompletionPrompt(from: request.messages)
+        var stopSequences = prompt.stopSequences
+        stopSequences.append(contentsOf: request.stopSequences)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "prompt": .string(request.messages.map(\.combinedText).joined(separator: "\n"))
+            "prompt": .string(prompt.text)
         ]
         if stream { body["stream"] = .bool(true) }
         if stream, config.includeUsage { body["stream_options"] = .object(["include_usage": .bool(true)]) }
@@ -1751,13 +1772,50 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
         if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
-        if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
-        let extraBody = isOpenAIBackedProvider(providerID, config: config)
-            ? openAICompletionProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
-            : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        if !stopSequences.isEmpty { body["stop"] = .array(stopSequences) }
+        let extraBody: [String: JSONValue]
+        if isOpenAIBackedProvider(providerID, config: config) {
+            extraBody = openAICompletionProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
+        } else if config.usesGenericOpenAICompatibleProviderOptions {
+            extraBody = openAICompatibleProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        } else {
+            extraBody = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        }
         body.merge(openAICompletionOptions(from: extraBody)) { _, new in new }
-        return (body, openAICompletionWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot))
+        return (body, openAICompletionWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions))
     }
+}
+
+private func openAICompatibleCompletionPrompt(from messages: [AIMessage]) throws -> (text: String, stopSequences: [String]) {
+    var remaining = messages
+    var text = ""
+
+    if remaining.first?.role == .system {
+        text += remaining.removeFirst().combinedText + "\n\n"
+    }
+
+    for message in remaining {
+        switch message.role {
+        case .system:
+            throw AIError.invalidArgument(argument: "messages", message: "Completion prompts only support a system message as the first message.")
+        case .user:
+            text += "user:\n\(message.combinedText)\n\n"
+        case .assistant:
+            let hasUnsupportedParts = message.content.contains { part in
+                if case .text = part { return false }
+                return true
+            }
+            if hasUnsupportedParts {
+                throw AIError.invalidArgument(argument: "messages", message: "Completion prompts only support text assistant messages.")
+            }
+            text += "assistant:\n\(message.combinedText)\n\n"
+        case .tool:
+            throw AIError.invalidArgument(argument: "messages", message: "Completion prompts do not support tool messages.")
+        }
+    }
+
+    text += "assistant:\n"
+    return (text, ["\nuser:"])
 }
 
 public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sendable {
@@ -3783,6 +3841,29 @@ private func openAICompatibleProviderOptions(from extraBody: [String: JSONValue]
     return output
 }
 
+private func openAICompatibleProviderOptions(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String, includeCompatibilityNamespace: Bool) -> [String: JSONValue] {
+    var output = openAICompatibleProviderOptions(from: extraBody, providerID: providerID, includeCompatibilityNamespace: includeCompatibilityNamespace)
+    var nested: [String: JSONValue] = [:]
+
+    if includeCompatibilityNamespace {
+        if let deprecated = providerOptions["openai-compatible"]?.objectValue {
+            nested.merge(deprecated) { _, value in value }
+        }
+        if let compatible = providerOptions["openaiCompatible"]?.objectValue {
+            nested.merge(compatible) { _, value in value }
+        }
+    }
+
+    for key in openAICompatibleProviderOptionNamespaceKeys(providerID) {
+        if let options = providerOptions[key]?.objectValue {
+            nested.merge(options) { _, value in value }
+        }
+    }
+
+    output.merge(nested) { _, value in value }
+    return output
+}
+
 private func openAICompatibleProviderOptionWarnings(from extraBody: [String: JSONValue], providerID: String, includeCompatibilityNamespace: Bool) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if includeCompatibilityNamespace, extraBody["openai-compatible"] != nil {
@@ -3805,6 +3886,28 @@ private func openAICompatibleProviderOptionWarnings(from extraBody: [String: JSO
     return warnings
 }
 
+private func openAICompatibleProviderOptionWarnings(providerOptions: [String: JSONValue], extraBody: [String: JSONValue], providerID: String, includeCompatibilityNamespace: Bool) -> [AIWarning] {
+    var warnings = openAICompatibleProviderOptionWarnings(from: extraBody, providerID: providerID, includeCompatibilityNamespace: includeCompatibilityNamespace)
+    if includeCompatibilityNamespace, providerOptions["openai-compatible"] != nil {
+        warnings.append(AIWarning(
+            type: "deprecated",
+            setting: "providerOptions key 'openai-compatible'",
+            message: "Use 'openaiCompatible' instead."
+        ))
+    }
+
+    let providerOptionsKey = openAICompatibleProviderRoot(providerID)
+    let camelProviderOptionsKey = openAICompatibleCamelCase(providerOptionsKey)
+    if camelProviderOptionsKey != providerOptionsKey, providerOptions[providerOptionsKey] != nil {
+        warnings.append(AIWarning(
+            type: "deprecated",
+            setting: "providerOptions key '\(providerOptionsKey)'",
+            message: "Use '\(camelProviderOptionsKey)' instead."
+        ))
+    }
+    return warnings
+}
+
 private func openAICompatibleProviderRoot(_ providerID: String) -> String {
     String(providerID.split(separator: ".", maxSplits: 1).first.map(String.init) ?? providerID)
 }
@@ -3817,6 +3920,27 @@ private func openAICompatibleProviderOptionRoots(_ providerID: String) -> [Strin
     default:
         return openAICompatibleProviderSurface(providerID) == nil ? [] : [root]
     }
+}
+
+private func openAICompatibleProviderOptionNamespaceKeys(_ providerID: String) -> [String] {
+    var keys: [String] = []
+    func append(_ key: String) {
+        guard !keys.contains(key) else { return }
+        keys.append(key)
+    }
+
+    for root in openAICompatibleProviderOptionRoots(providerID) {
+        append(root)
+        let camelRoot = openAICompatibleCamelCase(root)
+        if camelRoot != root { append(camelRoot) }
+    }
+    if providerID.hasPrefix("xai.") {
+        append("xai")
+    }
+    append(providerID)
+    let camelProviderID = openAICompatibleCamelCase(providerID)
+    if camelProviderID != providerID { append(camelProviderID) }
+    return keys
 }
 
 private func openAICompatibleProviderSurface(_ providerID: String) -> String? {
@@ -3862,10 +3986,12 @@ private func openAICompletionOptions(from extraBody: [String: JSONValue]) -> [St
     return output
 }
 
-private func openAICompletionWarnings(for request: LanguageModelRequest, providerID: String, openAIBackedProviderRoot: String? = nil) -> [AIWarning] {
+private func openAICompletionWarnings(for request: LanguageModelRequest, providerID: String, openAIBackedProviderRoot: String? = nil, usesGenericProviderOptions: Bool = false) -> [AIWarning] {
     var warnings = isOpenAIBackedProvider(providerID) || openAIBackedProviderRoot != nil
         ? []
-        : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        : (usesGenericProviderOptions
+            ? openAICompatibleProviderOptionWarnings(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+            : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false))
     if request.topK != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "topK"))
     }
@@ -3966,19 +4092,26 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
         }
         let warnings = isOpenAIBackedProvider(providerID, config: config)
             ? []
-            : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+            : (config.usesGenericOpenAICompatibleProviderOptions
+                ? openAICompatibleProviderOptionWarnings(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+                : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true))
 
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "input": .array(request.values)
         ]
         if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
-        if isOpenAIBackedProvider(providerID, config: config) {
+        if isOpenAIBackedProvider(providerID, config: config) || openAICompatibleProviderSurface(providerID) == "embedding" {
             body["encoding_format"] = .string("float")
         }
-        let extraBody = isOpenAIBackedProvider(providerID, config: config)
-            ? openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
-            : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+        let extraBody: [String: JSONValue]
+        if isOpenAIBackedProvider(providerID, config: config) {
+            extraBody = openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
+        } else if config.usesGenericOpenAICompatibleProviderOptions {
+            extraBody = openAICompatibleProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+        } else {
+            extraBody = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+        }
         body.merge(extraBody) { _, new in new }
 
         let response = try await config.sendJSONResponse(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
@@ -3996,6 +4129,7 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
             usage: tokenUsage(from: raw),
             rawValue: raw,
             warnings: warnings,
+            providerMetadata: raw["providerMetadata"]?.objectValue ?? [:],
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -4020,7 +4154,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count, count > maxImagesPerCall {
             throw AIError.invalidArgument(argument: "count", message: "OpenAI-compatible image models support at most \(maxImagesPerCall) image(s) per call.")
         }
-        let warnings = openAICompatibleImageWarnings(from: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot)
+        let warnings = openAICompatibleImageWarnings(from: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions)
         if !request.files.isEmpty {
             return try await editImage(request, warnings: warnings)
         }
@@ -4031,7 +4165,15 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         ]
         if let size = request.size { body["size"] = .string(size) }
         if let count = request.count { body["n"] = .number(Double(count)) }
-        body.merge(isOpenAIBackedProvider(providerID, config: config) ? openAIImageOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)) { _, new in new }
+        let imageOptions: [String: JSONValue]
+        if isOpenAIBackedProvider(providerID, config: config) {
+            imageOptions = openAIImageOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
+        } else if config.usesGenericOpenAICompatibleProviderOptions {
+            imageOptions = openAICompatibleProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        } else {
+            imageOptions = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        }
+        body.merge(imageOptions) { _, new in new }
         if isOpenAIBackedProvider(providerID, config: config), body["response_format"] == nil, !openAIImageHasDefaultResponseFormat(modelID) {
             body["response_format"] = .string("b64_json")
         } else if !isOpenAIBackedProvider(providerID, config: config) {
@@ -4074,7 +4216,14 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             form.appendField(name: "size", value: size)
         }
 
-        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAIImageOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot) : openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        let extraBody: [String: JSONValue]
+        if isOpenAIBackedProvider(providerID, config: config) {
+            extraBody = openAIImageOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
+        } else if config.usesGenericOpenAICompatibleProviderOptions {
+            extraBody = openAICompatibleProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        } else {
+            extraBody = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        }
         for (key, value) in extraBody {
             if case let .array(items) = value {
                 for item in items {
@@ -4166,9 +4315,11 @@ private func openAIImageDistributedTokens(_ tokens: Int, index: Int, total: Int)
     return index == total - 1 ? remainder : base
 }
 
-private func openAICompatibleImageWarnings(from request: ImageGenerationRequest, providerID: String, openAIBackedProviderRoot: String? = nil) -> [AIWarning] {
+private func openAICompatibleImageWarnings(from request: ImageGenerationRequest, providerID: String, openAIBackedProviderRoot: String? = nil, usesGenericProviderOptions: Bool = false) -> [AIWarning] {
     guard openAIBackedProviderRoot == nil, !isOpenAIBackedProvider(providerID) else { return [] }
-    var warnings = openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+    var warnings = usesGenericProviderOptions
+        ? openAICompatibleProviderOptionWarnings(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
+        : openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: false)
     if request.aspectRatio != nil {
         warnings.append(AIWarning(
             type: "unsupported",

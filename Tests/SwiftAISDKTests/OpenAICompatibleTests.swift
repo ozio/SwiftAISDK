@@ -391,6 +391,132 @@ import Testing
     #expect(imageBody["testProvider"] == nil)
 }
 
+@Test func openAICompatibleMapsProviderOptionsLikeUpstreamNamespaces() async throws {
+    let chatTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}
+    """))
+    let chatProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: chatTransport,
+        supportsStructuredOutputs: true
+    )
+
+    let chatResult = try await chatProvider.chatModel("chat-model").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "openai-compatible": ["user": "deprecated-user"],
+            "openaiCompatible": ["reasoningEffort": "low"],
+            "test-provider": ["custom": "raw"],
+            "testProvider": [
+                "custom": "camel",
+                "textVerbosity": "high",
+                "strictJsonSchema": false
+            ]
+        ],
+        extraBody: [
+            "responseFormat": [
+                "type": "json",
+                "name": "answer",
+                "schema": ["type": "object"]
+            ]
+        ]
+    ))
+
+    let chatBody = try decodeJSONBody(try #require((await chatTransport.requests()).first?.body))
+    #expect(chatBody["user"]?.stringValue == "deprecated-user")
+    #expect(chatBody["reasoning_effort"]?.stringValue == "low")
+    #expect(chatBody["verbosity"]?.stringValue == "high")
+    #expect(chatBody["custom"]?.stringValue == "camel")
+    #expect(chatBody["response_format"]?["json_schema"]?["strict"]?.boolValue == false)
+    #expect(chatBody["openai-compatible"] == nil)
+    #expect(chatBody["openaiCompatible"] == nil)
+    #expect(chatBody["test-provider"] == nil)
+    #expect(chatBody["testProvider"] == nil)
+    #expect(chatResult.warnings.contains { $0.type == "deprecated" && $0.setting == "providerOptions key 'openai-compatible'" })
+
+    let completionTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"text":"done","finish_reason":"stop"}],"usage":{"total_tokens":3}}
+    """))
+    let completionProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: completionTransport
+    )
+
+    _ = try await completionProvider.completionModel("completion-model").generate(LanguageModelRequest(
+        messages: [.system("Prefix."), .user("Finish")],
+        stopSequences: ["END"],
+        providerOptions: [
+            "test-provider": ["suffix": "raw", "logitBias": ["1": -1]],
+            "testProvider": ["suffix": "camel", "echo": true, "user": "user-123"]
+        ]
+    ))
+
+    let completionBody = try decodeJSONBody(try #require((await completionTransport.requests()).first?.body))
+    #expect(completionBody["prompt"]?.stringValue == "Prefix.\n\nuser:\nFinish\n\nassistant:\n")
+    #expect(completionBody["stop"]?[0]?.stringValue == "\nuser:")
+    #expect(completionBody["stop"]?[1]?.stringValue == "END")
+    #expect(completionBody["suffix"]?.stringValue == "camel")
+    #expect(completionBody["echo"]?.boolValue == true)
+    #expect(completionBody["user"]?.stringValue == "user-123")
+    #expect(completionBody["logit_bias"]?["1"]?.intValue == -1)
+    #expect(completionBody["test-provider"] == nil)
+    #expect(completionBody["testProvider"] == nil)
+
+    let embeddingTransport = RecordingTransport(response: jsonResponse("""
+    {"data":[{"embedding":[0.1,0.2]}],"usage":{"prompt_tokens":2},"providerMetadata":{"test-provider":{"traceId":"abc"}}}
+    """))
+    let embeddingProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: embeddingTransport
+    )
+
+    let embeddingResult = try await embeddingProvider.embeddingModel("embedding-model").embed(EmbeddingRequest(
+        values: ["hello"],
+        providerOptions: [
+            "openaiCompatible": ["user": "embed-user"],
+            "test-provider": ["dimensions": 64]
+        ]
+    ))
+
+    let embeddingBody = try decodeJSONBody(try #require((await embeddingTransport.requests()).first?.body))
+    #expect(embeddingBody["encoding_format"]?.stringValue == "float")
+    #expect(embeddingBody["user"]?.stringValue == "embed-user")
+    #expect(embeddingBody["dimensions"]?.intValue == 64)
+    #expect(embeddingBody["openaiCompatible"] == nil)
+    #expect(embeddingBody["test-provider"] == nil)
+    #expect(embeddingResult.providerMetadata["test-provider"]?["traceId"]?.stringValue == "abc")
+
+    let imageTransport = RecordingTransport(response: jsonResponse("""
+    {"data":[{"b64_json":"image-data"}]}
+    """))
+    let imageProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: imageTransport
+    )
+
+    _ = try await imageProvider.imageModel("image-model").generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: [
+            "test-provider": ["style": "raw"],
+            "testProvider": ["style": "camel", "response_format": "url"]
+        ]
+    ))
+
+    let imageBody = try decodeJSONBody(try #require((await imageTransport.requests()).first?.body))
+    #expect(imageBody["style"]?.stringValue == "camel")
+    #expect(imageBody["response_format"]?.stringValue == "b64_json")
+    #expect(imageBody["test-provider"] == nil)
+    #expect(imageBody["testProvider"] == nil)
+}
+
 @Test func openAICompatibleImageRejectsMoreThanMaxImagesPerCall() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"unused"}]}"#))
     let provider = try AIProviders.openAICompatible(
