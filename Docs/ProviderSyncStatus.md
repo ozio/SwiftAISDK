@@ -124,7 +124,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/mcp` | HTTP/SSE/Stdio transports, OAuth discovery/PKCE/refresh/register flows, resource/template/tool listing, elicitation, reconnects, tool output conversion, errors, and protocol capability checks are covered. |
 | `@ai-sdk/mistral` | Chat/stream and embedding surfaces, native request shape, documents/files, structured output controls, tool calls/provider-tool warnings, provider options, usage, and abort propagation are covered. |
 | `@ai-sdk/moonshotai` | Chat/stream bodies, thinking options, tool calls, provider options, unsupported capabilities, usage variants, finish mapping, user-agent behavior, and abort propagation are covered. |
-| `@ai-sdk/open-responses` | Responses request/stream lifecycle, reasoning, annotations/sources, hosted tools, MCP approvals/results, image generation partials, compaction, apply-patch/code-interpreter parts, errors, and raw chunks are covered. |
+| `@ai-sdk/open-responses` | Custom Responses endpoint factory, optional API key/custom headers, provider options namespace, request conversion, function tools/tool choice, structured text format, file/tool-result content conversion, finish/usage mapping, text/reasoning/function-call streaming, failed stream events, warnings, and raw chunks are covered. |
 | `@ai-sdk/openai` | Chat, Responses, completions, embeddings, images, speech, transcription, files, skills, tool helpers, provider aliases, organization/project headers, structured output, metadata, warnings, and abort propagation are covered. |
 | `@ai-sdk/openai-compatible` | Chat/completion/embedding/image/audio/video/rerank surfaces, route selection, stream parsing, provider surface IDs, warning behavior, provider option passthrough, response metadata, and abort propagation are covered. |
 | `@ai-sdk/perplexity` | Chat request/stream bodies, search/sources/citations, provider options, unsupported settings, finish/usage validation, response metadata, and abort propagation are covered. |
@@ -142,6 +142,7 @@ record and passes tests, it leaves the active queue.
 | Package | Baseline | Evidence |
 | --- | --- | --- |
 | `@ai-sdk/gateway` | `3.0.123` | `3294e3d`, `b8f35cb`, `08b36ed`: v3 base URL, headers/user agent, OIDC fallback, typed Gateway errors. |
+| `@ai-sdk/open-responses` | `1.0.16` | `d0d881f`: package re-read against upstream request/input/stream/finish schemas; file names, rich tool-result content, Open Responses finish mapping, and failed stream events closed. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -166,6 +167,20 @@ Known Swift differences / out of scope: Async Vercel OIDC refresh/request-contex
 Tests run: GatewayTests-focused tests during the pass, then full swift test in later provider rounds.
 Commit evidence: 3294e3d, b8f35cb, 08b36ed.
 Reopen only if: gateway npm version changes, Vercel OIDC behavior becomes async-required, Gateway error schema changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/open-responses`
+
+```text
+Package: @ai-sdk/open-responses
+Baseline: 1.0.16
+Upstream inspected: open-responses-provider.ts, open-responses-config.ts, open-responses-options.ts, open-responses-language-model.ts, convert-to-open-responses-input.ts, map-open-responses-finish-reason.ts, open-responses-api.ts.
+Swift files inspected: ProviderRegistry.swift, OpenAICompatible.swift, ResponsesEndpointTests.swift, OpenAIResponsesTests.swift, ProviderCapabilityMatrix.swift.
+Surfaces checked: custom URL factory, provider ID/providerOptions namespace, optional API key, custom header precedence, versioned user-agent suffix, language-only capability, unsupported capability errors, standard option warnings, reasoning provider options, system instructions, message/file/image input conversion, assistant tool-call replay, tool-result output conversion, function tools, tool choice, JSON schema text format, generate response text/reasoning/tool-call/usage/metadata parsing, Open Responses-specific finish reason mapping, stream-start warnings, text/reasoning/function-call streaming, failed stream events, raw chunks, abort propagation through the shared HTTP request path.
+Known Swift differences / out of scope: Swift uses `AIProviders.openResponses(name:url:settings:)` instead of upstream's callable `createOpenResponses(options)` shape; Swift provider settings are static rather than upstream's header resolver function; Swift unsupported non-language capabilities throw `AIError.unsupportedModel`; Swift streams may expose broader response metadata/lifecycle parts where the core contract supports them; upstream `generateId` customization is not exposed by SwiftAISDK for this wrapper.
+Tests run: swift test --filter openResponses; swift test --filter ResponsesEndpoint; swift test --filter OpenAIResponses; swift test with 892 tests.
+Commit evidence: d0d881f.
+Reopen only if: open-responses npm version changes, Open Responses request/input/stream schemas change, Swift core response/tool contracts change, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/anthropic-aws`
@@ -301,7 +316,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/open-responses` | `1.0.16` | `b3d4e27`, `fa5e36d`, `6832d59`, `866bd78`, `f8aeb19`, `002a70a`, `c61a3b4`, `998e27b`, `0d6b140`: lifecycle, reasoning, annotations, hosted tools, compaction, apply-patch streaming. |
 | `@ai-sdk/openai` | `3.0.67` | `b363c3f`, `1c45140`, `e2ea865`, `b2a1dcc`: provider naming, shell tools, image metadata, user agent; broad OpenAI tests exist. |
 | `@ai-sdk/openai-compatible` | `2.0.48` | `7aa1c55`: provider surfaces; broad OpenAI-compatible request/stream/warning tests exist. |
 | `@ai-sdk/groq` | `3.0.39` | `55faaac`, `6627b3d`, `2fe28f0`: option schema, transcription response, chat parity. |
@@ -344,7 +358,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Promote the central heavy providers from `substantial parity coverage` to
-   `fresh deep pass`: OpenAI/OpenAI-compatible/Open Responses.
+   `fresh deep pass`: OpenAI/OpenAI-compatible.
 2. Do final package sweeps for the already-covered language providers:
    Groq, Mistral, Cohere, Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI,
    Alibaba.
