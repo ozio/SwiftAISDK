@@ -166,15 +166,16 @@ public enum AIProviderCapabilities {
     }
 
     public static func markdownTable() -> String {
+        let supportedMarker = "✅"
         let header = "| Upstream package | Provider ID | Swift factories | L | C | E | I | T | S | V | R | F | K |"
         let separator = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
         let rows = all.map { row in
             let values = capabilityColumns.map { column in
-                row.supports(column.capability) ? "yes" : ""
+                row.supports(column.capability) ? supportedMarker : ""
             }
             let flags = values + [
-                row.supportsFileUpload ? "yes" : "",
-                row.supportsSkillUpload ? "yes" : "",
+                row.supportsFileUpload ? supportedMarker : "",
+                row.supportsSkillUpload ? supportedMarker : "",
             ]
             return (
                 [
