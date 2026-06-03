@@ -144,6 +144,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/gateway` | `3.0.123` | `3294e3d`, `b8f35cb`, `08b36ed`: v3 base URL, headers/user agent, OIDC fallback, typed Gateway errors. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/google-vertex` | `4.0.141` | `83ef81d`: regional REP hosts, express API-key precedence, embedding options/usage/limit, Veo polling/base64 videos, and subprovider URL parity after package re-read. |
+| `@ai-sdk/google` | `3.0.80` | `09bfd11`: Gemini/Imagen/Veo/embeddings parity sweep: providerOptions, multimodal content, editing warnings, video polling/options, metadata, and abort propagation after package re-read. |
 | `@ai-sdk/huggingface` | `1.0.50` | `e6ce75a`: provider-defined tools skipped with upstream-style warning after package re-read. |
 | `@ai-sdk/fal` | `2.0.34` | `b8ebeaa`: image metadata NSFW/prompt normalization after package re-read. |
 | `@ai-sdk/quiverai` | `1.0.0` | Re-read package and local implementation; no safe remaining gap found after existing QuiverAI option/schema/response tests. |
@@ -191,6 +192,20 @@ Known Swift differences / out of scope: Swift models Google auth with explicit a
 Tests run: swift test --filter GoogleVertex; swift test --filter GoogleMediaResponseMetadataTests; swift test with 869 tests.
 Commit evidence: 83ef81d.
 Reopen only if: google-vertex npm version changes, Vertex host/base URL rules change, Veo operation schema/polling changes, providerOptions schemas change, MaaS/xAI/Anthropic subprovider wrapper behavior changes, auth model changes become required for Swift, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/google`
+
+```text
+Package: @ai-sdk/google
+Baseline: 3.0.80
+Upstream inspected: google-provider.ts, google-generative-ai-language-model.ts, google-generative-ai-embedding-model.ts, google-generative-ai-embedding-options.ts, google-generative-ai-image-model.ts, google-generative-ai-video-model.ts, google-generative-ai-video-settings.ts, google-generative-ai-interactions-language-model.ts, google-generative-ai-files-api.ts, google-generative-ai-options.ts, google-prepare-tools.ts, tool helpers, index.ts, version.ts.
+Swift files inspected: GoogleGenerativeAI.swift, GoogleTools.swift, ProviderRegistry.swift, Core.swift, AI.swift, GoogleGenerativeAITests.swift, GoogleMediaResponseMetadataTests.swift.
+Surfaces checked: provider factory, callable/chat/language aliases, embedding/textEmbedding aliases, image/video/interactions/files/tool helpers, API-key/header precedence, user-agent suffix, base URL trimming, GenerateContent request bodies, Gemini/Gemma system handling, structured outputs, provider generation options, safety/cached/labels top-level options, provider-defined tools, tool choice, code execution, grounding metadata and sources, stream lifecycle/tool-call deltas/provider metadata/raw chunks, embeddings batch/single endpoints, embedding outputDimensionality/taskType/multimodal content/max input limit, Imagen generation shape/warnings/provider metadata, Imagen editing rejection, Gemini image file inputs/googleSearch/provider options, Veo long-running create/poll flow, standard image/seed/resolution/duration fields, reference images, video metadata, files resumable upload, Interactions/agents/streams/sources/tool steps, abort propagation through language/stream/embedding/image/video.
+Known Swift differences / out of scope: Swift uses static headers rather than upstream async Resolvable headers; Swift keeps `extraBody` as a legacy escape hatch alongside typed `providerOptions.google`; `generateId` customization is not exposed for Google-generated source/tool IDs yet; Swift exposes interactions as explicit `interactionsModel`/`interactionsAgent` helpers rather than upstream's overloaded `interactions(modelIdOrAgent)` call shape.
+Tests run: swift test --filter GoogleGenerativeAI; swift test with 877 tests.
+Commit evidence: 09bfd11.
+Reopen only if: @ai-sdk/google npm version changes, GenerateContent/Interactions/Files/Imagen/Veo/Embedding schemas change, providerOptions schemas change, generateId or async header behavior becomes required in Swift core, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/huggingface`
@@ -261,7 +276,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/openai-compatible` | `2.0.48` | `7aa1c55`: provider surfaces; broad OpenAI-compatible request/stream/warning tests exist. |
 | `@ai-sdk/anthropic` | `3.0.81` | `a64c969`, `0b2cd03`, `762f3e3`, `2ee70ed`, `0870130`, `7d62183`: streams, hosted tool results, warnings, provider-option betas, file refs, provider metadata. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `85b8875`, `50d2289`, `1acd167`: converse options, Anthropic invoke parity, user agent. |
-| `@ai-sdk/google` | `3.0.80` | `40d1f70`, `9c8085b`, `fe8fcaf`, `5c95b48`, `955e7c2`: provider tool warnings, options, Gemma system prompts, rich tool content, user agent. |
 | `@ai-sdk/groq` | `3.0.39` | `55faaac`, `6627b3d`, `2fe28f0`: option schema, transcription response, chat parity. |
 | `@ai-sdk/mistral` | `3.0.37` | `9ea7375`, `d4e5aab`: option schema and chat parity. |
 | `@ai-sdk/cohere` | `3.0.36` | `5d2c1d9`, `6b81b90`: option schema and chat parity. |
@@ -303,7 +317,7 @@ The realistic remaining provider work is not "all providers". It is:
 
 1. Promote the central heavy providers from `substantial parity coverage` to
    `fresh deep pass`: OpenAI/OpenAI-compatible/Open Responses, Anthropic,
-   Google/Google Vertex, Amazon Bedrock.
+   Amazon Bedrock.
 2. Do final package sweeps for the already-covered language providers:
    Groq, Mistral, Cohere, Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI,
    Alibaba.
