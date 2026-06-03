@@ -71,6 +71,84 @@ public enum OpenAITools {
         ]).objectValue ?? [:])
     }
 
+    public static func shellContainerAutoEnvironment(
+        fileIDs: [String] = [],
+        memoryLimit: String? = nil,
+        networkPolicy: JSONValue? = nil,
+        skills: [JSONValue] = []
+    ) -> JSONValue {
+        JSONValue.object([
+            "type": .string("containerAuto"),
+            "fileIds": fileIDs.isEmpty ? nil : .array(fileIDs),
+            "memoryLimit": memoryLimit.map(JSONValue.string),
+            "networkPolicy": networkPolicy,
+            "skills": skills.isEmpty ? nil : .array(skills)
+        ])
+    }
+
+    public static func shellContainerReferenceEnvironment(containerID: String) -> JSONValue {
+        JSONValue.object([
+            "type": .string("containerReference"),
+            "containerId": .string(containerID)
+        ])
+    }
+
+    public static func shellLocalEnvironment(skills: [JSONValue] = []) -> JSONValue {
+        JSONValue.object([
+            "type": .string("local"),
+            "skills": skills.isEmpty ? nil : .array(skills)
+        ])
+    }
+
+    public static func shellDisabledNetworkPolicy() -> JSONValue {
+        ["type": "disabled"]
+    }
+
+    public static func shellAllowlistNetworkPolicy(allowedDomains: [String], domainSecrets: [JSONValue] = []) -> JSONValue {
+        JSONValue.object([
+            "type": .string("allowlist"),
+            "allowedDomains": .array(allowedDomains),
+            "domainSecrets": domainSecrets.isEmpty ? nil : .array(domainSecrets)
+        ])
+    }
+
+    public static func shellDomainSecret(domain: String, name: String, value: String) -> JSONValue {
+        [
+            "domain": .string(domain),
+            "name": .string(name),
+            "value": .string(value)
+        ]
+    }
+
+    public static func shellSkillReference(providerReference: [String: String], version: String? = nil) -> JSONValue {
+        JSONValue.object([
+            "type": .string("skillReference"),
+            "providerReference": .object(providerReference.mapValues(JSONValue.string)),
+            "version": version.map(JSONValue.string)
+        ])
+    }
+
+    public static func shellInlineSkill(name: String, description: String, base64ZipData: String) -> JSONValue {
+        [
+            "type": "inline",
+            "name": .string(name),
+            "description": .string(description),
+            "source": [
+                "type": "base64",
+                "mediaType": "application/zip",
+                "data": .string(base64ZipData)
+            ]
+        ]
+    }
+
+    public static func shellLocalSkill(name: String, description: String, path: String) -> JSONValue {
+        [
+            "name": .string(name),
+            "description": .string(description),
+            "path": .string(path)
+        ]
+    }
+
     public static func webSearchPreview(searchContextSize: String? = nil, userLocation: JSONValue? = nil) -> JSONValue {
         providerTool(id: "openai.web_search_preview", name: "web_search_preview", args: JSONValue.object([
             "searchContextSize": searchContextSize.map(JSONValue.string),

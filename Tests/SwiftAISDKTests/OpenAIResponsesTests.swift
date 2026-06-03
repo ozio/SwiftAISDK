@@ -249,6 +249,19 @@ import Testing
             ),
             "code_interpreter": OpenAITools.codeInterpreter(container: ["fileIds": ["file_1", "file_2"]]),
             "computer_use": OpenAITools.computerUse(displayWidth: 1024, displayHeight: 768, environment: "browser"),
+            "shell": OpenAITools.shell(environment: OpenAITools.shellContainerAutoEnvironment(
+                fileIDs: ["file_shell_1"],
+                memoryLimit: "4g",
+                networkPolicy: OpenAITools.shellAllowlistNetworkPolicy(
+                    allowedDomains: ["example.com"],
+                    domainSecrets: [
+                        OpenAITools.shellDomainSecret(domain: "example.com", name: "TOKEN", value: "secret")
+                    ]
+                ),
+                skills: [
+                    OpenAITools.shellSkillReference(providerReference: ["openai": "skill_123"], version: "1")
+                ]
+            )),
             "image_generation": OpenAITools.imageGeneration(
                 inputFidelity: "high",
                 inputImageMask: ["fileId": "file_mask", "imageUrl": "https://example.com/mask.png"],
@@ -279,7 +292,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     let tools = try #require(body["tools"]?.arrayValue)
-    #expect(tools.count == 9)
+    #expect(tools.count == 10)
 
     let functionTool = try #require(tools.first { $0["type"]?.stringValue == "function" })
     #expect(functionTool["name"]?.stringValue == "lookup")
@@ -308,6 +321,16 @@ import Testing
     #expect(computerUse["display_width"]?.intValue == 1024)
     #expect(computerUse["display_height"]?.intValue == 768)
     #expect(computerUse["environment"]?.stringValue == "browser")
+
+    let shell = try #require(tools.first { $0["type"]?.stringValue == "shell" })
+    #expect(shell["environment"]?["type"]?.stringValue == "container_auto")
+    #expect(shell["environment"]?["file_ids"]?[0]?.stringValue == "file_shell_1")
+    #expect(shell["environment"]?["memory_limit"]?.stringValue == "4g")
+    #expect(shell["environment"]?["network_policy"]?["type"]?.stringValue == "allowlist")
+    #expect(shell["environment"]?["network_policy"]?["allowed_domains"]?[0]?.stringValue == "example.com")
+    #expect(shell["environment"]?["network_policy"]?["domain_secrets"]?[0]?["name"]?.stringValue == "TOKEN")
+    #expect(shell["environment"]?["skills"]?[0]?["type"]?.stringValue == "skillReference")
+    #expect(shell["environment"]?["skills"]?[0]?["providerReference"]?["openai"]?.stringValue == "skill_123")
 
     let imageGeneration = try #require(tools.first { $0["type"]?.stringValue == "image_generation" })
     #expect(imageGeneration["input_fidelity"]?.stringValue == "high")
