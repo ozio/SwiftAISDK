@@ -12,12 +12,13 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         authorization: AuthorizationStyle,
         supportedCapabilities: Set<ModelCapability> = [.language],
         settings: ProviderSettings = ProviderSettings(),
-        routesLikeOpenAI: Bool = false
+        routesLikeOpenAI: Bool = false,
+        userAgentSuffix: String? = nil
     ) throws {
         self.providerID = providerID
         self.supportedCapabilities = supportedCapabilities
         self.routesLikeOpenAI = routesLikeOpenAI
-        let headers = try Self.buildHeaders(providerID: providerID, authorization: authorization, settings: settings)
+        let headers = try Self.buildHeaders(providerID: providerID, authorization: authorization, settings: settings, userAgentSuffix: userAgentSuffix)
         self.config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? defaultBaseURL,
@@ -383,7 +384,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         return OpenAISkillsClient(providerID: "\(providerID).skills", providerReferenceKey: providerID, config: config)
     }
 
-    static func buildHeaders(providerID: String, authorization: AuthorizationStyle, settings: ProviderSettings) throws -> [String: String] {
+    static func buildHeaders(providerID: String, authorization: AuthorizationStyle, settings: ProviderSettings, userAgentSuffix: String? = nil) throws -> [String: String] {
         var headers = settings.headers
         switch authorization {
         case let .bearer(environmentVariables):
@@ -400,6 +401,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             headers[name] = headers[name] ?? "\(prefix.map { "\($0) " } ?? "")\(key)"
         case .none:
             break
+        }
+        if let userAgentSuffix {
+            return withUserAgentSuffix(headers, userAgentSuffix)
         }
         if providerID == "anthropic" {
             return withUserAgentSuffix(headers, "ai-sdk/anthropic/3.0.81")

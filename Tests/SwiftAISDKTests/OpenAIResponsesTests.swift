@@ -38,9 +38,10 @@ import Testing
     #expect(result.usage?.totalTokens == 7)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/responses")
-    #expect(request.headers["Authorization"] == "Bearer test-key")
-    #expect(request.headers["OpenAI-Organization"] == "org-123")
-    #expect(request.headers["OpenAI-Project"] == "proj-123")
+    #expect(request.headers["authorization"] == "Bearer test-key")
+    #expect(request.headers["openai-organization"] == "org-123")
+    #expect(request.headers["openai-project"] == "proj-123")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1")
     #expect(body["temperature"]?.doubleValue == 0.4)
@@ -80,9 +81,10 @@ import Testing
     #expect(result.text == "configured")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://proxy.example.com/openai/v1/responses")
-    #expect(request.headers["Authorization"] == "Bearer test-key")
-    #expect(request.headers["OpenAI-Organization"] == "org-123")
-    #expect(request.headers["OpenAI-Project"] == "proj-header")
+    #expect(request.headers["authorization"] == "Bearer test-key")
+    #expect(request.headers["openai-organization"] == "org-123")
+    #expect(request.headers["openai-project"] == "proj-header")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
 }
 
 @Test func openAIProviderAliasesRouteToUpstreamEndpoints() async throws {
@@ -177,6 +179,7 @@ import Testing
     #expect(result.text == "named")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/responses")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["store"]?.boolValue == false)
     #expect(body["previous_response_id"]?.stringValue == "resp-old")
@@ -190,6 +193,25 @@ import Testing
     #expect(body["parallelToolCalls"] == nil)
     #expect(body["reasoningEffort"] == nil)
     #expect(body["serviceTier"] == nil)
+}
+
+@Test func openAIAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"custom","usage":{"total_tokens":1}}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(
+        apiKey: "test-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport,
+        name: "branded"
+    ))
+    let model = try provider.languageModel("gpt-4.1")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(provider.providerID == "branded")
+    #expect(model.providerID == "branded.responses")
+    #expect(request.headers["authorization"] == "Bearer test-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai/3.0.67")
 }
 
 @Test func openAIResponsesMapsNestedProviderOptions() async throws {

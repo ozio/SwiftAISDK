@@ -28,7 +28,8 @@ import Testing
     #expect(result.warnings == [AIWarning(type: "unsupported", feature: "displayName")])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/files")
-    #expect(request.headers["Authorization"] == "Bearer test-key")
+    #expect(request.headers["authorization"] == "Bearer test-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"file\"; filename=\"notes.txt\""))
@@ -180,7 +181,8 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/skills")
-    #expect(request.headers["Authorization"] == "Bearer test-key")
+    #expect(request.headers["authorization"] == "Bearer test-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"files[]\"; filename=\"index.ts\""))
