@@ -113,9 +113,18 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
         if let teamIDOrSlug {
             settings.headers["x-vercel-ai-gateway-team"] = teamIDOrSlug
         }
-        settings.headers["ai-gateway-protocol-version"] = settings.headers["ai-gateway-protocol-version"] ?? "0.0.1"
-        settings.headers["ai-gateway-auth-method"] = settings.headers["ai-gateway-auth-method"] ?? "api-key"
-        let headers = try OpenAICompatibleProvider.buildHeaders(providerID: providerID, authorization: .bearer(environmentVariables: ["AI_GATEWAY_API_KEY"]), settings: settings, userAgentSuffix: "ai-sdk/gateway/3.0.123")
+        let auth = try gatewayAuthToken(settings: settings)
+        let normalizedHeaders = normalizeHeaders(settings.headers)
+        if normalizedHeaders["authorization"] == nil {
+            settings.headers["Authorization"] = "Bearer \(auth.token)"
+        }
+        if normalizedHeaders["ai-gateway-protocol-version"] == nil {
+            settings.headers["ai-gateway-protocol-version"] = "0.0.1"
+        }
+        if normalizedHeaders["ai-gateway-auth-method"] == nil {
+            settings.headers["ai-gateway-auth-method"] = auth.method
+        }
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/3.0.123")
         config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v3/ai",
@@ -250,6 +259,21 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
             billableWebSearchCalls: data["billable_web_search_calls"]?.intValue ?? 0
         )
     }
+}
+
+private struct GatewayAuthToken {
+    var token: String
+    var method: String
+}
+
+private func gatewayAuthToken(settings: ProviderSettings) throws -> GatewayAuthToken {
+    if let apiKey = settings.apiKey ?? environmentValue(["AI_GATEWAY_API_KEY"]) {
+        return GatewayAuthToken(token: apiKey, method: "api-key")
+    }
+    if let oidcToken = environmentValue(["VERCEL_OIDC_TOKEN"]) {
+        return GatewayAuthToken(token: oidcToken, method: "oidc")
+    }
+    throw AIError.missingAPIKey(provider: "gateway", environmentVariables: ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"])
 }
 
 private func gatewaySpendReportRow(_ raw: JSONValue) -> GatewaySpendReportRow {

@@ -42,6 +42,27 @@ import Testing
     #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/3.0.123")
 }
 
+@Test func gatewayUsesVercelOIDCTokenWhenGatewayAPIKeyMissing() async throws {
+    try await withTemporaryEnvironment([
+        "AI_GATEWAY_API_KEY": nil,
+        "VERCEL_OIDC_TOKEN": "oidc-token"
+    ]) {
+        let transport = RecordingTransport(response: jsonResponse("""
+        {"content":[{"type":"text","text":"oidc gateway"}],"finishReason":"stop"}
+        """))
+        let provider = try AIProviders.gateway(settings: ProviderSettings(transport: transport))
+        let model = try provider.languageModel("openai/gpt-4.1-mini")
+
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+        let request = try #require(await transport.requests().first)
+        #expect(request.headers["authorization"] == "Bearer oidc-token")
+        #expect(request.headers["ai-gateway-auth-method"] == "oidc")
+        #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.123")
+    }
+}
+
 @Test func gatewayLanguageMapsToolsToolChoiceAndContentToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"checking"},{"type":"source","sourceType":"url","id":"src_1","url":"https://example.com/a","title":"Example A","providerMetadata":{"gateway":{"rank":1}}},{"type":"tool-call","toolCallId":"call_1","toolName":"lookup","input":"{\\"query\\":\\"weather\\"}"},{"type":"tool-call","toolCallId":"gateway_search","toolName":"perplexity_search","input":{"query":"latest news"},"providerExecuted":true}],"finishReason":"stop","usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}
@@ -448,4 +469,28 @@ import Testing
     #expect(body["fps"]?.intValue == 24)
     #expect(body["seed"]?.intValue == 42)
     #expect(body["providerOptions"]?["fal"]?["motionStrength"]?.doubleValue == 0.8)
+}
+
+private func withTemporaryEnvironment<T>(_ updates: [String: String?], operation: () async throws -> T) async rethrows -> T {
+    var previous: [String: String?] = [:]
+    for key in updates.keys {
+        previous[key] = getenv(key).map { String(cString: $0) }
+    }
+    for (key, value) in updates {
+        if let value {
+            setenv(key, value, 1)
+        } else {
+            unsetenv(key)
+        }
+    }
+    defer {
+        for (key, value) in previous {
+            if let value {
+                setenv(key, value, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+    }
+    return try await operation()
 }
