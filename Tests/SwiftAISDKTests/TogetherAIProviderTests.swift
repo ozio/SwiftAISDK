@@ -161,6 +161,7 @@ import Testing
 
     let image = try await model.generateImage(ImageGenerationRequest(
         prompt: "edit",
+        size: "1024x1024",
         aspectRatio: "1:1",
         files: [
             ImageInputFile(url: "https://example.com/input-1.png"),

@@ -19,7 +19,7 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
                 message: "Together AI does not support mask-based image editing. Use FLUX Kontext models (e.g., black-forest-labs/FLUX.1-kontext-pro) with a reference image and descriptive prompt instead."
             )
         }
-        if request.aspectRatio != nil {
+        if request.size != nil {
             warnings.append(AIWarning(
                 type: "unsupported",
                 feature: "aspectRatio",

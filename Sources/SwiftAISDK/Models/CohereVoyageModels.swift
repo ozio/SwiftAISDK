@@ -319,7 +319,7 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             providerOptions: request.providerOptions
         )
         guard request.values.count <= 128 else {
-            throw AIError.invalidResponse(provider: providerID, message: "Voyage supports at most 128 embedding inputs per call.")
+            throw AIError.invalidArgument(argument: "values", message: "Voyage embedding models support at most 128 values per call.")
         }
         var body: [String: JSONValue] = [
             "input": .array(request.values),

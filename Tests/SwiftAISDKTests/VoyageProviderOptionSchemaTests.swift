@@ -90,6 +90,18 @@ import Testing
     }
 }
 
+@Test func voyageEmbeddingRejectsTooManyValuesBeforeRequestLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"embedding":[0.1]}],"usage":{"total_tokens":1}}"#))
+    let provider = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key", transport: transport))
+    let model = try provider.embeddingModel("voyage-4")
+    let values = (0..<129).map { "value-\($0)" }
+
+    await #expect(throws: AIError.invalidArgument(argument: "values", message: "Voyage embedding models support at most 128 values per call.")) {
+        _ = try await model.embed(EmbeddingRequest(values: values))
+    }
+    #expect(await transport.requests().isEmpty)
+}
+
 @Test func voyageRerankingResponseValidationMatchesUpstreamSchema() async throws {
     let provider = try AIProviders.voyage(settings: ProviderSettings(
         apiKey: "voyage-key",

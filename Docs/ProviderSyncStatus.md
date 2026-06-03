@@ -170,6 +170,9 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/azure` | `3.0.69` | Current foundation provider audit: package re-read across provider/tools/metadata; v1/deployment URL building, token-provider auth precedence, OpenAI-inherited language/media surfaces, tools, aliases, and user-agent behavior verified. |
 | `@ai-sdk/baseten` | `1.0.51` | Current foundation provider audit: package re-read across provider/chat/embedding/options; Model API vs `/sync`/`/sync/v1`, `/predict` rejection, dedicated embedding body/batching, error schema, and user-agent behavior verified. |
 | `@ai-sdk/deepinfra` | `2.0.52` | Current foundation provider audit: package re-read across provider/chat/completion/embedding/image/options; custom root base URL now adds upstream `/openai` and `/inference` prefixes, image/edit bodies, Gemma/Gemini usage correction, and user-agent behavior verified. |
+| `@ai-sdk/fireworks` | `2.0.53` | Current final provider audit: package re-read across provider/chat/completion/embedding/image/options; Fireworks error schema, thinking transform, workflow/image-generation/async image routing, polling/downloads, warnings, metadata, and user-agent behavior verified. |
+| `@ai-sdk/togetherai` | `2.0.53` | Current final provider audit: package re-read across provider/chat/completion/embedding/image/reranking/options; image warning condition, option schema, rerank request/response shape, env fallback, metadata, and user-agent behavior aligned. |
+| `@ai-sdk/voyage` | `1.0.4` | Current final provider audit: package re-read across provider/embedding/reranking/options/errors; native request bodies, provider option schemas, `{detail}` error schema, 128-value preflight, object-document warnings, metadata, and user-agent behavior aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -181,6 +184,48 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/fireworks`
+
+```text
+Package: @ai-sdk/fireworks
+Baseline: 2.0.53
+Upstream inspected: fireworks-provider.ts, fireworks-image-model.ts, fireworks-image-api.ts, chat/completion/embedding/image option files.
+Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, OpenAICompatible.swift, FireworksModels.swift, FireworksProviderTests.swift.
+Surfaces checked: provider factory, default base URL, FIREWORKS_API_KEY auth, user-agent suffix, language/completion/embedding OpenAI-compatible routes, Fireworks `{error}` error schema, chat thinking/reasoningHistory transform, image workflow/image_generation/workflows_async routing, async request_id polling, binary downloads, input image/mask warnings, size/aspect warnings, providerOptions namespace, response metadata, abort propagation.
+Known Swift differences / out of scope: Swift supports legacy extraBody merging alongside upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Fireworks|TogetherAI|Voyage'; full swift test in the current final provider audit batch.
+Commit evidence: Current final provider audit batch.
+Reopen only if: fireworks npm version changes, model backend routing changes, async poll schema changes, option/error schema changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/togetherai`
+
+```text
+Package: @ai-sdk/togetherai
+Baseline: 2.0.53
+Upstream inspected: togetherai-provider.ts, togetherai-image-model.ts, reranking/togetherai-reranking-model.ts, chat/completion/embedding/image/reranking option files.
+Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, TogetherAIModels.swift, TogetherAIProviderTests.swift.
+Surfaces checked: provider factory and aliases, default base URL, TOGETHER_API_KEY plus deprecated TOGETHER_AI_API_KEY auth fallback, user-agent suffix, OpenAI-compatible language/completion/embedding routes, image generation body, upstream size-triggered aspectRatio warning, single image input warning, mask error, providerOptions image schema, reranking `/rerank` body, rankFields mapping, return_documents false, JSON object documents, response/error validation, metadata, abort propagation.
+Known Swift differences / out of scope: Swift supports legacy extraBody merging and camelCase image option aliases in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Fireworks|TogetherAI|Voyage'; full swift test in the current final provider audit batch.
+Commit evidence: Current final provider audit batch.
+Reopen only if: togetherai npm version changes, image/rerank option schemas change, deprecated env fallback changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/voyage`
+
+```text
+Package: @ai-sdk/voyage
+Baseline: 1.0.4
+Upstream inspected: voyage-provider.ts, voyage-error.ts, voyage-embedding-model.ts, reranking/voyage-reranking-model.ts, embedding/reranking option files.
+Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, CohereVoyageModels.swift, CohereMistralVoyageTests.swift, VoyageProviderOptionSchemaTests.swift.
+Surfaces checked: provider factory, unsupported language/image surfaces, default base URL, VOYAGE_API_KEY auth, user-agent suffix, embedding/textEmbedding aliases, reranking aliases, embedding request body, providerOptions schema, 128-value preflight rejection before request, reranking request body, object document JSON-string conversion warning, `{detail}` HTTP error schema, response validation, usage/metadata, abort propagation.
+Known Swift differences / out of scope: Swift exposes unsupported capabilities through typed AIError instead of upstream NoSuchModelError classes. Swift supports legacy extraBody merging alongside upstream providerOptions.
+Tests run: swift test --filter 'Fireworks|TogetherAI|Voyage'; full swift test in the current final provider audit batch.
+Commit evidence: Current final provider audit batch.
+Reopen only if: voyage npm version changes, embedding/rerank request schemas change, error schema changes, maxEmbeddingsPerCall changes, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/azure`
 
@@ -713,14 +758,9 @@ Reopen only if: vercel npm version changes, provider wrapper gains new capabilit
 
 ## Substantial Parity Coverage
 
-These are not "untouched". They have concrete parity commits and tests, but are
-still queued for a final package-level sweep if we want to stamp them complete.
-
-| Package | Baseline | Existing parity evidence |
-| --- | --- | --- |
-| `@ai-sdk/fireworks` | `2.0.53` | `b007be4`, `2ea4fb3`: image provider parity and user agent. |
-| `@ai-sdk/togetherai` | `2.0.53` | `7511a6f`, `ee8e15f`, `8a1c02d`: provider/media validation/user agent. |
-| `@ai-sdk/voyage` | `1.0.4` | `d8f3617`, `b805d56`: option schema and response parity. |
+The model-provider package deep-pass queue is empty. Packages move back here only
+when npm discovery finds a new provider package, an upstream version changes, or
+a live/user report identifies a concrete mismatch.
 
 ## Needs Explicit Deep Pass
 
@@ -730,9 +770,8 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 ## Practical Remaining Queue
 
-The remaining provider package deep-pass queue is now deliberately small:
+The remaining product work is now outside the ordinary model-provider sweep:
 
-1. Finish final package sweeps for Fireworks, TogetherAI, and Voyage.
-2. Give MCP its own protocol-client completion audit instead of treating it like a model provider.
-3. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
-4. Run a final completion audit against npm provider discovery and the sync docs before declaring the overall port complete.
+1. Give MCP its own protocol-client completion audit instead of treating it like a model provider.
+2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
+3. Run a final completion audit against npm provider discovery and the sync docs before declaring the overall port complete.
