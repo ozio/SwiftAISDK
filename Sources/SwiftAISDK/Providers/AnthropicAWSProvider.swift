@@ -1,5 +1,17 @@
 import Foundation
 
+public struct AnthropicAWSCredentials: Sendable {
+    public var accessKeyID: String
+    public var secretAccessKey: String
+    public var sessionToken: String?
+
+    public init(accessKeyID: String, secretAccessKey: String, sessionToken: String? = nil) {
+        self.accessKeyID = accessKeyID
+        self.secretAccessKey = secretAccessKey
+        self.sessionToken = sessionToken
+    }
+}
+
 public struct AnthropicAWSProviderSettings: Sendable {
     public var region: String?
     public var workspaceID: String?
@@ -7,6 +19,7 @@ public struct AnthropicAWSProviderSettings: Sendable {
     public var accessKeyID: String?
     public var secretAccessKey: String?
     public var sessionToken: String?
+    public var credentialProvider: (@Sendable () async throws -> AnthropicAWSCredentials)?
     public var baseURL: String?
     public var headers: [String: String]
     public var transport: any AITransport
@@ -19,6 +32,7 @@ public struct AnthropicAWSProviderSettings: Sendable {
         accessKeyID: String? = nil,
         secretAccessKey: String? = nil,
         sessionToken: String? = nil,
+        credentialProvider: (@Sendable () async throws -> AnthropicAWSCredentials)? = nil,
         baseURL: String? = nil,
         headers: [String: String] = [:],
         transport: any AITransport = URLSessionTransport.shared,
@@ -30,6 +44,7 @@ public struct AnthropicAWSProviderSettings: Sendable {
         self.accessKeyID = accessKeyID
         self.secretAccessKey = secretAccessKey
         self.sessionToken = sessionToken
+        self.credentialProvider = credentialProvider
         self.baseURL = baseURL
         self.headers = headers
         self.transport = transport
@@ -66,24 +81,40 @@ public final class AnthropicAWSProvider: AIProvider, @unchecked Sendable {
 
         let transport: any AITransport
         if let apiKey = settings.apiKey ?? environmentValue(["ANTHROPIC_AWS_API_KEY"]) {
-            headers["x-api-key"] = headers["x-api-key"] ?? apiKey
+            headers["x-api-key"] = apiKey
             transport = settings.transport
         } else {
             guard let region else {
                 throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["AWS_REGION"])
             }
-            let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
-            let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
-            guard let accessKeyID, let secretAccessKey else {
-                throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["ANTHROPIC_AWS_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
+            let credentialsProvider: @Sendable () async throws -> AWSCredentials
+            if let credentialProvider = settings.credentialProvider {
+                credentialsProvider = {
+                    let credentials = try await credentialProvider()
+                    return AWSCredentials(
+                        accessKeyID: credentials.accessKeyID,
+                        secretAccessKey: credentials.secretAccessKey,
+                        sessionToken: credentials.sessionToken
+                    )
+                }
+            } else {
+                let accessKeyID = settings.accessKeyID ?? environmentValue(["AWS_ACCESS_KEY_ID"])
+                let secretAccessKey = settings.secretAccessKey ?? environmentValue(["AWS_SECRET_ACCESS_KEY"])
+                guard let accessKeyID, let secretAccessKey else {
+                    throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["ANTHROPIC_AWS_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
+                }
+                let sessionToken = settings.sessionToken ?? environmentValue(["AWS_SESSION_TOKEN"])
+                credentialsProvider = {
+                    AWSCredentials(
+                        accessKeyID: accessKeyID,
+                        secretAccessKey: secretAccessKey,
+                        sessionToken: sessionToken
+                    )
+                }
             }
             transport = AnthropicAWSSigV4Transport(
                 region: region,
-                credentials: AWSCredentials(
-                    accessKeyID: accessKeyID,
-                    secretAccessKey: secretAccessKey,
-                    sessionToken: settings.sessionToken ?? environmentValue(["AWS_SESSION_TOKEN"])
-                ),
+                credentialsProvider: credentialsProvider,
                 date: settings.date,
                 underlying: settings.transport
             )
@@ -145,13 +176,13 @@ public final class AnthropicAWSProvider: AIProvider, @unchecked Sendable {
 
 private final class AnthropicAWSSigV4Transport: AITransport, @unchecked Sendable {
     private let region: String
-    private let credentials: AWSCredentials
+    private let credentialsProvider: @Sendable () async throws -> AWSCredentials
     private let date: @Sendable () -> Date
     private let underlying: any AITransport
 
-    init(region: String, credentials: AWSCredentials, date: @escaping @Sendable () -> Date, underlying: any AITransport) {
+    init(region: String, credentialsProvider: @escaping @Sendable () async throws -> AWSCredentials, date: @escaping @Sendable () -> Date, underlying: any AITransport) {
         self.region = region
-        self.credentials = credentials
+        self.credentialsProvider = credentialsProvider
         self.date = date
         self.underlying = underlying
     }
@@ -160,6 +191,7 @@ private final class AnthropicAWSSigV4Transport: AITransport, @unchecked Sendable
         guard request.method.uppercased() == "POST", let body = request.body else {
             return try await underlying.send(request)
         }
+        let credentials = try await credentialsProvider()
         let signed = try AWSSigV4.sign(
             request: request,
             body: body,
