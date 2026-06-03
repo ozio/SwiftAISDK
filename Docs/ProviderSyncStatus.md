@@ -146,6 +146,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/openai-compatible` | `2.0.48` | `0badc3c`: package re-read across provider/chat/completion/embedding/image; generic providerOptions namespaces, completion prompt conversion, embedding metadata/default encoding, and generic-vs-specialized passthrough boundaries closed. |
 | `@ai-sdk/open-responses` | `1.0.16` | `d0d881f`: package re-read against upstream request/input/stream/finish schemas; file names, rich tool-result content, Open Responses finish mapping, and failed stream events closed. |
 | `@ai-sdk/groq` | `3.0.39` | `e67562f`: package re-read across provider/chat/messages/tools/transcription; Groq-specific usage details aligned after existing providerOptions/tool/transcription coverage. |
+| `@ai-sdk/mistral` | `3.0.37` | `54733c8`: package re-read across provider/chat/messages/tools/embedding; Mistral finish/error mapping and tool execution-denied output aligned after existing native chat/embedding parity coverage. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -226,6 +227,20 @@ Known Swift differences / out of scope: Swift exposes `extraBody` as an addition
 Tests run: swift test --filter Groq; swift test with 899 tests.
 Commit evidence: e67562f.
 Reopen only if: groq npm version changes, chat/transcription providerOptions schemas change, browser-search model support changes, usage schema changes, stream tool-call chunk requirements change, Swift core adds async settings/generateId hooks, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/mistral`
+
+```text
+Package: @ai-sdk/mistral
+Baseline: 3.0.37
+Upstream inspected: mistral-provider.ts, mistral-chat-language-model.ts, mistral-chat-options.ts, convert-to-mistral-chat-messages.ts, mistral-chat-prompt.ts, mistral-prepare-tools.ts, mistral-embedding-model.ts, mistral-embedding-options.ts, convert-mistral-usage.ts, get-response-metadata.ts, map-mistral-finish-reason.ts, mistral-error.ts, index.ts, version.ts.
+Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, MistralModels.swift, CohereMistralVoyageTests.swift, ProviderAbortPropagationTests.swift, NativeVectorResponseMetadataTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
+Surfaces checked: provider factory, callable/language/chat routing, embedding aliases, unsupported image capability, default base URL, MISTRAL_API_KEY auth, custom header precedence, user-agent suffix, chat request body, safe prompt, random seed, reasoning effort, document image/page limits, structured outputs, strict JSON schema, JSON-object instruction injection, unsupported standard warnings, message conversion for system/user/assistant/tool roles, inline images, PDF files, unsupported file rejection, assistant reasoning/prefix handling, tool calls, function tools, provider-defined tool warnings, tool choice required/tool filtering, parallel tool-call gating, generate response text/reasoning/tool calls, finish reason mapping, Mistral-specific usage/cache details, response metadata, stream lifecycle text/reasoning/tool input/raw/finish usage, embedding body/limit/float encoding/usage, and abort propagation for generate/stream.
+Known Swift differences / out of scope: Swift exposes `extraBody` as an additional compatibility escape hatch beside upstream providerOptions, including for embeddings; Swift settings are static dictionaries rather than upstream async resolvable header functions; upstream `generateId` customization and `supportedUrls` metadata are not public Swift hooks yet.
+Tests run: swift test --filter Mistral; swift test with 900 tests.
+Commit evidence: 54733c8.
+Reopen only if: mistral npm version changes, chat/embedding providerOptions schemas change, Mistral response/usage schemas change, Swift core adds async settings/generateId/supportedUrls hooks, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/anthropic-aws`
@@ -361,7 +376,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/mistral` | `3.0.37` | `9ea7375`, `d4e5aab`: option schema and chat parity. |
 | `@ai-sdk/cohere` | `3.0.36` | `5d2c1d9`, `6b81b90`: option schema and chat parity. |
 | `@ai-sdk/perplexity` | `3.0.33` | `361673a`, `cac1cc7`: provider parity, finish/response validation. |
 | `@ai-sdk/xai` | `3.0.93` | `b9cbbd3`, `4a63a9f`, `62183f0`, `b6543e7`, `899bb80`, `f5f3639`: image/video/options/responses/files/chat usage/provider refs/user agent. |
@@ -399,12 +413,9 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 The realistic remaining provider work is not "all providers". It is:
 
-1. Promote the remaining central heavy provider from `substantial parity
-   coverage` to `fresh deep pass`: OpenAI-compatible.
-2. Do final package sweeps for the already-covered language providers:
-   Groq, Mistral, Cohere, Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI,
-   Alibaba.
-3. Do final package sweeps for media/audio providers that already have option
+1. Do final package sweeps for the already-covered language providers:
+   Cohere, Perplexity, xAI, DeepSeek, Cerebras, MoonshotAI, Alibaba.
+2. Do final package sweeps for media/audio providers that already have option
    schema work: Replicate, Luma, KlingAI, Black Forest Labs, ByteDance, Prodia,
    Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.
-4. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
+3. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
