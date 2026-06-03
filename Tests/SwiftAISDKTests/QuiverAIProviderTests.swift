@@ -192,6 +192,24 @@ import Testing
     #expect(body["temperature"]?.doubleValue == 1.2)
 }
 
+@Test func quiverAIRejectsMoreThanMaxImagesPerCallLikeUpstream() async throws {
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "unused"))))
+    let model = try provider.imageModel("arrow-1.1-max")
+
+    await #expect(throws: AIError.invalidArgument(argument: "count", message: "QuiverAI image models support at most 16 images per call.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw", count: 17))
+    }
+}
+
+@Test func quiverAIRejectsInvalidResponseShapeLikeUpstreamSchema() async throws {
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"svg-bad","created":1,"data":[{"svg":"","mime_type":"image/svg+xml"}]}"#))))
+    let model = try provider.imageModel("arrow-1")
+
+    await #expect(throws: AIError.invalidResponse(provider: "quiverai.image", message: "QuiverAI image response is invalid.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw"))
+    }
+}
+
 @Test func quiverAIWarnsForUnsupportedStandardImageOptions() async throws {
     let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-warnings"))
     let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))

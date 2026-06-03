@@ -11,6 +11,9 @@ public final class QuiverAIImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
+        if let count = request.count, count > 16 {
+            throw AIError.invalidArgument(argument: "count", message: "QuiverAI image models support at most 16 images per call.")
+        }
         let options = try quiverAIImageOptions(from: request)
         let operation = options.operation ?? "generate"
         let body = try quiverAIRequestBody(modelID: modelID, request: request, options: options, operation: operation)
@@ -19,10 +22,11 @@ public final class QuiverAIImageModel: ImageModel, @unchecked Sendable {
 
         let response = try await config.sendJSONResponse(path: path, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        let base64Images = raw["data"]?.arrayValue?.compactMap { item -> String? in
-            guard let svg = item["svg"]?.stringValue else { return nil }
+        let documents = try quiverAISVGDocuments(from: raw, providerID: providerID)
+        let base64Images = documents.map { item -> String in
+            let svg = item["svg"]?.stringValue ?? ""
             return Data(svg.utf8).base64EncodedString()
-        } ?? []
+        }
         return ImageGenerationResult(
             urls: [],
             base64Images: base64Images,
@@ -34,6 +38,33 @@ public final class QuiverAIImageModel: ImageModel, @unchecked Sendable {
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
+}
+
+private func quiverAISVGDocuments(from raw: JSONValue, providerID: String) throws -> [JSONValue] {
+    guard let id = raw["id"]?.stringValue, !id.isEmpty,
+          let created = raw["created"]?.doubleValue, created >= 0, created.rounded() == created,
+          let data = raw["data"]?.arrayValue, !data.isEmpty else {
+        throw AIError.invalidResponse(provider: providerID, message: "QuiverAI image response is invalid.")
+    }
+    for item in data {
+        guard let svg = item["svg"]?.stringValue, !svg.isEmpty,
+              item["mime_type"]?.stringValue == "image/svg+xml" else {
+            throw AIError.invalidResponse(provider: providerID, message: "QuiverAI image response is invalid.")
+        }
+    }
+    if let usage = raw["usage"], usage != .null {
+        guard quiverAINonNegativeInteger(usage["total_tokens"]),
+              quiverAINonNegativeInteger(usage["input_tokens"]),
+              quiverAINonNegativeInteger(usage["output_tokens"]) else {
+            throw AIError.invalidResponse(provider: providerID, message: "QuiverAI image response is invalid.")
+        }
+    }
+    return data
+}
+
+private func quiverAINonNegativeInteger(_ value: JSONValue?) -> Bool {
+    guard let number = value?.doubleValue else { return false }
+    return number >= 0 && number.rounded() == number
 }
 
 private struct QuiverAIImageOptions {

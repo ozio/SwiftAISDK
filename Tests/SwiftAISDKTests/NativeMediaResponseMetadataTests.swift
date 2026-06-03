@@ -93,7 +93,7 @@ import Testing
     #expect(together.responseMetadata.body?["data"]?[0]?["b64_json"]?.stringValue == "together-image")
 
     let quiverTransport = RecordingTransport(response: jsonResponse(
-        #"{"data":[{"svg":"<svg/>"}]}"#,
+        #"{"id":"svg-1","created":1713374400,"data":[{"svg":"<svg/>","mime_type":"image/svg+xml"}]}"#,
         headers: ["quiver-header": "image"]
     ))
     let quiverProvider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: quiverTransport))
