@@ -36,11 +36,28 @@ import Testing
     #expect(result.responseMetadata.headers["x-cerebras"] == "yes")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.cerebras.ai/v1/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer cerebras-key")
+    #expect(request.headers["authorization"] == "Bearer cerebras-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/cerebras/2.0.54")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[1]?["reasoning"]?.stringValue == "I should call a tool.")
     #expect(body["messages"]?[1]?["reasoning_content"] == nil)
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+}
+
+@Test func cerebrasLanguageAppendsUpstreamUserAgentSuffixToCustomHeaders() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-ua","model":"zai-glm-4.7","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(
+        apiKey: "cerebras-key",
+        headers: ["User-Agent": "TestApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/cerebras/2.0.54")
+    #expect(request.headers["authorization"] == "Bearer cerebras-key")
 }
 
 @Test func cerebrasLanguageMapsProviderOptionsAndStandardSettings() async throws {

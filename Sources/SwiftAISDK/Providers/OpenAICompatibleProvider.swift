@@ -382,6 +382,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "moonshotai" {
             return withUserAgentSuffix(headers, "ai-sdk/moonshotai/2.0.23")
         }
+        if providerID == "cerebras" {
+            return withUserAgentSuffix(headers, "ai-sdk/cerebras/2.0.54")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }
