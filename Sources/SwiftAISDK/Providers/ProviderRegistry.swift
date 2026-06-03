@@ -69,16 +69,16 @@ public enum AIProviders {
         )
     }
 
-    public static func azure(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
-        try AzureOpenAIProvider(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, settings: settings)
+    public static func azure(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, tokenProvider: AzureOpenAITokenProvider? = nil, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
+        try AzureOpenAIProvider(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, tokenProvider: tokenProvider, settings: settings)
     }
 
-    public static func azureOpenAI(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
-        try azure(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, settings: settings)
+    public static func azureOpenAI(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, tokenProvider: AzureOpenAITokenProvider? = nil, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
+        try azure(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, tokenProvider: tokenProvider, settings: settings)
     }
 
-    public static func azureOpenai(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
-        try azureOpenAI(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, settings: settings)
+    public static func azureOpenai(resourceName: String? = nil, apiVersion: String = "v1", useDeploymentBasedURLs: Bool = false, tokenProvider: AzureOpenAITokenProvider? = nil, settings: ProviderSettings = ProviderSettings()) throws -> AzureOpenAIProvider {
+        try azureOpenAI(resourceName: resourceName, apiVersion: apiVersion, useDeploymentBasedURLs: useDeploymentBasedURLs, tokenProvider: tokenProvider, settings: settings)
     }
 
     public static func gateway(settings: ProviderSettings = ProviderSettings(), teamIDOrSlug: String? = nil) throws -> GatewayProvider {

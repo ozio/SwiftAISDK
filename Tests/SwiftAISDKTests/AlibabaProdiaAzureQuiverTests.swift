@@ -2,6 +2,21 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+private actor TokenStore {
+    private var tokens: [String]
+    private var index = 0
+    var count: Int { index }
+
+    init(tokens: [String]) {
+        self.tokens = tokens
+    }
+
+    func next() -> String {
+        defer { index += 1 }
+        return tokens[min(index, tokens.count - 1)]
+    }
+}
+
 @Test func azureLanguageDefaultsToResponsesV1URLAndApiKeyHeader() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"azure response","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}"#))
     let provider = try AIProviders.azure(resourceName: "test-resource", apiVersion: "2025-04-01-preview", settings: ProviderSettings(
@@ -37,7 +52,7 @@ import Testing
     #expect(request.headers["api-key"] == "azure-key")
     #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
-    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.68")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.69")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -48,6 +63,43 @@ import Testing
     #expect(body["azure"] == nil)
     #expect(body["openai"] == nil)
     #expect(body["previousResponseId"] == nil)
+}
+
+@Test func azureUsesTokenProviderForBearerAuthLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"first"}"#),
+        jsonResponse(#"{"id":"resp-2","status":"completed","output_text":"second"}"#)
+    ])
+    let tokenStore = TokenStore(tokens: ["token-one", "token-two"])
+    let provider = try AIProviders.azure(
+        resourceName: "test-resource",
+        tokenProvider: { await tokenStore.next() },
+        settings: ProviderSettings(transport: transport)
+    )
+    let model = try provider.responses("responses-deployment")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("One")]))
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Two")],
+        headers: ["Authorization": "Bearer caller-token"]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[0].headers["authorization"] == "Bearer token-one")
+    #expect(requests[0].headers["api-key"] == nil)
+    #expect(requests[1].headers["Authorization"] == "Bearer caller-token")
+    #expect(requests[1].headers["authorization"] == nil)
+    #expect(await tokenStore.count == 1)
+}
+
+@Test func azureRejectsAPIKeyAndTokenProviderTogetherLikeUpstream() async throws {
+    #expect(throws: AIError.invalidArgument(argument: "apiKey/tokenProvider", message: "Both apiKey and tokenProvider were provided. Please use only one authentication method.")) {
+        _ = try AIProviders.azure(
+            resourceName: "test-resource",
+            tokenProvider: { "azure-token" },
+            settings: ProviderSettings(apiKey: "azure-key")
+        )
+    }
 }
 
 @Test func azureCompletionMapsAzureProviderOptionsOverOpenAI() async throws {
