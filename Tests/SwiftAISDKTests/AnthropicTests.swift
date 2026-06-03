@@ -17,9 +17,28 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/3.0.81")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?.stringValue == "French.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
+}
+
+@Test func anthropicAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("claude-3-5-haiku-latest")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["x-api-key"] == "claude-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/3.0.81")
 }
 
 @Test func anthropicMessagesAliasUsesMessagesModel() async throws {
@@ -58,9 +77,30 @@ import Testing
     #expect(request.headers["x-api-key"] == "aws-api-key")
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.3")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "claude-sonnet-4-6")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hello")
+}
+
+@Test func anthropicAWSAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"aws custom"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropicAWS(settings: AnthropicAWSProviderSettings(
+        region: "us-west-2",
+        workspaceID: "wrkspc_test",
+        apiKey: "aws-api-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hello")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["x-api-key"] == "aws-api-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic-aws/1.0.3")
 }
 
 @Test func anthropicAWSSignsMessagesWithSigV4() async throws {
@@ -96,6 +136,7 @@ import Testing
     #expect(request.headers["x-amz-content-sha256"] != nil)
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-west-2/aws-external-anthropic/aws4_request") == true)
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.3")
 }
 
 @Test func anthropicRequestMapsProviderOptionsAndDocuments() async throws {

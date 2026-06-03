@@ -34,6 +34,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/files")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-beta"] == "files-api-2025-04-14")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/3.0.81")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(!bodyText.contains("Data"))
     #expect(!bodyText.contains("assistants"))
@@ -81,6 +82,7 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://api.anthropic.com/v1/skills")
     #expect(requests[0].headers["x-api-key"] == "claude-key")
     #expect(requests[0].headers["anthropic-beta"] == "skills-2025-10-02")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/3.0.81")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"display_title\""))
@@ -90,6 +92,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.anthropic.com/v1/skills/skill_01/versions/1772078378207930")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/3.0.81")
 }
 
 @Test func anthropicAWSFilesAndSkillsUseUpstreamProviderIDs() async throws {
@@ -132,9 +135,12 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/files")
     #expect(requests[0].headers["x-api-key"] == "aws-api-key")
     #expect(requests[0].headers["anthropic-beta"] == "files-api-2025-04-14")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.3")
     #expect(requests[1].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.3")
     #expect(requests[2].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills/skill_aws/versions/v1")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.3")
 }
 
 @Test func anthropicLanguageStreamsMessagesEvents() async throws {

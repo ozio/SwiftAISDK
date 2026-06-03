@@ -401,6 +401,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         case .none:
             break
         }
+        if providerID == "anthropic" {
+            return withUserAgentSuffix(headers, "ai-sdk/anthropic/3.0.81")
+        }
         if providerID == "moonshotai" {
             return withUserAgentSuffix(headers, "ai-sdk/moonshotai/2.0.23")
         }
