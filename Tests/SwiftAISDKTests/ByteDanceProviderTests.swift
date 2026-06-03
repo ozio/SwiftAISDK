@@ -333,8 +333,45 @@ import Testing
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
     let model = try provider.videoModel("seedance-1-0-pro")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidResponse(provider: "bytedance.video", message: "No task ID returned from API")) {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
+    }
+}
+
+@Test func byteDanceVideoUsesUpstreamErrorMessageSchema() async throws {
+    let submitProvider = try AIProviders.byteDance(settings: ProviderSettings(
+        apiKey: "ark-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 401,
+            headers: ["x-bytedance": "bad"],
+            body: Data(#"{"error":{"message":"Invalid API key","code":"unauthorized"}}"#.utf8)
+        ))
+    ))
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "bytedance.video",
+        statusCode: 401,
+        body: "Invalid API key",
+        headers: ["x-bytedance": "bad"]
+    )) {
+        _ = try await submitProvider.videoModel("seedance-1-0-pro").generateVideo(VideoGenerationRequest(prompt: "bad auth"))
+    }
+
+    let pollProvider = try AIProviders.byteDance(settings: ProviderSettings(
+        apiKey: "ark-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"task-poll-error"}"#),
+            AIHTTPResponse(statusCode: 500, headers: [:], body: Data(#"{"message":"Poll failed"}"#.utf8))
+        ])
+    ))
+    await #expect(throws: AIError.httpStatus(
+        provider: "bytedance.video",
+        statusCode: 500,
+        body: "Poll failed"
+    )) {
+        _ = try await pollProvider.videoModel("seedance-1-0-pro").generateVideo(VideoGenerationRequest(
+            prompt: "poll error",
+            providerOptions: ["bytedance": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+        ))
     }
 }
 
@@ -346,8 +383,16 @@ import Testing
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
     let model = try provider.videoModel("seedance-1-0-pro")
 
-    await #expect(throws: AIError.self) {
+    do {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
+        #expect(Bool(false), "Expected failed ByteDance task to throw")
+    } catch AIError.invalidResponse(let provider, let message) {
+        #expect(provider == "bytedance.video")
+        #expect(message.hasPrefix("Video generation failed: "))
+        #expect(message.contains(#""status":"failed""#))
+        #expect(message.contains(#""id":"task-failed""#))
+    } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
     }
 }
 
@@ -359,7 +404,23 @@ import Testing
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
     let model = try provider.videoModel("seedance-1-0-pro")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidResponse(provider: "bytedance.video", message: "No video URL in response")) {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
+    }
+}
+
+@Test func byteDanceVideoTimesOutWithUpstreamMessage() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-timeout"}"#),
+        jsonResponse(#"{"id":"task-timeout","status":"processing"}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro")
+
+    await #expect(throws: AIError.invalidResponse(provider: "bytedance.video", message: "Video generation timed out after 1ms")) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "timeout",
+            providerOptions: ["bytedance": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1])]
+        ))
     }
 }

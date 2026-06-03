@@ -117,6 +117,47 @@ import Testing
     #expect(requests[2].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.34")
 }
 
+@Test func blackForestLabsUsesUpstreamErrorMessageSchema() async throws {
+    let submitProvider = try AIProviders.blackForestLabs(settings: ProviderSettings(
+        apiKey: "bfl-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 422,
+            headers: ["x-bfl": "bad"],
+            body: Data(#"{"detail":{"error":"bad prompt"}}"#.utf8)
+        ))
+    ))
+    let submitModel = try submitProvider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "black-forest-labs.image",
+        statusCode: 422,
+        body: #"{"error":"bad prompt"}"#,
+        headers: ["x-bfl": "bad"]
+    )) {
+        _ = try await submitModel.generateImage(ImageGenerationRequest(prompt: "bad"))
+    }
+
+    let pollProvider = try AIProviders.blackForestLabs(settings: ProviderSettings(
+        apiKey: "bfl-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"bfl-poll-error","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+            AIHTTPResponse(statusCode: 500, headers: [:], body: Data(#"{"message":"poll failed"}"#.utf8))
+        ])
+    ))
+    let pollModel = try pollProvider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.httpStatus(
+        provider: "black-forest-labs.image",
+        statusCode: 500,
+        body: "poll failed"
+    )) {
+        _ = try await pollModel.generateImage(ImageGenerationRequest(
+            prompt: "poll error",
+            providerOptions: ["blackForestLabs": .object(["pollIntervalMillis": 1, "pollTimeoutMillis": 1000])]
+        ))
+    }
+}
+
 @Test func blackForestLabsProviderOptionsValidateAndMapUpstreamSchemaFields() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"bfl-schema","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
@@ -351,7 +392,7 @@ import Testing
     let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
     let model = try provider.imageModel("flux-pro-1.1")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidResponse(provider: "black-forest-labs.image", message: "Black Forest Labs submit response did not contain id and polling_url.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
     }
 }
@@ -364,7 +405,20 @@ import Testing
     let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
     let model = try provider.imageModel("flux-pro-1.1")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidResponse(provider: "black-forest-labs.image", message: "Black Forest Labs poll response is Ready but missing result.sample")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
+@Test func blackForestLabsImageThrowsWhenPollStatusIsMissingLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-missing-status","polling_url":"https://api.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"result":{"sample":"https://bfl.example.com/image.png"}}"#)
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+    let model = try provider.imageModel("flux-pro-1.1")
+
+    await #expect(throws: AIError.invalidResponse(provider: "black-forest-labs.image", message: "Missing status in Black Forest Labs poll response")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
     }
 }
@@ -377,7 +431,7 @@ import Testing
     let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
     let model = try provider.imageModel("flux-pro-1.1")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidResponse(provider: "black-forest-labs.image", message: "Black Forest Labs generation failed.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
     }
 }
@@ -390,7 +444,7 @@ import Testing
     let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
     let model = try provider.imageModel("flux-pro-1.1")
 
-    await #expect(throws: AIError.self) {
+    await #expect(throws: AIError.invalidResponse(provider: "black-forest-labs.image", message: "Black Forest Labs generation timed out.")) {
         _ = try await model.generateImage(ImageGenerationRequest(
             prompt: "cat",
             providerOptions: [

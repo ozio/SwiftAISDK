@@ -66,6 +66,52 @@ import Testing
     #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/prodia/1.0.31")
 }
 
+@Test func prodiaModelsUseUpstreamErrorMessageSchema() async throws {
+    let languageProvider = try AIProviders.prodia(settings: ProviderSettings(
+        apiKey: "prodia-token",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 422,
+            headers: ["x-prodia": "bad"],
+            body: Data(#"{"detail":"bad prompt"}"#.utf8)
+        ))
+    ))
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "prodia.language",
+        statusCode: 422,
+        body: "bad prompt",
+        headers: ["x-prodia": "bad"]
+    )) {
+        _ = try await languageProvider.languageModel("inference.nano-banana.img2img.v2").generate(LanguageModelRequest(messages: [.user("bad")]))
+    }
+
+    let imageProvider = try AIProviders.prodia(settings: ProviderSettings(
+        apiKey: "prodia-token",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 500,
+            headers: [:],
+            body: Data(#"{"error":"image failed"}"#.utf8)
+        ))
+    ))
+
+    await #expect(throws: AIError.httpStatus(provider: "prodia.image", statusCode: 500, body: "image failed")) {
+        _ = try await imageProvider.imageModel("sdxl").generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+
+    let videoProvider = try AIProviders.prodia(settings: ProviderSettings(
+        apiKey: "prodia-token",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 400,
+            headers: [:],
+            body: Data(#"{"message":"video failed"}"#.utf8)
+        ))
+    ))
+
+    await #expect(throws: AIError.httpStatus(provider: "prodia.video", statusCode: 400, body: "video failed")) {
+        _ = try await videoProvider.videoModel("veo").generateVideo(VideoGenerationRequest(prompt: "cat"))
+    }
+}
+
 @Test func prodiaLanguageWarnsAndStreamsGeneratedFiles() async throws {
     let imageBytes = Data("stream-image".utf8)
     let transport = RecordingTransport(response: multipartResponse(parts: [
@@ -185,11 +231,12 @@ import Testing
     #expect(request.headers["user-agent"] == "ai-sdk/prodia/1.0.31")
     #expect(request.headers["Accept"] == "multipart/form-data; image/png")
     let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["type"]?.stringValue == "sdxl")
-    #expect(body["config"]?["prompt"]?.stringValue == "cat")
-    #expect(body["config"]?["width"]?.intValue == 1024)
-    #expect(body["config"]?["height"]?.intValue == 768)
-    #expect(body["config"]?["seed"]?.intValue == 123)
+    #expect(body["values"]?["type"]?.stringValue == "sdxl")
+    #expect(body["values"]?["config"]?["prompt"]?.stringValue == "cat")
+    #expect(body["values"]?["config"]?["width"]?.intValue == 1024)
+    #expect(body["values"]?["config"]?["height"]?.intValue == 768)
+    #expect(body["values"]?["config"]?["seed"]?.intValue == 123)
+    #expect(body["content"]?.stringValue?.contains(#""type":"sdxl""#) == true)
 }
 
 @Test func prodiaImageMapsProviderOptionsAndWarnsForInvalidSize() async throws {
@@ -222,17 +269,17 @@ import Testing
         AIWarning(type: "unsupported", feature: "size", message: "Invalid size format: invalid. Expected format: WIDTHxHEIGHT (e.g., 1024x1024)")
     ])
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["config"]?["width"]?.intValue == 512)
-    #expect(body["config"]?["height"]?.intValue == 512)
-    #expect(body["config"]?["steps"]?.intValue == 4)
-    #expect(body["config"]?["style_preset"]?.stringValue == "cinematic")
-    #expect(body["config"]?["loras"]?[0]?.stringValue == "detail")
-    #expect(body["config"]?["progressive"]?.boolValue == true)
-    #expect(body["config"]?["seed"] == nil)
-    #expect(body["config"]?["stylePreset"] == nil)
-    #expect(body["config"]?["prodia"] == nil)
-    #expect(body["config"]?["ignored"] == nil)
-    #expect(body["config"]?["ignoredProviderOption"] == nil)
+    #expect(body["values"]?["config"]?["width"]?.intValue == 512)
+    #expect(body["values"]?["config"]?["height"]?.intValue == 512)
+    #expect(body["values"]?["config"]?["steps"]?.intValue == 4)
+    #expect(body["values"]?["config"]?["style_preset"]?.stringValue == "cinematic")
+    #expect(body["values"]?["config"]?["loras"]?[0]?.stringValue == "detail")
+    #expect(body["values"]?["config"]?["progressive"]?.boolValue == true)
+    #expect(body["values"]?["config"]?["seed"] == nil)
+    #expect(body["values"]?["config"]?["stylePreset"] == nil)
+    #expect(body["values"]?["config"]?["prodia"] == nil)
+    #expect(body["values"]?["config"]?["ignored"] == nil)
+    #expect(body["values"]?["config"]?["ignoredProviderOption"] == nil)
 }
 
 @Test func prodiaImageProviderOptionsValidateAndStripLikeUpstreamSchema() async throws {
@@ -281,13 +328,37 @@ import Testing
     ))
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["config"]?["steps"]?.intValue == 4)
-    #expect(body["config"]?["width"]?.intValue == 512)
-    #expect(body["config"]?["height"]?.intValue == 768)
-    #expect(body["config"]?["style_preset"]?.stringValue == "anime")
-    #expect(body["config"]?["loras"]?[0]?.stringValue == "detail")
-    #expect(body["config"]?["progressive"]?.boolValue == false)
-    #expect(body["config"]?["unknown"] == nil)
+    #expect(body["values"]?["config"]?["steps"]?.intValue == 4)
+    #expect(body["values"]?["config"]?["width"]?.intValue == 512)
+    #expect(body["values"]?["config"]?["height"]?.intValue == 768)
+    #expect(body["values"]?["config"]?["style_preset"]?.stringValue == "anime")
+    #expect(body["values"]?["config"]?["loras"]?[0]?.stringValue == "detail")
+    #expect(body["values"]?["config"]?["progressive"]?.boolValue == false)
+    #expect(body["values"]?["config"]?["unknown"] == nil)
+}
+
+@Test func prodiaImageUsesUpstreamMultipartValidationMessages() async throws {
+    let missingJobProvider = try AIProviders.prodia(settings: ProviderSettings(
+        apiKey: "prodia-token",
+        transport: RecordingTransport(response: multipartResponse(parts: [
+            (name: "output", contentType: "image/png", body: Data("png".utf8))
+        ]))
+    ))
+
+    await #expect(throws: AIError.invalidResponse(provider: "prodia.image", message: "Prodia multipart response missing job part")) {
+        _ = try await missingJobProvider.imageModel("sdxl").generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+
+    let missingOutputProvider = try AIProviders.prodia(settings: ProviderSettings(
+        apiKey: "prodia-token",
+        transport: RecordingTransport(response: multipartResponse(parts: [
+            (name: "job", contentType: "application/json", body: Data(#"{"id":"job-image"}"#.utf8))
+        ]))
+    ))
+
+    await #expect(throws: AIError.invalidResponse(provider: "prodia.image", message: "Prodia multipart response missing output image")) {
+        _ = try await missingOutputProvider.imageModel("sdxl").generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
 }
 
 @Test func prodiaVideoUsesMultipartJobEndpoint() async throws {
@@ -319,10 +390,11 @@ import Testing
     #expect(request.headers["user-agent"] == "ai-sdk/prodia/1.0.31")
     #expect(request.headers["Accept"] == "multipart/form-data; video/mp4")
     let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["type"]?.stringValue == "veo")
-    #expect(body["config"]?["prompt"]?.stringValue == "cat running")
-    #expect(body["config"]?["seed"]?.intValue == 42)
-    #expect(body["config"]?["resolution"]?.stringValue == "720p")
+    #expect(body["values"]?["type"]?.stringValue == "veo")
+    #expect(body["values"]?["config"]?["prompt"]?.stringValue == "cat running")
+    #expect(body["values"]?["config"]?["seed"]?.intValue == 42)
+    #expect(body["values"]?["config"]?["resolution"]?.stringValue == "720p")
+    #expect(body["content"]?.stringValue?.contains(#""type":"veo""#) == true)
 }
 
 @Test func prodiaVideoUsesMultipartForImageInputAndMergesProviderOptions() async throws {
@@ -377,8 +449,21 @@ import Testing
     ))
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["config"]?["resolution"]?.stringValue == "720p")
-    #expect(body["config"]?["unknown"] == nil)
+    #expect(body["values"]?["config"]?["resolution"]?.stringValue == "720p")
+    #expect(body["values"]?["config"]?["unknown"] == nil)
+}
+
+@Test func prodiaVideoUsesUpstreamMultipartValidationMessages() async throws {
+    let missingOutputProvider = try AIProviders.prodia(settings: ProviderSettings(
+        apiKey: "prodia-token",
+        transport: RecordingTransport(response: multipartResponse(parts: [
+            (name: "job", contentType: "application/json", body: Data(#"{"id":"job-video"}"#.utf8))
+        ]))
+    ))
+
+    await #expect(throws: AIError.invalidResponse(provider: "prodia.video", message: "Prodia multipart response missing output video")) {
+        _ = try await missingOutputProvider.videoModel("veo").generateVideo(VideoGenerationRequest(prompt: "cat"))
+    }
 }
 
 private func prodiaMultipartResponse(parts: [(name: String, contentType: String, body: Data)], headers: [String: String]) -> AIHTTPResponse {

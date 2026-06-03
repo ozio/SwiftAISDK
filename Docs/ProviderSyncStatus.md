@@ -157,6 +157,9 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/replicate` | `2.0.33` | Current media batch: package re-read across provider/image/video/options/errors; versioned/unversioned routes, error schemas, null namespace, video lifecycle messages, polling, downloads, and prefer headers aligned. |
 | `@ai-sdk/luma` | `2.0.33` | Current media batch: package re-read across provider/image/options/errors/polling; Luma detail error schema, failure/no-image/timeout messages, nullish provider options, reference image flows, and download behavior aligned. |
 | `@ai-sdk/klingai` | `3.0.18` | Current media batch: package re-read across provider/auth/video/options/errors/polling; `{code,message}` error schema, failure/timeout/missing-video messages, T2V/I2V/motion-control bodies, and poll timing aligned. |
+| `@ai-sdk/black-forest-labs` | `1.0.34` | Current media batch: package re-read across provider/image/options/errors/polling; BFL error schema, poll status validation, Ready-without-sample message, provider options, metadata, downloads, and timeout attempts aligned. |
+| `@ai-sdk/bytedance` | `1.0.14` | Current media batch: published dist re-read across provider/video/options/errors/polling; ARK auth, request body/media mapping, error schema, failed/no-video/missing-task/timeout messages, metadata, and poll behavior aligned. |
+| `@ai-sdk/prodia` | `1.0.31` | Current media batch: package re-read across provider/language/image/video/api; Prodia error schema, JSON job wrapper, multipart validation messages, provider metadata, options, and generated file/media flows aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -168,6 +171,48 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/black-forest-labs`
+
+```text
+Package: @ai-sdk/black-forest-labs
+Baseline: 1.0.34
+Upstream inspected: black-forest-labs-provider.ts, black-forest-labs-image-model.ts, black-forest-labs-image-settings.ts.
+Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, BlackForestLabsProviderTests.swift.
+Surfaces checked: provider factory, default base URL, BFL_API_KEY auth, user-agent suffix, image create/poll/download flow, size/aspect warnings, input image/mask mapping including fill model naming, providerOptions schema/null namespace, prompt/raw/safety/webhook/options mapping, metadata, poll URL id injection, status/state handling, timeout attempt count, HTTP error schema, Ready-without-sample and missing-status handling, abort propagation.
+Known Swift differences / out of scope: Swift also accepts BLACK_FOREST_LABS_API_KEY as an alias. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter BlackForestLabs; swift test --filter 'BlackForestLabs|ByteDance|Prodia'; full swift test in the current media batch.
+Commit evidence: Current media batch.
+Reopen only if: black-forest-labs npm version changes, image option/error/poll schema changes, generated image download behavior changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/bytedance`
+
+```text
+Package: @ai-sdk/bytedance
+Baseline: 1.0.14
+Upstream inspected: dist/index.mjs from the published package; package tarball has no src files.
+Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ByteDanceProviderTests.swift.
+Surfaces checked: provider factory, default ModelArk base URL, ARK_API_KEY auth, unsupported capability routing, video submit/poll flow, prompt/image/reference media content mapping, aspect/duration/seed/resolution mapping, providerOptions schema/null namespace/nullish fields, passthrough behavior, warnings, provider metadata, operation IDs, HTTP error schema, missing task ID, failed task, no video URL, timeout messages, abort propagation.
+Known Swift differences / out of scope: Swift exposes extraBody aliases for legacy/snake-case escape hatches beyond upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter ByteDance; swift test --filter 'BlackForestLabs|ByteDance|Prodia'; full swift test in the current media batch.
+Commit evidence: Current media batch.
+Reopen only if: bytedance npm version changes, ModelArk task schema/options/error schema changes, media reference mapping changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/prodia`
+
+```text
+Package: @ai-sdk/prodia
+Baseline: 1.0.31
+Upstream inspected: prodia-provider.ts, prodia-api.ts, prodia-language-model.ts, prodia-image-model.ts, prodia-video-model.ts, model settings files.
+Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ProdiaProviderTests.swift.
+Surfaces checked: provider factory, default base URL, PRODIA_TOKEN auth, user-agent suffix, language multipart img2img endpoint, image JSON job endpoint, video JSON and multipart img2vid endpoints, generated files/media, providerOptions schema/null namespace, warnings, JSON job wrapper, Prodia error schema, multipart boundary/job/output validation messages, provider metadata, response metadata, abort propagation.
+Known Swift differences / out of scope: Swift also accepts PRODIA_API_KEY as an alias. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter Prodia; swift test --filter 'BlackForestLabs|ByteDance|Prodia'; full swift test in the current media batch.
+Commit evidence: Current media batch.
+Reopen only if: prodia npm version changes, job multipart/JSON wrapper/error schema changes, generated media response shape changes, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/replicate`
 
@@ -528,9 +573,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/deepinfra` | `2.0.52` | `45b7c7a`, `6eaf86d`: provider parity and user agent. |
 | `@ai-sdk/fireworks` | `2.0.53` | `b007be4`, `2ea4fb3`: image provider parity and user agent. |
 | `@ai-sdk/togetherai` | `2.0.53` | `7511a6f`, `ee8e15f`, `8a1c02d`: provider/media validation/user agent. |
-| `@ai-sdk/black-forest-labs` | `1.0.34` | `85a7d8a`, `90e0eea`, `8870500`: option schema/options/user agent. |
-| `@ai-sdk/bytedance` | `1.0.14` | `1dc15dd`, `380ceac`: option schema/options. |
-| `@ai-sdk/prodia` | `1.0.31` | `d568b7a`, `8f7bee3`, `e1c6a8a`: option schema/options/user agent. |
 | `@ai-sdk/deepgram` | `2.0.33` | `1b5240b`, `5bd5ce8`, `035167f`: option schema/options/user agent. |
 | `@ai-sdk/elevenlabs` | `2.0.33` | `b28452e`, `f47f502`, `06d534c`: option schema/options/response parity. |
 | `@ai-sdk/assemblyai` | `2.0.33` | `12f99f8`, `a8478f5`, `eed6154`: option schema/transcript schema/user agent. |
@@ -551,6 +593,5 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Do final package sweeps for media/audio providers that already have option
-   schema work: Black Forest Labs, ByteDance, Prodia, Deepgram, ElevenLabs,
-   AssemblyAI, Gladia, RevAI, Hume, LMNT.
+   schema work: Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.
 2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.

@@ -589,7 +589,11 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             body["seed"] = .number(Double(seed))
         }
         body.merge(try blackForestLabsImageInputs(files: request.files, mask: request.mask, modelID: modelID)) { _, new in new }
-        let submitted = try await config.sendJSONResponse(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let submitResponse = try await config.transport.send(config.request(path: "/\(modelID)", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
+        guard (200..<300).contains(submitResponse.statusCode) else {
+            throw blackForestLabsHTTPStatusError(provider: providerID, response: submitResponse)
+        }
+        let submitted = (json: try submitResponse.jsonValue(), response: submitResponse)
         guard let pollURL = submitted.json["polling_url"]?.stringValue,
               let requestID = submitted.json["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs submit response did not contain id and polling_url.")
@@ -603,7 +607,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         )
         guard let url = raw["result"]?["sample"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs poll response did not contain result.sample.")
+            throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs poll response is Ready but missing result.sample")
         }
         let image = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
         guard (200..<300).contains(image.statusCode) else {
@@ -626,10 +630,13 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         for attempt in 0..<maxPollAttempts {
             let response = try await downloadURL(pollURL, transport: config.transport, headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw blackForestLabsHTTPStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             let status = raw["status"]?.stringValue ?? raw["state"]?.stringValue
+            guard let status else {
+                throw AIError.invalidResponse(provider: providerID, message: "Missing status in Black Forest Labs poll response")
+            }
             if status == "Ready" { return raw }
             if status == "Error" || status == "Failed" {
                 throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation failed.")
@@ -652,6 +659,28 @@ private func blackForestLabsProviderOptions(from request: ImageGenerationRequest
         output.merge(try blackForestLabsValidatedProviderOptions(from: providerOptions)) { _, providerValue in providerValue }
     }
     return output
+}
+
+private func blackForestLabsHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = blackForestLabsErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
+}
+
+private func blackForestLabsErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    if let detail = json["detail"] {
+        if let message = detail.stringValue {
+            return message
+        }
+        if let encoded = try? encodeJSONBody(detail),
+           let text = String(data: encoded, encoding: .utf8) {
+            return text
+        }
+    }
+    return json["message"]?.stringValue ?? "Unknown Black Forest Labs error"
 }
 
 private func blackForestLabsProviderOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
@@ -1761,20 +1790,25 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         }
         body.merge(byteDanceOptions(from: options)) { _, new in new }
 
-        let created = try await config.sendJSONResponse(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let createResponse = try await config.transport.send(config.request(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
+        guard (200..<300).contains(createResponse.statusCode) else {
+            throw byteDanceHTTPStatusError(provider: providerID, response: createResponse)
+        }
+        let created = (json: try createResponse.jsonValue(), response: createResponse)
         guard let taskID = created.json["id"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "ByteDance create response did not contain id.")
+            throw AIError.invalidResponse(provider: providerID, message: "No task ID returned from API")
         }
         let finalResponse = try await pollByteDance(
             taskID: taskID,
             headers: request.headers,
             intervalNanoseconds: byteDancePollInterval(options.known["pollIntervalMs"]),
             timeoutNanoseconds: byteDancePollTimeout(options.known["pollTimeoutMs"]),
+            timeoutMilliseconds: byteDancePollTimeoutMilliseconds(options.known["pollTimeoutMs"]),
             abortSignal: request.abortSignal
         )
         let raw = finalResponse.raw
         guard let url = raw["content"]?["video_url"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "ByteDance status response did not contain content.video_url.")
+            throw AIError.invalidResponse(provider: providerID, message: "No video URL in response")
         }
         return VideoGenerationResult(
             urls: [url],
@@ -1792,7 +1826,7 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         )
     }
 
-    private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
+    private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, timeoutMilliseconds: Double, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await config.transport.send(AIHTTPRequest(
@@ -1802,17 +1836,17 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw byteDanceHTTPStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {
             case "succeeded":
                 return (raw, response)
             case "failed":
-                throw AIError.invalidResponse(provider: providerID, message: "ByteDance video generation failed.")
+                throw AIError.invalidResponse(provider: providerID, message: "Video generation failed: \(byteDanceJSONString(raw))")
             default:
                 if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
-                    throw AIError.invalidResponse(provider: providerID, message: "ByteDance video generation timed out.")
+                    throw AIError.invalidResponse(provider: providerID, message: "Video generation timed out after \(formatByteDanceMilliseconds(timeoutMilliseconds))ms")
                 }
                 try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
@@ -2082,8 +2116,37 @@ private func byteDancePollInterval(_ value: JSONValue?) -> UInt64 {
 }
 
 private func byteDancePollTimeout(_ value: JSONValue?) -> UInt64 {
+    UInt64(byteDancePollTimeoutMilliseconds(value) * 1_000_000)
+}
+
+private func byteDancePollTimeoutMilliseconds(_ value: JSONValue?) -> Double {
     let milliseconds = value?.doubleValue ?? 300_000
-    return UInt64(max(milliseconds, 1) * 1_000_000)
+    return max(milliseconds, 1)
+}
+
+private func formatByteDanceMilliseconds(_ value: Double) -> String {
+    value.rounded() == value ? String(Int(value)) : String(value)
+}
+
+private func byteDanceHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = byteDanceErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
+}
+
+private func byteDanceErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    return json["error"]?["message"]?.stringValue ?? json["message"]?.stringValue ?? "Unknown error"
+}
+
+private func byteDanceJSONString(_ value: JSONValue) -> String {
+    guard let data = try? encodeJSONBody(value),
+          let text = String(data: data, encoding: .utf8) else {
+        return "\(value)"
+    }
+    return text
 }
 
 public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
@@ -2277,11 +2340,11 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw prodiaHTTPStatusError(provider: providerID, response: response)
         }
         let multipart = try parseMultipartResponse(response)
         guard multipart.contains(where: { $0.name == "job" }) else {
-            throw AIError.invalidResponse(provider: providerID, message: "Prodia language response did not contain job part.")
+            throw AIError.invalidResponse(provider: providerID, message: "Prodia multipart response missing job part")
         }
         let text = multipart.first {
             ($0.name == "output" && ($0.contentType?.hasPrefix("text/") == true || $0.fileName?.hasSuffix(".txt") == true))
@@ -2343,17 +2406,20 @@ public final class ProdiaImageModel: ImageModel, @unchecked Sendable {
         let response = try await config.transport.send(config.request(
             path: "/job?price=true",
             modelID: modelID,
-            body: body,
+            body: try prodiaJSONJobRequestBody(body),
             headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; image/png"]),
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw prodiaHTTPStatusError(provider: providerID, response: response)
         }
         let multipart = try parseMultipartResponse(response)
+        guard multipart.contains(where: { $0.name == "job" }) else {
+            throw AIError.invalidResponse(provider: providerID, message: "Prodia multipart response missing job part")
+        }
         let output = multipart.first { $0.name == "output" || $0.contentType?.hasPrefix("image/") == true }
         guard let output else {
-            throw AIError.invalidResponse(provider: providerID, message: "Prodia image response did not contain output image part.")
+            throw AIError.invalidResponse(provider: providerID, message: "Prodia multipart response missing output image")
         }
         let job = prodiaJobResult(from: multipart)
         return ImageGenerationResult(
@@ -2413,18 +2479,21 @@ public final class ProdiaVideoModel: VideoModel, @unchecked Sendable {
             response = try await config.transport.send(config.request(
                 path: "/job?price=true",
                 modelID: modelID,
-                body: body,
+                body: try prodiaJSONJobRequestBody(body),
                 headers: request.headers.mergingHeaders(["Accept": "multipart/form-data; video/mp4"]),
                 abortSignal: request.abortSignal
             ))
         }
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw prodiaHTTPStatusError(provider: providerID, response: response)
         }
         let multipart = try parseMultipartResponse(response)
+        guard multipart.contains(where: { $0.name == "job" }) else {
+            throw AIError.invalidResponse(provider: providerID, message: "Prodia multipart response missing job part")
+        }
         let output = multipart.first { $0.name == "output" || $0.contentType?.hasPrefix("video/") == true }
         guard output != nil else {
-            throw AIError.invalidResponse(provider: providerID, message: "Prodia video response did not contain output video part.")
+            throw AIError.invalidResponse(provider: providerID, message: "Prodia multipart response missing output video")
         }
         let job = prodiaJobResult(from: multipart)
         return VideoGenerationResult(
@@ -2441,6 +2510,37 @@ public final class ProdiaVideoModel: VideoModel, @unchecked Sendable {
 private struct ProdiaLanguageGeneration {
     var result: TextGenerationResult
     var files: [AIStreamFile]
+}
+
+private func prodiaJSONJobRequestBody(_ body: JSONValue) throws -> JSONValue {
+    let contentData = try encodeJSONBody(body)
+    let content = String(data: contentData, encoding: .utf8) ?? ""
+    return .object([
+        "content": .string(content),
+        "values": body
+    ])
+}
+
+private func prodiaHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = prodiaErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
+}
+
+private func prodiaErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    if let detail = json["detail"] {
+        if let message = detail.stringValue {
+            return message
+        }
+        if let encoded = try? encodeJSONBody(detail),
+           let text = String(data: encoded, encoding: .utf8) {
+            return text
+        }
+    }
+    return json["error"]?.stringValue ?? json["message"]?.stringValue ?? "Unknown Prodia error"
 }
 
 private func prodiaProviderOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
