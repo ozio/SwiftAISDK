@@ -305,6 +305,46 @@ import Testing
     }
 }
 
+@Test func elevenLabsModelsUseUpstreamErrorMessageSchema() async throws {
+    let speechProvider = try AIProviders.elevenLabs(settings: ProviderSettings(
+        apiKey: "eleven-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 401,
+            headers: ["content-type": "application/json", "x-eleven": "speech"],
+            body: Data(#"{"error":{"message":"speech unauthorized","code":401}}"#.utf8)
+        ))
+    ))
+    let speechModel = try speechProvider.speechModel("eleven_multilingual_v2")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "elevenlabs.speech",
+        statusCode: 401,
+        body: "speech unauthorized",
+        headers: ["content-type": "application/json", "x-eleven": "speech"]
+    )) {
+        _ = try await speechModel.speak(SpeechRequest(text: "Hello"))
+    }
+
+    let transcriptionProvider = try AIProviders.elevenLabs(settings: ProviderSettings(
+        apiKey: "eleven-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 422,
+            headers: ["content-type": "application/json", "x-eleven": "stt"],
+            body: Data(#"{"error":{"message":"bad audio","code":422}}"#.utf8)
+        ))
+    ))
+    let transcriptionModel = try transcriptionProvider.transcriptionModel("scribe_v1")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "elevenlabs.transcription",
+        statusCode: 422,
+        body: "bad audio",
+        headers: ["content-type": "application/json", "x-eleven": "stt"]
+    )) {
+        _ = try await transcriptionModel.transcribe(AudioTranscriptionRequest(audio: Data("mp3".utf8)))
+    }
+}
+
 @Test func elevenLabsTranscriptionUsesSpeechToTextMultipartEndpoint() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"language_code":"en","language_probability":0.99,"text":"eleven transcript","words":[{"text":"eleven","type":"word","start":0,"end":0.4}]}"#))
     let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))

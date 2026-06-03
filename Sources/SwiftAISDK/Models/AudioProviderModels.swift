@@ -28,7 +28,7 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let text = raw["results"]?["channels"]?[0]?["alternatives"]?[0]?["transcript"]?.stringValue ?? ""
@@ -71,7 +71,7 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
         }
         return SpeechResult(
             audio: response.body,
@@ -264,7 +264,7 @@ public final class ElevenLabsSpeechModel: SpeechModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
         }
         return SpeechResult(
             audio: response.body,
@@ -322,7 +322,7 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         try elevenLabsValidateTranscriptionResponse(raw)
@@ -485,7 +485,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: uploadResponse)
+            throw audioProviderHTTPStatusError(provider: providerID, response: uploadResponse)
         }
         let uploadRaw = try uploadResponse.jsonValue()
         guard let uploadURL = uploadRaw["upload_url"]?.stringValue else {
@@ -499,7 +499,17 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         if let language = request.language { body["language_code"] = .string(language) }
         body.merge(assemblyAITranscriptionOptions(from: options)) { _, new in new }
 
-        let submitRaw = try await config.sendJSON(path: "/v2/transcript", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let submitResponse = try await config.transport.send(config.request(
+            path: "/v2/transcript",
+            modelID: modelID,
+            body: .object(body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(submitResponse.statusCode) else {
+            throw audioProviderHTTPStatusError(provider: providerID, response: submitResponse)
+        }
+        let submitRaw = try submitResponse.jsonValue()
         guard let submitStatus = submitRaw["status"]?.stringValue, assemblyAITranscriptStatuses.contains(submitStatus) else {
             throw AIError.invalidResponse(provider: providerID, message: "AssemblyAI submit response status is invalid.")
         }
@@ -530,7 +540,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         while true {
             let response = try await config.transport.send(try getRequest(path: "/v2/transcript/\(id)", headers: request.headers, abortSignal: request.abortSignal))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw audioProviderHTTPStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             guard let status = raw["status"]?.stringValue, assemblyAITranscriptStatuses.contains(status) else {
@@ -559,6 +569,28 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
 }
 
 private let assemblyAITranscriptStatuses: Set<String> = ["queued", "processing", "completed", "error"]
+
+private func audioProviderHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = audioProviderErrorMessage(from: response.body) ?? response.bodyText
+    return httpStatusError(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+private func audioProviderErrorMessage(from data: Data) -> String? {
+    guard
+        let json = try? JSONSerialization.jsonObject(with: data),
+        let object = json as? [String: Any],
+        let error = object["error"] as? [String: Any],
+        let message = error["message"] as? String
+    else {
+        return nil
+    }
+    return message
+}
 
 private func validateAssemblyAITranscriptResponse(_ raw: JSONValue, providerID: String) throws {
     guard raw["id"]?.stringValue != nil else {
@@ -861,7 +893,7 @@ private func deepgramTranscriptionQuery(from extraBody: [String: JSONValue]) -> 
             mappedKey = "smart_format"
         case "uttSplit":
             mappedKey = "utt_split"
-        case "language", "punctuate", "redact", "search", "summarize", "topics", "utterances", "diarize":
+        case "language", "punctuate", "paragraphs", "summarize", "topics", "intents", "sentiment", "redact", "replace", "search", "keyterm", "diarize", "utterances":
             mappedKey = key
         default:
             continue

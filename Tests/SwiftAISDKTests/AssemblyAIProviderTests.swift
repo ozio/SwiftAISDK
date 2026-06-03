@@ -331,6 +331,72 @@ import Testing
     }
 }
 
+@Test func assemblyAITranscriptionUsesUpstreamHTTPErrorMessageSchema() async throws {
+    let uploadProvider = try AIProviders.assemblyAI(settings: ProviderSettings(
+        apiKey: "assembly-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 401,
+            headers: ["content-type": "application/json", "x-assembly": "upload"],
+            body: Data(#"{"error":{"message":"upload unauthorized","code":401}}"#.utf8)
+        ))
+    ))
+    let uploadModel = try uploadProvider.transcriptionModel("best")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "assemblyai.transcription",
+        statusCode: 401,
+        body: "upload unauthorized",
+        headers: ["content-type": "application/json", "x-assembly": "upload"]
+    )) {
+        _ = try await uploadModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
+    }
+
+    let submitProvider = try AIProviders.assemblyAI(settings: ProviderSettings(
+        apiKey: "assembly-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+            AIHTTPResponse(
+                statusCode: 400,
+                headers: ["content-type": "application/json", "x-assembly": "submit"],
+                body: Data(#"{"error":{"message":"submit failed","code":400}}"#.utf8)
+            )
+        ])
+    ))
+    let submitModel = try submitProvider.transcriptionModel("best")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "assemblyai.transcription",
+        statusCode: 400,
+        body: "submit failed",
+        headers: ["content-type": "application/json", "x-assembly": "submit"]
+    )) {
+        _ = try await submitModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
+    }
+
+    let pollProvider = try AIProviders.assemblyAI(settings: ProviderSettings(
+        apiKey: "assembly-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
+            jsonResponse(#"{"id":"job-123","status":"queued"}"#),
+            AIHTTPResponse(
+                statusCode: 500,
+                headers: ["content-type": "application/json", "x-assembly": "poll"],
+                body: Data(#"{"error":{"message":"poll failed","code":500}}"#.utf8)
+            )
+        ])
+    ))
+    let pollModel = try pollProvider.transcriptionModel("best")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "assemblyai.transcription",
+        statusCode: 500,
+        body: "poll failed",
+        headers: ["content-type": "application/json", "x-assembly": "poll"]
+    )) {
+        _ = try await pollModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8)))
+    }
+}
+
 @Test func assemblyAITranscriptionRejectsInvalidSubmitStatusLikeUpstreamSchema() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),

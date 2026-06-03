@@ -71,9 +71,49 @@ import Testing
     #expect(result.segments == [TranscriptionSegment(text: "hej", startSecond: 0, endSecond: 0.5)])
 
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_language=true&diarize=false&language=sv&model=nova-3&smart_format=true")
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_language=true&diarize=false&intents=true&keyterm=SwiftAISDK&language=sv&model=nova-3&paragraphs=true&replace=redacted&sentiment=true&smart_format=true")
     #expect(request.headers["content-type"] == "audio/wav")
     #expect(request.body == Data("wav".utf8))
+}
+
+@Test func deepgramAudioModelsUseUpstreamErrorMessageSchema() async throws {
+    let transcriptionProvider = try AIProviders.deepgram(settings: ProviderSettings(
+        apiKey: "deepgram-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 400,
+            headers: ["content-type": "application/json", "x-deepgram": "bad"],
+            body: Data(#"{"error":{"message":"transcription failed","code":400}}"#.utf8)
+        ))
+    ))
+    let transcriptionModel = try transcriptionProvider.transcriptionModel("nova-3")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "deepgram.transcription",
+        statusCode: 400,
+        body: "transcription failed",
+        headers: ["content-type": "application/json", "x-deepgram": "bad"]
+    )) {
+        _ = try await transcriptionModel.transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8)))
+    }
+
+    let speechProvider = try AIProviders.deepgram(settings: ProviderSettings(
+        apiKey: "deepgram-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 429,
+            headers: ["content-type": "application/json", "x-deepgram": "rate"],
+            body: Data(#"{"error":{"message":"speech rate limited","code":429}}"#.utf8)
+        ))
+    ))
+    let speechModel = try speechProvider.speechModel("aura-2-helena-en")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "deepgram.speech",
+        statusCode: 429,
+        body: "speech rate limited",
+        headers: ["content-type": "application/json", "x-deepgram": "rate"]
+    )) {
+        _ = try await speechModel.speak(SpeechRequest(text: "Hello"))
+    }
 }
 
 @Test func deepgramTranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {

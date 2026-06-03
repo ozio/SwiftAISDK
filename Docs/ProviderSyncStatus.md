@@ -160,6 +160,9 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/black-forest-labs` | `1.0.34` | Current media batch: package re-read across provider/image/options/errors/polling; BFL error schema, poll status validation, Ready-without-sample message, provider options, metadata, downloads, and timeout attempts aligned. |
 | `@ai-sdk/bytedance` | `1.0.14` | Current media batch: published dist re-read across provider/video/options/errors/polling; ARK auth, request body/media mapping, error schema, failed/no-video/missing-task/timeout messages, metadata, and poll behavior aligned. |
 | `@ai-sdk/prodia` | `1.0.31` | Current media batch: package re-read across provider/language/image/video/api; Prodia error schema, JSON job wrapper, multipart validation messages, provider metadata, options, and generated file/media flows aligned. |
+| `@ai-sdk/deepgram` | `2.0.33` | Current audio batch: package re-read across provider/transcription/speech/options/errors; `{error:{message,code}}` HTTP errors, missing transcription query mappings, speech option cleanup, provider metadata, warnings, and abort propagation aligned. |
+| `@ai-sdk/elevenlabs` | `2.0.33` | Current audio batch: package re-read across provider/speech/transcription/options/errors; `{error:{message,code}}` HTTP errors, speech JSON body/query, STT multipart/defaults, validation, metadata, warnings, and abort propagation aligned. |
+| `@ai-sdk/assemblyai` | `2.0.33` | Current audio batch: package re-read across provider/transcription/options/errors/upload-submit-poll; `{error:{message,code}}` HTTP errors on upload/submit/poll, submit response handling, status/result schemas, metadata, and abort propagation aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -171,6 +174,48 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/deepgram`
+
+```text
+Package: @ai-sdk/deepgram
+Baseline: 2.0.33
+Upstream inspected: deepgram-provider.ts, deepgram-error.ts, deepgram-transcription-model.ts, deepgram-speech-model.ts, option/config files.
+Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, DeepgramProviderTests.swift.
+Surfaces checked: provider factory, default base URL, DEEPGRAM_API_KEY auth, user-agent suffix, raw audio listen upload, transcription query body mapping, default diarize, providerOptions schema/null namespace, speech format parsing, encoding/container/sample_rate/bit_rate cleanup and warnings, unsupported standard speech warnings, metadata, HTTP error schema, abort propagation.
+Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Deepgram|ElevenLabs|AssemblyAI'; full swift test in the current audio batch.
+Commit evidence: Current audio batch.
+Reopen only if: deepgram npm version changes, listen/speak option/error schema changes, speech format rules change, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/elevenlabs`
+
+```text
+Package: @ai-sdk/elevenlabs
+Baseline: 2.0.33
+Upstream inspected: elevenlabs-provider.ts, elevenlabs-error.ts, elevenlabs-speech-model.ts, elevenlabs-transcription-model.ts, option/config files.
+Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ElevenLabsProviderTests.swift.
+Surfaces checked: provider factory, default base URL, ELEVENLABS_API_KEY auth, user-agent suffix, speech text-to-speech route/query/body, output format aliases, voice settings, pronunciation dictionaries, text normalization fields, enable_logging query, STT multipart route/file/options/defaults, transcription response validation, segments/language/duration, HTTP error schema, metadata, warnings, abort propagation.
+Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Deepgram|ElevenLabs|AssemblyAI'; full swift test in the current audio batch.
+Commit evidence: Current audio batch.
+Reopen only if: elevenlabs npm version changes, TTS/STT option/error schema changes, multipart response shape changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/assemblyai`
+
+```text
+Package: @ai-sdk/assemblyai
+Baseline: 2.0.33
+Upstream inspected: assemblyai-provider.ts, assemblyai-error.ts, assemblyai-transcription-model.ts, option/config files.
+Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, AssemblyAIProviderTests.swift.
+Surfaces checked: provider factory, default base URL, ASSEMBLYAI_API_KEY auth, user-agent suffix, upload/submit/poll lifecycle, providerOptions schema/null namespace, submit body mapping, status validation, failed transcription message, final transcript text/words/language/audio_duration mapping, HTTP error schema on upload/submit/poll, metadata, abort propagation.
+Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Deepgram|ElevenLabs|AssemblyAI'; full swift test in the current audio batch.
+Commit evidence: Current audio batch.
+Reopen only if: assemblyai npm version changes, upload/submit/poll schemas change, transcript status/result/error schema changes, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/black-forest-labs`
 
@@ -573,9 +618,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/deepinfra` | `2.0.52` | `45b7c7a`, `6eaf86d`: provider parity and user agent. |
 | `@ai-sdk/fireworks` | `2.0.53` | `b007be4`, `2ea4fb3`: image provider parity and user agent. |
 | `@ai-sdk/togetherai` | `2.0.53` | `7511a6f`, `ee8e15f`, `8a1c02d`: provider/media validation/user agent. |
-| `@ai-sdk/deepgram` | `2.0.33` | `1b5240b`, `5bd5ce8`, `035167f`: option schema/options/user agent. |
-| `@ai-sdk/elevenlabs` | `2.0.33` | `b28452e`, `f47f502`, `06d534c`: option schema/options/response parity. |
-| `@ai-sdk/assemblyai` | `2.0.33` | `12f99f8`, `a8478f5`, `eed6154`: option schema/transcript schema/user agent. |
 | `@ai-sdk/gladia` | `2.0.33` | `3556db5`, `d5be7d9`, `5dba70d`: option schema/polling result/transcription parity. |
 | `@ai-sdk/revai` | `2.0.33` | `6d53477`, `2bf52ae`, `2766762`, `c721831`: option schema/options/transcript response/user agent. |
 | `@ai-sdk/hume` | `2.0.33` | `3a601dd`, `afd5ac3`, `0003f86`, `ab29ac4`: option schema/options/model identity/speech parity. |
@@ -593,5 +635,5 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Do final package sweeps for media/audio providers that already have option
-   schema work: Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.
+   schema work: Gladia, RevAI, Hume, LMNT.
 2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
