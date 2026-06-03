@@ -623,12 +623,14 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             throw httpStatusError(provider: providerID, response: submitResponse)
         }
         var job = try submitResponse.jsonValue()
+        try validateRevAIJobResponse(job, providerID: providerID)
         if job["status"]?.stringValue == "failed" {
             throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription job submission failed.")
         }
         guard let jobID = job["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Rev.ai job response did not contain id.")
         }
+        let submissionLanguage = job["language"]?.stringValue
         job = try await pollRevAIJob(id: jobID, initial: job, request: request)
         let transcriptResponse = try await config.transport.send(try getRequest(
             path: "/speechtotext/v1/jobs/\(jobID)/transcript",
@@ -639,13 +641,14 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             throw httpStatusError(provider: providerID, response: transcriptResponse)
         }
         let raw = try transcriptResponse.jsonValue()
+        try validateRevAITranscriptResponse(raw, providerID: providerID)
         let segments = revAITranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: revAITranscriptText(from: raw),
             rawValue: raw,
             segments: segments,
-            language: job["language"]?.stringValue,
-            durationInSeconds: transcriptionDuration(from: segments),
+            language: submissionLanguage,
+            durationInSeconds: transcriptionDuration(from: segments) ?? 0,
             responseMetadata: aiResponseMetadata(from: raw, response: transcriptResponse, modelID: modelID)
         )
     }
@@ -666,6 +669,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
                 throw httpStatusError(provider: providerID, response: response)
             }
             job = try response.jsonValue()
+            try validateRevAIJobResponse(job, providerID: providerID)
             if job["status"]?.stringValue == "failed" {
                 throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription job failed.")
             }
@@ -683,6 +687,53 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             headers: config.headers.mergingHeaders(requestHeaders),
             abortSignal: abortSignal
         )
+    }
+}
+
+private func validateRevAIJobResponse(_ raw: JSONValue, providerID: String) throws {
+    if let id = raw["id"], id != .null, id.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "Rev.ai job response is invalid.")
+    }
+    if let status = raw["status"], status != .null, status.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "Rev.ai job response is invalid.")
+    }
+    if let language = raw["language"], language != .null, language.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "Rev.ai job response is invalid.")
+    }
+}
+
+private func validateRevAITranscriptResponse(_ raw: JSONValue, providerID: String) throws {
+    guard let monologues = raw["monologues"] else { return }
+    guard monologues != .null else { return }
+    guard let monologueArray = monologues.arrayValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+    }
+    for monologue in monologueArray {
+        guard let object = monologue.objectValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+        }
+        guard let elements = object["elements"] else { continue }
+        guard elements != .null else { continue }
+        guard let elementArray = elements.arrayValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+        }
+        for element in elementArray {
+            guard let elementObject = element.objectValue else {
+                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+            }
+            if let type = elementObject["type"], type != .null, type.stringValue == nil {
+                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+            }
+            if let value = elementObject["value"], value != .null, value.stringValue == nil {
+                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+            }
+            if let timestamp = elementObject["ts"], timestamp != .null, timestamp.doubleValue == nil {
+                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+            }
+            if let endTimestamp = elementObject["end_ts"], endTimestamp != .null, endTimestamp.doubleValue == nil {
+                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription response is invalid.")
+            }
+        }
     }
 }
 

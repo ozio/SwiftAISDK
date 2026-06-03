@@ -254,6 +254,29 @@ import Testing
     #expect(form.contains("\"language\":\"de\""))
 }
 
+@Test func revAITranscriptionKeepsSubmissionLanguageAndZeroDurationLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"job-123","status":"in_progress","language":"en"}"#),
+        jsonResponse(#"{"id":"job-123","status":"transcribed"}"#),
+        jsonResponse(#"{"monologues":[{"elements":[{"type":"punct","value":"."}]}]}"#)
+    ])
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
+    let model = try provider.transcriptionModel("machine")
+
+    let result = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+
+    #expect(result.text == ".")
+    #expect(result.segments.isEmpty)
+    #expect(result.language == "en")
+    #expect(result.durationInSeconds == 0)
+    let requests = await transport.requests()
+    #expect(requests.map(\.url.path) == [
+        "/speechtotext/v1/jobs",
+        "/speechtotext/v1/jobs/job-123",
+        "/speechtotext/v1/jobs/job-123/transcript"
+    ])
+}
+
 @Test func revAITranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {
     let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: RecordingTransport(response: jsonResponse(#"{}"#))))
     let model = try provider.transcriptionModel("machine")
@@ -388,6 +411,37 @@ import Testing
         _ = try await model.transcribe(AudioTranscriptionRequest(
             audio: Data("audio".utf8),
             providerOptions: ["revai": .object(["forced_alignment": .string("true")])]
+        ))
+    }
+}
+
+@Test func revAITranscriptionRejectsInvalidJobResponseShapeLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"job-123","status":1}"#))
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
+    let model = try provider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.invalidResponse(provider: "revai.transcription", message: "Rev.ai job response is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            fileName: "clip.wav",
+            mimeType: "audio/wav"
+        ))
+    }
+}
+
+@Test func revAITranscriptionRejectsInvalidTranscriptResponseShapeLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"job-123","status":"transcribed","language":"en"}"#),
+        jsonResponse(#"{"monologues":[{"elements":[{"type":"text","value":1,"ts":0,"end_ts":1}]}]}"#)
+    ])
+    let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
+    let model = try provider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.invalidResponse(provider: "revai.transcription", message: "Rev.ai transcription response is invalid.")) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("audio".utf8),
+            fileName: "clip.wav",
+            mimeType: "audio/wav"
         ))
     }
 }
