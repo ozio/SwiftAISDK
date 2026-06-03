@@ -20,7 +20,8 @@ import Testing
     #expect(imageRequests.count == 2)
     let imageRequest = try #require(imageRequests.first)
     #expect(imageRequest.url.absoluteString == "https://api.x.ai/v1/images/generations")
-    #expect(imageRequest.headers["Authorization"] == "Bearer xai-key")
+    #expect(imageRequest.headers["authorization"] == "Bearer xai-key")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/xai/3.0.93")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "grok-2-image")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -30,7 +31,8 @@ import Testing
     #expect(imageBody["quality"]?.stringValue == "high")
     #expect(imageBody["output_format"]?.stringValue == "png")
     #expect(imageRequests[1].method == "GET")
-    #expect(imageRequests[1].headers["Authorization"] == nil)
+    #expect(imageRequests[1].headers["authorization"] == nil)
+    #expect(imageRequests[1].headers["user-agent"] == nil)
 
     let videoTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"vid-1"}"#),
@@ -50,6 +52,8 @@ import Testing
     let requests = await videoTransport.requests()
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.x.ai/v1/videos/generations")
+    #expect(requests[0].headers["authorization"] == "Bearer xai-key")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/xai/3.0.93")
     let videoBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(videoBody["model"]?.stringValue == "grok-2-video")
     #expect(videoBody["prompt"]?.stringValue == "cat running")
@@ -58,6 +62,8 @@ import Testing
     #expect(videoBody["resolution"]?.stringValue == "720p")
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.x.ai/v1/videos/vid-1")
+    #expect(requests[1].headers["authorization"] == "Bearer xai-key")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/xai/3.0.93")
 
     let editTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"edit-1"}"#),
@@ -78,6 +84,10 @@ import Testing
     #expect(edit.warnings.contains(AIWarning(type: "unsupported", feature: "aspectRatio", message: "xAI video editing does not support custom aspect ratio.")))
     let editRequests = await editTransport.requests()
     #expect(editRequests[0].url.absoluteString == "https://api.x.ai/v1/videos/edits")
+    #expect(editRequests[0].headers["authorization"] == "Bearer xai-key")
+    #expect(editRequests[0].headers["user-agent"] == "ai-sdk/xai/3.0.93")
+    #expect(editRequests[1].headers["authorization"] == "Bearer xai-key")
+    #expect(editRequests[1].headers["user-agent"] == "ai-sdk/xai/3.0.93")
     let editBody = try decodeJSONBody(try #require(editRequests[0].body))
     #expect(editBody["video"]?["url"]?.stringValue == "https://x.ai/source.mp4")
     #expect(editBody["aspect_ratio"] == nil)

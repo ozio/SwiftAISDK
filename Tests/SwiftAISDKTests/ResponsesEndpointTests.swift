@@ -15,12 +15,29 @@ import Testing
     #expect(result.usage?.totalTokens == 5)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/responses")
-    #expect(request.headers["Authorization"] == "Bearer xai-key")
+    #expect(request.headers["authorization"] == "Bearer xai-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/xai/3.0.93")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "grok-4")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
     #expect(body["input"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
     #expect(body["max_output_tokens"]?.intValue == 12)
+}
+
+@Test func xAIAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-custom","status":"completed","output_text":"ok"}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(
+        apiKey: "xai-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("grok-4")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer xai-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/xai/3.0.93")
 }
 
 @Test func xAIProviderAliasesUseUpstreamProviderIDsAndOptions() async throws {

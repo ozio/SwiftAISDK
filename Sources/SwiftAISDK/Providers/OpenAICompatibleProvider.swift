@@ -467,6 +467,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "deepinfra" {
             return withUserAgentSuffix(headers, "ai-sdk/deepinfra/2.0.52")
         }
+        if providerID == "xai" {
+            return withUserAgentSuffix(headers, "ai-sdk/xai/3.0.93")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

@@ -70,7 +70,8 @@ import Testing
     ])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/files")
-    #expect(request.headers["Authorization"] == "Bearer xai-key")
+    #expect(request.headers["authorization"] == "Bearer xai-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/xai/3.0.93")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"file\"; filename=\"blob\""))
     #expect(bodyText.contains("name=\"team_id\""))
