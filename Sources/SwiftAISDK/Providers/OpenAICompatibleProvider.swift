@@ -394,6 +394,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "mistral" {
             return withUserAgentSuffix(headers, "ai-sdk/mistral/3.0.37")
         }
+        if providerID == "cohere" {
+            return withUserAgentSuffix(headers, "ai-sdk/cohere/3.0.36")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

@@ -20,7 +20,7 @@ import Testing
     #expect(result.responseMetadata.body?["generation_id"]?.stringValue == "gen-1")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.cohere.com/v2/chat")
-    #expect(request.headers["Authorization"] == "Bearer cohere-key")
+    #expect(request.headers["authorization"] == "Bearer cohere-key")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "command-a-03-2025")
     #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
@@ -28,6 +28,36 @@ import Testing
     #expect(body["p"]?.doubleValue == 0.8)
     #expect(body["max_tokens"]?.intValue == 12)
     #expect(body["documents"] == nil)
+}
+
+@Test func cohereProviderAddsVersionedUserAgentSuffix() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
+    """))
+    let provider = try AIProviders.cohere(settings: ProviderSettings(
+        apiKey: "cohere-key",
+        headers: ["User-Agent": "custom-client/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("command-a-03-2025")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer cohere-key")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/3.0.36")
+}
+
+@Test func cohereUnknownFinishReasonMapsToOther() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"SOMETHING_NEW","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
+    """))
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
+    let model = try provider.languageModel("command-a-03-2025")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.finishReason == "other")
 }
 
 @Test func cohereLanguageMapsStandardOptionsResponseFormatAndToolChoice() async throws {
@@ -130,8 +160,7 @@ import Testing
         AIMessage(role: .user, content: [
             .text("What do these documents say?"),
             .file(mimeType: "text/plain", data: Data("First document content".utf8), filename: "doc1.txt"),
-            .file(mimeType: "application/json", data: Data("{\"key\":\"value\"}".utf8), filename: "data.json"),
-            .data(mimeType: "application/pdf", data: Data("PDF-like content".utf8))
+            .file(mimeType: "application/json", data: Data("{\"key\":\"value\"}".utf8), filename: "data.json")
         ])
     ]))
 
@@ -139,14 +168,27 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "user")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "What do these documents say?")
-    #expect(body["documents"]?.arrayValue?.count == 3)
+    #expect(body["documents"]?.arrayValue?.count == 2)
     #expect(body["documents"]?[0]?["data"]?["text"]?.stringValue == "First document content")
     #expect(body["documents"]?[0]?["data"]?["title"]?.stringValue == "doc1.txt")
     #expect(body["documents"]?[1]?["data"]?["text"]?.stringValue == "{\"key\":\"value\"}")
     #expect(body["documents"]?[1]?["data"]?["title"]?.stringValue == "data.json")
-    #expect(body["documents"]?[2]?["data"]?["text"]?.stringValue == "PDF-like content")
-    #expect(body["documents"]?[2]?["data"]?["title"] == nil)
-    #expect(String(data: try #require(request.body), encoding: .utf8)?.contains("application/pdf") == false)
+}
+
+@Test func cohereRejectsUnsupportedDocumentMediaTypeLikeUpstream() async throws {
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.languageModel("command-r-plus")
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "files",
+        message: "Media type 'application/pdf' is not supported. Supported media types are: text/* and application/json."
+    )) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .file(mimeType: "application/pdf", data: Data("PDF-like content".utf8), filename: "doc.pdf")
+            ])
+        ]))
+    }
 }
 
 @Test func cohereLanguageKeepsImagesInlineWhileExtractingDocuments() async throws {
@@ -160,6 +202,7 @@ import Testing
         AIMessage(role: .user, content: [
             .text("Use both."),
             .file(mimeType: "image/png", data: Data([0, 1, 2, 3]), filename: "image.png"),
+            .data(mimeType: "image/*", data: Data([0, 1, 2])),
             .file(mimeType: "text/plain", data: Data("Document text".utf8), filename: "note.txt")
         ])
     ]))
@@ -171,9 +214,41 @@ import Testing
     #expect(content[0]["text"]?.stringValue == "Use both.")
     #expect(content[1]["type"]?.stringValue == "image_url")
     #expect(content[1]["image_url"]?["url"]?.stringValue == "data:image/png;base64,AAECAw==")
+    #expect(content[2]["type"]?.stringValue == "image_url")
+    #expect(content[2]["image_url"]?["url"]?.stringValue == "data:image/jpeg;base64,AAEC")
     #expect(body["documents"]?.arrayValue?.count == 1)
     #expect(body["documents"]?[0]?["data"]?["text"]?.stringValue == "Document text")
     #expect(body["documents"]?[0]?["data"]?["title"]?.stringValue == "note.txt")
+}
+
+@Test func cohereProviderDefinedToolsAreSkippedWithWarning() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
+    """))
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
+    let model = try provider.languageModel("command-a-03-2025")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        tools: [
+            "lookup": [
+                "type": "object",
+                "properties": ["value": ["type": "string"]]
+            ],
+            "cohere.search": [
+                "type": "provider",
+                "id": "cohere.search"
+            ]
+        ]
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "provider-defined tool cohere.search")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools.count == 1)
+    #expect(tools[0]["function"]?["name"]?.stringValue == "lookup")
 }
 
 @Test func cohereLanguageParsesToolCallsAndNullArguments() async throws {

@@ -61,7 +61,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                     }
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     continuation.yield(.responseMetadata(cohereResponseMetadata(response: response, modelID: modelID)))
-                    var finishReason: String?
+                    var finishReason: String? = "other"
                     var usage: TokenUsage?
                     var pendingToolCall: CoherePendingToolCall?
                     var activeReasoningID: String?
@@ -152,7 +152,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         var options = try cohereProviderOptions(from: request)
         let responseFormat = cohereResolvedResponseFormat(request: request, options: &options)
         let toolChoice = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
-        let prompt = coherePromptJSON(from: request.messages)
+        let prompt = try coherePromptJSON(from: request.messages)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "messages": .array(prompt.messages)
@@ -173,9 +173,9 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         if let thinking = cohereThinking(reasoning: request.reasoning, options: &options) {
             body["thinking"] = thinking
         }
-        let tools = cohereTools(from: request.tools, only: cohereForcedToolName(from: toolChoice))
-        if !tools.isEmpty {
-            body["tools"] = .array(tools)
+        let preparedTools = cohereTools(from: request.tools, only: cohereForcedToolName(from: toolChoice))
+        if !preparedTools.tools.isEmpty {
+            body["tools"] = .array(preparedTools.tools)
             if let toolChoice = cohereToolChoice(from: toolChoice) {
                 body["tool_choice"] = toolChoice
             }
@@ -183,7 +183,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         for (key, value) in options where !["thinking", "responseFormat", "toolChoice"].contains(key) {
             body[key] = value
         }
-        return CoherePreparedCall(body: body, warnings: prompt.warnings)
+        return CoherePreparedCall(body: body, warnings: preparedTools.warnings + prompt.warnings)
     }
 }
 
@@ -197,6 +197,11 @@ private struct CoherePendingToolCall {
     var name: String
     var arguments: String
     var rawValue: JSONValue?
+}
+
+private struct CoherePreparedTools {
+    var tools: [JSONValue]
+    var warnings: [AIWarning]
 }
 
 public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
@@ -773,8 +778,17 @@ private func cohereThinking(from value: JSONValue) -> JSONValue {
     return .object(object)
 }
 
-private func cohereTools(from tools: [String: JSONValue], only forcedToolName: String? = nil) -> [JSONValue] {
-    tools.sorted { $0.key < $1.key }.compactMap { name, schema in
+private func cohereTools(from tools: [String: JSONValue], only forcedToolName: String? = nil) -> CoherePreparedTools {
+    var warnings: [AIWarning] = []
+    let values = tools.sorted { $0.key < $1.key }.compactMap { name, schema -> JSONValue? in
+        let object = schema.objectValue
+        if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "provider-defined tool \(object?["id"]?.stringValue ?? name)"
+            ))
+            return nil
+        }
         guard forcedToolName == nil || forcedToolName == name else { return nil }
         return .object([
             "type": .string("function"),
@@ -785,6 +799,7 @@ private func cohereTools(from tools: [String: JSONValue], only forcedToolName: S
             ])
         ])
     }
+    return CoherePreparedTools(tools: values, warnings: warnings)
 }
 
 private func cohereForcedToolName(from value: JSONValue?) -> String? {
@@ -805,13 +820,13 @@ private func cohereToolChoice(from value: JSONValue?) -> JSONValue? {
     }
 }
 
-private func coherePromptJSON(from messages: [AIMessage]) -> (messages: [JSONValue], documents: [JSONValue], warnings: [AIWarning]) {
+private func coherePromptJSON(from messages: [AIMessage]) throws -> (messages: [JSONValue], documents: [JSONValue], warnings: [AIWarning]) {
     var cohereMessages: [JSONValue] = []
     var documents: [JSONValue] = []
     var warnings: [AIWarning] = []
 
     for message in messages {
-        let converted = cohereMessageJSON(message)
+        let converted = try cohereMessageJSON(message)
         cohereMessages.append(contentsOf: converted.messages)
         documents.append(contentsOf: converted.documents)
         warnings.append(contentsOf: converted.warnings)
@@ -820,7 +835,7 @@ private func coherePromptJSON(from messages: [AIMessage]) -> (messages: [JSONVal
     return (cohereMessages, documents, warnings)
 }
 
-private func cohereMessageJSON(_ message: AIMessage) -> (messages: [JSONValue], documents: [JSONValue], warnings: [AIWarning]) {
+private func cohereMessageJSON(_ message: AIMessage) throws -> (messages: [JSONValue], documents: [JSONValue], warnings: [AIWarning]) {
     switch message.role {
     case .system:
         return ([.object(["role": .string("system"), "content": .string(message.combinedText)])], [], [])
@@ -841,24 +856,30 @@ private func cohereMessageJSON(_ message: AIMessage) -> (messages: [JSONValue], 
         return ([.object(["role": .string("tool"), "content": .string(message.combinedText)])], [], [])
     case .user:
         let hasImage = message.content.contains {
-            if let payload = $0.filePayload { return payload.mimeType.hasPrefix("image/") }
+            if let payload = $0.filePayload { return cohereIsImageMediaType(payload.mimeType) }
             if case .imageURL = $0 { return true }
             return false
         }
-        let documents = message.content.compactMap(cohereDocumentJSON)
-        let unsupportedFiles = message.content.filter { part in
-            guard let payload = part.filePayload else { return false }
-            return !payload.mimeType.hasPrefix("image/") && String(data: payload.data, encoding: .utf8) == nil
+        var documents: [JSONValue] = []
+        for part in message.content {
+            if let document = try cohereDocumentJSON(part) {
+                documents.append(document)
+            }
         }
-        let warnings = unsupportedFiles.map { _ in AIWarning(type: "unsupported", feature: "non-text document content") }
         guard hasImage else {
             let text = message.content.compactMap(\.text).joined()
-            return ([.object(["role": .string("user"), "content": .string(text)])], documents, warnings)
+            return ([.object(["role": .string("user"), "content": .string(text)])], documents, [])
+        }
+        var content: [JSONValue] = []
+        for part in message.content {
+            if let converted = try cohereContentPartJSON(part) {
+                content.append(converted)
+            }
         }
         return ([.object([
             "role": .string("user"),
-            "content": .array(message.content.compactMap(cohereContentPartJSON))
-        ])], documents, warnings)
+            "content": .array(content)
+        ])], documents, [])
     }
 }
 
@@ -905,32 +926,51 @@ private func cohereJSONString(_ value: JSONValue) -> String? {
     return String(data: data, encoding: .utf8)
 }
 
-private func cohereContentPartJSON(_ part: AIContentPart) -> JSONValue? {
+private func cohereContentPartJSON(_ part: AIContentPart) throws -> JSONValue? {
     switch part {
     case let .text(text):
         return text.isEmpty ? nil : .object(["type": .string("text"), "text": .string(text)])
     case let .imageURL(url):
         return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
-    case let .data(mimeType, data) where mimeType.hasPrefix("image/"),
-         let .file(mimeType, data, _) where mimeType.hasPrefix("image/"):
+    case let .data(mimeType, data) where cohereIsImageMediaType(mimeType),
+         let .file(mimeType, data, _) where cohereIsImageMediaType(mimeType):
         return .object([
             "type": .string("image_url"),
-            "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
+            "image_url": .object(["url": .string("data:\(cohereImageDataURLMediaType(mimeType));base64,\(data.base64EncodedString())")])
         ])
-    case .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .providerReference:
+        throw AIError.invalidArgument(
+            argument: "files",
+            message: "Cohere chat API expects file URLs to be downloaded before prompt conversion."
+        )
+    case .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }
 
-private func cohereDocumentJSON(_ part: AIContentPart) -> JSONValue? {
-    guard let payload = part.filePayload, !payload.mimeType.hasPrefix("image/") else {
+private func cohereDocumentJSON(_ part: AIContentPart) throws -> JSONValue? {
+    guard let payload = part.filePayload, !cohereIsImageMediaType(payload.mimeType) else {
         return nil
+    }
+    guard payload.mimeType.hasPrefix("text/") || payload.mimeType == "application/json" else {
+        throw AIError.invalidArgument(
+            argument: "files",
+            message: "Media type '\(payload.mimeType)' is not supported. Supported media types are: text/* and application/json."
+        )
     }
     var data: [String: JSONValue] = [
         "text": .string(String(decoding: payload.data, as: UTF8.self))
     ]
     if let filename = payload.filename { data["title"] = .string(filename) }
     return .object(["data": .object(data)])
+}
+
+private func cohereIsImageMediaType(_ mediaType: String) -> Bool {
+    mediaType == "image" || mediaType.hasPrefix("image/")
+}
+
+private func cohereImageDataURLMediaType(_ mediaType: String) -> String {
+    mediaType == "image" || mediaType == "image/*" ? "image/jpeg" : mediaType
 }
 
 private func mapCohereFinishReason(_ reason: String?) -> String? {
@@ -944,7 +984,7 @@ private func mapCohereFinishReason(_ reason: String?) -> String? {
     case "TOOL_CALL":
         return "tool-calls"
     default:
-        return reason
+        return "other"
     }
 }
 
