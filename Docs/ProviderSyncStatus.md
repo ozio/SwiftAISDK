@@ -143,6 +143,7 @@ record and passes tests, it leaves the active queue.
 | --- | --- | --- |
 | `@ai-sdk/gateway` | `3.0.123` | `3294e3d`, `b8f35cb`, `08b36ed`: v3 base URL, headers/user agent, OIDC fallback, typed Gateway errors. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
+| `@ai-sdk/google-vertex` | `4.0.141` | `83ef81d`: regional REP hosts, express API-key precedence, embedding options/usage/limit, Veo polling/base64 videos, and subprovider URL parity after package re-read. |
 | `@ai-sdk/huggingface` | `1.0.50` | `e6ce75a`: provider-defined tools skipped with upstream-style warning after package re-read. |
 | `@ai-sdk/fal` | `2.0.34` | `b8ebeaa`: image metadata NSFW/prompt normalization after package re-read. |
 | `@ai-sdk/quiverai` | `1.0.0` | Re-read package and local implementation; no safe remaining gap found after existing QuiverAI option/schema/response tests. |
@@ -176,6 +177,20 @@ Known Swift differences / out of scope: Swift keeps acronym-style names such as 
 Tests run: swift test --filter Anthropic; swift test with 868 tests.
 Commit evidence: 135ceb6.
 Reopen only if: anthropic-aws npm version changes, AWS wrapper auth/header/signing behavior changes, new wrapper-level settings or model families appear, Anthropic core generateId becomes in-scope, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/google-vertex`
+
+```text
+Package: @ai-sdk/google-vertex
+Baseline: 4.0.141
+Upstream inspected: google-vertex-provider.ts, google-vertex-provider-node.ts, google-vertex-embedding-model.ts, google-vertex-embedding-options.ts, google-vertex-image-model.ts, google-vertex-video-model.ts, google-vertex-video-settings.ts, google-vertex-tools.ts, maas/google-vertex-maas-provider.ts, xai/google-vertex-xai-provider.ts, anthropic/google-vertex-anthropic-provider.ts, index.ts, version.ts.
+Swift files inspected: GoogleVertexProvider.swift, GoogleVertexModels.swift, GoogleGenerativeAI.swift, GoogleTools.swift, ProviderRegistry.swift, OpenAICompatibleProvider.swift, Anthropic.swift, Core.swift, AI.swift, GoogleVertexTests.swift, GoogleMediaResponseMetadataTests.swift.
+Surfaces checked: default factories, callable/chat/language aliases, Express mode API key auth, API-key header precedence, OAuth/access-token/service-account routing, global/eu/us/regional hosts, custom base URL trimming, user-agent suffix, GenerateContent language bodies/streams/tools/grounding/provider metadata, URL/GCS support inherited by language/Gemini image calls, embedding request options/limit/usage, Imagen generation/edit reference images/masks, Gemini image generation path, Veo long-running operation polling, video URL/base64 outputs, video provider metadata, response metadata, MaaS OpenAI-compatible endpoint, xAI reasoning-effort stripping and usage conversion, Vertex Anthropic rawPredict/streamRawPredict shape and tool subset.
+Known Swift differences / out of scope: Swift models Google auth with explicit accessToken/serviceAccount settings instead of node googleAuthOptions/edge GoogleCredentials; settings headers are static dictionaries rather than upstream async Resolvable headers; generateId customization is not exposed yet for Google/Vertex source IDs and media IDs; Swift keeps the public googleVertexMaaS/googleVertexXAI provider IDs already used by the capability matrix even though upstream MaaS package names the OpenAI-compatible wrapper "vertex.maas".
+Tests run: swift test --filter GoogleVertex; swift test --filter GoogleMediaResponseMetadataTests; swift test with 869 tests.
+Commit evidence: 83ef81d.
+Reopen only if: google-vertex npm version changes, Vertex host/base URL rules change, Veo operation schema/polling changes, providerOptions schemas change, MaaS/xAI/Anthropic subprovider wrapper behavior changes, auth model changes become required for Swift, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/huggingface`
@@ -280,7 +295,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Why still here |
 | --- | --- | --- |
-| `@ai-sdk/google-vertex` | `4.0.141` | Strong tests exist, but it needs a standalone package-level pass separate from Google Generative AI. |
 | `@ai-sdk/mcp` | `1.0.45` | MCP client/transport/OAuth are implemented and tested, but this is a protocol package rather than a model provider and needs its own sweep criteria. |
 
 ## Practical Remaining Queue
