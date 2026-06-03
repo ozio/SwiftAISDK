@@ -11,7 +11,6 @@ import Testing
         prompt: "cat",
         size: "1024x768",
         seed: 42,
-        count: 2,
         files: [ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png")],
         extraBody: [
             "steps": 4,
@@ -31,7 +30,7 @@ import Testing
     #expect(imageBody["width"]?.intValue == 1024)
     #expect(imageBody["height"]?.intValue == 768)
     #expect(imageBody["seed"]?.intValue == 42)
-    #expect(imageBody["n"]?.intValue == 2)
+    #expect(imageBody["n"] == nil)
     #expect(imageBody["response_format"]?.stringValue == "base64")
     #expect(imageBody["steps"]?.intValue == 4)
     #expect(imageBody["guidance"]?.doubleValue == 3.5)
@@ -39,7 +38,7 @@ import Testing
     #expect(imageBody["disable_safety_checker"]?.boolValue == true)
     #expect(imageBody["image_url"]?.stringValue?.hasPrefix("data:image/png;base64,") == true)
 
-    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"id":"rank-1","model":"Salesforce/Llama-Rank-v1","results":[{"index":1,"relevance_score":0.8},{"index":0,"relevance_score":0.2}]}"#))
+    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"id":"rank-1","model":"Salesforce/Llama-Rank-v1","results":[{"index":1,"relevance_score":0.8},{"index":0,"relevance_score":0.2}],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}"#))
     let rerankProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: rerankTransport))
     let rerankModel = try rerankProvider.rerankingModel("Salesforce/Llama-Rank-v1")
 
@@ -93,7 +92,7 @@ import Testing
     #expect(imageBody["openai"] == nil)
     #expect(imageBody["togetherai"] == nil)
 
-    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}]}"#))
+    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}"#))
     let rerankProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: rerankTransport))
     let rerankModel = try rerankProvider.rerankingModel("Salesforce/Llama-Rank-v1")
 
@@ -166,6 +165,25 @@ import Testing
     }
 }
 
+@Test func togetherAIImageRejectsMultipleImagesPerCallLikeUpstream() async throws {
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image"}]}"#))))
+    let model = try provider.imageModel("black-forest-labs/FLUX.1-schnell-Free")
+
+    await #expect(throws: AIError.invalidArgument(argument: "count", message: "TogetherAI image models support at most 1 image per call.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", count: 2))
+    }
+}
+
+@Test func togetherAIImageRejectsInvalidResponseShapeLikeUpstreamSchema() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"data":[{}]}"#))
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/FLUX.1-schnell-Free")
+
+    await #expect(throws: AIError.invalidResponse(provider: "togetherai.image", message: "TogetherAI image response contained invalid b64_json data.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
 @Test func togetherAIImageProviderOptionsValidateLikeUpstreamSchema() async throws {
     let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image"}]}"#))))
     let model = try provider.imageModel("black-forest-labs/FLUX.1-schnell-Free")
@@ -189,7 +207,7 @@ import Testing
 
 @Test func togetherAIRerankingSendsJSONDocumentsAndProviderOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"rank-1","model":"Salesforce/Llama-Rank-v1","results":[{"index":0,"relevance_score":0.7},{"index":1,"relevance_score":0.3}]}
+    {"id":"rank-1","model":"Salesforce/Llama-Rank-v1","results":[{"index":0,"relevance_score":0.7},{"index":1,"relevance_score":0.3}],"usage":{"prompt_tokens":2,"completion_tokens":0,"total_tokens":2}}
     """))
     let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: transport))
     let model = try provider.rerankingModel("Salesforce/Llama-Rank-v1")
@@ -213,7 +231,7 @@ import Testing
 }
 
 @Test func togetherAIRerankingProviderOptionsValidateLikeUpstreamSchema() async throws {
-    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}]}"#))))
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}"#))))
     let model = try provider.rerankingModel("Salesforce/Llama-Rank-v1")
 
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.togetherai", message: "TogetherAI provider options must be an object.")) {
@@ -224,5 +242,14 @@ import Testing
     }
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.togetherai.rankFields", message: "TogetherAI rankFields must be an array of strings.")) {
         _ = try await model.rerank(RerankingRequest(query: "q", documents: ["a"], providerOptions: ["togetherai": ["rankFields": ["text", 42]]]))
+    }
+}
+
+@Test func togetherAIRerankingRejectsInvalidResponseShapeLikeUpstreamSchema() async throws {
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}]}"#))))
+    let model = try provider.rerankingModel("Salesforce/Llama-Rank-v1")
+
+    await #expect(throws: AIError.invalidResponse(provider: "togetherai.reranking", message: "TogetherAI reranking response did not contain valid usage.")) {
+        _ = try await model.rerank(RerankingRequest(query: "q", documents: ["a"]))
     }
 }

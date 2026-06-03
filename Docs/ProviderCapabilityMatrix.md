@@ -79,6 +79,7 @@ Legend:
 | `moonshotai` | Chat requests stream usage by default and maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema. |
 | `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, and the caller supplied providerOptions namespace. |
 | `openai-compatible` | Generic OpenAI-compatible factory; caller supplies provider ID and base URL. |
+| `togetherai` | Image generation mirrors upstream `maxImagesPerCall = 1`; image and reranking responses are validated against the upstream-focused JSON shapes. |
 
 ## Reality Gates
 

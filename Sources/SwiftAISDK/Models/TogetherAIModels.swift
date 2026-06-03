@@ -32,6 +32,9 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
                 message: "Together AI only supports a single input image. Additional images are ignored."
             ))
         }
+        if let count = request.count, count > 1 {
+            throw AIError.invalidArgument(argument: "count", message: "TogetherAI image models support at most 1 image per call.")
+        }
 
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -40,9 +43,6 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
         ]
         if let seed = request.seed {
             body["seed"] = .number(Double(seed))
-        }
-        if let count = request.count, count > 1 {
-            body["n"] = .number(Double(count))
         }
         if let size = request.size {
             let dimensions = size.split(separator: "x", omittingEmptySubsequences: false)
@@ -56,7 +56,13 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
 
         let response = try await config.sendJSONResponse(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        let base64Images = raw["data"]?.arrayValue?.compactMap { $0["b64_json"]?.stringValue } ?? []
+        guard let data = raw["data"]?.arrayValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "TogetherAI image response did not contain data.")
+        }
+        let base64Images = data.compactMap { $0["b64_json"]?.stringValue }
+        guard base64Images.count == data.count else {
+            throw AIError.invalidResponse(provider: providerID, message: "TogetherAI image response contained invalid b64_json data.")
+        }
         return ImageGenerationResult(
             urls: [],
             base64Images: base64Images,
@@ -243,13 +249,22 @@ public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable
 
         let response = try await config.sendJSONResponse(path: "/rerank", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        let results = raw["results"]?.arrayValue?.compactMap { item -> RerankedDocument? in
+        guard togetherAIRerankingUsageIsValid(raw["usage"]) else {
+            throw AIError.invalidResponse(provider: providerID, message: "TogetherAI reranking response did not contain valid usage.")
+        }
+        guard let rawResults = raw["results"]?.arrayValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "TogetherAI reranking response did not contain results.")
+        }
+        let results = rawResults.compactMap { item -> RerankedDocument? in
             guard let index = item["index"]?.intValue,
                   let score = item["relevance_score"]?.doubleValue ?? item["score"]?.doubleValue else {
                 return nil
             }
             return RerankedDocument(index: index, score: score, document: item["document"]?.stringValue)
-        } ?? []
+        }
+        guard results.count == rawResults.count else {
+            throw AIError.invalidResponse(provider: providerID, message: "TogetherAI reranking response contained invalid results.")
+        }
         return RerankingResult(
             results: results,
             rawValue: raw,
@@ -257,4 +272,10 @@ public final class TogetherAIRerankingModel: RerankingModel, @unchecked Sendable
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
+}
+
+private func togetherAIRerankingUsageIsValid(_ usage: JSONValue?) -> Bool {
+    usage?["prompt_tokens"]?.doubleValue != nil &&
+        usage?["completion_tokens"]?.doubleValue != nil &&
+        usage?["total_tokens"]?.doubleValue != nil
 }

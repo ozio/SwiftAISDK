@@ -78,7 +78,7 @@ public enum AIProviderCapabilities {
         providerRow("quiverai", "@ai-sdk/quiverai", ["AIProviders.quiverAI", "AIProviders.quiverai"], [.image]),
         providerRow("replicate", "@ai-sdk/replicate", ["AIProviders.replicate"], [.image, .video]),
         providerRow("revai", "@ai-sdk/revai", ["AIProviders.revAI", "AIProviders.revai"], [.transcription]),
-        providerRow("togetherai", "@ai-sdk/togetherai", ["AIProviders.togetherAI", "AIProviders.togetherai"], [.language, .completion, .embedding, .image, .reranking]),
+        providerRow("togetherai", "@ai-sdk/togetherai", ["AIProviders.togetherAI", "AIProviders.togetherai"], [.language, .completion, .embedding, .image, .reranking], notes: "Image generation mirrors upstream `maxImagesPerCall = 1`; image and reranking responses are validated against the upstream-focused JSON shapes."),
         providerRow("vercel", "@ai-sdk/vercel", ["AIProviders.vercel"], [.language]),
         providerRow("voyage", "@ai-sdk/voyage", ["AIProviders.voyage"], [.embedding, .reranking]),
         providerRow("xai", "@ai-sdk/xai", ["AIProviders.xAI", "AIProviders.xai"], [.language, .image, .video], files: true)

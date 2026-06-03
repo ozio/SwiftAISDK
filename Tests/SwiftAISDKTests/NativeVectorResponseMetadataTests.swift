@@ -128,7 +128,7 @@ import Testing
     #expect(gatewayRerank.responseMetadata.body?["ranking"]?[0]?["relevanceScore"]?.doubleValue == 0.9)
 
     let togetherTransport = RecordingTransport(response: jsonResponse("""
-    {"id":"together-rerank","results":[{"index":0,"relevance_score":0.75}]}
+    {"id":"together-rerank","results":[{"index":0,"relevance_score":0.75}],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}
     """, headers: ["together-header": "rerank"]))
     let together = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: togetherTransport))
 

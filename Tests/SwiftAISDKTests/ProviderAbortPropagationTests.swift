@@ -443,7 +443,7 @@ import Testing
     let imageRequest = try #require(await imageTransport.requests().first)
     #expect(imageRequest.abortSignal === imageController.signal)
 
-    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}]}"#))
+    let rerankTransport = RecordingTransport(response: jsonResponse(#"{"results":[{"index":0,"relevance_score":0.9}],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}"#))
     let rerankProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: rerankTransport))
     let rerankModel = try rerankProvider.rerankingModel("Salesforce/Llama-Rank-v1")
     let rerankController = AIAbortController()
