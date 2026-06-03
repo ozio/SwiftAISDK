@@ -381,6 +381,12 @@ import Testing
         body: "rate limited",
         headers: ["Retry-After": "0"]
     ))
+    let apiError = try #require(httpStatusError(provider: "mock", response: response).apiCallError)
+    #expect(apiError.provider == "mock")
+    #expect(apiError.statusCode == 429)
+    #expect(apiError.responseHeaders["Retry-After"] == "0")
+    #expect(apiError.responseBody == "rate limited")
+    #expect(apiError.isRetryable)
 }
 
 @Test func aiGenerateTextDoesNotRetryNonRetryableErrors() async throws {
@@ -870,14 +876,78 @@ import Testing
             executableTools: [lookup]
         )
         Issue.record("Expected invalid tool arguments to fail schema validation.")
-    } catch let error as AIError {
+    } catch let error as AIInvalidToolInputError {
+        #expect(error.toolName == "lookup")
+        #expect(error.toolCallID == "call-1")
         #expect(error.description.contains("Tool call arguments do not match tool schema"))
-        #expect(error.description.contains("$.city"))
-        #expect(error.description.contains("expected string"))
+        #expect(error.validationError?.path == "$.city")
+        #expect(error.validationError?.message.contains("expected string") == true)
     }
 
     #expect(await capture.value() == nil)
     #expect(model.requests.count == 1)
+}
+
+@Test func aiGenerateTextThrowsTypedNoSuchToolError() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "missing", arguments: #"{}"#)
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "",
+        finishReason: "tool-calls",
+        toolCalls: [toolCall],
+        rawValue: .object([:])
+    ))
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object"]
+    ) { _ in
+        ["ok": true]
+    }
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Use a tool.",
+            executableTools: [lookup]
+        )
+        Issue.record("Expected missing tool error.")
+    } catch let error as AINoSuchToolError {
+        #expect(error.toolName == "missing")
+        #expect(error.availableToolNames == ["lookup"])
+    }
+}
+
+@Test func aiGenerateTextWrapsToolArgumentRefinementFailures() async throws {
+    struct RefinementFailure: Error, CustomStringConvertible {
+        var description: String { "could not repair input" }
+    }
+
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":42}"#)
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "",
+        finishReason: "tool-calls",
+        toolCalls: [toolCall],
+        rawValue: .object([:])
+    ))
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object"],
+        refineArguments: { _ in throw RefinementFailure() }
+    ) { _ in
+        ["ok": true]
+    }
+
+    do {
+        _ = try await AI.generateText(
+            model: model,
+            prompt: "Use a tool.",
+            executableTools: [lookup]
+        )
+        Issue.record("Expected tool repair error.")
+    } catch let error as AIToolCallRepairError {
+        #expect(error.toolName == "lookup")
+        #expect(error.toolCallID == "call-1")
+        #expect(error.originalError == "could not repair input")
+    }
 }
 
 @Test func aiGenerateTextValidatesToolArgumentsAfterRefinement() async throws {

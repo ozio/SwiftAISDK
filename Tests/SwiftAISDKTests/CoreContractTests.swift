@@ -35,6 +35,39 @@ import Testing
     #expect(request.extraBody["user"]?.stringValue == "user-1")
 }
 
+@Test func typedCoreErrorsExposeUsefulDiagnostics() throws {
+    let apiError = AIAPICallError(
+        provider: "mock",
+        url: "https://api.example.test/v1",
+        requestBody: ["prompt": "hello"],
+        statusCode: 503,
+        responseHeaders: ["Retry-After": "1"],
+        responseBody: "try later"
+    )
+    #expect(apiError.isRetryable)
+    #expect(apiError.description.contains("HTTP 503"))
+    #expect(apiError.requestBody?["prompt"]?.stringValue == "hello")
+
+    do {
+        _ = try parseJSON(
+            #"{"count":"many"}"#,
+            schema: [
+                "type": "object",
+                "properties": ["count": ["type": "integer"]],
+                "required": ["count"]
+            ]
+        )
+        Issue.record("Expected type validation error.")
+    } catch let error as AITypeValidationError {
+        #expect(error.path == "$.count")
+        #expect(error.message.contains("expected integer"))
+    }
+
+    let noOutput = AINoOutputGeneratedError(provider: "mock", outputKind: .object)
+    #expect(noOutput.description.contains("mock"))
+    #expect(noOutput.description.contains("object output"))
+}
+
 @Test func languageStreamPartRepresentsV4LifecycleMetadataAndToolParts() {
     let response = AIResponseMetadata(
         id: "resp-1",

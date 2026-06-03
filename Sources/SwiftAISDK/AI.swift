@@ -89,7 +89,7 @@ public enum AI {
             )
             var result = try await generateText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy, telemetry: telemetry)
             result.toolCalls = annotateToolCalls(result.toolCalls, toolsByName: toolsByName)
-            let executableCalls = result.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
+            let executableCalls = result.toolCalls.filter { !$0.providerExecuted }
 
             if executableCalls.isEmpty {
                 let finalStep = AIToolStep(
@@ -961,7 +961,7 @@ public enum AI {
                             to: continuation,
                             toolsByName: toolsByName
                         )
-                        let executableCalls = step.toolCalls.filter { !$0.providerExecuted && toolsByName[$0.name] != nil }
+                        let executableCalls = step.toolCalls.filter { !$0.providerExecuted }
 
                         guard !executableCalls.isEmpty else {
                             let completedStep = step.toolStep(
@@ -3485,6 +3485,9 @@ private func isRetryable(_ error: Error) -> Bool {
         }
         return false
     }
+    if let error = error as? AIAPICallError {
+        return error.isRetryable
+    }
     if let error = error as? URLError {
         switch error.code {
         case .cancelled, .userCancelledAuthentication:
@@ -3514,6 +3517,9 @@ private func httpHeaders(from error: Error) -> [String: String]? {
         if case let .gateway(gatewayError) = error {
             return gatewayError.headers
         }
+    }
+    if let error = error as? AIAPICallError {
+        return error.responseHeaders
     }
     return nil
 }
@@ -4199,12 +4205,23 @@ private func executeToolCalls(
 ) async throws -> AIToolExecutionBatch {
     var batch = AIToolExecutionBatch()
     for call in calls {
-        guard let tool = toolsByName[call.name] else { continue }
+        guard let tool = toolsByName[call.name] else {
+            throw AINoSuchToolError(toolName: call.name, availableToolNames: Array(toolsByName.keys))
+        }
         await telemetry?.recordToolStart(stepIndex: stepIndex, call: call, tool: tool)
         do {
             let arguments = try toolArguments(from: call)
-            let refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
-            try validateToolArguments(refinedArguments, schema: tool.parameters, toolName: call.name)
+            let refinedArguments: JSONValue
+            do {
+                refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
+            } catch {
+                throw AIToolCallRepairError(
+                    toolName: call.name,
+                    toolCallID: call.id,
+                    originalError: String(describing: error)
+                )
+            }
+            try validateToolArguments(refinedArguments, schema: tool.parameters, call: call)
             let approvalStatus = try await toolApproval?(AIToolApprovalContext(
                 toolCall: call,
                 arguments: refinedArguments,
@@ -4350,17 +4367,24 @@ private func toolArguments(from call: AIToolCall) throws -> JSONValue {
     do {
         return try decodeJSONBody(Data(trimmed.utf8))
     } catch {
-        throw AIError.invalidArgument(argument: "toolCalls.\(call.name).arguments", message: "Tool call arguments must be valid JSON.")
+        throw AIInvalidToolInputError(
+            toolName: call.name,
+            toolCallID: call.id,
+            message: "Tool call arguments must be valid JSON."
+        )
     }
 }
 
-private func validateToolArguments(_ arguments: JSONValue, schema: JSONValue, toolName: String) throws {
+private func validateToolArguments(_ arguments: JSONValue, schema: JSONValue, call: AIToolCall) throws {
     do {
         try AIJSONSchemaValidator.validate(arguments, schema: schema)
     } catch let issue as AIJSONSchemaValidationIssue {
-        throw AIError.invalidArgument(
-            argument: "toolCalls.\(toolName).arguments",
-            message: "Tool call arguments do not match tool schema: \(issue.description)"
+        throw AIInvalidToolInputError(
+            toolName: call.name,
+            toolCallID: call.id,
+            input: arguments,
+            message: "Tool call arguments do not match tool schema: \(issue.description)",
+            validationError: issue
         )
     }
 }

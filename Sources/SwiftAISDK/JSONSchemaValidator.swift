@@ -40,14 +40,7 @@ private func jsonSchemaTypeIncludesObject(_ type: JSONValue?) -> Bool {
     return type?.arrayValue?.contains(where: { $0.stringValue == "object" }) == true
 }
 
-struct AIJSONSchemaValidationIssue: Error, CustomStringConvertible, Sendable {
-    var path: String
-    var message: String
-
-    var description: String {
-        "\(path): \(message)"
-    }
-}
+typealias AIJSONSchemaValidationIssue = AITypeValidationError
 
 enum AIJSONSchemaValidator {
     static func validate(_ value: JSONValue, schema: JSONValue, path: String = "$") throws {

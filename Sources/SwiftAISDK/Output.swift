@@ -183,7 +183,8 @@ public enum Output {
                         telemetry: telemetry,
                         jsonInstruction: jsonInstruction,
                         repairText: repairText
-                    )
+                    ),
+                    outputKind: .object
                 )
             }
         )
@@ -244,6 +245,7 @@ public enum Output {
                         jsonInstruction: jsonInstruction,
                         repairText: repairText
                     ),
+                    outputKind: .array,
                     partial: { $0 }
                 )
             }
@@ -301,6 +303,7 @@ public enum Output {
                         jsonInstruction: jsonInstruction,
                         repairText: repairText
                     ),
+                    outputKind: .choice,
                     partial: { $0 }
                 )
             }
@@ -342,6 +345,7 @@ public enum Output {
                         jsonInstruction: jsonInstruction,
                         repairText: repairText
                     ),
+                    outputKind: .json,
                     partial: { $0 }
                 )
             }
@@ -469,10 +473,12 @@ private func mapLanguageStreamToOutputStream(
 
 private func mapObjectStreamToOutputStream<FinalOutput: Sendable, PartialOutput: Sendable>(
     _ stream: AsyncThrowingStream<ObjectStreamPart<FinalOutput>, Error>,
+    outputKind: AIOutputKind? = nil,
     partial transformPartial: (@Sendable (FinalOutput) -> PartialOutput)? = nil
 ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
+            var didYieldOutput = false
             do {
                 for try await part in stream {
                     try Task.checkCancellation()
@@ -490,6 +496,7 @@ private func mapObjectStreamToOutputStream<FinalOutput: Sendable, PartialOutput:
                             continuation.yield(.partialOutput(transformPartial(partial)))
                         }
                     case let .object(result):
+                        didYieldOutput = true
                         continuation.yield(.output(AIOutputGenerationResult(objectResult: result)))
                     case let .warning(warning):
                         continuation.yield(.warning(warning))
@@ -504,6 +511,9 @@ private func mapObjectStreamToOutputStream<FinalOutput: Sendable, PartialOutput:
                     case let .finish(reason, usage):
                         continuation.yield(.finish(reason: reason, usage: usage))
                     }
+                }
+                guard didYieldOutput else {
+                    throw AINoOutputGeneratedError(outputKind: outputKind)
                 }
                 continuation.finish()
             } catch {

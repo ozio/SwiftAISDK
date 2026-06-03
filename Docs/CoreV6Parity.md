@@ -78,7 +78,7 @@ it means JavaScript-style error-class parity is only partial.
 
 | Upstream error | SwiftAISDK status | Current Swift evidence | Notes / next decision |
 | --- | --- | --- | --- |
-| `AI_APICallError` | `partial` | `AIError.httpStatus`, `AIError.httpStatusWithHeaders`, provider-specific HTTP error mapping | HTTP status/body/headers are preserved, but there is no dedicated API-call error carrying all upstream fields such as URL/request body/retryability. |
+| `AI_APICallError` | `covered` | `AIAPICallError`, `AIError.apiCallError`, provider-specific HTTP error mapping | Swift keeps existing `AIError.httpStatus*` compatibility while exposing a richer API-call error shape for status/body/headers/retryability diagnostics. |
 | `AI_DownloadError` | `covered` | `AIDownloadError` | Direct Swift analog exists. |
 | `AI_EmptyResponseBodyError` | `partial` | `AIError.invalidResponse` | Empty-body cases are reported through general invalid-response errors. |
 | `AI_InvalidArgumentError` | `covered` | `AIError.invalidArgument` | Direct functional analog exists. |
@@ -87,7 +87,7 @@ it means JavaScript-style error-class parity is only partial.
 | `AI_InvalidPromptError` | `partial` | `AIError.invalidArgument`, provider conversion errors | No dedicated prompt error with structured prompt details. |
 | `AI_InvalidResponseDataError` | `covered` | `AIError.invalidResponse` | Functional analog exists, though less structured. |
 | `AI_InvalidToolApprovalError` | `partial` | `AIToolApprovalStatus`, approval request/response flow | Approval validation exists, but no dedicated public error type. |
-| `AI_InvalidToolInputError` | `partial` | `AITool` validation/refinement, `AIError.invalidArgument` | Behavior exists, but typed validation diagnostics are called out as a product gap. |
+| `AI_InvalidToolInputError` | `covered` | `AIInvalidToolInputError`, `AITypeValidationError`, `AITool` validation/refinement | Tool argument JSON/schema failures now throw typed tool-input errors. |
 | `AI_JSONParseError` | `covered` | `AIJSONParseError` | Direct Swift analog exists. |
 | `AI_LoadAPIKeyError` | `covered` | `AIError.missingAPIKey` | Functional analog exists. |
 | `AI_LoadSettingError` | `partial` | `AIError.invalidArgument`, provider settings validation | No dedicated setting-load error. |
@@ -98,15 +98,15 @@ it means JavaScript-style error-class parity is only partial.
 | `AI_NoVideoGeneratedError` | `partial` | video invalid-response paths | No dedicated public type. |
 | `AI_NoSpeechGeneratedError` | `partial` | speech invalid-response paths | No dedicated public type. |
 | `AI_NoObjectGeneratedError` | `covered` | `AIObjectGenerationError` with `kind` and `strategy` | Swift groups object/array/enum/json failures into one typed error. |
-| `AI_NoOutputGeneratedError` | `partial` | `AIObjectGenerationError`, `TextGenerationResult` empty text cases | Upstream v6 `Output` does not have a direct Swift equivalent yet. |
+| `AI_NoOutputGeneratedError` | `covered` | `AINoOutputGeneratedError`, `AIObjectGenerationError` | The v6-style `Output` stream mapper now has a dedicated no-output error for streams that finish without final output. Object parsing still uses `AIObjectGenerationError` for invalid generated output. |
 | `AI_NoSuchModelError` | `covered` | `AIError.unsupportedModel` | Functional analog exists. |
 | `AI_NoSuchProviderError` | `covered` | `AIProviderRegistryError.noSuchProvider` | Direct registry analog exists. |
-| `AI_NoSuchToolError` | `partial` | tool lookup/execution errors through `AIError.invalidArgument` or thrown execution errors | No dedicated public no-such-tool type. |
+| `AI_NoSuchToolError` | `covered` | `AINoSuchToolError` | Local tool loops now throw a typed error when the model asks for an unavailable non-provider-executed tool. |
 | `AI_RetryError` | `covered` | `AIRetryError`, `AIRetryErrorReason` | Direct Swift analog exists. |
 | `AI_ToolCallNotFoundForApprovalError` | `partial` | approval flow validation | No dedicated public type. |
-| `AI_ToolCallRepairError` / `ToolCallRepairError` | `missing` | none | Swift tool input refinement exists, but there is no dedicated repair error. |
+| `AI_ToolCallRepairError` / `ToolCallRepairError` | `covered` | `AIToolCallRepairError`, `AITool.refineArguments` | Swift maps the existing argument-refinement hook to a typed tool-call repair failure. |
 | `AI_TooManyEmbeddingValuesForCallError` | `partial` | provider/model preflight errors via `AIError.invalidArgument` | Behavior is tested for providers, but no dedicated public error. |
-| `AI_TypeValidationError` | `partial` | `AIJSONSchemaValidator`, `AIObjectGenerationError.kind == .schemaValidation` | Schema validation exists; no standalone public type-validation error. |
+| `AI_TypeValidationError` | `covered` | `AITypeValidationError`, `AIJSONSchemaValidator`, `AIObjectGenerationError.kind == .schemaValidation` | Schema validation now has a standalone public type-validation error, while object generation continues to wrap schema failures in `AIObjectGenerationError`. |
 | `AI_UIMessageStreamError` | `missing` | none | Depends on whether UI message streams enter scope. |
 | `AI_UnsupportedFunctionalityError` | `partial` | `AIError.unsupportedModel`, `AIWarning(type: "unsupported", ...)`, provider invalid-argument paths | Unsupported features are represented, but not as a dedicated public error class. |
 
@@ -122,10 +122,10 @@ it means JavaScript-style error-class parity is only partial.
 3. Decide whether UI/agent surfaces are in scope. If yes, start with
    `UIMessage` + validation, then agent UI streams. If no, mark them out of
    scope in README/product docs.
-4. Consider whether typed error-class parity matters to Swift users. A middle
-   path would add a few high-value public errors (`AIAPICallError`,
-   `AITypeValidationError`, `AINoSuchToolError`, approval/tool-repair errors)
-   without mirroring every JavaScript class.
+4. Continue typed-error parity only where it improves Swift diagnostics. The
+   first middle-path batch now covers API calls, type validation, no-output,
+   no-such-tool, invalid tool input, and tool-call repair. Remaining candidates
+   are approval-specific errors and narrower media no-content errors.
 
 ## SwiftUI UI Layer Candidates
 
