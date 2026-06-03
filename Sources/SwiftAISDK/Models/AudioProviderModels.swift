@@ -653,12 +653,12 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(submitResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: submitResponse)
+            throw audioProviderHTTPStatusError(provider: providerID, response: submitResponse)
         }
         var job = try submitResponse.jsonValue()
         try validateRevAIJobResponse(job, providerID: providerID)
         if job["status"]?.stringValue == "failed" {
-            throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription job submission failed.")
+            throw AIError.invalidResponse(provider: providerID, message: "Failed to submit transcription job to Rev.ai")
         }
         guard let jobID = job["id"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Rev.ai job response did not contain id.")
@@ -671,7 +671,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(transcriptResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: transcriptResponse)
+            throw audioProviderHTTPStatusError(provider: providerID, response: transcriptResponse)
         }
         let raw = try transcriptResponse.jsonValue()
         try validateRevAITranscriptResponse(raw, providerID: providerID)
@@ -691,7 +691,7 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
         let started = DispatchTime.now().uptimeNanoseconds
         while job["status"]?.stringValue != "transcribed" {
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
-                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription polling timed out.")
+                throw AIError.invalidResponse(provider: providerID, message: "Transcription job polling timed out")
             }
             let response = try await config.transport.send(try getRequest(
                 path: "/speechtotext/v1/jobs/\(id)",
@@ -699,12 +699,12 @@ public final class RevAITranscriptionModel: TranscriptionModel, @unchecked Senda
                 abortSignal: request.abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw audioProviderHTTPStatusError(provider: providerID, response: response)
             }
             job = try response.jsonValue()
             try validateRevAIJobResponse(job, providerID: providerID)
             if job["status"]?.stringValue == "failed" {
-                throw AIError.invalidResponse(provider: providerID, message: "Rev.ai transcription job failed.")
+                throw AIError.invalidResponse(provider: providerID, message: "Transcription job failed")
             }
             if job["status"]?.stringValue != "transcribed" {
                 try await sleepWithAbortSignal(nanoseconds: 1_000_000_000, abortSignal: request.abortSignal)
@@ -794,7 +794,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: uploadResponse)
+            throw audioProviderHTTPStatusError(provider: providerID, response: uploadResponse)
         }
         let uploadRaw = try uploadResponse.jsonValue()
         guard let audioURL = uploadRaw["audio_url"]?.stringValue else {
@@ -803,7 +803,17 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
 
         var body: [String: JSONValue] = ["audio_url": .string(audioURL)]
         body.merge(gladiaTranscriptionOptions(from: options)) { _, new in new }
-        let initRaw = try await config.sendJSON(path: "/v2/pre-recorded", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let initResponse = try await config.transport.send(config.request(
+            path: "/v2/pre-recorded",
+            modelID: modelID,
+            body: .object(body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(initResponse.statusCode) else {
+            throw audioProviderHTTPStatusError(provider: providerID, response: initResponse)
+        }
+        let initRaw = try initResponse.jsonValue()
         guard let resultURL = initRaw["result_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Gladia initiation response did not contain result_url.")
         }
@@ -811,11 +821,11 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
         let finalResponse = try await pollGladiaResultResponse(url: resultURL, request: request)
         let raw = finalResponse.json
         guard raw["status"]?.stringValue != "error" else {
-            throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription failed.")
+            throw AIError.invalidResponse(provider: providerID, message: "Transcription job failed")
         }
         try validateGladiaTranscriptionResult(raw, providerID: providerID)
         guard raw["result"]?.objectValue != nil else {
-            throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is empty.")
+            throw AIError.invalidResponse(provider: providerID, message: "Transcription result is empty")
         }
         let text = raw["result"]?["transcription"]?["full_transcript"]?.stringValue ?? ""
         let segments = gladiaTranscriptionSegments(from: raw)
@@ -833,11 +843,11 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
-                throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription polling timed out.")
+                throw AIError.invalidResponse(provider: providerID, message: "Transcription job polling timed out")
             }
             let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw audioProviderHTTPStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             guard let status = raw["status"]?.stringValue, ["queued", "processing", "done", "error"].contains(status) else {

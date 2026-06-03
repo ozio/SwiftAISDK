@@ -467,12 +467,102 @@ import Testing
     }
 }
 
+@Test func revAITranscriptionUsesUpstreamHTTPErrorMessageSchema() async throws {
+    let submitProvider = try AIProviders.revAI(settings: ProviderSettings(
+        apiKey: "rev-key",
+        transport: RecordingTransport(response: AIHTTPResponse(
+            statusCode: 401,
+            headers: ["content-type": "application/json", "x-revai": "submit"],
+            body: Data(#"{"error":{"message":"submit unauthorized","code":401}}"#.utf8)
+        ))
+    ))
+    let submitModel = try submitProvider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "revai.transcription",
+        statusCode: 401,
+        body: "submit unauthorized",
+        headers: ["content-type": "application/json", "x-revai": "submit"]
+    )) {
+        _ = try await submitModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+    }
+
+    let pollProvider = try AIProviders.revAI(settings: ProviderSettings(
+        apiKey: "rev-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"job-123","status":"in_progress","language":"en"}"#),
+            AIHTTPResponse(
+                statusCode: 500,
+                headers: ["content-type": "application/json", "x-revai": "poll"],
+                body: Data(#"{"error":{"message":"poll failed","code":500}}"#.utf8)
+            )
+        ])
+    ))
+    let pollModel = try pollProvider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "revai.transcription",
+        statusCode: 500,
+        body: "poll failed",
+        headers: ["content-type": "application/json", "x-revai": "poll"]
+    )) {
+        _ = try await pollModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+    }
+
+    let transcriptProvider = try AIProviders.revAI(settings: ProviderSettings(
+        apiKey: "rev-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"job-123","status":"transcribed","language":"en"}"#),
+            AIHTTPResponse(
+                statusCode: 400,
+                headers: ["content-type": "application/json", "x-revai": "transcript"],
+                body: Data(#"{"error":{"message":"transcript failed","code":400}}"#.utf8)
+            )
+        ])
+    ))
+    let transcriptModel = try transcriptProvider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "revai.transcription",
+        statusCode: 400,
+        body: "transcript failed",
+        headers: ["content-type": "application/json", "x-revai": "transcript"]
+    )) {
+        _ = try await transcriptModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+    }
+}
+
+@Test func revAITranscriptionUsesUpstreamLifecycleMessages() async throws {
+    let submitProvider = try AIProviders.revAI(settings: ProviderSettings(
+        apiKey: "rev-key",
+        transport: RecordingTransport(response: jsonResponse(#"{"status":"failed"}"#))
+    ))
+    let submitModel = try submitProvider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.invalidResponse(provider: "revai.transcription", message: "Failed to submit transcription job to Rev.ai")) {
+        _ = try await submitModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+    }
+
+    let pollProvider = try AIProviders.revAI(settings: ProviderSettings(
+        apiKey: "rev-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"job-123","status":"in_progress","language":"en"}"#),
+            jsonResponse(#"{"id":"job-123","status":"failed","language":"en"}"#)
+        ])
+    ))
+    let pollModel = try pollProvider.transcriptionModel("machine")
+
+    await #expect(throws: AIError.invalidResponse(provider: "revai.transcription", message: "Transcription job failed")) {
+        _ = try await pollModel.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+    }
+}
+
 @Test func revAITranscriptionThrowsForFailedSubmissionBeforeMissingID() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"status":"failed"}"#))
     let provider = try AIProviders.revAI(settings: ProviderSettings(apiKey: "rev-key", transport: transport))
     let model = try provider.transcriptionModel("machine")
 
-    await #expect(throws: AIError.invalidResponse(provider: "revai.transcription", message: "Rev.ai transcription job submission failed.")) {
+    await #expect(throws: AIError.invalidResponse(provider: "revai.transcription", message: "Failed to submit transcription job to Rev.ai")) {
         _ = try await model.transcribe(AudioTranscriptionRequest(
             audio: Data("audio".utf8),
             fileName: "clip.wav",

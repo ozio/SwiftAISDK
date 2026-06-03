@@ -163,6 +163,8 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/deepgram` | `2.0.33` | Current audio batch: package re-read across provider/transcription/speech/options/errors; `{error:{message,code}}` HTTP errors, missing transcription query mappings, speech option cleanup, provider metadata, warnings, and abort propagation aligned. |
 | `@ai-sdk/elevenlabs` | `2.0.33` | Current audio batch: package re-read across provider/speech/transcription/options/errors; `{error:{message,code}}` HTTP errors, speech JSON body/query, STT multipart/defaults, validation, metadata, warnings, and abort propagation aligned. |
 | `@ai-sdk/assemblyai` | `2.0.33` | Current audio batch: package re-read across provider/transcription/options/errors/upload-submit-poll; `{error:{message,code}}` HTTP errors on upload/submit/poll, submit response handling, status/result schemas, metadata, and abort propagation aligned. |
+| `@ai-sdk/gladia` | `2.0.33` | Current transcription batch: package re-read across provider/transcription/options/errors/upload-init-poll; `{error:{message,code}}` HTTP errors on upload/init/poll, upstream lifecycle messages, option schema, status/result schemas, metadata, and abort propagation aligned. |
+| `@ai-sdk/revai` | `2.0.33` | Current transcription batch: package re-read across provider/transcription/options/errors/submit-poll-transcript; `{error:{message,code}}` HTTP errors, upstream lifecycle messages, multipart config/options, result schema, metadata, and abort propagation aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -174,6 +176,34 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/gladia`
+
+```text
+Package: @ai-sdk/gladia
+Baseline: 2.0.33
+Upstream inspected: gladia-provider.ts, gladia-error.ts, gladia-transcription-model.ts, API/config files.
+Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, GladiaProviderTests.swift.
+Surfaces checked: provider factory, default base URL, GLADIA_API_KEY auth, user-agent suffix, no-arg default model, upload/init/poll lifecycle, providerOptions schema/null namespace, legacy extraBody mapping, nested option key conversion, standard language behavior, result status/result validation, failed/empty/timeout lifecycle messages, HTTP error schema on upload/init/poll, metadata, abort propagation.
+Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Gladia|RevAI'; full swift test in the current transcription batch.
+Commit evidence: Current transcription batch.
+Reopen only if: gladia npm version changes, upload/init/poll schemas change, option/error schema changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/revai`
+
+```text
+Package: @ai-sdk/revai
+Baseline: 2.0.33
+Upstream inspected: revai-provider.ts, revai-error.ts, revai-transcription-model.ts, API/options/config files.
+Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, RevAIProviderTests.swift.
+Surfaces checked: provider factory, default base URL, REVAI_API_KEY bearer auth, user-agent suffix, multipart job submit, poll job status, transcript fetch, providerOptions schema/defaults/null namespace, nested summarization/translation config defaults, submission language retention, zero-duration segment behavior, failed/timeout lifecycle messages, HTTP error schema on submit/poll/transcript, metadata, abort propagation.
+Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
+Tests run: swift test --filter 'Gladia|RevAI'; full swift test in the current transcription batch.
+Commit evidence: Current transcription batch.
+Reopen only if: revai npm version changes, submit/poll/transcript schemas change, option/error schema changes, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/deepgram`
 
@@ -618,8 +648,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 | `@ai-sdk/deepinfra` | `2.0.52` | `45b7c7a`, `6eaf86d`: provider parity and user agent. |
 | `@ai-sdk/fireworks` | `2.0.53` | `b007be4`, `2ea4fb3`: image provider parity and user agent. |
 | `@ai-sdk/togetherai` | `2.0.53` | `7511a6f`, `ee8e15f`, `8a1c02d`: provider/media validation/user agent. |
-| `@ai-sdk/gladia` | `2.0.33` | `3556db5`, `d5be7d9`, `5dba70d`: option schema/polling result/transcription parity. |
-| `@ai-sdk/revai` | `2.0.33` | `6d53477`, `2bf52ae`, `2766762`, `c721831`: option schema/options/transcript response/user agent. |
 | `@ai-sdk/hume` | `2.0.33` | `3a601dd`, `afd5ac3`, `0003f86`, `ab29ac4`: option schema/options/model identity/speech parity. |
 | `@ai-sdk/lmnt` | `2.0.33` | `63361fb`, `24606d0`, `e93b4fc`, `d1597d0`: option schema/options/auth casing/user agent. |
 | `@ai-sdk/voyage` | `1.0.4` | `d8f3617`, `b805d56`: option schema and response parity. |
@@ -635,5 +663,5 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Do final package sweeps for media/audio providers that already have option
-   schema work: Gladia, RevAI, Hume, LMNT.
+   schema work: Hume, LMNT.
 2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
