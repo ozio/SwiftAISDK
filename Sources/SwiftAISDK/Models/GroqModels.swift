@@ -41,7 +41,7 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
             text: text,
             reasoning: reasoning,
             finishReason: groqFinishReason(choice?["finish_reason"]?.stringValue),
-            usage: tokenUsage(from: raw),
+            usage: groqUsage(from: raw["usage"]),
             toolCalls: toolCalls,
             rawValue: raw,
             warnings: prepared.warnings,
@@ -80,7 +80,7 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                             didEmitResponseMetadata = true
                             continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: response, modelID: modelID)))
                         }
-                        latestUsage = tokenUsage(from: raw["x_groq"] ?? raw) ?? tokenUsage(from: raw) ?? latestUsage
+                        latestUsage = groqUsage(from: raw["x_groq"]?["usage"]) ?? groqUsage(from: raw["usage"]) ?? latestUsage
                         if let reasoning = raw["choices"]?[0]?["delta"]?["reasoning"]?.stringValue, !reasoning.isEmpty {
                             let id = activeReasoningID ?? "reasoning-0"
                             if activeReasoningID == nil {
@@ -447,6 +447,22 @@ private let groqTranscriptionProviderOptionKeys: Set<String> = [
     "temperature",
     "timestampGranularities"
 ]
+
+private func groqUsage(from usage: JSONValue?) -> TokenUsage? {
+    guard let usage, usage != .null else { return nil }
+    let promptTokens = usage["prompt_tokens"]?.intValue ?? 0
+    let completionTokens = usage["completion_tokens"]?.intValue ?? 0
+    let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue
+    return TokenUsage(
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        totalTokens: usage["total_tokens"]?.intValue ?? promptTokens + completionTokens,
+        inputTokensNoCache: promptTokens,
+        outputTextTokens: reasoningTokens.map { completionTokens - $0 } ?? completionTokens,
+        outputReasoningTokens: reasoningTokens,
+        rawValue: usage
+    )
+}
 
 private func groqValidateChatProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]

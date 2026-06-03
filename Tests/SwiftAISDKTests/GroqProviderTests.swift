@@ -6,7 +6,7 @@ import Testing
     let transport = RecordingTransport(response: sseResponse("""
     data: {"id":"groq-1","created":1780326500,"model":"qwen/qwen3-32b","choices":[{"index":0,"delta":{"reasoning":"think"},"finish_reason":null}]}
 
-    data: {"id":"groq-1","model":"qwen/qwen3-32b","choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}],"x_groq":{"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"completion_tokens_details":{"reasoning_tokens":1}}}}
+    data: {"id":"groq-1","model":"qwen/qwen3-32b","choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}],"x_groq":{"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"prompt_tokens_details":{"cached_tokens":1},"completion_tokens_details":{"reasoning_tokens":1}}}}
 
     data: [DONE]
 
@@ -18,7 +18,7 @@ import Testing
     var responseMetadata: AIResponseMetadata?
     var reasoningLifecycle: [String] = []
     var textLifecycle: [String] = []
-    var totalTokens: Int?
+    var usage: TokenUsage?
     for try await part in model.stream(LanguageModelRequest(
         messages: [.user("Hi")],
         reasoning: "xhigh",
@@ -52,8 +52,8 @@ import Testing
             textLifecycle.append("delta:\(id):\(delta)")
         case let .textEnd(id, _):
             textLifecycle.append("end:\(id)")
-        case let .finish(_, usage):
-            totalTokens = usage?.totalTokens
+        case let .finish(_, finishUsage):
+            usage = finishUsage
         default:
             break
         }
@@ -65,7 +65,14 @@ import Testing
     #expect(responseMetadata?.headers["x-groq"] == "stream")
     #expect(reasoningLifecycle == ["start:reasoning-0", "delta:reasoning-0:think", "end:reasoning-0"])
     #expect(textLifecycle == ["start:txt-0", "delta:txt-0:answer", "end:txt-0"])
-    #expect(totalTokens == 5)
+    #expect(usage?.totalTokens == 5)
+    #expect(usage?.inputTokens == 2)
+    #expect(usage?.inputTokensNoCache == 2)
+    #expect(usage?.inputTokensCacheRead == nil)
+    #expect(usage?.outputTokens == 3)
+    #expect(usage?.outputTextTokens == 2)
+    #expect(usage?.outputReasoningTokens == 1)
+    #expect(usage?.rawValue?["prompt_tokens_details"]?["cached_tokens"]?.intValue == 1)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.groq.com/openai/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer groq-key")
@@ -379,7 +386,7 @@ import Testing
 
 @Test func groqLanguageParsesToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"groq-1","created":1780326500,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning":"Need weather.","tool_calls":[{"id":"tk85n1k4m","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":210,"completion_tokens":15,"total_tokens":225}}
+    {"id":"groq-1","created":1780326500,"model":"llama-3.3-70b-versatile","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning":"Need weather.","tool_calls":[{"id":"tk85n1k4m","type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":210,"completion_tokens":15,"total_tokens":225,"prompt_tokens_details":{"cached_tokens":12},"completion_tokens_details":{"reasoning_tokens":5}}}
     """, headers: ["x-groq": "generate"]))
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
     let model = try provider.languageModel("llama-3.3-70b-versatile")
@@ -393,6 +400,11 @@ import Testing
     #expect(result.reasoning == "Need weather.")
     #expect(result.finishReason == "tool-calls")
     #expect(result.usage?.totalTokens == 225)
+    #expect(result.usage?.inputTokensNoCache == 210)
+    #expect(result.usage?.inputTokensCacheRead == nil)
+    #expect(result.usage?.outputTextTokens == 10)
+    #expect(result.usage?.outputReasoningTokens == 5)
+    #expect(result.usage?.rawValue?["prompt_tokens_details"]?["cached_tokens"]?.intValue == 12)
     #expect(result.responseMetadata.id == "groq-1")
     #expect(result.responseMetadata.modelID == "llama-3.3-70b-versatile")
     #expect(result.responseMetadata.headers["x-groq"] == "generate")
