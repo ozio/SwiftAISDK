@@ -267,6 +267,7 @@ public enum AuthorizationStyle: Equatable, Hashable, Sendable {
 
 public struct ProviderSettings: Sendable {
     public var apiKey: String?
+    public var authToken: String?
     public var baseURL: String?
     public var modelURL: String?
     public var organization: String?
@@ -282,6 +283,7 @@ public struct ProviderSettings: Sendable {
 
     public init(
         apiKey: String? = nil,
+        authToken: String? = nil,
         baseURL: String? = nil,
         modelURL: String? = nil,
         organization: String? = nil,
@@ -296,6 +298,7 @@ public struct ProviderSettings: Sendable {
         name: String? = nil
     ) {
         self.apiKey = apiKey
+        self.authToken = authToken
         self.baseURL = baseURL
         self.modelURL = modelURL
         self.organization = organization

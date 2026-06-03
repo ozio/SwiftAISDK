@@ -174,7 +174,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             path: path,
             modelID: modelID,
             body: .object(body),
-            headers: anthropicHeaders(request.headers, configHeaders: config.headers, betas: preparedRequest.betas)
+            headers: anthropicHeaders(request.headers, configHeaders: config.headers, betas: preparedRequest.betas),
+            abortSignal: request.abortSignal
         )
         let raw = response.json
         let toolCalls = anthropicToolCalls(from: raw["content"])
@@ -221,7 +222,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         path: path,
                         modelID: modelID,
                         body: .object(body),
-                        headers: anthropicHeaders(request.headers, configHeaders: config.headers, betas: preparedRequest.betas)
+                        headers: anthropicHeaders(request.headers, configHeaders: config.headers, betas: preparedRequest.betas),
+                        abortSignal: request.abortSignal
                     ))
                     guard (200..<300).contains(response.statusCode) else {
                         throw httpStatusError(provider: providerID, response: response)
@@ -331,12 +333,21 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         if let topK = request.topK { body["top_k"] = .number(Double(topK)) }
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if !request.stopSequences.isEmpty { body["stop_sequences"] = .array(request.stopSequences) }
-        let preparedTools = anthropicPrepareTools(from: request.tools)
+        let providerOptions = try anthropicOptions(from: request, providerID: providerID)
+        let preparedTools = anthropicPrepareTools(
+            from: request.tools,
+            toolChoice: request.toolChoice ?? providerOptions.toolChoice,
+            disableParallelToolUse: providerOptions.disableParallelToolUse,
+            defaultEagerInputStreaming: stream && (providerOptions.toolStreaming ?? true)
+        )
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)
         }
-        let providerOptions = try anthropicOptions(from: request)
+        if let toolChoice = preparedTools.toolChoice {
+            body["tool_choice"] = toolChoice
+        }
         body.merge(providerOptions.body) { _, new in new }
+        warnings.append(contentsOf: preparedTools.warnings)
         anthropicApplyResponseFormat(request.responseFormat, to: &body, warnings: &warnings)
         applyAnthropicThinkingRules(
             to: &body,
@@ -782,11 +793,18 @@ private struct AnthropicStreamingToolCalls {
 
 private struct AnthropicPreparedTools {
     var tools: [JSONValue] = []
+    var toolChoice: JSONValue?
     var betas: [String] = []
+    var warnings: [AIWarning] = []
     var hasCodeExecution = false
 }
 
-private func anthropicPrepareTools(from tools: [String: JSONValue]) -> AnthropicPreparedTools {
+private func anthropicPrepareTools(
+    from tools: [String: JSONValue],
+    toolChoice: JSONValue? = nil,
+    disableParallelToolUse: Bool? = nil,
+    defaultEagerInputStreaming: Bool = false
+) -> AnthropicPreparedTools {
     var prepared = AnthropicPreparedTools()
 
     func addBeta(_ beta: String) {
@@ -799,7 +817,11 @@ private func anthropicPrepareTools(from tools: [String: JSONValue]) -> Anthropic
         let object = schema.objectValue
         let isProviderTool = object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue?.hasPrefix("anthropic.") == true
         guard isProviderTool else {
-            prepared.tools.append(.object(["name": .string(name), "input_schema": schema]))
+            var tool: [String: JSONValue] = ["name": .string(name), "input_schema": schema]
+            if defaultEagerInputStreaming {
+                tool["eager_input_streaming"] = true
+            }
+            prepared.tools.append(.object(tool))
             continue
         }
 
@@ -873,8 +895,15 @@ private func anthropicPrepareTools(from tools: [String: JSONValue]) -> Anthropic
             tool["caching"] = args["caching"]
             prepared.tools.append(.object(tool.compactMapValues { $0 }))
         default:
-            break
+            prepared.warnings.append(AIWarning(type: "unsupported", feature: "provider-defined tool \(id)"))
         }
+    }
+    let choice = anthropicToolChoice(from: toolChoice, disableParallelToolUse: disableParallelToolUse)
+    if choice.omitTools {
+        prepared.tools = []
+        prepared.toolChoice = nil
+    } else if !prepared.tools.isEmpty {
+        prepared.toolChoice = choice.value
     }
     return prepared
 }
@@ -908,6 +937,40 @@ private func anthropicWebTool(type: String, name: String, args: [String: JSONVal
         tool["user_location"] = args["userLocation"]
     }
     return .object(tool.compactMapValues { $0 })
+}
+
+private func anthropicToolChoice(from value: JSONValue?, disableParallelToolUse: Bool?) -> (value: JSONValue?, omitTools: Bool) {
+    guard let value else {
+        guard let disableParallelToolUse, disableParallelToolUse else {
+            return (nil, false)
+        }
+        return (.object([
+            "type": .string("auto"),
+            "disable_parallel_tool_use": .bool(disableParallelToolUse)
+        ]), false)
+    }
+
+    let type = value["type"]?.stringValue ?? value.stringValue
+    var object: [String: JSONValue]
+    switch type {
+    case "auto":
+        object = ["type": .string("auto")]
+    case "required", "any":
+        object = ["type": .string("any")]
+    case "none":
+        return (nil, true)
+    case "tool":
+        object = ["type": .string("tool")]
+        if let name = value["toolName"]?.stringValue ?? value["name"]?.stringValue {
+            object["name"] = .string(name)
+        }
+    default:
+        return (nil, false)
+    }
+    if let disableParallelToolUse {
+        object["disable_parallel_tool_use"] = .bool(disableParallelToolUse)
+    }
+    return (.object(object), false)
 }
 
 private func anthropicHeaders(_ requestHeaders: [String: String], configHeaders: [String: String], betas: [String]) -> [String: String] {
@@ -1657,6 +1720,9 @@ func anthropicFinishReason(_ reason: String?) -> String? {
 private struct AnthropicMappedOptions {
     var body: [String: JSONValue]
     var betas: [String]
+    var toolChoice: JSONValue?
+    var disableParallelToolUse: Bool?
+    var toolStreaming: Bool?
 }
 
 private let anthropicLanguageProviderOptionKeys: Set<String> = [
@@ -1677,20 +1743,42 @@ private let anthropicLanguageProviderOptionKeys: Set<String> = [
     "contextManagement"
 ]
 
-private func anthropicOptions(from request: LanguageModelRequest) throws -> AnthropicMappedOptions {
+private func anthropicOptions(from request: LanguageModelRequest, providerID: String) throws -> AnthropicMappedOptions {
     var output = anthropicOptions(from: request.extraBody)
     var betas: [String] = []
+    var toolChoice = output.removeValue(forKey: "tool_choice")
+    var disableParallelToolUse = request.extraBody["disableParallelToolUse"]?.boolValue
+    var toolStreaming = request.extraBody["toolStreaming"]?.boolValue
 
     if let value = request.providerOptions["anthropic"] {
         guard value != .null else {
-            return AnthropicMappedOptions(body: output, betas: betas)
+            return AnthropicMappedOptions(body: output, betas: betas, toolChoice: toolChoice, disableParallelToolUse: disableParallelToolUse, toolStreaming: toolStreaming)
         }
         guard let nested = value.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.anthropic", message: "Anthropic provider options must be an object.")
         }
-        let typed = try anthropicTypedOptions(from: nested)
+        let typed = try anthropicTypedOptions(from: nested, argumentPrefix: "providerOptions.anthropic")
         output.merge(typed.body) { _, typed in typed }
         betas.append(contentsOf: typed.betas)
+        toolChoice = typed.toolChoice ?? toolChoice
+        disableParallelToolUse = typed.disableParallelToolUse ?? disableParallelToolUse
+        toolStreaming = typed.toolStreaming ?? toolStreaming
+    }
+
+    let providerOptionsName = anthropicProviderOptionsName(from: providerID)
+    if providerOptionsName != "anthropic", let value = request.providerOptions[providerOptionsName] {
+        guard value != .null else {
+            return AnthropicMappedOptions(body: output, betas: betas, toolChoice: toolChoice, disableParallelToolUse: disableParallelToolUse, toolStreaming: toolStreaming)
+        }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName)", message: "Anthropic provider options must be an object.")
+        }
+        let typed = try anthropicTypedOptions(from: nested, argumentPrefix: "providerOptions.\(providerOptionsName)")
+        output.merge(typed.body) { _, typed in typed }
+        betas.append(contentsOf: typed.betas)
+        toolChoice = typed.toolChoice ?? toolChoice
+        disableParallelToolUse = typed.disableParallelToolUse ?? disableParallelToolUse
+        toolStreaming = typed.toolStreaming ?? toolStreaming
     }
 
     if let betaValue = request.extraBody["anthropicBeta"] {
@@ -1698,15 +1786,22 @@ private func anthropicOptions(from request: LanguageModelRequest) throws -> Anth
     }
     betas.append(contentsOf: anthropicAutomaticBetas(from: output))
 
-    return AnthropicMappedOptions(body: output, betas: betas)
+    return AnthropicMappedOptions(body: output, betas: betas, toolChoice: toolChoice, disableParallelToolUse: disableParallelToolUse, toolStreaming: toolStreaming)
 }
 
-private func anthropicTypedOptions(from options: [String: JSONValue]) throws -> AnthropicMappedOptions {
+private func anthropicTypedOptions(from options: [String: JSONValue], argumentPrefix: String) throws -> AnthropicMappedOptions {
     let knownOptions = options.filter { anthropicLanguageProviderOptionKeys.contains($0.key) }
     var body = anthropicOptions(from: knownOptions)
     body.removeValue(forKey: "anthropicBeta")
-    let betas = try anthropicBetaValues(options["anthropicBeta"], argument: "providerOptions.anthropic.anthropicBeta")
-    return AnthropicMappedOptions(body: body, betas: betas)
+    let toolChoice = body.removeValue(forKey: "tool_choice")
+    let disableParallelToolUse = options["disableParallelToolUse"]?.boolValue
+    let toolStreaming = options["toolStreaming"]?.boolValue
+    let betas = try anthropicBetaValues(options["anthropicBeta"], argument: "\(argumentPrefix).anthropicBeta")
+    return AnthropicMappedOptions(body: body, betas: betas, toolChoice: toolChoice, disableParallelToolUse: disableParallelToolUse, toolStreaming: toolStreaming)
+}
+
+private func anthropicProviderOptionsName(from providerID: String) -> String {
+    String(providerID.split(separator: ".", maxSplits: 1).first.map(String.init) ?? providerID)
 }
 
 private func anthropicBetaValues(_ value: JSONValue?, argument: String) throws -> [String] {

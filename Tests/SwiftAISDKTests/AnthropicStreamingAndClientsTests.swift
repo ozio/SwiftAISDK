@@ -182,6 +182,87 @@ import Testing
     #expect(body["stream"] == true)
 }
 
+@Test func anthropicLanguageStreamsUseEagerFunctionToolInputByDefaultLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    for try await _ in model.stream(LanguageModelRequest(
+        messages: [.user("Use lookup.")],
+        tools: ["lookup": ["type": "object", "properties": ["query": ["type": "string"]]]]
+    )) {}
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["tools"]?[0]?["eager_input_streaming"]?.boolValue == true)
+}
+
+@Test func anthropicLanguageRespectsToolStreamingFalseLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    for try await _ in model.stream(LanguageModelRequest(
+        messages: [.user("Use lookup.")],
+        tools: ["lookup": ["type": "object", "properties": ["query": ["type": "string"]]]],
+        providerOptions: ["anthropic": ["toolStreaming": false]]
+    )) {}
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["tools"]?[0]?["eager_input_streaming"] == nil)
+}
+
+@Test func anthropicLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+        """),
+        sseResponse("""
+        event: content_block_delta
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+        event: message_delta
+        data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+        event: message_stop
+        data: {"type":"message_stop"}
+
+        """)
+    ])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+    let controller = AIAbortController()
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: controller.signal))
+    for try await _ in model.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: controller.signal)) {}
+
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].abortSignal === controller.signal)
+    #expect(requests[1].abortSignal === controller.signal)
+}
+
 @Test func anthropicLanguageStreamsThinkingDeltasAndMappedFinishReason() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     event: content_block_delta

@@ -528,17 +528,28 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
     public let providerID = "anthropic"
     public let supportedCapabilities: Set<ModelCapability> = [.language]
     private let config: ModelHTTPConfig
+    private let languageProviderID: String
 
     public init(settings: ProviderSettings = ProviderSettings()) throws {
-        var headers = try OpenAICompatibleProvider.buildHeaders(
-            providerID: providerID,
-            authorization: .apiKeyHeader(name: "x-api-key", environmentVariables: ["ANTHROPIC_API_KEY"]),
-            settings: settings
-        )
+        if settings.apiKey != nil, settings.authToken != nil {
+            throw AIError.invalidArgument(argument: "apiKey/authToken", message: "Both apiKey and authToken were provided. Please use only one authentication method.")
+        }
+        var headers = settings.headers
+        if let authToken = settings.authToken {
+            headers["Authorization"] = headers["Authorization"] ?? "Bearer \(authToken)"
+        } else {
+            let key = settings.apiKey ?? environmentValue(["ANTHROPIC_API_KEY"])
+            guard let key else {
+                throw AIError.missingAPIKey(provider: providerID, environmentVariables: ["ANTHROPIC_API_KEY"])
+            }
+            headers["x-api-key"] = headers["x-api-key"] ?? key
+        }
+        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/3.0.81")
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
+        languageProviderID = settings.name ?? "anthropic.messages"
         config = ModelHTTPConfig(
             providerID: providerID,
-            baseURL: settings.baseURL ?? "https://api.anthropic.com/v1",
+            baseURL: settings.baseURL ?? environmentValue(["ANTHROPIC_BASE_URL"]) ?? "https://api.anthropic.com/v1",
             headers: headers,
             transport: settings.transport,
             includeUsage: settings.includeUsage,
@@ -549,7 +560,7 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
-        AnthropicLanguageModel(modelID: modelID, config: config.withProviderID("anthropic.messages"))
+        AnthropicLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID))
     }
 
     public func messages(_ modelID: String) throws -> any LanguageModel {

@@ -41,6 +41,50 @@ import Testing
     #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/3.0.81")
 }
 
+@Test func anthropicAuthTokenBaseURLAndCustomProviderNameMirrorUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"custom"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        authToken: "auth-token",
+        baseURL: "https://anthropic-proxy.example.com/v1/",
+        transport: transport,
+        name: "custom-anthropic.messages"
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    #expect(model.providerID == "custom-anthropic.messages")
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "anthropic": [
+                "metadata": ["userId": "canonical-user"]
+            ],
+            "custom-anthropic": [
+                "metadata": ["userId": "custom-user"],
+                "anthropicBeta": ["custom-beta-2026-01-01"]
+            ]
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://anthropic-proxy.example.com/v1/messages")
+    #expect(request.headers["authorization"] == "Bearer auth-token")
+    #expect(request.headers["x-api-key"] == nil)
+    #expect(request.headers["anthropic-beta"]?.contains("custom-beta-2026-01-01") == true)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["metadata"]?["user_id"]?.stringValue == "custom-user")
+}
+
+@Test func anthropicRejectsExplicitAPIKeyAndAuthTokenLikeUpstream() throws {
+    #expect(throws: AIError.invalidArgument(
+        argument: "apiKey/authToken",
+        message: "Both apiKey and authToken were provided. Please use only one authentication method."
+    )) {
+        _ = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", authToken: "auth-token"))
+    }
+}
+
 @Test func anthropicMessagesAliasUsesMessagesModel() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"alias"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
@@ -484,6 +528,45 @@ import Testing
     #expect(result.warnings.contains {
         $0.type == "other" && $0.message == "code execution tool is required when using skills"
     })
+}
+
+@Test func anthropicRequestMapsToolChoiceAndDisableParallelLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"content":[{"type":"text","text":"tool choice"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+        """),
+        jsonResponse("""
+        {"content":[{"type":"text","text":"none"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+        """)
+    ])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+    let tools: [String: JSONValue] = [
+        "lookup": ["type": "object", "properties": ["query": ["type": "string"]]]
+    ]
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use lookup.")],
+        tools: tools,
+        toolChoice: ["type": "tool", "toolName": "lookup"],
+        providerOptions: ["anthropic": ["disableParallelToolUse": true]]
+    ))
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Do not use tools.")],
+        tools: tools,
+        toolChoice: ["type": "none"]
+    ))
+
+    let requests = await transport.requests()
+    let firstBody = try decodeJSONBody(try #require(requests[0].body))
+    #expect(firstBody["tools"]?[0]?["name"]?.stringValue == "lookup")
+    #expect(firstBody["tool_choice"]?["type"]?.stringValue == "tool")
+    #expect(firstBody["tool_choice"]?["name"]?.stringValue == "lookup")
+    #expect(firstBody["tool_choice"]?["disable_parallel_tool_use"]?.boolValue == true)
+
+    let secondBody = try decodeJSONBody(try #require(requests[1].body))
+    #expect(secondBody["tools"] == nil)
+    #expect(secondBody["tool_choice"] == nil)
 }
 
 @Test func anthropicRequestConvertsProviderReferenceFilesLikeUpstream() async throws {
