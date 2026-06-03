@@ -149,6 +149,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/mistral` | `3.0.37` | `54733c8`: package re-read across provider/chat/messages/tools/embedding; Mistral finish/error mapping and tool execution-denied output aligned after existing native chat/embedding parity coverage. |
 | `@ai-sdk/cohere` | `3.0.36` | `5f0bd7f`: package re-read across provider/chat/prompt/tools/embedding/reranking; Cohere stream error chunks, tool-call argument canonicalization, and execution-denied output aligned after existing native parity coverage. |
 | `@ai-sdk/perplexity` | `3.0.33` | `3b96637`: package re-read across provider/language/messages/options/usage/finish schemas; stream parse errors now surface as error parts after existing search/citation/metadata parity coverage. |
+| `@ai-sdk/xai` | `3.0.93` | `7d689df`: package re-read across provider/chat/responses/tools/image/video/files; xAI Responses request prep now owns option/input/tool mapping instead of riding the OpenAI-compatible builder, and chat/Responses reasoning option schemas were aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -271,6 +272,20 @@ Known Swift differences / out of scope: Swift exposes `extraBody` as an addition
 Tests run: swift test --filter perplexity; swift test with 902 tests.
 Commit evidence: 3b96637.
 Reopen only if: perplexity npm version changes, chat/options/message/usage/stream schemas change, Perplexity adds new provider capabilities, Swift core adds async settings/generateId/supportedUrls hooks, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/xai`
+
+```text
+Package: @ai-sdk/xai
+Baseline: 3.0.93
+Upstream inspected: xai-provider.ts, xai-chat-language-model.ts, xai-chat-options.ts, convert-to-xai-chat-messages.ts, xai-prepare-tools.ts, convert-xai-chat-usage.ts, map-xai-finish-reason.ts, responses/xai-responses-language-model.ts, responses/xai-responses-options.ts, responses/convert-to-xai-responses-input.ts, responses/xai-responses-prepare-tools.ts, responses/convert-xai-responses-usage.ts, xai-image-model.ts, xai-image-options.ts, xai-video-model.ts, xai-video-options.ts, tool/*.ts, xai-error.ts, index.ts, version.ts.
+Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, XAIResponses.swift, XAIModels.swift, FileClients.swift, XAIChatProviderTests.swift, XAIProviderTests.swift, ResponsesEndpointTests.swift, FileAndSkillClientTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
+Surfaces checked: factory aliases, provider IDs, default base URL, XAI_API_KEY auth, custom header precedence, user-agent suffix, unsupported embeddings, chat route, Responses route, image route, video route, files route, provider references, chat providerOptions, Responses providerOptions, reasoning effort schemas, logprobs/topLogprobs, seed, structured JSON formats, search parameters, function tools, xAI provider-defined tools, provider-tool toolChoice warnings, message/input conversion, inline image data, non-image Files API references, tool-result serialization, usage/cache/reasoning token conversion, finish reasons, response metadata, media polling/options/metadata, file metadata/team ID, stream usage/raw/error coverage, and abort propagation through language/media/file paths.
+Known Swift differences / out of scope: Swift has no separate non-image URL file content part in the core message contract, so xAI Responses non-image files use Files API provider references (`file_id`) rather than upstream URL file parts; Swift settings are static dictionaries rather than upstream async resolvable header functions; upstream `generateId` customization is not exposed as a public Swift hook.
+Tests run: swift test --filter xAI; swift test --filter ResponsesEndpoint; swift test with 903 tests.
+Commit evidence: 7d689df.
+Reopen only if: xai npm version changes, xAI chat/Responses providerOptions schemas change, xAI tool or media/file schemas change, Swift core adds URL file parts/async settings/generateId hooks, live smoke or user bug reports a concrete mismatch.
 ```
 
 #### `@ai-sdk/anthropic-aws`
@@ -406,7 +421,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/xai` | `3.0.93` | `b9cbbd3`, `4a63a9f`, `62183f0`, `b6543e7`, `899bb80`, `f5f3639`: image/video/options/responses/files/chat usage/provider refs/user agent. |
 | `@ai-sdk/deepseek` | `2.0.35` | `cf03d70`, `9b1abb6`: provider options and reasoning history. |
 | `@ai-sdk/cerebras` | `2.0.54` | `7583bf4`, `e271d29`, `7279a9a`: options, structured finish, user agent. |
 | `@ai-sdk/moonshotai` | `2.0.23` | `80bcd36`, `2b244c6`, `c58f369`: options, chat parity, user agent. |
@@ -442,7 +456,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 The realistic remaining provider work is not "all providers". It is:
 
 1. Do final package sweeps for the already-covered language providers:
-   xAI, DeepSeek, Cerebras, MoonshotAI, Alibaba.
+   DeepSeek, Cerebras, MoonshotAI, Alibaba.
 2. Do final package sweeps for media/audio providers that already have option
    schema work: Replicate, Luma, KlingAI, Black Forest Labs, ByteDance, Prodia,
    Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.

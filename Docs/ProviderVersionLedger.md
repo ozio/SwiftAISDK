@@ -53,4 +53,4 @@ Versions below were checked with `npm view <package> version` on 2026-06-03.
 | `@ai-sdk/togetherai` | `2.0.53` | `AIProviders.togetherAI`, `TogetherAIImageModel`, `TogetherAIRerankingModel`, `TogetherAIProviderTests.swift` |
 | `@ai-sdk/vercel` | `2.0.50` | `AIProviders.vercel`, `VercelProvider`, `ProviderRegistryVercelTests.swift` |
 | `@ai-sdk/voyage` | `1.0.4` | `AIProviders.voyage`, `VoyageEmbeddingModel`, `VoyageRerankingModel`, `VoyageProviderOptionSchemaTests.swift` |
-| `@ai-sdk/xai` | `3.0.93` | `AIProviders.xAI`, `XAITools`, `XAIImageModel`, `XAIVideoModel`, `XAIProviderTests.swift` |
+| `@ai-sdk/xai` | `3.0.93` | `AIProviders.xAI`, `XAIResponses.swift`, `XAITools`, `XAIImageModel`, `XAIVideoModel`, `XAIProviderTests.swift` |
