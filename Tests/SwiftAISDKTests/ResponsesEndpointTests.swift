@@ -353,7 +353,7 @@ import Testing
 
 @Test func perplexityLanguageUsesNativeChatShapeAndKeepsMetadata() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}],"citations":["https://example.com/a"],"images":[{"image_url":"https://img.example.com/a.png","origin_url":"https://origin.example.com","height":512,"width":768}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"citation_tokens":2,"num_search_queries":1,"cost":{"request_cost":0.01,"total_cost":0.02}}}
+    {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}],"citations":["https://example.com/a"],"images":[{"image_url":"https://img.example.com/a.png","origin_url":"https://origin.example.com","height":512,"width":768}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"reasoning_tokens":1,"citation_tokens":2,"num_search_queries":1,"cost":{"request_cost":0.01,"total_cost":0.02}}}
     """))
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
     let model = try provider.languageModel("sonar")
@@ -364,7 +364,7 @@ import Testing
             AIMessage(role: .user, content: [
                 .text("Look at this."),
                 .imageURL("https://example.com/image.png"),
-                .data(mimeType: "application/pdf", data: Data("pdf".utf8))
+                .file(mimeType: "application/pdf", data: Data("pdf".utf8), filename: "brief.pdf")
             ])
         ],
         temperature: 0.2,
@@ -376,6 +376,10 @@ import Testing
 
     #expect(result.text == "answer")
     #expect(result.usage?.totalTokens == 7)
+    #expect(result.usage?.inputTokensNoCache == 3)
+    #expect(result.usage?.outputReasoningTokens == 1)
+    #expect(result.usage?.outputTextTokens == 3)
+    #expect(result.usage?.rawValue?["reasoning_tokens"]?.intValue == 1)
     #expect(result.sources.count == 1)
     #expect(result.sources[0].id == "citation-0")
     #expect(result.sources[0].sourceType == "url")
@@ -390,7 +394,8 @@ import Testing
     #expect(result.providerMetadata["perplexity"]?["cost"]?["totalCost"]?.doubleValue == 0.02)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.perplexity.ai/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer pplx-key")
+    #expect(request.headers["authorization"] == "Bearer pplx-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/3.0.33")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "sonar")
     #expect(body["temperature"]?.doubleValue == 0.2)
@@ -405,7 +410,7 @@ import Testing
     #expect(content?[1]?["image_url"]?["url"]?.stringValue == "https://example.com/image.png")
     #expect(content?[2]?["type"]?.stringValue == "file_url")
     #expect(content?[2]?["file_url"]?["url"]?.stringValue == Data("pdf".utf8).base64EncodedString())
-    #expect(content?[2]?["file_name"]?.stringValue == "document-2.pdf")
+    #expect(content?[2]?["file_name"]?.stringValue == "brief.pdf")
 }
 
 @Test func perplexityLanguageMapsStructuredFormatWarningsAndMetadata() async throws {
@@ -472,13 +477,21 @@ import Testing
     #expect(body["return_images"]?.boolValue == true)
     #expect(body["search_recency_filter"]?.stringValue == "month")
     #expect(body["perplexity"] == nil)
+
+    await #expect(throws: AIError.invalidArgument(argument: "messages", message: "Perplexity does not support tool messages.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            .toolResponses(toolResults: [
+                AIToolResult(toolCallID: "call-1", toolName: "lookup", result: "done")
+            ])
+        ]))
+    }
 }
 
 @Test func perplexityLanguageStreamsNativeChunksWithUsage() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"hel"},"finish_reason":null}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3},"citations":["https://example.com/a"]}
 
-    data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"lo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4,"citation_tokens":1,"num_search_queries":1}}
+    data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"lo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4,"reasoning_tokens":1,"citation_tokens":1,"num_search_queries":1}}
 
     data: [DONE]
 
@@ -491,6 +504,8 @@ import Testing
     var sources: [AISource] = []
     var finishReason: String?
     var totalTokens: Int?
+    var outputReasoningTokens: Int?
+    var outputTextTokens: Int?
     var providerMetadata: [String: JSONValue] = [:]
     var metadata: AIResponseMetadata?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
@@ -508,6 +523,8 @@ import Testing
         case let .finishMetadata(reason, usage, metadata):
             finishReason = reason
             totalTokens = usage?.totalTokens
+            outputReasoningTokens = usage?.outputReasoningTokens
+            outputTextTokens = usage?.outputTextTokens
             providerMetadata = metadata
         case let .responseMetadata(value):
             metadata = value
@@ -524,6 +541,8 @@ import Testing
     #expect(sources[0].providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
     #expect(finishReason == "stop")
     #expect(totalTokens == 4)
+    #expect(outputReasoningTokens == 1)
+    #expect(outputTextTokens == 1)
     #expect(providerMetadata["perplexity"]?["usage"]?["citationTokens"]?.intValue == 1)
     #expect(providerMetadata["perplexity"]?["usage"]?["numSearchQueries"]?.intValue == 1)
     #expect(providerMetadata["perplexity"]?["images"] == .null)

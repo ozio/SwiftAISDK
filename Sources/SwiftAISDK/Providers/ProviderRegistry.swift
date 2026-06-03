@@ -193,7 +193,20 @@ public enum AIProviders {
     }
 
     public static func perplexity(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "perplexity", defaultBaseURL: "https://api.perplexity.ai", authorization: .bearer(environmentVariables: ["PERPLEXITY_API_KEY"]), supportedCapabilities: [.language], settings: settings)
+        let headers = try perplexityHeaders(settings: settings)
+        let config = ModelHTTPConfig(
+            providerID: "perplexity",
+            baseURL: settings.baseURL ?? "https://api.perplexity.ai",
+            modelURL: settings.modelURL,
+            headers: headers,
+            transport: settings.transport,
+            includeUsage: settings.includeUsage,
+            queryParams: settings.queryParams,
+            supportsStructuredOutputs: settings.supportsStructuredOutputs,
+            maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
+            transformRequestBody: settings.transformRequestBody
+        )
+        return OpenAICompatibleProvider(providerID: "perplexity", supportedCapabilities: [.language], config: config)
     }
 
     public static func fireworks(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -378,6 +391,16 @@ private func googleVertexAnthropicBaseURL(project: String?, location: String?) t
     let location = location ?? environmentValue(["GOOGLE_VERTEX_LOCATION"]) ?? "global"
     let host = location == "global" ? "aiplatform.googleapis.com" : "\(location)-aiplatform.googleapis.com"
     return "https://\(host)/v1/projects/\(project)/locations/\(location)/publishers/anthropic/models"
+}
+
+private func perplexityHeaders(settings: ProviderSettings) throws -> [String: String] {
+    var headers = settings.headers
+    let key = settings.apiKey ?? environmentValue(["PERPLEXITY_API_KEY"])
+    guard let key else {
+        throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
+    }
+    headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
+    return withUserAgentSuffix(headers, "ai-sdk/perplexity/3.0.33")
 }
 
 private func klingAIJWT(accessKey: String, secretKey: String, now: Date = Date()) throws -> String {

@@ -11,7 +11,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = perplexityPreparedCall(for: request, modelID: modelID, stream: false)
+        let prepared = try perplexityPreparedCall(for: request, modelID: modelID, stream: false)
         let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
@@ -27,7 +27,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
         return TextGenerationResult(
             text: text,
             finishReason: perplexityFinishReason(choice?["finish_reason"]?.stringValue),
-            usage: tokenUsage(from: raw),
+            usage: perplexityUsage(from: raw),
             sources: perplexitySources(from: raw["citations"]),
             providerMetadata: perplexityProviderMetadata(from: raw),
             rawValue: raw,
@@ -40,7 +40,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = perplexityPreparedCall(for: request, modelID: modelID, stream: true)
+                    let prepared = try perplexityPreparedCall(for: request, modelID: modelID, stream: true)
                     let body = JSONValue.object(prepared.body)
                     let response = try await config.transport.send(config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal))
                     guard (200..<300).contains(response.statusCode) else {
@@ -63,7 +63,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                             didEmitResponseMetadata = true
                             continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: response, modelID: modelID)))
                         }
-                        latestUsage = tokenUsage(from: raw) ?? latestUsage
+                        latestUsage = perplexityUsage(from: raw) ?? latestUsage
                         perplexityMergeProviderMetadata(from: raw, into: &providerMetadata)
                         if !didEmitSources {
                             didEmitSources = true
@@ -101,12 +101,12 @@ private struct PerplexityPreparedCall {
     var warnings: [AIWarning]
 }
 
-private func perplexityPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) -> PerplexityPreparedCall {
+private func perplexityPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> PerplexityPreparedCall {
     var options = perplexityProviderOptions(from: request)
     let responseFormat = perplexityResolvedResponseFormat(request: request, options: &options)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
-        "messages": .array(request.messages.map(perplexityMessageJSON))
+        "messages": .array(try request.messages.map(perplexityMessageJSON))
     ]
     if stream { body["stream"] = true }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
@@ -267,6 +267,22 @@ private func perplexityImagesMetadata(from value: JSONValue?) -> JSONValue {
     })
 }
 
+private func perplexityUsage(from raw: JSONValue) -> TokenUsage? {
+    guard let usage = raw["usage"] else { return nil }
+    let inputTokens = usage["prompt_tokens"]?.intValue ?? 0
+    let outputTokens = usage["completion_tokens"]?.intValue ?? 0
+    let reasoningTokens = usage["reasoning_tokens"]?.intValue ?? 0
+    return TokenUsage(
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: usage["total_tokens"]?.intValue ?? inputTokens + outputTokens,
+        inputTokensNoCache: inputTokens,
+        outputTextTokens: outputTokens - reasoningTokens,
+        outputReasoningTokens: reasoningTokens,
+        rawValue: usage
+    )
+}
+
 private func perplexityFinishReason(_ reason: String?) -> String? {
     switch reason {
     case "stop", "length":
@@ -278,7 +294,11 @@ private func perplexityFinishReason(_ reason: String?) -> String? {
     }
 }
 
-private func perplexityMessageJSON(_ message: AIMessage) -> JSONValue {
+private func perplexityMessageJSON(_ message: AIMessage) throws -> JSONValue {
+    guard message.role != .tool else {
+        throw AIError.invalidArgument(argument: "messages", message: "Perplexity does not support tool messages.")
+    }
+
     let multipart = message.content.contains { part in
         switch part {
         case .text:
@@ -308,12 +328,17 @@ private func perplexityMessageJSON(_ message: AIMessage) -> JSONValue {
                 "type": .string("image_url"),
                 "image_url": .object(["url": .string(url)])
             ])
-        case let .data(mimeType, data) where mimeType == "application/pdf",
-             let .file(mimeType, data, _) where mimeType == "application/pdf":
+        case let .data(mimeType, data) where mimeType == "application/pdf":
             return .object([
                 "type": .string("file_url"),
                 "file_url": .object(["url": .string(data.base64EncodedString())]),
                 "file_name": .string("document-\(index).pdf")
+            ])
+        case let .file(mimeType, data, filename) where mimeType == "application/pdf":
+            return .object([
+                "type": .string("file_url"),
+                "file_url": .object(["url": .string(data.base64EncodedString())]),
+                "file_name": .string(filename ?? "document-\(index).pdf")
             ])
         case let .data(mimeType, data) where mimeType.hasPrefix("image/"),
              let .file(mimeType, data, _) where mimeType.hasPrefix("image/"):
