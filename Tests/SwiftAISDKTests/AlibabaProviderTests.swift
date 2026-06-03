@@ -180,6 +180,25 @@ import Testing
     #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/alibaba/1.0.25")
 }
 
+@Test func alibabaLanguageUsesUpstreamErrorMessageSchema() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 429,
+        headers: ["x-dashscope": "limited"],
+        body: Data(#"{"error":{"message":"Rate limit exceeded","code":"Throttling","type":"rate_limit"}}"#.utf8)
+    ))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.languageModel("qwen-plus")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "alibaba.chat",
+        statusCode: 429,
+        body: "Rate limit exceeded",
+        headers: ["x-dashscope": "limited"]
+    )) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+    }
+}
+
 @Test func alibabaLanguageMapsProviderOptionsAndRichUsage() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"chatcmpl-cache-test","created":1770764844,"model":"qwen-plus","choices":[{"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150,"prompt_tokens_details":{"cached_tokens":80,"cache_creation_input_tokens":20},"completion_tokens_details":{"reasoning_tokens":10}}}"#))
     let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
@@ -245,6 +264,14 @@ import Testing
 
     _ = try await model.generate(LanguageModelRequest(
         messages: [.user("Hi")],
+        providerOptions: ["alibaba": .null],
+        extraBody: ["alibaba": ["enableThinking": true]]
+    ))
+    var body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["enable_thinking"]?.boolValue == true)
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
         providerOptions: [
             "openai": ["enableThinking": true],
             "alibaba": [
@@ -256,7 +283,7 @@ import Testing
         extraBody: ["topK": 7]
     ))
 
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    body = try decodeJSONBody(try #require((await transport.requests())[1].body))
     #expect(body["enable_thinking"]?.boolValue == true)
     #expect(body["parallel_tool_calls"] == nil)
     #expect(body["top_k"]?.intValue == 7)
@@ -437,6 +464,17 @@ import Testing
     #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
 }
 
+@Test func alibabaLanguageMapsMissingUsageToEmptyUsageLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop","index":0}]}"#))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.languageModel("qwen-plus")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "ok")
+    #expect(result.usage == TokenUsage(inputTokensNoCache: 0, inputTokensCacheWrite: 0))
+}
+
 @Test func alibabaLanguageStreamsFragmentedToolCalls() async throws {
     let transport = RecordingTransport(response: sseResponse(#"""
     data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_weather","type":"function","function":{"name":"weather","arguments":"{\"location\":"}}]},"finish_reason":null}]}
@@ -488,6 +526,54 @@ import Testing
     #expect(try decodeJSONBody(Data((try #require(finalCall)).arguments.utf8))["location"]?.stringValue == "San Francisco")
     #expect(finishReason == "tool-calls")
     #expect(totalTokens == 13)
+}
+
+@Test func alibabaLanguageStreamsErrorChunksAndParseErrorsAsErrorPartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"error":{"message":"Stream failed","code":"InternalError","type":"server_error"}}
+
+    data: not-json
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.languageModel("qwen-plus")
+
+    var errors: [String] = []
+    var finishReason: String?
+    var usage: TokenUsage?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .error(message, _):
+            errors.append(message)
+        case let .finish(reason, finalUsage):
+            finishReason = reason
+            usage = finalUsage
+        default:
+            break
+        }
+    }
+
+    #expect(errors.first == "Stream failed")
+    #expect(errors.count == 2)
+    #expect(finishReason == "error")
+    #expect(usage == TokenUsage(inputTokensNoCache: 0, inputTokensCacheWrite: 0))
+}
+
+@Test func alibabaLanguageStreamRequiresFirstToolDeltaIDAndNameLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":null,"index":0}]}
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.languageModel("qwen-plus")
+
+    await #expect(throws: AIError.invalidResponse(provider: "alibaba.chat", message: "Expected 'id' to be a string.")) {
+        for try await _ in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {}
+    }
 }
 
 @Test func alibabaVideoMapsStandardFieldsProviderOptionsWarningsAndMetadata() async throws {
@@ -575,6 +661,14 @@ import Testing
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "wave",
+        providerOptions: ["alibaba": .null],
+        extraBody: ["alibaba": ["negativePrompt": "raw negative", "pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+    var body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?["negative_prompt"]?.stringValue == "raw negative")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "wave",
         providerOptions: [
             "openai": ["negativePrompt": "ignored"],
             "alibaba": [
@@ -588,10 +682,29 @@ import Testing
         ]
     ))
 
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    body = try decodeJSONBody(try #require((await transport.requests())[2].body))
     #expect(body["input"]?["negative_prompt"] == nil)
     #expect(body["input"]?["reference_urls"]?[0]?.stringValue == "https://example.com/ref.png")
     #expect(body["parameters"]?["prompt_extend"] == nil)
     #expect(body["parameters"]?["customUnknown"] == nil)
     #expect(body["parameters"]?["openai"] == nil)
+}
+
+@Test func alibabaVideoUsesUpstreamFlatErrorMessageSchema() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 400,
+        headers: ["x-dashscope": "bad"],
+        body: Data(#"{"code":"InvalidParameter","message":"Bad video request","request_id":"req-bad"}"#.utf8)
+    ))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.videoModel("wan2.6-t2v")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "alibaba.video",
+        statusCode: 400,
+        body: "Bad video request",
+        headers: ["x-dashscope": "bad"]
+    )) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "wave"))
+    }
 }

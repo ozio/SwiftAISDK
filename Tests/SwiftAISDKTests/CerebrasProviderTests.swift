@@ -69,6 +69,35 @@ import Testing
     #expect(result.finishReason == "other")
 }
 
+@Test func cerebrasLanguageMapsMissingUsageToEmptyUsageLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-no-usage","model":"zai-glm-4.7","choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.usage == TokenUsage())
+}
+
+@Test func cerebrasLanguageUsesFlatCerebrasErrorSchemaLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 429,
+        headers: ["x-cerebras": "limited"],
+        body: Data(#"{"message":"Rate limit exceeded","type":"rate_limit_error","param":"messages","code":"rate_limit"}"#.utf8)
+    ))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "cerebras.chat",
+        statusCode: 429,
+        body: "Rate limit exceeded",
+        headers: ["x-cerebras": "limited"]
+    )) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+    }
+}
+
 @Test func cerebrasLanguageAppendsUpstreamUserAgentSuffixToCustomHeaders() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"cerebras-ua","model":"zai-glm-4.7","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
     let provider = try AIProviders.cerebras(settings: ProviderSettings(
@@ -520,4 +549,52 @@ import Testing
     #expect(usage?.inputTokensCacheRead == 2)
     #expect(usage?.outputTextTokens == 3)
     #expect(usage?.outputReasoningTokens == 1)
+}
+
+@Test func cerebrasLanguageStreamsErrorChunksAndParseErrorsAsErrorPartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"message":"First chunk failed","type":"server_error","param":"messages","code":"bad_chunk"}
+
+    data: not-json
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    var errors: [String] = []
+    var finishReason: String?
+    var usage: TokenUsage?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .error(message, _):
+            errors.append(message)
+        case let .finish(reason, finalUsage):
+            finishReason = reason
+            usage = finalUsage
+        default:
+            break
+        }
+    }
+
+    #expect(errors.first == "First chunk failed")
+    #expect(errors.count == 2)
+    #expect(finishReason == "error")
+    #expect(usage == TokenUsage())
+}
+
+@Test func cerebrasLanguageStreamRequiresFirstToolDeltaIDAndNameLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"id":"cerebras-1","model":"zai-glm-4.7","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":null}]}
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-4.7")
+
+    await #expect(throws: AIError.invalidResponse(provider: "cerebras.chat", message: "Expected 'id' to be a string.")) {
+        for try await _ in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {}
+    }
 }

@@ -12,13 +12,17 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let prepared = try cerebrasPreparedCall(for: request, modelID: modelID, stream: false)
-        let response = try await config.sendJSONResponse(
+        let httpResponse = try await config.transport.send(config.request(
             path: "/chat/completions",
             modelID: modelID,
             body: .object(prepared.body),
             headers: request.headers,
             abortSignal: request.abortSignal
-        )
+        ))
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw cerebrasHTTPStatusError(response: httpResponse)
+        }
+        let response = (json: try httpResponse.jsonValue(), response: httpResponse)
         let raw = response.json
         let choice = raw["choices"]?[0]
         let toolCalls = cerebrasToolCalls(from: choice?["message"]?["tool_calls"])
@@ -35,7 +39,7 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
             text: text,
             reasoning: choice?["message"]?["reasoning"]?.stringValue ?? "",
             finishReason: finishReason,
-            usage: cerebrasUsage(from: raw),
+            usage: cerebrasUsage(from: raw) ?? TokenUsage(),
             toolCalls: cerebrasShouldDropStructuredToolCalls(
                 hasText: !text.isEmpty,
                 normalizeStructuredToolCalls: prepared.normalizesStructuredToolCalls
@@ -60,11 +64,11 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                         abortSignal: request.abortSignal
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw cerebrasHTTPStatusError(response: response)
                     }
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))
-                    var latestUsage: TokenUsage?
+                    var latestUsage: TokenUsage? = TokenUsage()
                     var hasText = false
                     var finishReason: String? = "other"
                     var toolCalls = CerebrasStreamingToolCalls()
@@ -72,10 +76,23 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                     var providerMetadata: [String: JSONValue] = [:]
                     var activeText = false
                     var activeReasoningID: String?
+                    var startedToolCallIndices: Set<Int> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
-                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                        let raw: JSONValue
+                        do {
+                            raw = try decodeJSONBody(Data(event.data.utf8))
+                        } catch {
+                            finishReason = "error"
+                            continuation.yield(.error(message: error.localizedDescription))
+                            continue
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
+                        }
+                        if let streamError = cerebrasStreamError(from: raw) {
+                            finishReason = "error"
+                            continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
+                            continue
                         }
                         if !emittedResponseMetadata {
                             emittedResponseMetadata = true
@@ -113,6 +130,16 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                                normalizeStructuredToolCalls: prepared.normalizesStructuredToolCalls
                            ) {
                             for toolCallDelta in toolCallDeltas {
+                                let index = toolCallDelta["index"]?.intValue ?? 0
+                                if !startedToolCallIndices.contains(index) {
+                                    guard toolCallDelta["id"]?.stringValue != nil else {
+                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'id' to be a string.")
+                                    }
+                                    guard toolCallDelta["function"]?["name"]?.stringValue != nil else {
+                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
+                                    }
+                                    startedToolCallIndices.insert(index)
+                                }
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)
                                 }
@@ -160,6 +187,43 @@ private struct CerebrasPreparedCall {
 private struct CerebrasPreparedTools {
     var tools: [JSONValue]
     var warnings: [AIWarning]
+}
+
+private func cerebrasHTTPStatusError(response: AIHTTPResponse) -> AIError {
+    let body = cerebrasErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: "cerebras.chat", statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(
+        provider: "cerebras.chat",
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+private func cerebrasErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    return json["message"]?.stringValue ?? json["error"]?["message"]?.stringValue
+}
+
+private func cerebrasStreamError(from raw: JSONValue) -> (message: String, rawValue: JSONValue)? {
+    if let message = raw["message"]?.stringValue,
+       raw["type"] != nil || raw["code"] != nil || raw["param"] != nil {
+        return (message, raw)
+    }
+    if let error = raw["error"] {
+        return (
+            error["message"]?.stringValue ?? cerebrasJSONString(error) ?? "Cerebras stream error.",
+            error
+        )
+    }
+    return nil
+}
+
+private func cerebrasJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? encodeJSONBody(value) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> CerebrasPreparedCall {

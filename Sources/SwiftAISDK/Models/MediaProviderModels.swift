@@ -2062,7 +2062,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ).withURL(try requireURL("\(base)/api/v1/services/aigc/video-generation/video-synthesis")))
         guard (200..<300).contains(createResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: createResponse)
+            throw alibabaVideoHTTPStatusError(provider: providerID, response: createResponse)
         }
         let created = try createResponse.jsonValue()
         guard let taskID = created["output"]?["task_id"]?.stringValue else {
@@ -2100,7 +2100,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw alibabaVideoHTTPStatusError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["output"]?["task_status"]?.stringValue {
@@ -3099,12 +3099,31 @@ private func alibabaVideoProviderOptions(from extraBody: [String: JSONValue]) ->
 private func alibabaVideoProviderOptions(from request: VideoGenerationRequest) throws -> [String: JSONValue] {
     var output = alibabaVideoProviderOptions(from: request.extraBody)
     if let value = request.providerOptions["alibaba"] {
+        guard value != .null else { return output }
         guard let nested = value.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.alibaba", message: "Alibaba provider options must be an object.")
         }
         output.merge(try alibabaValidateVideoProviderOptions(nested)) { _, nested in nested }
     }
     return output
+}
+
+private func alibabaVideoHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = alibabaVideoErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+private func alibabaVideoErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    return json["message"]?.stringValue ?? json["error"]?["message"]?.stringValue
 }
 
 private func alibabaValidateVideoProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {

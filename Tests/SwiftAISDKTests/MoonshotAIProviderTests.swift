@@ -73,6 +73,25 @@ import Testing
     #expect(request.headers["authorization"] == "Bearer moonshot-key")
 }
 
+@Test func moonshotLanguageUsesUpstreamErrorMessageSchema() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 429,
+        headers: ["x-moonshot": "limited"],
+        body: Data(#"{"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}"#.utf8)
+    ))
+    let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
+    let model = try provider.languageModel("kimi-k2")
+
+    await #expect(throws: AIError.httpStatusWithHeaders(
+        provider: "moonshotai.chat",
+        statusCode: 429,
+        body: "Rate limit exceeded",
+        headers: ["x-moonshot": "limited"]
+    )) {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+    }
+}
+
 @Test func moonshotLanguageHandlesThinkingWithoutBudgetTokens() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"choices":[{"message":{"content":"moon"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
@@ -318,6 +337,51 @@ import Testing
     }
 
     #expect(finishUsage == TokenUsage())
+}
+
+@Test func moonshotLanguageStreamsErrorChunksAndParseErrorsAsErrorPartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"error":{"message":"Stream failed","type":"server_error"}}
+
+    data: not-json
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
+    let model = try provider.languageModel("kimi-k2")
+
+    var errors: [String] = []
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .error(message, _):
+            errors.append(message)
+        case let .finish(reason, _):
+            finishReason = reason
+        default:
+            break
+        }
+    }
+
+    #expect(errors.first == "Stream failed")
+    #expect(errors.count == 2)
+    #expect(finishReason == "error")
+}
+
+@Test func moonshotLanguageStreamRequiresFirstToolDeltaIDAndNameLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"id":"moonshot-1","model":"kimi-k2","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":null}]}
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
+    let model = try provider.languageModel("kimi-k2")
+
+    await #expect(throws: AIError.invalidResponse(provider: "moonshotai.chat", message: "Expected 'id' to be a string.")) {
+        for try await _ in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {}
+    }
 }
 
 @Test func moonshotProviderRejectsUnsupportedEmbeddingAndImageModels() throws {

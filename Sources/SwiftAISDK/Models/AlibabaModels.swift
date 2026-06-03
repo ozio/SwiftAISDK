@@ -17,13 +17,17 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
             stream: false,
             transformRequestBody: config.transformRequestBody
         )
-        let response = try await config.sendJSONResponse(
+        let httpResponse = try await config.transport.send(config.request(
             path: "/chat/completions",
             modelID: modelID,
             body: .object(prepared.body),
             headers: request.headers,
             abortSignal: request.abortSignal
-        )
+        ))
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw alibabaHTTPStatusError(provider: providerID, response: httpResponse)
+        }
+        let response = (json: try httpResponse.jsonValue(), response: httpResponse)
         let raw = response.json
         let choice = raw["choices"]?[0]
         let toolCalls = alibabaToolCalls(from: choice?["message"]?["tool_calls"])
@@ -34,7 +38,7 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
             text: text,
             reasoning: choice?["message"]?["reasoning_content"]?.stringValue ?? "",
             finishReason: alibabaFinishReason(choice?["finish_reason"]?.stringValue),
-            usage: alibabaUsage(from: raw),
+            usage: alibabaUsage(from: raw) ?? TokenUsage(inputTokensNoCache: 0, inputTokensCacheWrite: 0),
             toolCalls: toolCalls,
             rawValue: raw,
             warnings: prepared.warnings,
@@ -60,20 +64,33 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                         abortSignal: request.abortSignal
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw alibabaHTTPStatusError(provider: providerID, response: response)
                     }
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))
-                    var latestUsage: TokenUsage?
-                    var finishReason: String?
+                    var latestUsage: TokenUsage? = TokenUsage(inputTokensNoCache: 0, inputTokensCacheWrite: 0)
+                    var finishReason: String? = "other"
                     var toolCalls = AlibabaStreamingToolCalls()
                     var emittedResponseMetadata = false
                     var activeText = false
                     var activeReasoningID: String?
+                    var startedToolCallIndices: Set<Int> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
-                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                        let raw: JSONValue
+                        do {
+                            raw = try decodeJSONBody(Data(event.data.utf8))
+                        } catch {
+                            finishReason = "error"
+                            continuation.yield(.error(message: error.localizedDescription))
+                            continue
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
+                        }
+                        if let streamError = alibabaStreamError(from: raw) {
+                            finishReason = "error"
+                            continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
+                            continue
                         }
                         if !emittedResponseMetadata {
                             emittedResponseMetadata = true
@@ -115,6 +132,16 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                                 activeText = false
                             }
                             for toolCallDelta in toolCallDeltas {
+                                let index = toolCallDelta["index"]?.intValue ?? 0
+                                if !startedToolCallIndices.contains(index) {
+                                    guard toolCallDelta["id"]?.stringValue != nil else {
+                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'id' to be a string.")
+                                    }
+                                    guard toolCallDelta["function"]?["name"]?.stringValue != nil else {
+                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
+                                    }
+                                    startedToolCallIndices.insert(index)
+                                }
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)
                                 }
@@ -311,6 +338,7 @@ private func alibabaUserPartFeature(_ part: AIContentPart) -> String {
 private func alibabaOptions(from request: LanguageModelRequest) throws -> [String: JSONValue] {
     var output = alibabaOptions(from: request.extraBody)
     if let value = request.providerOptions["alibaba"] {
+        guard value != .null else { return output }
         guard let nested = value.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.alibaba", message: "Alibaba provider options must be an object.")
         }
@@ -318,6 +346,38 @@ private func alibabaOptions(from request: LanguageModelRequest) throws -> [Strin
     }
     alibabaNormalizeOptions(&output)
     return output
+}
+
+private func alibabaHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = alibabaErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .httpStatusWithHeaders(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+private func alibabaErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    return json["error"]?["message"]?.stringValue ?? json["message"]?.stringValue
+}
+
+private func alibabaStreamError(from raw: JSONValue) -> (message: String, rawValue: JSONValue)? {
+    if let error = raw["error"] {
+        return (
+            error["message"]?.stringValue ?? alibabaJSONString(error) ?? "Alibaba stream error.",
+            error
+        )
+    }
+    if let message = raw["message"]?.stringValue,
+       raw["code"] != nil || raw["type"] != nil || raw["request_id"] != nil {
+        return (message, raw)
+    }
+    return nil
 }
 
 private func alibabaOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {

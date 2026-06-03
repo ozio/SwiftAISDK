@@ -94,7 +94,7 @@ record and passes tests, it leaves the active queue.
 
 | Package | Provider-specific DoD |
 | --- | --- |
-| `@ai-sdk/alibaba` | Chat request/stream bodies, thinking options, tool calls, provider options, usage-only chunks, reasoning text, unsupported settings, abort propagation, and user-agent behavior are covered. |
+| `@ai-sdk/alibaba` | Chat request/stream bodies, thinking options, tool calls, provider options/null namespace, usage-only/missing-usage chunks, reasoning text, stream/HTTP errors, unsupported settings, video task flow/errors, abort propagation, and user-agent behavior are covered. |
 | `@ai-sdk/amazon-bedrock` | Converse, InvokeModel/Anthropic, Bedrock Mantle, SigV4 signing, event-stream parsing, reasoning/tool-use blocks, structured output, embeddings, image generation/editing, reranking, cache/metadata, unsupported models, region/credential handling, and abort propagation are covered. |
 | `@ai-sdk/anthropic` | Messages requests/streams, thinking/redacted thinking, citations, hosted tools, provider-defined tools, file references, beta headers, container/context metadata, warnings, usage, and abort propagation are covered. |
 | `@ai-sdk/anthropic-aws` | AWS Anthropic wrapper routes, workspace/API-key headers, base URL/auth differences, unsupported capabilities, model identity, and parity with the tiny upstream wrapper are covered. |
@@ -103,7 +103,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/baseten` | Model API vs dedicated endpoint routing, `/sync` and `/sync/v1` behavior, embedding batching/body shape, model URL validation, headers, response metadata, and abort propagation are covered. |
 | `@ai-sdk/black-forest-labs` | Image create/poll/download flow, option schema, prompt upsampling/raw/safety/options mapping, input/output megapixel metadata, warnings, timeout/poll attempts, and abort propagation are covered. |
 | `@ai-sdk/bytedance` | Video submit/poll flow, T2V/I2V/R2V option mapping, dimensions/aspect options, warnings, provider metadata, operation IDs, timeout behavior, and abort propagation are covered. |
-| `@ai-sdk/cerebras` | Chat request/stream bodies, reasoning transforms, structured response format, tool calls, provider options, finish/usage normalization, warnings, user agent, and abort propagation are covered. |
+| `@ai-sdk/cerebras` | Chat request/stream bodies, reasoning transforms, structured response format, tool calls, provider options, finish/usage normalization, stream/HTTP errors, warnings, user agent, and abort propagation are covered. |
 | `@ai-sdk/cohere` | Chat, stream, embeddings, reranking, documents/images, provider options, tool calls/provider-defined tool warnings, structured output, usage, user agent, and abort propagation are covered. |
 | `@ai-sdk/deepgram` | Raw audio transcription, speech query/body mapping, encoding/sample-rate cleanup, provider options, language handling, warnings, response metadata, and abort propagation are covered. |
 | `@ai-sdk/deepinfra` | OpenAI-compatible chat/embedding/image behavior, provider-specific user-agent/header behavior, image limits, response metadata, unsupported families, and abort propagation are covered. |
@@ -123,7 +123,7 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/luma` | Image generation/edit/reference flows, polling, character references, null namespace/nullish options, unsupported editing inputs, metadata, timeouts, and abort propagation are covered. |
 | `@ai-sdk/mcp` | HTTP/SSE/Stdio transports, OAuth discovery/PKCE/refresh/register flows, resource/template/tool listing, elicitation, reconnects, tool output conversion, errors, and protocol capability checks are covered. |
 | `@ai-sdk/mistral` | Chat/stream and embedding surfaces, native request shape, documents/files, structured output controls, tool calls/provider-tool warnings, provider options, usage, and abort propagation are covered. |
-| `@ai-sdk/moonshotai` | Chat/stream bodies, thinking options, tool calls, provider options, unsupported capabilities, usage variants, finish mapping, user-agent behavior, and abort propagation are covered. |
+| `@ai-sdk/moonshotai` | Chat/stream bodies, thinking options, tool calls, provider options, unsupported capabilities, usage variants, stream/HTTP errors, finish mapping, user-agent behavior, and abort propagation are covered. |
 | `@ai-sdk/open-responses` | Custom Responses endpoint factory, optional API key/custom headers, provider options namespace, request conversion, function tools/tool choice, structured text format, file/tool-result content conversion, finish/usage mapping, text/reasoning/function-call streaming, failed stream events, warnings, and raw chunks are covered. |
 | `@ai-sdk/openai` | Chat, Responses, completions, embeddings, images, speech, transcription, files, skills, tool helpers, provider aliases, organization/project headers, structured output, metadata, warnings, and abort propagation are covered. |
 | `@ai-sdk/openai-compatible` | Chat/completion/embedding/image surfaces, route selection, stream parsing, provider surface IDs, warning behavior, provider option passthrough, response metadata, and abort propagation are covered. |
@@ -151,6 +151,9 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/perplexity` | `3.0.33` | `3b96637`: package re-read across provider/language/messages/options/usage/finish schemas; stream parse errors now surface as error parts after existing search/citation/metadata parity coverage. |
 | `@ai-sdk/xai` | `3.0.93` | `7d689df`: package re-read across provider/chat/responses/tools/image/video/files; xAI Responses request prep now owns option/input/tool mapping instead of riding the OpenAI-compatible builder, and chat/Responses reasoning option schemas were aligned. |
 | `@ai-sdk/deepseek` | `2.0.35` | `e25563e`: package re-read across provider/chat/options/messages/tools/usage/stream; missing usage, tool-result output serialization, stream error parts, and strict first tool-delta validation aligned. |
+| `@ai-sdk/cerebras` | `2.0.54` | Current OpenAI-compatible batch: package re-read across provider/chat/options; flat Cerebras error schema, missing usage, stream error parts, and strict first tool-delta validation aligned. |
+| `@ai-sdk/moonshotai` | `2.0.23` | Current OpenAI-compatible batch: package re-read across provider/chat/options/usage; generic OpenAI-compatible stream/HTTP error handling and strict first tool-delta validation aligned for MoonshotAI. |
+| `@ai-sdk/alibaba` | `1.0.25` | Current OpenAI-compatible batch: package re-read across provider/chat/messages/options/usage/video; chat/video error schemas, null provider namespace, missing usage, stream error parts, and strict first tool-delta validation aligned. |
 | `@ai-sdk/anthropic-aws` | `1.0.3` | `135ceb6`: API-key header precedence and dynamic SigV4 credential-provider parity after package re-read. |
 | `@ai-sdk/amazon-bedrock` | `4.0.112` | `e2cb97e`: dynamic SigV4 credentials, Converse JSON response format parity, embeddings provider options/response shapes, image validation/warnings/count limits, and streaming auth parity after package re-read. |
 | `@ai-sdk/anthropic` | `3.0.81` | `30c3272`: provider auth/base URL/custom name, tool choice/parallel tool-use, eager stream tool inputs, provider option key merging, and abort propagation after package re-read. |
@@ -162,6 +165,45 @@ record and passes tests, it leaves the active queue.
 | `@ai-sdk/vercel` | `2.0.50` | Re-read package and local implementation; existing endpoint/header/user-agent/unsupported-family coverage matched the tiny upstream package. |
 
 ### Fresh Pass Completion Records
+
+#### `@ai-sdk/cerebras`
+
+```text
+Package: @ai-sdk/cerebras
+Baseline: 2.0.54
+Upstream inspected: cerebras-provider.ts, cerebras-chat-language-model.ts, cerebras-chat-options.ts, cerebras-chat-language-model-options.ts, version.ts.
+Swift files inspected: CerebrasModels.swift, OpenAICompatibleProvider.swift, CerebrasProviderTests.swift.
+Surfaces checked: provider factory, chat request body, reasoning_content -> reasoning transform, structured JSON response format, structured-output tool-call filtering, provider options, tool choice/tool warnings, finish/usage mapping, flat Cerebras HTTP error schema, stream parse/error chunks, strict first tool-call delta validation, response metadata, user-agent suffix, abort propagation.
+Known Swift differences / out of scope: Swift uses static headers rather than upstream async resolvable header functions; Swift text stream part IDs are stable Swift contract IDs rather than upstream-internal labels.
+Tests run: swift test --filter Cerebras; full swift test in the current OpenAI-compatible batch.
+Reopen only if: cerebras npm version changes, chat/error/stream schema changes, structured-output mixed tool-call behavior changes, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/moonshotai`
+
+```text
+Package: @ai-sdk/moonshotai
+Baseline: 2.0.23
+Upstream inspected: moonshotai-provider.ts, moonshotai-chat-language-model.ts, moonshotai-chat-options.ts, convert-moonshotai-chat-usage.ts, version.ts.
+Swift files inspected: OpenAICompatible.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, MoonshotAIProviderTests.swift.
+Surfaces checked: provider factory aliases, default base URL, API key/header/user-agent handling, includeUsage default, thinking/reasoningHistory transform, provider option schema, tool choice/provider-tool warnings, Moonshot usage conversion, HTTP error.message schema, stream parse/error chunks, strict first tool-call delta validation, unsupported embedding/image capabilities, abort propagation.
+Known Swift differences / out of scope: Swift exposes `extraBody` alongside upstream providerOptions and uses static settings dictionaries instead of async resolvable headers.
+Tests run: swift test --filter Moonshot; swift test --filter OpenAICompatible; full swift test in the current OpenAI-compatible batch.
+Reopen only if: moonshotai npm version changes, thinking/reasoningHistory or usage schemas change, inherited OpenAI-compatible stream semantics change, live smoke or user bug reports a concrete mismatch.
+```
+
+#### `@ai-sdk/alibaba`
+
+```text
+Package: @ai-sdk/alibaba
+Baseline: 1.0.25
+Upstream inspected: alibaba-provider.ts, alibaba-chat-language-model.ts, alibaba-chat-options.ts, convert-to-alibaba-chat-messages.ts, convert-alibaba-usage.ts, alibaba-error.ts, alibaba-video-model.ts, alibaba-video-settings.ts, version.ts.
+Swift files inspected: AlibabaModels.swift, MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, AlibabaProviderTests.swift.
+Surfaces checked: language and video factories, default compatible/native base URLs, API key/header/user-agent handling, chat request body, multimodal message conversion, thinking options, providerOptions.alibaba null namespace and typed schema, tools/tool choice/tool-result serialization, response format, usage/cache-write conversion including missing usage, HTTP error.message schema, stream parse/error chunks, usage-only chunks, strict first tool-call delta validation, video task create/poll flow, video native flat error schema, video provider options/warnings/metadata, abort propagation.
+Known Swift differences / out of scope: Swift keeps `extraBody` as a compatibility escape hatch; Swift video polling uses the package's existing abort-aware sleep rather than upstream's JS `delay` helper.
+Tests run: swift test --filter Alibaba; full swift test in the current OpenAI-compatible batch.
+Reopen only if: alibaba npm version changes, Qwen chat/error/usage schemas change, Wan video native API schema changes, providerOptions schemas change, live smoke or user bug reports a concrete mismatch.
+```
 
 #### `@ai-sdk/gateway`
 
@@ -436,9 +478,6 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 | Package | Baseline | Existing parity evidence |
 | --- | --- | --- |
-| `@ai-sdk/cerebras` | `2.0.54` | `7583bf4`, `e271d29`, `7279a9a`: options, structured finish, user agent. |
-| `@ai-sdk/moonshotai` | `2.0.23` | `80bcd36`, `2b244c6`, `c58f369`: options, chat parity, user agent. |
-| `@ai-sdk/alibaba` | `1.0.25` | `5584aa1`, `24f2732`: provider options and user agent. |
 | `@ai-sdk/azure` | `3.0.69` | `eb4119b`, `8026419`: aliases and token provider parity. |
 | `@ai-sdk/baseten` | `1.0.51` | `cd81ac4`, `2399a21`: provider URL and embedding behavior. |
 | `@ai-sdk/deepinfra` | `2.0.52` | `45b7c7a`, `6eaf86d`: provider parity and user agent. |
@@ -469,9 +508,7 @@ still queued for a final package-level sweep if we want to stamp them complete.
 
 The realistic remaining provider work is not "all providers". It is:
 
-1. Do final package sweeps for the already-covered language providers:
-   Cerebras, MoonshotAI, Alibaba.
-2. Do final package sweeps for media/audio providers that already have option
+1. Do final package sweeps for media/audio providers that already have option
    schema work: Replicate, Luma, KlingAI, Black Forest Labs, ByteDance, Prodia,
    Deepgram, ElevenLabs, AssemblyAI, Gladia, RevAI, Hume, LMNT.
-3. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
+2. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
