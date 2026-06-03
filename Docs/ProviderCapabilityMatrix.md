@@ -1,6 +1,6 @@
 # Provider Capability Matrix
 
-Snapshot date: 2026-05-31
+Snapshot date: 2026-06-03
 
 This document is generated from `AIProviderCapabilities` in
 `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`. Update that

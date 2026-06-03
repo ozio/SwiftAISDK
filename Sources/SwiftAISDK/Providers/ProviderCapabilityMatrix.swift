@@ -33,7 +33,7 @@ public struct AIProviderCapabilityRow: Equatable, Sendable {
 }
 
 public enum AIProviderCapabilities {
-    public static let markdownSnapshotDate = "2026-05-31"
+    public static let markdownSnapshotDate = "2026-06-03"
 
     public static let all: [AIProviderCapabilityRow] = [
         providerRow("alibaba", "@ai-sdk/alibaba", ["AIProviders.alibaba"], [.language, .video]),
