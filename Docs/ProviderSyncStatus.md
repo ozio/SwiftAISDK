@@ -785,5 +785,33 @@ No package is currently waiting for an explicit deep pass.
 
 The remaining product work is now outside the ordinary model-provider sweep:
 
-1. Add live smoke slices. Mock parity is broad; live coverage is still narrow.
-2. Run a final completion audit against npm provider discovery and the sync docs before declaring the overall port complete.
+1. Run a final completion audit against npm provider discovery, the version
+   ledger, capability matrix, live smoke, and full tests before declaring the
+   overall port complete.
+2. Add more live smoke slices only for distinct transport families or concrete
+   production risks. Mock parity is intentionally broader than live coverage.
+
+## Completion Audit Snapshot
+
+2026-06-03 completed:
+
+- Current `npm search @ai-sdk --json --searchlimit=250` provider-like packages
+  found: `alibaba`, `amazon-bedrock`, `anthropic`, `assemblyai`, `azure`,
+  `baseten`, `black-forest-labs`, `bytedance`, `cerebras`, `cohere`,
+  `deepgram`, `deepinfra`, `deepseek`, `elevenlabs`, `fal`, `fireworks`,
+  `gateway`, `gladia`, `google`, `google-vertex`, `groq`, `huggingface`,
+  `hume`, `klingai`, `lmnt`, `luma`, `mcp`, `mistral`, `moonshotai`,
+  `open-responses`, `openai`, `openai-compatible`, `perplexity`, `prodia`,
+  `replicate`, `revai`, `togetherai`, `vercel`, and `xai`.
+- The search also returned non-provider/client packages intentionally outside
+  the provider port: `angular`, `codemod`, `devtools`, `langchain`,
+  `llamaindex`, `provider`, `provider-utils`, `react`, `rsc`, `solid`,
+  `svelte`, `ui-utils`, `valibot`, `vue`, and `workflow`.
+- `Docs/ProviderVersionLedger.md` and `AIProviderCapabilities` cover every
+  provider-like package above. The ledger additionally tracks provider packages
+  that were included in earlier discovery/deep-pass work but did not appear in
+  this search result: `anthropic-aws`, `quiverai`, and `voyage`.
+- Live smoke with real root credentials passed for representative core facades:
+  OpenAI generate/stream/embedding/tool-loop, Anthropic generate/stream/tool-loop,
+  and Google generate/stream/embedding/tool-loop.
+- Final full-suite result: `swift test` passed with 944 tests.

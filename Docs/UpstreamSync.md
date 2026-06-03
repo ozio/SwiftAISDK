@@ -2,8 +2,8 @@
 
 This is the playbook for keeping SwiftAISDK aligned with the provider-facing
 packages in Vercel AI SDK (`@ai-sdk/*`). Keep it short and operational: choose
-one surface, compare against upstream, port the behavior, test it, update the
-inventory, then commit and push.
+a small related batch, compare against upstream, port the behavior, test it,
+update the inventory, then commit and push.
 
 For package versions, use `Docs/ProviderVersionLedger.md`. For product-level
 priorities, use `Docs/ProductGapAudit.md`. For current provider inventory, use
@@ -44,10 +44,15 @@ matrix, generated docs, and focused tests agree.
 
 ## Round Workflow
 
-Run provider sync as one vertical provider pass at a time.
+Run provider sync as a vertical provider batch. Prefer 2-3 related providers per
+round when the changes are small or the providers share a transport family
+(audio, media, OpenAI-compatible, etc.); use a single provider only for large or
+risky packages such as OpenAI, Anthropic, Google, Bedrock, Vertex, Gateway, or
+MCP.
 
-1. Pick exactly one provider package from `Docs/ProviderVersionLedger.md`, unless
-   the change is truly cross-cutting.
+1. Pick the provider package or 2-3 related provider packages from
+   `Docs/ProviderVersionLedger.md`. Do not start a new batch until the previous
+   one is tested, documented, committed, and pushed.
 2. Refresh the upstream source:
 
    ```sh
@@ -75,7 +80,7 @@ Run provider sync as one vertical provider pass at a time.
    `Docs/ProviderCapabilityMatrix.md` if coverage changed.
 9. Update `Docs/ProviderVersionLedger.md` and this guide only when their facts
    changed.
-10. Commit and push before moving to the next provider.
+10. Commit and push the completed batch before moving to the next batch.
 
 ## Definition Of Done
 
