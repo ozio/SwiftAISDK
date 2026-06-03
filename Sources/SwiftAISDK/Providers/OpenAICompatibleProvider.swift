@@ -458,6 +458,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "quiverai" {
             return withUserAgentSuffix(headers, "ai-sdk/quiverai/1.0.0")
         }
+        if providerID == "togetherai" {
+            return withUserAgentSuffix(headers, "ai-sdk/togetherai/2.0.53")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

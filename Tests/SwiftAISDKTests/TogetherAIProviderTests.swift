@@ -23,7 +23,8 @@ import Testing
     #expect(image.base64Images == ["base64-image"])
     let imageRequest = try #require(await imageTransport.requests().first)
     #expect(imageRequest.url.absoluteString == "https://api.together.xyz/v1/images/generations")
-    #expect(imageRequest.headers["Authorization"] == "Bearer together-key")
+    #expect(imageRequest.headers["authorization"] == "Bearer together-key")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/2.0.53")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "black-forest-labs/FLUX.1-schnell-Free")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -47,10 +48,28 @@ import Testing
     #expect(reranking.results.map(\.index) == [1, 0])
     let rerankRequest = try #require(await rerankTransport.requests().first)
     #expect(rerankRequest.url.absoluteString == "https://api.together.xyz/v1/rerank")
+    #expect(rerankRequest.headers["authorization"] == "Bearer together-key")
+    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/2.0.53")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["top_n"]?.intValue == 1)
     #expect(rerankBody["return_documents"]?.boolValue == false)
     #expect(rerankBody["rank_fields"]?[0]?.stringValue == "title")
+}
+
+@Test func togetherAIAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image"}]}"#))
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(
+        apiKey: "together-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.imageModel("black-forest-labs/FLUX.1-schnell-Free")
+
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer together-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/2.0.53")
 }
 
 @Test func togetherAIMapsNestedProviderOptions() async throws {
