@@ -22,7 +22,8 @@ import Testing
     #expect(result.text == "fw")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer fireworks-key")
+    #expect(request.headers["authorization"] == "Bearer fireworks-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/2.0.53")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["thinking"]?["type"]?.stringValue == "enabled")
     #expect(body["thinking"]?["budget_tokens"]?.intValue == 2048)
@@ -43,7 +44,8 @@ import Testing
     #expect(result.warnings.isEmpty)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image")
-    #expect(request.headers["Authorization"] == "Bearer fireworks-key")
+    #expect(request.headers["authorization"] == "Bearer fireworks-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/2.0.53")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["samples"]?.intValue == 1)
@@ -72,16 +74,38 @@ import Testing
     let requests = await transport.requests()
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro")
+    #expect(requests[0].headers["authorization"] == "Bearer fireworks-key")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/fireworks/2.0.53")
     let submitBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(submitBody["prompt"]?.stringValue == "cat")
     #expect(submitBody["samples"]?.intValue == 2)
     #expect(submitBody["width"]?.stringValue == "1024")
     #expect(submitBody["height"]?.stringValue == "768")
     #expect(requests[1].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro/get_result")
+    #expect(requests[1].headers["authorization"] == "Bearer fireworks-key")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/fireworks/2.0.53")
     let pollBody = try decodeJSONBody(try #require(requests[1].body))
     #expect(pollBody["id"]?.stringValue == "fw-1")
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://assets.example.com/fireworks.png")
+    #expect(requests[2].headers["authorization"] == "Bearer fireworks-key")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/fireworks/2.0.53")
+}
+
+@Test func fireworksAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8)))
+    let provider = try AIProviders.fireworks(settings: ProviderSettings(
+        apiKey: "fireworks-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.imageModel("accounts/fireworks/models/flux-1-schnell-fp8")
+
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer fireworks-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/fireworks/2.0.53")
 }
 
 @Test func fireworksImageMapsProviderOptionsAndInputImage() async throws {
