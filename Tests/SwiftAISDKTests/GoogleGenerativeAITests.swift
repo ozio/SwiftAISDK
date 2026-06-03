@@ -17,8 +17,27 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/3.0.80")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
+}
+
+@Test func googleAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(
+        apiKey: "gemini-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Ping")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["x-goog-api-key"] == "gemini-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/3.0.80")
 }
 
 @Test func googleGenerateContentResolvesTopLevelInlineMediaType() async throws {

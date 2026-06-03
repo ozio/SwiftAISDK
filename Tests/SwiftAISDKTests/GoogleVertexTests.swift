@@ -477,9 +477,28 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/text-embedding-005:predict")
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/4.0.141")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["instances"]?[0]?["content"]?.stringValue == "hello")
     #expect(body["parameters"]?["outputDimensionality"]?.intValue == 128)
+}
+
+@Test func googleVertexAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"predictions":[{"embeddings":{"values":[0.4,0.5]}}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        apiKey: "vertex-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.embeddingModel("text-embedding-005")
+
+    _ = try await model.embed(EmbeddingRequest(values: ["hello"]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["x-goog-api-key"] == "vertex-key")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/4.0.141")
 }
 
 @Test func googleVertexImageAndVideoUsePredictEndpoints() async throws {
