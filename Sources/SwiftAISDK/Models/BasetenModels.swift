@@ -11,41 +11,115 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        var body: [String: JSONValue] = [
-            "model": .string(modelID),
-            "input": .array(request.values)
-        ]
-        if let dimensions = request.dimensions { body["dimensions"] = .number(Double(dimensions)) }
-        body.merge(basetenEmbeddingOptions(from: request.extraBody)) { _, new in new }
+        guard !request.values.isEmpty else {
+            throw AIError.invalidArgument(argument: "values", message: "Input list cannot be empty")
+        }
 
-        let response = try await config.sendJSONResponse(
-            path: "/embeddings",
-            modelID: modelID,
-            body: .object(body),
-            headers: request.headers,
-            abortSignal: request.abortSignal
-        )
-        let raw = response.json
-        guard let data = raw["data"]?.arrayValue else {
+        var allData: [JSONValue] = []
+        var promptTokens = 0
+        var totalTokens = 0
+        var rawResponses: [JSONValue] = []
+        var responseMetadata = AIResponseMetadata()
+        let batches = request.values.chunked(into: basetenPerformanceClientBatchSize)
+
+        var batchStartIndex = 0
+        for (batchIndex, batch) in batches.enumerated() {
+            let body = basetenPerformanceEmbeddingBody(values: batch, modelID: modelID)
+            var headers = request.headers
+            headers["x-baseten-customer-request-id"] = headers["x-baseten-customer-request-id"] ?? "swift-ai-sdk-\(UUID().uuidString)-\(batchIndex)"
+            let response = try await config.sendJSONResponse(
+                path: "/embeddings",
+                modelID: modelID,
+                body: body,
+                headers: headers,
+                abortSignal: request.abortSignal
+            )
+            let raw = response.json
+            rawResponses.append(raw)
+            if batchIndex == 0 {
+                responseMetadata = aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            }
+            guard let data = raw["data"]?.arrayValue else {
+                throw AIError.invalidResponse(provider: providerID, message: "No embedding data found.")
+            }
+            allData.append(contentsOf: basetenAdjustEmbeddingIndexes(data, startIndex: batchStartIndex))
+            promptTokens += raw["usage"]?["prompt_tokens"]?.intValue ?? raw["usage"]?["input_tokens"]?.intValue ?? 0
+            totalTokens += raw["usage"]?["total_tokens"]?.intValue ?? 0
+            batchStartIndex += batch.count
+        }
+
+        guard !allData.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No embedding data found.")
         }
-        let embeddings = data.compactMap { item -> [Double]? in
+        let embeddings = allData.compactMap { item -> [Double]? in
             item["embedding"]?.arrayValue?.compactMap(\.doubleValue)
         }
+        let raw = basetenCombinedEmbeddingRawValue(
+            data: allData,
+            modelID: modelID,
+            promptTokens: promptTokens,
+            totalTokens: totalTokens,
+            rawResponses: rawResponses
+        )
         return EmbeddingResult(
             embeddings: embeddings,
             usage: tokenUsage(from: raw),
             rawValue: raw,
-            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            requestMetadata: AIRequestMetadata(
+                body: basetenPerformanceEmbeddingBody(values: request.values, modelID: modelID),
+                headers: request.headers
+            ),
+            responseMetadata: responseMetadata
         )
     }
 }
 
-private func basetenEmbeddingOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
-    var output = extraBody
-    output.removeValue(forKey: "baseten")
-    return output
+private let basetenPerformanceClientBatchSize = 128
+
+private func basetenPerformanceEmbeddingBody(values: [String], modelID: String) -> JSONValue {
+    .object([
+        "input": .array(values.map(JSONValue.string)),
+        "model": .string(modelID)
+    ])
+}
+
+private func basetenCombinedEmbeddingRawValue(
+    data: [JSONValue],
+    modelID: String,
+    promptTokens: Int,
+    totalTokens: Int,
+    rawResponses: [JSONValue]
+) -> JSONValue {
+    var raw: [String: JSONValue] = [
+        "object": .string("list"),
+        "data": .array(data),
+        "model": .string(modelID),
+        "usage": .object([
+            "prompt_tokens": .number(Double(promptTokens)),
+            "total_tokens": .number(Double(totalTokens))
+        ])
+    ]
+    if rawResponses.count > 1 {
+        raw["responses"] = .array(rawResponses)
+    }
+    return .object(raw)
+}
+
+private func basetenAdjustEmbeddingIndexes(_ data: [JSONValue], startIndex: Int) -> [JSONValue] {
+    data.map { item in
+        guard var object = item.objectValue else { return item }
+        let index = object["index"]?.intValue ?? 0
+        object["index"] = .number(Double(index + startIndex))
+        return .object(object)
+    }
+}
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
 }
 
 extension ModelHTTPConfig {

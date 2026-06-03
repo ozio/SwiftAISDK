@@ -44,7 +44,7 @@ public enum AIProviderCapabilities {
         providerRow("anthropic-aws", "@ai-sdk/anthropic-aws", ["AIProviders.anthropicAWS", "AIProviders.anthropicAws"], [.language], files: true, skills: true),
         providerRow("assemblyai", "@ai-sdk/assemblyai", ["AIProviders.assemblyAI", "AIProviders.assemblyai"], [.transcription]),
         providerRow("azure", "@ai-sdk/azure", ["AIProviders.azure", "AIProviders.azureOpenAI", "AIProviders.azureOpenai"], [.language, .completion, .embedding, .image, .transcription, .speech]),
-        providerRow("baseten", "@ai-sdk/baseten", ["AIProviders.baseten"], [.language, .embedding], notes: "`ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1`."),
+        providerRow("baseten", "@ai-sdk/baseten", ["AIProviders.baseten"], [.language, .embedding], notes: "`ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1` and mirror the upstream performance-client body plus 128-input batching."),
         providerRow("black-forest-labs", "@ai-sdk/black-forest-labs", ["AIProviders.blackForestLabs"], [.image]),
         providerRow("bytedance", "@ai-sdk/bytedance", ["AIProviders.byteDance", "AIProviders.bytedance"], [.video]),
         providerRow("cerebras", "@ai-sdk/cerebras", ["AIProviders.cerebras"], [.language]),
