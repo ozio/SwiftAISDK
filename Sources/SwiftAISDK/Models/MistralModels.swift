@@ -31,7 +31,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
             text: text,
             reasoning: reasoning,
             finishReason: mapMistralFinishReason(choice?["finish_reason"]?.stringValue),
-            usage: tokenUsage(from: raw),
+            usage: mistralUsage(from: raw),
             toolCalls: toolCalls,
             rawValue: raw,
             warnings: prepared.warnings,
@@ -55,7 +55,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                         throw httpStatusError(provider: providerID, response: response)
                     }
                     continuation.yield(.streamStart(warnings: prepared.warnings))
-                    var finishReason: String?
+                    var finishReason: String? = "other"
                     var usage: TokenUsage?
                     var emittedResponseMetadata = false
                     var activeText = false
@@ -105,7 +105,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                             finishReason = mapMistralFinishReason(reason)
                         }
                         if raw["usage"] != nil {
-                            usage = tokenUsage(from: raw)
+                            usage = mistralUsage(from: raw)
                         }
                     }
                     if let reasoningID = activeReasoningID {
@@ -130,7 +130,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         let messages = mistralMessages(request.messages, responseFormat: responseFormat)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "messages": .array(mistralMessagesJSON(messages))
+            "messages": .array(try mistralMessagesJSON(messages))
         ]
         if stream { body["stream"] = true }
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
@@ -143,9 +143,9 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         }
         let toolChoiceInput = request.toolChoice ?? options["toolChoice"]
         let toolChoice = mistralToolChoice(from: toolChoiceInput)
-        let tools = mistralTools(from: request.tools, only: mistralForcedToolName(from: toolChoiceInput))
-        if !tools.isEmpty {
-            body["tools"] = .array(tools)
+        let preparedTools = mistralTools(from: request.tools, only: mistralForcedToolName(from: toolChoiceInput))
+        if !preparedTools.tools.isEmpty {
+            body["tools"] = .array(preparedTools.tools)
             if let toolChoice {
                 body["tool_choice"] = toolChoice
             }
@@ -163,7 +163,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
             case "documentPageLimit":
                 body["document_page_limit"] = value
             case "parallelToolCalls":
-                if !tools.isEmpty { body["parallel_tool_calls"] = value }
+                if !preparedTools.tools.isEmpty { body["parallel_tool_calls"] = value }
             case "responseFormat", "structuredOutputs", "strictJsonSchema":
                 continue
             case "toolChoice":
@@ -179,12 +179,17 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
            mistralSupportsReasoningEffort(modelID) {
             body["reasoning_effort"] = .string(reasoning == "none" ? "none" : "high")
         }
-        return MistralPreparedCall(body: body, warnings: warnings)
+        return MistralPreparedCall(body: body, warnings: warnings + preparedTools.warnings)
     }
 }
 
 private struct MistralPreparedCall {
     var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
+
+private struct MistralPreparedTools {
+    var tools: [JSONValue]
     var warnings: [AIWarning]
 }
 
@@ -382,19 +387,24 @@ private func mistralRequireNumber(_ value: JSONValue, argument: String, message:
     }
 }
 
-private func mistralMessagesJSON(_ messages: [AIMessage]) -> [JSONValue] {
-    messages.flatMap(mistralMessageJSONs)
+private func mistralMessagesJSON(_ messages: [AIMessage]) throws -> [JSONValue] {
+    try messages.enumerated().flatMap { index, message in
+        try mistralMessageJSONs(message, isLastMessage: index == messages.count - 1)
+    }
 }
 
-private func mistralMessageJSONs(_ message: AIMessage) -> [JSONValue] {
+private func mistralMessageJSONs(_ message: AIMessage, isLastMessage: Bool) throws -> [JSONValue] {
     switch message.role {
     case .system:
         return [.object(["role": .string("system"), "content": .string(message.combinedText)])]
     case .assistant:
         var output: [String: JSONValue] = [
             "role": .string("assistant"),
-            "content": .string(message.combinedText)
+            "content": .string(mistralAssistantText(from: message))
         ]
+        if isLastMessage {
+            output["prefix"] = true
+        }
         let toolCalls = message.content.compactMap(mistralAssistantToolCallJSON)
         if !toolCalls.isEmpty {
             output["tool_calls"] = .array(toolCalls)
@@ -409,9 +419,14 @@ private func mistralMessageJSONs(_ message: AIMessage) -> [JSONValue] {
     case .user:
         return [.object([
             "role": .string("user"),
-            "content": .array(message.content.compactMap(mistralContentPartJSON))
+            "content": .array(try message.content.map(mistralContentPartJSON))
         ])]
     }
+}
+
+private func mistralAssistantText(from message: AIMessage) -> String {
+    let text = message.content.compactMap(\.text).joined()
+    return text + (message.reasoning ?? "")
 }
 
 private func mistralAssistantToolCallJSON(_ part: AIContentPart) -> JSONValue? {
@@ -458,7 +473,7 @@ private func mistralJSONString(_ value: JSONValue) -> String? {
     return String(data: data, encoding: .utf8)
 }
 
-private func mistralContentPartJSON(_ part: AIContentPart) -> JSONValue? {
+private func mistralContentPartJSON(_ part: AIContentPart) throws -> JSONValue {
     switch part {
     case let .text(text):
         return .object(["type": .string("text"), "text": .string(text)])
@@ -466,12 +481,17 @@ private func mistralContentPartJSON(_ part: AIContentPart) -> JSONValue? {
         return .object(["type": .string("image_url"), "image_url": .string(url)])
     case let .data(mimeType, data) where mimeType.hasPrefix("image/"),
          let .file(mimeType, data, _) where mimeType.hasPrefix("image/"):
-        return .object(["type": .string("image_url"), "image_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
+        let mediaType = mimeType == "image/*" ? "image/jpeg" : mimeType
+        return .object(["type": .string("image_url"), "image_url": .string("data:\(mediaType);base64,\(data.base64EncodedString())")])
     case let .data(mimeType, data) where mimeType == "application/pdf",
          let .file(mimeType, data, _) where mimeType == "application/pdf":
         return .object(["type": .string("document_url"), "document_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
-    case .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
-        return nil
+    case let .data(mimeType, _), let .file(mimeType, _, _):
+        throw AIError.invalidArgument(argument: "files", message: "Mistral chat API only supports image and PDF file parts; got \(mimeType).")
+    case .providerReference:
+        throw AIError.invalidArgument(argument: "files", message: "Mistral chat API only supports image URL, inline image file, and PDF file parts.")
+    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        throw AIError.invalidArgument(argument: "messages", message: "Mistral user messages only support text, image file, and PDF file parts.")
     }
 }
 
@@ -512,8 +532,26 @@ private func mapMistralFinishReason(_ reason: String?) -> String? {
     case "tool_calls":
         return "tool-calls"
     default:
-        return reason == nil ? nil : "other"
+        return "other"
     }
+}
+
+private func mistralUsage(from raw: JSONValue) -> TokenUsage? {
+    guard let usage = raw["usage"] else { return nil }
+    let inputTokens = usage["prompt_tokens"]?.intValue
+    let outputTokens = usage["completion_tokens"]?.intValue
+    let cacheReadTokens = usage["num_cached_tokens"]?.intValue
+        ?? usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
+        ?? usage["prompt_token_details"]?["cached_tokens"]?.intValue
+    return TokenUsage(
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: usage["total_tokens"]?.intValue,
+        inputTokensNoCache: inputTokens.map { $0 - (cacheReadTokens ?? 0) },
+        inputTokensCacheRead: cacheReadTokens.flatMap { $0 == 0 ? nil : $0 },
+        outputTextTokens: outputTokens,
+        rawValue: usage
+    )
 }
 
 private func mistralResponseMetadata(from raw: JSONValue? = nil, response: AIHTTPResponse, modelID: String) -> AIResponseMetadata {
@@ -526,21 +564,39 @@ private func mistralResponseMetadata(from raw: JSONValue? = nil, response: AIHTT
     )
 }
 
-private func mistralTools(from tools: [String: JSONValue], only forcedName: String?) -> [JSONValue] {
-    tools.compactMap { name, schema in
+private func mistralTools(from tools: [String: JSONValue], only forcedName: String?) -> MistralPreparedTools {
+    var warnings: [AIWarning] = []
+    let values: [JSONValue] = tools.compactMap { name, schema in
+        let object = schema.objectValue
+        if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "provider-defined tool \(object?["id"]?.stringValue ?? name)"
+            ))
+            return nil
+        }
         if let forcedName, forcedName != name { return nil }
+        var parameters = schema
         var function: [String: JSONValue] = [
             "name": .string(name),
-            "parameters": schema
+            "parameters": parameters
         ]
-        if let description = schema["description"]?.stringValue {
-            function["description"] = .string(description)
+        if var parameterObject = parameters.objectValue {
+            if let description = parameterObject["description"]?.stringValue {
+                function["description"] = .string(description)
+            }
+            if let strict = parameterObject.removeValue(forKey: "strict") {
+                function["strict"] = strict
+                parameters = .object(parameterObject)
+                function["parameters"] = parameters
+            }
         }
         return .object([
             "type": .string("function"),
             "function": .object(function)
         ])
     }
+    return MistralPreparedTools(tools: values, warnings: warnings)
 }
 
 private func mistralToolChoice(from value: JSONValue?) -> JSONValue? {

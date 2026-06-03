@@ -391,6 +391,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "groq" {
             return withUserAgentSuffix(headers, "ai-sdk/groq/3.0.39")
         }
+        if providerID == "mistral" {
+            return withUserAgentSuffix(headers, "ai-sdk/mistral/3.0.37")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

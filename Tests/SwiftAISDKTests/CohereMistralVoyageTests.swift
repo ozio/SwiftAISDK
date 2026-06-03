@@ -304,7 +304,7 @@ import Testing
     #expect(result.responseMetadata.body?["id"]?.stringValue == "cmpl-1")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.mistral.ai/v1/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer mistral-key")
+    #expect(request.headers["authorization"] == "Bearer mistral-key")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "mistral-large-latest")
     #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
@@ -345,6 +345,77 @@ import Testing
     #expect(body["messages"]?[0]?["content"]?.stringValue == "You MUST answer with JSON.")
     #expect(body["messages"]?[1]?["role"]?.stringValue == "user")
     #expect(body["responseFormat"] == nil)
+}
+
+@Test func mistralProviderAddsVersionedUserAgentSuffix() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(
+        apiKey: "mistral-key",
+        headers: ["User-Agent": "custom-client/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Bearer mistral-key")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/3.0.37")
+}
+
+@Test func mistralMissingFinishReasonMapsToOtherAndUsageCountsCache() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":null}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"num_cached_tokens":3}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.finishReason == "other")
+    #expect(result.usage?.inputTokens == 10)
+    #expect(result.usage?.inputTokensNoCache == 7)
+    #expect(result.usage?.inputTokensCacheRead == 3)
+    #expect(result.usage?.outputTextTokens == 2)
+    #expect(result.usage?.rawValue?["num_cached_tokens"]?.intValue == 3)
+}
+
+@Test func mistralMessagesMapAssistantReasoningPrefixAndImageWildcardLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"continued"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .text("See"),
+            .data(mimeType: "image/*", data: Data([0, 1, 2]))
+        ]),
+        .assistant("Partial answer", reasoning: " prior thinking")
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let messages = try #require(body["messages"]?.arrayValue)
+    let userContent = try #require(messages[0]["content"]?.arrayValue)
+    #expect(userContent[1]["type"]?.stringValue == "image_url")
+    #expect(userContent[1]["image_url"]?.stringValue == "data:image/jpeg;base64,AAEC")
+    #expect(messages[1]["role"]?.stringValue == "assistant")
+    #expect(messages[1]["content"]?.stringValue == "Partial answer prior thinking")
+    #expect(messages[1]["prefix"]?.boolValue == true)
+}
+
+@Test func mistralRejectsUnsupportedUserFilePartsLikeUpstream() async throws {
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: RecordingTransport(responses: [])))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    await #expect(throws: AIError.invalidArgument(argument: "files", message: "Mistral chat API only supports image and PDF file parts; got text/plain.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [.file(mimeType: "text/plain", data: Data("nope".utf8), filename: "note.txt")])
+        ]))
+    }
 }
 
 @Test func mistralLanguageMapsStandardStructuredResponseFormat() async throws {
@@ -449,6 +520,39 @@ import Testing
     #expect(body["parallel_tool_calls"] == nil)
     #expect(body["tool_choice"] == nil)
     #expect(body["tools"] == nil)
+}
+
+@Test func mistralProviderDefinedToolsAreSkippedWithWarning() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        tools: [
+            "lookup": [
+                "type": "object",
+                "properties": ["value": ["type": "string"]],
+                "strict": true
+            ],
+            "mistral.search": [
+                "type": "provider",
+                "id": "mistral.search"
+            ]
+        ]
+    ))
+
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "provider-defined tool mistral.search")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools.count == 1)
+    #expect(tools[0]["function"]?["name"]?.stringValue == "lookup")
+    #expect(tools[0]["function"]?["strict"]?.boolValue == true)
+    #expect(tools[0]["function"]?["parameters"]?["strict"] == nil)
 }
 
 @Test func mistralLanguageParsesToolCalls() async throws {
