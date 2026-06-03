@@ -8,6 +8,46 @@ import Testing
     }
 }
 
+@Test func openAICompatibleUsesUpstreamSurfaceIDsAndUserAgent() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"choices":[{"message":{"content":"chat"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}"#),
+        jsonResponse(#"{"choices":[{"text":"completion","finish_reason":"stop"}],"usage":{"total_tokens":2}}"#),
+        jsonResponse(#"{"data":[{"embedding":[0.1,0.2]}],"usage":{"total_tokens":2}}"#),
+        jsonResponse(#"{"data":[{"b64_json":"image-data"}]}"#)
+    ])
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        headers: ["User-Agent": "CustomApp/1.0", "X-Client": "swift"],
+        transport: transport
+    )
+
+    let languageModel = try provider.languageModel("chat-model")
+    let chatModel = try provider.chatModel("chat-model")
+    let completionModel = try provider.completionModel("completion-model")
+    let embeddingModel = try provider.embeddingModel("embedding-model")
+    let imageModel = try provider.imageModel("image-model")
+
+    #expect(provider.providerID == "test-provider")
+    #expect(languageModel.providerID == "test-provider.chat")
+    #expect(chatModel.providerID == "test-provider.chat")
+    #expect(completionModel.providerID == "test-provider.completion")
+    #expect(embeddingModel.providerID == "test-provider.embedding")
+    #expect(imageModel.providerID == "test-provider.image")
+
+    _ = try await chatModel.generate(LanguageModelRequest(messages: [.user("Hi")]))
+    _ = try await completionModel.generate(LanguageModelRequest(messages: [.user("Finish")]))
+    _ = try await embeddingModel.embed(EmbeddingRequest(values: ["hello"]))
+    _ = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat"))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 4)
+    #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
+    #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/2.0.48" })
+}
+
 @Test func openAICompatibleStreamsIncludeUsageWhenEnabled() async throws {
     let chatTransport = RecordingTransport(response: sseResponse("""
     data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}

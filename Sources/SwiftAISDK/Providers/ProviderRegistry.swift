@@ -111,7 +111,9 @@ public enum AIProviders {
                 supportsStructuredOutputs: supportsStructuredOutputs,
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
-            )
+            ),
+            userAgentSuffix: "ai-sdk/openai-compatible/2.0.48",
+            usesOpenAICompatibleSurfaceIDs: true
         )
     }
 

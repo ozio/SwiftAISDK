@@ -3525,7 +3525,18 @@ private func openAICompatibleProviderOptionRoots(_ providerID: String) -> [Strin
     case "baseten", "deepinfra", "fireworks", "moonshotai", "togetherai":
         return providerID == root ? [] : [root]
     default:
-        return []
+        return openAICompatibleProviderSurface(providerID) == nil ? [] : [root]
+    }
+}
+
+private func openAICompatibleProviderSurface(_ providerID: String) -> String? {
+    let parts = providerID.split(separator: ".", maxSplits: 1).map(String.init)
+    guard parts.count == 2 else { return nil }
+    switch parts[1] {
+    case "chat", "completion", "embedding", "image":
+        return parts[1]
+    default:
+        return nil
     }
 }
 

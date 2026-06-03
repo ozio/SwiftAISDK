@@ -5,6 +5,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
     public let supportedCapabilities: Set<ModelCapability>
     private let config: ModelHTTPConfig
     private let routesLikeOpenAI: Bool
+    private let usesOpenAICompatibleSurfaceIDs: Bool
 
     public init(
         providerID: String,
@@ -13,11 +14,13 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         supportedCapabilities: Set<ModelCapability> = [.language],
         settings: ProviderSettings = ProviderSettings(),
         routesLikeOpenAI: Bool = false,
-        userAgentSuffix: String? = nil
+        userAgentSuffix: String? = nil,
+        usesOpenAICompatibleSurfaceIDs: Bool = false
     ) throws {
         self.providerID = providerID
         self.supportedCapabilities = supportedCapabilities
         self.routesLikeOpenAI = routesLikeOpenAI
+        self.usesOpenAICompatibleSurfaceIDs = usesOpenAICompatibleSurfaceIDs
         let headers = try Self.buildHeaders(providerID: providerID, authorization: authorization, settings: settings, userAgentSuffix: userAgentSuffix)
         self.config = ModelHTTPConfig(
             providerID: providerID,
@@ -39,10 +42,14 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         self.supportedCapabilities = supportedCapabilities
         self.config = config
         self.routesLikeOpenAI = routesLikeOpenAI
+        self.usesOpenAICompatibleSurfaceIDs = false
     }
 
     private func modelConfig(surface: String) -> ModelHTTPConfig {
         if routesLikeOpenAI {
+            return config.withProviderID("\(providerID).\(surface)")
+        }
+        if usesOpenAICompatibleSurfaceIDs {
             return config.withProviderID("\(providerID).\(surface)")
         }
         switch providerID {
