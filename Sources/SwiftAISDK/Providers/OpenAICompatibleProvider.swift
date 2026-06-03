@@ -440,6 +440,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "gladia" {
             return withUserAgentSuffix(headers, "ai-sdk/gladia/2.0.33")
         }
+        if providerID == "fal" {
+            return withUserAgentSuffix(headers, "ai-sdk/fal/2.0.34")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }

@@ -30,7 +30,8 @@ import Testing
     #expect(requests.count == 2)
     let request = try #require(requests.first)
     #expect(request.url.absoluteString == "https://fal.run/fal-ai/flux/schnell")
-    #expect(request.headers["Authorization"] == "Key fal-key")
+    #expect(request.headers["authorization"] == "Key fal-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/fal/2.0.34")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["image_size"]?.stringValue == "landscape_16_9")
@@ -42,7 +43,29 @@ import Testing
     #expect(body["useMultipleImages"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://fal.example.com/image.png")
-    #expect(requests[1].headers["Authorization"] == nil)
+    #expect(requests[1].headers["authorization"] == nil)
+    #expect(requests[1].headers["user-agent"] == nil)
+}
+
+@Test func falAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"image":{"url":"https://fal.example.com/image.png","content_type":"image/png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("fal-png".utf8))
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(
+        apiKey: "fal-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.imageModel("fal-ai/flux/schnell")
+
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+
+    let requests = await transport.requests()
+    #expect(requests[0].headers["authorization"] == "Key fal-key")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/fal/2.0.34")
+    #expect(requests[1].headers["authorization"] == nil)
+    #expect(requests[1].headers["user-agent"] == nil)
 }
 
 @Test func falImageMapsFilesMaskAndNestedOptions() async throws {
@@ -195,7 +218,8 @@ import Testing
     let speechRequests = await speechTransport.requests()
     #expect(speechRequests.count == 2)
     #expect(speechRequests[0].url.absoluteString == "https://fal.run/fal-ai/minimax/speech-02-hd")
-    #expect(speechRequests[0].headers["Authorization"] == "Key fal-key")
+    #expect(speechRequests[0].headers["authorization"] == "Key fal-key")
+    #expect(speechRequests[0].headers["user-agent"] == "ai-sdk/fal/2.0.34")
     let speechBody = try decodeJSONBody(try #require(speechRequests[0].body))
     #expect(speechBody["text"]?.stringValue == "hello")
     #expect(speechBody["voice"]?.stringValue == "voice-id")
@@ -203,7 +227,8 @@ import Testing
     #expect(speechBody["language_boost"]?.stringValue == "English")
     #expect(speechRequests[1].method == "GET")
     #expect(speechRequests[1].url.absoluteString == "https://fal.example.com/audio.mp3")
-    #expect(speechRequests[1].headers["Authorization"] == nil)
+    #expect(speechRequests[1].headers["authorization"] == nil)
+    #expect(speechRequests[1].headers["user-agent"] == nil)
 
     let transcriptionTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"transcription-1"}"#),
@@ -218,6 +243,8 @@ import Testing
     let transcriptionRequests = await transcriptionTransport.requests()
     #expect(transcriptionRequests.count == 2)
     #expect(transcriptionRequests[0].url.absoluteString == "https://queue.fal.run/fal-ai/whisper")
+    #expect(transcriptionRequests[0].headers["authorization"] == "Key fal-key")
+    #expect(transcriptionRequests[0].headers["user-agent"] == "ai-sdk/fal/2.0.34")
     let transcriptionBody = try decodeJSONBody(try #require(transcriptionRequests[0].body))
     #expect(transcriptionBody["task"]?.stringValue == "transcribe")
     #expect(transcriptionBody["language"]?.stringValue == "en")
@@ -227,6 +254,8 @@ import Testing
     #expect(transcriptionBody["audio_url"]?.stringValue?.hasPrefix("data:audio/wav;base64,") == true)
     #expect(transcriptionRequests[1].method == "GET")
     #expect(transcriptionRequests[1].url.absoluteString == "https://queue.fal.run/fal-ai/whisper/requests/transcription-1")
+    #expect(transcriptionRequests[1].headers["authorization"] == "Key fal-key")
+    #expect(transcriptionRequests[1].headers["user-agent"] == "ai-sdk/fal/2.0.34")
 }
 
 @Test func falAudioModelsMapNestedProviderOptions() async throws {
