@@ -41,7 +41,8 @@ import Testing
     #expect(result.usage?.rawValue?["cached_tokens"]?.intValue == 30)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.moonshot.ai/v1/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer moonshot-key")
+    #expect(request.headers["authorization"] == "Bearer moonshot-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/moonshotai/2.0.23")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["moonshotai"] == nil)
     #expect(body["extraRaw"]?.stringValue == "keep-me")
@@ -52,6 +53,24 @@ import Testing
     #expect(body["thinking"]?["extra"] == nil)
     #expect(body["reasoning_history"]?.stringValue == "preserved")
     #expect(body["reasoningHistory"] == nil)
+}
+
+@Test func moonshotLanguageAppendsUpstreamUserAgentSuffixToCustomHeaders() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"moon"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
+    """))
+    let provider = try AIProviders.moonshotAI(settings: ProviderSettings(
+        apiKey: "moonshot-key",
+        headers: ["User-Agent": "TestApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("kimi-k2")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/moonshotai/2.0.23")
+    #expect(request.headers["authorization"] == "Bearer moonshot-key")
 }
 
 @Test func moonshotLanguageHandlesThinkingWithoutBudgetTokens() async throws {

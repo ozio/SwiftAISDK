@@ -379,6 +379,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         case .none:
             break
         }
+        if providerID == "moonshotai" {
+            return withUserAgentSuffix(headers, "ai-sdk/moonshotai/2.0.23")
+        }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers
     }
