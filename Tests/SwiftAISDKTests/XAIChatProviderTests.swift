@@ -126,7 +126,7 @@ import Testing
         ))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be low or high.")) {
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
             providerOptions: ["xai": ["reasoningEffort": "minimal"]]

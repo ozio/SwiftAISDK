@@ -91,10 +91,10 @@ import Testing
 
     _ = try await model.generate(LanguageModelRequest(
         messages: [.user("Hi")],
+        seed: 42,
         providerOptions: [
             "xai": [
                 "reasoningEffort": "high",
-                "reasoningSummary": "detailed",
                 "logprobs": false,
                 "topLogprobs": 8,
                 "store": false,
@@ -114,10 +114,10 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["reasoning"]?["effort"]?.stringValue == "high")
-    #expect(body["reasoning"]?["summary"]?.stringValue == "detailed")
     #expect(body["top_logprobs"]?.intValue == 8)
-    #expect(body["logprobs"]?.boolValue == false)
+    #expect(body["logprobs"]?.boolValue == true)
     #expect(body["store"]?.boolValue == false)
+    #expect(body["seed"]?.intValue == 42)
     #expect(body["previous_response_id"]?.stringValue == "resp-old")
     #expect(body["include"]?[0]?.stringValue == "file_search_call.results")
     #expect(body["include"]?[1]?.stringValue == "reasoning.encrypted_content")
@@ -140,7 +140,7 @@ import Testing
         ))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be low, medium, or high.")) {
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
             providerOptions: ["xai": ["reasoningEffort": "minimal"]]
@@ -175,7 +175,9 @@ import Testing
 
     let nullNamespaceBody = try decodeJSONBody(try #require((await nullNamespaceTransport.requests()).first?.body))
     #expect(nullNamespaceBody["top_logprobs"]?.intValue == 2)
+    #expect(nullNamespaceBody["topLogprobs"] == nil)
     #expect(nullNamespaceBody["include"]?[0]?.stringValue == "reasoning.encrypted_content")
+    #expect(nullNamespaceBody["xai"] == nil)
 
     let includeNullTransport = RecordingTransport(response: jsonResponse(#"{"id":"resp-2","status":"completed","output_text":"xai responses"}"#))
     let includeNullProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: includeNullTransport))
@@ -188,6 +190,61 @@ import Testing
 
     let includeNullBody = try decodeJSONBody(try #require((await includeNullTransport.requests()).first?.body))
     #expect(includeNullBody["include"] == nil)
+}
+
+@Test func xAIResponsesInputConverterOwnsSystemFilesAndToolOutputs() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai responses"}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.responses("grok-4")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .system("Be precise."),
+        AIMessage(role: .user, content: [
+            .text("Read the uploaded file."),
+            .providerReference(mimeType: "application/pdf", reference: ["xai": "file_xai_pdf"])
+        ]),
+        AIMessage(role: .assistant, content: [
+            .text("I will call a tool."),
+            .toolCall(AIToolCall(
+                id: "call-1",
+                name: "lookup",
+                arguments: #"{"q":"xai"}"#,
+                providerMetadata: ["xai": .object(["itemId": .string("fc_item_1")])]
+            ))
+        ]),
+        .toolResponses(toolResults: [
+            AIToolResult(
+                toolCallID: "call-1",
+                toolName: "lookup",
+                result: .object(["type": .string("execution-denied")])
+            )
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let input = try #require(body["input"]?.arrayValue)
+    #expect(input[0]["role"]?.stringValue == "system")
+    #expect(input[0]["content"]?.stringValue == "Be precise.")
+    #expect(input[1]["content"]?[0]?["type"]?.stringValue == "input_text")
+    #expect(input[1]["content"]?[1]?["type"]?.stringValue == "input_file")
+    #expect(input[1]["content"]?[1]?["file_id"]?.stringValue == "file_xai_pdf")
+    #expect(input[2]["role"]?.stringValue == "assistant")
+    #expect(input[2]["content"]?.stringValue == "I will call a tool.")
+    #expect(input[3]["type"]?.stringValue == "function_call")
+    #expect(input[3]["id"]?.stringValue == "fc_item_1")
+    #expect(input[3]["call_id"]?.stringValue == "call-1")
+    #expect(input[4]["type"]?.stringValue == "function_call_output")
+    #expect(input[4]["output"]?.stringValue == "tool execution denied")
+
+    let rejectingProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: RecordingTransport(responses: [])))
+    let rejectingModel = try rejectingProvider.responses("grok-4")
+    await #expect(throws: AIError.invalidArgument(argument: "messages", message: "xAI Responses requires a URL or Files API provider reference for non-image file parts.")) {
+        _ = try await rejectingModel.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .file(mimeType: "application/pdf", data: Data("pdf".utf8), filename: "inline.pdf")
+            ])
+        ]))
+    }
 }
 
 @Test func xAIToolsHelpersMirrorResponsesToolFactories() async throws {
@@ -224,11 +281,14 @@ import Testing
             ),
             "image": XAITools.viewImage(),
             "video": XAITools.viewXVideo()
-        ]
+        ],
+        toolChoice: ["type": "tool", "toolName": "web"]
     ))
 
     #expect(result.text == "xai tools")
+    #expect(result.warnings == [AIWarning(type: "unsupported", feature: "toolChoice for server-side tool \"web\"")])
     let body = try decodeJSONBody(try #require((await transport.requests().first)?.body))
+    #expect(body["tool_choice"] == nil)
     let tools = try #require(body["tools"]?.arrayValue)
     #expect(tools.count == 7)
     let web = try #require(tools.first { $0["type"]?.stringValue == "web_search" })

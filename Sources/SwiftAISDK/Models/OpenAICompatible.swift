@@ -1394,8 +1394,8 @@ private func xaiValidateChatProviderOptions(_ options: [String: JSONValue]) thro
     for (key, value) in options where allowedKeys.contains(key) {
         switch key {
         case "reasoningEffort":
-            guard let effort = value.stringValue, ["none", "low", "medium", "high"].contains(effort) else {
-                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")
+            guard let effort = value.stringValue, ["low", "high"].contains(effort) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be low or high.")
             }
         case "logprobs", "parallel_function_calling":
             guard value.boolValue != nil else {
@@ -2104,18 +2104,22 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 
     private func openAICompatiblePreparedRequest(for request: LanguageModelRequest, stream: Bool) throws -> OpenAICompatibleResponsesPreparedRequest {
+        if providerID.hasPrefix("xai.") {
+            return try xaiResponsesPreparedRequest(
+                modelID: modelID,
+                providerID: providerID,
+                request: request,
+                stream: stream,
+                transformRequestBody: config.transformRequestBody
+            )
+        }
         let extraBody: [String: JSONValue]
         if isOpenAIBackedProvider(providerID, config: config) {
             extraBody = openAIResponsesProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot)
-        } else if providerID.hasPrefix("xai.") {
-            extraBody = try xaiResponsesProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID)
         } else {
             extraBody = request.extraBody
         }
         var options = openAIResponsesOptions(from: extraBody)
-        if providerID.hasPrefix("xai.") {
-            options = xaiResponsesOptions(from: options)
-        }
         let isOpenAIBacked = isOpenAIBackedProvider(providerID, config: config)
         let warnings = isOpenAIBacked ? openAIResponsesOpenAIBackedWarnings(options: options) : []
         if isOpenAIBacked {
@@ -2192,7 +2196,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 }
 
-private struct OpenAICompatibleResponsesPreparedRequest {
+struct OpenAICompatibleResponsesPreparedRequest {
     var body: [String: JSONValue]
     var warnings: [AIWarning]
 }
