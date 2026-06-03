@@ -41,6 +41,18 @@ import Testing
     #expect(body["context"]?["utterances"]?[0]?["voice"]?["id"]?.stringValue == "prior-voice")
 }
 
+@Test func humeSpeechIgnoresModelIDLikeUpstreamNoArgFactory() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
+    let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))
+    let model = try provider.speechModel("ignored-by-upstream")
+
+    let result = try await model.speak(SpeechRequest(text: "Hello"))
+
+    #expect(result.responseMetadata.modelID == "")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.hume.ai/v0/tts/file")
+}
+
 @Test func humeSpeechMapsNestedExtraBodyOptionsAndUtteranceFields() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("hume".utf8)))
     let provider = try AIProviders.hume(settings: ProviderSettings(apiKey: "hume-key", transport: transport))

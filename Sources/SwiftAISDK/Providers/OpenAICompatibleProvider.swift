@@ -290,7 +290,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return LMNTSpeechModel(modelID: modelID, config: config)
         }
         if providerID == "hume" {
-            return HumeSpeechModel(modelID: modelID, config: config)
+            return HumeSpeechModel(modelID: "", config: config)
         }
         if providerID == "elevenlabs" {
             return ElevenLabsSpeechModel(modelID: modelID, config: config)

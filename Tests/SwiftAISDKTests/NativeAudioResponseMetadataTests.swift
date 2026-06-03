@@ -85,7 +85,7 @@ import Testing
 
     let hume = try await humeModel.speak(SpeechRequest(text: "hello"))
 
-    #expect(hume.responseMetadata.modelID == "hume")
+    #expect(hume.responseMetadata.modelID == "")
     #expect(hume.responseMetadata.headers["hume-header"] == "speech")
 
     let groqTransport = RecordingTransport(response: jsonResponse(
