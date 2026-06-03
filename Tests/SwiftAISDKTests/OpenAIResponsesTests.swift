@@ -129,6 +129,69 @@ import Testing
     #expect(requests[2].url.absoluteString == "https://api.openai.com/v1/completions")
 }
 
+@Test func openAIProviderNameOverrideMatchesUpstreamSurfaceIDsAndOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"named","usage":{"total_tokens":1}}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport, name: "branded"))
+
+    let languageModel = try provider.languageModel("gpt-4.1")
+    let responsesModel = try provider.responses("gpt-4.1")
+    let chatModel = try provider.chat("gpt-4.1-mini")
+    let completionModel = try provider.completion("gpt-3.5-turbo-instruct")
+    let embeddingModel = try provider.embeddingModel("text-embedding-3-small")
+    let imageModel = try provider.imageModel("gpt-image-1")
+    let transcriptionModel = try provider.transcriptionModel("gpt-4o-transcribe")
+    let speechModel = try provider.speechModel("gpt-4o-mini-tts")
+    let files = provider.files()
+    let skills = try provider.skills()
+
+    #expect(provider.providerID == "branded")
+    #expect(languageModel.providerID == "branded.responses")
+    #expect(responsesModel.providerID == "branded.responses")
+    #expect(chatModel.providerID == "branded.chat")
+    #expect(completionModel.providerID == "branded.completion")
+    #expect(embeddingModel.providerID == "branded.embedding")
+    #expect(imageModel.providerID == "branded.image")
+    #expect(transcriptionModel.providerID == "branded.transcription")
+    #expect(speechModel.providerID == "branded.speech")
+    #expect(files.providerID == "branded.files")
+    #expect(skills.providerID == "branded.skills")
+
+    let result = try await languageModel.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        extraBody: [
+            "openai": .object([
+                "store": .bool(false),
+                "parallelToolCalls": .bool(true)
+            ]),
+            "branded": .object([
+                "previousResponseId": .string("resp-old"),
+                "reasoningEffort": .string("low"),
+                "parallelToolCalls": .bool(false)
+            ]),
+            "branded.responses": .object([
+                "serviceTier": .string("flex")
+            ])
+        ]
+    ))
+
+    #expect(result.text == "named")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.openai.com/v1/responses")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["store"]?.boolValue == false)
+    #expect(body["previous_response_id"]?.stringValue == "resp-old")
+    #expect(body["parallel_tool_calls"]?.boolValue == false)
+    #expect(body["reasoning"]?["effort"]?.stringValue == "low")
+    #expect(body["service_tier"]?.stringValue == "flex")
+    #expect(body["openai"] == nil)
+    #expect(body["branded"] == nil)
+    #expect(body["branded.responses"] == nil)
+    #expect(body["previousResponseId"] == nil)
+    #expect(body["parallelToolCalls"] == nil)
+    #expect(body["reasoningEffort"] == nil)
+    #expect(body["serviceTier"] == nil)
+}
+
 @Test func openAIResponsesMapsNestedProviderOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done","usage":{"total_tokens":3}}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))

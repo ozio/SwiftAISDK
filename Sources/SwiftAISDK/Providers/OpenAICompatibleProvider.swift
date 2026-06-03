@@ -4,16 +4,19 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
     public let providerID: String
     public let supportedCapabilities: Set<ModelCapability>
     private let config: ModelHTTPConfig
+    private let routesLikeOpenAI: Bool
 
     public init(
         providerID: String,
         defaultBaseURL: String,
         authorization: AuthorizationStyle,
         supportedCapabilities: Set<ModelCapability> = [.language],
-        settings: ProviderSettings = ProviderSettings()
+        settings: ProviderSettings = ProviderSettings(),
+        routesLikeOpenAI: Bool = false
     ) throws {
         self.providerID = providerID
         self.supportedCapabilities = supportedCapabilities
+        self.routesLikeOpenAI = routesLikeOpenAI
         let headers = try Self.buildHeaders(providerID: providerID, authorization: authorization, settings: settings)
         self.config = ModelHTTPConfig(
             providerID: providerID,
@@ -25,17 +28,22 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             queryParams: settings.queryParams,
             supportsStructuredOutputs: settings.supportsStructuredOutputs,
             maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
-            transformRequestBody: settings.transformRequestBody
+            transformRequestBody: settings.transformRequestBody,
+            openAIBackedProviderRoot: routesLikeOpenAI ? providerID : nil
         )
     }
 
-    init(providerID: String, supportedCapabilities: Set<ModelCapability>, config: ModelHTTPConfig) {
+    init(providerID: String, supportedCapabilities: Set<ModelCapability>, config: ModelHTTPConfig, routesLikeOpenAI: Bool = false) {
         self.providerID = providerID
         self.supportedCapabilities = supportedCapabilities
         self.config = config
+        self.routesLikeOpenAI = routesLikeOpenAI
     }
 
     private func modelConfig(surface: String) -> ModelHTTPConfig {
+        if routesLikeOpenAI {
+            return config.withProviderID("\(providerID).\(surface)")
+        }
         switch providerID {
         case "openai":
             return config.withProviderID("openai.\(surface)")
@@ -55,7 +63,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         guard supportedCapabilities.contains(.language) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .language, modelID: modelID)
         }
-        if providerID == "openai" {
+        if routesLikeOpenAI || providerID == "openai" {
             return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
         }
         if providerID == "xai" {
@@ -342,15 +350,15 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             providerID: "\(providerID).files",
             providerReferenceKey: providerID == "xai" ? "xai" : providerID,
             config: config,
-            includePurpose: providerID == "openai" || providerID == "xai"
+            includePurpose: routesLikeOpenAI || providerID == "openai" || providerID == "xai"
         )
     }
 
     public func skills() throws -> any AISkillsClient {
-        guard providerID == "openai" else {
+        guard routesLikeOpenAI || providerID == "openai" else {
             throw AIError.invalidArgument(argument: "providerID", message: "Skills upload is only supported by the OpenAI provider.")
         }
-        return OpenAISkillsClient(providerID: "openai.skills", providerReferenceKey: "openai", config: config)
+        return OpenAISkillsClient(providerID: "\(providerID).skills", providerReferenceKey: providerID, config: config)
     }
 
     static func buildHeaders(providerID: String, authorization: AuthorizationStyle, settings: ProviderSettings) throws -> [String: String] {
