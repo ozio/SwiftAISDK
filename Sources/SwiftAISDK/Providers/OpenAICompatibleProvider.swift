@@ -443,8 +443,14 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         if providerID == "fal" {
             return withUserAgentSuffix(headers, "ai-sdk/fal/2.0.34")
         }
+        if providerID == "alibaba" {
+            return withUserAgentSuffix(headers, "ai-sdk/alibaba/1.0.25")
+        }
         if providerID == "luma" {
             return withUserAgentSuffix(headers, "ai-sdk/luma/2.0.33")
+        }
+        if providerID == "klingai" {
+            return withUserAgentSuffix(headers, "ai-sdk/klingai/3.0.18")
         }
         if providerID == "replicate" {
             return withUserAgentSuffix(headers, "ai-sdk/replicate/2.0.33")

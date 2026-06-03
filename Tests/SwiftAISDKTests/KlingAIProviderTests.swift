@@ -35,7 +35,8 @@ import Testing
     let requests = await transport.requests()
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/text2video")
-    #expect(requests[0].headers["Authorization"] == "Bearer kling-token")
+    #expect(requests[0].headers["authorization"] == "Bearer kling-token")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/klingai/3.0.18")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model_name"]?.stringValue == "kling-v2-1")
     #expect(body["prompt"]?.stringValue == "cat running")
@@ -48,6 +49,29 @@ import Testing
     #expect(body["pollTimeoutMs"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/text2video/task-1")
+    #expect(requests[1].headers["authorization"] == "Bearer kling-token")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/klingai/3.0.18")
+}
+
+@Test func klingAIAppendsVersionedUserAgentToCustomHeader() async throws {
+    let transport = klingAITransport(taskID: "task-custom", videoURL: "https://kling.example.com/custom.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(
+        apiKey: "kling-token",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.videoModel("kling-v2.1-t2v")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "scene",
+        providerOptions: ["klingai": .object(["mode": "std", "pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[0].headers["authorization"] == "Bearer kling-token")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/3.0.18")
+    #expect(requests[1].headers["authorization"] == "Bearer kling-token")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/3.0.18")
 }
 
 @Test func klingAIT2VMapsProviderOptionsAndWarnings() async throws {
