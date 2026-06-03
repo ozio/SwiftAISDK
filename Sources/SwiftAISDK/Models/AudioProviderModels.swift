@@ -325,6 +325,7 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             throw httpStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
+        try elevenLabsValidateTranscriptionResponse(raw)
         let segments = elevenLabsTranscriptionSegments(from: raw)
         return TranscriptionResult(
             text: raw["text"]?.stringValue ?? "",
@@ -3005,6 +3006,52 @@ private let elevenLabsTranscriptionProviderOptionDefaults: [String: JSONValue] =
     "diarize": .bool(false),
     "fileFormat": .string("other")
 ]
+
+private func elevenLabsValidateTranscriptionResponse(_ raw: JSONValue) throws {
+    guard raw["language_code"]?.stringValue != nil else {
+        throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response did not contain a valid language_code.")
+    }
+    guard raw["language_probability"]?.doubleValue != nil else {
+        throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response did not contain a valid language_probability.")
+    }
+    guard raw["text"]?.stringValue != nil else {
+        throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response did not contain valid text.")
+    }
+    guard let words = raw["words"], words != .null else { return }
+    guard let wordItems = words.arrayValue else {
+        throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words must be an array.")
+    }
+    for (index, word) in wordItems.enumerated() {
+        guard word["text"]?.stringValue != nil else {
+            throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[\(index)].text must be a string.")
+        }
+        guard let type = word["type"]?.stringValue, ["word", "spacing", "audio_event"].contains(type) else {
+            throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[\(index)].type is invalid.")
+        }
+        for key in ["start", "end"] {
+            if let value = word[key], value != .null, value.doubleValue == nil {
+                throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[\(index)].\(key) must be a number or null.")
+            }
+        }
+        if let speakerID = word["speaker_id"], speakerID != .null, speakerID.stringValue == nil {
+            throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[\(index)].speaker_id must be a string or null.")
+        }
+        guard let characters = word["characters"], characters != .null else { continue }
+        guard let characterItems = characters.arrayValue else {
+            throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[\(index)].characters must be an array.")
+        }
+        for (characterIndex, character) in characterItems.enumerated() {
+            guard character["text"]?.stringValue != nil else {
+                throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[\(index)].characters[\(characterIndex)].text must be a string.")
+            }
+            for key in ["start", "end"] {
+                if let value = character[key], value != .null, value.doubleValue == nil {
+                    throw AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[\(index)].characters[\(characterIndex)].\(key) must be a number or null.")
+                }
+            }
+        }
+    }
+}
 
 private func elevenLabsSpeechWarnings(for request: SpeechRequest) -> [AIWarning] {
     guard request.instructions != nil else { return [] }

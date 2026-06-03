@@ -23,6 +23,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/text-to-speech/voice-123?enable_logging=false&output_format=mp3_44100_192")
     #expect(request.headers["xi-api-key"] == "eleven-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/elevenlabs/2.0.33")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
     #expect(body["model_id"]?.stringValue == "eleven_multilingual_v2")
@@ -283,6 +284,24 @@ import Testing
             text: "Hello",
             providerOptions: ["elevenlabs": .object(["enableLogging": .string("false")])]
         ))
+    }
+}
+
+@Test func elevenLabsTranscriptionRejectsInvalidResponseShapeLikeUpstreamSchema() async throws {
+    let missingLanguageTransport = RecordingTransport(response: jsonResponse(#"{"text":"missing language","language_probability":0.99}"#))
+    let missingLanguageProvider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: missingLanguageTransport))
+    let missingLanguageModel = try missingLanguageProvider.transcriptionModel("scribe_v1")
+
+    await #expect(throws: AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response did not contain a valid language_code.")) {
+        _ = try await missingLanguageModel.transcribe(AudioTranscriptionRequest(audio: Data("mp3".utf8)))
+    }
+
+    let invalidWordsTransport = RecordingTransport(response: jsonResponse(#"{"language_code":"en","language_probability":0.99,"text":"bad words","words":[{"text":"hello","type":"not_a_word"}]}"#))
+    let invalidWordsProvider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: invalidWordsTransport))
+    let invalidWordsModel = try invalidWordsProvider.transcriptionModel("scribe_v1")
+
+    await #expect(throws: AIError.invalidResponse(provider: "elevenlabs.transcription", message: "ElevenLabs transcription response words[0].type is invalid.")) {
+        _ = try await invalidWordsModel.transcribe(AudioTranscriptionRequest(audio: Data("mp3".utf8)))
     }
 }
 

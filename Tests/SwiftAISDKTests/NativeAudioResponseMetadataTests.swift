@@ -50,7 +50,7 @@ import Testing
     #expect(elevenSpeech.responseMetadata.headers["eleven-header"] == "speech")
 
     let elevenTranscriptionTransport = RecordingTransport(response: jsonResponse(
-        #"{"text":"eleven transcript"}"#,
+        #"{"language_code":"en","language_probability":0.99,"text":"eleven transcript"}"#,
         headers: ["eleven-header": "transcription"]
     ))
     let elevenTranscriptionProvider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: elevenTranscriptionTransport))
