@@ -276,6 +276,17 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         return OpenAICompatibleTranscriptionModel(modelID: modelID, config: modelConfig(surface: "transcription"))
     }
 
+    public func transcriptionModel() throws -> any TranscriptionModel {
+        guard providerID == "gladia" else {
+            throw AIError.invalidArgument(argument: "modelID", message: "A model ID is required for \(providerID).")
+        }
+        return try transcriptionModel("default")
+    }
+
+    public func transcription() throws -> any TranscriptionModel {
+        try transcriptionModel()
+    }
+
     public func speechModel(_ modelID: String) throws -> any SpeechModel {
         guard supportedCapabilities.contains(.speech) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .speech, modelID: modelID)
@@ -425,6 +436,9 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         }
         if providerID == "revai" {
             return withUserAgentSuffix(headers, "ai-sdk/revai/2.0.33")
+        }
+        if providerID == "gladia" {
+            return withUserAgentSuffix(headers, "ai-sdk/gladia/2.0.33")
         }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers

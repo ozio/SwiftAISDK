@@ -770,7 +770,6 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
         }
 
         var body: [String: JSONValue] = ["audio_url": .string(audioURL)]
-        if let language = request.language { body["language"] = .string(language) }
         body.merge(gladiaTranscriptionOptions(from: options)) { _, new in new }
         let initRaw = try await config.sendJSON(path: "/v2/pre-recorded", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         guard let resultURL = initRaw["result_url"]?.stringValue else {

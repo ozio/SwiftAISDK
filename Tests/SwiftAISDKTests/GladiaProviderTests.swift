@@ -52,6 +52,7 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.gladia.io/v2/upload")
     #expect(requests[0].headers["x-gladia-key"] == "gladia-key")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/gladia/2.0.33")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let uploadBody = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(uploadBody.contains("name=\"audio\"; filename=\"audio.wav\""))
@@ -59,7 +60,7 @@ import Testing
     #expect(requests[1].url.absoluteString == "https://api.gladia.io/v2/pre-recorded")
     let initBody = try decodeJSONBody(try #require(requests[1].body))
     #expect(initBody["audio_url"]?.stringValue == "https://audio.example.com/file.wav")
-    #expect(initBody["language"]?.stringValue == "en")
+    #expect(initBody["language"] == nil)
     #expect(initBody["context_prompt"]?.stringValue == "Names include Codex.")
     #expect(initBody["detect_language"]?.boolValue == false)
     #expect(initBody["enable_code_switching"]?.boolValue == true)
@@ -82,6 +83,49 @@ import Testing
 
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://api.gladia.io/v2/pre-recorded/result/job-123")
+}
+
+@Test func gladiaTranscriptionNoArgFactoryAndCustomUserAgentMirrorUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":1.0},"transcription":{"full_transcript":"custom","languages":["en"],"utterances":[{"start":0,"end":1.0,"text":"custom"}]}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(
+        apiKey: "gladia-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.transcription()
+
+    let result = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+
+    #expect(model.modelID == "default")
+    #expect(result.responseMetadata.modelID == "default")
+    let requests = await transport.requests()
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.33")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.33")
+    #expect(requests[2].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.33")
+}
+
+@Test func gladiaTranscriptionIgnoresStandardLanguageLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":1.0},"transcription":{"full_transcript":"ignored language","languages":["fr"],"utterances":[{"start":0,"end":1.0,"text":"ignored language"}]}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(apiKey: "gladia-key", transport: transport))
+    let model = try provider.transcriptionModel("default")
+
+    let result = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        mimeType: "audio/wav",
+        language: "ja"
+    ))
+
+    #expect(result.language == "fr")
+    let initBody = try decodeJSONBody(try #require((await transport.requests())[1].body))
+    #expect(initBody["language"] == nil)
 }
 
 @Test func gladiaTranscriptionMapsNestedExtraBodyOptions() async throws {
