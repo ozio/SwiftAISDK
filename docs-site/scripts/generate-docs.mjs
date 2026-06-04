@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -115,7 +122,33 @@ function generateProviders() {
   );
 }
 
+function findSwiftAISDKSymbolGraphs() {
+  const root = join(repoRoot, '.build');
+  const candidates = [];
+  function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(path);
+      } else if (entry.name === 'SwiftAISDK.symbols.json') {
+        candidates.push(path);
+      }
+    }
+  }
+  if (existsSync(root)) {
+    walk(root);
+  }
+  return candidates.sort();
+}
+
+function removeExistingSymbolGraphs() {
+  for (const path of findSwiftAISDKSymbolGraphs()) {
+    rmSync(path);
+  }
+}
+
 function dumpSymbolGraph() {
+  removeExistingSymbolGraphs();
   const result = spawnSync(
     'swift',
     [
@@ -129,26 +162,21 @@ function dumpSymbolGraph() {
     { cwd: repoRoot, encoding: 'utf8' },
   );
   if (result.status !== 0) {
+    const emittedGraphs = findSwiftAISDKSymbolGraphs();
+    if (emittedGraphs.length > 0) {
+      console.warn(
+        'swift package dump-symbol-graph returned non-zero after emitting SwiftAISDK.symbols.json; continuing with the library graph.',
+      );
+      return;
+    }
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);
-    throw new Error('Failed to dump Swift symbol graph.');
+    throw new Error('Failed to dump SwiftAISDK symbol graph.');
   }
 }
 
 function findSymbolGraphFile() {
-  const root = join(repoRoot, '.build');
-  const candidates = [];
-  function walk(dir) {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(path);
-      } else if (entry.name === 'SwiftAISDK.symbols.json') {
-        candidates.push(path);
-      }
-    }
-  }
-  walk(root);
+  const candidates = findSwiftAISDKSymbolGraphs();
   if (candidates.length === 0) {
     throw new Error('SwiftAISDK.symbols.json was not emitted.');
   }
