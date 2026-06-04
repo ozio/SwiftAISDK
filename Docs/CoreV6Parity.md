@@ -6,7 +6,8 @@ This document tracks SwiftAISDK against the current AI SDK v6 Core and Errors
 reference. It is intentionally high-level: provider package drift belongs in
 `ProviderVersionLedger.md` and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@6.0.196` and `@ai-sdk/react@3.0.198`.
+snapshots, currently `ai@6.0.196`, `@ai-sdk/react@3.0.198`, and
+`@ai-sdk/provider-utils@4.0.27`.
 
 References:
 
@@ -38,9 +39,9 @@ References:
 | `generateSpeech` | `covered` | `AI.generateSpeech`, `SpeechRequest` | Native model family exists. |
 | `experimental_generateVideo` | `covered` | `AI.generateVideo`, `VideoGenerationRequest` | Swift uses stable `generateVideo` naming. Decide only if an `experimental_` alias is useful for discoverability. |
 | `Output` | `covered` | `Output.text/object/array/choice/json`, `AI.generateText(... output:)`, `AI.streamText(... output:)`, existing object-generation facades | Swift now mirrors the v6-style `generateText/streamText + Output.*` entry point while still keeping the older Swift-native object/array/enum/json facades. `Output.object` partial streaming uses `JSONValue` because Swift has no automatic `DeepPartial<T>`. |
-| `Agent` interface | `missing` | none | Decide whether SwiftAISDK should port agent abstractions or keep tool loops inside `AI.generateText`/`AI.streamText`. |
-| `ToolLoopAgent` | `partial` | tool-loop overloads on `AI.generateText` and `AI.streamText` | Behavior exists as facade options, not as a reusable agent object. |
-| `createAgentUIStream` | `partial` | `AIUIMessageStreamReducer`, `AIUIMessageStreamReducer.snapshots(from:)` | Swift now has the core UI-message reducer needed for agent/UI streams, but no dedicated `Agent` stream wrapper yet. |
+| `Agent` interface | `covered` | `AIAgent`, `AIAgentCallOptions` | Swift-native agent protocol mirrors upstream `version: "agent-v1"`, optional `id`, tool exposure, and generate/stream calls over model messages or prompts. |
+| `ToolLoopAgent` | `covered` | `AIToolLoopAgent`, tool-loop overloads on `AI.generateText` and `AI.streamText` | Reusable agent object wraps the existing Swift tool loop. Default `maxSteps` is 20 to match upstream `stepCountIs(20)` behavior. |
+| `createAgentUIStream` | `covered` | `createAgentUIStream`, `AIUIMessageStreamReducer.snapshots(from:)` | Converts validated `AIUIMessage` history to model messages, streams through any `AIAgent`, and returns assistant UI-message snapshots. |
 | `createAgentUIStreamResponse` | `out of scope candidate` | none | JS response/server surface; likely not a SwiftPM core priority unless a Swift server use case is chosen. |
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
@@ -56,7 +57,7 @@ References:
 | `safeValidateUIMessages` | `covered` | `safeValidateUIMessages`, `AIUIMessageValidationResult` | Non-throwing validation result for UI persistence/import flows. Swift returns accumulated issues instead of the upstream `{ success, data/error }` union. |
 | `createProviderRegistry` | `covered` | `createProviderRegistry`, `AIProviderRegistry` | Registry and default-provider flows exist. |
 | `customProvider` | `covered` | `customProvider`, `AICustomProvider` | Supports configured models/clients and fallbacks. |
-| `cosineSimilarity` | `missing` | none | Small helper; straightforward to add if desired. |
+| `cosineSimilarity` | `covered` | `cosineSimilarity(_:_:)` for `Double` and `Float` vectors | Mirrors upstream empty-vector and zero-magnitude behavior, and throws `AIError.invalidArgument` for mismatched lengths. |
 | `wrapLanguageModel` | `covered` | `wrapLanguageModel`, `AILanguageModelMiddleware` | Includes generate/stream wrapping and request transforms. |
 | `wrapImageModel` | `covered` | `wrapImageModel`, `AIImageModelMiddleware` | Direct surface exists. |
 | `LanguageModelV3Middleware` | `covered` | `AILanguageModelMiddleware` | Swift-specific type name; semantics are similar. |
@@ -67,10 +68,10 @@ References:
 | `extractJsonMiddleware` | `covered` | `extractJsonMiddleware`, `extractJSONMiddleware` | Direct helper plus Swift capitalization alias. |
 | `stepCountIs` | `swift-native` | `AIStopCondition.isStepCount` | Behavior exists; helper name differs. |
 | `hasToolCall` | `swift-native` | `AIStopCondition.hasToolCall` | Behavior exists; helper name differs. |
-| `simulateReadableStream` | `missing` | none | JS stream test helper; likely not central for Swift, but could map to `AsyncThrowingStream` test utilities. |
-| `smoothStream` | `missing` | none | Streaming text smoothing helper is not represented. |
-| `generateId` | `missing` | none | Small utility; decide whether public helper belongs in core. |
-| `createIdGenerator` | `missing` | none | Same as `generateId`. |
+| `simulateReadableStream` | `covered` | `simulateReadableStream(chunks:initialDelayNanoseconds:chunkDelayNanoseconds:)` | Swift-native `AsyncThrowingStream` equivalent with `nil` delays as the no-delay path. |
+| `smoothStream` | `covered` | `smoothStream(_:delayNanoseconds:chunking:)`, custom detector overload | Smooths text/reasoning deltas by word, line, or custom detector; flushes before non-text chunks and preserves metadata. |
+| `generateId` | `covered` | `generateId()` | Public 16-character non-secure ID helper matching upstream default length/alphabet. |
+| `createIdGenerator` | `covered` | `createIdGenerator(prefix:separator:size:alphabet:)` | Supports prefix, separator, size, and alphabet. Separator is only used when `prefix` is provided, matching upstream provider-utils behavior. |
 | `DefaultGeneratedFile` | `missing` | `AIStreamFile`, generated media result structs | File/media objects exist, but not the upstream named type. |
 
 ## AI SDK Errors Reference
@@ -115,16 +116,16 @@ it means JavaScript-style error-class parity is only partial.
 
 ## Recommended Next Passes
 
-1. Decide whether SwiftAISDK wants exact v6 API names for small helpers:
-   `cosineSimilarity`, `generateId`, `createIdGenerator`, and maybe
-   `simulateReadableStream`.
-2. Continue polishing the new `AIOutput` surface where it proves useful:
+1. Continue polishing the new `AIOutput` surface where it proves useful:
    document examples and consider array `elementStream` ergonomics. The
    `choice/json` factories already propagate `name` and `description` as
    provider hints.
-3. Build object-generation session state over the existing `Output` streaming
-   surface. Agent-specific UI streams can sit on the same reducer and transport
-   contracts.
+2. Decide whether `DefaultGeneratedFile` deserves a named Swift analog or
+   whether `AIStreamFile` plus generated media result structs are sufficient.
+3. Keep JS response helpers (`createAgentUIStreamResponse`,
+   `pipeAgentUIStreamToResponse`, `createUIMessageStreamResponse`,
+   `pipeUIMessageStreamToResponse`) out of core unless SwiftAISDK grows a
+   server-side Swift target.
 4. Continue typed-error parity only where it improves Swift diagnostics. The
    first middle-path batch now covers API calls, type validation, no-output,
    no-such-tool, invalid tool input, and tool-call repair. Remaining candidates
@@ -142,7 +143,7 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 | `UIMessage` and message parts | `AIUIMessage`, `AIUIMessagePart`, metadata/data parts | done | Core render-message model exists without depending on SwiftUI/Observation. |
 | `convertToModelMessages` | `convertToModelMessages` | done | Converts supported `AIUIMessage` parts into `AIMessage` history for model calls; render-only parts are ignored, unsupported URL files fail with `AIUIMessageStreamError`. |
 | `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReducer` | done | Converts `LanguageStreamPart` into stable UI message snapshots, so UI layers do not hand-roll streaming assembly. ID-based text/reasoning/tool-input chunks now reject missing starts like upstream `processUIMessageStream`; Swift keeps id-less language deltas as a compatibility convenience. |
-| `useObject` | `@Observable` `AIObjectGenerationSession<Output>` | P2 | Wrap `streamObject` for SwiftUI with `partialObject`, `object`, `isStreaming`, `error`, `submit`, and cancellation. Useful for forms, inspectors, and structured assistant panels. |
+| `useObject` | `AIObjectGenerationSession<Output, Partial>` | done | Combine-backed `ObservableObject` over v6-style `Output` streaming with `partialObject`, final `object`, `result`, status, error, text, warnings, metadata, `submit`, `stop`, and `clear`. Final object validation errors are reported through `onFinish`, matching upstream `useObject` semantics. |
 | `DirectChatTransport` | `AIChatTransport`, `AIChatTransportRequest`, `AIChatRequestOptions`, `DirectAIChatTransport` | done | In-process transport streams `AIUIMessage` snapshots from `AI.streamText`, supports tool-loop options, request defaults, aborts, retry/timeout/telemetry, and reasoning/source/finish filters. Leave room for an `HTTPChatTransport` later when an app talks to its own backend. |
 
 ### Not Worth Directly Porting
@@ -156,5 +157,5 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 
 ### Suggested Build Order
 
-1. Add `AIObjectGenerationSession<Output>` after the chat state model settles.
-2. Consider agent-specific UI stream wrappers on top of `AIUIMessageStreamReducer`.
+1. Add examples/docs for `AIObjectGenerationSession` and agent UI streams once the public naming settles.
+2. Consider `useCompletion` only if real SwiftUI app code repeatedly needs a dedicated completion session.

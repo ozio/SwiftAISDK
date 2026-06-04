@@ -35,6 +35,62 @@ import Testing
     #expect(request.extraBody["user"]?.stringValue == "user-1")
 }
 
+@Test func coreUtilityHelpersMirrorAISDKSmallHelpers() async throws {
+    #expect(try cosineSimilarity([1.0, 0.0], [0.0, 1.0]) == 0)
+    #expect(abs(try cosineSimilarity([1.0, 1.0], [1.0, 1.0]) - 1) < 0.000_001)
+    #expect(try cosineSimilarity([0.0, 0.0], [1.0, 1.0]) == 0)
+    #expect(try cosineSimilarity([] as [Double], [] as [Double]) == 0)
+
+    do {
+        _ = try cosineSimilarity([1.0], [1.0, 2.0])
+        Issue.record("Expected mismatched vector failure.")
+    } catch let error as AIError {
+        if case let .invalidArgument(argument, message) = error {
+            #expect(argument == "vector1,vector2")
+            #expect(message.contains("same length"))
+        } else {
+            Issue.record("Expected invalid argument error.")
+        }
+    }
+
+    let generator = createIdGenerator(prefix: "msg", separator: "_", size: 8, alphabet: "a")
+    let emptyPrefixGenerator = createIdGenerator(prefix: "", separator: "_", size: 4, alphabet: "b")
+    let unprefixedGenerator = createIdGenerator(size: 4, alphabet: "c")
+    #expect(generator() == "msg_aaaaaaaa")
+    #expect(emptyPrefixGenerator() == "_bbbb")
+    #expect(unprefixedGenerator() == "cccc")
+    #expect(generateId().count == 16)
+
+    var chunks: [String] = []
+    for try await chunk in simulateReadableStream(
+        chunks: ["a", "b"],
+        initialDelayNanoseconds: nil,
+        chunkDelayNanoseconds: nil
+    ) {
+        chunks.append(chunk)
+    }
+    #expect(chunks == ["a", "b"])
+
+    let languageStream = simulateReadableStream(
+        chunks: [
+            LanguageStreamPart.textDelta("Hello "),
+            LanguageStreamPart.textDelta("world"),
+            LanguageStreamPart.finish(reason: "stop", usage: nil)
+        ],
+        initialDelayNanoseconds: nil,
+        chunkDelayNanoseconds: nil
+    )
+    var smoothed: [LanguageStreamPart] = []
+    for try await part in smoothStream(languageStream, delayNanoseconds: nil, chunking: .word) {
+        smoothed.append(part)
+    }
+    #expect(smoothed == [
+        .textDelta("Hello "),
+        .textDelta("world"),
+        .finish(reason: "stop", usage: nil)
+    ])
+}
+
 @Test func typedCoreErrorsExposeUsefulDiagnostics() throws {
     let apiError = AIAPICallError(
         provider: "mock",
