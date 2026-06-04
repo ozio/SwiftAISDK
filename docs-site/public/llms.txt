@@ -3,16 +3,16 @@
 SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 
 ## Pages
-- [Introduction](/): Learn what SwiftAISDK is and where to start.
-- [MCP tools](/cookbook/mcp-tools/): Discover MCP tools and pass them to AI.generateText.
-- [Generate text](/core/generate-text/): Use AI.generateText for one-shot language model calls.
-- [Stream text](/core/stream-text/): Consume language model output as an async sequence.
-- [Structured output](/core/structured-output/): Generate Decodable Swift values from JSON output.
-- [Tools](/core/tools/): Let a language model call typed Swift tools.
-- [Install](/getting-started/install/): Add SwiftAISDK to a SwiftPM package and configure credentials.
-- [Quickstart](/getting-started/quickstart/): Generate text with a provider and model.
-- [Provider matrix](/providers/): Generated provider capability overview for SwiftAISDK.
-- [Reference](/reference/): Generated overview of the public SwiftAISDK surface.
-- [Public symbols](/reference/generated/public-symbols/): Generated public SwiftAISDK symbol table.
-- [Troubleshooting](/troubleshooting/): Diagnose common SwiftAISDK setup and runtime issues.
-- [Upstream parity](/upstream-parity/): Understand how SwiftAISDK tracks Vercel AI SDK.
+- [Introduction](https://ozio.github.io/SwiftAISDK/): Learn what SwiftAISDK is and where to start.
+- [MCP tools](https://ozio.github.io/SwiftAISDK/cookbook/mcp-tools/): Discover MCP tools and pass them to AI.generateText.
+- [Generate text](https://ozio.github.io/SwiftAISDK/core/generate-text/): Use AI.generateText for one-shot language model calls.
+- [Stream text](https://ozio.github.io/SwiftAISDK/core/stream-text/): Consume language model output as an async sequence.
+- [Structured output](https://ozio.github.io/SwiftAISDK/core/structured-output/): Generate Decodable Swift values from JSON output.
+- [Tools](https://ozio.github.io/SwiftAISDK/core/tools/): Let a language model call typed Swift tools.
+- [Install](https://ozio.github.io/SwiftAISDK/getting-started/install/): Add SwiftAISDK to a SwiftPM package and configure credentials.
+- [Quickstart](https://ozio.github.io/SwiftAISDK/getting-started/quickstart/): Generate text with a provider and model.
+- [Provider matrix](https://ozio.github.io/SwiftAISDK/providers/): Generated provider capability overview for SwiftAISDK.
+- [Reference](https://ozio.github.io/SwiftAISDK/reference/): Generated overview of the public SwiftAISDK surface.
+- [Public symbols](https://ozio.github.io/SwiftAISDK/reference/generated/public-symbols/): Generated public SwiftAISDK symbol table.
+- [Troubleshooting](https://ozio.github.io/SwiftAISDK/troubleshooting/): Diagnose common SwiftAISDK setup and runtime issues.
+- [Upstream parity](https://ozio.github.io/SwiftAISDK/upstream-parity/): Understand how SwiftAISDK tracks Vercel AI SDK.

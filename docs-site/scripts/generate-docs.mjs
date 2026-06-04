@@ -14,6 +14,8 @@ const docsSiteRoot = fileURLToPath(new URL('..', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const contentRoot = join(docsSiteRoot, 'src/content/docs');
 const publicRoot = join(docsSiteRoot, 'public');
+const docsBase = process.env.DOCS_BASE ?? '/';
+const docsSite = process.env.DOCS_SITE ?? '';
 
 function ensureDir(path) {
   mkdirSync(path, { recursive: true });
@@ -22,6 +24,17 @@ function ensureDir(path) {
 function writeGenerated(path, body) {
   ensureDir(join(path, '..'));
   writeFileSync(path, body);
+}
+
+function normalizedDocsBase() {
+  if (!docsBase || docsBase === '/') return '';
+  return `/${docsBase.replace(/^\/|\/$/g, '')}`;
+}
+
+function publicDocsUrl(slug) {
+  const path = `${normalizedDocsBase()}${slug}`;
+  if (!docsSite) return path;
+  return `${docsSite.replace(/\/$/g, '')}${path}`;
 }
 
 function splitMarkdownRow(row) {
@@ -278,7 +291,8 @@ function generateLLMSFiles() {
     '',
     '## Pages',
     ...pages.map(
-      (page) => `- [${page.title}](${page.slug}): ${page.description}`,
+      (page) =>
+        `- [${page.title}](${publicDocsUrl(page.slug)}): ${page.description}`,
     ),
     '',
   ].join('\n');
@@ -287,7 +301,7 @@ function generateLLMSFiles() {
     llms,
     ...pages.map(
       (page) =>
-        `\n\n# ${page.title}\n\nSource path: ${page.slug}\n\n${page.source.replace(/^---[\s\S]*?---\n/, '')}`,
+        `\n\n# ${page.title}\n\nSource URL: ${publicDocsUrl(page.slug)}\n\n${page.source.replace(/^---[\s\S]*?---\n/, '')}`,
     ),
   ].join('\n');
 

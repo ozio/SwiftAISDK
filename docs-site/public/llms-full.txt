@@ -3,25 +3,25 @@
 SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 
 ## Pages
-- [Introduction](/): Learn what SwiftAISDK is and where to start.
-- [MCP tools](/cookbook/mcp-tools/): Discover MCP tools and pass them to AI.generateText.
-- [Generate text](/core/generate-text/): Use AI.generateText for one-shot language model calls.
-- [Stream text](/core/stream-text/): Consume language model output as an async sequence.
-- [Structured output](/core/structured-output/): Generate Decodable Swift values from JSON output.
-- [Tools](/core/tools/): Let a language model call typed Swift tools.
-- [Install](/getting-started/install/): Add SwiftAISDK to a SwiftPM package and configure credentials.
-- [Quickstart](/getting-started/quickstart/): Generate text with a provider and model.
-- [Provider matrix](/providers/): Generated provider capability overview for SwiftAISDK.
-- [Reference](/reference/): Generated overview of the public SwiftAISDK surface.
-- [Public symbols](/reference/generated/public-symbols/): Generated public SwiftAISDK symbol table.
-- [Troubleshooting](/troubleshooting/): Diagnose common SwiftAISDK setup and runtime issues.
-- [Upstream parity](/upstream-parity/): Understand how SwiftAISDK tracks Vercel AI SDK.
+- [Introduction](https://ozio.github.io/SwiftAISDK/): Learn what SwiftAISDK is and where to start.
+- [MCP tools](https://ozio.github.io/SwiftAISDK/cookbook/mcp-tools/): Discover MCP tools and pass them to AI.generateText.
+- [Generate text](https://ozio.github.io/SwiftAISDK/core/generate-text/): Use AI.generateText for one-shot language model calls.
+- [Stream text](https://ozio.github.io/SwiftAISDK/core/stream-text/): Consume language model output as an async sequence.
+- [Structured output](https://ozio.github.io/SwiftAISDK/core/structured-output/): Generate Decodable Swift values from JSON output.
+- [Tools](https://ozio.github.io/SwiftAISDK/core/tools/): Let a language model call typed Swift tools.
+- [Install](https://ozio.github.io/SwiftAISDK/getting-started/install/): Add SwiftAISDK to a SwiftPM package and configure credentials.
+- [Quickstart](https://ozio.github.io/SwiftAISDK/getting-started/quickstart/): Generate text with a provider and model.
+- [Provider matrix](https://ozio.github.io/SwiftAISDK/providers/): Generated provider capability overview for SwiftAISDK.
+- [Reference](https://ozio.github.io/SwiftAISDK/reference/): Generated overview of the public SwiftAISDK surface.
+- [Public symbols](https://ozio.github.io/SwiftAISDK/reference/generated/public-symbols/): Generated public SwiftAISDK symbol table.
+- [Troubleshooting](https://ozio.github.io/SwiftAISDK/troubleshooting/): Diagnose common SwiftAISDK setup and runtime issues.
+- [Upstream parity](https://ozio.github.io/SwiftAISDK/upstream-parity/): Understand how SwiftAISDK tracks Vercel AI SDK.
 
 
 
 # Introduction
 
-Source path: /
+Source URL: https://ozio.github.io/SwiftAISDK/
 
 
 # SwiftAISDK
@@ -69,7 +69,7 @@ SwiftAISDK tracks the provider-facing AI SDK surface. Web framework hooks and Re
 
 # MCP tools
 
-Source path: /cookbook/mcp-tools/
+Source URL: https://ozio.github.io/SwiftAISDK/cookbook/mcp-tools/
 
 
 # MCP Tools
@@ -110,7 +110,7 @@ For local processes, use `MCPStdioTransport`. For remote servers, use `MCPHTTPTr
 
 # Generate text
 
-Source path: /core/generate-text/
+Source URL: https://ozio.github.io/SwiftAISDK/core/generate-text/
 
 
 # Generate Text
@@ -177,7 +177,7 @@ let result = try await AI.generateText(
 
 # Stream text
 
-Source path: /core/stream-text/
+Source URL: https://ozio.github.io/SwiftAISDK/core/stream-text/
 
 
 # Stream Text
@@ -226,7 +226,7 @@ for try await part in AI.streamText(
 
 # Structured output
 
-Source path: /core/structured-output/
+Source URL: https://ozio.github.io/SwiftAISDK/core/structured-output/
 
 
 # Structured Output
@@ -292,7 +292,7 @@ Use `AI.generateObject` when you want the most direct Swift API. Use `Output` wh
 
 # Tools
 
-Source path: /core/tools/
+Source URL: https://ozio.github.io/SwiftAISDK/core/tools/
 
 
 # Tools
@@ -364,7 +364,7 @@ let dynamicTool = AITool.dynamic(
 
 # Install
 
-Source path: /getting-started/install/
+Source URL: https://ozio.github.io/SwiftAISDK/getting-started/install/
 
 
 # Install
@@ -416,7 +416,7 @@ Use explicit settings when you need custom headers, a custom base URL, a mock tr
 
 # Quickstart
 
-Source path: /getting-started/quickstart/
+Source URL: https://ozio.github.io/SwiftAISDK/getting-started/quickstart/
 
 
 # Quickstart
@@ -471,7 +471,7 @@ let answer = try await AI.generateText(
 
 # Provider matrix
 
-Source path: /providers/
+Source URL: https://ozio.github.io/SwiftAISDK/providers/
 
 
 # Provider matrix
@@ -544,7 +544,7 @@ This page is generated from the package capability matrix. Update [ProviderCapab
 
 # Reference
 
-Source path: /reference/
+Source URL: https://ozio.github.io/SwiftAISDK/reference/
 
 
 # Reference
@@ -575,7 +575,7 @@ Continue to [Public symbols](generated/public-symbols/) for the generated symbol
 
 # Public symbols
 
-Source path: /reference/generated/public-symbols/
+Source URL: https://ozio.github.io/SwiftAISDK/reference/generated/public-symbols/
 
 
 # Public symbols
@@ -3268,7 +3268,7 @@ This page is generated by `npm --prefix docs-site run generate` from `swift pack
 
 # Troubleshooting
 
-Source path: /troubleshooting/
+Source URL: https://ozio.github.io/SwiftAISDK/troubleshooting/
 
 
 # Troubleshooting
@@ -3302,7 +3302,7 @@ Pass an explicit retry policy or timeout only after you know the provider stream
 
 # Upstream parity
 
-Source path: /upstream-parity/
+Source URL: https://ozio.github.io/SwiftAISDK/upstream-parity/
 
 
 # Upstream Parity
