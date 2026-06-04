@@ -569,7 +569,12 @@ import Testing
     )
     let model = try provider.embeddingModel("embedding-model")
 
-    await #expect(throws: AIError.invalidArgument(argument: "values", message: "OpenAI-compatible embedding models support at most 2 values per call.")) {
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "test-provider.embedding",
+        modelID: "embedding-model",
+        maxEmbeddingsPerCall: 2,
+        values: ["one", "two", "three"]
+    )) {
         _ = try await model.embed(EmbeddingRequest(values: ["one", "two", "three"]))
     }
 

@@ -984,7 +984,12 @@ import Testing
     ))
     let model = try provider.embeddingModel("amazon.titan-embed-text-v2:0")
 
-    await #expect(throws: AIError.invalidArgument(argument: "values", message: "Amazon Bedrock embedding models support at most 1 value per call.")) {
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "amazon-bedrock",
+        modelID: "amazon.titan-embed-text-v2:0",
+        maxEmbeddingsPerCall: 1,
+        values: ["hello", "world"]
+    )) {
         _ = try await model.embed(EmbeddingRequest(values: ["hello", "world"]))
     }
 }

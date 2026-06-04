@@ -32,6 +32,9 @@ public struct AIUIMessageValidationResult: Equatable, Sendable {
 public func validateUIMessages(_ messages: [AIUIMessage]) throws -> [AIUIMessage] {
     let result = safeValidateUIMessages(messages)
     guard result.isValid else {
+        if result.issues.count == 1, let approvalError = firstToolApprovalValidationError(in: messages) {
+            throw approvalError
+        }
         throw AIUIMessageStreamError(
             message: "Invalid UI messages.",
             validationIssues: result.issues
@@ -74,6 +77,46 @@ public func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageVali
     }
 
     return AIUIMessageValidationResult(messages: messages, issues: issues)
+}
+
+private func firstToolApprovalValidationError(in messages: [AIUIMessage]) -> (any Error)? {
+    var toolCallIDs: Set<String> = []
+    var approvalRequestIDs: Set<String> = []
+    var approvalRequestToolCallIDs: [(approvalID: String, toolCallID: String)] = []
+    var approvalResponseIDs: [String] = []
+
+    for message in messages {
+        for part in message.parts {
+            switch part {
+            case let .toolCall(call) where !call.id.isEmpty:
+                toolCallIDs.insert(call.id)
+            case let .toolApprovalRequest(request):
+                if !request.id.isEmpty {
+                    approvalRequestIDs.insert(request.id)
+                }
+                if let toolCallID = request.toolCallID, !toolCallID.isEmpty {
+                    approvalRequestToolCallIDs.append((request.id, toolCallID))
+                }
+            case let .toolApprovalResponse(response) where !response.id.isEmpty:
+                approvalResponseIDs.append(response.id)
+            default:
+                break
+            }
+        }
+    }
+
+    for item in approvalRequestToolCallIDs where !toolCallIDs.contains(item.toolCallID) {
+        return AIToolCallNotFoundForApprovalError(
+            toolCallID: item.toolCallID,
+            approvalID: item.approvalID
+        )
+    }
+
+    for approvalID in approvalResponseIDs where !approvalRequestIDs.contains(approvalID) {
+        return AIInvalidToolApprovalError(approvalID: approvalID)
+    }
+
+    return nil
 }
 
 private func collectPartReferences(

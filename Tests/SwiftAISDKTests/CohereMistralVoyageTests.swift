@@ -898,6 +898,17 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["input"]?[0]?.stringValue == "hello")
     #expect(body["encoding_format"]?.stringValue == "float")
+
+    let tooManyValues = Array(repeating: "x", count: 33)
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "mistral.embedding",
+        modelID: "mistral-embed",
+        maxEmbeddingsPerCall: 32,
+        values: tooManyValues
+    )) {
+        _ = try await model.embed(EmbeddingRequest(values: tooManyValues))
+    }
+    #expect(await transport.requests().count == 1)
 }
 
 @Test func mistralModelsMapNestedProviderOptions() async throws {
@@ -1168,6 +1179,17 @@ import Testing
     #expect(embeddingBody["input_type"]?.stringValue == "classification")
     #expect(embeddingBody["output_dimension"]?.intValue == 512)
     #expect(embeddingBody["truncate"]?.stringValue == "END")
+
+    let tooManyValues = Array(repeating: "x", count: 97)
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "cohere.textEmbedding",
+        modelID: "embed-english-v3.0",
+        maxEmbeddingsPerCall: 96,
+        values: tooManyValues
+    )) {
+        _ = try await embeddingModel.embed(EmbeddingRequest(values: tooManyValues))
+    }
+    #expect(await embeddingTransport.requests().count == 1)
 
     let rerankTransport = RecordingTransport(response: jsonResponse(#"{"id":"rank-1","results":[{"index":1,"relevance_score":0.9},{"index":0,"relevance_score":0.1}]}"#))
     let rerankProvider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: rerankTransport))

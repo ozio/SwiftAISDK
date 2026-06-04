@@ -15,9 +15,11 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
             return EmbeddingResult(embeddings: [], rawValue: .object([:]))
         }
         guard request.values.count <= 1 else {
-            throw AIError.invalidArgument(
-                argument: "values",
-                message: "Amazon Bedrock embedding models support at most 1 value per call."
+            throw AITooManyEmbeddingValuesForCallError(
+                provider: providerID,
+                modelID: modelID,
+                maxEmbeddingsPerCall: 1,
+                values: request.values
             )
         }
         let providerOptions = try bedrockEmbeddingProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)

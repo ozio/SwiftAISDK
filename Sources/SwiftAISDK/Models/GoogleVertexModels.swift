@@ -79,7 +79,12 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         guard request.values.count <= 2048 else {
-            throw AIError.invalidArgument(argument: "values", message: "Google Vertex embedding models support at most 2048 values per call.")
+            throw AITooManyEmbeddingValuesForCallError(
+                provider: providerID,
+                modelID: modelID,
+                maxEmbeddingsPerCall: 2048,
+                values: request.values
+            )
         }
         let options = googleVertexEmbeddingProviderOptions(from: request)
         var parameters: [String: JSONValue] = [:]

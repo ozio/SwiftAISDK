@@ -13,7 +13,12 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         guard request.values.count <= 2048 else {
-            throw AIError.invalidArgument(argument: "values", message: "Google embedding models support at most 2048 values per call.")
+            throw AITooManyEmbeddingValuesForCallError(
+                provider: providerID,
+                modelID: modelID,
+                maxEmbeddingsPerCall: 2048,
+                values: request.values
+            )
         }
         let options = googleEmbeddingProviderOptions(from: request)
         let multimodalContent = options["content"]?.arrayValue
@@ -353,4 +358,3 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
         return "\(uri)\(uri.contains("?") ? "&" : "?")key=\(key)"
     }
 }
-

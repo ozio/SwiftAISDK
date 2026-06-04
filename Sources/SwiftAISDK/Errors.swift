@@ -81,6 +81,99 @@ public struct AINoOutputGeneratedError: Error, Equatable, CustomStringConvertibl
     }
 }
 
+public struct AINoContentGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var message: String
+
+    public init(message: String = "No content generated.") {
+        self.message = message
+    }
+
+    public var description: String {
+        message
+    }
+}
+
+public struct AINoImageGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var message: String
+    public var responses: [AIResponseMetadata]
+
+    public init(
+        message: String = "No image generated.",
+        responses: [AIResponseMetadata] = []
+    ) {
+        self.message = message
+        self.responses = responses
+    }
+
+    public var description: String {
+        message
+    }
+}
+
+public struct AINoVideoGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var message: String
+    public var responses: [AIResponseMetadata]
+
+    public init(
+        message: String = "No video generated.",
+        responses: [AIResponseMetadata] = []
+    ) {
+        self.message = message
+        self.responses = responses
+    }
+
+    public var description: String {
+        message
+    }
+}
+
+public struct AINoSpeechGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var responses: [AIResponseMetadata]
+
+    public init(responses: [AIResponseMetadata] = []) {
+        self.responses = responses
+    }
+
+    public var description: String {
+        "No speech audio generated."
+    }
+}
+
+public struct AINoTranscriptGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var responses: [AIResponseMetadata]
+
+    public init(responses: [AIResponseMetadata] = []) {
+        self.responses = responses
+    }
+
+    public var description: String {
+        "No transcript generated."
+    }
+}
+
+public struct AITooManyEmbeddingValuesForCallError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var provider: String
+    public var modelID: String
+    public var maxEmbeddingsPerCall: Int
+    public var values: [String]
+
+    public init(
+        provider: String,
+        modelID: String,
+        maxEmbeddingsPerCall: Int,
+        values: [String]
+    ) {
+        self.provider = provider
+        self.modelID = modelID
+        self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
+        self.values = values
+    }
+
+    public var description: String {
+        "Too many values for a single embedding call. The \(provider) model \"\(modelID)\" can only embed up to \(maxEmbeddingsPerCall) values per call, but \(values.count) values were provided."
+    }
+}
+
 public struct AINoSuchToolError: Error, Equatable, CustomStringConvertible, Sendable {
     public var toolName: String
     public var availableToolNames: [String]
@@ -95,6 +188,32 @@ public struct AINoSuchToolError: Error, Equatable, CustomStringConvertible, Send
             return "No such tool: \(toolName)."
         }
         return "No such tool: \(toolName). Available tools: \(availableToolNames.joined(separator: ", "))."
+    }
+}
+
+public struct AIInvalidToolApprovalError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var approvalID: String
+
+    public init(approvalID: String) {
+        self.approvalID = approvalID
+    }
+
+    public var description: String {
+        "Tool approval response references unknown approvalId: \"\(approvalID)\". No matching tool-approval-request found in message history."
+    }
+}
+
+public struct AIToolCallNotFoundForApprovalError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var toolCallID: String
+    public var approvalID: String
+
+    public init(toolCallID: String, approvalID: String) {
+        self.toolCallID = toolCallID
+        self.approvalID = approvalID
+    }
+
+    public var description: String {
+        "Tool call \"\(toolCallID)\" not found for approval request \"\(approvalID)\"."
     }
 }
 

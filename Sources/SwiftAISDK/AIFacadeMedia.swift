@@ -115,6 +115,9 @@ extension AI {
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = imageGenerationRequestMetadata(request)
             }
+            guard !result.urls.isEmpty || !result.base64Images.isEmpty else {
+                throw AINoImageGeneratedError(responses: [result.responseMetadata])
+            }
             return result
         }
     }
@@ -142,6 +145,9 @@ extension AI {
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = AIRequestMetadata(body: transcriptionRequestMetadataBody(request), headers: request.headers)
             }
+            guard !result.text.isEmpty else {
+                throw AINoTranscriptGeneratedError(responses: [result.responseMetadata])
+            }
             return result
         }
     }
@@ -165,6 +171,9 @@ extension AI {
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = AIRequestMetadata(body: speechRequestMetadataBody(request), headers: request.headers)
             }
+            guard !result.audio.isEmpty else {
+                throw AINoSpeechGeneratedError(responses: [result.responseMetadata])
+            }
             return result
         }
     }
@@ -187,6 +196,9 @@ extension AI {
             var result = try await model.generateVideo(request)
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = videoGenerationRequestMetadata(request)
+            }
+            guard !result.urls.isEmpty || !result.base64Videos.isEmpty else {
+                throw AINoVideoGeneratedError(responses: [result.responseMetadata])
             }
             return result
         }

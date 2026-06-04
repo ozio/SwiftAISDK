@@ -16,7 +16,12 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             providerOptions: request.providerOptions
         )
         guard request.values.count <= 96 else {
-            throw AIError.invalidResponse(provider: providerID, message: "Cohere supports at most 96 embedding inputs per call.")
+            throw AITooManyEmbeddingValuesForCallError(
+                provider: providerID,
+                modelID: modelID,
+                maxEmbeddingsPerCall: 96,
+                values: request.values
+            )
         }
         var body: [String: JSONValue] = [
             "model": .string(modelID),

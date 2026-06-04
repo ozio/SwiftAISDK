@@ -14,7 +14,12 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         guard request.values.count <= maxEmbeddingsPerCall else {
-            throw AIError.invalidArgument(argument: "values", message: "OpenAI-compatible embedding models support at most \(maxEmbeddingsPerCall) values per call.")
+            throw AITooManyEmbeddingValuesForCallError(
+                provider: providerID,
+                modelID: modelID,
+                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+                values: request.values
+            )
         }
         let warnings = isOpenAIBackedProvider(providerID, config: config)
             ? []

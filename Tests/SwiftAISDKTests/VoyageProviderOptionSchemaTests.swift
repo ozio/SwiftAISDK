@@ -96,7 +96,12 @@ import Testing
     let model = try provider.embeddingModel("voyage-4")
     let values = (0..<129).map { "value-\($0)" }
 
-    await #expect(throws: AIError.invalidArgument(argument: "values", message: "Voyage embedding models support at most 128 values per call.")) {
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "voyage.embedding",
+        modelID: "voyage-4",
+        maxEmbeddingsPerCall: 128,
+        values: values
+    )) {
         _ = try await model.embed(EmbeddingRequest(values: values))
     }
     #expect(await transport.requests().isEmpty)

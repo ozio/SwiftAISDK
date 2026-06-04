@@ -298,8 +298,14 @@ import Testing
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: RecordingTransport(response: jsonResponse("{}"))))
     let model = try provider.embeddingModel("gemini-embedding-001")
 
-    await #expect(throws: AIError.invalidArgument(argument: "values", message: "Google embedding models support at most 2048 values per call.")) {
-        _ = try await model.embed(EmbeddingRequest(values: Array(repeating: "x", count: 2049)))
+    let tooManyValues = Array(repeating: "x", count: 2049)
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "google.generative-ai",
+        modelID: "gemini-embedding-001",
+        maxEmbeddingsPerCall: 2048,
+        values: tooManyValues
+    )) {
+        _ = try await model.embed(EmbeddingRequest(values: tooManyValues))
     }
     await #expect(throws: AIError.invalidArgument(
         argument: "providerOptions.google.content",

@@ -1557,6 +1557,55 @@ private actor PrepareStepCapture {
     #expect(skillClient.requests.first?.files.first?.path == "skill.md")
 }
 
+@Test func aiFacadeThrowsTypedNoGeneratedMediaErrors() async throws {
+    let response = AIResponseMetadata(id: "response-1", modelID: "mock")
+
+    await #expect(throws: AINoImageGeneratedError(responses: [response])) {
+        _ = try await AI.generateImage(
+            model: MockImageModel(result: ImageGenerationResult(
+                urls: [],
+                base64Images: [],
+                rawValue: .object([:]),
+                responseMetadata: response
+            )),
+            prompt: "empty"
+        )
+    }
+
+    await #expect(throws: AINoTranscriptGeneratedError(responses: [response])) {
+        _ = try await AI.transcribe(
+            model: MockTranscriptionModel(result: TranscriptionResult(
+                text: "",
+                rawValue: .object([:]),
+                responseMetadata: response
+            )),
+            request: AudioTranscriptionRequest(audio: Data("wav".utf8))
+        )
+    }
+
+    await #expect(throws: AINoSpeechGeneratedError(responses: [response])) {
+        _ = try await AI.generateSpeech(
+            model: MockSpeechModel(result: SpeechResult(
+                audio: Data(),
+                responseMetadata: response
+            )),
+            request: SpeechRequest(text: "empty")
+        )
+    }
+
+    await #expect(throws: AINoVideoGeneratedError(responses: [response])) {
+        _ = try await AI.generateVideo(
+            model: MockVideoModel(result: VideoGenerationResult(
+                urls: [],
+                base64Videos: [],
+                rawValue: .object([:]),
+                responseMetadata: response
+            )),
+            request: VideoGenerationRequest(prompt: "empty")
+        )
+    }
+}
+
 @Test func aiFacadeFillsUploadRequestMetadataWhenCustomClientsDoNot() async throws {
     let fileClient = MockFileClient(result: FileUploadResult(providerReference: ["file": "file-1"], rawValue: .object([:])))
     let file = try await AI.uploadFile(client: fileClient, request: FileUploadRequest(

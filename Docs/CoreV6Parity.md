@@ -90,26 +90,26 @@ it means JavaScript-style error-class parity is only partial.
 | `AI_InvalidMessageRoleError` | `partial` | `MessageRole` enum, provider message conversion validation | Swift enum prevents many invalid roles, but conversion failures use general errors. |
 | `AI_InvalidPromptError` | `partial` | `AIError.invalidArgument`, provider conversion errors | No dedicated prompt error with structured prompt details. |
 | `AI_InvalidResponseDataError` | `covered` | `AIError.invalidResponse` | Functional analog exists, though less structured. |
-| `AI_InvalidToolApprovalError` | `partial` | `AIToolApprovalStatus`, approval request/response flow | Approval validation exists, but no dedicated public error type. |
+| `AI_InvalidToolApprovalError` | `covered` | `AIInvalidToolApprovalError`, `validateUIMessages` | Throwing UI-message validation now reports unknown approval response ids with a typed approval error; `safeValidateUIMessages` still returns accumulated issues. |
 | `AI_InvalidToolInputError` | `covered` | `AIInvalidToolInputError`, `AITypeValidationError`, `AITool` validation/refinement | Tool argument JSON/schema failures now throw typed tool-input errors. |
 | `AI_JSONParseError` | `covered` | `AIJSONParseError` | Direct Swift analog exists. |
 | `AI_LoadAPIKeyError` | `covered` | `AIError.missingAPIKey` | Functional analog exists. |
 | `AI_LoadSettingError` | `partial` | `AIError.invalidArgument`, provider settings validation | No dedicated setting-load error. |
 | `AI_MessageConversionError` | `partial` | provider-specific conversion errors via `AIError.invalidArgument`/warnings | No dedicated public message-conversion error. |
-| `AI_NoContentGeneratedError` | `partial` | media/audio/video/text invalid-response paths | No dedicated cross-modal no-content type. |
-| `AI_NoImageGeneratedError` | `partial` | image model invalid-response paths | No dedicated public type. |
-| `AI_NoTranscriptGeneratedError` | `partial` | transcription invalid-response paths | No dedicated public type. |
-| `AI_NoVideoGeneratedError` | `partial` | video invalid-response paths | No dedicated public type. |
-| `AI_NoSpeechGeneratedError` | `partial` | speech invalid-response paths | No dedicated public type. |
+| `AI_NoContentGeneratedError` | `covered` | `AINoContentGeneratedError` | Public cross-modal no-content analog exists for callers that want the generic upstream error concept. |
+| `AI_NoImageGeneratedError` | `covered` | `AINoImageGeneratedError`, `AI.generateImage` | The public facade throws a typed error when a successful image model call returns no URL or base64 image. Provider-specific low-level models may still throw narrower invalid-response errors before returning. |
+| `AI_NoTranscriptGeneratedError` | `covered` | `AINoTranscriptGeneratedError`, `AI.transcribe` | The public facade throws a typed error for empty final transcript text. |
+| `AI_NoVideoGeneratedError` | `covered` | `AINoVideoGeneratedError`, `AI.generateVideo` | The public facade throws a typed error when no URL or base64 video is returned. |
+| `AI_NoSpeechGeneratedError` | `covered` | `AINoSpeechGeneratedError`, `AI.generateSpeech` | The public facade throws a typed error for empty generated audio. |
 | `AI_NoObjectGeneratedError` | `covered` | `AIObjectGenerationError` with `kind` and `strategy` | Swift groups object/array/enum/json failures into one typed error. |
 | `AI_NoOutputGeneratedError` | `covered` | `AINoOutputGeneratedError`, `AIObjectGenerationError` | The v6-style `Output` stream mapper now has a dedicated no-output error for streams that finish without final output. Object parsing still uses `AIObjectGenerationError` for invalid generated output. |
 | `AI_NoSuchModelError` | `covered` | `AIError.unsupportedModel` | Functional analog exists. |
 | `AI_NoSuchProviderError` | `covered` | `AIProviderRegistryError.noSuchProvider` | Direct registry analog exists. |
 | `AI_NoSuchToolError` | `covered` | `AINoSuchToolError` | Local tool loops now throw a typed error when the model asks for an unavailable non-provider-executed tool. |
 | `AI_RetryError` | `covered` | `AIRetryError`, `AIRetryErrorReason` | Direct Swift analog exists. |
-| `AI_ToolCallNotFoundForApprovalError` | `partial` | approval flow validation | No dedicated public type. |
+| `AI_ToolCallNotFoundForApprovalError` | `covered` | `AIToolCallNotFoundForApprovalError`, `validateUIMessages` | Approval requests that reference a missing tool call now surface as a typed error in throwing validation. |
 | `AI_ToolCallRepairError` / `ToolCallRepairError` | `covered` | `AIToolCallRepairError`, `AITool.refineArguments` | Swift maps the existing argument-refinement hook to a typed tool-call repair failure. |
-| `AI_TooManyEmbeddingValuesForCallError` | `partial` | provider/model preflight errors via `AIError.invalidArgument` | Behavior is tested for providers, but no dedicated public error. |
+| `AI_TooManyEmbeddingValuesForCallError` | `covered` | `AITooManyEmbeddingValuesForCallError`, embedding model preflight guards | OpenAI-compatible, Google, Google Vertex, Voyage, Mistral, Cohere, and Amazon Bedrock embedding limits now throw a typed error carrying provider, model id, max count, and values. |
 | `AI_TypeValidationError` | `covered` | `AITypeValidationError`, `AIJSONSchemaValidator`, `AIObjectGenerationError.kind == .schemaValidation` | Schema validation now has a standalone public type-validation error, while object generation continues to wrap schema failures in `AIObjectGenerationError`. |
 | `AI_UIMessageStreamError` | `covered` | `AIUIMessageStreamError` | Used for UI message validation and stream-reduction failures. Carries `chunkType`/`chunkID` for out-of-sequence stream chunks, plus Swift validation issues. |
 | `AI_UnsupportedFunctionalityError` | `partial` | `AIError.unsupportedModel`, `AIWarning(type: "unsupported", ...)`, provider invalid-argument paths | Unsupported features are represented, but not as a dedicated public error class. |
@@ -127,9 +127,10 @@ it means JavaScript-style error-class parity is only partial.
    `pipeUIMessageStreamToResponse`) out of core unless SwiftAISDK grows a
    server-side Swift target.
 4. Continue typed-error parity only where it improves Swift diagnostics. The
-   first middle-path batch now covers API calls, type validation, no-output,
-   no-such-tool, invalid tool input, and tool-call repair. Remaining candidates
-   are approval-specific errors and narrower media no-content errors.
+   middle-path batches now cover API calls, type validation, no-output,
+   no-such-tool, invalid tool input, tool-call repair, approval-link failures,
+   no-generated media, and too-many embedding values. Remaining candidates are
+   mostly prompt/message conversion and narrower provider response-shape errors.
 
 ## SwiftUI UI Layer Candidates
 

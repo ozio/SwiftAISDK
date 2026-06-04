@@ -122,6 +122,17 @@ import Testing
     let noOutput = AINoOutputGeneratedError(provider: "mock", outputKind: .object)
     #expect(noOutput.description.contains("mock"))
     #expect(noOutput.description.contains("object output"))
+
+    let noContent = AINoContentGeneratedError()
+    #expect(noContent.description == "No content generated.")
+
+    let tooManyEmbeddings = AITooManyEmbeddingValuesForCallError(
+        provider: "mock",
+        modelID: "embed",
+        maxEmbeddingsPerCall: 1,
+        values: ["a", "b"]
+    )
+    #expect(tooManyEmbeddings.description.contains("2 values were provided"))
 }
 
 @Test func languageStreamPartRepresentsV4LifecycleMetadataAndToolParts() {
@@ -294,6 +305,43 @@ import Testing
         Issue.record("Expected UI message validation failure.")
     } catch let error as AIUIMessageStreamError {
         #expect(error.validationIssues == result.issues)
+    }
+}
+
+@Test func uiMessageValidationThrowsTypedApprovalErrors() throws {
+    do {
+        try validateUIMessages([
+            AIUIMessage(
+                id: "assistant-1",
+                role: .assistant,
+                parts: [.toolApprovalResponse(AIToolApprovalResponse(id: "missing-approval", approved: true))]
+            )
+        ])
+        Issue.record("Expected invalid tool approval error.")
+    } catch let error as AIInvalidToolApprovalError {
+        #expect(error.approvalID == "missing-approval")
+        #expect(error.description.contains("unknown approvalId"))
+    }
+
+    do {
+        try validateUIMessages([
+            AIUIMessage(
+                id: "assistant-1",
+                role: .assistant,
+                parts: [
+                    .toolApprovalRequest(AIToolApprovalRequest(
+                        id: "approval-1",
+                        toolName: "lookup",
+                        arguments: "{}",
+                        toolCallID: "missing-call"
+                    ))
+                ]
+            )
+        ])
+        Issue.record("Expected approval tool-call lookup failure.")
+    } catch let error as AIToolCallNotFoundForApprovalError {
+        #expect(error.approvalID == "approval-1")
+        #expect(error.toolCallID == "missing-call")
     }
 }
 

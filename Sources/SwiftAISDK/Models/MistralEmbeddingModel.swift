@@ -12,7 +12,12 @@ public final class MistralEmbeddingModel: EmbeddingModel, @unchecked Sendable {
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         guard request.values.count <= 32 else {
-            throw AIError.invalidResponse(provider: providerID, message: "Mistral supports at most 32 embedding inputs per call.")
+            throw AITooManyEmbeddingValuesForCallError(
+                provider: providerID,
+                modelID: modelID,
+                maxEmbeddingsPerCall: 32,
+                values: request.values
+            )
         }
         var body: [String: JSONValue] = [
             "model": .string(modelID),
