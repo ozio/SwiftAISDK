@@ -1,0 +1,52 @@
+---
+title: Quickstart
+description: Generate text with a provider and model.
+---
+
+# Quickstart
+
+Create a provider, choose a language model, and call `AI.generateText`.
+
+```swift
+import SwiftAISDK
+
+let provider = try AIProviders.openAI()
+let model = try provider.languageModel("gpt-4.1-mini")
+
+let result = try await AI.generateText(
+    model: model,
+    prompt: "Write one sentence about Swift concurrency."
+)
+
+print(result.text)
+```
+
+Run the same shape with another provider by changing only the factory and model ID:
+
+```swift
+let provider = try AIProviders.anthropic()
+let model = try provider.languageModel("claude-sonnet-4-5")
+```
+
+## What Happens
+
+1. The provider factory loads credentials and provider defaults.
+2. `languageModel(_:)` resolves a concrete model implementation.
+3. The `AI` facade builds a provider-agnostic request.
+4. The provider maps the request to its API and normalizes the result.
+
+When you need a string model ID, register providers once and call through the default provider registry.
+
+```swift
+let registry = createProviderRegistry([
+    "openai": try AIProviders.openAI(),
+    "anthropic": try AIProviders.anthropic(),
+])
+
+AIDefaultProvider.set(registry)
+
+let answer = try await AI.generateText(
+    model: "openai:gpt-4.1-mini",
+    prompt: "Write a release checklist."
+)
+```

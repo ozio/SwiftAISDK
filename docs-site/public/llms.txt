@@ -1,0 +1,18 @@
+# SwiftAISDK documentation
+
+SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
+
+## Pages
+- [Introduction](/): Learn what SwiftAISDK is and where to start.
+- [MCP tools](/cookbook/mcp-tools/): Discover MCP tools and pass them to AI.generateText.
+- [Generate text](/core/generate-text/): Use AI.generateText for one-shot language model calls.
+- [Stream text](/core/stream-text/): Consume language model output as an async sequence.
+- [Structured output](/core/structured-output/): Generate Decodable Swift values from JSON output.
+- [Tools](/core/tools/): Let a language model call typed Swift tools.
+- [Install](/getting-started/install/): Add SwiftAISDK to a SwiftPM package and configure credentials.
+- [Quickstart](/getting-started/quickstart/): Generate text with a provider and model.
+- [Provider matrix](/providers/): Generated provider capability overview for SwiftAISDK.
+- [Reference](/reference/): Generated overview of the public SwiftAISDK surface.
+- [Public symbols](/reference/generated/public-symbols/): Generated public SwiftAISDK symbol table.
+- [Troubleshooting](/troubleshooting/): Diagnose common SwiftAISDK setup and runtime issues.
+- [Upstream parity](/upstream-parity/): Understand how SwiftAISDK tracks Vercel AI SDK.

@@ -1,0 +1,64 @@
+---
+title: Generate text
+description: Use AI.generateText for one-shot language model calls.
+---
+
+# Generate Text
+
+Use `AI.generateText` when you want a complete response before continuing your workflow.
+
+```swift
+import SwiftAISDK
+
+let provider = try AIProviders.openAI()
+let model = try provider.languageModel("gpt-4.1-mini")
+
+let result = try await AI.generateText(
+    model: model,
+    prompt: "Summarize the benefits of typed APIs in three bullets.",
+    temperature: 0.3,
+    maxOutputTokens: 200
+)
+
+print(result.text)
+```
+
+## Request Options
+
+Common options map to provider-agnostic model settings:
+
+- `temperature`, `topP`, `topK`
+- `maxOutputTokens`
+- `stopSequences`
+- `seed`
+- `headers`
+- `providerOptions`
+- `extraBody`
+- `abortSignal`
+
+Use `providerOptions` for documented provider-specific behavior. Use `extraBody` only as a low-level escape hatch when the provider has not yet grown a typed option.
+
+```swift
+let result = try await AI.generateText(
+    model: model,
+    prompt: "Be concise.",
+    providerOptions: [
+        "openai": [
+            "parallelToolCalls": false,
+            "store": false,
+        ],
+    ]
+)
+```
+
+## Results
+
+`TextGenerationResult` includes the normalized text plus metadata you can use for logging, billing, and debugging:
+
+- `text`
+- `reasoning`
+- `finishReason`
+- `usage`
+- `warnings`
+- `providerMetadata`
+- `responseMetadata`

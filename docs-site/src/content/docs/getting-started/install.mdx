@@ -1,0 +1,49 @@
+---
+title: Install
+description: Add SwiftAISDK to a SwiftPM package and configure credentials.
+---
+
+# Install
+
+Add SwiftAISDK to your package manifest:
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/ozio/SwiftAISDK.git", branch: "main"),
+],
+targets: [
+    .target(
+        name: "YourApp",
+        dependencies: [
+            .product(name: "SwiftAISDK", package: "SwiftAISDK"),
+        ]
+    ),
+]
+```
+
+Then import the library:
+
+```swift
+import SwiftAISDK
+```
+
+## Credentials
+
+Provider factories read upstream-style environment variables by default:
+
+| Provider | Default environment variable |
+| --- | --- |
+| OpenAI | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| Google Generative AI | `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` |
+
+You can also pass credentials explicitly:
+
+```swift
+let provider = try AIProviders.openAI(
+    settings: ProviderSettings(apiKey: "your-api-key")
+)
+```
+
+Use explicit settings when you need custom headers, a custom base URL, a mock transport, or per-environment credentials.

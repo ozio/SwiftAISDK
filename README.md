@@ -248,3 +248,12 @@ Useful project docs:
 - [Docs/ProviderVersionLedger.md](Docs/ProviderVersionLedger.md): tracked npm package baselines and evidence files.
 - [Docs/UpstreamSync.md](Docs/UpstreamSync.md): workflow for finding upstream changes and porting them.
 - [Docs/ProductGapAudit.md](Docs/ProductGapAudit.md): remaining product-level gaps and review checklist.
+- [Docs/DocumentationDoD.md](Docs/DocumentationDoD.md): documentation scope, quality bar, and verification gates.
+
+The user-facing documentation site lives in `docs-site` and is generated before
+build:
+
+```sh
+npm ci --prefix docs-site
+npm --prefix docs-site run build
+```

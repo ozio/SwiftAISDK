@@ -1,0 +1,69 @@
+---
+title: Tools
+description: Let a language model call typed Swift tools.
+---
+
+# Tools
+
+Tools let a model ask your Swift code to do discrete work, then continue with the tool result.
+
+```swift
+import SwiftAISDK
+
+let weather = AITool(
+    name: "weather",
+    description: "Get the current weather in a city.",
+    parameters: [
+        "type": "object",
+        "properties": [
+            "city": ["type": "string"],
+        ],
+        "required": ["city"],
+    ]
+) { arguments in
+    let city = arguments["city"]?.stringValue ?? "unknown"
+    return [
+        "city": .string(city),
+        "forecast": "sunny",
+        "temperatureCelsius": 24,
+    ]
+}
+
+let provider = try AIProviders.openAI()
+let model = try provider.languageModel("gpt-4.1-mini")
+
+let answer = try await AI.generateText(
+    model: model,
+    prompt: "What should I wear in Tokyo today?",
+    executableTools: [weather],
+    maxSteps: 3
+)
+
+print(answer.text)
+```
+
+## Tool Shape
+
+An `AITool` has:
+
+- a stable `name`
+- an optional `description`
+- a JSON Schema `parameters` value
+- an async `execute` function
+- optional argument refinement, approvals, context, and model-facing output mapping
+
+Use `maxSteps` to let the model call tools, receive results, and make a follow-up model call until it returns a final answer or the step limit is reached.
+
+## Dynamic Tools
+
+Use dynamic tools when the exact schema is discovered at runtime, such as tools loaded from MCP.
+
+```swift
+let dynamicTool = AITool.dynamic(
+    name: "runtime_search",
+    description: "Search a runtime index.",
+    parameters: ["type": "object"]
+) { arguments in
+    ["ok": true, "input": arguments]
+}
+```

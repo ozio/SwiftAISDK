@@ -1,0 +1,26 @@
+{
+  "name": "swiftaisdk-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run generate && astro dev --host 127.0.0.1",
+    "generate": "node scripts/generate-docs.mjs",
+    "build": "npm run generate && astro build",
+    "preview": "astro preview --host 127.0.0.1",
+    "check": "npm run generate && astro check"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.39.3",
+    "astro": "6.4.4",
+    "remark-gfm": "4.0.1",
+    "sharp": "0.34.5",
+    "typescript": "5.8.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.2"
+  },
+  "overrides": {
+    "yaml": "2.9.0"
+  }
+}

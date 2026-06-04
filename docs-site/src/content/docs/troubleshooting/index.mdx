@@ -1,0 +1,31 @@
+---
+title: Troubleshooting
+description: Diagnose common SwiftAISDK setup and runtime issues.
+---
+
+# Troubleshooting
+
+## Missing API Key
+
+Provider factories read upstream-style environment variables. If a factory throws a missing key error, either export the expected variable or pass `ProviderSettings(apiKey:)`.
+
+```sh
+export OPENAI_API_KEY="..."
+```
+
+## Unsupported Model
+
+An unsupported model error usually means the provider cannot route that model ID to the requested capability. Check the provider page and make sure you are asking for a language, embedding, image, speech, transcription, video, or reranking model through the matching factory.
+
+## Structured Output Fails
+
+Structured output has two failure points:
+
+1. The provider must return JSON text.
+2. The JSON must satisfy your schema and decode into the Swift type.
+
+Start by logging the generated text, then simplify the schema until the provider reliably follows it.
+
+## Streaming Stops Early
+
+Pass an explicit retry policy or timeout only after you know the provider stream works without them. Streaming retries happen only before the first emitted part, so an interrupted provider stream is surfaced rather than duplicated.
