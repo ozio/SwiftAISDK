@@ -75,7 +75,7 @@ import Testing
     let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
     let model = try provider.imageModel("black-forest-labs/flux-schnell")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "replicate",
         statusCode: 422,
         body: "Invalid image request",
@@ -93,7 +93,7 @@ import Testing
     let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
     let model = try provider.imageModel("black-forest-labs/flux-schnell")
 
-    await #expect(throws: AIError.httpStatus(provider: "replicate", statusCode: 500, body: "download failed")) {
+    await #expect(throws: AIError.apiCall(provider: "replicate", statusCode: 500, body: "download failed")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
     }
 }
@@ -490,7 +490,7 @@ import Testing
     let submitProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: submitTransport))
     let submitModel = try submitProvider.videoModel("owner/video-model")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "replicate.video",
         statusCode: 422,
         body: "Invalid video request",
@@ -506,7 +506,7 @@ import Testing
     let pollProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: pollTransport))
     let pollModel = try pollProvider.videoModel("owner/video-model")
 
-    await #expect(throws: AIError.httpStatus(provider: "replicate.video", statusCode: 500, body: "poll failed")) {
+    await #expect(throws: AIError.apiCall(provider: "replicate.video", statusCode: 500, body: "poll failed")) {
         _ = try await pollModel.generateVideo(VideoGenerationRequest(
             prompt: "cat",
             providerOptions: ["replicate": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]

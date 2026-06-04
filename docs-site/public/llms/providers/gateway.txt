@@ -1,0 +1,29 @@
+# "gateway"
+
+Source URL: /providers/gateway/
+
+## Package
+
+`@ai-sdk/gateway`
+
+## Factories
+
+`AIProviders.gateway`
+
+## Capabilities
+
+- Language
+- Embedding
+- Image
+- Transcription
+- Speech
+- Video
+- Reranking
+
+## Notes
+
+Gateway also exposes model, credits, spend, and generation metadata management APIs.
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

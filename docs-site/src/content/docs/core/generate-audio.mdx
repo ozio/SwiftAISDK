@@ -1,0 +1,22 @@
+---
+title: Generate audio
+description: Generate provider audio that is not speech.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import generateAudioExample from '../../../../../Examples/Sources/GenerateAudio/main.swift?raw';
+
+Use `generateAudio` for prompt-to-audio models that are not text-to-speech, such as ElevenLabs music and sound effects.
+
+<Code code={generateAudioExample} lang="swift" title="Examples/Sources/GenerateAudio/main.swift" />
+
+`AudioGenerationRequest` carries:
+
+- `prompt`: the natural-language audio prompt.
+- `durationSeconds`: optional requested duration.
+- `format`: provider output format such as `mp3_32` or `mp3_44100_128`.
+- `seed`, `providerOptions`, `extraBody`, `headers`, and `abortSignal`.
+
+`AudioGenerationResult` returns generated audio bytes, content type, warnings, provider metadata, request metadata, and response metadata.
+
+ElevenLabs exposes `provider.musicModel()` for `/v1/music` and `provider.soundEffectsModel()` for `/v1/sound-generation`.

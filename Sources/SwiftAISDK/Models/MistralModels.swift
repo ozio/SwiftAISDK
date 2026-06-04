@@ -52,7 +52,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                         abortSignal: request.abortSignal
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: response)
                     }
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var finishReason: String? = "other"

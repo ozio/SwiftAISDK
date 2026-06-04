@@ -335,7 +335,7 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             latest = raw

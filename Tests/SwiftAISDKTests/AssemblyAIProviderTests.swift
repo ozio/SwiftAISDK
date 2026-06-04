@@ -42,7 +42,8 @@ import Testing
     #expect(requests[1].url.absoluteString == "https://api.assemblyai.com/v2/transcript")
     #expect(requests[1].headers["user-agent"] == "ai-sdk/assemblyai/2.0.33")
     let submitBody = try decodeJSONBody(try #require(requests[1].body))
-    #expect(submitBody["speech_model"]?.stringValue == "best")
+    #expect(submitBody["speech_models"]?[0]?.stringValue == "best")
+    #expect(submitBody["speech_model"] == nil)
     #expect(submitBody["audio_url"]?.stringValue == "https://cdn.example.com/audio.wav")
     #expect(submitBody["language_code"]?.stringValue == "en")
     #expect(submitBody["auto_chapters"]?.boolValue == true)
@@ -89,7 +90,8 @@ import Testing
 
     let requests = await transport.requests()
     let submitBody = try decodeJSONBody(try #require(requests[1].body))
-    #expect(submitBody["speech_model"]?.stringValue == "nano")
+    #expect(submitBody["speech_models"]?[0]?.stringValue == "nano")
+    #expect(submitBody["speech_model"] == nil)
     #expect(submitBody["disfluencies"]?.boolValue == true)
     #expect(submitBody["multichannel"]?.boolValue == true)
     #expect(submitBody["punctuate"]?.boolValue == false)
@@ -175,7 +177,8 @@ import Testing
 
     let requests = await transport.requests()
     let submitBody = try decodeJSONBody(try #require(requests[1].body))
-    #expect(submitBody["speech_model"]?.stringValue == "best")
+    #expect(submitBody["speech_models"]?[0]?.stringValue == "best")
+    #expect(submitBody["speech_model"] == nil)
     #expect(submitBody["audio_end_at"]?.intValue == 10_000)
     #expect(submitBody["audio_start_from"]?.intValue == 250)
     #expect(submitBody["auto_highlights"]?.boolValue == true)
@@ -342,7 +345,7 @@ import Testing
     ))
     let uploadModel = try uploadProvider.transcriptionModel("best")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "assemblyai.transcription",
         statusCode: 401,
         body: "upload unauthorized",
@@ -364,7 +367,7 @@ import Testing
     ))
     let submitModel = try submitProvider.transcriptionModel("best")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "assemblyai.transcription",
         statusCode: 400,
         body: "submit failed",
@@ -387,7 +390,7 @@ import Testing
     ))
     let pollModel = try pollProvider.transcriptionModel("best")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "assemblyai.transcription",
         statusCode: 500,
         body: "poll failed",

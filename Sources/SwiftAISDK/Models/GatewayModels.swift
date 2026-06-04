@@ -108,7 +108,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                         config.request(path: "/language-model", modelID: modelID, body: gatewayLanguageBody(for: request), headers: request.headers.mergingHeaders(modelHeaders(streaming: true)))
                     )
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: response)
                     }
                     continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
                     var toolBuffers: [String: GatewayStreamingToolCall] = [:]

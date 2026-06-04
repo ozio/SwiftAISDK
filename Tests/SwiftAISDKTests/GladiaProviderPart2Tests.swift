@@ -149,7 +149,7 @@ import Testing
     ))
     let uploadModel = try uploadProvider.transcriptionModel("default")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "gladia.transcription",
         statusCode: 401,
         body: "upload unauthorized",
@@ -171,7 +171,7 @@ import Testing
     ))
     let initModel = try initProvider.transcriptionModel("default")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "gladia.transcription",
         statusCode: 400,
         body: "init failed",
@@ -194,7 +194,7 @@ import Testing
     ))
     let pollModel = try pollProvider.transcriptionModel("default")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "gladia.transcription",
         statusCode: 500,
         body: "poll failed",

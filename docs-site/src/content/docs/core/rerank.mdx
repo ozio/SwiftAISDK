@@ -1,0 +1,44 @@
+---
+title: Rerank
+description: Score and reorder documents for a query.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import rerankExample from '../../../../../Examples/Sources/Rerank/main.swift?raw';
+
+Use `rerank` when you already have candidate documents and want the model to score them for a query.
+
+<Code code={rerankExample} lang="swift" title="Examples/Sources/Rerank/main.swift" />
+
+Use the request initializer when your provider supports structured document objects.
+
+```swift
+let request = RerankingRequest(
+    query: "Find Swift examples",
+    documents: [
+        ["title": "Quickstart", "body": "Generate text with a provider."],
+        ["title": "Tools", "body": "Execute typed Swift tools."],
+    ],
+    topK: 1
+)
+
+let result = try await AI.rerank(model: model, request: request)
+```
+
+## Options
+
+- `query` is the search or ranking intent.
+- `documents` are candidate strings or structured document objects.
+- `topK` limits the returned matches.
+- `providerOptions` carries provider-specific scoring settings.
+- `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
+
+## Results
+
+`RerankingResult` returns scored document references:
+
+- `results`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

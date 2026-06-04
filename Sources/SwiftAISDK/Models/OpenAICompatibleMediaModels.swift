@@ -177,7 +177,7 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
             )
         )
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         guard case let .array(data) = raw["data"] else {
@@ -281,7 +281,7 @@ func openAICompatibleResolveImageFile(_ file: ImageInputFile, providerID: String
     }
     let response = try await downloadURL(url, transport: transport)
     guard (200..<300).contains(response.statusCode) else {
-        throw httpStatusError(provider: providerID, response: response)
+        throw apiCallError(provider: providerID, response: response)
     }
     let mediaType = file.mediaType
         ?? response.headers["content-type"]
@@ -340,7 +340,7 @@ public final class OpenAICompatibleSpeechModel: SpeechModel, @unchecked Sendable
 
         let response = try await config.transport.send(config.request(path: "/audio/speech", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         return SpeechResult(
             audio: response.body,
@@ -409,7 +409,7 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
             )
         )
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         guard let text = raw["text"]?.stringValue else {

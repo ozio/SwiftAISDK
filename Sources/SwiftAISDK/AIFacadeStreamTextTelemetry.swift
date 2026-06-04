@@ -7,10 +7,10 @@ func streamTextWithTelemetry(
     modelID: String?,
     input: JSONValue?,
     retryPolicy: AIRetryPolicy,
-    telemetry: AITelemetryOptions?,
+    telemetry: Telemetry.Options?,
     abortSignal: AIAbortSignal? = nil
 ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
-    let dispatcher = AITelemetryDispatcher(options: telemetry)
+    let dispatcher = TelemetryDispatcher(options: telemetry)
     let callID = UUID().uuidString
     let started = DispatchTime.now().uptimeNanoseconds
     let terminalState = AIStreamTerminalState()

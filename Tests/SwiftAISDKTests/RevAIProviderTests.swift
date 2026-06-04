@@ -478,7 +478,7 @@ import Testing
     ))
     let submitModel = try submitProvider.transcriptionModel("machine")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "revai.transcription",
         statusCode: 401,
         body: "submit unauthorized",
@@ -500,7 +500,7 @@ import Testing
     ))
     let pollModel = try pollProvider.transcriptionModel("machine")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "revai.transcription",
         statusCode: 500,
         body: "poll failed",
@@ -522,7 +522,7 @@ import Testing
     ))
     let transcriptModel = try transcriptProvider.transcriptionModel("machine")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "revai.transcription",
         statusCode: 400,
         body: "transcript failed",

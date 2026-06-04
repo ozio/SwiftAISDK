@@ -39,7 +39,7 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let id = raw["id"]?.stringValue ?? raw["file"]?["id"]?.stringValue ?? ""
@@ -85,7 +85,7 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(startResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: startResponse)
+            throw apiCallError(provider: providerID, response: startResponse)
         }
         guard let uploadURL = headerValue(startResponse.headers, "x-goog-upload-url") else {
             throw AIError.invalidResponse(provider: providerID, message: "No x-goog-upload-url returned from resumable upload start.")
@@ -103,7 +103,7 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(uploadResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: uploadResponse)
+            throw apiCallError(provider: providerID, response: uploadResponse)
         }
         var raw = try uploadResponse.jsonValue()
         var file = raw["file"] ?? raw
@@ -123,7 +123,7 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
                 abortSignal: request.abortSignal
             ))
             guard (200..<300).contains(statusResponse.statusCode) else {
-                throw httpStatusError(provider: providerID, response: statusResponse)
+                throw apiCallError(provider: providerID, response: statusResponse)
             }
             file = try statusResponse.jsonValue()
             raw = file
@@ -170,7 +170,7 @@ public final class XAIFileClient: AIFileClient, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         var metadata: [String: JSONValue] = [:]

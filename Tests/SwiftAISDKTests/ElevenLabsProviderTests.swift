@@ -316,7 +316,7 @@ import Testing
     ))
     let speechModel = try speechProvider.speechModel("eleven_multilingual_v2")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "elevenlabs.speech",
         statusCode: 401,
         body: "speech unauthorized",
@@ -335,7 +335,7 @@ import Testing
     ))
     let transcriptionModel = try transcriptionProvider.transcriptionModel("scribe_v1")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "elevenlabs.transcription",
         statusCode: 422,
         body: "bad audio",
@@ -345,8 +345,144 @@ import Testing
     }
 }
 
+@Test func elevenLabsMusicUsesMusicEndpoint() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg", "song-id": "song-1"], body: Data("music".utf8)))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.musicModel()
+
+    let result = try await AI.generateAudio(
+        model: model,
+        request: AudioGenerationRequest(
+            prompt: "Tiny upbeat instrumental loop",
+            durationSeconds: 3,
+            format: "mp3_64",
+            providerOptions: ["elevenlabs": .object(["forceInstrumental": true])]
+        )
+    )
+
+    #expect(result.audio == Data("music".utf8))
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/music?output_format=mp3_44100_64")
+    #expect(request.headers["xi-api-key"] == "eleven-key")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["prompt"]?.stringValue == "Tiny upbeat instrumental loop")
+    #expect(body["music_length_ms"]?.intValue == 3000)
+    #expect(body["model_id"]?.stringValue == "music_v1")
+    #expect(body["force_instrumental"]?.boolValue == true)
+}
+
+@Test func elevenLabsSoundEffectsUsesSoundGenerationEndpoint() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("sfx".utf8)))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.soundEffectsModel()
+
+    _ = try await model.generateAudio("Soft UI click", durationSeconds: 0.5, format: "mp3_32", providerOptions: [
+        "elevenlabs": .object(["promptInfluence": 0.4, "loop": false])
+    ])
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_32")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["text"]?.stringValue == "Soft UI click")
+    #expect(body["duration_seconds"]?.doubleValue == 0.5)
+    #expect(body["prompt_influence"]?.doubleValue == 0.4)
+    #expect(body["loop"]?.boolValue == false)
+    #expect(body["model_id"]?.stringValue == "eleven_text_to_sound_v2")
+}
+
+@Test func elevenLabsVoiceChangerUsesSpeechToSpeechEndpoint() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("changed".utf8)))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.voiceChangerModel()
+
+    _ = try await model.transformAudio(
+        audio: Data("input".utf8),
+        fileName: "input.mp3",
+        mimeType: "audio/mpeg",
+        voice: "voice-123",
+        format: "mp3_64",
+        providerOptions: [
+            "elevenlabs": .object([
+                "removeBackgroundNoise": true,
+                "fileFormat": "other",
+                "voiceSettings": ["stability": 0.4],
+                "enableLogging": false
+            ])
+        ]
+    )
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/speech-to-speech/voice-123?enable_logging=false&output_format=mp3_44100_64")
+    let body = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(body.contains("name=\"audio\"; filename=\"input.mp3\""))
+    #expect(body.contains("name=\"model_id\""))
+    #expect(body.contains("eleven_multilingual_sts_v2"))
+    #expect(body.contains("name=\"remove_background_noise\""))
+    #expect(body.contains("true"))
+    #expect(body.contains("name=\"file_format\""))
+    #expect(body.contains("other"))
+    #expect(body.contains("name=\"voice_settings\""))
+    #expect(body.contains(#""stability":0.4"#))
+}
+
+@Test func elevenLabsVoiceIsolatorUsesAudioIsolationEndpoint() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("clean".utf8)))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let model = try provider.voiceIsolatorModel()
+
+    _ = try await AI.transformAudio(
+        model: model,
+        request: AudioTransformationRequest(
+            audio: Data("noisy".utf8),
+            fileName: "noisy.wav",
+            mimeType: "audio/wav",
+            providerOptions: ["elevenlabs": .object(["fileFormat": "other"])]
+        )
+    )
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/audio-isolation")
+    let body = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(body.contains("name=\"audio\"; filename=\"noisy.wav\""))
+    #expect(body.contains("name=\"file_format\""))
+    #expect(body.contains("other"))
+}
+
+@Test func elevenLabsDubbingClientCreatesGetsAndDownloadsDub() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"dubbing_id":"dub-123","expected_duration_sec":2.5}"#),
+        jsonResponse(#"{"dubbing_id":"dub-123","name":"Smoke","status":"dubbed","source_language":"en","target_languages":["es"],"error":null}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("dub-audio".utf8))
+    ])
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
+    let client = try provider.dubbing()
+
+    let created = try await client.create(DubbingCreateRequest(file: Data("audio".utf8), fileName: "clip.mp3", name: "Smoke", sourceLanguage: "en", targetLanguage: "es", extraBody: ["disableVoiceCloning": true]))
+    let status = try await client.get(created.dubbingID)
+    let audio = try await client.audio(dubbingID: created.dubbingID, languageCode: "es")
+
+    #expect(created.dubbingID == "dub-123")
+    #expect(created.expectedDurationSeconds == 2.5)
+    #expect(status.status == "dubbed")
+    #expect(status.targetLanguages == ["es"])
+    #expect(audio.audio == Data("dub-audio".utf8))
+
+    let requests = await transport.requests()
+    #expect(requests[0].url.absoluteString == "https://api.elevenlabs.io/v1/dubbing")
+    #expect(requests[0].method == "POST")
+    #expect(requests[1].url.absoluteString == "https://api.elevenlabs.io/v1/dubbing/dub-123")
+    #expect(requests[1].method == "GET")
+    #expect(requests[2].url.absoluteString == "https://api.elevenlabs.io/v1/dubbing/dub-123/audio/es")
+    #expect(requests[2].method == "GET")
+    let body = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
+    #expect(body.contains("name=\"file\"; filename=\"clip.mp3\""))
+    #expect(body.contains("name=\"target_lang\""))
+    #expect(body.contains("es"))
+    #expect(body.contains("name=\"disable_voice_cloning\""))
+}
+
 @Test func elevenLabsTranscriptionUsesSpeechToTextMultipartEndpoint() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"language_code":"en","language_probability":0.99,"text":"eleven transcript","words":[{"text":"eleven","type":"word","start":0,"end":0.4}]}"#))
+    let transport = RecordingTransport(response: jsonResponse(#"{"transcription_id":"stt-123","language_code":"en","language_probability":0.99,"text":"eleven transcript","words":[{"text":"eleven","type":"word","start":0,"end":0.4}]}"#))
     let provider = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: transport))
     let model = try provider.transcriptionModel("scribe_v1")
 
@@ -359,6 +495,7 @@ import Testing
     ))
 
     #expect(result.text == "eleven transcript")
+    #expect(result.responseMetadata.id == "stt-123")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/speech-to-text")
     #expect(request.headers["xi-api-key"] == "eleven-key")

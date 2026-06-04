@@ -43,11 +43,26 @@ export default defineConfig({
             { label: 'Stream text', slug: 'core/stream-text' },
             { label: 'Structured output', slug: 'core/structured-output' },
             { label: 'Tools', slug: 'core/tools' },
+            { label: 'Embeddings', slug: 'core/embeddings' },
+            { label: 'Generate image', slug: 'core/generate-image' },
+            { label: 'Transcribe audio', slug: 'core/transcribe' },
+            { label: 'Generate speech', slug: 'core/generate-speech' },
+            { label: 'Generate audio', slug: 'core/generate-audio' },
+            { label: 'Transform audio', slug: 'core/transform-audio' },
+            { label: 'Dubbing', slug: 'core/dubbing' },
+            { label: 'Generate video', slug: 'core/generate-video' },
+            { label: 'Rerank', slug: 'core/rerank' },
+            { label: 'Error handling', slug: 'core/error-handling' },
+            { label: 'Telemetry', slug: 'core/telemetry' },
           ],
         },
         {
           label: 'Cookbook',
           items: [{ label: 'MCP tools', slug: 'cookbook/mcp-tools' }],
+        },
+        {
+          label: 'Components',
+          items: [{ label: 'Components', slug: 'components' }],
         },
         {
           label: 'Providers',
@@ -56,7 +71,6 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
-            { label: 'Overview', slug: 'reference' },
             {
               label: 'Public symbols',
               slug: 'reference/generated/public-symbols',
@@ -66,7 +80,6 @@ export default defineConfig({
         {
           label: 'Project',
           items: [
-            { label: 'Upstream parity', slug: 'upstream-parity' },
             { label: 'Troubleshooting', slug: 'troubleshooting' },
           ],
         },

@@ -1,0 +1,19 @@
+# "revai"
+
+Source URL: /providers/revai/
+
+## Package
+
+`@ai-sdk/revai`
+
+## Factories
+
+`AIProviders.revAI`
+
+## Capabilities
+
+- Transcription
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

@@ -84,4 +84,11 @@ import Testing
     #expect(voyageRow.supportedCapabilities == voyage.supportedCapabilities)
     #expect(voyageRow.supports(.embedding))
     #expect(voyageRow.supports(.reranking))
+
+    let gateway = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key"))
+    let gatewayRow = try #require(AIProviderCapabilities.row(providerID: "gateway"))
+    #expect(gatewayRow.supportedCapabilities == gateway.supportedCapabilities)
+    #expect(!gatewayRow.supports(.audioGeneration))
+    #expect(!gatewayRow.supports(.audioTransformation))
+    #expect(!gatewayRow.supports(.dubbing))
 }

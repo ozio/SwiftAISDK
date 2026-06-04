@@ -1,0 +1,87 @@
+# Telemetry
+
+Source URL: /components/telemetry/
+
+## Symbol counts
+
+| Symbol kind | Count |
+| --- | --- |
+| Case | 10 |
+| Enumeration | 2 |
+| Initializer | 4 |
+| Instance Method | 5 |
+| Instance Property | 35 |
+| Protocol | 1 |
+| Structure | 4 |
+| Type Method | 3 |
+| Type Property | 1 |
+
+## Public symbols
+
+| Kind | Symbol | Declaration | Source |
+| --- | --- | --- | --- |
+| Case | `Telemetry.Event.Kind.abort` | `case abort` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.end` | `case end` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.error` | `case error` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.retry` | `case retry` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.start` | `case start` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.stepEnd` | `case stepEnd` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.stepStart` | `case stepStart` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.toolEnd` | `case toolEnd` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.toolError` | `case toolError` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Case | `Telemetry.Event.Kind.toolStart` | `case toolStart` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Enumeration | `Telemetry` | `enum Telemetry` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Enumeration | `Telemetry.Event.Kind` | `enum Kind` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Initializer | `init(callID:operationID:providerID:modelID:execute:)` | `init(callID: String, operationID: String, providerID: String, modelID: String? = nil, execute: @escaping @Sendable () async throws -> Output)` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Initializer | `init(callID:toolCallID:toolName:execute:)` | `init(callID: String, toolCallID: String, toolName: String, execute: @escaping @Sendable () async throws -> Output)` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Initializer | `init(isEnabled:includesInput:includesOutput:functionID:metadata:integrations:)` | `init(isEnabled: Bool = true, includesInput: Bool = true, includesOutput: Bool = true, functionID: String? = nil, metadata: [String : JSONValue] = [:], integrations: [any Telemetry.Integration]? = nil)` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Initializer | `init(kind:callID:operationID:providerID:modelID:functionID:attempt:maxRetries:delayNanoseconds:durationNanoseconds:input:output:usage:warnings:providerMetadata:responseMetadata:errorDescription:metadata:includesInput:includesOutput:)` | `init(kind: Telemetry.Event.Kind, callID: String, operationID: String, providerID: String, modelID: String? = nil, functionID: String? = nil, attempt: Int? = nil, maxRetries: Int? = nil, delayNanoseconds: UInt64? = nil, durationNanoseconds: UInt64? = nil, input: JSONValue? = nil, output: JSONValue? = nil, usage: TokenUsage? = nil, warnings: [AIWarning] = [], providerMetadata: [String : JSONValue] = [:], responseMetadata: AIResponseMetadata = AIResponseMetadata(), errorDescription: String? = nil, metadata: [String : JSONValue] = [:], includesInput: Bool = true, includesOutput: Bool = true)` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Method | `executeLanguageModelCall(_:)` | `func executeLanguageModelCall<Output>(_ context: Telemetry.LanguageModelCallContext<Output>) async throws -> Output where Output : Sendable` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Method | `executeLanguageModelCall(_:)` | `func executeLanguageModelCall<Output>(_ context: Telemetry.LanguageModelCallContext<Output>) async throws -> Output where Output : Sendable` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Method | `executeTool(_:)` | `func executeTool<Output>(_ context: Telemetry.ToolExecutionContext<Output>) async throws -> Output where Output : Sendable` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Method | `executeTool(_:)` | `func executeTool<Output>(_ context: Telemetry.ToolExecutionContext<Output>) async throws -> Output where Output : Sendable` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Method | `record(_:)` | `func record(_ event: Telemetry.Event) async` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `attempt` | `var attempt: Int?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `callID` | `var callID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `callID` | `var callID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `callID` | `var callID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `delayNanoseconds` | `var delayNanoseconds: UInt64?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `durationNanoseconds` | `var durationNanoseconds: UInt64?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `errorDescription` | `var errorDescription: String?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `execute` | `var execute: @Sendable () async throws -> Output` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `execute` | `var execute: @Sendable () async throws -> Output` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `functionID` | `var functionID: String?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `functionID` | `var functionID: String?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `includesInput` | `var includesInput: Bool` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `includesInput` | `var includesInput: Bool` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `includesOutput` | `var includesOutput: Bool` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `includesOutput` | `var includesOutput: Bool` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `input` | `var input: JSONValue?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `integrations` | `var integrations: [any Telemetry.Integration]?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `isEnabled` | `var isEnabled: Bool` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `kind` | `var kind: Telemetry.Event.Kind` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `maxRetries` | `var maxRetries: Int?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `metadata` | `var metadata: [String : JSONValue]` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `metadata` | `var metadata: [String : JSONValue]` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `modelID` | `var modelID: String?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `modelID` | `var modelID: String?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `operationID` | `var operationID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `operationID` | `var operationID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `output` | `var output: JSONValue?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `providerID` | `var providerID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `providerID` | `var providerID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `providerMetadata` | `var providerMetadata: [String : JSONValue]` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `responseMetadata` | `var responseMetadata: AIResponseMetadata` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `toolCallID` | `var toolCallID: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `toolName` | `var toolName: String` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `usage` | `var usage: TokenUsage?` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Instance Property | `warnings` | `var warnings: [AIWarning]` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Protocol | `Telemetry.Integration` | `protocol Integration : Sendable` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Structure | `Telemetry.Event` | `struct Event` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Structure | `Telemetry.LanguageModelCallContext` | `struct LanguageModelCallContext<Output> where Output : Sendable` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Structure | `Telemetry.Options` | `struct Options` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Structure | `Telemetry.ToolExecutionContext` | `struct ToolExecutionContext<Output> where Output : Sendable` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Type Method | `register(_:)` | `static func register(_ integrations: any Telemetry.Integration...)` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Type Method | `register(_:)` | `static func register(_ integrations: [any Telemetry.Integration])` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Type Method | `registeredIntegrations()` | `static func registeredIntegrations() -> [any Telemetry.Integration]` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |
+| Type Property | `disabled` | `static let disabled: Telemetry.Options` | [Sources/SwiftAISDK/Telemetry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Telemetry.swift) |

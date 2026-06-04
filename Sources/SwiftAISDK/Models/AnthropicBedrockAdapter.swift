@@ -65,7 +65,7 @@ func amazonBedrockAnthropicDownloadContent(
 
     let response = try await downloadURL(url, transport: transport, abortSignal: abortSignal)
     guard (200..<300).contains(response.statusCode) else {
-        throw httpStatusError(provider: providerID, response: response)
+        throw apiCallError(provider: providerID, response: response)
     }
     let mediaType = amazonBedrockAnthropicMediaType(
         contentType: response.headerValue("content-type"),

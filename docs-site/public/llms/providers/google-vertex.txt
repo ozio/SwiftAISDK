@@ -1,0 +1,22 @@
+# "google.vertex"
+
+Source URL: /providers/google-vertex/
+
+## Package
+
+`@ai-sdk/google-vertex`
+
+## Factories
+
+`AIProviders.googleVertex`
+
+## Capabilities
+
+- Language
+- Embedding
+- Image
+- Video
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

@@ -26,7 +26,7 @@ public final class OpenAISkillsClient: AISkillsClient, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
 
         let raw = try response.jsonValue()
@@ -90,7 +90,7 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
 
         let raw = try response.jsonValue()
@@ -128,7 +128,7 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
             abortSignal: abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         return (raw["name"]?.stringValue, raw["description"]?.stringValue)

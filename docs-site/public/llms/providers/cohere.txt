@@ -1,0 +1,21 @@
+# "cohere"
+
+Source URL: /providers/cohere/
+
+## Package
+
+`@ai-sdk/cohere`
+
+## Factories
+
+`AIProviders.cohere`
+
+## Capabilities
+
+- Language
+- Embedding
+- Reranking
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

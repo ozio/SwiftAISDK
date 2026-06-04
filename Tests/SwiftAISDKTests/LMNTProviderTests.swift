@@ -71,7 +71,7 @@ import Testing
     ))
     let model = try provider.speechModel("aurora")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "lmnt.speech",
         statusCode: 429,
         body: "speech rate limited",

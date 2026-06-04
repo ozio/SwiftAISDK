@@ -82,7 +82,7 @@ import Testing
     let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
     let model = try provider.languageModel("kimi-k2")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "moonshotai.chat",
         statusCode: 429,
         body: "Rate limit exceeded",

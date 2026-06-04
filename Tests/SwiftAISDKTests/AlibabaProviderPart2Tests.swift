@@ -246,7 +246,7 @@ import Testing
     let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
     let model = try provider.videoModel("wan2.6-t2v")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "alibaba.video",
         statusCode: 400,
         body: "Bad video request",

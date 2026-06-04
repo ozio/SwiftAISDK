@@ -114,7 +114,7 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
         ]))
         let response = try await config.transport.send(httpRequest)
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw: JSONValue
         if let event = parseServerSentEvents(response.body).first(where: { $0.data != "[DONE]" }) {
@@ -130,7 +130,7 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
                     "param": raw["param"] ?? .null
                 ])
             ])
-            throw httpStatusError(
+            throw apiCallError(
                 provider: providerID,
                 statusCode: raw["statusCode"]?.intValue ?? response.statusCode,
                 body: String(data: try encodeJSONBody(errorBody), encoding: .utf8) ?? raw["message"]?.stringValue ?? String(describing: raw),

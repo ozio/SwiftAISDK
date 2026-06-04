@@ -203,6 +203,54 @@ func speechRequestMetadataBody(_ request: SpeechRequest) -> JSONValue {
     ])
 }
 
+func audioGenerationRequestTelemetryInput(_ request: AudioGenerationRequest) -> JSONValue {
+    .object([
+        "prompt": .string(request.prompt),
+        "durationSeconds": request.durationSeconds.map(JSONValue.number),
+        "format": request.format.map(JSONValue.string),
+        "seed": request.seed.map { .number(Double($0)) },
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+func audioGenerationRequestMetadataBody(_ request: AudioGenerationRequest) -> JSONValue {
+    .object([
+        "prompt": .string(request.prompt),
+        "durationSeconds": request.durationSeconds.map(JSONValue.number),
+        "format": request.format.map(JSONValue.string),
+        "seed": request.seed.map { .number(Double($0)) },
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
+    ])
+}
+
+func audioTransformationRequestTelemetryInput(_ request: AudioTransformationRequest) -> JSONValue {
+    .object([
+        "fileName": .string(request.fileName),
+        "mimeType": .string(request.mimeType),
+        "byteLength": .number(Double(request.audio.count)),
+        "voice": request.voice.map(JSONValue.string),
+        "format": request.format.map(JSONValue.string),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
+        "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+func audioTransformationRequestMetadataBody(_ request: AudioTransformationRequest) -> JSONValue {
+    .object([
+        "fileName": .string(request.fileName),
+        "mimeType": .string(request.mimeType),
+        "byteLength": .number(Double(request.audio.count)),
+        "voice": request.voice.map(JSONValue.string),
+        "format": request.format.map(JSONValue.string),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
+        "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody)
+    ])
+}
+
 func videoRequestTelemetryInput(_ request: VideoGenerationRequest) -> JSONValue {
     .object([
         "prompt": .string(request.prompt),
@@ -478,6 +526,24 @@ func speechTelemetryOutput(_ result: SpeechResult) -> JSONValue {
         "byteLength": .number(Double(result.audio.count)),
         "contentType": result.contentType.map(JSONValue.string),
         "requestMetadata": aiRequestMetadataJSON(result.requestMetadata)
+    ])
+}
+
+func audioGenerationTelemetryOutput(_ result: AudioGenerationResult) -> JSONValue {
+    .object([
+        "byteLength": .number(Double(result.audio.count)),
+        "contentType": result.contentType.map(JSONValue.string),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
+        "rawValue": result.rawValue
+    ])
+}
+
+func audioTransformationTelemetryOutput(_ result: AudioTransformationResult) -> JSONValue {
+    .object([
+        "byteLength": .number(Double(result.audio.count)),
+        "contentType": result.contentType.map(JSONValue.string),
+        "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
+        "rawValue": result.rawValue
     ])
 }
 

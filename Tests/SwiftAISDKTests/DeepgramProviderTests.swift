@@ -87,7 +87,7 @@ import Testing
     ))
     let transcriptionModel = try transcriptionProvider.transcriptionModel("nova-3")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "deepgram.transcription",
         statusCode: 400,
         body: "transcription failed",
@@ -106,7 +106,7 @@ import Testing
     ))
     let speechModel = try speechProvider.speechModel("aura-2-helena-en")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "deepgram.speech",
         statusCode: 429,
         body: "speech rate limited",

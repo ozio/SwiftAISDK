@@ -113,7 +113,7 @@ struct BedrockStreamState {
 
 func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, warnings: [AIWarning] = [], jsonResponseToolName: String? = nil) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
-        throw httpStatusError(provider: providerID, response: response)
+        throw apiCallError(provider: providerID, response: response)
     }
 
     let contentType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value

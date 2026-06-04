@@ -1,0 +1,24 @@
+# "azure"
+
+Source URL: /providers/azure/
+
+## Package
+
+`@ai-sdk/azure`
+
+## Factories
+
+`AIProviders.azure`
+
+## Capabilities
+
+- Language
+- Completion
+- Embedding
+- Image
+- Transcription
+- Speech
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

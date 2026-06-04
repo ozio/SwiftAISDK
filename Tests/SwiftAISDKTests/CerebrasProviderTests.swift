@@ -88,7 +88,7 @@ import Testing
     let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
     let model = try provider.languageModel("zai-glm-4.7")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "cerebras.chat",
         statusCode: 429,
         body: "Rate limit exceeded",

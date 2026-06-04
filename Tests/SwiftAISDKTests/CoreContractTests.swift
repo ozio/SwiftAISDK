@@ -119,12 +119,12 @@ import Testing
         #expect(error.message.contains("expected integer"))
     }
 
-    let noOutput = AINoOutputGeneratedError(provider: "mock", outputKind: .object)
+    let noOutput = AINoOutputError(provider: "mock", structuredOutputKind: .object)
     #expect(noOutput.description.contains("mock"))
-    #expect(noOutput.description.contains("object output"))
+    #expect(noOutput.description.contains("object"))
 
-    let noContent = AINoContentGeneratedError()
-    #expect(noContent.description == "No content generated.")
+    let noContent = AINoOutputError(kind: .content)
+    #expect(noContent.description == "No content was generated.")
 
     let tooManyEmbeddings = AITooManyEmbeddingValuesForCallError(
         provider: "mock",

@@ -5,14 +5,14 @@ public struct AIAgentCallOptions: Sendable {
     public var abortSignal: AIAbortSignal?
     public var timeoutNanoseconds: UInt64?
     public var retryPolicy: AIRetryPolicy?
-    public var telemetry: AITelemetryOptions?
+    public var telemetry: Telemetry.Options?
 
     public init(
         requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy? = nil,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) {
         self.requestOptions = requestOptions
         self.abortSignal = abortSignal
@@ -64,7 +64,7 @@ public struct AIToolLoopAgent: AIAgent {
     public var toolApproval: AIToolApproval?
     public var requestOptions: AIChatRequestOptions
     public var retryPolicy: AIRetryPolicy
-    public var telemetry: AITelemetryOptions?
+    public var telemetry: Telemetry.Options?
 
     public init(
         id: String? = nil,
@@ -77,7 +77,7 @@ public struct AIToolLoopAgent: AIAgent {
         toolApproval: AIToolApproval? = nil,
         requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) {
         self.id = id
         self.model = model

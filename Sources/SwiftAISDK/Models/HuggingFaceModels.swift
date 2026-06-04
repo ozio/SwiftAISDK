@@ -58,7 +58,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                     )
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: response)
                     }
 
                     continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))

@@ -457,8 +457,8 @@ private func isPrivateIPv6(_ bytes: [UInt8]) -> Bool {
     return false
 }
 
-func httpStatusError(provider: String, response: AIHTTPResponse) -> AIError {
-    httpStatusError(
+func apiCallError(provider: String, response: AIHTTPResponse) -> AIError {
+    apiCallError(
         provider: provider,
         statusCode: response.statusCode,
         body: response.bodyText,
@@ -466,7 +466,7 @@ func httpStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     )
 }
 
-func httpStatusError(
+func apiCallError(
     provider: String,
     statusCode: Int,
     body: String,
@@ -476,9 +476,9 @@ func httpStatusError(
         return .gateway(gatewayErrorFromHTTPStatus(statusCode: statusCode, body: body, headers: headers))
     }
     guard !headers.isEmpty else {
-        return .httpStatus(provider: provider, statusCode: statusCode, body: body)
+        return .apiCall(provider: provider, statusCode: statusCode, body: body)
     }
-    return .httpStatusWithHeaders(
+    return .apiCall(
         provider: provider,
         statusCode: statusCode,
         body: body,

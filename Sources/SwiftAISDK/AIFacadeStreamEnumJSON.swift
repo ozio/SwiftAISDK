@@ -9,7 +9,7 @@ public static func streamEnum(
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -57,7 +57,7 @@ public static func streamEnum(
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -103,7 +103,7 @@ public static func streamEnum(
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -142,7 +142,7 @@ public static func streamEnum(
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil

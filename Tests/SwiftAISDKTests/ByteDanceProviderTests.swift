@@ -347,7 +347,7 @@ import Testing
             body: Data(#"{"error":{"message":"Invalid API key","code":"unauthorized"}}"#.utf8)
         ))
     ))
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "bytedance.video",
         statusCode: 401,
         body: "Invalid API key",
@@ -363,7 +363,7 @@ import Testing
             AIHTTPResponse(statusCode: 500, headers: [:], body: Data(#"{"message":"Poll failed"}"#.utf8))
         ])
     ))
-    await #expect(throws: AIError.httpStatus(
+    await #expect(throws: AIError.apiCall(
         provider: "bytedance.video",
         statusCode: 500,
         body: "Poll failed"

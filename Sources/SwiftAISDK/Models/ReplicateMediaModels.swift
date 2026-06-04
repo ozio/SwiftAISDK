@@ -248,9 +248,9 @@ private func replicateProviderOptions(
 private func replicateHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     let body = replicateErrorMessage(from: response.body) ?? response.bodyText
     guard !response.headers.isEmpty else {
-        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+        return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
     }
-    return .httpStatusWithHeaders(
+    return .apiCall(
         provider: provider,
         statusCode: response.statusCode,
         body: body,

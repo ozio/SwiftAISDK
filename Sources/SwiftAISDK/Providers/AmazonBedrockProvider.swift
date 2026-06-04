@@ -317,7 +317,7 @@ struct BedrockRuntimeConfig: @unchecked Sendable {
     func sendJSONResponse(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let response = try await sendRequest(try request(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         return (try response.jsonValue(), response)
     }

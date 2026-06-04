@@ -58,7 +58,7 @@ public final class LumaImageModel: ImageModel, @unchecked Sendable {
         }
         let image = try await downloadURL(url, transport: config.transport, abortSignal: request.abortSignal)
         guard (200..<300).contains(image.statusCode) else {
-            throw httpStatusError(provider: providerID, response: image)
+            throw apiCallError(provider: providerID, response: image)
         }
         return ImageGenerationResult(
             urls: [url],
@@ -308,9 +308,9 @@ private func lumaMaxPollAttempts(_ value: JSONValue?) -> Int {
 private func lumaHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     let body = lumaErrorMessage(from: response.body) ?? response.bodyText
     guard !response.headers.isEmpty else {
-        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+        return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
     }
-    return .httpStatusWithHeaders(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
+    return .apiCall(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
 }
 
 private func lumaErrorMessage(from data: Data) -> String? {

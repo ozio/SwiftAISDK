@@ -1,0 +1,61 @@
+# Generate image
+
+Source URL: /core/generate-image/
+
+Use `generateImage` when a provider exposes an image model. The Swift-native convenience accepts the prompt directly and builds an `ImageGenerationRequest` for you.
+
+```swift title="Examples/Sources/GenerateImage/main.swift"
+import SwiftAISDK
+
+@main
+struct GenerateImageExample {
+    static func main() async throws {
+        let provider = try AIProviders.openAI()
+        let model = try provider.imageModel("gpt-image-1")
+
+        let result = try await model.generateImage(
+            "A small watercolor robot reading Swift code.",
+            size: "1024x1024",
+            count: 1
+        )
+
+        print(result.urls.first ?? result.base64Images.first ?? "")
+    }
+}
+```
+
+For image editing, pass input files and an optional mask.
+
+```swift
+let source = ImageInputFile(
+    data: imageData,
+    mediaType: "image/png",
+    fileName: "source.png"
+)
+
+let result = try await model.generateImage(
+    "Replace the background with a quiet desk.",
+    files: [source]
+)
+```
+
+## Options
+
+- `size` and `aspectRatio` describe the output shape.
+- `seed` requests deterministic output when a provider supports it.
+- `count` requests multiple images.
+- `files` and `mask` support image editing.
+- `providerOptions` carries provider-specific controls.
+- `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
+
+## Results
+
+`ImageGenerationResult` may contain hosted URLs, base64 images, or both:
+
+- `urls`
+- `base64Images`
+- `usage`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

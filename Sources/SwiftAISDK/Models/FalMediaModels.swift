@@ -47,7 +47,7 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
         for url in urls {
             let response = try await downloadURL(url, transport: config.transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             images.append(response.body.base64EncodedString())
         }
@@ -85,7 +85,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ).withURL(try requireURL("https://queue.fal.run/fal-ai/\(normalized)")))
         guard (200..<300).contains(queueResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: queueResponse)
+            throw apiCallError(provider: providerID, response: queueResponse)
         }
         let queued = try queueResponse.jsonValue()
         guard let responseURL = queued["response_url"]?.stringValue else {
@@ -120,7 +120,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
                 return (try response.jsonValue(), response)
             }
             if !falIsInProgress(response) {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                 throw AIError.invalidResponse(provider: providerID, message: "Fal video generation timed out.")

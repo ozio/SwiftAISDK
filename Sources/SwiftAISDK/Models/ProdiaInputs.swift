@@ -18,7 +18,7 @@ func prodiaInputImage(from messages: [AIMessage], transport: AITransport, abortS
         case let .imageURL(urlString):
             let response = try await downloadURL(urlString, transport: transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: "prodia.language", response: response)
+                throw apiCallError(provider: "prodia.language", response: response)
             }
             let mediaType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value ?? "image/png"
             return (response.body, prodiaResolvedImageMediaType(mediaType: mediaType, data: response.body))
@@ -39,7 +39,7 @@ func prodiaVideoInputImage(from image: ImageInputFile, transport: AITransport, a
     }
     let response = try await downloadURL(url, transport: transport, abortSignal: abortSignal)
     guard (200..<300).contains(response.statusCode) else {
-        throw httpStatusError(provider: "prodia.video", response: response)
+        throw apiCallError(provider: "prodia.video", response: response)
     }
     let mediaType = image.mediaType
         ?? response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value

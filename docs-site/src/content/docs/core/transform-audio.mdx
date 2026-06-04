@@ -1,0 +1,17 @@
+---
+title: Transform audio
+description: Transform existing audio through provider-native audio tools.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import transformAudioExample from '../../../../../Examples/Sources/TransformAudio/main.swift?raw';
+
+Use `transformAudio` when the provider takes existing media and returns changed audio.
+
+<Code code={transformAudioExample} lang="swift" title="Examples/Sources/TransformAudio/main.swift" />
+
+`AudioTransformationRequest` carries the input audio bytes, file name, MIME type, optional target voice, output format, provider options, extra body, headers, and abort signal.
+
+`AudioTransformationResult` returns transformed audio bytes plus content type and metadata.
+
+ElevenLabs exposes `provider.voiceChangerModel()` for `/v1/speech-to-speech/:voice_id` and `provider.voiceIsolatorModel()` for `/v1/audio-isolation`.

@@ -1,0 +1,19 @@
+# "quiverai"
+
+Source URL: /providers/quiverai/
+
+## Package
+
+`@ai-sdk/quiverai`
+
+## Factories
+
+`AIProviders.quiverAI`
+
+## Capabilities
+
+- Image
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

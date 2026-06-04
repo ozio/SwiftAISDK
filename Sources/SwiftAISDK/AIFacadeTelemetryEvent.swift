@@ -1,12 +1,12 @@
 import Foundation
 
 func telemetryEvent(
-    kind: AITelemetryEventKind,
+    kind: Telemetry.Event.Kind,
     callID: String,
     operationID: String,
     providerID: String,
     modelID: String?,
-    options: AITelemetryOptions?,
+    options: Telemetry.Options?,
     attempt: Int? = nil,
     maxRetries: Int? = nil,
     delayNanoseconds: UInt64? = nil,
@@ -18,10 +18,10 @@ func telemetryEvent(
     providerMetadata: [String: JSONValue] = [:],
     responseMetadata: AIResponseMetadata = AIResponseMetadata(),
     errorDescription: String? = nil
-) -> AITelemetryEvent {
-    let recordInputs = options?.recordInputs ?? true
-    let recordOutputs = options?.recordOutputs ?? true
-    return AITelemetryEvent(
+) -> Telemetry.Event {
+    let includesInput = options?.includesInput ?? true
+    let includesOutput = options?.includesOutput ?? true
+    return Telemetry.Event(
         kind: kind,
         callID: callID,
         operationID: operationID,
@@ -32,15 +32,15 @@ func telemetryEvent(
         maxRetries: maxRetries,
         delayNanoseconds: delayNanoseconds,
         durationNanoseconds: durationNanoseconds,
-        input: recordInputs ? input : nil,
-        output: recordOutputs ? output : nil,
+        input: includesInput ? input : nil,
+        output: includesOutput ? output : nil,
         usage: usage,
         warnings: warnings,
         providerMetadata: providerMetadata,
         responseMetadata: responseMetadata,
         errorDescription: errorDescription,
         metadata: options?.metadata ?? [:],
-        recordInputs: options?.recordInputs,
-        recordOutputs: options?.recordOutputs
+        includesInput: includesInput,
+        includesOutput: includesOutput
     )
 }

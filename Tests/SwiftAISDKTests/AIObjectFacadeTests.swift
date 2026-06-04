@@ -24,7 +24,7 @@ import Testing
         schema: schema,
         schemaName: "answer",
         schemaDescription: "Answer schema.",
-        telemetry: AITelemetryOptions(functionID: "unit.object", integrations: [recorder])
+        telemetry: Telemetry.Options(functionID: "unit.object", integrations: [recorder])
     )
     let events = await recorder.events()
 
@@ -64,7 +64,7 @@ import Testing
         as: ObjectFacadeAnswer.self,
         schema: schema,
         schemaName: "answer",
-        telemetry: AITelemetryOptions(integrations: [telemetry]),
+        telemetry: Telemetry.Options(integrations: [telemetry]),
         callbacks: AIObjectGenerationCallbacks(
             onStart: { event in await recorder.recordStart(event) },
             onStepStart: { event in await recorder.recordStepStart(event) },
@@ -114,7 +114,7 @@ import Testing
             prompt: "Return broken object.",
             as: ObjectFacadeAnswer.self,
             schema: objectFacadeAnswerSchema(),
-            telemetry: AITelemetryOptions(integrations: [telemetry]),
+            telemetry: Telemetry.Options(integrations: [telemetry]),
             callbacks: AIObjectGenerationCallbacks(
                 onStart: { event in await recorder.recordStart(event) },
                 onStepStart: { event in await recorder.recordStepStart(event) },
@@ -161,7 +161,7 @@ import Testing
         as: ObjectFacadeAnswer.self,
         schema: schema,
         schemaName: "answer",
-        telemetry: AITelemetryOptions(integrations: [telemetry]),
+        telemetry: Telemetry.Options(integrations: [telemetry]),
         callbacks: AIObjectGenerationCallbacks(
             onStart: { event in await recorder.recordStart(event) },
             onStepStart: { event in await recorder.recordStepStart(event) },
@@ -252,7 +252,7 @@ import Testing
         as: ObjectFacadeAnswer.self,
         schema: schema,
         schemaName: "answer",
-        telemetry: AITelemetryOptions(integrations: [recorder])
+        telemetry: Telemetry.Options(integrations: [recorder])
     ) {
         switch part {
         case let .textDelta(delta):
@@ -313,7 +313,7 @@ import Testing
         prompt: "Cancel object stream.",
         as: ObjectFacadeAnswer.self,
         schema: objectFacadeAnswerSchema(),
-        telemetry: AITelemetryOptions(integrations: [telemetry]),
+        telemetry: Telemetry.Options(integrations: [telemetry]),
         callbacks: AIObjectGenerationCallbacks(
             onStart: { event in await callbacks.recordStart(event) },
             onStepStart: { event in await callbacks.recordStepStart(event) },
@@ -345,7 +345,7 @@ import Testing
 @Test func aiStreamObjectRetriesRetryableStartErrors() async throws {
     let recorder = ObjectTelemetryRecorder()
     let model = ObjectFacadeFlakyStreamingLanguageModel(outcomes: [
-        .failure(AIError.httpStatus(provider: "mock", statusCode: 503, body: "try again")),
+        .failure(AIError.apiCall(provider: "mock", statusCode: 503, body: "try again")),
         .parts([
             .textDelta(#"{"value":"retried","count":5}"#),
             .finish(reason: "stop", usage: TokenUsage(totalTokens: 7))
@@ -359,7 +359,7 @@ import Testing
         as: ObjectFacadeAnswer.self,
         schema: objectFacadeAnswerSchema(),
         retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0),
-        telemetry: AITelemetryOptions(integrations: [recorder])
+        telemetry: Telemetry.Options(integrations: [recorder])
     ) {
         if case let .object(result) = part {
             object = result

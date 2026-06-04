@@ -1,0 +1,56 @@
+# Transform audio
+
+Source URL: /core/transform-audio/
+
+Use `transformAudio` when the provider takes existing media and returns changed audio.
+
+```swift title="Examples/Sources/TransformAudio/main.swift"
+import Foundation
+import SwiftAISDK
+
+@main
+struct TransformAudioExample {
+    static func main() async {
+        do {
+            let provider = try AIProviders.elevenLabs()
+            let speech = try provider.speechModel("eleven_multilingual_v2")
+            let source = try await AI.generateSpeech(
+                "Swift AI voice tools smoke test. This source clip is long enough for isolation.",
+                using: speech,
+                voice: "21m00Tcm4TlvDq8ikWAM",
+                format: "mp3_32",
+                providerOptions: ["elevenlabs": ["languageCode": "en"]]
+            )
+
+            let changer = try provider.voiceChangerModel()
+            let changed = try await AI.transformAudio(
+                audio: source.audio,
+                using: changer,
+                fileName: "voice.mp3",
+                mimeType: source.contentType ?? "audio/mpeg",
+                voice: "21m00Tcm4TlvDq8ikWAM",
+                format: "mp3_32"
+            )
+            print("Changed voice bytes: \(changed.audio.count)")
+
+            let isolator = try provider.voiceIsolatorModel()
+            let isolated = try await AI.transformAudio(
+                audio: source.audio,
+                using: isolator,
+                fileName: "voice.mp3",
+                mimeType: source.contentType ?? "audio/mpeg",
+                providerOptions: ["elevenlabs": ["fileFormat": "other"]]
+            )
+            print("Isolated voice bytes: \(isolated.audio.count)")
+        } catch {
+            print("Audio transformation failed: \(error)")
+        }
+    }
+}
+```
+
+`AudioTransformationRequest` carries the input audio bytes, file name, MIME type, optional target voice, output format, provider options, extra body, headers, and abort signal.
+
+`AudioTransformationResult` returns transformed audio bytes plus content type and metadata.
+
+ElevenLabs exposes `provider.voiceChangerModel()` for `/v1/speech-to-speech/:voice_id` and `provider.voiceIsolatorModel()` for `/v1/audio-isolation`.

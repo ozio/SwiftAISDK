@@ -1,0 +1,13 @@
+---
+title: Dubbing
+description: Create and inspect provider dubbing jobs.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import dubbingExample from '../../../../../Examples/Sources/Dubbing/main.swift?raw';
+
+Dubbing is a provider-native job lifecycle rather than a simple model call. ElevenLabs exposes it through `provider.dubbing()`.
+
+<Code code={dubbingExample} lang="swift" title="Examples/Sources/Dubbing/main.swift" />
+
+Use `DubbingCreateRequest` with either uploaded media bytes or `sourceURL`, plus a target language. `DubbingCreateResult` returns the `dubbingID` and expected duration. `DubbingStatusResult` reports the current state, and `dubbing.audio(dubbingID:languageCode:)` downloads the generated audio/video once the job is ready.

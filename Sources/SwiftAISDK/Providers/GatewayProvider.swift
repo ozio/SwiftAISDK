@@ -105,7 +105,7 @@ public struct GatewayGenerationInfo: Equatable, Sendable {
 
 public final class GatewayProvider: AIProvider, @unchecked Sendable {
     public let providerID = "gateway"
-    public let supportedCapabilities: Set<ModelCapability> = Set(ModelCapability.allCases)
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .speech, .video, .reranking]
     private let config: ModelHTTPConfig
 
     public init(settings: ProviderSettings = ProviderSettings(), teamIDOrSlug: String? = nil) throws {
@@ -169,7 +169,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
     public func availableModels() async throws -> [GatewayModelEntry] {
         let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try requireURL("\(config.baseURL)/config"), headers: config.headers))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         return raw["models"]?.arrayValue?.compactMap { item in
@@ -191,7 +191,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
     public func credits() async throws -> GatewayCredits {
         let response = try await config.transport.send(AIHTTPRequest(method: "GET", url: try gatewayOriginURL(baseURL: config.baseURL, path: "/v1/credits"), headers: config.headers))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         return GatewayCredits(balance: raw["balance"]?.stringValue ?? "", totalUsed: raw["total_used"]?.stringValue ?? raw["totalUsed"]?.stringValue ?? "")
@@ -222,7 +222,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
             headers: config.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         return GatewaySpendReportResponse(results: raw["results"]?.arrayValue?.map(gatewaySpendReportRow) ?? [])
@@ -235,7 +235,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
             headers: config.headers
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let data = try response.jsonValue()["data"] ?? .object([:])
         return GatewayGenerationInfo(

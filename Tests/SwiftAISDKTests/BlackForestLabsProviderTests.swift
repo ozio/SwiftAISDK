@@ -128,7 +128,7 @@ import Testing
     ))
     let submitModel = try submitProvider.imageModel("flux-pro-1.1")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "black-forest-labs.image",
         statusCode: 422,
         body: #"{"error":"bad prompt"}"#,
@@ -146,7 +146,7 @@ import Testing
     ))
     let pollModel = try pollProvider.imageModel("flux-pro-1.1")
 
-    await #expect(throws: AIError.httpStatus(
+    await #expect(throws: AIError.apiCall(
         provider: "black-forest-labs.image",
         statusCode: 500,
         body: "poll failed"

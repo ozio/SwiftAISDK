@@ -10,7 +10,7 @@ extension AI {
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil

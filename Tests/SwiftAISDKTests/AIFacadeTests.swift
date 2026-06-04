@@ -2,6 +2,107 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+private struct NativeAPISummary: Decodable, Sendable, Equatable {
+    var title: String
+}
+
+@Test func swiftNativeGenerateTextConvenienceBuildsOptionsAndRunsTools() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "weather", arguments: #"{"city":"Tokyo"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object([:])),
+        TextGenerationResult(text: "Bring a light jacket.", rawValue: .object([:]))
+    ])
+    let weather = AITool(
+        name: "weather",
+        description: "Get the weather.",
+        parameters: [
+            "type": "object",
+            "properties": ["city": ["type": "string"]],
+            "required": ["city"]
+        ]
+    ) { arguments in
+        ["city": arguments["city"] ?? .string("missing"), "forecast": "cool"]
+    }
+
+    let result = try await model.generateText(
+        "What should I wear?",
+        options: LanguageGenerationOptions(
+            temperature: 0.4,
+            maxOutputTokens: 120,
+            providerOptions: ["openai": ["store": false]],
+            retryPolicy: .none
+        ),
+        tools: LanguageToolOptions([weather], maxSteps: 2)
+    )
+
+    #expect(result.text == "Bring a light jacket.")
+    #expect(model.requests.count == 2)
+    let firstRequest = try #require(model.requests.first)
+    #expect(firstRequest.messages == [.user("What should I wear?")])
+    #expect(firstRequest.temperature == 0.4)
+    #expect(firstRequest.maxOutputTokens == 120)
+    #expect(firstRequest.providerOptions["openai"]?["store"]?.boolValue == false)
+    #expect(firstRequest.tools["weather"]?["description"]?.stringValue == "Get the weather.")
+}
+
+@Test func swiftNativeGenerateObjectConvenienceRequestsSchemaAndDecodes() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(text: #"{"title":"Done"}"#, rawValue: .object([:])))
+    let schema = AIJSONSchema<NativeAPISummary>(
+        [
+            "type": "object",
+            "properties": ["title": ["type": "string"]],
+            "required": ["title"]
+        ],
+        name: "summary"
+    )
+
+    let result = try await model.generateObject("Summarize this.", schema: schema)
+
+    #expect(result.object == NativeAPISummary(title: "Done"))
+    let request = try #require(model.requests.first)
+    #expect(request.messages == [.user("Summarize this.")])
+    #expect(request.responseFormat == .json(schema: schema.jsonSchema, name: "summary"))
+}
+
+@Test func swiftNativeMediaConveniencesUseModalVerbNames() async throws {
+    let embeddingModel = MockEmbeddingModel(results: [
+        EmbeddingResult(embeddings: [[0.1, 0.2]], rawValue: .object([:]))
+    ])
+    let embedding = try await embeddingModel.embed("hello", dimensions: 2)
+    #expect(embedding.embeddings == [[0.1, 0.2]])
+    #expect(embeddingModel.requests.first?.values == ["hello"])
+    #expect(embeddingModel.requests.first?.dimensions == 2)
+
+    let imageModel = MockImageModel(result: ImageGenerationResult(urls: ["https://example.com/image.png"], rawValue: .object([:])))
+    let image = try await imageModel.generateImage("cat", size: "1024x1024", count: 1)
+    #expect(image.urls == ["https://example.com/image.png"])
+    #expect(imageModel.requests.first?.prompt == "cat")
+    #expect(imageModel.requests.first?.size == "1024x1024")
+    #expect(imageModel.requests.first?.count == 1)
+
+    let transcriptionModel = MockTranscriptionModel(result: TranscriptionResult(text: "hello", rawValue: .object([:])))
+    let transcription = try await transcriptionModel.transcribe(audio: Data("wav".utf8), language: "en", prompt: "Names are proper nouns.")
+    #expect(transcription.text == "hello")
+    #expect(transcriptionModel.requests.first?.audio == Data("wav".utf8))
+    #expect(transcriptionModel.requests.first?.language == "en")
+    #expect(transcriptionModel.requests.first?.prompt == "Names are proper nouns.")
+
+    let speechModel = MockSpeechModel(result: SpeechResult(audio: Data("audio".utf8)))
+    let speech = try await speechModel.generateSpeech("hello", voice: "alloy", speed: 1.1, language: "en")
+    #expect(String(data: speech.audio, encoding: .utf8) == "audio")
+    #expect(speechModel.requests.first?.text == "hello")
+    #expect(speechModel.requests.first?.voice == "alloy")
+    #expect(speechModel.requests.first?.speed == 1.1)
+    #expect(speechModel.requests.first?.language == "en")
+
+    let videoModel = MockVideoModel(result: VideoGenerationResult(urls: ["https://example.com/video.mp4"], rawValue: .object([:])))
+    let video = try await AI.generateVideo("clip", using: videoModel, durationSeconds: 4, count: 2)
+    #expect(video.urls == ["https://example.com/video.mp4"])
+    #expect(videoModel.requests.first?.prompt == "clip")
+    #expect(videoModel.requests.first?.durationSeconds == 4)
+    #expect(videoModel.requests.first?.count == 2)
+}
+
 @Test func aiGenerateTextPromptBuildsLanguageRequest() async throws {
     let model = MockLanguageModel(result: TextGenerationResult(text: "done", rawValue: .object([:])))
 
@@ -37,7 +138,7 @@ import Testing
 }
 @Test func aiGenerateTextRetriesRetryableErrors() async throws {
     let model = FlakyLanguageModel(failures: [
-        AIError.httpStatus(provider: "mock", statusCode: 500, body: "temporary")
+        AIError.apiCall(provider: "mock", statusCode: 500, body: "temporary")
     ], result: TextGenerationResult(text: "recovered", rawValue: .object([:])))
 
     let result = try await AI.generateText(
@@ -51,7 +152,7 @@ import Testing
 }
 @Test func aiGenerateTextHonorsRetryAfterHeader() async throws {
     let model = FlakyLanguageModel(failures: [
-        AIError.httpStatusWithHeaders(
+        AIError.apiCall(
             provider: "mock",
             statusCode: 429,
             body: "rate limited",
@@ -74,7 +175,7 @@ import Testing
 @Test func aiGenerateTextEmitsTelemetryLifecycleAndRetryEvents() async throws {
     let recorder = TelemetryRecorder()
     let model = FlakyLanguageModel(failures: [
-        AIError.httpStatus(provider: "mock", statusCode: 503, body: "try again")
+        AIError.apiCall(provider: "mock", statusCode: 503, body: "try again")
     ], result: TextGenerationResult(
         text: "recovered",
         finishReason: "stop",
@@ -86,7 +187,7 @@ import Testing
         model: model,
         prompt: "Telemetry",
         retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0),
-        telemetry: AITelemetryOptions(
+        telemetry: Telemetry.Options(
             functionID: "unit.generateText",
             metadata: ["tenant": .string("test")],
             integrations: [recorder]
@@ -111,10 +212,33 @@ import Testing
     #expect(events[2].output?["requestMetadata"]?["body"]?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Telemetry")
     #expect(events[2].usage == TokenUsage(inputTokens: 1, outputTokens: 2, totalTokens: 3))
 }
+
+@Test func registeredTelemetryRequiresPerCallOptIn() async throws {
+    Telemetry.removeAllIntegrations()
+    let recorder = TelemetryRecorder()
+    Telemetry.register(recorder)
+    defer { Telemetry.removeAllIntegrations() }
+
+    let model = MockLanguageModel(result: TextGenerationResult(text: "ok", rawValue: .object([:])))
+
+    _ = try await AI.generateText(
+        model: model,
+        prompt: "Do not record by default."
+    )
+    #expect(await recorder.events().isEmpty)
+
+    _ = try await AI.generateText(
+        model: model,
+        prompt: "Record with explicit options.",
+        telemetry: Telemetry.Options()
+    )
+    #expect(await recorder.events().map(\.kind) == [.start, .end])
+}
+
 @Test func aiGenerateTextTelemetryRecordsErrorsAndRespectsOutputFlag() async throws {
     let recorder = TelemetryRecorder()
     let model = FlakyLanguageModel(failures: [
-        AIError.httpStatus(provider: "mock", statusCode: 400, body: "bad request")
+        AIError.apiCall(provider: "mock", statusCode: 400, body: "bad request")
     ], result: TextGenerationResult(text: "unused", rawValue: .object([:])))
 
     do {
@@ -122,7 +246,7 @@ import Testing
             model: model,
             prompt: "Telemetry error",
             retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0),
-            telemetry: AITelemetryOptions(recordOutputs: false, integrations: [recorder])
+            telemetry: Telemetry.Options(includesOutput: false, integrations: [recorder])
         )
         Issue.record("Expected telemetry error path.")
     } catch {
@@ -144,7 +268,7 @@ import Testing
             model: model,
             prompt: "Abort me",
             abortSignal: controller.signal,
-            telemetry: AITelemetryOptions(integrations: [recorder])
+            telemetry: Telemetry.Options(integrations: [recorder])
         )
         Issue.record("Expected aborted generateText call.")
     } catch let error as AIAbortError {
@@ -165,7 +289,7 @@ import Testing
         model: model,
         prompt: "Wrap",
         retryPolicy: .none,
-        telemetry: AITelemetryOptions(integrations: [
+        telemetry: Telemetry.Options(integrations: [
             ExecutionWrappingTelemetry(name: "first", log: log),
             ExecutionWrappingTelemetry(name: "second", log: log)
         ])
@@ -213,7 +337,7 @@ import Testing
         prompt: "Weather?",
         executableTools: [lookup],
         maxSteps: 2,
-        telemetry: AITelemetryOptions(functionID: "unit.toolLoop", integrations: [recorder])
+        telemetry: Telemetry.Options(functionID: "unit.toolLoop", integrations: [recorder])
     )
     let events = await recorder.events()
     let stepEvents = events.filter { $0.operationID == "ai.generateText.step" }
@@ -259,7 +383,7 @@ import Testing
         executableTools: [lookup],
         maxSteps: 2,
         retryPolicy: .none,
-        telemetry: AITelemetryOptions(integrations: [ExecutionWrappingTelemetry(name: "wrapper", log: log)])
+        telemetry: Telemetry.Options(integrations: [ExecutionWrappingTelemetry(name: "wrapper", log: log)])
     )
 
     #expect(result.toolResults.first?.result["forecast"]?.stringValue == "sunny")
@@ -340,7 +464,7 @@ import Testing
         prompt: "Weather?",
         executableTools: [lookup],
         maxSteps: 2,
-        telemetry: AITelemetryOptions(functionID: "unit.streamToolLoop", integrations: [recorder])
+        telemetry: Telemetry.Options(functionID: "unit.streamToolLoop", integrations: [recorder])
     ) {
         streamed.append(part)
     }
@@ -357,20 +481,20 @@ import Testing
     #expect(toolEvents[1].output?["result"]?["toolName"]?.stringValue == "lookup")
     #expect(toolEvents[1].output?["result"]?["result"]?["city"]?.stringValue == "Kyoto")
 }
-@Test func httpStatusErrorPreservesResponseHeaders() throws {
+@Test func apiCallErrorPreservesResponseHeaders() throws {
     let response = AIHTTPResponse(
         statusCode: 429,
         headers: ["Retry-After": "0"],
         body: Data("rate limited".utf8)
     )
 
-    #expect(httpStatusError(provider: "mock", response: response) == .httpStatusWithHeaders(
+    #expect(apiCallError(provider: "mock", response: response) == .apiCall(
         provider: "mock",
         statusCode: 429,
         body: "rate limited",
         headers: ["Retry-After": "0"]
     ))
-    let apiError = try #require(httpStatusError(provider: "mock", response: response).apiCallError)
+    let apiError = try #require(apiCallError(provider: "mock", response: response).apiCallError)
     #expect(apiError.provider == "mock")
     #expect(apiError.statusCode == 429)
     #expect(apiError.responseHeaders["Retry-After"] == "0")
@@ -379,7 +503,7 @@ import Testing
 }
 @Test func aiGenerateTextDoesNotRetryNonRetryableErrors() async throws {
     let model = FlakyLanguageModel(failures: [
-        AIError.httpStatus(provider: "mock", statusCode: 400, body: "bad request")
+        AIError.apiCall(provider: "mock", statusCode: 400, body: "bad request")
     ], result: TextGenerationResult(text: "unused", rawValue: .object([:])))
 
     do {
@@ -390,15 +514,15 @@ import Testing
         )
         Issue.record("Expected non-retryable HTTP error.")
     } catch let error as AIError {
-        #expect(error == AIError.httpStatus(provider: "mock", statusCode: 400, body: "bad request"))
+        #expect(error == AIError.apiCall(provider: "mock", statusCode: 400, body: "bad request"))
     }
 
     #expect(model.requests.count == 1)
 }
 @Test func aiGenerateTextWrapsWhenMaxRetriesExceeded() async throws {
     let model = FlakyLanguageModel(failures: [
-        AIError.httpStatus(provider: "mock", statusCode: 503, body: "one"),
-        AIError.httpStatus(provider: "mock", statusCode: 503, body: "two")
+        AIError.apiCall(provider: "mock", statusCode: 503, body: "one"),
+        AIError.apiCall(provider: "mock", statusCode: 503, body: "two")
     ], result: TextGenerationResult(text: "unused", rawValue: .object([:])))
 
     do {

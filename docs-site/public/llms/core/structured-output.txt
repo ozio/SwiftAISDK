@@ -1,0 +1,63 @@
+# Structured output
+
+Source URL: /core/structured-output/
+
+Use structured output when your app needs a Swift value rather than free-form prose.
+
+```swift title="Examples/Sources/StructuredOutput/main.swift"
+import SwiftAISDK
+
+struct Summary: Decodable, Sendable {
+    var title: String
+    var bullets: [String]
+}
+
+@main
+struct StructuredOutputExample {
+    static func main() async throws {
+        let schema = AIJSONSchema<Summary>(
+            [
+                "type": "object",
+                "properties": [
+                    "title": ["type": "string"],
+                    "bullets": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                    ],
+                ],
+                "required": ["title", "bullets"],
+            ],
+            name: "summary"
+        )
+
+        let provider = try AIProviders.openAI()
+        let model = try provider.languageModel("gpt-4.1-mini")
+
+        let result = try await model.generateObject(
+            "Summarize the SwiftAISDK README.",
+            schema: schema
+        )
+
+        print(result.object.title)
+    }
+}
+```
+
+## Output Facade
+
+SwiftAISDK also mirrors the upstream-style `Output` entry point on `generateText` and `streamText`.
+
+```swift
+let result = try await model.generateText(
+    "Return a compact summary.",
+    output: Output.object(
+        schema: schema.jsonSchema,
+        name: schema.name,
+        as: Summary.self
+    )
+)
+
+print(result.output.bullets)
+```
+
+Use `generateObject` when you want the most direct Swift API. Use `Output` when you want one facade for text, object, array, choice, and JSON strategies.

@@ -161,7 +161,7 @@ public struct DirectAIChatTransport: AIChatTransport {
     public var requestOptions: AIChatRequestOptions
     public var timeoutNanoseconds: UInt64?
     public var retryPolicy: AIRetryPolicy
-    public var telemetry: AITelemetryOptions?
+    public var telemetry: Telemetry.Options?
     public var sendReasoning: Bool
     public var sendSources: Bool
     public var sendFinish: Bool
@@ -177,7 +177,7 @@ public struct DirectAIChatTransport: AIChatTransport {
         requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         sendReasoning: Bool = true,
         sendSources: Bool = false,
         sendFinish: Bool = true,

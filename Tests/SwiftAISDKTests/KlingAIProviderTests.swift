@@ -374,7 +374,7 @@ import Testing
     ))
     let model = try provider.videoModel("kling-v2.1-t2v")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "klingai.video",
         statusCode: 401,
         body: "Invalid token",
@@ -390,7 +390,7 @@ import Testing
             AIHTTPResponse(statusCode: 500, headers: [:], body: Data(#"{"code":5000,"message":"Poll failed"}"#.utf8))
         ])
     ))
-    await #expect(throws: AIError.httpStatus(
+    await #expect(throws: AIError.apiCall(
         provider: "klingai.video",
         statusCode: 500,
         body: "Poll failed"

@@ -7,24 +7,24 @@ struct AIRetryAttemptTelemetry: Sendable {
     var delayNanoseconds: UInt64
 }
 
-struct AITelemetryDispatcher: Sendable {
-    var options: AITelemetryOptions?
-    var integrations: [any AITelemetryIntegration]
+struct TelemetryDispatcher: Sendable {
+    var options: Telemetry.Options?
+    var integrations: [any Telemetry.Integration]
 
-    init(options: AITelemetryOptions?) {
+    init(options: Telemetry.Options?) {
         self.options = options
-        if options?.isEnabled == false {
+        guard let options, options.isEnabled else {
             integrations = []
-        } else {
-            integrations = options?.integrations ?? AITelemetry.registeredIntegrations()
+            return
         }
+        integrations = options.integrations ?? Telemetry.registeredIntegrations()
     }
 
     var isEnabled: Bool {
         !integrations.isEmpty
     }
 
-    func record(_ event: AITelemetryEvent) async {
+    func record(_ event: Telemetry.Event) async {
         guard isEnabled else { return }
         for integration in integrations {
             await integration.record(event)
@@ -46,7 +46,7 @@ struct AITelemetryDispatcher: Sendable {
         for integration in integrations {
             let innerExecute = execute
             execute = {
-                try await integration.executeLanguageModelCall(AITelemetryLanguageModelCallContext(
+                try await integration.executeLanguageModelCall(Telemetry.LanguageModelCallContext(
                     callID: callID,
                     operationID: operationID,
                     providerID: providerID,
@@ -72,7 +72,7 @@ struct AITelemetryDispatcher: Sendable {
         for integration in integrations {
             let innerExecute = execute
             execute = {
-                try await integration.executeTool(AITelemetryToolExecutionContext(
+                try await integration.executeTool(Telemetry.ToolExecutionContext(
                     callID: callID,
                     toolCallID: toolCallID,
                     toolName: toolName,
@@ -95,21 +95,21 @@ actor AIStreamTerminalState {
 }
 
 struct AIToolLoopTelemetryContext: Sendable {
-    var dispatcher: AITelemetryDispatcher
+    var dispatcher: TelemetryDispatcher
     var callID: String
     var operationID: String
     var providerID: String
     var modelID: String?
-    var telemetry: AITelemetryOptions?
+    var telemetry: Telemetry.Options?
     var started: UInt64
 
     init(
         operationID: String,
         providerID: String,
         modelID: String?,
-        telemetry: AITelemetryOptions?
+        telemetry: Telemetry.Options?
     ) {
-        self.dispatcher = AITelemetryDispatcher(options: telemetry)
+        self.dispatcher = TelemetryDispatcher(options: telemetry)
         self.callID = UUID().uuidString
         self.operationID = operationID
         self.providerID = providerID

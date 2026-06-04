@@ -47,7 +47,7 @@ import Testing
         dimensions: 64,
         chunkSize: 2,
         providerOptions: ["test": .object(["flag": .bool(true)])],
-        telemetry: AITelemetryOptions(integrations: [recorder])
+        telemetry: Telemetry.Options(integrations: [recorder])
     )
     let events = await recorder.events()
 
@@ -138,7 +138,7 @@ import Testing
 @Test func aiFacadeThrowsTypedNoGeneratedMediaErrors() async throws {
     let response = AIResponseMetadata(id: "response-1", modelID: "mock")
 
-    await #expect(throws: AINoImageGeneratedError(responses: [response])) {
+    await #expect(throws: AINoOutputError(kind: .image, responses: [response])) {
         _ = try await AI.generateImage(
             model: MockImageModel(result: ImageGenerationResult(
                 urls: [],
@@ -150,7 +150,7 @@ import Testing
         )
     }
 
-    await #expect(throws: AINoTranscriptGeneratedError(responses: [response])) {
+    await #expect(throws: AINoOutputError(kind: .transcript, responses: [response])) {
         _ = try await AI.transcribe(
             model: MockTranscriptionModel(result: TranscriptionResult(
                 text: "",
@@ -161,7 +161,7 @@ import Testing
         )
     }
 
-    await #expect(throws: AINoSpeechGeneratedError(responses: [response])) {
+    await #expect(throws: AINoOutputError(kind: .speech, responses: [response])) {
         _ = try await AI.generateSpeech(
             model: MockSpeechModel(result: SpeechResult(
                 audio: Data(),
@@ -171,7 +171,7 @@ import Testing
         )
     }
 
-    await #expect(throws: AINoVideoGeneratedError(responses: [response])) {
+    await #expect(throws: AINoOutputError(kind: .video, responses: [response])) {
         _ = try await AI.generateVideo(
             model: MockVideoModel(result: VideoGenerationResult(
                 urls: [],

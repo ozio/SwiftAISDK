@@ -5,9 +5,15 @@
 xcuserdata/
 DerivedData/
 .netrc
-*-api-key.txt
 .idea/
 docs-site/node_modules/
 docs-site/dist/
 .astro/
 Examples/.build/
+
+# Local credentials for live smoke tests.
+.env
+.env.*
+!/.env.example
+*-api-key
+*-api-key.txt

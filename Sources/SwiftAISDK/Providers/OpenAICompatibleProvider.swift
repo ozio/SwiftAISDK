@@ -340,6 +340,57 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         try speechModel()
     }
 
+    public func musicModel(_ modelID: String = "music_v1") throws -> any AudioGenerationModel {
+        guard providerID == "elevenlabs" else {
+            throw AIError.unsupportedModel(provider: providerID, capability: .audioGeneration, modelID: modelID)
+        }
+        return ElevenLabsMusicModel(modelID: modelID, config: config)
+    }
+
+    public func music(_ modelID: String = "music_v1") throws -> any AudioGenerationModel {
+        try musicModel(modelID)
+    }
+
+    public func soundEffectsModel(_ modelID: String = "eleven_text_to_sound_v2") throws -> any AudioGenerationModel {
+        guard providerID == "elevenlabs" else {
+            throw AIError.unsupportedModel(provider: providerID, capability: .audioGeneration, modelID: modelID)
+        }
+        return ElevenLabsSoundEffectsModel(modelID: modelID, config: config)
+    }
+
+    public func soundEffects(_ modelID: String = "eleven_text_to_sound_v2") throws -> any AudioGenerationModel {
+        try soundEffectsModel(modelID)
+    }
+
+    public func voiceChangerModel(_ modelID: String = "eleven_multilingual_sts_v2") throws -> any AudioTransformationModel {
+        guard providerID == "elevenlabs" else {
+            throw AIError.unsupportedModel(provider: providerID, capability: .audioTransformation, modelID: modelID)
+        }
+        return ElevenLabsVoiceChangerModel(modelID: modelID, config: config)
+    }
+
+    public func voiceChanger(_ modelID: String = "eleven_multilingual_sts_v2") throws -> any AudioTransformationModel {
+        try voiceChangerModel(modelID)
+    }
+
+    public func voiceIsolatorModel(_ modelID: String = "audio-isolation") throws -> any AudioTransformationModel {
+        guard providerID == "elevenlabs" else {
+            throw AIError.unsupportedModel(provider: providerID, capability: .audioTransformation, modelID: modelID)
+        }
+        return ElevenLabsVoiceIsolatorModel(modelID: modelID, config: config)
+    }
+
+    public func voiceIsolator(_ modelID: String = "audio-isolation") throws -> any AudioTransformationModel {
+        try voiceIsolatorModel(modelID)
+    }
+
+    public func dubbing() throws -> ElevenLabsDubbingClient {
+        guard providerID == "elevenlabs" else {
+            throw AIError.unsupportedModel(provider: providerID, capability: .dubbing, modelID: "dubbing")
+        }
+        return ElevenLabsDubbingClient(config: config)
+    }
+
     public func videoModel(_ modelID: String) throws -> any VideoModel {
         guard supportedCapabilities.contains(.video) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .video, modelID: modelID)
@@ -509,4 +560,3 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         return headers
     }
 }
-

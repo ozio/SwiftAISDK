@@ -141,7 +141,7 @@ public final class ElevenLabsTranscriptionModel: TranscriptionModel, @unchecked 
             rawValue: raw,
             segments: segments,
             language: raw["language_code"]?.stringValue,
-            durationInSeconds: transcriptionDuration(from: segments),
+            durationInSeconds: elevenLabsTranscriptionDuration(from: raw),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }

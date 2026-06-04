@@ -7,6 +7,9 @@ public enum ModelCapability: String, Hashable, Codable, CaseIterable, Sendable {
     case image
     case transcription
     case speech
+    case audioGeneration
+    case audioTransformation
+    case dubbing
     case video
     case reranking
 }
@@ -102,4 +105,3 @@ public struct AIMessage: Equatable, Hashable, Sendable {
         content.compactMap(\.text).joined(separator: "\n")
     }
 }
-

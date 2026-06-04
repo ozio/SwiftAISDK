@@ -36,7 +36,7 @@ import Testing
         model: model,
         prompt: "Stream",
         includeRawChunks: true,
-        telemetry: AITelemetryOptions(integrations: [recorder])
+        telemetry: Telemetry.Options(integrations: [recorder])
     ) {
         streamed.append(part)
     }
@@ -63,7 +63,7 @@ import Testing
     for try await part in AI.streamText(
         model: model,
         prompt: "Cancel stream",
-        telemetry: AITelemetryOptions(integrations: [recorder])
+        telemetry: Telemetry.Options(integrations: [recorder])
     ) {
         streamed.append(part)
         break
@@ -80,7 +80,7 @@ import Testing
 @Test func aiStreamTextRetriesRetryableStartErrors() async throws {
     let recorder = TelemetryRecorder()
     let model = FlakyStreamingLanguageModel(outcomes: [
-        .failure(AIError.httpStatusWithHeaders(
+        .failure(AIError.apiCall(
             provider: "mock",
             statusCode: 429,
             body: "rate limited",
@@ -97,7 +97,7 @@ import Testing
         model: model,
         prompt: "Retry stream",
         retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 1_000_000_000),
-        telemetry: AITelemetryOptions(integrations: [recorder])
+        telemetry: Telemetry.Options(integrations: [recorder])
     ) {
         streamed.append(part)
     }
@@ -118,7 +118,7 @@ import Testing
     let model = FlakyStreamingLanguageModel(outcomes: [
         .partsThenFailure(
             [.textDelta("partial")],
-            AIError.httpStatus(provider: "mock", statusCode: 503, body: "interrupted")
+            AIError.apiCall(provider: "mock", statusCode: 503, body: "interrupted")
         ),
         .parts([
             .textDelta("duplicated"),
@@ -137,7 +137,7 @@ import Testing
         }
         Issue.record("Expected stream failure after first part.")
     } catch let error as AIError {
-        #expect(error == .httpStatus(provider: "mock", statusCode: 503, body: "interrupted"))
+        #expect(error == .apiCall(provider: "mock", statusCode: 503, body: "interrupted"))
     }
 
     #expect(streamed == [.textDelta("partial")])
@@ -152,7 +152,7 @@ import Testing
             model: model,
             prompt: "Too slow",
             timeoutNanoseconds: 1_000_000,
-            telemetry: AITelemetryOptions(integrations: [recorder])
+            telemetry: Telemetry.Options(integrations: [recorder])
         ) {}
         Issue.record("Expected stream timeout.")
     } catch let error as AIError {

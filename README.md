@@ -27,10 +27,7 @@ import SwiftAISDK
 let provider = try AIProviders.openAI()
 let model = try provider.languageModel("gpt-4.1")
 
-let result = try await AI.generateText(
-    model: model,
-    prompt: "Write one sentence about Swift."
-)
+let result = try await model.generateText("Write one sentence about Swift.")
 
 print(result.text)
 ```
@@ -53,7 +50,7 @@ The `AI` facade mirrors the high-level shape of `@ai-sdk/ai` while using Swift
 protocols for each model family:
 
 ```swift
-let text = try await AI.generateText(model: model, prompt: "Hello")
+let text = try await model.generateText("Hello")
 
 let embeddings = try await AI.embedMany(
     model: try provider.embeddingModel("text-embedding-3-small"),
@@ -70,7 +67,7 @@ let image = try await AI.generateImage(
 Streaming text is exposed as an async sequence:
 
 ```swift
-for try await part in AI.streamText(model: model, prompt: "Stream this") {
+for try await part in model.streamText("Stream this") {
     print(part)
 }
 ```
@@ -103,9 +100,8 @@ let schema = AIJSONSchema<Summary>(
     name: "summary"
 )
 
-let result = try await AI.generateObject(
-    model: model,
-    prompt: "Summarize this changelog.",
+let result = try await model.generateObject(
+    "Summarize this changelog.",
     schema: schema
 )
 
@@ -117,9 +113,8 @@ The upstream-style `Output` entry point is available on `generateText` and
 schema-free JSON output:
 
 ```swift
-let result = try await AI.generateText(
-    model: model,
-    prompt: "Summarize this changelog.",
+let result = try await model.generateText(
+    "Summarize this changelog.",
     output: Output.object(schema: schema)
 )
 
@@ -132,7 +127,7 @@ Streaming and JSON strategies are also available through `streamObject`,
 
 ## Tools
 
-`AI.generateText` and `AI.streamText` can execute typed Swift tools and continue
+`generateText` and `streamText` can execute typed Swift tools and continue
 the conversation until the model returns a final answer or `maxSteps` is
 reached:
 
@@ -149,11 +144,9 @@ let weather = AITool(
     ["forecast": "sunny in \(arguments["city"]?.stringValue ?? "unknown")"]
 }
 
-let answer = try await AI.generateText(
-    model: model,
-    prompt: "What should I wear in Tokyo?",
-    executableTools: [weather],
-    maxSteps: 3
+let answer = try await model.generateText(
+    "What should I wear in Tokyo?",
+    tools: LanguageToolOptions([weather], maxSteps: 3)
 )
 ```
 
@@ -219,10 +212,9 @@ let mcp = try await MCPClient.connect(
 )
 
 let tools = try await mcp.tools()
-let answer = try await AI.generateText(
-    model: model,
-    prompt: "Search the docs.",
-    executableTools: Array(tools.values)
+let answer = try await model.generateText(
+    "Search the docs.",
+    tools: LanguageToolOptions(Array(tools.values))
 )
 ```
 

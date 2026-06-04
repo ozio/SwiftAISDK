@@ -57,7 +57,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                     )
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: response)
                     }
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     continuation.yield(.responseMetadata(cohereResponseMetadata(response: response, modelID: modelID)))

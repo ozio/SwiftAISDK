@@ -18,11 +18,12 @@ import Testing
     #expect(deepgramResult.durationInSeconds == 1.2)
 
     let elevenTransport = RecordingTransport(response: jsonResponse("""
-    {"text":"eleven text","language_code":"de","language_probability":0.99,"words":[{"text":"eleven","type":"word","start":0,"end":0.5},{"text":"text","type":"word","start":0.6,"end":1.1}]}
+    {"text":"eleven text","language_code":"de","language_probability":0.99,"words":[{"text":"early","type":"word","start":4,"end":9},{"text":"missing","type":"word","start":2,"end":null},{"text":"text","type":"word","start":0.6,"end":1.1}]}
     """))
     let eleven = try AIProviders.elevenLabs(settings: ProviderSettings(apiKey: "eleven-key", transport: elevenTransport))
     let elevenResult = try await eleven.transcriptionModel("scribe_v1").transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8)))
 
+    #expect(elevenResult.segments[1] == TranscriptionSegment(text: "missing", startSecond: 2, endSecond: 0))
     #expect(elevenResult.segments.last == TranscriptionSegment(text: "text", startSecond: 0.6, endSecond: 1.1))
     #expect(elevenResult.language == "de")
     #expect(elevenResult.durationInSeconds == 1.1)

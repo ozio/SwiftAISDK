@@ -1,0 +1,174 @@
+# Error handling
+
+Source URL: /core/error-handling/
+
+Every facade call is `async throws`, and streams are `AsyncThrowingStream`s. Catch specific error types when you need structured fields, then fall back to `Error` for logging.
+
+```swift title="Examples/Sources/ErrorHandling/main.swift"
+import SwiftAISDK
+
+@main
+struct ErrorHandlingExample {
+    static func main() async throws {
+        let provider = try AIProviders.openAI()
+        let model = try provider.languageModel("gpt-4.1-mini")
+
+        do {
+            let result = try await model.generateText(
+                "Summarize this document.",
+                options: LanguageGenerationOptions(
+                    retryPolicy: AIRetryPolicy(maxRetries: 1)
+                )
+            )
+            print(result.text)
+        } catch let error as AIAbortError {
+            print("Cancelled: \(error.reason ?? "no reason")")
+        } catch let error as AIError {
+            switch error {
+            case .missingAPIKey(let provider, let variables):
+                print("\(provider) needs one of: \(variables.joined(separator: ", "))")
+            case .unsupportedModel(let provider, let capability, let modelID):
+                print("\(provider) cannot use \(modelID) for \(capability.rawValue)")
+            case .invalidArgument(let argument, let message):
+                print("Invalid \(argument): \(message)")
+            case .apiCall(let apiError):
+                print("\(apiError.provider) HTTP \(apiError.statusCode): \(apiError.responseBody)")
+                print(apiError.responseHeaders)
+            case .invalidResponse(let provider, let message):
+                print("\(provider) returned an invalid response: \(message)")
+            case .gateway(let gatewayError):
+                print("Gateway \(gatewayError.statusCode): \(gatewayError.message)")
+            case .invalidURL(let url):
+                print("Invalid URL: \(url)")
+            case .timeout(let durationNanoseconds):
+                print("Timed out after \(durationNanoseconds) ns")
+            }
+        } catch {
+            print("Unexpected error: \(error)")
+        }
+    }
+}
+```
+
+## Common Error Types
+
+`AIError` is the primary cross-provider error enum:
+
+- `missingAPIKey` when credentials are missing.
+- `unsupportedModel` when a provider cannot route a model to the requested capability.
+- `invalidArgument` for invalid options, inputs, provider options, URLs, or tool settings.
+- `invalidResponse` when a provider response shape is not usable.
+- `apiCall` for provider HTTP failures.
+- `gateway` for Vercel Gateway-specific errors.
+- `invalidURL` for malformed URLs.
+- `timeout` for facade timeout failures.
+
+Other public error types cover narrower workflows:
+
+- `AIAbortError` for caller cancellation through `AIAbortController`.
+- `AIRetryError` when retry orchestration fails or is cancelled.
+- `AINoOutputError` when a provider returns a valid response without usable output.
+- `AITypeValidationError` and `AIObjectGenerationError` for structured output parsing, schema validation, and decoding.
+- `AINoSuchToolError`, `AIInvalidToolInputError`, `AIToolCallRepairError`, `AIInvalidToolApprovalError`, and `AIToolCallNotFoundForApprovalError` for tool execution and approval flows.
+- `MCPClientError` for MCP protocol, transport, and server errors.
+
+## HTTP Failures
+
+For provider HTTP failures, inspect status, body, and headers from the `AIAPICallError` carried by `AIError.apiCall`. `AIError.apiCallError` also exposes gateway failures in the same shape.
+
+```swift
+do {
+    _ = try await model.generateImage("A small app icon.")
+} catch let error as AIError {
+    if let apiError = error.apiCallError {
+        print(apiError.provider)
+        print(apiError.statusCode)
+        print(apiError.responseBody)
+        print(apiError.responseHeaders)
+    }
+}
+```
+
+## No Output
+
+When a provider succeeds but returns no usable content, catch `AINoOutputError` and inspect `kind`.
+
+```swift
+do {
+    _ = try await model.generateImage("A tiny app icon.")
+} catch let error as AINoOutputError {
+    switch error.kind {
+    case .image:
+        print("The provider returned no image.")
+    case .speech:
+        print("The provider returned no speech audio.")
+    case .transcript:
+        print("The provider returned no transcript.")
+    default:
+        print(error.description)
+    }
+}
+```
+
+## Retries And Timeouts
+
+Facade calls retry transient failures by default with `AIRetryPolicy.default`. Disable retries for deterministic tests or when the caller handles retries elsewhere.
+
+```swift
+let result = try await model.generateText(
+    "Do not retry this request.",
+    options: LanguageGenerationOptions(retryPolicy: .none)
+)
+```
+
+Set `timeoutNanoseconds` on the retry policy to bound a complete facade call.
+
+```swift
+let options = LanguageGenerationOptions(
+    retryPolicy: AIRetryPolicy(
+        maxRetries: 2,
+        timeoutNanoseconds: 30_000_000_000
+    )
+)
+
+let result = try await model.generateText("Summarize.", options: options)
+```
+
+Streaming retries only happen before the first emitted part. Once the stream has yielded a part, later provider errors are surfaced through the stream instead of replaying already-delivered output.
+
+```swift
+do {
+    for try await part in model.streamText("Stream this.") {
+        print(part)
+    }
+} catch {
+    print("Stream failed after yielding available parts: \(error)")
+}
+```
+
+## Cancellation
+
+Use `AIAbortController` when the caller can cancel an operation, such as a user leaving a screen.
+
+```swift
+let controller = AIAbortController()
+
+let task = Task {
+    try await model.generateImage(
+        "A poster concept.",
+        abortSignal: controller.signal
+    )
+}
+
+controller.abort(reason: "User closed the editor")
+
+do {
+    _ = try await task.value
+} catch let error as AIAbortError {
+    print(error.description)
+}
+```
+
+## Logging Safely
+
+Result and error metadata is useful for debugging, but it may contain provider response bodies, headers, prompts, or generated content. Prefer logging structured status fields first, and redact request bodies or response bodies before shipping logs to external systems.

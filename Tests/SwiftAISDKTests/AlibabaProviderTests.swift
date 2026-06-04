@@ -185,7 +185,7 @@ import Testing
     let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
     let model = try provider.languageModel("qwen-plus")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "alibaba.chat",
         statusCode: 429,
         body: "Rate limit exceeded",

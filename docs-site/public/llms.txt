@@ -2,17 +2,86 @@
 
 SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 
-## Pages
-- [Introduction](https://ozio.github.io/SwiftAISDK/): Learn what SwiftAISDK is and where to start.
-- [MCP tools](https://ozio.github.io/SwiftAISDK/cookbook/mcp-tools/): Discover MCP tools and pass them to AI.generateText.
-- [Generate text](https://ozio.github.io/SwiftAISDK/core/generate-text/): Use AI.generateText for one-shot language model calls.
-- [Stream text](https://ozio.github.io/SwiftAISDK/core/stream-text/): Consume language model output as an async sequence.
-- [Structured output](https://ozio.github.io/SwiftAISDK/core/structured-output/): Generate Decodable Swift values from JSON output.
-- [Tools](https://ozio.github.io/SwiftAISDK/core/tools/): Let a language model call typed Swift tools.
-- [Install](https://ozio.github.io/SwiftAISDK/getting-started/install/): Add SwiftAISDK to a SwiftPM package and configure credentials.
-- [Quickstart](https://ozio.github.io/SwiftAISDK/getting-started/quickstart/): Generate text with a provider and model.
-- [Provider matrix](https://ozio.github.io/SwiftAISDK/providers/): Generated provider capability overview for SwiftAISDK.
-- [Reference](https://ozio.github.io/SwiftAISDK/reference/): Generated overview of the public SwiftAISDK surface.
-- [Public symbols](https://ozio.github.io/SwiftAISDK/reference/generated/public-symbols/): Generated public SwiftAISDK symbol table.
-- [Troubleshooting](https://ozio.github.io/SwiftAISDK/troubleshooting/): Diagnose common SwiftAISDK setup and runtime issues.
-- [Upstream parity](https://ozio.github.io/SwiftAISDK/upstream-parity/): Understand how SwiftAISDK tracks Vercel AI SDK.
+## LLM-readable pages
+- [Introduction](/llms/index.txt): Learn what SwiftAISDK is and where to start.
+- [Components](/llms/components.txt): Generated component map for SwiftAISDK public APIs.
+- [Audio](/llms/components/audio.txt): Public SwiftAISDK APIs for audio.
+- [Chat and UI messages](/llms/components/chat-and-ui-messages.txt): Public SwiftAISDK APIs for chat and ui messages.
+- [Core runtime](/llms/components/core-runtime.txt): Public SwiftAISDK APIs for core runtime.
+- [Errors](/llms/components/errors.txt): Public SwiftAISDK APIs for errors.
+- [MCP](/llms/components/mcp.txt): Public SwiftAISDK APIs for mcp.
+- [Media](/llms/components/media.txt): Public SwiftAISDK APIs for media.
+- [Middleware](/llms/components/middleware.txt): Public SwiftAISDK APIs for middleware.
+- [Provider models](/llms/components/provider-models.txt): Public SwiftAISDK APIs for provider models.
+- [Providers](/llms/components/providers.txt): Public SwiftAISDK APIs for providers.
+- [Structured output](/llms/components/structured-output.txt): Public SwiftAISDK APIs for structured output.
+- [Telemetry](/llms/components/telemetry.txt): Public SwiftAISDK APIs for telemetry.
+- [Tools](/llms/components/tools.txt): Public SwiftAISDK APIs for tools.
+- [Video and reranking](/llms/components/video-and-reranking.txt): Public SwiftAISDK APIs for video and reranking.
+- [MCP tools](/llms/cookbook/mcp-tools.txt): Discover MCP tools and pass them to a language model.
+- [Dubbing](/llms/core/dubbing.txt): Create and inspect provider dubbing jobs.
+- [Embeddings](/llms/core/embeddings.txt): Convert text into vectors for search, clustering, and retrieval.
+- [Error handling](/llms/core/error-handling.txt): Handle validation, provider, retry, timeout, abort, and output errors.
+- [Generate audio](/llms/core/generate-audio.txt): Generate provider audio that is not speech.
+- [Generate image](/llms/core/generate-image.txt): Create or edit images with an image model.
+- [Generate speech](/llms/core/generate-speech.txt): Convert text into audio with a speech model.
+- [Generate text](/llms/core/generate-text.txt): Use a language model for one-shot text generation.
+- [Generate video](/llms/core/generate-video.txt): Create video clips with a video model.
+- [Rerank](/llms/core/rerank.txt): Score and reorder documents for a query.
+- [Stream text](/llms/core/stream-text.txt): Consume language model output as an async sequence.
+- [Structured output](/llms/core/structured-output.txt): Generate Decodable Swift values from JSON output.
+- [Telemetry](/llms/core/telemetry.txt): Record provider calls, retries, streams, tool execution, usage, and metadata.
+- [Tools](/llms/core/tools.txt): Let a language model call typed Swift tools.
+- [Transcribe audio](/llms/core/transcribe.txt): Convert audio bytes into text with a transcription model.
+- [Transform audio](/llms/core/transform-audio.txt): Transform existing audio through provider-native audio tools.
+- [Install](/llms/getting-started/install.txt): Add SwiftAISDK to a SwiftPM package and configure credentials.
+- [Quickstart](/llms/getting-started/quickstart.txt): Generate text with a provider and model.
+- [Provider matrix](/llms/providers.txt): Generated provider capability overview for SwiftAISDK.
+- ["alibaba"](/llms/providers/alibaba.txt): "alibaba provider capabilities and factories."
+- ["amazon-bedrock.anthropic"](/llms/providers/amazon-bedrock-anthropic.txt): "amazon-bedrock.anthropic provider capabilities and factories."
+- ["amazon-bedrock"](/llms/providers/amazon-bedrock.txt): "amazon-bedrock provider capabilities and factories."
+- ["anthropic-aws"](/llms/providers/anthropic-aws.txt): "anthropic-aws provider capabilities and factories."
+- ["anthropic"](/llms/providers/anthropic.txt): "anthropic provider capabilities and factories."
+- ["assemblyai"](/llms/providers/assemblyai.txt): "assemblyai provider capabilities and factories."
+- ["azure"](/llms/providers/azure.txt): "azure provider capabilities and factories."
+- ["baseten"](/llms/providers/baseten.txt): "baseten provider capabilities and factories."
+- ["bedrock-mantle"](/llms/providers/bedrock-mantle.txt): "bedrock-mantle provider capabilities and factories."
+- ["black-forest-labs"](/llms/providers/black-forest-labs.txt): "black-forest-labs provider capabilities and factories."
+- ["bytedance"](/llms/providers/bytedance.txt): "bytedance provider capabilities and factories."
+- ["cerebras"](/llms/providers/cerebras.txt): "cerebras provider capabilities and factories."
+- ["cohere"](/llms/providers/cohere.txt): "cohere provider capabilities and factories."
+- ["deepgram"](/llms/providers/deepgram.txt): "deepgram provider capabilities and factories."
+- ["deepinfra"](/llms/providers/deepinfra.txt): "deepinfra provider capabilities and factories."
+- ["deepseek"](/llms/providers/deepseek.txt): "deepseek provider capabilities and factories."
+- ["elevenlabs"](/llms/providers/elevenlabs.txt): "elevenlabs provider capabilities and factories."
+- ["fal"](/llms/providers/fal.txt): "fal provider capabilities and factories."
+- ["fireworks"](/llms/providers/fireworks.txt): "fireworks provider capabilities and factories."
+- ["gateway"](/llms/providers/gateway.txt): "gateway provider capabilities and factories."
+- ["gladia"](/llms/providers/gladia.txt): "gladia provider capabilities and factories."
+- ["google.generative-ai"](/llms/providers/google-generative-ai.txt): "google.generative-ai provider capabilities and factories."
+- ["google.vertex"](/llms/providers/google-vertex.txt): "google.vertex provider capabilities and factories."
+- ["googleVertex.anthropic"](/llms/providers/googlevertex-anthropic.txt): "googleVertex.anthropic provider capabilities and factories."
+- ["googleVertex.maas"](/llms/providers/googlevertex-maas.txt): "googleVertex.maas provider capabilities and factories."
+- ["googleVertex.xai"](/llms/providers/googlevertex-xai.txt): "googleVertex.xai provider capabilities and factories."
+- ["groq"](/llms/providers/groq.txt): "groq provider capabilities and factories."
+- ["huggingface"](/llms/providers/huggingface.txt): "huggingface provider capabilities and factories."
+- ["hume"](/llms/providers/hume.txt): "hume provider capabilities and factories."
+- ["klingai"](/llms/providers/klingai.txt): "klingai provider capabilities and factories."
+- ["lmnt"](/llms/providers/lmnt.txt): "lmnt provider capabilities and factories."
+- ["luma"](/llms/providers/luma.txt): "luma provider capabilities and factories."
+- ["mistral"](/llms/providers/mistral.txt): "mistral provider capabilities and factories."
+- ["moonshotai"](/llms/providers/moonshotai.txt): "moonshotai provider capabilities and factories."
+- ["open-responses.responses"](/llms/providers/open-responses-responses.txt): "open-responses.responses provider capabilities and factories."
+- ["openai-compatible"](/llms/providers/openai-compatible.txt): "openai-compatible provider capabilities and factories."
+- ["openai"](/llms/providers/openai.txt): "openai provider capabilities and factories."
+- ["perplexity"](/llms/providers/perplexity.txt): "perplexity provider capabilities and factories."
+- ["prodia"](/llms/providers/prodia.txt): "prodia provider capabilities and factories."
+- ["quiverai"](/llms/providers/quiverai.txt): "quiverai provider capabilities and factories."
+- ["replicate"](/llms/providers/replicate.txt): "replicate provider capabilities and factories."
+- ["revai"](/llms/providers/revai.txt): "revai provider capabilities and factories."
+- ["togetherai"](/llms/providers/togetherai.txt): "togetherai provider capabilities and factories."
+- ["vercel"](/llms/providers/vercel.txt): "vercel provider capabilities and factories."
+- ["voyage"](/llms/providers/voyage.txt): "voyage provider capabilities and factories."
+- ["xai"](/llms/providers/xai.txt): "xai provider capabilities and factories."
+- [Public symbols](/llms/reference/generated/public-symbols.txt): Generated public SwiftAISDK symbol table.
+- [Troubleshooting](/llms/troubleshooting.txt): Diagnose common SwiftAISDK setup and runtime issues.

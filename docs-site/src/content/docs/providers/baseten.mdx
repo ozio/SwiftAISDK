@@ -1,0 +1,25 @@
+---
+title: "baseten"
+description: "baseten provider capabilities and factories."
+---
+
+## Package
+
+`@ai-sdk/baseten`
+
+## Factories
+
+`AIProviders.baseten`
+
+## Capabilities
+
+- Language
+- Embedding
+
+## Notes
+
+`ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1` and mirror the upstream performance-client body plus 128-input batching.
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

@@ -1,0 +1,19 @@
+# "black-forest-labs"
+
+Source URL: /providers/black-forest-labs/
+
+## Package
+
+`@ai-sdk/black-forest-labs`
+
+## Factories
+
+`AIProviders.blackForestLabs`
+
+## Capabilities
+
+- Image
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

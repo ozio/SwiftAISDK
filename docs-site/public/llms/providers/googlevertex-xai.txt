@@ -1,0 +1,19 @@
+# "googleVertex.xai"
+
+Source URL: /providers/googlevertex-xai/
+
+## Package
+
+`@ai-sdk/google-vertex`
+
+## Factories
+
+`AIProviders.googleVertexXAI`
+
+## Capabilities
+
+- Language
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

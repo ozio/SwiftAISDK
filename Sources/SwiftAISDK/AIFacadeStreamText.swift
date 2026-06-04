@@ -6,7 +6,7 @@ extension AI {
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
             return streamTextWithTelemetry(
@@ -52,7 +52,7 @@ extension AI {
         toolApproval: AIToolApproval? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let stream = AsyncThrowingStream<LanguageStreamPart, Error> { continuation in
             let task = Task {
@@ -230,7 +230,7 @@ extension AI {
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let request = LanguageModelRequest(
             messages: [.user(prompt)],
@@ -283,7 +283,7 @@ extension AI {
         output: AIOutput<FinalOutput, PartialOutput>,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
@@ -317,7 +317,7 @@ extension AI {
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {

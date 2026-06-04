@@ -32,7 +32,7 @@ func streamFromGoogleGenerateContent(
     warnings: [AIWarning] = []
 ) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
-        throw httpStatusError(provider: providerID, response: response)
+        throw apiCallError(provider: providerID, response: response)
     }
 
     var parts: [LanguageStreamPart] = [

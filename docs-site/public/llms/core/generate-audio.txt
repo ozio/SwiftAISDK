@@ -1,0 +1,52 @@
+# Generate audio
+
+Source URL: /core/generate-audio/
+
+Use `generateAudio` for prompt-to-audio models that are not text-to-speech, such as ElevenLabs music and sound effects.
+
+```swift title="Examples/Sources/GenerateAudio/main.swift"
+import Foundation
+import SwiftAISDK
+
+@main
+struct GenerateAudioExample {
+    static func main() async {
+        do {
+            let provider = try AIProviders.elevenLabs()
+
+            let soundEffects = try provider.soundEffectsModel()
+            let click = try await AI.generateAudio(
+                "A single soft interface click.",
+                using: soundEffects,
+                durationSeconds: 0.5,
+                format: "mp3_32",
+                providerOptions: ["elevenlabs": ["promptInfluence": 0.3]]
+            )
+            print("Generated sound effect bytes: \(click.audio.count)")
+
+            let music = try provider.musicModel()
+            let cue = try await AI.generateAudio(
+                "Three seconds of quiet instrumental piano, no vocals.",
+                using: music,
+                durationSeconds: 3,
+                format: "mp3_32",
+                providerOptions: ["elevenlabs": ["forceInstrumental": true]]
+            )
+            print("Generated music bytes: \(cue.audio.count)")
+        } catch {
+            print("Audio generation failed: \(error)")
+        }
+    }
+}
+```
+
+`AudioGenerationRequest` carries:
+
+- `prompt`: the natural-language audio prompt.
+- `durationSeconds`: optional requested duration.
+- `format`: provider output format such as `mp3_32` or `mp3_44100_128`.
+- `seed`, `providerOptions`, `extraBody`, `headers`, and `abortSignal`.
+
+`AudioGenerationResult` returns generated audio bytes, content type, warnings, provider metadata, request metadata, and response metadata.
+
+ElevenLabs exposes `provider.musicModel()` for `/v1/music` and `provider.soundEffectsModel()` for `/v1/sound-generation`.

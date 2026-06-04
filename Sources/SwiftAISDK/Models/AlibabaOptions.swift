@@ -16,9 +16,9 @@ func alibabaOptions(from request: LanguageModelRequest) throws -> [String: JSONV
 func alibabaHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     let body = alibabaErrorMessage(from: response.body) ?? response.bodyText
     guard !response.headers.isEmpty else {
-        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+        return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
     }
-    return .httpStatusWithHeaders(
+    return .apiCall(
         provider: provider,
         statusCode: response.statusCode,
         body: body,

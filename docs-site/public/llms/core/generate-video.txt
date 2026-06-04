@@ -1,0 +1,63 @@
+# Generate video
+
+Source URL: /core/generate-video/
+
+Use `generateVideo` when a provider exposes text-to-video or image-to-video.
+
+```swift title="Examples/Sources/GenerateVideo/main.swift"
+import SwiftAISDK
+
+@main
+struct GenerateVideoExample {
+    static func main() async throws {
+        let provider = try AIProviders.google()
+        let model = try provider.videoModel("veo-3.1-generate-preview")
+
+        let result = try await model.generateVideo(
+            "A tiny robot walks across a desk and waves.",
+            aspectRatio: "16:9",
+            durationSeconds: 4
+        )
+
+        print(result.urls.first ?? result.base64Videos.first ?? "")
+    }
+}
+```
+
+For image-to-video models, include a source image.
+
+```swift
+let image = ImageInputFile(
+    data: imageData,
+    mediaType: "image/png",
+    fileName: "start.png"
+)
+
+let result = try await model.generateVideo(
+    "Animate the scene with a slow camera push.",
+    image: image,
+    durationSeconds: 5
+)
+```
+
+## Options
+
+- `aspectRatio`, `resolution`, and `fps` describe output shape and playback.
+- `durationSeconds` requests clip duration.
+- `image` supplies an image-to-video starting frame.
+- `seed` requests deterministic output when supported.
+- `count` requests multiple videos.
+- `providerOptions` carries provider-specific controls, including polling settings for async providers.
+- `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
+
+## Results
+
+`VideoGenerationResult` may contain hosted URLs, base64 videos, or an operation ID:
+
+- `urls`
+- `base64Videos`
+- `operationID`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

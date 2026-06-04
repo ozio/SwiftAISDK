@@ -1,0 +1,19 @@
+# "bytedance"
+
+Source URL: /providers/bytedance/
+
+## Package
+
+`@ai-sdk/bytedance`
+
+## Factories
+
+`AIProviders.byteDance`
+
+## Capabilities
+
+- Video
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

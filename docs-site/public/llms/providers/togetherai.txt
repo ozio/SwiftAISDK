@@ -1,0 +1,27 @@
+# "togetherai"
+
+Source URL: /providers/togetherai/
+
+## Package
+
+`@ai-sdk/togetherai`
+
+## Factories
+
+`AIProviders.togetherAI`
+
+## Capabilities
+
+- Language
+- Completion
+- Embedding
+- Image
+- Reranking
+
+## Notes
+
+Image generation mirrors upstream `maxImagesPerCall = 1`; image and reranking responses are validated against the upstream-focused JSON shapes.
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

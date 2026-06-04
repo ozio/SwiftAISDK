@@ -1,9 +1,7 @@
 ---
 title: MCP tools
-description: Discover MCP tools and pass them to AI.generateText.
+description: Discover MCP tools and pass them to a language model.
 ---
-
-# MCP Tools
 
 Use MCP when tools live outside your process or are shared by multiple clients.
 
@@ -19,11 +17,9 @@ let tools = try await mcp.tools()
 let provider = try AIProviders.openAI()
 let model = try provider.languageModel("gpt-4.1-mini")
 
-let answer = try await AI.generateText(
-    model: model,
-    prompt: "Search the docs and summarize the answer.",
-    executableTools: Array(tools.values),
-    maxSteps: 4
+let answer = try await model.generateText(
+    "Search the docs and summarize the answer.",
+    tools: LanguageToolOptions(Array(tools.values), maxSteps: 4)
 )
 
 print(answer.text)

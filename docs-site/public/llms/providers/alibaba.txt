@@ -1,0 +1,20 @@
+# "alibaba"
+
+Source URL: /providers/alibaba/
+
+## Package
+
+`@ai-sdk/alibaba`
+
+## Factories
+
+`AIProviders.alibaba`
+
+## Capabilities
+
+- Language
+- Video
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

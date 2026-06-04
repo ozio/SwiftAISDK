@@ -45,7 +45,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let base64Images = raw["images"]?.arrayValue?.compactMap { image in
@@ -102,7 +102,7 @@ public final class DeepInfraImageModel: ImageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let base64Images = raw["data"]?.arrayValue?.compactMap { $0["b64_json"]?.stringValue } ?? []
@@ -149,7 +149,7 @@ private func deepInfraResolveImageFile(_ file: ImageInputFile, transport: AITran
     }
     let response = try await downloadURL(url, transport: transport)
     guard (200..<300).contains(response.statusCode) else {
-        throw httpStatusError(provider: "deepinfra.image", response: response)
+        throw apiCallError(provider: "deepinfra.image", response: response)
     }
     let mediaType = file.mediaType
         ?? response.headers["content-type"]

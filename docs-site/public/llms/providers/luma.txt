@@ -1,0 +1,19 @@
+# "luma"
+
+Source URL: /providers/luma/
+
+## Package
+
+`@ai-sdk/luma`
+
+## Factories
+
+`AIProviders.luma`
+
+## Capabilities
+
+- Image
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

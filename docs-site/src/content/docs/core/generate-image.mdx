@@ -1,0 +1,47 @@
+---
+title: Generate image
+description: Create or edit images with an image model.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import generateImageExample from '../../../../../Examples/Sources/GenerateImage/main.swift?raw';
+
+Use `generateImage` when a provider exposes an image model. The Swift-native convenience accepts the prompt directly and builds an `ImageGenerationRequest` for you.
+
+<Code code={generateImageExample} lang="swift" title="Examples/Sources/GenerateImage/main.swift" />
+
+For image editing, pass input files and an optional mask.
+
+```swift
+let source = ImageInputFile(
+    data: imageData,
+    mediaType: "image/png",
+    fileName: "source.png"
+)
+
+let result = try await model.generateImage(
+    "Replace the background with a quiet desk.",
+    files: [source]
+)
+```
+
+## Options
+
+- `size` and `aspectRatio` describe the output shape.
+- `seed` requests deterministic output when a provider supports it.
+- `count` requests multiple images.
+- `files` and `mask` support image editing.
+- `providerOptions` carries provider-specific controls.
+- `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
+
+## Results
+
+`ImageGenerationResult` may contain hosted URLs, base64 images, or both:
+
+- `urls`
+- `base64Images`
+- `usage`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

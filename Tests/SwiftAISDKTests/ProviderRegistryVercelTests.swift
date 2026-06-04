@@ -49,27 +49,26 @@ import Testing
     _ = try AIProviders.openResponses(name: "open-responses", url: "https://example.com/responses", settings: settings)
 }
 
-@Test func providerRegistryExposesUpstreamFactoryNameAliases() throws {
+@Test func providerRegistryExposesCanonicalFactoryNames() throws {
     let transport = RecordingTransport(response: jsonResponse("{}"))
     let settings = ProviderSettings(apiKey: "key", transport: transport)
 
-    #expect(try AIProviders.openai(settings: settings).providerID == "openai")
-    #expect(try AIProviders.anthropicAws(settings: AnthropicAWSProviderSettings(region: "us-east-1", workspaceID: "workspace", apiKey: "key", transport: transport)).providerID == "anthropic-aws")
-    #expect(try AIProviders.openaiCompatible(name: "compat", baseURL: "https://api.example.com", apiKey: "key", transport: transport).providerID == "compat")
-    #expect(try AIProviders.xai(settings: settings).providerID == "xai")
-    #expect(try AIProviders.deepseek(settings: settings).providerID == "deepseek")
-    #expect(try AIProviders.togetherai(settings: settings).providerID == "togetherai")
-    #expect(try AIProviders.deepinfra(settings: settings).providerID == "deepinfra")
-    #expect(try AIProviders.moonshotai(settings: settings).providerID == "moonshotai")
-    #expect(try AIProviders.huggingface(settings: settings).providerID == "huggingface")
-    #expect(try AIProviders.assemblyai(settings: settings).providerID == "assemblyai")
-    #expect(try AIProviders.elevenlabs(settings: settings).providerID == "elevenlabs")
-    #expect(try AIProviders.revai(settings: settings).providerID == "revai")
-    #expect(try AIProviders.klingai(settings: settings).providerID == "klingai")
-    #expect(try AIProviders.bytedance(settings: settings).providerID == "bytedance")
-    #expect(try AIProviders.quiverai(settings: settings).providerID == "quiverai")
-    #expect(try AIProviders.azureOpenAI(resourceName: "resource", settings: settings).providerID == "azure")
-    #expect(try AIProviders.azureOpenai(resourceName: "resource", settings: settings).providerID == "azure")
+    #expect(try AIProviders.openAI(settings: settings).providerID == "openai")
+    #expect(try AIProviders.anthropicAWS(settings: AnthropicAWSProviderSettings(region: "us-east-1", workspaceID: "workspace", apiKey: "key", transport: transport)).providerID == "anthropic-aws")
+    #expect(try AIProviders.openAICompatible(name: "compat", baseURL: "https://api.example.com", apiKey: "key", transport: transport).providerID == "compat")
+    #expect(try AIProviders.xAI(settings: settings).providerID == "xai")
+    #expect(try AIProviders.deepSeek(settings: settings).providerID == "deepseek")
+    #expect(try AIProviders.togetherAI(settings: settings).providerID == "togetherai")
+    #expect(try AIProviders.deepInfra(settings: settings).providerID == "deepinfra")
+    #expect(try AIProviders.moonshotAI(settings: settings).providerID == "moonshotai")
+    #expect(try AIProviders.huggingFace(settings: settings).providerID == "huggingface")
+    #expect(try AIProviders.assemblyAI(settings: settings).providerID == "assemblyai")
+    #expect(try AIProviders.elevenLabs(settings: settings).providerID == "elevenlabs")
+    #expect(try AIProviders.revAI(settings: settings).providerID == "revai")
+    #expect(try AIProviders.klingAI(settings: settings).providerID == "klingai")
+    #expect(try AIProviders.byteDance(settings: settings).providerID == "bytedance")
+    #expect(try AIProviders.quiverAI(settings: settings).providerID == "quiverai")
+    #expect(try AIProviders.azure(resourceName: "resource", settings: settings).providerID == "azure")
 }
 
 @Test func providerFactoryAliasesMirrorUpstreamNames() throws {

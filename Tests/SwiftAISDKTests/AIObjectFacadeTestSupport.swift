@@ -70,14 +70,14 @@ struct ObjectFacadePartialAnswer: Codable, Equatable, Sendable {
     var value: String?
     var count: Int?
 }
-actor ObjectTelemetryRecorder: AITelemetryIntegration {
-    private var recordedEvents: [AITelemetryEvent] = []
+actor ObjectTelemetryRecorder: Telemetry.Integration {
+    private var recordedEvents: [Telemetry.Event] = []
 
-    func record(_ event: AITelemetryEvent) {
+    func record(_ event: Telemetry.Event) {
         recordedEvents.append(event)
     }
 
-    func events() -> [AITelemetryEvent] {
+    func events() -> [Telemetry.Event] {
         recordedEvents
     }
 }

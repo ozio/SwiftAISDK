@@ -5,7 +5,7 @@ func withTelemetry<Output: Sendable>(
     providerID: String,
     modelID: String?,
     input: JSONValue?,
-    telemetry: AITelemetryOptions?,
+    telemetry: Telemetry.Options?,
     retryPolicy: AIRetryPolicy,
     abortSignal: AIAbortSignal? = nil,
     callID providedCallID: String? = nil,
@@ -17,7 +17,7 @@ func withTelemetry<Output: Sendable>(
     wrapLanguageModelCall: Bool = false,
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
-    let dispatcher = AITelemetryDispatcher(options: telemetry)
+    let dispatcher = TelemetryDispatcher(options: telemetry)
     guard dispatcher.isEnabled else {
         let result = try await withRetry(policy: retryPolicy, abortSignal: abortSignal, operation: operation)
         await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
@@ -83,7 +83,7 @@ func withTelemetry<Output: Sendable>(
         await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
         return result
     } catch {
-        let eventKind: AITelemetryEventKind = isCancellationTelemetryError(error) ? .abort : .error
+        let eventKind: Telemetry.Event.Kind = isCancellationTelemetryError(error) ? .abort : .error
         await dispatcher.record(telemetryEvent(
             kind: eventKind,
             callID: callID,

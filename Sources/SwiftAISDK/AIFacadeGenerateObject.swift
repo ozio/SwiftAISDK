@@ -9,7 +9,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -63,7 +63,7 @@ extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -105,7 +105,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -144,7 +144,7 @@ extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -184,7 +184,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<[Element]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -239,7 +239,7 @@ extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<[Element]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -281,7 +281,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<[ElementSchema.Output]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -320,7 +320,7 @@ extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<[ElementSchema.Output]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -359,7 +359,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -415,7 +415,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -459,7 +459,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -509,7 +509,7 @@ extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil

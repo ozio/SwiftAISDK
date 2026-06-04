@@ -170,11 +170,8 @@ func failingPartStream<Part: Sendable>(_ error: Error) -> AsyncThrowingStream<Pa
 
 func isRetryable(_ error: Error) -> Bool {
     if let error = error as? AIError {
-        if case let .httpStatus(_, statusCode, _) = error {
-            return isRetryableHTTPStatus(statusCode)
-        }
-        if case let .httpStatusWithHeaders(_, statusCode, _, _) = error {
-            return isRetryableHTTPStatus(statusCode)
+        if let apiError = error.apiCallError {
+            return apiError.isRetryable
         }
         if case let .gateway(gatewayError) = error {
             return gatewayError.isRetryable
@@ -207,8 +204,8 @@ func retryAfterDelayNanoseconds(from error: Error) -> UInt64? {
 
 func httpHeaders(from error: Error) -> [String: String]? {
     if let error = error as? AIError {
-        if case let .httpStatusWithHeaders(_, _, _, headers) = error {
-            return headers
+        if let apiError = error.apiCallError {
+            return apiError.responseHeaders
         }
         if case let .gateway(gatewayError) = error {
             return gatewayError.headers

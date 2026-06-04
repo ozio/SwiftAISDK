@@ -1,0 +1,68 @@
+# Provider matrix
+
+Source URL: /providers/
+
+This page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.
+
+Language: 31
+Completion: 7
+Embedding: 15
+Image: 18
+Transcription: 10
+Speech: 8
+Audio generation: 1
+Audio transformation: 1
+Dubbing: 1
+Video: 10
+Reranking: 5
+Files: 5
+Skills: 3
+
+| Provider | Upstream package | Swift factories | Language | Embedding | Image | Transcription | Speech | Audio generation | Audio transformation | Dubbing | Video | Reranking | Files | Skills |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [`alibaba`](alibaba/) | `@ai-sdk/alibaba` | `AIProviders.alibaba` | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |
+| [`amazon-bedrock`](amazon-bedrock/) | `@ai-sdk/amazon-bedrock` | `AIProviders.amazonBedrock` | ✅ | ✅ | ✅ |  |  |  |  |  |  | ✅ |  |  |
+| [`amazon-bedrock.anthropic`](amazon-bedrock-anthropic/) | `@ai-sdk/amazon-bedrock` | `AIProviders.amazonBedrockAnthropic` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`bedrock-mantle`](bedrock-mantle/) | `@ai-sdk/amazon-bedrock` | `AIProviders.bedrockMantle` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`anthropic`](anthropic/) | `@ai-sdk/anthropic` | `AIProviders.anthropic` | ✅ |  |  |  |  |  |  |  |  |  | ✅ | ✅ |
+| [`anthropic-aws`](anthropic-aws/) | `@ai-sdk/anthropic-aws` | `AIProviders.anthropicAWS` | ✅ |  |  |  |  |  |  |  |  |  | ✅ | ✅ |
+| [`assemblyai`](assemblyai/) | `@ai-sdk/assemblyai` | `AIProviders.assemblyAI` |  |  |  | ✅ |  |  |  |  |  |  |  |  |
+| [`azure`](azure/) | `@ai-sdk/azure` | `AIProviders.azure` | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |
+| [`baseten`](baseten/) | `@ai-sdk/baseten` | `AIProviders.baseten` | ✅ | ✅ |  |  |  |  |  |  |  |  |  |  |
+| [`black-forest-labs`](black-forest-labs/) | `@ai-sdk/black-forest-labs` | `AIProviders.blackForestLabs` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
+| [`bytedance`](bytedance/) | `@ai-sdk/bytedance` | `AIProviders.byteDance` |  |  |  |  |  |  |  |  | ✅ |  |  |  |
+| [`cerebras`](cerebras/) | `@ai-sdk/cerebras` | `AIProviders.cerebras` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`cohere`](cohere/) | `@ai-sdk/cohere` | `AIProviders.cohere` | ✅ | ✅ |  |  |  |  |  |  |  | ✅ |  |  |
+| [`deepgram`](deepgram/) | `@ai-sdk/deepgram` | `AIProviders.deepgram` |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |
+| [`deepinfra`](deepinfra/) | `@ai-sdk/deepinfra` | `AIProviders.deepInfra` | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
+| [`deepseek`](deepseek/) | `@ai-sdk/deepseek` | `AIProviders.deepSeek` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`elevenlabs`](elevenlabs/) | `@ai-sdk/elevenlabs` | `AIProviders.elevenLabs` |  |  |  | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  |  |
+| [`fal`](fal/) | `@ai-sdk/fal` | `AIProviders.fal` |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  |  |  |
+| [`fireworks`](fireworks/) | `@ai-sdk/fireworks` | `AIProviders.fireworks` | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
+| [`gateway`](gateway/) | `@ai-sdk/gateway` | `AIProviders.gateway` | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ | ✅ |  |  |
+| [`gladia`](gladia/) | `@ai-sdk/gladia` | `AIProviders.gladia` |  |  |  | ✅ |  |  |  |  |  |  |  |  |
+| [`google.generative-ai`](google-generative-ai/) | `@ai-sdk/google` | `AIProviders.google` | ✅ | ✅ | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |
+| [`google.vertex`](google-vertex/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertex` | ✅ | ✅ | ✅ |  |  |  |  |  | ✅ |  |  |  |
+| [`googleVertex.maas`](googlevertex-maas/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertexMaaS` | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
+| [`googleVertex.xai`](googlevertex-xai/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertexXAI` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`googleVertex.anthropic`](googlevertex-anthropic/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertexAnthropic` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`groq`](groq/) | `@ai-sdk/groq` | `AIProviders.groq` | ✅ |  |  | ✅ |  |  |  |  |  |  |  |  |
+| [`huggingface`](huggingface/) | `@ai-sdk/huggingface` | `AIProviders.huggingFace` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`hume`](hume/) | `@ai-sdk/hume` | `AIProviders.hume` |  |  |  |  | ✅ |  |  |  |  |  |  |  |
+| [`klingai`](klingai/) | `@ai-sdk/klingai` | `AIProviders.klingAI` |  |  |  |  |  |  |  |  | ✅ |  |  |  |
+| [`lmnt`](lmnt/) | `@ai-sdk/lmnt` | `AIProviders.lmnt` |  |  |  |  | ✅ |  |  |  |  |  |  |  |
+| [`luma`](luma/) | `@ai-sdk/luma` | `AIProviders.luma` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
+| [`mistral`](mistral/) | `@ai-sdk/mistral` | `AIProviders.mistral` | ✅ | ✅ |  |  |  |  |  |  |  |  |  |  |
+| [`moonshotai`](moonshotai/) | `@ai-sdk/moonshotai` | `AIProviders.moonshotAI` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`open-responses.responses`](open-responses-responses/) | `@ai-sdk/open-responses` | `AIProviders.openResponses` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`openai`](openai/) | `@ai-sdk/openai` | `AIProviders.openAI` | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  | ✅ | ✅ |
+| [`openai-compatible`](openai-compatible/) | `@ai-sdk/openai-compatible` | `AIProviders.openAICompatible` | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
+| [`perplexity`](perplexity/) | `@ai-sdk/perplexity` | `AIProviders.perplexity` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`prodia`](prodia/) | `@ai-sdk/prodia` | `AIProviders.prodia` | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |
+| [`quiverai`](quiverai/) | `@ai-sdk/quiverai` | `AIProviders.quiverAI` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
+| [`replicate`](replicate/) | `@ai-sdk/replicate` | `AIProviders.replicate` |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |
+| [`revai`](revai/) | `@ai-sdk/revai` | `AIProviders.revAI` |  |  |  | ✅ |  |  |  |  |  |  |  |  |
+| [`togetherai`](togetherai/) | `@ai-sdk/togetherai` | `AIProviders.togetherAI` | ✅ | ✅ | ✅ |  |  |  |  |  |  | ✅ |  |  |
+| [`vercel`](vercel/) | `@ai-sdk/vercel` | `AIProviders.vercel` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`voyage`](voyage/) | `@ai-sdk/voyage` | `AIProviders.voyage` |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |
+| [`xai`](xai/) | `@ai-sdk/xai` | `AIProviders.xAI` | ✅ |  | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |

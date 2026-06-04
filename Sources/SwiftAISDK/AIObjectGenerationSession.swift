@@ -39,7 +39,7 @@ public struct AIObjectGenerationSessionRequestOptions: Sendable {
     public var headers: [String: String]
     public var timeoutNanoseconds: UInt64?
     public var retryPolicy: AIRetryPolicy
-    public var telemetry: AITelemetryOptions?
+    public var telemetry: Telemetry.Options?
     public var jsonInstruction: AIJSONInstruction?
     public var repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
 
@@ -58,7 +58,7 @@ public struct AIObjectGenerationSessionRequestOptions: Sendable {
         headers: [String: String] = [:],
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) {
@@ -188,7 +188,7 @@ public final class AIObjectGenerationSession<Output: Sendable, Partial: Sendable
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> Task<Void, Never> {
@@ -233,7 +233,7 @@ public final class AIObjectGenerationSession<Output: Sendable, Partial: Sendable
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64?,
         retryPolicy: AIRetryPolicy,
-        telemetry: AITelemetryOptions?,
+        telemetry: Telemetry.Options?,
         jsonInstruction: AIJSONInstruction?,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?,
         abortController: AIAbortController
@@ -365,6 +365,6 @@ public final class AIObjectGenerationSession<Output: Sendable, Partial: Sendable
     }
 
     private func isFinalOutputError(_ error: Error) -> Bool {
-        error is AIObjectGenerationError || error is AINoOutputGeneratedError
+        error is AIObjectGenerationError || error is AINoOutputError
     }
 }

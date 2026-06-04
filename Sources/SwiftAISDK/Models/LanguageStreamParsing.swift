@@ -2,7 +2,7 @@ import Foundation
 
 func streamFromSSE(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, mapChunk: (JSONValue) -> [LanguageStreamPart]) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
-        throw httpStatusError(provider: providerID, response: response)
+        throw apiCallError(provider: providerID, response: response)
     }
     var parts: [LanguageStreamPart] = []
     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {

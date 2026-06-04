@@ -22,7 +22,7 @@ public static func streamObject<Object: Decodable & Sendable>(
         headers: [String: String] = [:],
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -66,7 +66,7 @@ public static func streamObject<Object: Decodable & Sendable>(
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -107,7 +107,7 @@ public static func streamObject<Object: Decodable & Sendable>(
         headers: [String: String] = [:],
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Schema.Output>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil

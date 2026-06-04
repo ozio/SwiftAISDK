@@ -1,0 +1,22 @@
+# "xai"
+
+Source URL: /providers/xai/
+
+## Package
+
+`@ai-sdk/xai`
+
+## Factories
+
+`AIProviders.xAI`
+
+## Capabilities
+
+- Language
+- Image
+- Video
+- Files
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

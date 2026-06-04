@@ -34,7 +34,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: LanguageModelRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> TextGenerationResult {
         try await generateText(
             model: resolveLanguageModel(modelID, provider: provider),
@@ -54,7 +54,7 @@ public extension AI {
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> TextGenerationResult {
         try await generateText(
             model: resolveLanguageModel(modelID, provider: provider),
@@ -96,7 +96,7 @@ public extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         abortSignal: AIAbortSignal? = nil,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> TextGenerationResult {
         try await generateText(
             model: resolveLanguageModel(modelID, provider: provider),
@@ -134,7 +134,7 @@ public extension AI {
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
             return streamText(
@@ -160,7 +160,7 @@ public extension AI {
         toolApproval: AIToolApproval? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
             return streamText(
@@ -208,7 +208,7 @@ public extension AI {
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         do {
             return streamText(
@@ -254,7 +254,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -283,7 +283,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<[Element]>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -311,7 +311,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<String>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -337,7 +337,7 @@ public extension AI {
         schemaName: String? = nil,
         schemaDescription: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<JSONValue>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -365,7 +365,7 @@ public extension AI {
         schemaDescription: String? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         callbacks: AIObjectGenerationCallbacks<Object>? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -399,7 +399,7 @@ public extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> EmbeddingResult {
         try await embed(
             model: resolveEmbeddingModel(modelID, provider: provider),
@@ -418,7 +418,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: EmbeddingRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> EmbeddingResult {
         try await embed(model: resolveEmbeddingModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
@@ -433,7 +433,7 @@ public extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> EmbeddingResult {
         try await embedMany(
             model: resolveEmbeddingModel(modelID, provider: provider),
@@ -453,7 +453,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: ImageGenerationRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> ImageGenerationResult {
         try await generateImage(model: resolveImageModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
@@ -472,7 +472,7 @@ public extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> ImageGenerationResult {
         try await generateImage(
             model: resolveImageModel(modelID, provider: provider),
@@ -496,7 +496,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: AudioTranscriptionRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> TranscriptionResult {
         try await transcribe(model: resolveTranscriptionModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
@@ -506,7 +506,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: SpeechRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> SpeechResult {
         try await generateSpeech(model: resolveSpeechModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
@@ -516,7 +516,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: VideoGenerationRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> VideoGenerationResult {
         try await generateVideo(model: resolveVideoModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }
@@ -526,7 +526,7 @@ public extension AI {
         provider: (any AIProvider)? = nil,
         request: RerankingRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> RerankingResult {
         try await rerank(model: resolveRerankingModel(modelID, provider: provider), request: request, retryPolicy: retryPolicy, telemetry: telemetry)
     }

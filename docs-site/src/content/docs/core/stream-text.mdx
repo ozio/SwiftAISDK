@@ -3,31 +3,12 @@ title: Stream text
 description: Consume language model output as an async sequence.
 ---
 
-# Stream Text
+import { Code } from '@astrojs/starlight/components';
+import streamTextExample from '../../../../../Examples/Sources/StreamText/main.swift?raw';
 
-Use `AI.streamText` when the UI or caller should receive partial output as it is generated.
+Use `streamText` when the UI or caller should receive partial output as it is generated.
 
-```swift
-import SwiftAISDK
-
-let provider = try AIProviders.openAI()
-let model = try provider.languageModel("gpt-4.1-mini")
-
-for try await part in AI.streamText(
-    model: model,
-    prompt: "Write a short haiku about APIs."
-) {
-    switch part {
-    case .textDelta(let text):
-        print(text, terminator: "")
-    case .finish(let reason, let usage):
-        print("\nFinished: \(reason ?? "unknown")")
-        print("Tokens: \(usage?.totalTokens ?? 0)")
-    default:
-        break
-    }
-}
-```
+<Code code={streamTextExample} lang="swift" title="Examples/Sources/StreamText/main.swift" />
 
 Streaming emits structured lifecycle parts, not just raw strings. That lets you render text, reasoning, tool calls, tool results, source citations, files, raw chunks, and finish metadata with one loop.
 
@@ -36,10 +17,9 @@ Streaming emits structured lifecycle parts, not just raw strings. That lets you 
 Facade calls retry transient failures by default. For streams, retries only happen before the first emitted part so already-delivered chunks are not duplicated.
 
 ```swift
-for try await part in AI.streamText(
-    model: model,
-    prompt: "Stream this carefully.",
-    retryPolicy: .none
+for try await part in model.streamText(
+    "Stream this carefully.",
+    options: LanguageGenerationOptions(retryPolicy: .none)
 ) {
     // Render parts.
 }

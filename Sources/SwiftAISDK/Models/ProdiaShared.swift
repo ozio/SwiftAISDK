@@ -17,9 +17,9 @@ func prodiaJSONJobRequestBody(_ body: JSONValue) throws -> JSONValue {
 func prodiaHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     let body = prodiaErrorMessage(from: response.body) ?? response.bodyText
     guard !response.headers.isEmpty else {
-        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+        return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
     }
-    return .httpStatusWithHeaders(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
+    return .apiCall(provider: provider, statusCode: response.statusCode, body: body, headers: response.headers)
 }
 
 func prodiaErrorMessage(from data: Data) -> String? {

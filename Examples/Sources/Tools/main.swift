@@ -25,11 +25,9 @@ struct ToolsExample {
         let provider = try AIProviders.openAI()
         let model = try provider.languageModel("gpt-4.1-mini")
 
-        let answer = try await AI.generateText(
-            model: model,
-            prompt: "What should I wear in Tokyo today?",
-            executableTools: [weather],
-            maxSteps: 3
+        let answer = try await model.generateText(
+            "What should I wear in Tokyo today?",
+            tools: LanguageToolOptions([weather], maxSteps: 3)
         )
 
         print(answer.text)

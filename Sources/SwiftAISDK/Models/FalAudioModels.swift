@@ -29,7 +29,7 @@ public final class FalSpeechModel: SpeechModel, @unchecked Sendable {
         }
         let audioResponse = try await downloadURL(audioURL, transport: config.transport, abortSignal: request.abortSignal)
         guard (200..<300).contains(audioResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: audioResponse)
+            throw apiCallError(provider: providerID, response: audioResponse)
         }
         return SpeechResult(
             audio: audioResponse.body,
@@ -83,7 +83,7 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(queueResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: queueResponse)
+            throw apiCallError(provider: providerID, response: queueResponse)
         }
         let queued = try queueResponse.jsonValue()
         guard let requestID = queued["request_id"]?.stringValue else {
@@ -115,7 +115,7 @@ public final class FalTranscriptionModel: TranscriptionModel, @unchecked Sendabl
                 return (try response.jsonValue(), response)
             }
             if !falIsTranscriptionInProgress(response) {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                 throw AIError.invalidResponse(provider: providerID, message: "Fal transcription request timed out.")

@@ -108,14 +108,14 @@ final class FlakyLanguageModel: LanguageModel, @unchecked Sendable {
         return result
     }
 }
-actor TelemetryRecorder: AITelemetryIntegration {
-    private var recordedEvents: [AITelemetryEvent] = []
+actor TelemetryRecorder: Telemetry.Integration {
+    private var recordedEvents: [Telemetry.Event] = []
 
-    func record(_ event: AITelemetryEvent) {
+    func record(_ event: Telemetry.Event) {
         recordedEvents.append(event)
     }
 
-    func events() -> [AITelemetryEvent] {
+    func events() -> [Telemetry.Event] {
         recordedEvents
     }
 }
@@ -130,20 +130,20 @@ actor ExecutionWrapperLog {
         values
     }
 }
-struct ExecutionWrappingTelemetry: AITelemetryIntegration {
+struct ExecutionWrappingTelemetry: Telemetry.Integration {
     var name: String
     var log: ExecutionWrapperLog
 
-    func record(_ event: AITelemetryEvent) {}
+    func record(_ event: Telemetry.Event) {}
 
-    func executeLanguageModelCall<Output: Sendable>(_ context: AITelemetryLanguageModelCallContext<Output>) async throws -> Output {
+    func executeLanguageModelCall<Output: Sendable>(_ context: Telemetry.LanguageModelCallContext<Output>) async throws -> Output {
         await log.append("\(name)-language-start:\(context.operationID):\(context.modelID ?? "unknown")")
         let result = try await context.execute()
         await log.append("\(name)-language-end")
         return result
     }
 
-    func executeTool<Output: Sendable>(_ context: AITelemetryToolExecutionContext<Output>) async throws -> Output {
+    func executeTool<Output: Sendable>(_ context: Telemetry.ToolExecutionContext<Output>) async throws -> Output {
         await log.append("\(name)-tool-start:\(context.toolCallID):\(context.toolName)")
         let result = try await context.execute()
         await log.append("\(name)-tool-end")

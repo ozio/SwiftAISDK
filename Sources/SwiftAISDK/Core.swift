@@ -5,8 +5,7 @@ public enum AIError: Error, Equatable, CustomStringConvertible, Sendable {
     case unsupportedModel(provider: String, capability: ModelCapability, modelID: String)
     case invalidArgument(argument: String, message: String)
     case invalidResponse(provider: String, message: String)
-    case httpStatus(provider: String, statusCode: Int, body: String)
-    case httpStatusWithHeaders(provider: String, statusCode: Int, body: String, headers: [String: String])
+    case apiCall(AIAPICallError)
     case gateway(GatewayError)
     case invalidURL(String)
     case timeout(durationNanoseconds: UInt64)
@@ -21,10 +20,8 @@ public enum AIError: Error, Equatable, CustomStringConvertible, Sendable {
             return "Invalid \(argument): \(message)"
         case let .invalidResponse(provider, message):
             return "\(provider) returned an invalid response: \(message)"
-        case let .httpStatus(provider, statusCode, body):
-            return "\(provider) request failed with HTTP \(statusCode): \(body)"
-        case let .httpStatusWithHeaders(provider, statusCode, body, _):
-            return "\(provider) request failed with HTTP \(statusCode): \(body)"
+        case let .apiCall(error):
+            return error.description
         case let .gateway(error):
             return error.description
         case let .invalidURL(url):
@@ -89,4 +86,3 @@ public struct AIRetryPolicy: Equatable, Sendable {
     public static let `default` = AIRetryPolicy()
     public static let none = AIRetryPolicy(maxRetries: 0, initialDelayNanoseconds: 0)
 }
-

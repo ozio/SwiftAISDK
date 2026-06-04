@@ -1,0 +1,19 @@
+# "amazon-bedrock.anthropic"
+
+Source URL: /providers/amazon-bedrock-anthropic/
+
+## Package
+
+`@ai-sdk/amazon-bedrock`
+
+## Factories
+
+`AIProviders.amazonBedrockAnthropic`
+
+## Capabilities
+
+- Language
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

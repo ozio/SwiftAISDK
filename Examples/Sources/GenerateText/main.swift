@@ -6,10 +6,7 @@ struct GenerateTextExample {
         let provider = try AIProviders.openAI()
         let model = try provider.languageModel("gpt-4.1-mini")
 
-        let result = try await AI.generateText(
-            model: model,
-            prompt: "Write one sentence about Swift concurrency."
-        )
+        let result = try await model.generateText("Write one sentence about Swift concurrency.")
 
         print(result.text)
     }

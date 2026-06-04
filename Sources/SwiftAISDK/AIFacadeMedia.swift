@@ -1,11 +1,11 @@
 import Foundation
 
 extension AI {
-    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
+    public static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> EmbeddingResult {
         try await embed(model: model, request: EmbeddingRequest(values: [value], dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
-    public static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> EmbeddingResult {
+    public static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> EmbeddingResult {
         try await withTelemetry(
             operationID: request.values.count == 1 ? "ai.embed" : "ai.embedMany",
             providerID: model.providerID,
@@ -38,7 +38,7 @@ extension AI {
         headers: [String: String] = [:],
         abortSignal: AIAbortSignal? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> EmbeddingResult {
         guard let chunkSize, chunkSize > 0, values.count > chunkSize else {
             return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
@@ -96,7 +96,7 @@ extension AI {
         }
     }
 
-    public static func generateImage(model: any ImageModel, request: ImageGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> ImageGenerationResult {
+    public static func generateImage(model: any ImageModel, request: ImageGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> ImageGenerationResult {
         try await withTelemetry(
             operationID: "ai.generateImage",
             providerID: model.providerID,
@@ -116,17 +116,17 @@ extension AI {
                 result.requestMetadata = imageGenerationRequestMetadata(request)
             }
             guard !result.urls.isEmpty || !result.base64Images.isEmpty else {
-                throw AINoImageGeneratedError(responses: [result.responseMetadata])
+                throw AINoOutputError(kind: .image, responses: [result.responseMetadata])
             }
             return result
         }
     }
 
-    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> ImageGenerationResult {
+    public static func generateImage(model: any ImageModel, prompt: String, size: String? = nil, aspectRatio: String? = nil, seed: Int? = nil, count: Int? = nil, files: [ImageInputFile] = [], mask: ImageInputFile? = nil, providerOptions: [String: JSONValue] = [:], extraBody: [String: JSONValue] = [:], headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> ImageGenerationResult {
         try await generateImage(model: model, request: ImageGenerationRequest(prompt: prompt, size: size, aspectRatio: aspectRatio, seed: seed, count: count, files: files, mask: mask, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
     }
 
-    public static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> TranscriptionResult {
+    public static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> TranscriptionResult {
         try await withTelemetry(
             operationID: "ai.transcribe",
             providerID: model.providerID,
@@ -146,13 +146,13 @@ extension AI {
                 result.requestMetadata = AIRequestMetadata(body: transcriptionRequestMetadataBody(request), headers: request.headers)
             }
             guard !result.text.isEmpty else {
-                throw AINoTranscriptGeneratedError(responses: [result.responseMetadata])
+                throw AINoOutputError(kind: .transcript, responses: [result.responseMetadata])
             }
             return result
         }
     }
 
-    public static func generateSpeech(model: any SpeechModel, request: SpeechRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> SpeechResult {
+    public static func generateSpeech(model: any SpeechModel, request: SpeechRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> SpeechResult {
         try await withTelemetry(
             operationID: "ai.generateSpeech",
             providerID: model.providerID,
@@ -172,13 +172,65 @@ extension AI {
                 result.requestMetadata = AIRequestMetadata(body: speechRequestMetadataBody(request), headers: request.headers)
             }
             guard !result.audio.isEmpty else {
-                throw AINoSpeechGeneratedError(responses: [result.responseMetadata])
+                throw AINoOutputError(kind: .speech, responses: [result.responseMetadata])
             }
             return result
         }
     }
 
-    public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> VideoGenerationResult {
+    public static func generateAudio(model: any AudioGenerationModel, request: AudioGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> AudioGenerationResult {
+        try await withTelemetry(
+            operationID: "ai.generateAudio",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: audioGenerationRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
+            output: audioGenerationTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
+            var result = try await model.generateAudio(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: audioGenerationRequestMetadataBody(request), headers: request.headers)
+            }
+            guard !result.audio.isEmpty else {
+                throw AINoOutputError(kind: .audio, responses: [result.responseMetadata])
+            }
+            return result
+        }
+    }
+
+    public static func transformAudio(model: any AudioTransformationModel, request: AudioTransformationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> AudioTransformationResult {
+        try await withTelemetry(
+            operationID: "ai.transformAudio",
+            providerID: model.providerID,
+            modelID: model.modelID,
+            input: audioTransformationRequestTelemetryInput(request),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
+            output: audioTransformationTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
+            var result = try await model.transformAudio(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = AIRequestMetadata(body: audioTransformationRequestMetadataBody(request), headers: request.headers)
+            }
+            guard !result.audio.isEmpty else {
+                throw AINoOutputError(kind: .audio, responses: [result.responseMetadata])
+            }
+            return result
+        }
+    }
+
+    public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> VideoGenerationResult {
         try await withTelemetry(
             operationID: "ai.generateVideo",
             providerID: model.providerID,
@@ -198,13 +250,13 @@ extension AI {
                 result.requestMetadata = videoGenerationRequestMetadata(request)
             }
             guard !result.urls.isEmpty || !result.base64Videos.isEmpty else {
-                throw AINoVideoGeneratedError(responses: [result.responseMetadata])
+                throw AINoOutputError(kind: .video, responses: [result.responseMetadata])
             }
             return result
         }
     }
 
-    public static func rerank(model: any RerankingModel, request: RerankingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> RerankingResult {
+    public static func rerank(model: any RerankingModel, request: RerankingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> RerankingResult {
         try await withTelemetry(
             operationID: "ai.rerank",
             providerID: model.providerID,
@@ -227,7 +279,7 @@ extension AI {
         }
     }
 
-    public static func uploadFile(client: any AIFileClient, request: FileUploadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> FileUploadResult {
+    public static func uploadFile(client: any AIFileClient, request: FileUploadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> FileUploadResult {
         try await withTelemetry(
             operationID: "ai.uploadFile",
             providerID: client.providerID,
@@ -250,7 +302,7 @@ extension AI {
         }
     }
 
-    public static func uploadSkill(client: any AISkillsClient, request: SkillUploadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: AITelemetryOptions? = nil) async throws -> SkillUploadResult {
+    public static func uploadSkill(client: any AISkillsClient, request: SkillUploadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> SkillUploadResult {
         try await withTelemetry(
             operationID: "ai.uploadSkill",
             providerID: client.providerID,

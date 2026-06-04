@@ -1,0 +1,26 @@
+# "openai"
+
+Source URL: /providers/openai/
+
+## Package
+
+`@ai-sdk/openai`
+
+## Factories
+
+`AIProviders.openAI`
+
+## Capabilities
+
+- Language
+- Completion
+- Embedding
+- Image
+- Transcription
+- Speech
+- Files
+- Skills
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

@@ -8,7 +8,7 @@ func generateObjectResult<Output: Sendable>(
     schemaName: String?,
     schemaDescription: String?,
     retryPolicy: AIRetryPolicy,
-    telemetry: AITelemetryOptions?,
+    telemetry: Telemetry.Options?,
     callbacks: AIObjectGenerationCallbacks<Output>?,
     parse: @escaping @Sendable (String, String) async throws -> (object: Output, rawObject: JSONValue, text: String)
 ) async throws -> ObjectGenerationResult<Output> {
@@ -56,7 +56,7 @@ func generateObjectResult<Output: Sendable>(
     ) {
         var textResult: TextGenerationResult?
         do {
-            let generatedResult = try await AITelemetryDispatcher(options: telemetry).executeLanguageModelCall(
+            let generatedResult = try await TelemetryDispatcher(options: telemetry).executeLanguageModelCall(
                 callID: callID,
                 operationID: "ai.generateObject",
                 providerID: model.providerID,

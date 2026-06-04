@@ -5,7 +5,7 @@ extension AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> TextGenerationResult {
         try await withTelemetry(
             operationID: "ai.generateText",
@@ -39,7 +39,7 @@ extension AI {
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> TextGenerationResult {
         guard !executableTools.isEmpty || prepareStep != nil else {
             return try await generateText(model: model, request: request, retryPolicy: retryPolicy, telemetry: telemetry)
@@ -202,7 +202,7 @@ extension AI {
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         abortSignal: AIAbortSignal? = nil,
-        telemetry: AITelemetryOptions? = nil
+        telemetry: Telemetry.Options? = nil
     ) async throws -> TextGenerationResult {
         let request = LanguageModelRequest(
             messages: [.user(prompt)],
@@ -247,7 +247,7 @@ extension AI {
         request: LanguageModelRequest,
         output: AIOutput<FinalOutput, PartialOutput>,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> AIOutputGenerationResult<FinalOutput> {
@@ -279,7 +279,7 @@ extension AI {
         headers: [String: String] = [:],
         abortSignal: AIAbortSignal? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: AITelemetryOptions? = nil,
+        telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) async throws -> AIOutputGenerationResult<FinalOutput> {

@@ -1,0 +1,19 @@
+# "klingai"
+
+Source URL: /providers/klingai/
+
+## Package
+
+`@ai-sdk/klingai`
+
+## Factories
+
+`AIProviders.klingAI`
+
+## Capabilities
+
+- Video
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

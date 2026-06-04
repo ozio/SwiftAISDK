@@ -1,0 +1,62 @@
+# Transcribe audio
+
+Source URL: /core/transcribe/
+
+Use `transcribe` when you have audio data and want normalized text back.
+
+```swift title="Examples/Sources/TranscribeAudio/main.swift"
+import Foundation
+import SwiftAISDK
+
+@main
+struct TranscribeAudioExample {
+    static func main() async throws {
+        let provider = try AIProviders.openAI()
+        let model = try provider.transcriptionModel("gpt-4o-transcribe")
+        let audio = try Data(contentsOf: URL(fileURLWithPath: "meeting.wav"))
+
+        let result = try await model.transcribe(
+            audio: audio,
+            fileName: "meeting.wav",
+            mimeType: "audio/wav",
+            language: "en",
+            prompt: "The speakers discuss Swift package design."
+        )
+
+        print(result.text)
+    }
+}
+```
+
+The lower-level request initializer is still available when you want to build the request separately.
+
+```swift
+let request = AudioTranscriptionRequest(
+    audio: audio,
+    fileName: "clip.m4a",
+    mimeType: "audio/mp4"
+)
+
+let result = try await AI.transcribe(model: model, request: request)
+```
+
+## Options
+
+- `fileName` and `mimeType` describe the submitted audio.
+- `language` hints the expected language when the provider supports it.
+- `prompt` gives the model context for names, vocabulary, or formatting.
+- `providerOptions` carries provider-specific transcription settings.
+- `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
+
+## Results
+
+`TranscriptionResult` includes text plus optional timing and language metadata:
+
+- `text`
+- `segments`
+- `language`
+- `durationInSeconds`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

@@ -76,7 +76,7 @@ import Testing
         ))
     ))
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "prodia.language",
         statusCode: 422,
         body: "bad prompt",
@@ -94,7 +94,7 @@ import Testing
         ))
     ))
 
-    await #expect(throws: AIError.httpStatus(provider: "prodia.image", statusCode: 500, body: "image failed")) {
+    await #expect(throws: AIError.apiCall(provider: "prodia.image", statusCode: 500, body: "image failed")) {
         _ = try await imageProvider.imageModel("sdxl").generateImage(ImageGenerationRequest(prompt: "cat"))
     }
 
@@ -107,7 +107,7 @@ import Testing
         ))
     ))
 
-    await #expect(throws: AIError.httpStatus(provider: "prodia.video", statusCode: 400, body: "video failed")) {
+    await #expect(throws: AIError.apiCall(provider: "prodia.video", statusCode: 400, body: "video failed")) {
         _ = try await videoProvider.videoModel("veo").generateVideo(VideoGenerationRequest(prompt: "cat"))
     }
 }

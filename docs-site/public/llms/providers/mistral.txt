@@ -1,0 +1,20 @@
+# "mistral"
+
+Source URL: /providers/mistral/
+
+## Package
+
+`@ai-sdk/mistral`
+
+## Factories
+
+`AIProviders.mistral`
+
+## Capabilities
+
+- Language
+- Embedding
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

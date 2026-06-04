@@ -82,7 +82,7 @@ import Testing
     ))
     let model = try provider.speechModel("")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "hume.speech",
         statusCode: 422,
         body: "voice is invalid",

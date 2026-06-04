@@ -63,7 +63,7 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         guard let text = raw["text"]?.stringValue else {

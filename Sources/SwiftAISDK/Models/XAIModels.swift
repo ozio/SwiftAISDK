@@ -138,7 +138,7 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         for url in urls {
             let response = try await downloadURL(url, transport: config.transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             images.append(response.body.base64EncodedString())
         }
@@ -257,7 +257,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             if raw["status"]?.stringValue == "done" || raw["video"]?["url"]?.stringValue != nil {

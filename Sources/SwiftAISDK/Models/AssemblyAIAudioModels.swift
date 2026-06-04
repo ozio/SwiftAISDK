@@ -30,7 +30,7 @@ public final class AssemblyAITranscriptionModel: TranscriptionModel, @unchecked 
         }
 
         var body: [String: JSONValue] = [
-            "speech_model": .string(modelID),
+            "speech_models": .array([.string(modelID)]),
             "audio_url": .string(uploadURL)
         ]
         if let language = request.language { body["language_code"] = .string(language) }
@@ -343,4 +343,3 @@ private let assemblyAITranscriptionProviderOptionKeys: Set<String> = [
     "webhookUrl",
     "wordBoost"
 ]
-

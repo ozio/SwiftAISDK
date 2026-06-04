@@ -1,0 +1,64 @@
+# Rerank
+
+Source URL: /core/rerank/
+
+Use `rerank` when you already have candidate documents and want the model to score them for a query.
+
+```swift title="Examples/Sources/Rerank/main.swift"
+import SwiftAISDK
+
+@main
+struct RerankExample {
+    static func main() async throws {
+        let provider = try AIProviders.cohere()
+        let model = try provider.rerankingModel("rerank-v3.5")
+
+        let result = try await model.rerank(
+            query: "Which document explains provider options?",
+            documents: [
+                "Provider options carry provider-specific settings.",
+                "Streaming text emits lifecycle parts.",
+                "Embeddings convert strings into vectors.",
+            ],
+            topK: 2
+        )
+
+        for item in result.results {
+            print("index: \(item.index), score: \(item.score)")
+        }
+    }
+}
+```
+
+Use the request initializer when your provider supports structured document objects.
+
+```swift
+let request = RerankingRequest(
+    query: "Find Swift examples",
+    documents: [
+        ["title": "Quickstart", "body": "Generate text with a provider."],
+        ["title": "Tools", "body": "Execute typed Swift tools."],
+    ],
+    topK: 1
+)
+
+let result = try await AI.rerank(model: model, request: request)
+```
+
+## Options
+
+- `query` is the search or ranking intent.
+- `documents` are candidate strings or structured document objects.
+- `topK` limits the returned matches.
+- `providerOptions` carries provider-specific scoring settings.
+- `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
+
+## Results
+
+`RerankingResult` returns scored document references:
+
+- `results`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

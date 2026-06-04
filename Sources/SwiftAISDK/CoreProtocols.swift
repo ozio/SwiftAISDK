@@ -53,6 +53,18 @@ public protocol SpeechModel: Sendable {
     func speak(_ request: SpeechRequest) async throws -> SpeechResult
 }
 
+public protocol AudioGenerationModel: Sendable {
+    var providerID: String { get }
+    var modelID: String { get }
+    func generateAudio(_ request: AudioGenerationRequest) async throws -> AudioGenerationResult
+}
+
+public protocol AudioTransformationModel: Sendable {
+    var providerID: String { get }
+    var modelID: String { get }
+    func transformAudio(_ request: AudioTransformationRequest) async throws -> AudioTransformationResult
+}
+
 public protocol VideoModel: Sendable {
     var providerID: String { get }
     var modelID: String { get }

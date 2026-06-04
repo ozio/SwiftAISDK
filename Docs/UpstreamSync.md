@@ -231,9 +231,10 @@ Use these gates before calling a surface complete:
    LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
    ```
 
-   Current live smoke reads `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and
-   `GEMINI_API_KEY`, or the ignored root files `openai-api-key.txt`,
-   `claude-api-key.txt`, and `gemini-api-key.txt`.
+   Current live smoke reads `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+   `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `ASSEMBLYAI_API_KEY`, and
+   `OPENAI_COMPATIBLE_API_KEY`. In Xcode, set these as test environment
+   variables in the scheme instead of Run/Profile arguments.
 
 4. README, `Docs/ProviderCapabilityMatrix.md`, `Docs/ProviderVersionLedger.md`,
    and `Docs/ProductGapAudit.md` tell the same story as the code.

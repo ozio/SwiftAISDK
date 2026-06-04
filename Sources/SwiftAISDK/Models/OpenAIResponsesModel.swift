@@ -59,7 +59,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     let store = body["store"]?.boolValue ?? true
                     let response = try await config.transport.send(config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: response)
                     }
                     if case .openResponses = config.responsesRequestMode {
                         continuation.yield(.streamStart(warnings: prepared.warnings))

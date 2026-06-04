@@ -59,95 +59,62 @@ public struct AITypeValidationError: Error, Equatable, CustomStringConvertible, 
     }
 }
 
-public struct AINoOutputGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
+public enum AINoOutputKind: String, Equatable, Sendable {
+    case output
+    case content
+    case image
+    case video
+    case audio
+    case speech
+    case transcript
+}
+
+public struct AINoOutputError: Error, Equatable, CustomStringConvertible, Sendable {
     public var provider: String?
-    public var outputKind: AIOutputKind?
+    public var kind: AINoOutputKind
+    public var structuredOutputKind: AIOutputKind?
+    public var responses: [AIResponseMetadata]
     public var message: String
 
     public init(
         provider: String? = nil,
-        outputKind: AIOutputKind? = nil,
-        message: String = "No output was generated."
+        kind: AINoOutputKind = .output,
+        structuredOutputKind: AIOutputKind? = nil,
+        responses: [AIResponseMetadata] = [],
+        message: String? = nil
     ) {
         self.provider = provider
-        self.outputKind = outputKind
-        self.message = message
+        self.kind = kind
+        self.structuredOutputKind = structuredOutputKind
+        self.responses = responses
+        self.message = message ?? Self.defaultMessage(kind: kind, structuredOutputKind: structuredOutputKind)
     }
 
     public var description: String {
         let providerPrefix = provider.map { "\($0) " } ?? ""
-        let outputSuffix = outputKind.map { " for \($0.rawValue) output" } ?? ""
-        return "\(providerPrefix)did not generate output\(outputSuffix): \(message)"
-    }
-}
-
-public struct AINoContentGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
-    public var message: String
-
-    public init(message: String = "No content generated.") {
-        self.message = message
+        return "\(providerPrefix)\(message)"
     }
 
-    public var description: String {
-        message
-    }
-}
-
-public struct AINoImageGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
-    public var message: String
-    public var responses: [AIResponseMetadata]
-
-    public init(
-        message: String = "No image generated.",
-        responses: [AIResponseMetadata] = []
-    ) {
-        self.message = message
-        self.responses = responses
-    }
-
-    public var description: String {
-        message
-    }
-}
-
-public struct AINoVideoGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
-    public var message: String
-    public var responses: [AIResponseMetadata]
-
-    public init(
-        message: String = "No video generated.",
-        responses: [AIResponseMetadata] = []
-    ) {
-        self.message = message
-        self.responses = responses
-    }
-
-    public var description: String {
-        message
-    }
-}
-
-public struct AINoSpeechGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
-    public var responses: [AIResponseMetadata]
-
-    public init(responses: [AIResponseMetadata] = []) {
-        self.responses = responses
-    }
-
-    public var description: String {
-        "No speech audio generated."
-    }
-}
-
-public struct AINoTranscriptGeneratedError: Error, Equatable, CustomStringConvertible, Sendable {
-    public var responses: [AIResponseMetadata]
-
-    public init(responses: [AIResponseMetadata] = []) {
-        self.responses = responses
-    }
-
-    public var description: String {
-        "No transcript generated."
+    private static func defaultMessage(kind: AINoOutputKind, structuredOutputKind: AIOutputKind?) -> String {
+        switch kind {
+        case .output:
+            if let structuredOutputKind {
+                return "No \(structuredOutputKind.rawValue) output was generated."
+            }
+            return "No output was generated."
+        case .content:
+            return "No content was generated."
+        case .image:
+            return "No image was generated."
+        case .video:
+            return "No video was generated."
+        case .audio:
+            return "No audio was generated."
+        case .speech:
+            return "No speech audio was generated."
+        case .transcript:
+            return "No transcript was generated."
+        }
     }
 }
 
@@ -296,21 +263,24 @@ public struct AIUIMessageStreamError: Error, Equatable, CustomStringConvertible,
 }
 
 public extension AIError {
+    static func apiCall(
+        provider: String,
+        statusCode: Int,
+        body: String,
+        headers: [String: String] = [:]
+    ) -> AIError {
+        .apiCall(AIAPICallError(
+            provider: provider,
+            statusCode: statusCode,
+            responseHeaders: headers,
+            responseBody: body
+        ))
+    }
+
     var apiCallError: AIAPICallError? {
         switch self {
-        case let .httpStatus(provider, statusCode, body):
-            return AIAPICallError(
-                provider: provider,
-                statusCode: statusCode,
-                responseBody: body
-            )
-        case let .httpStatusWithHeaders(provider, statusCode, body, headers):
-            return AIAPICallError(
-                provider: provider,
-                statusCode: statusCode,
-                responseHeaders: headers,
-                responseBody: body
-            )
+        case let .apiCall(error):
+            return error
         case let .gateway(error):
             return AIAPICallError(
                 provider: "gateway",

@@ -47,7 +47,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                     let body = JSONValue.object(config.transformRequestBody?(prepared.body) ?? prepared.body)
                     let response = try await config.transport.send(config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: response)
                     }
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))

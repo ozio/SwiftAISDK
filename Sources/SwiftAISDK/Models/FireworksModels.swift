@@ -45,7 +45,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
                 abortSignal: request.abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             let raw: JSONValue = .object([
                 "contentType": fireworksContentType(response.headers).map(JSONValue.string)
@@ -72,7 +72,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(submit.statusCode) else {
-            throw httpStatusError(provider: providerID, response: submit)
+            throw apiCallError(provider: providerID, response: submit)
         }
         let submitRaw = try submit.jsonValue()
         guard let requestID = submitRaw["request_id"]?.stringValue else {
@@ -81,7 +81,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
         let imageURL = try await pollAsyncImage(requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
         let imageResponse = try await downloadURL(imageURL, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
         guard (200..<300).contains(imageResponse.statusCode) else {
-            throw httpStatusError(provider: providerID, response: imageResponse)
+            throw apiCallError(provider: providerID, response: imageResponse)
         }
         return ImageGenerationResult(
             urls: [imageURL],
@@ -106,7 +106,7 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             switch raw["status"]?.stringValue {

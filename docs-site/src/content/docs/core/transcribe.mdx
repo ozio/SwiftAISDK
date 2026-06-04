@@ -1,0 +1,44 @@
+---
+title: Transcribe audio
+description: Convert audio bytes into text with a transcription model.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import transcribeAudioExample from '../../../../../Examples/Sources/TranscribeAudio/main.swift?raw';
+
+Use `transcribe` when you have audio data and want normalized text back.
+
+<Code code={transcribeAudioExample} lang="swift" title="Examples/Sources/TranscribeAudio/main.swift" />
+
+The lower-level request initializer is still available when you want to build the request separately.
+
+```swift
+let request = AudioTranscriptionRequest(
+    audio: audio,
+    fileName: "clip.m4a",
+    mimeType: "audio/mp4"
+)
+
+let result = try await AI.transcribe(model: model, request: request)
+```
+
+## Options
+
+- `fileName` and `mimeType` describe the submitted audio.
+- `language` hints the expected language when the provider supports it.
+- `prompt` gives the model context for names, vocabulary, or formatting.
+- `providerOptions` carries provider-specific transcription settings.
+- `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
+
+## Results
+
+`TranscriptionResult` includes text plus optional timing and language metadata:
+
+- `text`
+- `segments`
+- `language`
+- `durationInSeconds`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

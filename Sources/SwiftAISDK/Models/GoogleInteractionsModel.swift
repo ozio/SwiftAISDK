@@ -47,7 +47,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                         abortSignal: request.abortSignal
                     ))
                     guard (200..<300).contains(response.statusCode) else {
-                        throw httpStatusError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: response)
                     }
 
                     if !prepared.warnings.isEmpty {
@@ -117,7 +117,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
     private func sendInteractions(body: JSONValue, headers: [String: String], abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let response = try await config.transport.send(config.request(path: "/interactions", modelID: modelID, body: body, headers: googleInteractionsHeaders(headers), abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
-            throw httpStatusError(provider: providerID, response: response)
+            throw apiCallError(provider: providerID, response: response)
         }
         return try response.jsonValue()
     }
@@ -141,7 +141,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                 abortSignal: abortSignal
             ))
             guard (200..<300).contains(response.statusCode) else {
-                throw httpStatusError(provider: providerID, response: response)
+                throw apiCallError(provider: providerID, response: response)
             }
             let raw = try response.jsonValue()
             if googleInteractionsIsTerminal(raw["status"]?.stringValue) {

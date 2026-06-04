@@ -361,7 +361,7 @@ Package: @ai-sdk/elevenlabs
 Baseline: 2.0.33
 Upstream inspected: elevenlabs-provider.ts, elevenlabs-error.ts, elevenlabs-speech-model.ts, elevenlabs-transcription-model.ts, option/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ElevenLabsProviderTests.swift.
-Surfaces checked: provider factory, default base URL, ELEVENLABS_API_KEY auth, user-agent suffix, speech text-to-speech route/query/body, output format aliases, voice settings, pronunciation dictionaries, text normalization fields, enable_logging query, STT multipart route/file/options/defaults, transcription response validation, segments/language/duration, HTTP error schema, metadata, warnings, abort propagation.
+Surfaces checked: provider factory, default base URL, ELEVENLABS_API_KEY auth, user-agent suffix, speech text-to-speech route/query/body, output format aliases, voice settings, pronunciation dictionaries, text normalization fields, enable_logging query, STT multipart route/file/options/defaults, transcription response validation, upstream-style word segment and final-word duration mapping, language, HTTP error schema, metadata, warnings, abort propagation.
 Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
 Tests run: swift test --filter 'Deepgram|ElevenLabs|AssemblyAI'; full swift test in the current audio batch.
 Commit evidence: Current audio batch.
@@ -375,7 +375,7 @@ Package: @ai-sdk/assemblyai
 Baseline: 2.0.33
 Upstream inspected: assemblyai-provider.ts, assemblyai-error.ts, assemblyai-transcription-model.ts, option/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, AssemblyAIProviderTests.swift.
-Surfaces checked: provider factory, default base URL, ASSEMBLYAI_API_KEY auth, user-agent suffix, upload/submit/poll lifecycle, providerOptions schema/null namespace, submit body mapping, status validation, failed transcription message, final transcript text/words/language/audio_duration mapping, HTTP error schema on upload/submit/poll, metadata, abort propagation.
+Surfaces checked: provider factory, default base URL, ASSEMBLYAI_API_KEY auth, user-agent suffix, upload/submit/poll lifecycle, providerOptions schema/null namespace, submit body mapping including current `speech_models`, status validation, failed transcription message, final transcript text/words/language/audio_duration mapping, HTTP error schema on upload/submit/poll, metadata, abort propagation.
 Known Swift differences / out of scope: Swift still supports extraBody as a legacy escape hatch in addition to upstream providerOptions. Swift keeps stable AIError cases instead of upstream's exact JS error classes.
 Tests run: swift test --filter 'Deepgram|ElevenLabs|AssemblyAI'; full swift test in the current audio batch.
 Commit evidence: Current audio batch.

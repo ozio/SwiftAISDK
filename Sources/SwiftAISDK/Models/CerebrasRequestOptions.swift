@@ -3,9 +3,9 @@ import Foundation
 func cerebrasHTTPStatusError(response: AIHTTPResponse) -> AIError {
     let body = cerebrasErrorMessage(from: response.body) ?? response.bodyText
     guard !response.headers.isEmpty else {
-        return .httpStatus(provider: "cerebras.chat", statusCode: response.statusCode, body: body)
+        return .apiCall(provider: "cerebras.chat", statusCode: response.statusCode, body: body)
     }
-    return .httpStatusWithHeaders(
+    return .apiCall(
         provider: "cerebras.chat",
         statusCode: response.statusCode,
         body: body,

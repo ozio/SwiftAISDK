@@ -1,0 +1,55 @@
+# Embeddings
+
+Source URL: /core/embeddings/
+
+Use `embed` for a single text value and `embedMany` when you want one request to cover multiple inputs.
+
+```swift title="Examples/Sources/Embeddings/main.swift"
+import SwiftAISDK
+
+@main
+struct EmbeddingsExample {
+    static func main() async throws {
+        let provider = try AIProviders.openAI()
+        let model = try provider.embeddingModel("text-embedding-3-small")
+
+        let result = try await model.embed(
+            "Swift makes API boundaries explicit.",
+            dimensions: 512
+        )
+
+        print(result.embeddings.first ?? [])
+    }
+}
+```
+
+For batches, pass all values at once. Use `chunkSize` when a provider has an input limit and the facade should split the batch while preserving result order.
+
+```swift
+let result = try await model.embedMany(
+    ["alpha", "beta", "gamma"],
+    chunkSize: 100
+)
+
+for vector in result.embeddings {
+    print(vector.count)
+}
+```
+
+## Options
+
+- `dimensions` requests a provider-supported embedding size.
+- `providerOptions` carries provider-specific settings.
+- `extraBody` is a low-level escape hatch for unsupported provider fields.
+- `headers`, `abortSignal`, `retryPolicy`, and `telemetry` work the same way as other facade calls.
+
+## Results
+
+`EmbeddingResult` includes normalized vectors plus request and response metadata:
+
+- `embeddings`
+- `usage`
+- `warnings`
+- `providerMetadata`
+- `requestMetadata`
+- `responseMetadata`

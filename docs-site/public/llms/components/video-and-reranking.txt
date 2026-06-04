@@ -1,0 +1,64 @@
+# Video and reranking
+
+Source URL: /components/video-and-reranking/
+
+## Symbol counts
+
+| Symbol kind | Count |
+| --- | --- |
+| Initializer | 6 |
+| Instance Property | 37 |
+| Structure | 5 |
+
+## Public symbols
+
+| Kind | Symbol | Declaration | Source |
+| --- | --- | --- | --- |
+| Initializer | `init(index:score:document:)` | `init(index: Int, score: Double, document: String? = nil)` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Initializer | `init(prompt:aspectRatio:durationSeconds:image:resolution:fps:seed:count:providerOptions:extraBody:headers:abortSignal:)` | `init(prompt: String, aspectRatio: String? = nil, durationSeconds: Double? = nil, image: ImageInputFile? = nil, resolution: String? = nil, fps: Double? = nil, seed: Int? = nil, count: Int? = nil, providerOptions: [String : JSONValue] = [:], extraBody: [String : JSONValue] = [:], headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil)` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Initializer | `init(query:documents:topK:providerOptions:extraBody:headers:abortSignal:)` | `init(query: String, documents: [String], topK: Int? = nil, providerOptions: [String : JSONValue] = [:], extraBody: [String : JSONValue] = [:], headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil)` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Initializer | `init(query:documents:topK:providerOptions:extraBody:headers:abortSignal:)` | `init(query: String, documents: [[String : JSONValue]], topK: Int? = nil, providerOptions: [String : JSONValue] = [:], extraBody: [String : JSONValue] = [:], headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil)` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Initializer | `init(results:rawValue:warnings:providerMetadata:requestMetadata:responseMetadata:)` | `init(results: [RerankedDocument], rawValue: JSONValue, warnings: [AIWarning] = [], providerMetadata: [String : JSONValue] = [:], requestMetadata: AIRequestMetadata = AIRequestMetadata(), responseMetadata: AIResponseMetadata = AIResponseMetadata())` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Initializer | `init(urls:base64Videos:operationID:rawValue:warnings:providerMetadata:requestMetadata:responseMetadata:)` | `init(urls: [String], base64Videos: [String] = [], operationID: String? = nil, rawValue: JSONValue, warnings: [AIWarning] = [], providerMetadata: [String : JSONValue] = [:], requestMetadata: AIRequestMetadata = AIRequestMetadata(), responseMetadata: AIResponseMetadata = AIResponseMetadata())` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `aspectRatio` | `var aspectRatio: String?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `base64Videos` | `var base64Videos: [String]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `count` | `var count: Int?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `document` | `var document: String?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `documentObjects` | `var documentObjects: [[String : JSONValue]]?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `documents` | `var documents: [String]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `durationSeconds` | `var durationSeconds: Double?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `extraBody` | `var extraBody: [String : JSONValue]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `extraBody` | `var extraBody: [String : JSONValue]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `fps` | `var fps: Double?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `headers` | `var headers: [String : String]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `headers` | `var headers: [String : String]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `image` | `var image: ImageInputFile?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `index` | `var index: Int` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `operationID` | `var operationID: String?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `prompt` | `var prompt: String` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `providerMetadata` | `var providerMetadata: [String : JSONValue]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `providerMetadata` | `var providerMetadata: [String : JSONValue]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `providerOptions` | `var providerOptions: [String : JSONValue]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `providerOptions` | `var providerOptions: [String : JSONValue]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `query` | `var query: String` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `rawValue` | `var rawValue: JSONValue` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `rawValue` | `var rawValue: JSONValue` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `requestMetadata` | `var requestMetadata: AIRequestMetadata` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `requestMetadata` | `var requestMetadata: AIRequestMetadata` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `resolution` | `var resolution: String?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `responseMetadata` | `var responseMetadata: AIResponseMetadata` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `responseMetadata` | `var responseMetadata: AIResponseMetadata` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `results` | `var results: [RerankedDocument]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `score` | `var score: Double` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `seed` | `var seed: Int?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `topK` | `var topK: Int?` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `urls` | `var urls: [String]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `warnings` | `var warnings: [AIWarning]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Instance Property | `warnings` | `var warnings: [AIWarning]` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Structure | `RerankedDocument` | `struct RerankedDocument` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Structure | `RerankingRequest` | `struct RerankingRequest` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Structure | `RerankingResult` | `struct RerankingResult` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Structure | `VideoGenerationRequest` | `struct VideoGenerationRequest` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |
+| Structure | `VideoGenerationResult` | `struct VideoGenerationResult` | [Sources/SwiftAISDK/CoreVideoRerankingResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreVideoRerankingResults.swift) |

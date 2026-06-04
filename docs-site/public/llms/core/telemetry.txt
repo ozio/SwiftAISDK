@@ -1,0 +1,178 @@
+# Telemetry
+
+Source URL: /core/telemetry/
+
+Use telemetry when you want structured events for observability, debugging, billing, or product analytics. Telemetry is opt-in: pass `Telemetry.Options` on a call, or register integrations globally and pass enabled telemetry options. Calls with `telemetry: nil` do not record events.
+
+```swift title="Examples/Sources/Telemetry/main.swift"
+import SwiftAISDK
+
+struct ConsoleTelemetry: Telemetry.Integration {
+    func record(_ event: Telemetry.Event) async {
+        print("\(event.kind.rawValue) \(event.operationID) \(event.providerID)")
+    }
+}
+
+@main
+struct TelemetryExample {
+    static func main() async throws {
+        let provider = try AIProviders.openAI()
+        let model = try provider.languageModel("gpt-4.1-mini")
+
+        let result = try await model.generateText(
+            "Summarize this release note.",
+            options: LanguageGenerationOptions(
+                telemetry: Telemetry.Options(
+                    functionID: "release.summary",
+                    metadata: [
+                        "tenant": .string("acme"),
+                        "source": .string("docs"),
+                    ],
+                    integrations: [ConsoleTelemetry()]
+                )
+            )
+        )
+
+        print(result.text)
+    }
+}
+```
+
+## Integrations
+
+Implement `Telemetry.Integration` to receive `Telemetry.Event` values. The default `executeLanguageModelCall` and `executeTool` implementations simply run the underlying operation, so most integrations only need `record(_:)`.
+
+```swift
+struct MetricsTelemetry: Telemetry.Integration {
+    func record(_ event: Telemetry.Event) async {
+        if event.kind == .end {
+            print(event.durationNanoseconds ?? 0)
+            print(event.usage?.totalTokens ?? 0)
+        }
+    }
+}
+```
+
+Register shared integrations once, then pass `Telemetry.Options()` to calls that should use the registered integrations.
+
+```swift
+Telemetry.register(MetricsTelemetry())
+
+let result = try await model.generateText(
+    "Explain this issue.",
+    options: LanguageGenerationOptions(
+        telemetry: Telemetry.Options(functionID: "support.explain")
+    )
+)
+```
+
+Per-call `integrations` override the registered integrations for that call.
+
+```swift
+let result = try await model.generateImage(
+    "A compact app icon.",
+    telemetry: Telemetry.Options(integrations: [ConsoleTelemetry()])
+)
+```
+
+Disable telemetry for a call with `Telemetry.Options.disabled`.
+
+```swift
+let result = try await model.generateText(
+    "Do not record this call.",
+    options: LanguageGenerationOptions(telemetry: .disabled)
+)
+```
+
+## Events
+
+Telemetry events carry the operation, provider, model, call ID, duration, usage, warnings, metadata, and provider response details when available.
+
+- `start` when a facade operation begins.
+- `retry` before a retry delay.
+- `end` when an operation completes successfully.
+- `abort` when the caller aborts the operation.
+- `error` when an operation fails.
+- `stepStart` and `stepEnd` for multi-step tool loops.
+- `toolStart`, `toolEnd`, and `toolError` for tool execution.
+
+Common operation IDs include:
+
+- `ai.generateText`
+- `ai.streamText`
+- `ai.generateObject`
+- `ai.streamObject`
+- `ai.embed`
+- `ai.embedMany`
+- `ai.generateImage`
+- `ai.transcribe`
+- `ai.generateSpeech`
+- `ai.generateVideo`
+- `ai.rerank`
+
+Tool loop events use suffixed operation IDs such as `ai.generateText.step` and `ai.generateText.tool`.
+
+## Privacy
+
+Telemetry can include prompts, tool arguments, generated output, provider metadata, and response metadata. Turn off input or output recording when events leave your process or go to a third-party backend.
+
+```swift
+let telemetry = Telemetry.Options(
+    includesInput: false,
+    includesOutput: false,
+    functionID: "chat.reply",
+    metadata: ["environment": .string("production")]
+)
+
+let result = try await model.generateText(
+    "Use private context from the app.",
+    options: LanguageGenerationOptions(telemetry: telemetry)
+)
+```
+
+`includesInput` and `includesOutput` are copied onto each event so downstream integrations can preserve the caller's redaction intent.
+
+## Wrapping Execution
+
+Integrations can wrap model calls and tools by implementing `executeLanguageModelCall` or `executeTool`. Always call `context.execute()` unless the integration intentionally blocks the operation.
+
+```swift
+struct TimingTelemetry: Telemetry.Integration {
+    func record(_ event: Telemetry.Event) async {}
+
+    func executeLanguageModelCall<Output: Sendable>(
+        _ context: Telemetry.LanguageModelCallContext<Output>
+    ) async throws -> Output {
+        let started = DispatchTime.now().uptimeNanoseconds
+        defer {
+            let elapsed = DispatchTime.now().uptimeNanoseconds - started
+            print("\(context.operationID) took \(elapsed) ns")
+        }
+        return try await context.execute()
+    }
+}
+```
+
+Execution wrappers compose in the order integrations are registered or passed on the call.
+
+## Streams
+
+Streaming telemetry records the start event before the stream emits parts and records a terminal event when the stream ends, fails, or is aborted. Stream failures surface through the `AsyncThrowingStream`, so collect telemetry and consume the stream in the same task boundary when you need correlated logs.
+
+```swift
+do {
+    for try await part in model.streamText(
+        "Write this response incrementally.",
+        options: LanguageGenerationOptions(
+            telemetry: Telemetry.Options(
+                functionID: "writer.stream",
+                integrations: [ConsoleTelemetry()]
+            )
+        )
+    ) {
+        print(part)
+    }
+} catch {
+    print("Stream failed: \(error)")
+}
+```

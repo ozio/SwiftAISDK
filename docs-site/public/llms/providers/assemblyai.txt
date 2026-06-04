@@ -1,0 +1,19 @@
+# "assemblyai"
+
+Source URL: /providers/assemblyai/
+
+## Package
+
+`@ai-sdk/assemblyai`
+
+## Factories
+
+`AIProviders.assemblyAI`
+
+## Capabilities
+
+- Transcription
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

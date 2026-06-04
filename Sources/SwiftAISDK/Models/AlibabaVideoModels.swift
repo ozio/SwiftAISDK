@@ -152,9 +152,9 @@ private func alibabaVideoProviderOptions(from request: VideoGenerationRequest) t
 private func alibabaVideoHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     let body = alibabaVideoErrorMessage(from: response.body) ?? response.bodyText
     guard !response.headers.isEmpty else {
-        return .httpStatus(provider: provider, statusCode: response.statusCode, body: body)
+        return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
     }
-    return .httpStatusWithHeaders(
+    return .apiCall(
         provider: provider,
         statusCode: response.statusCode,
         body: body,

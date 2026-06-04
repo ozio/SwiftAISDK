@@ -67,7 +67,7 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
         _ model: any LanguageModel,
         _ request: LanguageModelRequest,
         _ retryPolicy: AIRetryPolicy,
-        _ telemetry: AITelemetryOptions?,
+        _ telemetry: Telemetry.Options?,
         _ jsonInstruction: AIJSONInstruction?,
         _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
     ) async throws -> AIOutputGenerationResult<FinalOutput>
@@ -77,7 +77,7 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
         _ request: LanguageModelRequest,
         _ timeoutNanoseconds: UInt64?,
         _ retryPolicy: AIRetryPolicy,
-        _ telemetry: AITelemetryOptions?,
+        _ telemetry: Telemetry.Options?,
         _ jsonInstruction: AIJSONInstruction?,
         _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
     ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error>
@@ -91,7 +91,7 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
             _ model: any LanguageModel,
             _ request: LanguageModelRequest,
             _ retryPolicy: AIRetryPolicy,
-            _ telemetry: AITelemetryOptions?,
+            _ telemetry: Telemetry.Options?,
             _ jsonInstruction: AIJSONInstruction?,
             _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
         ) async throws -> AIOutputGenerationResult<FinalOutput>,
@@ -100,7 +100,7 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
             _ request: LanguageModelRequest,
             _ timeoutNanoseconds: UInt64?,
             _ retryPolicy: AIRetryPolicy,
-            _ telemetry: AITelemetryOptions?,
+            _ telemetry: Telemetry.Options?,
             _ jsonInstruction: AIJSONInstruction?,
             _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
         ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error>
@@ -513,7 +513,7 @@ private func mapObjectStreamToOutputStream<FinalOutput: Sendable, PartialOutput:
                     }
                 }
                 guard didYieldOutput else {
-                    throw AINoOutputGeneratedError(outputKind: outputKind)
+                    throw AINoOutputError(structuredOutputKind: outputKind)
                 }
                 continuation.finish()
             } catch {

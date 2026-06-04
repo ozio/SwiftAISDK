@@ -84,7 +84,7 @@ import Testing
     ))
     let model = try provider.imageModel("photon-1")
 
-    await #expect(throws: AIError.httpStatusWithHeaders(
+    await #expect(throws: AIError.apiCall(
         provider: "luma.image",
         statusCode: 422,
         body: "Prompt is invalid",
@@ -104,7 +104,7 @@ import Testing
     ))
     let model = try provider.imageModel("photon-1")
 
-    await #expect(throws: AIError.httpStatus(
+    await #expect(throws: AIError.apiCall(
         provider: "luma.image",
         statusCode: 500,
         body: "Poll failed"

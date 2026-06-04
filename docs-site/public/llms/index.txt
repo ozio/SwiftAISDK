@@ -1,0 +1,35 @@
+# Introduction
+
+Source URL: /
+
+# SwiftAISDK
+
+SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK. It gives Swift apps one facade for text, structured output, embeddings, media, audio, reranking, files, skills, middleware, MCP tools, and typed tool execution.
+
+Start with a provider, pick a model, and call Swift-native model methods such as `generateText`, `streamText`, and `generateObject`. Keep provider-specific behavior in provider settings and `providerOptions`; keep application behavior in Swift types, tools, and async sequences.
+
+## Choose Your Path
+
+Quickstart
+Generate your first response with OpenAI or any registry-backed model.
+
+Tools
+Let a model call typed Swift functions and continue the conversation.
+
+Providers
+See which upstream `@ai-sdk/*` providers and model families are covered.
+
+MCP
+Discover remote tools and pass them into text generation.
+
+## How the Docs Are Organized
+
+- **Getting Started** explains installation, credentials, and the first request.
+- **Core** covers common app workflows: text, streaming, structured output, tools, and middleware.
+- **Cookbook** contains task-oriented recipes you can adapt into app code.
+- **Providers** is generated from the package capability matrix.
+- **Reference** is generated from Swift symbol graphs and is best used after a guide points you to a type.
+
+## Current Scope
+
+SwiftAISDK tracks the provider-facing AI SDK surface. Web framework hooks and React Server Components are intentionally not the first thing you should look for here; SwiftUI-facing abstractions are expected to be Swift-native.
