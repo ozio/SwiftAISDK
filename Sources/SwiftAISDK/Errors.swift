@@ -149,6 +149,27 @@ public struct AIToolCallRepairError: Error, Equatable, CustomStringConvertible, 
     }
 }
 
+public struct AIUIMessageStreamError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var message: String
+    public var rawValue: JSONValue?
+    public var validationIssues: [AIUIMessageValidationIssue]
+
+    public init(
+        message: String,
+        rawValue: JSONValue? = nil,
+        validationIssues: [AIUIMessageValidationIssue] = []
+    ) {
+        self.message = message
+        self.rawValue = rawValue
+        self.validationIssues = validationIssues
+    }
+
+    public var description: String {
+        guard !validationIssues.isEmpty else { return message }
+        return "\(message): \(validationIssues.map(\.description).joined(separator: "; "))"
+    }
+}
+
 public extension AIError {
     var apiCallError: AIAPICallError? {
         switch self {

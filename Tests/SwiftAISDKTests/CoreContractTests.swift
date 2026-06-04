@@ -114,6 +114,119 @@ import Testing
     #expect(parts.contains(.error(message: "provider error", rawValue: .object(["code": .string("bad")]))))
 }
 
+@Test func uiMessageReducerBuildsAssistantMessageFromLanguageStreamParts() throws {
+    let source = AISource(id: "src-1", sourceType: "url", url: "https://example.com")
+    let file = AIStreamFile(id: "file-1", mediaType: "text/plain", filename: "note.txt")
+    let approvalRequest = AIToolApprovalRequest(
+        id: "approval-call-1",
+        toolName: "lookup",
+        arguments: #"{"city":"Tokyo"}"#,
+        toolCallID: "call-1"
+    )
+    let approvalResponse = AIToolApprovalResponse(id: "approval-call-1", approved: true)
+    let toolResult = AIToolResult(
+        toolCallID: "call-1",
+        toolName: "lookup",
+        result: ["forecast": "sunny"]
+    )
+    let response = AIResponseMetadata(id: "resp-1", modelID: "model-1")
+
+    let parts: [LanguageStreamPart] = [
+        .streamStart(warnings: [AIWarning(type: "unsupported", feature: "seed")]),
+        .textStart(id: "text-1"),
+        .textDeltaPart(id: "text-1", delta: "Hel"),
+        .textDeltaPart(id: "text-1", delta: "lo"),
+        .textEnd(id: "text-1"),
+        .reasoningStart(id: "reasoning-1"),
+        .reasoningDeltaPart(id: "reasoning-1", delta: "thinking"),
+        .reasoningEnd(id: "reasoning-1"),
+        .toolInputStart(id: "call-1", name: "lookup", title: "Lookup"),
+        .toolInputDelta(id: "call-1", delta: #"{"city""#),
+        .toolInputDelta(id: "call-1", delta: #":"Tokyo"}"#),
+        .toolInputEnd(id: "call-1"),
+        .toolApprovalRequest(approvalRequest),
+        .toolApprovalResponse(approvalResponse),
+        .toolResult(toolResult),
+        .source(source),
+        .file(file),
+        .metadata(["trace": .string("ui")]),
+        .responseMetadata(response),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 9))
+    ]
+
+    var reducer = AIUIMessageStreamReducer(message: .assistant(id: "message-1"))
+    let message = try reducer.consume(contentsOf: parts)
+
+    #expect(message.id == "message-1")
+    #expect(message.role == .assistant)
+    #expect(message.text == "Hello")
+    #expect(message.reasoning == "thinking")
+    #expect(message.metadata["warnings"]?[0]?["feature"]?.stringValue == "seed")
+    #expect(message.metadata["trace"]?.stringValue == "ui")
+    #expect(message.metadata["response"]?["id"]?.stringValue == "resp-1")
+    #expect(message.metadata["usage"]?["totalTokens"]?.intValue == 9)
+    #expect(message.metadata["finishReason"]?.stringValue == "stop")
+    #expect(message.parts.contains(.toolApprovalRequest(approvalRequest)))
+    #expect(message.parts.contains(.toolApprovalResponse(approvalResponse)))
+    #expect(message.parts.contains(.toolResult(toolResult)))
+    #expect(message.parts.contains(.source(source)))
+    #expect(message.parts.contains(.file(file)))
+
+    let toolCall = try #require(message.parts.compactMap { part -> AIToolCall? in
+        if case let .toolCall(call) = part { return call }
+        return nil
+    }.first)
+    #expect(toolCall.id == "call-1")
+    #expect(toolCall.name == "lookup")
+    #expect(toolCall.arguments == #"{"city":"Tokyo"}"#)
+    #expect(toolCall.title == "Lookup")
+    #expect(safeValidateUIMessages([message]).isValid)
+}
+
+@Test func uiMessageValidationReportsBrokenMessageParts() throws {
+    let broken = AIUIMessage(
+        id: "",
+        role: .assistant,
+        parts: [
+            .toolCall(AIToolCall(id: "", name: "", arguments: "{")),
+            .toolResult(AIToolResult(toolCallID: "missing-call", toolName: "lookup", result: ["ok": true])),
+            .toolApprovalResponse(AIToolApprovalResponse(id: "missing-approval", approved: false))
+        ]
+    )
+
+    let result = safeValidateUIMessages([broken])
+    #expect(result.isValid == false)
+    #expect(result.issues.contains { $0.path == "messages[0].id" })
+    #expect(result.issues.contains { $0.path.contains("toolCall.arguments") })
+    #expect(result.issues.contains { $0.message.contains("tool result must reference") })
+    #expect(result.issues.contains { $0.message.contains("approval response must reference") })
+
+    do {
+        try validateUIMessages([broken])
+        Issue.record("Expected UI message validation failure.")
+    } catch let error as AIUIMessageStreamError {
+        #expect(error.validationIssues == result.issues)
+    }
+}
+
+@Test func uiMessageSnapshotStreamEmitsIncrementalMessages() async throws {
+    let stream = AsyncThrowingStream<LanguageStreamPart, Error> { continuation in
+        continuation.yield(.textDelta("A"))
+        continuation.yield(.textDelta("B"))
+        continuation.yield(.finish(reason: "stop", usage: TokenUsage(totalTokens: 2)))
+        continuation.finish()
+    }
+
+    var snapshots: [AIUIMessage] = []
+    for try await snapshot in AIUIMessageStreamReducer.snapshots(from: stream, messageID: "message-1") {
+        snapshots.append(snapshot)
+    }
+
+    #expect(snapshots.map(\.text) == ["A", "AB", "AB"])
+    #expect(snapshots.last?.metadata["finishReason"]?.stringValue == "stop")
+    #expect(snapshots.last?.metadata["usage"]?["totalTokens"]?.intValue == 2)
+}
+
 @Test func resultTypesCarrySharedWarningsAndMetadataWithoutBreakingDefaults() {
     let response = AIResponseMetadata(id: "resp-1", modelID: "model-1", headers: ["x-request-id": "req-1"])
     let request = AIRequestMetadata(body: .object(["model": .string("model-1")]), headers: ["x-test": "1"])

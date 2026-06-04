@@ -37,7 +37,7 @@ References:
 | `Output` | `covered` | `Output.text/object/array/choice/json`, `AI.generateText(... output:)`, `AI.streamText(... output:)`, existing object-generation facades | Swift now mirrors the v6-style `generateText/streamText + Output.*` entry point while still keeping the older Swift-native object/array/enum/json facades. `Output.object` partial streaming uses `JSONValue` because Swift has no automatic `DeepPartial<T>`. |
 | `Agent` interface | `missing` | none | Decide whether SwiftAISDK should port agent abstractions or keep tool loops inside `AI.generateText`/`AI.streamText`. |
 | `ToolLoopAgent` | `partial` | tool-loop overloads on `AI.generateText` and `AI.streamText` | Behavior exists as facade options, not as a reusable agent object. |
-| `createAgentUIStream` | `missing` | none | Likely depends on UI message stream decisions. |
+| `createAgentUIStream` | `partial` | `AIUIMessageStreamReducer`, `AIUIMessageStreamReducer.snapshots(from:)` | Swift now has the core UI-message reducer needed for agent/UI streams, but no dedicated `Agent` stream wrapper yet. |
 | `createAgentUIStreamResponse` | `out of scope candidate` | none | JS response/server surface; likely not a SwiftPM core priority unless a Swift server use case is chosen. |
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
@@ -48,9 +48,9 @@ References:
 | `zodSchema` | `out of scope candidate` | none | Zod is TypeScript-specific. Could document `AIJSONSchema` as the Swift alternative. |
 | `valibotSchema` | `out of scope candidate` | none | Valibot is TypeScript-specific. |
 | `ModelMessage` | `covered` | `AIMessage`, `AIContentPart`, `MessageRole` | Swift naming differs but covers system/user/assistant/tool plus text, file, image URL, provider references, tool calls/results, approvals. |
-| `UIMessage` | `missing` | none | UI stream/package parity is currently undecided. |
-| `validateUIMessages` | `missing` | none | Depends on whether `UIMessage` enters scope. |
-| `safeValidateUIMessages` | `missing` | none | Depends on whether `UIMessage` enters scope. |
+| `UIMessage` | `covered` | `AIUIMessage`, `AIUIMessagePart`, text/reasoning/data/file/source/tool/approval/custom parts | Swift keeps UI/render messages separate from `AIMessage` model-request messages. |
+| `validateUIMessages` | `covered` | `validateUIMessages` | Validates ids, tool JSON arguments, tool-result links, and approval links. |
+| `safeValidateUIMessages` | `covered` | `safeValidateUIMessages`, `AIUIMessageValidationResult` | Non-throwing validation result for UI persistence/import flows. |
 | `createProviderRegistry` | `covered` | `createProviderRegistry`, `AIProviderRegistry` | Registry and default-provider flows exist. |
 | `customProvider` | `covered` | `customProvider`, `AICustomProvider` | Supports configured models/clients and fallbacks. |
 | `cosineSimilarity` | `missing` | none | Small helper; straightforward to add if desired. |
@@ -107,7 +107,7 @@ it means JavaScript-style error-class parity is only partial.
 | `AI_ToolCallRepairError` / `ToolCallRepairError` | `covered` | `AIToolCallRepairError`, `AITool.refineArguments` | Swift maps the existing argument-refinement hook to a typed tool-call repair failure. |
 | `AI_TooManyEmbeddingValuesForCallError` | `partial` | provider/model preflight errors via `AIError.invalidArgument` | Behavior is tested for providers, but no dedicated public error. |
 | `AI_TypeValidationError` | `covered` | `AITypeValidationError`, `AIJSONSchemaValidator`, `AIObjectGenerationError.kind == .schemaValidation` | Schema validation now has a standalone public type-validation error, while object generation continues to wrap schema failures in `AIObjectGenerationError`. |
-| `AI_UIMessageStreamError` | `missing` | none | Depends on whether UI message streams enter scope. |
+| `AI_UIMessageStreamError` | `covered` | `AIUIMessageStreamError` | Used for UI message validation and stream-reduction failures. |
 | `AI_UnsupportedFunctionalityError` | `partial` | `AIError.unsupportedModel`, `AIWarning(type: "unsupported", ...)`, provider invalid-argument paths | Unsupported features are represented, but not as a dedicated public error class. |
 
 ## Recommended Next Passes
@@ -119,9 +119,10 @@ it means JavaScript-style error-class parity is only partial.
    document examples and consider array `elementStream` ergonomics. The
    `choice/json` factories already propagate `name` and `description` as
    provider hints.
-3. Decide whether UI/agent surfaces are in scope. If yes, start with
-   `UIMessage` + validation, then agent UI streams. If no, mark them out of
-   scope in README/product docs.
+3. Build the next UI layer over the new core UI-message foundation:
+   `AIChatTransport`, `DirectAIChatTransport`, and then a SwiftUI-friendly
+   session/controller surface. Agent-specific UI streams can sit on the same
+   reducer.
 4. Continue typed-error parity only where it improves Swift diagnostics. The
    first middle-path batch now covers API calls, type validation, no-output,
    no-such-tool, invalid tool input, and tool-call repair. Remaining candidates
@@ -136,8 +137,8 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 | Upstream UI idea | SwiftUI candidate | Priority | Notes |
 | --- | --- | --- | --- |
 | `useChat` | `@Observable` `AIChatSession` or `AIChatController` | P1 | Manage `messages`, `status`, `error`, `sendMessage`, `regenerate`, `stop`, `resumeStream`, `addToolOutput`, and `addToolApprovalResponse`. Use SwiftUI Observation rather than hook state. |
-| `UIMessage` and message parts | `AIUIMessage`, `AIUIMessagePart`, metadata/data parts | P1 | Keep UI rendering state separate from `AIMessage` model-request state. Parts should cover text, reasoning, sources, files, tool calls, tool results, approval requests/responses, and custom data. |
-| `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReader` or `AIChatSession.consume(stream:)` | P1 | Convert `LanguageStreamPart`/future UI stream chunks into stable message updates on the main actor, so SwiftUI views do not hand-roll streaming assembly. |
+| `UIMessage` and message parts | `AIUIMessage`, `AIUIMessagePart`, metadata/data parts | done | Core render-message model exists without depending on SwiftUI/Observation. |
+| `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReducer` | done | Converts `LanguageStreamPart` into stable UI message snapshots, so UI layers do not hand-roll streaming assembly. |
 | `useObject` | `@Observable` `AIObjectGenerationSession<Output>` | P2 | Wrap `streamObject` for SwiftUI with `partialObject`, `object`, `isStreaming`, `error`, `submit`, and cancellation. Useful for forms, inspectors, and structured assistant panels. |
 | `DirectChatTransport` | `AIChatTransport` plus `DirectAIChatTransport` | P1 | In-process transport should be the SwiftUI default because native apps can call SwiftAISDK directly. Leave room for an `HTTPChatTransport` later when an app talks to its own backend. |
 
@@ -152,9 +153,8 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 
 ### Suggested Build Order
 
-1. Add `AIUIMessage` and `AIUIMessagePart` as the stable render model.
-2. Add a stream reducer that maps current `LanguageStreamPart` into UI message
-   updates.
-3. Add `AIChatTransport` and `DirectAIChatTransport`.
-4. Add `@Observable` `AIChatSession` for SwiftUI apps.
-5. Add `AIObjectGenerationSession<Output>` after the chat state model settles.
+1. Add `AIChatTransport` and `DirectAIChatTransport`.
+2. Add `@Observable` `AIChatSession` for SwiftUI apps, conditional on platform
+   availability if needed.
+3. Add `AIObjectGenerationSession<Output>` after the chat state model settles.
+4. Consider agent-specific UI stream wrappers on top of `AIUIMessageStreamReducer`.
