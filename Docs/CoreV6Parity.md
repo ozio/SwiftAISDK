@@ -10,6 +10,7 @@ References:
 
 - <https://ai-sdk.dev/docs/reference/ai-sdk-core>
 - <https://ai-sdk.dev/docs/reference/ai-sdk-errors>
+- <https://ai-sdk.dev/docs/reference/ai-sdk-ui>
 
 ## Status Labels
 
@@ -119,10 +120,10 @@ it means JavaScript-style error-class parity is only partial.
    document examples and consider array `elementStream` ergonomics. The
    `choice/json` factories already propagate `name` and `description` as
    provider hints.
-3. Build the next UI layer over the new core UI-message foundation:
-   `AIChatTransport`, `DirectAIChatTransport`, and then a SwiftUI-friendly
-   session/controller surface. Agent-specific UI streams can sit on the same
-   reducer.
+3. Build the SwiftUI layer over the new core UI-message and transport
+   foundation: `AIChatSession`/controller first, then object-generation
+   session state. Agent-specific UI streams can sit on the same reducer and
+   transport contracts.
 4. Continue typed-error parity only where it improves Swift diagnostics. The
    first middle-path batch now covers API calls, type validation, no-output,
    no-such-tool, invalid tool input, and tool-call repair. Remaining candidates
@@ -138,9 +139,10 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 | --- | --- | --- | --- |
 | `useChat` | `@Observable` `AIChatSession` or `AIChatController` | P1 | Manage `messages`, `status`, `error`, `sendMessage`, `regenerate`, `stop`, `resumeStream`, `addToolOutput`, and `addToolApprovalResponse`. Use SwiftUI Observation rather than hook state. |
 | `UIMessage` and message parts | `AIUIMessage`, `AIUIMessagePart`, metadata/data parts | done | Core render-message model exists without depending on SwiftUI/Observation. |
+| `convertToModelMessages` | `convertToModelMessages` | done | Converts supported `AIUIMessage` parts into `AIMessage` history for model calls; render-only parts are ignored, unsupported URL files fail with `AIUIMessageStreamError`. |
 | `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReducer` | done | Converts `LanguageStreamPart` into stable UI message snapshots, so UI layers do not hand-roll streaming assembly. |
 | `useObject` | `@Observable` `AIObjectGenerationSession<Output>` | P2 | Wrap `streamObject` for SwiftUI with `partialObject`, `object`, `isStreaming`, `error`, `submit`, and cancellation. Useful for forms, inspectors, and structured assistant panels. |
-| `DirectChatTransport` | `AIChatTransport` plus `DirectAIChatTransport` | P1 | In-process transport should be the SwiftUI default because native apps can call SwiftAISDK directly. Leave room for an `HTTPChatTransport` later when an app talks to its own backend. |
+| `DirectChatTransport` | `AIChatTransport`, `AIChatTransportRequest`, `AIChatRequestOptions`, `DirectAIChatTransport` | done | In-process transport streams `AIUIMessage` snapshots from `AI.streamText`, supports tool-loop options, request defaults, aborts, retry/timeout/telemetry, and reasoning/source/finish filters. Leave room for an `HTTPChatTransport` later when an app talks to its own backend. |
 
 ### Not Worth Directly Porting
 
@@ -153,8 +155,7 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 
 ### Suggested Build Order
 
-1. Add `AIChatTransport` and `DirectAIChatTransport`.
-2. Add `@Observable` `AIChatSession` for SwiftUI apps, conditional on platform
+1. Add `@Observable` `AIChatSession` for SwiftUI apps, conditional on platform
    availability if needed.
-3. Add `AIObjectGenerationSession<Output>` after the chat state model settles.
-4. Consider agent-specific UI stream wrappers on top of `AIUIMessageStreamReducer`.
+2. Add `AIObjectGenerationSession<Output>` after the chat state model settles.
+3. Consider agent-specific UI stream wrappers on top of `AIUIMessageStreamReducer`.

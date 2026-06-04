@@ -227,6 +227,149 @@ import Testing
     #expect(snapshots.last?.metadata["usage"]?["totalTokens"]?.intValue == 2)
 }
 
+@Test func convertToModelMessagesMapsSupportedUIMessageParts() throws {
+    let imageData = try #require("image".data(using: .utf8))
+    let call = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Tokyo"}"#)
+    let result = AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["forecast": "sunny"])
+
+    let messages = try convertToModelMessages([
+        .system("Rules."),
+        AIUIMessage(
+            id: "user-1",
+            role: .user,
+            parts: [
+                .text(AIUITextPart(text: "What is this?")),
+                .file(AIStreamFile(mediaType: "image/png", data: imageData, filename: "image.png")),
+                .file(AIStreamFile(mediaType: "image/jpeg", url: "https://example.com/image.jpg"))
+            ]
+        ),
+        AIUIMessage(
+            id: "assistant-1",
+            role: .assistant,
+            parts: [
+                .reasoning(AIUIReasoningPart(text: "Need a lookup.")),
+                .toolCall(call),
+                .metadata(["ignored": .bool(true)])
+            ]
+        ),
+        AIUIMessage(id: "tool-1", role: .tool, parts: [.toolResult(result)])
+    ])
+
+    #expect(messages.count == 4)
+    #expect(messages[0] == .system("Rules."))
+    #expect(messages[1].role == .user)
+    #expect(messages[1].combinedText == "What is this?")
+    #expect(messages[1].content.count == 3)
+    #expect(messages[2].reasoning == "Need a lookup.")
+    #expect(messages[2].content == [.toolCall(call)])
+    #expect(messages[3].content == [.toolResult(result)])
+}
+
+@Test func convertToModelMessagesRejectsUnsupportedURLFiles() throws {
+    let message = AIUIMessage(
+        id: "user-1",
+        role: .user,
+        parts: [
+            .file(AIStreamFile(mediaType: "application/pdf", url: "https://example.com/report.pdf"))
+        ]
+    )
+
+    do {
+        _ = try convertToModelMessages([message])
+        Issue.record("Expected model-message conversion failure.")
+    } catch let error as AIUIMessageStreamError {
+        #expect(error.validationIssues.first?.path == "messages[0].parts[0].file")
+        #expect(error.description.contains("URL files"))
+    }
+}
+
+@Test func directAIChatTransportConvertsHistoryAndStreamsUIMessageSnapshots() async throws {
+    let source = AISource(id: "source-1", sourceType: "url", url: "https://example.com")
+    let model = ChatTransportRecordingLanguageModel(streamParts: [
+        .textDelta("Hel"),
+        .textDelta("lo"),
+        .reasoningDelta("thinking"),
+        .source(source),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+    ])
+    let call = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"city":"Tokyo"}"#)
+    let result = AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["forecast": "sunny"])
+    let transport = DirectAIChatTransport(
+        model: model,
+        requestOptions: AIChatRequestOptions(
+            temperature: 0.2,
+            providerOptions: ["mock": ["trace": "enabled"]],
+            headers: ["x-default": "1"]
+        ),
+        sendSources: true,
+        generateMessageID: { "generated-response" }
+    )
+
+    let stream = try transport.sendMessages(AIChatTransportRequest(
+        chatID: "chat-1",
+        responseMessageID: "response-1",
+        messages: [
+            .system("Rules."),
+            .user("Weather?"),
+            AIUIMessage(id: "assistant-1", role: .assistant, parts: [.toolCall(call)]),
+            AIUIMessage(id: "tool-1", role: .tool, parts: [.toolResult(result)])
+        ],
+        headers: ["x-request": "2"]
+    ))
+
+    var snapshots: [AIUIMessage] = []
+    for try await snapshot in stream {
+        snapshots.append(snapshot)
+    }
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.temperature == 0.2)
+    #expect(request.providerOptions["mock"]?["trace"]?.stringValue == "enabled")
+    #expect(request.headers == ["x-default": "1", "x-request": "2"])
+    #expect(request.messages.map(\.role) == [.system, .user, .assistant, .tool])
+    #expect(request.messages[2].content == [.toolCall(call)])
+    #expect(request.messages[3].content == [.toolResult(result)])
+    #expect(snapshots.map(\.text) == ["Hel", "Hello", "Hello", "Hello", "Hello"])
+    #expect(snapshots.last?.id == "response-1")
+    #expect(snapshots.last?.reasoning == "thinking")
+    #expect(snapshots.last?.parts.contains(.source(source)) == true)
+    #expect(snapshots.last?.metadata["finishReason"]?.stringValue == "stop")
+}
+
+@Test func directAIChatTransportCanHideReasoningSourcesAndFinishMetadata() async throws {
+    let model = ChatTransportRecordingLanguageModel(streamParts: [
+        .reasoningDelta("hidden"),
+        .source(AISource(id: "source-1", sourceType: "url", url: "https://example.com")),
+        .textDelta("Visible"),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+    ])
+    let transport = DirectAIChatTransport(
+        model: model,
+        sendReasoning: false,
+        sendSources: false,
+        sendFinish: false,
+        generateMessageID: { "generated-response" }
+    )
+
+    var snapshots: [AIUIMessage] = []
+    for try await snapshot in try transport.sendMessages(AIChatTransportRequest(
+        chatID: "chat-1",
+        messages: [.user("Hi")]
+    )) {
+        snapshots.append(snapshot)
+    }
+
+    #expect(snapshots.count == 1)
+    #expect(snapshots.first?.id == "generated-response")
+    #expect(snapshots.first?.text == "Visible")
+    #expect(snapshots.first?.reasoning.isEmpty == true)
+    #expect(snapshots.first?.metadata["finishReason"] == nil)
+    #expect(snapshots.first?.parts.contains { part in
+        if case .source = part { return true }
+        return false
+    } == false)
+}
+
 @Test func resultTypesCarrySharedWarningsAndMetadataWithoutBreakingDefaults() {
     let response = AIResponseMetadata(id: "resp-1", modelID: "model-1", headers: ["x-request-id": "req-1"])
     let request = AIRequestMetadata(body: .object(["model": .string("model-1")]), headers: ["x-test": "1"])
@@ -306,4 +449,37 @@ import Testing
     #expect(skill.requestMetadata == request)
     #expect(skill.responseMetadata == response)
     #expect(skill.warnings == [warning])
+}
+
+private final class ChatTransportRecordingLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "chat-transport"
+    let modelID = "language"
+    var generateRequests: [LanguageModelRequest] = []
+    var streamRequests: [LanguageModelRequest] = []
+    private let result: TextGenerationResult
+    private let streamParts: [LanguageStreamPart]
+
+    init(
+        result: TextGenerationResult = TextGenerationResult(text: "ok", rawValue: .object([:])),
+        streamParts: [LanguageStreamPart] = []
+    ) {
+        self.result = result
+        self.streamParts = streamParts
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        generateRequests.append(request)
+        return result
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamRequests.append(request)
+        let parts = streamParts
+        return AsyncThrowingStream { continuation in
+            for part in parts {
+                continuation.yield(part)
+            }
+            continuation.finish()
+        }
+    }
 }
