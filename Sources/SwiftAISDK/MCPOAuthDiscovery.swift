@@ -1,0 +1,176 @@
+import Foundation
+
+public struct MCPOAuthDiscovery {
+    public static func discoverProtectedResourceMetadata(
+        serverURL: URL,
+        protocolVersion: String = MCPClient.latestProtocolVersion,
+        resourceMetadataURL: URL? = nil,
+        transport: any AITransport = URLSessionTransport.shared
+    ) async throws -> MCPOAuthProtectedResourceMetadata {
+        let discoveryURL = resourceMetadataURL ?? mcpWellKnownURL(
+            for: serverURL,
+            wellKnownName: "oauth-protected-resource",
+            includePath: true
+        )
+        var response = try await discoveryGETWithHeaderRetry(url: discoveryURL, protocolVersion: protocolVersion, transport: transport)
+
+        if resourceMetadataURL == nil,
+           shouldFallbackToRoot(response: response, originalURL: serverURL) {
+            response = try await discoveryGETWithHeaderRetry(
+                url: mcpWellKnownURL(for: serverURL, wellKnownName: "oauth-protected-resource", includePath: false),
+                protocolVersion: protocolVersion,
+                transport: transport
+            )
+        }
+
+        guard let response else {
+            throw MCPClientError(message: "Resource server does not implement OAuth 2.0 Protected Resource Metadata.")
+        }
+        if response.statusCode == 404 {
+            throw MCPClientError(message: "Resource server does not implement OAuth 2.0 Protected Resource Metadata.")
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw MCPClientError(message: "HTTP \(response.statusCode) trying to load well-known OAuth protected resource metadata.")
+        }
+        return try MCPOAuthProtectedResourceMetadata(json: response.jsonValue())
+    }
+
+    public static func discoverProtectedResourceMetadata(
+        serverURL: String,
+        protocolVersion: String = MCPClient.latestProtocolVersion,
+        resourceMetadataURL: String? = nil,
+        transport: any AITransport = URLSessionTransport.shared
+    ) async throws -> MCPOAuthProtectedResourceMetadata {
+        try await discoverProtectedResourceMetadata(
+            serverURL: requireURL(serverURL),
+            protocolVersion: protocolVersion,
+            resourceMetadataURL: try resourceMetadataURL.map(requireURL),
+            transport: transport
+        )
+    }
+
+    public static func buildAuthorizationServerDiscoveryURLs(_ authorizationServerURL: URL) -> [URL] {
+        mcpAuthorizationServerDiscoveryURLs(authorizationServerURL).map(\.url)
+    }
+
+    public static func discoverAuthorizationServerMetadata(
+        authorizationServerURL: URL,
+        protocolVersion: String = MCPClient.latestProtocolVersion,
+        transport: any AITransport = URLSessionTransport.shared
+    ) async throws -> MCPOAuthAuthorizationServerMetadata? {
+        for discoveryURL in mcpAuthorizationServerDiscoveryURLs(authorizationServerURL) {
+            guard let response = try await discoveryGETWithHeaderRetry(
+                url: discoveryURL.url,
+                protocolVersion: protocolVersion,
+                transport: transport
+            ) else {
+                continue
+            }
+            guard (200..<300).contains(response.statusCode) else {
+                if (400..<500).contains(response.statusCode) {
+                    continue
+                }
+                throw MCPClientError(
+                    message: "HTTP \(response.statusCode) trying to load \(discoveryURL.kind == .oauth ? "OAuth" : "OpenID provider") metadata from \(discoveryURL.url.absoluteString)"
+                )
+            }
+            return try MCPOAuthAuthorizationServerMetadata(
+                json: response.jsonValue(),
+                sourceURL: discoveryURL.url,
+                sourceType: discoveryURL.kind
+            )
+        }
+        return nil
+    }
+
+    public static func discoverAuthorizationServerMetadata(
+        authorizationServerURL: String,
+        protocolVersion: String = MCPClient.latestProtocolVersion,
+        transport: any AITransport = URLSessionTransport.shared
+    ) async throws -> MCPOAuthAuthorizationServerMetadata? {
+        try await discoverAuthorizationServerMetadata(
+            authorizationServerURL: requireURL(authorizationServerURL),
+            protocolVersion: protocolVersion,
+            transport: transport
+        )
+    }
+}
+
+struct MCPOAuthDiscoveryURL {
+    enum Kind {
+        case oauth
+        case oidc
+    }
+
+    var url: URL
+    var kind: Kind
+}
+
+func discoveryGET(url: URL, protocolVersion: String, transport: any AITransport) async throws -> AIHTTPResponse {
+    try await transport.send(AIHTTPRequest(
+        method: "GET",
+        url: url,
+        headers: protocolVersion.isEmpty ? [:] : ["MCP-Protocol-Version": protocolVersion]
+    ))
+}
+
+func discoveryGETWithHeaderRetry(
+    url: URL,
+    protocolVersion: String,
+    transport: any AITransport
+) async throws -> AIHTTPResponse? {
+    do {
+        return try await discoveryGET(url: url, protocolVersion: protocolVersion, transport: transport)
+    } catch {
+        do {
+            return try await discoveryGET(url: url, protocolVersion: "", transport: transport)
+        } catch {
+            return nil
+        }
+    }
+}
+
+func shouldFallbackToRoot(response: AIHTTPResponse?, originalURL: URL) -> Bool {
+    guard originalURL.path != "" && originalURL.path != "/" else { return false }
+    guard let response else { return true }
+    return (400..<500).contains(response.statusCode)
+}
+
+func mcpWellKnownURL(for url: URL, wellKnownName: String, includePath: Bool) -> URL {
+    var components = URLComponents()
+    components.scheme = url.scheme
+    components.host = url.host
+    components.port = url.port
+    let path = includePath ? url.path.trimmedTrailingSlashForOAuthDiscovery : ""
+    components.path = "/.well-known/\(wellKnownName)\(path)"
+    if includePath {
+        components.query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.query
+    }
+    return components.url ?? url
+}
+
+func mcpAuthorizationServerDiscoveryURLs(_ url: URL) -> [MCPOAuthDiscoveryURL] {
+    let path = url.path.trimmedTrailingSlashForOAuthDiscovery
+    guard !path.isEmpty else {
+        return [
+            MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server"), kind: .oauth),
+            MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/openid-configuration"), kind: .oidc)
+        ]
+    }
+    return [
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server\(path)"), kind: .oauth),
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server"), kind: .oauth),
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/openid-configuration\(path)"), kind: .oidc),
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "\(path)/.well-known/openid-configuration"), kind: .oidc)
+    ]
+}
+
+func mcpURL(origin: URL, path: String) -> URL {
+    var components = URLComponents()
+    components.scheme = origin.scheme
+    components.host = origin.host
+    components.port = origin.port
+    components.path = path
+    return components.url ?? origin
+}
+
