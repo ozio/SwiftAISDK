@@ -6,6 +6,7 @@ public struct AIUIMessageStreamReducer: Sendable {
     private var textPartIndexes: [String: Int] = [:]
     private var reasoningPartIndexes: [String: Int] = [:]
     private var toolCallPartIndexes: [String: Int] = [:]
+    private var activeToolInputIDs: Set<String> = []
     private var fallbackToolCallIDsByIndex: [Int: String] = [:]
     private var fallbackToolCallCounter = 0
 
@@ -25,17 +26,17 @@ public struct AIUIMessageStreamReducer: Sendable {
         case let .textDelta(delta):
             appendText(delta, id: nil)
         case let .textDeltaPart(id, delta, providerMetadata):
-            appendText(delta, id: id, providerMetadata: providerMetadata)
+            try appendTextDeltaPart(delta, id: id, providerMetadata: providerMetadata)
         case let .textEnd(id, providerMetadata):
-            mergeTextMetadata(id: id, providerMetadata: providerMetadata)
+            try endTextPart(id: id, providerMetadata: providerMetadata)
         case let .reasoningStart(id, providerMetadata):
             ensureReasoningPart(id: id, providerMetadata: providerMetadata)
         case let .reasoningDelta(delta):
             appendReasoning(delta, id: nil)
         case let .reasoningDeltaPart(id, delta, providerMetadata):
-            appendReasoning(delta, id: id, providerMetadata: providerMetadata)
+            try appendReasoningDeltaPart(delta, id: id, providerMetadata: providerMetadata)
         case let .reasoningEnd(id, providerMetadata):
-            mergeReasoningMetadata(id: id, providerMetadata: providerMetadata)
+            try endReasoningPart(id: id, providerMetadata: providerMetadata)
         case let .toolInputStart(id, name, providerExecuted, dynamic, title, providerMetadata):
             ensureToolCallPart(
                 id: id,
@@ -45,10 +46,11 @@ public struct AIUIMessageStreamReducer: Sendable {
                 title: title,
                 providerMetadata: providerMetadata
             )
+            activeToolInputIDs.insert(id)
         case let .toolInputDelta(id, delta, providerMetadata):
-            appendToolArguments(delta, id: id, providerMetadata: providerMetadata)
+            try appendToolInputDelta(delta, id: id, providerMetadata: providerMetadata)
         case let .toolInputEnd(id, providerMetadata):
-            mergeToolMetadata(id: id, providerMetadata: providerMetadata)
+            try endToolInput(id: id, providerMetadata: providerMetadata)
         case let .toolCallDelta(id, name, argumentsDelta, index):
             appendToolCallDelta(id: id, name: name, argumentsDelta: argumentsDelta, index: index)
         case let .toolCall(call):
@@ -117,62 +119,114 @@ public struct AIUIMessageStreamReducer: Sendable {
         }
     }
 
-    private mutating func ensureTextPart(id: String?, providerMetadata: [String: JSONValue] = [:]) {
+    private mutating func ensureTextPart(
+        id: String?,
+        providerMetadata: [String: JSONValue] = [:],
+        state: AIUIStreamingPartState? = .streaming
+    ) {
         let key = id ?? "$default"
         if let index = textPartIndexes[key], case let .text(part) = message.parts[index] {
             message.parts[index] = .text(AIUITextPart(
                 id: part.id,
                 text: part.text,
+                state: part.state ?? state,
                 providerMetadata: part.providerMetadata.merging(providerMetadata) { _, new in new }
             ))
             return
         }
         textPartIndexes[key] = message.parts.count
-        message.parts.append(.text(AIUITextPart(id: id, text: "", providerMetadata: providerMetadata)))
+        message.parts.append(.text(AIUITextPart(id: id, text: "", state: state, providerMetadata: providerMetadata)))
     }
 
     private mutating func appendText(_ delta: String, id: String?, providerMetadata: [String: JSONValue] = [:]) {
-        ensureTextPart(id: id, providerMetadata: providerMetadata)
+        ensureTextPart(id: id, providerMetadata: providerMetadata, state: id == nil ? nil : .streaming)
         let key = id ?? "$default"
         guard let index = textPartIndexes[key], case let .text(part) = message.parts[index] else { return }
         message.parts[index] = .text(AIUITextPart(
             id: part.id,
             text: part.text + delta,
+            state: part.state,
             providerMetadata: part.providerMetadata.merging(providerMetadata) { _, new in new }
         ))
     }
 
-    private mutating func mergeTextMetadata(id: String, providerMetadata: [String: JSONValue]) {
-        ensureTextPart(id: id, providerMetadata: providerMetadata)
+    private mutating func appendTextDeltaPart(
+        _ delta: String,
+        id: String,
+        providerMetadata: [String: JSONValue]
+    ) throws {
+        guard textPartIndexes[id] != nil else {
+            throw missingStartError(chunkType: "text-delta", chunkID: id, startChunkType: "text-start")
+        }
+        appendText(delta, id: id, providerMetadata: providerMetadata)
     }
 
-    private mutating func ensureReasoningPart(id: String?, providerMetadata: [String: JSONValue] = [:]) {
+    private mutating func endTextPart(id: String, providerMetadata: [String: JSONValue]) throws {
+        guard let index = textPartIndexes[id], case let .text(part) = message.parts[index] else {
+            throw missingStartError(chunkType: "text-end", chunkID: id, startChunkType: "text-start")
+        }
+        message.parts[index] = .text(AIUITextPart(
+            id: part.id,
+            text: part.text,
+            state: .done,
+            providerMetadata: part.providerMetadata.merging(providerMetadata) { _, new in new }
+        ))
+        textPartIndexes.removeValue(forKey: id)
+    }
+
+    private mutating func ensureReasoningPart(
+        id: String?,
+        providerMetadata: [String: JSONValue] = [:],
+        state: AIUIStreamingPartState? = .streaming
+    ) {
         let key = id ?? "$default"
         if let index = reasoningPartIndexes[key], case let .reasoning(part) = message.parts[index] {
             message.parts[index] = .reasoning(AIUIReasoningPart(
                 id: part.id,
                 text: part.text,
+                state: part.state ?? state,
                 providerMetadata: part.providerMetadata.merging(providerMetadata) { _, new in new }
             ))
             return
         }
         reasoningPartIndexes[key] = message.parts.count
-        message.parts.append(.reasoning(AIUIReasoningPart(id: id, text: "", providerMetadata: providerMetadata)))
+        message.parts.append(.reasoning(AIUIReasoningPart(id: id, text: "", state: state, providerMetadata: providerMetadata)))
     }
 
     private mutating func appendReasoning(_ delta: String, id: String?, providerMetadata: [String: JSONValue] = [:]) {
-        ensureReasoningPart(id: id, providerMetadata: providerMetadata)
+        ensureReasoningPart(id: id, providerMetadata: providerMetadata, state: id == nil ? nil : .streaming)
         let key = id ?? "$default"
         guard let index = reasoningPartIndexes[key], case let .reasoning(part) = message.parts[index] else { return }
         message.parts[index] = .reasoning(AIUIReasoningPart(
             id: part.id,
             text: part.text + delta,
+            state: part.state,
             providerMetadata: part.providerMetadata.merging(providerMetadata) { _, new in new }
         ))
     }
 
-    private mutating func mergeReasoningMetadata(id: String, providerMetadata: [String: JSONValue]) {
-        ensureReasoningPart(id: id, providerMetadata: providerMetadata)
+    private mutating func appendReasoningDeltaPart(
+        _ delta: String,
+        id: String,
+        providerMetadata: [String: JSONValue]
+    ) throws {
+        guard reasoningPartIndexes[id] != nil else {
+            throw missingStartError(chunkType: "reasoning-delta", chunkID: id, startChunkType: "reasoning-start")
+        }
+        appendReasoning(delta, id: id, providerMetadata: providerMetadata)
+    }
+
+    private mutating func endReasoningPart(id: String, providerMetadata: [String: JSONValue]) throws {
+        guard let index = reasoningPartIndexes[id], case let .reasoning(part) = message.parts[index] else {
+            throw missingStartError(chunkType: "reasoning-end", chunkID: id, startChunkType: "reasoning-start")
+        }
+        message.parts[index] = .reasoning(AIUIReasoningPart(
+            id: part.id,
+            text: part.text,
+            state: .done,
+            providerMetadata: part.providerMetadata.merging(providerMetadata) { _, new in new }
+        ))
+        reasoningPartIndexes.removeValue(forKey: id)
     }
 
     private mutating func ensureToolCallPart(
@@ -227,6 +281,25 @@ public struct AIUIMessageStreamReducer: Sendable {
         ensureToolCallPart(id: id, name: "", providerMetadata: providerMetadata)
     }
 
+    private mutating func appendToolInputDelta(
+        _ delta: String,
+        id: String,
+        providerMetadata: [String: JSONValue]
+    ) throws {
+        guard activeToolInputIDs.contains(id) else {
+            throw missingStartError(chunkType: "tool-input-delta", chunkID: id, startChunkType: "tool-input-start")
+        }
+        appendToolArguments(delta, id: id, providerMetadata: providerMetadata)
+    }
+
+    private mutating func endToolInput(id: String, providerMetadata: [String: JSONValue]) throws {
+        guard activeToolInputIDs.contains(id) else {
+            throw missingStartError(chunkType: "tool-input-end", chunkID: id, startChunkType: "tool-input-start")
+        }
+        mergeToolMetadata(id: id, providerMetadata: providerMetadata)
+        activeToolInputIDs.remove(id)
+    }
+
     private mutating func appendToolCallDelta(id: String?, name: String?, argumentsDelta: String, index: Int?) {
         let toolID = id ?? fallbackToolCallID(index: index)
         ensureToolCallPart(id: toolID, name: name ?? "")
@@ -262,6 +335,14 @@ public struct AIUIMessageStreamReducer: Sendable {
         if !providerMetadata.isEmpty {
             message.metadata["providerMetadata"] = .object(providerMetadata)
         }
+    }
+
+    private func missingStartError(chunkType: String, chunkID: String, startChunkType: String) -> AIUIMessageStreamError {
+        AIUIMessageStreamError(
+            message: "Received \(chunkType) for missing stream part with ID \"\(chunkID)\". Ensure a \"\(startChunkType)\" chunk is sent before any \"\(chunkType)\" chunks.",
+            chunkType: chunkType,
+            chunkID: chunkID
+        )
     }
 }
 

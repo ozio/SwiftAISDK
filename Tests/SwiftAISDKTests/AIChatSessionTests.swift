@@ -62,6 +62,24 @@ import Testing
 }
 
 @MainActor
+@Test func aiChatSessionCanSubmitExistingTranscriptWithoutNewUserMessage() async throws {
+    let transport = RecordingChatTransport()
+    let session = AIChatSession(
+        transport: transport,
+        messages: [.user("Hi", id: "user-1")],
+        generateMessageID: { "response-1" }
+    )
+
+    await session.sendMessage(options: AIChatSessionRequestOptions(headers: ["x-submit": "1"])).value
+
+    let request = try #require(transport.sendRequests.first)
+    #expect(request.messageID == "user-1")
+    #expect(request.headers == ["x-submit": "1"])
+    #expect(request.messages.map(\.id) == ["user-1"])
+    #expect(session.messages.map(\.id) == ["user-1", "response-1"])
+}
+
+@MainActor
 @Test func aiChatSessionRegeneratesFromUserOrAssistantMessage() async throws {
     let transport = RecordingChatTransport()
     let ids = RecordingIDGenerator(["response-user", "response-assistant"])
@@ -93,17 +111,25 @@ import Testing
 @MainActor
 @Test func aiChatSessionResumeKeepsReadyWhenNoStreamExistsAndConsumesReconnectStream() async throws {
     let transport = RecordingChatTransport(reconnects: [nil, "resumed-message"])
-    let session = AIChatSession(chatID: "chat-1", transport: transport)
+    let events = RecordingSessionEvents()
+    let session = AIChatSession(
+        chatID: "chat-1",
+        transport: transport,
+        onFinish: { events.finishEvents.append($0) }
+    )
 
     await session.resumeStream(options: AIChatSessionRequestOptions(headers: ["x-resume": "1"])).value
     #expect(session.status == .ready)
     #expect(session.messages.isEmpty)
     #expect(transport.reconnectRequests.first?.headers == ["x-resume": "1"])
+    #expect(events.finishEvents.isEmpty)
 
     await session.resumeStream().value
     #expect(session.status == .ready)
     #expect(session.messages.map(\.id) == ["resumed-message"])
     #expect(session.messages.first?.text == "Resumed resumed-message")
+    #expect(events.finishEvents.count == 1)
+    #expect(events.finishEvents.first?.message?.id == "resumed-message")
 }
 
 @MainActor
@@ -121,6 +147,67 @@ import Testing
     #expect(session.messages[0].parts == [.toolResult(result)])
     #expect(session.messages[1].id == "approval-message")
     #expect(session.messages[1].parts == [.toolApprovalResponse(response)])
+}
+
+@MainActor
+@Test func aiChatSessionInvokesFinishAndErrorCallbacksLikeUpstreamChat() async throws {
+    let finishEvents = RecordingSessionEvents()
+    let success = AIChatSession(
+        transport: RecordingChatTransport(),
+        generateMessageID: { "response-1" },
+        onFinish: { finishEvents.finishEvents.append($0) }
+    )
+
+    await success.sendMessage("Hi", id: "user-1").value
+
+    let finish = try #require(finishEvents.finishEvents.first)
+    #expect(finish.message?.id == "response-1")
+    #expect(finish.messages.map(\.id) == ["user-1", "response-1"])
+    #expect(finish.isAbort == false)
+    #expect(finish.isDisconnect == false)
+    #expect(finish.isError == false)
+
+    let errorEvents = RecordingSessionEvents()
+    let failure = AIChatSession(
+        transport: ErroringChatTransport(),
+        generateMessageID: { "response-error" },
+        onError: { errorEvents.errors.append(String(describing: $0)) },
+        onFinish: { errorEvents.finishEvents.append($0) }
+    )
+
+    await failure.sendMessage("Hi", id: "user-1").value
+
+    #expect(failure.status == .error)
+    #expect(errorEvents.errors.count == 1)
+    let errorFinish = try #require(errorEvents.finishEvents.first)
+    #expect(errorFinish.isError)
+    #expect(errorFinish.message?.id == "response-error")
+}
+
+@MainActor
+@Test func aiChatSessionCanSendAutomaticallyAfterToolOutput() async throws {
+    let transport = RecordingChatTransport()
+    let ids = RecordingIDGenerator(["tool-message", "auto-response"])
+    let session = AIChatSession(
+        transport: transport,
+        messages: [.assistant(id: "assistant-1")],
+        generateMessageID: { ids.next() },
+        sendAutomaticallyWhen: { messages in
+            messages.last?.role == .tool
+        }
+    )
+    let result = AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["ok": true])
+
+    session.addToolOutput(result, options: AIChatSessionRequestOptions(headers: ["x-auto": "1"]))
+
+    await waitUntil { transport.sendRequests.count == 1 }
+    await waitUntil { session.status == .ready }
+
+    let request = try #require(transport.sendRequests.first)
+    #expect(request.messageID == "tool-message")
+    #expect(request.headers == ["x-auto": "1"])
+    #expect(request.messages.map(\.id) == ["assistant-1", "tool-message"])
+    #expect(session.messages.map(\.id) == ["assistant-1", "tool-message", "auto-response"])
 }
 
 private final class RecordingChatTransport: AIChatTransport, @unchecked Sendable {
@@ -153,6 +240,17 @@ private final class RecordingChatTransport: AIChatTransport, @unchecked Sendable
     }
 }
 
+private final class ErroringChatTransport: AIChatTransport, @unchecked Sendable {
+    func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error> {
+        throw AIError.invalidResponse(provider: "test", message: "boom")
+    }
+}
+
+private final class RecordingSessionEvents: @unchecked Sendable {
+    var finishEvents: [AIChatSessionFinishEvent] = []
+    var errors: [String] = []
+}
+
 private final class RecordingIDGenerator: @unchecked Sendable {
     private var ids: [String]
 
@@ -162,5 +260,16 @@ private final class RecordingIDGenerator: @unchecked Sendable {
 
     func next() -> String {
         ids.isEmpty ? UUID().uuidString : ids.removeFirst()
+    }
+}
+
+@MainActor
+private func waitUntil(
+    timeoutNanoseconds: UInt64 = 1_000_000_000,
+    _ predicate: @MainActor () -> Bool
+) async {
+    let start = DispatchTime.now().uptimeNanoseconds
+    while !predicate() && DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
+        await Task.yield()
     }
 }

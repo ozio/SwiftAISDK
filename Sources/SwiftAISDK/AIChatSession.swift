@@ -24,6 +24,31 @@ public struct AIChatSessionRequestOptions: Sendable {
     }
 }
 
+public struct AIChatSessionFinishEvent: Sendable {
+    public var message: AIUIMessage?
+    public var messages: [AIUIMessage]
+    public var isAbort: Bool
+    public var isDisconnect: Bool
+    public var isError: Bool
+    public var finishReason: String?
+
+    public init(
+        message: AIUIMessage?,
+        messages: [AIUIMessage],
+        isAbort: Bool,
+        isDisconnect: Bool,
+        isError: Bool,
+        finishReason: String? = nil
+    ) {
+        self.message = message
+        self.messages = messages
+        self.isAbort = isAbort
+        self.isDisconnect = isDisconnect
+        self.isError = isError
+        self.finishReason = finishReason
+    }
+}
+
 @MainActor
 public final class AIChatSession: ObservableObject {
     @Published public private(set) var messages: [AIUIMessage]
@@ -33,16 +58,24 @@ public final class AIChatSession: ObservableObject {
     public let chatID: String
     public var transport: any AIChatTransport
     public var generateMessageID: @Sendable () -> String
+    public var onError: (@MainActor @Sendable (Error) -> Void)?
+    public var onFinish: (@MainActor @Sendable (AIChatSessionFinishEvent) -> Void)?
+    public var sendAutomaticallyWhen: (@MainActor @Sendable ([AIUIMessage]) -> Bool)?
 
     private var currentTask: Task<Void, Never>?
     private var currentAbortController: AIAbortController?
     private var activeRunID: UUID?
+    private var activeResponseMessageID: String?
+    private var activeRequestOptions = AIChatSessionRequestOptions()
 
     public init(
         chatID: String = UUID().uuidString,
         transport: any AIChatTransport,
         messages: [AIUIMessage] = [],
-        generateMessageID: @escaping @Sendable () -> String = { UUID().uuidString }
+        generateMessageID: @escaping @Sendable () -> String = { UUID().uuidString },
+        onError: (@MainActor @Sendable (Error) -> Void)? = nil,
+        onFinish: (@MainActor @Sendable (AIChatSessionFinishEvent) -> Void)? = nil,
+        sendAutomaticallyWhen: (@MainActor @Sendable ([AIUIMessage]) -> Bool)? = nil
     ) {
         self.chatID = chatID
         self.transport = transport
@@ -50,10 +83,36 @@ public final class AIChatSession: ObservableObject {
         self.status = .ready
         self.error = nil
         self.generateMessageID = generateMessageID
+        self.onError = onError
+        self.onFinish = onFinish
+        self.sendAutomaticallyWhen = sendAutomaticallyWhen
     }
 
     public var isRunning: Bool {
         status == .submitted || status == .streaming
+    }
+
+    @discardableResult
+    public func sendMessage(
+        options: AIChatSessionRequestOptions = AIChatSessionRequestOptions()
+    ) -> Task<Void, Never> {
+        stop()
+        guard let lastMessageID = messages.last?.id else {
+            return failStart(AIError.invalidArgument(
+                argument: "messages",
+                message: "At least one message is required to submit the current transcript."
+            ))
+        }
+
+        let responseID = generateMessageID()
+        messages.append(.assistant(id: responseID))
+        return startStream(
+            trigger: .submitMessage,
+            messageID: lastMessageID,
+            responseMessageID: responseID,
+            requestMessages: Array(messages.dropLast()),
+            options: options
+        )
     }
 
     @discardableResult
@@ -151,6 +210,7 @@ public final class AIChatSession: ObservableObject {
         let runID = UUID()
         activeRunID = runID
         error = nil
+        activeRequestOptions = options
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -161,14 +221,14 @@ public final class AIChatSession: ObservableObject {
                     body: options.body,
                     metadata: options.metadata
                 )) else {
-                    finish(runID: runID, error: nil)
+                    clearRunWithoutFinish(runID: runID)
                     return
                 }
                 guard activeRunID == runID else { return }
                 status = .submitted
                 await consume(stream, runID: runID)
             } catch {
-                finish(runID: runID, error: error)
+                finish(runID: runID, error: error, isAbort: false)
             }
         }
         currentTask = task
@@ -176,12 +236,16 @@ public final class AIChatSession: ObservableObject {
     }
 
     public func stop(reason: String? = "stopped") {
+        let stoppedRunID = activeRunID
         currentAbortController?.abort(reason: reason)
         currentTask?.cancel()
-        currentAbortController = nil
-        currentTask = nil
-        activeRunID = nil
-        if isRunning {
+        if let stoppedRunID, isRunning {
+            finish(runID: stoppedRunID, error: nil, isAbort: true)
+        } else {
+            currentAbortController = nil
+            currentTask = nil
+            activeRunID = nil
+            activeResponseMessageID = nil
             status = .ready
         }
     }
@@ -200,15 +264,17 @@ public final class AIChatSession: ObservableObject {
     public func addToolResult(
         _ result: AIToolResult,
         id: String? = nil,
-        metadata: [String: JSONValue] = [:]
+        metadata: [String: JSONValue] = [:],
+        options: AIChatSessionRequestOptions = AIChatSessionRequestOptions()
     ) {
-        addToolOutput(result, id: id, metadata: metadata)
+        addToolOutput(result, id: id, metadata: metadata, options: options)
     }
 
     public func addToolOutput(
         _ result: AIToolResult,
         id: String? = nil,
-        metadata: [String: JSONValue] = [:]
+        metadata: [String: JSONValue] = [:],
+        options: AIChatSessionRequestOptions = AIChatSessionRequestOptions()
     ) {
         messages.append(AIUIMessage(
             id: id ?? generateMessageID(),
@@ -216,12 +282,14 @@ public final class AIChatSession: ObservableObject {
             parts: [.toolResult(result)],
             metadata: metadata
         ))
+        triggerAutomaticSendIfNeeded(options: options)
     }
 
     public func addToolApprovalResponse(
         _ response: AIToolApprovalResponse,
         id: String? = nil,
-        metadata: [String: JSONValue] = [:]
+        metadata: [String: JSONValue] = [:],
+        options: AIChatSessionRequestOptions = AIChatSessionRequestOptions()
     ) {
         messages.append(AIUIMessage(
             id: id ?? generateMessageID(),
@@ -229,6 +297,7 @@ public final class AIChatSession: ObservableObject {
             parts: [.toolApprovalResponse(response)],
             metadata: metadata
         ))
+        triggerAutomaticSendIfNeeded(options: options)
     }
 
     private func startStream(
@@ -241,6 +310,8 @@ public final class AIChatSession: ObservableObject {
         let runID = UUID()
         let controller = AIAbortController()
         activeRunID = runID
+        activeResponseMessageID = responseMessageID
+        activeRequestOptions = options
         currentAbortController = controller
         status = .submitted
         error = nil
@@ -261,7 +332,7 @@ public final class AIChatSession: ObservableObject {
                 ))
                 await consume(stream, runID: runID)
             } catch {
-                finish(runID: runID, error: error)
+                finish(runID: runID, error: error, isAbort: false)
             }
         }
         currentTask = task
@@ -275,30 +346,46 @@ public final class AIChatSession: ObservableObject {
                 upsertMessage(snapshot)
                 status = .streaming
             }
-            finish(runID: runID, error: nil)
+            finish(runID: runID, error: nil, isAbort: false)
         } catch is CancellationError {
-            finish(runID: runID, error: nil)
+            finish(runID: runID, error: nil, isAbort: true)
         } catch let error as AIAbortError {
-            if Task.isCancelled {
-                finish(runID: runID, error: nil)
-            } else {
-                finish(runID: runID, error: error)
-            }
+            finish(runID: runID, error: Task.isCancelled ? nil : error, isAbort: true)
         } catch {
-            finish(runID: runID, error: error)
+            finish(runID: runID, error: error, isAbort: false)
         }
     }
 
-    private func finish(runID: UUID, error: Error?) {
+    private func finish(runID: UUID, error: Error?, isAbort: Bool) {
         guard activeRunID == runID else { return }
+        let finishedMessage = activeResponseMessageID.flatMap { id in
+            messages.first { $0.id == id }
+        } ?? messages.last
+        let finishReason = finishedMessage?.metadata["finishReason"]?.stringValue
+        let isDisconnect = error.map(isDisconnectError) ?? false
+        let isError = error != nil
+
         currentTask = nil
         currentAbortController = nil
         activeRunID = nil
+        activeResponseMessageID = nil
         if let error {
             self.error = error
+            onError?(error)
             status = .error
         } else {
             status = .ready
+        }
+        onFinish?(AIChatSessionFinishEvent(
+            message: finishedMessage,
+            messages: messages,
+            isAbort: isAbort,
+            isDisconnect: isDisconnect,
+            isError: isError,
+            finishReason: finishReason
+        ))
+        if !isAbort && !isError {
+            triggerAutomaticSendIfNeeded(options: activeRequestOptions)
         }
     }
 
@@ -310,10 +397,42 @@ public final class AIChatSession: ObservableObject {
         }
     }
 
+    private func clearRunWithoutFinish(runID: UUID) {
+        guard activeRunID == runID else { return }
+        currentTask = nil
+        currentAbortController = nil
+        activeRunID = nil
+        activeResponseMessageID = nil
+        status = .ready
+    }
+
     private func failStart(_ error: Error) -> Task<Void, Never> {
         self.error = error
+        onError?(error)
         status = .error
         return Task {}
+    }
+
+    private func triggerAutomaticSendIfNeeded(options: AIChatSessionRequestOptions) {
+        guard !isRunning, sendAutomaticallyWhen?(messages) == true else { return }
+        guard let lastMessageID = messages.last?.id else { return }
+        let responseID = generateMessageID()
+        messages.append(.assistant(id: responseID))
+        _ = startStream(
+            trigger: .submitMessage,
+            messageID: lastMessageID,
+            responseMessageID: responseID,
+            requestMessages: Array(messages.dropLast()),
+            options: options
+        )
+    }
+
+    private func isDisconnectError(_ error: Error) -> Bool {
+        if error is URLError {
+            return true
+        }
+        let description = String(describing: error).lowercased()
+        return description.contains("network") || description.contains("connection")
     }
 
     private func regenerationTarget(messageID: String?) -> (id: String, index: Array<AIUIMessage>.Index, role: MessageRole)? {

@@ -183,6 +183,38 @@ import Testing
     #expect(safeValidateUIMessages([message]).isValid)
 }
 
+@Test func uiMessageStreamReducerTracksStreamingStateAndRejectsMissingStarts() throws {
+    var reducer = AIUIMessageStreamReducer(message: .assistant(id: "message-1"))
+
+    _ = try reducer.consume(.textStart(id: "text-1"))
+    var text = try #require(reducer.message.parts.firstTextPart)
+    #expect(text.state == .streaming)
+
+    _ = try reducer.consume(.textDeltaPart(id: "text-1", delta: "Hello"))
+    _ = try reducer.consume(.textEnd(id: "text-1"))
+    text = try #require(reducer.message.parts.firstTextPart)
+    #expect(text.text == "Hello")
+    #expect(text.state == .done)
+
+    do {
+        var brokenReducer = AIUIMessageStreamReducer(message: .assistant(id: "broken"))
+        _ = try brokenReducer.consume(.textDeltaPart(id: "missing", delta: "!"))
+        Issue.record("Expected missing text-start failure.")
+    } catch let error as AIUIMessageStreamError {
+        #expect(error.chunkType == "text-delta")
+        #expect(error.chunkID == "missing")
+    }
+
+    do {
+        var brokenReducer = AIUIMessageStreamReducer(message: .assistant(id: "broken"))
+        _ = try brokenReducer.consume(.toolInputDelta(id: "missing-tool", delta: "{}"))
+        Issue.record("Expected missing tool-input-start failure.")
+    } catch let error as AIUIMessageStreamError {
+        #expect(error.chunkType == "tool-input-delta")
+        #expect(error.chunkID == "missing-tool")
+    }
+}
+
 @Test func uiMessageValidationReportsBrokenMessageParts() throws {
     let broken = AIUIMessage(
         id: "",
@@ -207,6 +239,16 @@ import Testing
     } catch let error as AIUIMessageStreamError {
         #expect(error.validationIssues == result.issues)
     }
+}
+
+@Test func uiMessageValidationRejectsEmptyMessagesAndPartsLikeUpstream() {
+    let emptyMessages = safeValidateUIMessages([])
+    #expect(emptyMessages.isValid == false)
+    #expect(emptyMessages.issues.contains { $0.path == "messages" })
+
+    let emptyParts = safeValidateUIMessages([AIUIMessage(id: "empty", role: .assistant)])
+    #expect(emptyParts.isValid == false)
+    #expect(emptyParts.issues.contains { $0.path == "messages[0].parts" })
 }
 
 @Test func uiMessageSnapshotStreamEmitsIncrementalMessages() async throws {
@@ -449,6 +491,17 @@ import Testing
     #expect(skill.requestMetadata == request)
     #expect(skill.responseMetadata == response)
     #expect(skill.warnings == [warning])
+}
+
+private extension Array where Element == AIUIMessagePart {
+    var firstTextPart: AIUITextPart? {
+        for part in self {
+            if case let .text(text) = part {
+                return text
+            }
+        }
+        return nil
+    }
 }
 
 private final class ChatTransportRecordingLanguageModel: LanguageModel, @unchecked Sendable {

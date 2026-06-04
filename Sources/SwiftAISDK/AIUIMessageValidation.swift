@@ -46,11 +46,18 @@ public func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageVali
     var toolCallIDs: Set<String> = []
     var approvalRequestIDs: Set<String> = []
 
+    if messages.isEmpty {
+        issues.append(AIUIMessageValidationIssue(path: "messages", message: "messages array must not be empty."))
+    }
+
     for (messageIndex, message) in messages.enumerated() {
         let messagePath = "messages[\(messageIndex)]"
         validateNonEmpty(message.id, path: "\(messagePath).id", label: "message id", issues: &issues)
         if !message.id.isEmpty && !messageIDs.insert(message.id).inserted {
             issues.append(AIUIMessageValidationIssue(path: "\(messagePath).id", message: "message id must be unique."))
+        }
+        if message.parts.isEmpty {
+            issues.append(AIUIMessageValidationIssue(path: "\(messagePath).parts", message: "message must contain at least one part."))
         }
 
         for (partIndex, part) in message.parts.enumerated() {

@@ -1,17 +1,25 @@
 import Foundation
 
+public enum AIUIStreamingPartState: String, Equatable, Hashable, Sendable {
+    case streaming
+    case done
+}
+
 public struct AIUITextPart: Equatable, Hashable, Sendable {
     public var id: String?
     public var text: String
+    public var state: AIUIStreamingPartState?
     public var providerMetadata: [String: JSONValue]
 
     public init(
         id: String? = nil,
         text: String,
+        state: AIUIStreamingPartState? = nil,
         providerMetadata: [String: JSONValue] = [:]
     ) {
         self.id = id
         self.text = text
+        self.state = state
         self.providerMetadata = providerMetadata
     }
 }
@@ -19,15 +27,18 @@ public struct AIUITextPart: Equatable, Hashable, Sendable {
 public struct AIUIReasoningPart: Equatable, Hashable, Sendable {
     public var id: String?
     public var text: String
+    public var state: AIUIStreamingPartState?
     public var providerMetadata: [String: JSONValue]
 
     public init(
         id: String? = nil,
         text: String,
+        state: AIUIStreamingPartState? = nil,
         providerMetadata: [String: JSONValue] = [:]
     ) {
         self.id = id
         self.text = text
+        self.state = state
         self.providerMetadata = providerMetadata
     }
 }

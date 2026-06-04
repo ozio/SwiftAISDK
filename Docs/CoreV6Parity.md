@@ -1,10 +1,12 @@
 # Core V6 Parity
 
-Snapshot date: 2026-06-03
+Snapshot date: 2026-06-04
 
 This document tracks SwiftAISDK against the current AI SDK v6 Core and Errors
 reference. It is intentionally high-level: provider package drift belongs in
 `ProviderVersionLedger.md` and provider behavior belongs in focused tests.
+Implementation-sensitive UI/chat items are also checked against npm source
+snapshots, currently `ai@6.0.196` and `@ai-sdk/react@3.0.198`.
 
 References:
 
@@ -50,8 +52,8 @@ References:
 | `valibotSchema` | `out of scope candidate` | none | Valibot is TypeScript-specific. |
 | `ModelMessage` | `covered` | `AIMessage`, `AIContentPart`, `MessageRole` | Swift naming differs but covers system/user/assistant/tool plus text, file, image URL, provider references, tool calls/results, approvals. |
 | `UIMessage` | `covered` | `AIUIMessage`, `AIUIMessagePart`, text/reasoning/data/file/source/tool/approval/custom parts | Swift keeps UI/render messages separate from `AIMessage` model-request messages. |
-| `validateUIMessages` | `covered` | `validateUIMessages` | Validates ids, tool JSON arguments, tool-result links, and approval links. |
-| `safeValidateUIMessages` | `covered` | `safeValidateUIMessages`, `AIUIMessageValidationResult` | Non-throwing validation result for UI persistence/import flows. |
+| `validateUIMessages` | `covered` | `validateUIMessages` | Validates non-empty message arrays/parts, ids, tool JSON arguments, tool-result links, and approval links. Schema-driven metadata/data/tool validation remains Swift-native rather than a direct Zod/Standard Schema port. |
+| `safeValidateUIMessages` | `covered` | `safeValidateUIMessages`, `AIUIMessageValidationResult` | Non-throwing validation result for UI persistence/import flows. Swift returns accumulated issues instead of the upstream `{ success, data/error }` union. |
 | `createProviderRegistry` | `covered` | `createProviderRegistry`, `AIProviderRegistry` | Registry and default-provider flows exist. |
 | `customProvider` | `covered` | `customProvider`, `AICustomProvider` | Supports configured models/clients and fallbacks. |
 | `cosineSimilarity` | `missing` | none | Small helper; straightforward to add if desired. |
@@ -108,7 +110,7 @@ it means JavaScript-style error-class parity is only partial.
 | `AI_ToolCallRepairError` / `ToolCallRepairError` | `covered` | `AIToolCallRepairError`, `AITool.refineArguments` | Swift maps the existing argument-refinement hook to a typed tool-call repair failure. |
 | `AI_TooManyEmbeddingValuesForCallError` | `partial` | provider/model preflight errors via `AIError.invalidArgument` | Behavior is tested for providers, but no dedicated public error. |
 | `AI_TypeValidationError` | `covered` | `AITypeValidationError`, `AIJSONSchemaValidator`, `AIObjectGenerationError.kind == .schemaValidation` | Schema validation now has a standalone public type-validation error, while object generation continues to wrap schema failures in `AIObjectGenerationError`. |
-| `AI_UIMessageStreamError` | `covered` | `AIUIMessageStreamError` | Used for UI message validation and stream-reduction failures. |
+| `AI_UIMessageStreamError` | `covered` | `AIUIMessageStreamError` | Used for UI message validation and stream-reduction failures. Carries `chunkType`/`chunkID` for out-of-sequence stream chunks, plus Swift validation issues. |
 | `AI_UnsupportedFunctionalityError` | `partial` | `AIError.unsupportedModel`, `AIWarning(type: "unsupported", ...)`, provider invalid-argument paths | Unsupported features are represented, but not as a dedicated public error class. |
 
 ## Recommended Next Passes
@@ -136,10 +138,10 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 
 | Upstream UI idea | SwiftUI candidate | Priority | Notes |
 | --- | --- | --- | --- |
-| `useChat` | `AIChatSession` | done | Combine-backed `ObservableObject` for iOS 15/macOS 12+ that manages `messages`, `status`, `error`, `sendMessage`, replacement, `regenerate`, `stop`, `resumeStream`, `addToolOutput`, and `addToolApprovalResponse` over `AIChatTransport`. Uses `ready/submitted/streaming/error` status names to mirror upstream. |
+| `useChat` | `AIChatSession` | done | Combine-backed `ObservableObject` for iOS 15/macOS 12+ that manages `messages`, `status`, `error`, `sendMessage`, submit-existing-transcript, replacement, `regenerate`, `stop`, `resumeStream`, `addToolOutput`, and `addToolApprovalResponse` over `AIChatTransport`. Uses upstream status names and mirrors `onError`, `onFinish`, abort/resume finish semantics, and `sendAutomaticallyWhen`. Swift tool output currently appends tool-role messages instead of mutating stateful upstream tool UI parts. |
 | `UIMessage` and message parts | `AIUIMessage`, `AIUIMessagePart`, metadata/data parts | done | Core render-message model exists without depending on SwiftUI/Observation. |
 | `convertToModelMessages` | `convertToModelMessages` | done | Converts supported `AIUIMessage` parts into `AIMessage` history for model calls; render-only parts are ignored, unsupported URL files fail with `AIUIMessageStreamError`. |
-| `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReducer` | done | Converts `LanguageStreamPart` into stable UI message snapshots, so UI layers do not hand-roll streaming assembly. |
+| `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReducer` | done | Converts `LanguageStreamPart` into stable UI message snapshots, so UI layers do not hand-roll streaming assembly. ID-based text/reasoning/tool-input chunks now reject missing starts like upstream `processUIMessageStream`; Swift keeps id-less language deltas as a compatibility convenience. |
 | `useObject` | `@Observable` `AIObjectGenerationSession<Output>` | P2 | Wrap `streamObject` for SwiftUI with `partialObject`, `object`, `isStreaming`, `error`, `submit`, and cancellation. Useful for forms, inspectors, and structured assistant panels. |
 | `DirectChatTransport` | `AIChatTransport`, `AIChatTransportRequest`, `AIChatRequestOptions`, `DirectAIChatTransport` | done | In-process transport streams `AIUIMessage` snapshots from `AI.streamText`, supports tool-loop options, request defaults, aborts, retry/timeout/telemetry, and reasoning/source/finish filters. Leave room for an `HTTPChatTransport` later when an app talks to its own backend. |
 
