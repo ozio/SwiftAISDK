@@ -39,13 +39,32 @@ public struct AIChatTransportRequest: Sendable {
     }
 }
 
+public struct AIChatReconnectRequest: Sendable {
+    public var chatID: String
+    public var headers: [String: String]
+    public var body: [String: JSONValue]
+    public var metadata: JSONValue?
+
+    public init(
+        chatID: String,
+        headers: [String: String] = [:],
+        body: [String: JSONValue] = [:],
+        metadata: JSONValue? = nil
+    ) {
+        self.chatID = chatID
+        self.headers = headers
+        self.body = body
+        self.metadata = metadata
+    }
+}
+
 public protocol AIChatTransport: Sendable {
     func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error>
-    func reconnectToStream(chatID: String) async throws -> AsyncThrowingStream<AIUIMessage, Error>?
+    func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>?
 }
 
 public extension AIChatTransport {
-    func reconnectToStream(chatID: String) async throws -> AsyncThrowingStream<AIUIMessage, Error>? {
+    func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>? {
         nil
     }
 }
@@ -217,7 +236,7 @@ public struct DirectAIChatTransport: AIChatTransport {
         )
     }
 
-    public func reconnectToStream(chatID: String) async throws -> AsyncThrowingStream<AIUIMessage, Error>? {
+    public func reconnectToStream(_ request: AIChatReconnectRequest) async throws -> AsyncThrowingStream<AIUIMessage, Error>? {
         nil
     }
 
