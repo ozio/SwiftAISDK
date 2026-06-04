@@ -45,7 +45,6 @@ import Testing
     #expect(sent[3]["params"]?["name"]?.stringValue == "search")
     #expect(sent[3]["params"]?["arguments"]?["query"]?.stringValue == "swift")
 }
-
 @Test func mcpToolModelOutputConvertsImagesAndUnknownContent() async throws {
     let transport = MockMCPTransport(
         capabilities: fullMCPCapabilities(),
@@ -78,7 +77,6 @@ import Testing
     #expect(modelOutput["value"]?[1]?["type"]?.stringValue == "text")
     #expect(modelOutput["value"]?[1]?["text"]?.stringValue?.contains("\"custom\"") == true)
 }
-
 @Test func mcpToolModelOutputFallsBackToJSONForNonContentResults() async throws {
     let transport = MockMCPTransport(
         capabilities: fullMCPCapabilities(),
@@ -94,7 +92,6 @@ import Testing
     #expect(modelOutput["type"]?.stringValue == "json")
     #expect(modelOutput["value"]?["structuredContent"]?["ok"]?.boolValue == true)
 }
-
 @Test func mcpClientCreatesToolsFromCachedDefinitionsWithoutListingAgain() async throws {
     let transport = MockMCPTransport()
     let client = try await MCPClient.connect(transport: transport)
@@ -108,7 +105,6 @@ import Testing
     let sent = await transport.sentMessages()
     #expect(sent.map { $0["method"]?.stringValue } == ["tools/call"])
 }
-
 @Test func mcpDynamicToolHonorsAbortedExecutionContextBeforeToolCall() async throws {
     let transport = MockMCPTransport()
     let client = try await MCPClient.connect(transport: transport)
@@ -130,7 +126,6 @@ import Testing
     let sent = await transport.sentMessages()
     #expect(sent.isEmpty)
 }
-
 @Test func mcpClientRejectsToolCallsWhenServerHasNoToolCapability() async throws {
     let transport = MockMCPTransport(capabilities: .object([:]))
     let client = try await MCPClient.connect(transport: transport)
@@ -142,7 +137,6 @@ import Testing
         #expect(error.description.contains("does not support tools"))
     }
 }
-
 @Test func mcpHTTPTransportForwardsAbortSignalToRequests() async throws {
     let controller = AIAbortController()
     let http = RecordingTransport(response: jsonResponse(#"{"jsonrpc":"2.0","id":7,"result":{}}"#))
@@ -160,7 +154,6 @@ import Testing
     let request = try #require(await http.requests().first)
     #expect(request.abortSignal === controller.signal)
 }
-
 @Test func mcpClientListsReadsResourcesAndTemplates() async throws {
     let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
     let client = try await MCPClient.connect(transport: transport)
@@ -190,7 +183,6 @@ import Testing
     #expect(sent[2]["params"]?["cursor"]?.stringValue == "cursor-1")
     #expect(sent[3]["params"]?["uri"]?.stringValue == "file:///docs/intro.md")
 }
-
 @Test func mcpClientListsAndGetsPrompts() async throws {
     let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
     let client = try await MCPClient.connect(transport: transport)
@@ -217,7 +209,6 @@ import Testing
     #expect(sent[3]["params"]?["name"]?.stringValue == "summarize")
     #expect(sent[3]["params"]?["arguments"]?["topic"]?.stringValue == "Swift")
 }
-
 @Test func mcpClientHandlesElicitationRequests() async throws {
     let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
     let client = try await MCPClient.connect(
@@ -263,7 +254,6 @@ import Testing
     let sent = await transport.sentMessages()
     #expect(sent[0]["params"]?["capabilities"]?["elicitation"]?["applyDefaults"]?.boolValue == true)
 }
-
 @Test func mcpClientRejectsElicitationWithoutHandler() async throws {
     let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
     let client = try await MCPClient.connect(
@@ -285,7 +275,6 @@ import Testing
     #expect(response["error"]?["code"]?.intValue == -32601)
     #expect(response["error"]?["message"]?.stringValue == "No elicitation handler registered on client")
 }
-
 @Test func mcpClientHandlesPingAndUnsupportedIncomingRequests() async throws {
     let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
     let client = try await MCPClient.connect(transport: transport)
@@ -306,7 +295,6 @@ import Testing
     #expect(unsupported["error"]?["code"]?.intValue == -32601)
     #expect(unsupported["error"]?["message"]?.stringValue == "Unsupported request method: sampling/createMessage")
 }
-
 @Test func mcpClientRejectsInvalidElicitationRequest() async throws {
     let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
     let client = try await MCPClient.connect(
@@ -329,7 +317,6 @@ import Testing
     #expect(response["error"]?["code"]?.intValue == -32602)
     #expect(response["error"]?["message"]?.stringValue?.contains("message and requestedSchema") == true)
 }
-
 @Test func mcpClientRejectsResourcesWhenServerHasNoResourceCapability() async throws {
     let transport = MockMCPTransport(capabilities: .object(["tools": .object([:])]))
     let client = try await MCPClient.connect(transport: transport)
@@ -341,7 +328,6 @@ import Testing
         #expect(error.description.contains("does not support resources"))
     }
 }
-
 @Test func mcpHTTPTransportPostsJSONRPCMessages() async throws {
     let http = RecordingTransport(responses: [
         jsonResponse(#"{"jsonrpc":"2.0","id":7,"result":{"ok":true}}"#),
@@ -371,7 +357,6 @@ import Testing
     #expect(body["method"]?.stringValue == "ping")
     #expect(requests.count == 2)
 }
-
 @Test func mcpHTTPTransportAuthorizesAndRetriesAfter401() async throws {
     let auth = MockMCPOAuthProvider(initialToken: "old-token", authorizedToken: "new-token")
     let http = RecordingTransport(responses: [
@@ -402,7 +387,6 @@ import Testing
     #expect(await auth.invalidatedScopes() == [.tokens])
     #expect(await auth.resourceMetadataURLs().map(\.absoluteString) == ["https://auth.example.com/.well-known/oauth-protected-resource"])
 }
-
 @Test func mcpHTTPTransportStreamingAuthorizesAndRetriesAfter401() async throws {
     let auth = MockMCPOAuthProvider(initialToken: "old-stream-token", authorizedToken: "new-stream-token")
     let http = StreamingRecordingTransport(responses: [
@@ -435,7 +419,6 @@ import Testing
     #expect(requests[1].headers["authorization"] == "Bearer new-stream-token")
     #expect(await auth.resourceMetadataURLs().map(\.absoluteString) == ["https://auth.example.com/resource"])
 }
-
 @Test func mcpHTTPTransportParsesSSEResponsesAndTerminatesSession() async throws {
     let http = RecordingTransport(responses: [
         AIHTTPResponse(
@@ -463,482 +446,4 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[1].method == "DELETE")
     #expect(requests[1].headers["mcp-session-id"] == "session-1")
-}
-
-@Test func mcpHTTPTransportStartHandlesBufferedInboundSSERequests() async throws {
-    let http = RecordingTransport(responses: [
-        AIHTTPResponse(
-            statusCode: 200,
-            headers: ["content-type": "text/event-stream"],
-            body: Data("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"ping\"}\n\n".utf8)
-        ),
-        AIHTTPResponse(statusCode: 202)
-    ])
-    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
-    await transport.setRequestHandler { request in
-        [
-            "jsonrpc": "2.0",
-            "id": request["id"] ?? .null,
-            "result": [:]
-        ]
-    }
-
-    try await transport.start()
-
-    let requests = try await waitForRecordedRequests(http, count: 2)
-    #expect(requests.count == 2)
-    #expect(requests[0].method == "GET")
-    #expect(requests[0].headers["accept"] == "text/event-stream")
-    #expect(requests[1].method == "POST")
-    let body = try #require(requests[1].body).jsonValueForTest()
-    #expect(body["id"]?.intValue == 11)
-    #expect(body["result"]?.objectValue?.isEmpty == true)
-}
-
-@Test func mcpHTTPTransportStreamsPOSTSSEResponseBeforeStreamEnds() async throws {
-    let http = StreamingRecordingTransport(responses: [
-        streamResponse(
-            headers: ["content-type": "text/event-stream"],
-            chunks: ["event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"ok\":true}}\n\n"],
-            finishes: false
-        )
-    ])
-    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
-
-    let response = try await transport.request([
-        "jsonrpc": "2.0",
-        "id": 4,
-        "method": "initialize",
-        "params": [:]
-    ])
-
-    #expect(response["result"]?["ok"]?.boolValue == true)
-    let requests = await http.requests()
-    #expect(requests.count == 1)
-    #expect(requests[0].method == "POST")
-    #expect(requests[0].headers["accept"] == "application/json, text/event-stream")
-}
-
-@Test func mcpHTTPTransportUsesStreamingInboundSSEWithoutBlockingStart() async throws {
-    let http = StreamingRecordingTransport(responses: [
-        streamResponse(
-            headers: ["content-type": "text/event-stream"],
-            chunks: ["event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"ping\"}\n\n"],
-            finishes: false
-        ),
-        streamResponse(statusCode: 202)
-    ])
-    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
-    await transport.setRequestHandler { request in
-        [
-            "jsonrpc": "2.0",
-            "id": request["id"] ?? .null,
-            "result": [:]
-        ]
-    }
-
-    try await transport.start()
-
-    let requests = try await waitForStreamingRequests(http, count: 2)
-    #expect(requests[0].method == "GET")
-    #expect(requests[0].headers["accept"] == "text/event-stream")
-    #expect(requests[1].method == "POST")
-    let body = try #require(requests[1].body).jsonValueForTest()
-    #expect(body["id"]?.intValue == 21)
-    #expect(body["result"]?.objectValue?.isEmpty == true)
-
-    try await transport.close()
-}
-
-@Test func mcpHTTPTransportReconnectsInboundSSEWithLastEventID() async throws {
-    let http = StreamingRecordingTransport(responses: [
-        streamResponse(
-            headers: ["content-type": "text/event-stream"],
-            chunks: ["id: cursor-1\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"ping\"}\n\n"],
-            errorAfterChunks: TestStreamFailure()
-        ),
-        streamResponse(statusCode: 202),
-        streamResponse(
-            headers: ["content-type": "text/event-stream"],
-            chunks: [],
-            finishes: false
-        )
-    ])
-    let transport = try MCPHTTPTransport(
-        url: "https://mcp.example.com/rpc",
-        transport: http,
-        inboundReconnectDelayNanoseconds: 1_000_000
-    )
-    await transport.setRequestHandler { request in
-        [
-            "jsonrpc": "2.0",
-            "id": request["id"] ?? .null,
-            "result": [:]
-        ]
-    }
-
-    try await transport.start()
-
-    let requests = try await waitForStreamingRequests(http, count: 3)
-    #expect(requests[0].method == "GET")
-    #expect(requests[1].method == "POST")
-    #expect(requests[2].method == "GET")
-    #expect(requests[2].headers["last-event-id"] == "cursor-1")
-
-    try await transport.close()
-}
-
-private actor MockMCPTransport: MCPTransport {
-    private var messages: [JSONValue] = []
-    private let capabilities: JSONValue
-    private let toolResult: JSONValue?
-    private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
-
-    init(
-        capabilities: JSONValue = .object(["tools": .object(["listChanged": .bool(false)])]),
-        toolResult: JSONValue? = nil
-    ) {
-        self.capabilities = capabilities
-        self.toolResult = toolResult
-    }
-
-    func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {
-        requestHandler = handler
-    }
-
-    func start() async throws {}
-
-    func request(_ message: JSONValue) async throws -> JSONValue {
-        messages.append(message)
-        let id = message["id"] ?? .number(0)
-        switch message["method"]?.stringValue {
-        case "initialize":
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": [
-                    "protocolVersion": .string(MCPClient.latestProtocolVersion),
-                    "capabilities": capabilities,
-                    "serverInfo": [
-                        "name": "mock-server",
-                        "version": "0.1.0"
-                    ],
-                    "instructions": "Use these mock tools carefully."
-                ]
-            ]
-        case "tools/list":
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": [
-                    "tools": [
-                        [
-                            "name": "search",
-                            "title": "Search",
-                            "description": "Search documents",
-                            "inputSchema": [
-                                "type": "object",
-                                "properties": [
-                                    "query": ["type": "string"]
-                                ]
-                            ],
-                            "_meta": [
-                                "source": "mock"
-                            ]
-                        ]
-                    ]
-                ]
-            ]
-        case "tools/call":
-            let query = message["params"]?["arguments"]?["query"]?.stringValue ?? ""
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": toolResult ?? [
-                    "content": [
-                        [
-                            "type": "text",
-                            "text": .string("Result for \(query)")
-                        ]
-                    ],
-                    "isError": false
-                ]
-            ]
-        case "resources/list":
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": [
-                    "nextCursor": "cursor-2",
-                    "resources": [
-                        [
-                            "uri": "file:///docs/intro.md",
-                            "name": "intro",
-                            "title": "Intro",
-                            "description": "Intro docs",
-                            "mimeType": "text/markdown",
-                            "size": 128
-                        ]
-                    ]
-                ]
-            ]
-        case "resources/read":
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": [
-                    "contents": [
-                        [
-                            "uri": "file:///docs/intro.md",
-                            "mimeType": "text/markdown",
-                            "text": "# Intro"
-                        ]
-                    ]
-                ]
-            ]
-        case "resources/templates/list":
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": [
-                    "resourceTemplates": [
-                        [
-                            "uriTemplate": "file:///docs/{slug}.md",
-                            "name": "doc",
-                            "title": "Doc",
-                            "description": "Documentation page",
-                            "mimeType": "text/markdown"
-                        ]
-                    ]
-                ]
-            ]
-        case "prompts/list":
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": [
-                    "nextCursor": "prompt-cursor-2",
-                    "prompts": [
-                        [
-                            "name": "summarize",
-                            "title": "Summarize",
-                            "description": "Summarize a topic.",
-                            "arguments": [
-                                [
-                                    "name": "topic",
-                                    "description": "Topic to summarize",
-                                    "required": true
-                                ]
-                            ]
-                        ]
-                    ]
-                ]
-            ]
-        case "prompts/get":
-            let topic = message["params"]?["arguments"]?["topic"]?.stringValue ?? "topic"
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": [
-                    "description": "Summarize a topic.",
-                    "messages": [
-                        [
-                            "role": "user",
-                            "content": [
-                                "type": "text",
-                                "text": .string("Summarize \(topic)")
-                            ]
-                        ]
-                    ]
-                ]
-            ]
-        default:
-            return [
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": [
-                    "code": -32601,
-                    "message": "Unknown method"
-                ]
-            ]
-        }
-    }
-
-    func notify(_ message: JSONValue) async throws {
-        messages.append(message)
-    }
-
-    func close() async throws {}
-
-    func sentMessages() -> [JSONValue] {
-        messages
-    }
-
-    func reset() {
-        messages = []
-    }
-
-    func simulateIncomingRequest(_ request: JSONValue) async -> JSONValue {
-        guard let requestHandler else {
-            return [
-                "jsonrpc": "2.0",
-                "id": request["id"] ?? .null,
-                "error": [
-                    "code": -32603,
-                    "message": "No request handler registered."
-                ]
-            ]
-        }
-        return await requestHandler(request)
-    }
-}
-
-private func fullMCPCapabilities() -> JSONValue {
-    .object([
-        "tools": .object(["listChanged": .bool(false)]),
-        "resources": .object(["listChanged": .bool(false)]),
-        "prompts": .object(["listChanged": .bool(false)]),
-        "elicitation": .object(["applyDefaults": .bool(true)])
-    ])
-}
-
-private actor MCPElicitationRecorder {
-    private var recordedRequest: MCPElicitationRequest?
-
-    func record(_ request: MCPElicitationRequest) {
-        recordedRequest = request
-    }
-
-    func request() -> MCPElicitationRequest? {
-        recordedRequest
-    }
-}
-
-private actor MockMCPOAuthProvider: MCPOAuthProvider {
-    private var token: String?
-    private let authorizedToken: String?
-    private var metadataURLs: [URL] = []
-    private var invalidations: [MCPOAuthCredentialScope] = []
-
-    init(initialToken: String?, authorizedToken: String?) {
-        self.token = initialToken
-        self.authorizedToken = authorizedToken
-    }
-
-    func accessToken() async throws -> String? {
-        token
-    }
-
-    func authorize(resourceMetadataURL: URL?) async throws -> Bool {
-        if let resourceMetadataURL {
-            metadataURLs.append(resourceMetadataURL)
-        }
-        token = authorizedToken
-        return authorizedToken != nil
-    }
-
-    func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async {
-        invalidations.append(scope)
-    }
-
-    func resourceMetadataURLs() -> [URL] {
-        metadataURLs
-    }
-
-    func invalidatedScopes() -> [MCPOAuthCredentialScope] {
-        invalidations
-    }
-}
-
-private actor StreamingRecordingTransport: AIStreamingTransport {
-    private var recordedRequests: [AIHTTPRequest] = []
-    private var responses: [AIHTTPStreamResponse]
-
-    init(responses: [AIHTTPStreamResponse]) {
-        self.responses = responses
-    }
-
-    func requests() -> [AIHTTPRequest] {
-        recordedRequests
-    }
-
-    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
-        let response = try await stream(request)
-        var body = Data()
-        for try await chunk in response.body {
-            body.append(chunk)
-        }
-        return AIHTTPResponse(statusCode: response.statusCode, headers: response.headers, body: body)
-    }
-
-    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
-        recordedRequests.append(request)
-        guard !responses.isEmpty else {
-            return streamResponse(statusCode: 202)
-        }
-        return responses.removeFirst()
-    }
-}
-
-private func streamResponse(
-    statusCode: Int = 200,
-    headers: [String: String] = [:],
-    chunks: [String] = [],
-    finishes: Bool = true,
-    errorAfterChunks: Error? = nil
-) -> AIHTTPStreamResponse {
-    AIHTTPStreamResponse(
-        statusCode: statusCode,
-        headers: headers,
-        body: AsyncThrowingStream { continuation in
-            let task = Task {
-                for chunk in chunks {
-                    try Task.checkCancellation()
-                    continuation.yield(Data(chunk.utf8))
-                }
-                if let errorAfterChunks {
-                    continuation.finish(throwing: errorAfterChunks)
-                    return
-                }
-                if finishes {
-                    continuation.finish()
-                } else {
-                    while !Task.isCancelled {
-                        try await Task.sleep(nanoseconds: 1_000_000_000)
-                    }
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-    )
-}
-
-private struct TestStreamFailure: Error {}
-
-private extension Data {
-    func jsonValueForTest() throws -> JSONValue {
-        try JSONDecoder().decode(JSONValue.self, from: self)
-    }
-}
-
-private func waitForRecordedRequests(_ transport: RecordingTransport, count: Int) async throws -> [AIHTTPRequest] {
-    for _ in 0..<50 {
-        let requests = await transport.requests()
-        if requests.count >= count {
-            return requests
-        }
-        try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    return await transport.requests()
-}
-
-private func waitForStreamingRequests(_ transport: StreamingRecordingTransport, count: Int) async throws -> [AIHTTPRequest] {
-    for _ in 0..<50 {
-        let requests = await transport.requests()
-        if requests.count >= count {
-            return requests
-        }
-        try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    return await transport.requests()
 }

@@ -21,7 +21,6 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
 }
-
 @Test func googleAppendsVersionedUserAgentToCustomHeader() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}
@@ -39,7 +38,6 @@ import Testing
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
     #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/3.0.80")
 }
-
 @Test func googleCustomXGoogAPIKeyOverridesConfiguredAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}
@@ -56,7 +54,6 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "custom-key")
 }
-
 @Test func googleGenerateContentResolvesTopLevelInlineMediaType() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"saw image"}]},"finishReason":"STOP"}]}
@@ -72,7 +69,6 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["contents"]?[0]?["parts"]?[0]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
 }
-
 @Test func googleGemmaPrependsSystemInstructionToFirstUserMessage() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"gemma"}]},"finishReason":"STOP"}]}
@@ -89,7 +85,6 @@ import Testing
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Be precise.\n\n")
     #expect(body["contents"]?[0]?["parts"]?[1]?["text"]?.stringValue == "Hello")
 }
-
 @Test func googleGeminiStillSendsSystemInstruction() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}
@@ -103,7 +98,6 @@ import Testing
     #expect(body["systemInstruction"]?["parts"]?[0]?["text"]?.stringValue == "Be precise.")
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hello")
 }
-
 @Test func googleLanguageMapsStandardStructuredResponseFormat() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"{\\"location\\":\\"Tokyo\\"}"}]},"finishReason":"STOP"}]}
@@ -131,7 +125,6 @@ import Testing
     #expect(body["generationConfig"]?["responseSchema"]?["$schema"] == nil)
     #expect(body["responseFormat"] == nil)
 }
-
 @Test func googleLanguageOmitsResponseSchemaWhenStructuredOutputsDisabled() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"{\\"location\\":\\"Tokyo\\"}"}]},"finishReason":"STOP"}]}
@@ -154,7 +147,6 @@ import Testing
     #expect(body["structuredOutputs"] == nil)
     #expect(body["google"] == nil)
 }
-
 @Test func googleLanguageMapsProviderOptionsSamplingAndReasoning() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"options"}]},"finishReason":"STOP"}]}
@@ -203,7 +195,6 @@ import Testing
     )))
     #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("'sharedRequestType' and 'requestType'") ?? false) })
 }
-
 @Test func googleLanguageMapsGemini25ReasoningToThinkingBudget() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"budget"}]},"finishReason":"STOP"}]}
@@ -219,7 +210,6 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["generationConfig"]?["thinkingConfig"]?["thinkingBudget"]?.intValue == 32768)
 }
-
 @Test func googleLanguageWarnsAndDropsVertexOnlyStreamFunctionCallArguments() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"ignored"}]},"finishReason":"STOP"}]}
@@ -241,7 +231,6 @@ import Testing
     #expect(body["streamFunctionCallArguments"] == nil)
     #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("'streamFunctionCallArguments' is only supported on the Vertex AI API") ?? false) })
 }
-
 @Test func googleEmbeddingPreservesRequestMetadata() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"embedding":{"values":[0.1,0.2]}}
@@ -256,7 +245,6 @@ import Testing
     #expect(result.requestMetadata.headers["x-client"] == "swift")
     #expect(result.requestMetadata.headers["x-goog-api-key"] == nil)
 }
-
 @Test func googleEmbeddingMapsProviderOptionsAndMultimodalContentLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"embeddings":[{"values":[0.1,0.2]},{"values":[0.3,0.4]}]}
@@ -293,7 +281,6 @@ import Testing
     #expect(body["requests"]?[0]?["taskType"]?.stringValue == "RETRIEVAL_DOCUMENT")
     #expect(body["requests"]?[1]?["content"]?["parts"]?[0]?["fileData"]?["fileUri"]?.stringValue == "https://generativelanguage.googleapis.com/v1beta/files/file-1")
 }
-
 @Test func googleEmbeddingRejectsTooManyValuesAndMismatchedMultimodalContentLikeUpstream() async throws {
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: RecordingTransport(response: jsonResponse("{}"))))
     let model = try provider.embeddingModel("gemini-embedding-001")
@@ -317,7 +304,6 @@ import Testing
         ))
     }
 }
-
 @Test func googleLanguageMapsFunctionToolsAndToolChoice() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"tool-ready"}]},"finishReason":"STOP"}]}
@@ -354,7 +340,6 @@ import Testing
     #expect(body["toolConfig"]?["functionCallingConfig"]?["allowedFunctionNames"]?[0]?.stringValue == "lookup")
     #expect(body["toolChoice"] == nil)
 }
-
 @Test func googleLanguageMapsProviderDefinedTools() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"grounded"}]},"finishReason":"STOP"}]}
@@ -379,7 +364,6 @@ import Testing
     #expect(body["toolConfig"] == nil)
     #expect(body["toolChoice"] == nil)
 }
-
 @Test func googleLanguageWarnsForUnsupportedProviderDefinedToolsLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"plain"}]},"finishReason":"STOP"}]}
@@ -402,7 +386,6 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["tools"] == nil)
 }
-
 @Test func googleLanguageWarnsForMixedFunctionAndProviderToolsBeforeGemini3() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"mixed"}]},"finishReason":"STOP"}]}
@@ -424,7 +407,6 @@ import Testing
     #expect(tools.contains { $0["googleSearch"]?.objectValue?.isEmpty == true })
     #expect(!tools.contains { $0["functionDeclarations"] != nil })
 }
-
 @Test func googleLanguageWarnsForVertexRagStoreOnNonVertexProvider() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"rag"}]},"finishReason":"STOP"}]}
@@ -444,1033 +426,4 @@ import Testing
     })
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["tools"]?[0]?["retrieval"]?["vertex_rag_store"]?["similarity_top_k"]?.intValue == 2)
-}
-
-@Test func googleToolsHelpersMirrorProviderExecutedToolFactories() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"text":"grounded"}]},"finishReason":"STOP"}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-
-    _ = try await model.generate(LanguageModelRequest(
-        messages: [.user("Use Google tools.")],
-        tools: [
-            "google.google_search": GoogleTools.googleSearch(
-                searchTypes: ["webSearch": [:], "imageSearch": [:]],
-                timeRangeFilter: ["startTime": "2025-01-01T00:00:00Z", "endTime": "2025-02-01T00:00:00Z"]
-            ),
-            "google.enterprise_web_search": GoogleTools.enterpriseWebSearch(),
-            "google.google_maps": GoogleTools.googleMaps(),
-            "google.url_context": GoogleTools.urlContext(),
-            "google.file_search": GoogleTools.fileSearch(
-                fileSearchStoreNames: ["fileSearchStores/store-1"],
-                metadataFilter: #"author="Ada""#,
-                topK: 4
-            ),
-            "google.code_execution": GoogleTools.codeExecution()
-        ]
-    ))
-
-    let request = try #require(await transport.requests().first)
-    let body = try decodeJSONBody(try #require(request.body))
-    let tools = try #require(body["tools"]?.arrayValue)
-    let googleSearch = try #require(tools.first { $0["googleSearch"] != nil })
-    #expect(googleSearch["googleSearch"]?["searchTypes"]?["webSearch"] != nil)
-    #expect(googleSearch["googleSearch"]?["timeRangeFilter"]?["startTime"]?.stringValue == "2025-01-01T00:00:00Z")
-    #expect(tools.contains { $0["enterpriseWebSearch"]?.objectValue?.isEmpty == true })
-    #expect(tools.contains { $0["googleMaps"]?.objectValue?.isEmpty == true })
-    #expect(tools.contains { $0["urlContext"]?.objectValue?.isEmpty == true })
-    let fileSearch = try #require(tools.first { $0["fileSearch"] != nil })
-    #expect(fileSearch["fileSearch"]?["fileSearchStoreNames"]?[0]?.stringValue == "fileSearchStores/store-1")
-    #expect(fileSearch["fileSearch"]?["metadataFilter"]?.stringValue == #"author="Ada""#)
-    #expect(fileSearch["fileSearch"]?["topK"]?.intValue == 4)
-    #expect(tools.contains { $0["codeExecution"]?.objectValue?.isEmpty == true })
-}
-
-@Test func googleLanguageStreamStartCarriesProviderToolWarnings() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP","index":0}]}
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-pro")
-
-    var startWarnings: [AIWarning] = []
-    for try await part in model.stream(LanguageModelRequest(
-        messages: [.user("Search.")],
-        tools: ["google.google_search": GoogleTools.googleSearch()]
-    )) {
-        if case let .streamStart(warnings) = part {
-            startWarnings = warnings
-        }
-    }
-
-    #expect(startWarnings.contains {
-        $0.type == "unsupported" && $0.feature == "provider-defined tool google.google_search" && $0.message == "Google Search requires Gemini 2.0 or newer."
-    })
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["tools"] == nil)
-}
-
-@Test func googleLanguageParsesFunctionCalls() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"functionCall":{"name":"weather","args":{"location":"San Francisco"}},"thoughtSignature":"sig-google-tool"}],"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":29,"candidatesTokenCount":15,"totalTokenCount":44}}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-
-    let result = try await model.generate(LanguageModelRequest(messages: [.user("Weather?")]))
-
-    #expect(result.text == "")
-    #expect(result.finishReason == "tool-calls")
-    #expect(result.usage?.totalTokens == 44)
-    #expect(result.toolCalls.count == 1)
-    #expect(result.toolCalls[0].id == "tool-call-0")
-    #expect(result.toolCalls[0].name == "weather")
-    #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
-    #expect(result.toolCalls[0].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-google-tool")
-}
-
-@Test func googleGenerateContentReplaysToolCallThoughtSignature() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-    let toolCall = AIToolCall(
-        id: "tool-call-0",
-        name: "weather",
-        arguments: #"{"location":"Tokyo"}"#,
-        providerMetadata: ["google": .object(["thoughtSignature": .string("sig-google-tool")])]
-    )
-    let toolResult = AIToolResult(
-        toolCallID: "tool-call-0",
-        toolName: "weather",
-        result: ["forecast": "sunny"]
-    )
-
-    _ = try await model.generate(LanguageModelRequest(messages: [
-        .user("Weather?"),
-        .assistant(toolCalls: [toolCall]),
-        .toolResult(toolResult)
-    ]))
-
-    let request = try #require(await transport.requests().first)
-    let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["contents"]?[1]?["parts"]?[0]?["functionCall"]?["name"]?.stringValue == "weather")
-    #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "sig-google-tool")
-}
-
-@Test func googleGenerateContentInjectsGemini3ThoughtSignatureSentinel() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-3-pro")
-
-    let result = try await model.generate(LanguageModelRequest(messages: [
-        .user("Weather?"),
-        .assistant(toolCalls: [
-            AIToolCall(id: "tool-call-0", name: "weather", arguments: #"{"location":"Tokyo"}"#)
-        ])
-    ]))
-
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["contents"]?[1]?["parts"]?[0]?["functionCall"]?["name"]?.stringValue == "weather")
-    #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "skip_thought_signature_validator")
-    #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("skip_thought_signature_validator") ?? false) })
-}
-
-@Test func googleGenerateContentParsesProviderExecutedCodeAndServerTools() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}},"thoughtSignature":"sig-server"},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP"}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-3-pro")
-
-    let result = try await model.generate(LanguageModelRequest(messages: [.user("Search and run code.")]))
-
-    #expect(result.text == "")
-    #expect(result.finishReason == "tool-calls")
-    #expect(result.toolCalls.count == 2)
-    #expect(result.toolCalls[0].id == "google-code-execution-0")
-    #expect(result.toolCalls[0].name == "code_execution")
-    #expect(result.toolCalls[0].providerExecuted == true)
-    #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["code"]?.stringValue == "print('hi')")
-    #expect(result.toolCalls[1].id == "search-1")
-    #expect(result.toolCalls[1].name == "server:google_search")
-    #expect(result.toolCalls[1].providerExecuted == true)
-    #expect(result.toolCalls[1].dynamic == true)
-    #expect(result.toolCalls[1].providerMetadata["google"]?["serverToolType"]?.stringValue == "google_search")
-    #expect(result.toolCalls[1].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-server")
-    #expect(result.toolResults.count == 2)
-    #expect(result.toolResults[0].toolCallID == "google-code-execution-0")
-    #expect(result.toolResults[0].result["outcome"]?.stringValue == "OUTCOME_OK")
-    #expect(result.toolResults[0].result["output"]?.stringValue == "hi\n")
-    #expect(result.toolResults[1].toolCallID == "search-1")
-    #expect(result.toolResults[1].toolName == "server:google_search")
-    #expect(result.toolResults[1].dynamic == true)
-    #expect(result.toolResults[1].result["results"]?[0]?["title"]?.stringValue == "Swift")
-}
-
-@Test func googleGenerateContentStreamsProviderExecutedToolsAndInlineData() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="},"thoughtSignature":"sig-file"},{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}}},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-3-pro")
-
-    var files: [AIStreamFile] = []
-    var toolCalls: [AIToolCall] = []
-    var toolResults: [AIToolResult] = []
-    var finishReason: String?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Search and run code.")])) {
-        switch part {
-        case let .file(file):
-            files.append(file)
-        case let .toolCall(call):
-            toolCalls.append(call)
-        case let .toolResult(result):
-            toolResults.append(result)
-        case let .finish(reason, _):
-            finishReason = reason
-        default:
-            break
-        }
-    }
-
-    #expect(files.count == 1)
-    #expect(files[0].mediaType == "image/png")
-    #expect(files[0].data == Data("image".utf8))
-    #expect(files[0].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-file")
-    #expect(toolCalls.map(\.name) == ["code_execution", "server:google_search"])
-    #expect(toolCalls.map(\.providerExecuted) == [true, true])
-    #expect(toolResults.map(\.toolCallID) == ["google-code-execution-1", "search-1"])
-    #expect(toolResults[1].result["results"]?[0]?["title"]?.stringValue == "Swift")
-    #expect(finishReason == "tool-calls")
-}
-
-@Test func googleLanguageExtractsGroundingSources() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"text":"grounded"}]},"finishReason":"STOP","groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source Title"}},{"retrievedContext":{"uri":"gs://rag-corpus/document.pdf","title":"RAG Document","text":"Retrieved context"}},{"retrievedContext":{"fileSearchStore":"fileSearchStores/test-store-xyz","title":"Test Document"}},{"maps":{"uri":"https://maps.google.com/maps?cid=12345","title":"Best Restaurant"}},{"image":{"sourceUri":"https://example.com/article","imageUri":"https://example.com/image.jpg","title":"Image Result"}}]}}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-
-    let result = try await model.generate(LanguageModelRequest(messages: [.user("Ground it.")]))
-
-    #expect(result.text == "grounded")
-    #expect(result.sources.count == 5)
-    #expect(result.sources[0].id == "grounding-0")
-    #expect(result.sources[0].sourceType == "url")
-    #expect(result.sources[0].url == "https://source.example.com")
-    #expect(result.sources[0].title == "Source Title")
-    #expect(result.sources[1].sourceType == "document")
-    #expect(result.sources[1].title == "RAG Document")
-    #expect(result.sources[1].mediaType == "application/pdf")
-    #expect(result.sources[1].filename == "document.pdf")
-    #expect(result.sources[2].sourceType == "document")
-    #expect(result.sources[2].title == "Test Document")
-    #expect(result.sources[2].mediaType == "application/octet-stream")
-    #expect(result.sources[2].filename == "test-store-xyz")
-    #expect(result.sources[3].sourceType == "url")
-    #expect(result.sources[3].url == "https://maps.google.com/maps?cid=12345")
-    #expect(result.sources[3].title == "Best Restaurant")
-    #expect(result.sources[4].sourceType == "url")
-    #expect(result.sources[4].url == "https://example.com/article")
-    #expect(result.sources[4].title == "Image Result")
-    #expect(result.sources[4].rawValue?["image"]?["imageUri"]?.stringValue == "https://example.com/image.jpg")
-}
-
-@Test func googleLanguagePreservesGenerateContentProviderMetadata() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"text":"metadata"}]},"finishReason":"STOP","finishMessage":"done","safetyRatings":[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"NEGLIGIBLE","blocked":false}],"groundingMetadata":{"webSearchQueries":["weather"],"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source"}}]},"urlContextMetadata":{"urlMetadata":[{"retrievedUrl":"https://example.com/page","urlRetrievalStatus":"URL_RETRIEVAL_STATUS_SUCCESS"}]}}],"promptFeedback":{"blockReason":"SAFETY","safetyRatings":[{"category":"HARM_CATEGORY_HATE_SPEECH","probability":"NEGLIGIBLE"}]},"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3,"serviceTier":"priority"}}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-
-    let result = try await model.generate(LanguageModelRequest(messages: [.user("Metadata?")]))
-    let metadata = try #require(result.providerMetadata["google"])
-
-    #expect(metadata["safetyRatings"]?[0]?["category"]?.stringValue == "HARM_CATEGORY_DANGEROUS_CONTENT")
-    #expect(metadata["promptFeedback"]?["blockReason"]?.stringValue == "SAFETY")
-    #expect(metadata["groundingMetadata"]?["webSearchQueries"]?[0]?.stringValue == "weather")
-    #expect(metadata["urlContextMetadata"]?["urlMetadata"]?[0]?["retrievedUrl"]?.stringValue == "https://example.com/page")
-    #expect(metadata["finishMessage"]?.stringValue == "done")
-    #expect(metadata["serviceTier"]?.stringValue == "priority")
-}
-
-@Test func googleImagenUsesPredictInstancesAndParameters() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"predictions":[{"bytesBase64Encoded":"image-1"},{"bytesBase64Encoded":"image-2"}]}"#))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.imageModel("imagen-4.0-generate-001")
-
-    let result = try await model.generateImage(ImageGenerationRequest(
-        prompt: "cat",
-        aspectRatio: "16:9",
-        count: 2,
-        extraBody: ["negativePrompt": "blur", "personGeneration": "allow_adult"]
-    ))
-
-    #expect(result.base64Images == ["image-1", "image-2"])
-    #expect(result.providerMetadata["google"]?["images"]?.arrayValue?.count == 2)
-    let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict")
-    #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["instances"]?[0]?["prompt"]?.stringValue == "cat")
-    #expect(body["parameters"]?["sampleCount"]?.intValue == 2)
-    #expect(body["parameters"]?["aspectRatio"]?.stringValue == "16:9")
-    #expect(body["parameters"]?["negativePrompt"]?.stringValue == "blur")
-    #expect(body["parameters"]?["personGeneration"]?.stringValue == "allow_adult")
-}
-
-@Test func googleImagenRejectsEditingAndWarnsForUnsupportedSizeSeedLikeUpstream() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"predictions":[{"bytesBase64Encoded":"image"}]}"#))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.imageModel("imagen-4.0-generate-001")
-
-    await #expect(throws: AIError.invalidArgument(argument: "files", message: "Google Generative AI does not support image editing with Imagen models. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities.")) {
-        _ = try await model.generateImage(ImageGenerationRequest(
-            prompt: "edit",
-            files: [ImageInputFile(data: Data("image".utf8), mediaType: "image/png")]
-        ))
-    }
-    await #expect(throws: AIError.invalidArgument(argument: "mask", message: "Google Generative AI does not support image editing with masks. Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities.")) {
-        _ = try await model.generateImage(ImageGenerationRequest(
-            prompt: "edit",
-            mask: ImageInputFile(data: Data("mask".utf8), mediaType: "image/png")
-        ))
-    }
-
-    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "16:9", seed: 42))
-    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "size" })
-    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "seed" })
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["parameters"]?["aspectRatio"]?.stringValue == "1:1")
-    #expect(body["parameters"]?["seed"] == nil)
-}
-
-@Test func googleGeminiImageUsesGenerateContentImageModality() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"gemini-image"}}]}}]}"#))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.imageModel("gemini-2.5-flash-image")
-
-    #expect(model.providerID == "google.generative-ai")
-    let result = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "1:1"))
-
-    #expect(result.base64Images == ["gemini-image"])
-    let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent")
-    let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "cat")
-    #expect(body["generationConfig"]?["responseModalities"]?[0]?.stringValue == "IMAGE")
-    #expect(body["generationConfig"]?["imageConfig"]?["aspectRatio"]?.stringValue == "1:1")
-}
-
-@Test func googleGeminiImageMapsFilesAndGoogleSearchOptionLikeUpstream() async throws {
-    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"edited-image"}}]},"groundingMetadata":{"webSearchQueries":["cat"]}}]}"#))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.imageModel("gemini-2.5-flash-image")
-
-    let result = try await model.generateImage(ImageGenerationRequest(
-        prompt: "Make it cinematic",
-        files: [
-            ImageInputFile(data: Data([0x89, 0x50, 0x4E, 0x47]), mediaType: "image/*"),
-            ImageInputFile(url: "https://example.com/source.png")
-        ],
-        providerOptions: [
-            "google": [
-                "googleSearch": ["searchTypes": ["webSearch": [:]]],
-                "thinkingConfig": ["includeThoughts": true],
-                "safetySettings": [["category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE"]],
-                "labels": ["scene": "edit"]
-            ]
-        ]
-    ))
-
-    #expect(result.base64Images == ["edited-image"])
-    #expect(result.providerMetadata["google"]?["groundingMetadata"]?["webSearchQueries"]?[0]?.stringValue == "cat")
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    let parts = try #require(body["contents"]?[0]?["parts"]?.arrayValue)
-    #expect(parts[0]["text"]?.stringValue == "Make it cinematic")
-    #expect(parts[1]["inlineData"]?["mimeType"]?.stringValue == "image/png")
-    #expect(parts[2]["fileData"]?["fileUri"]?.stringValue == "https://example.com/source.png")
-    #expect(body["generationConfig"]?["responseModalities"]?[0]?.stringValue == "IMAGE")
-    #expect(body["generationConfig"]?["thinkingConfig"]?["includeThoughts"]?.boolValue == true)
-    #expect(body["safetySettings"]?[0]?["category"]?.stringValue == "HARM_CATEGORY_DANGEROUS_CONTENT")
-    #expect(body["labels"]?["scene"]?.stringValue == "edit")
-    #expect(body["tools"]?[0]?["googleSearch"]?["searchTypes"]?["webSearch"] != nil)
-    #expect(body["googleSearch"] == nil)
-}
-
-@Test func googleModelsForwardAbortSignalToLanguageEmbeddingAndImageRequests() async throws {
-    let languageTransport = RecordingTransport(responses: [
-        jsonResponse("""
-        {"candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}
-        """),
-        sseResponse("""
-        data: {"candidates":[{"content":{"parts":[{"text":"gem"}],"role":"model"},"finishReason":"STOP","index":0}]}
-
-        """)
-    ])
-    let languageProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: languageTransport))
-    let languageModel = try languageProvider.languageModel("gemini-2.5-flash")
-    let languageController = AIAbortController()
-
-    _ = try await languageModel.generate(LanguageModelRequest(messages: [.user("Ping")], abortSignal: languageController.signal))
-    for try await _ in languageModel.stream(LanguageModelRequest(messages: [.user("Ping")], abortSignal: languageController.signal)) {}
-
-    let languageRequests = await languageTransport.requests()
-    #expect(languageRequests.count == 2)
-    #expect(languageRequests[0].abortSignal === languageController.signal)
-    #expect(languageRequests[1].abortSignal === languageController.signal)
-
-    let embeddingTransport = RecordingTransport(response: jsonResponse(#"{"embedding":{"values":[0.1,0.2]}}"#))
-    let embeddingProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: embeddingTransport))
-    let embeddingModel = try embeddingProvider.embeddingModel("gemini-embedding-001")
-    let embeddingController = AIAbortController()
-
-    _ = try await embeddingModel.embed(EmbeddingRequest(values: ["hello"], abortSignal: embeddingController.signal))
-
-    #expect((await embeddingTransport.requests()).first?.abortSignal === embeddingController.signal)
-
-    let imageTransport = RecordingTransport(response: jsonResponse(#"{"predictions":[{"bytesBase64Encoded":"image"}]}"#))
-    let imageProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: imageTransport))
-    let imageModel = try imageProvider.imageModel("imagen-4.0-generate-001")
-    let imageController = AIAbortController()
-
-    _ = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: imageController.signal))
-
-    #expect((await imageTransport.requests()).first?.abortSignal === imageController.signal)
-}
-
-@Test func googleVeoCreatesLongRunningOperationAndPollsVideoURL() async throws {
-    let transport = RecordingTransport(responses: [
-        jsonResponse(#"{"name":"operations/video-1","done":false}"#),
-        jsonResponse(#"{"name":"operations/video-1","done":true,"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"https://generativelanguage.googleapis.com/files/video-123.mp4?alt=media"}}]}}}"#)
-    ])
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.videoModel("veo-3.1-generate-preview")
-
-    #expect(model.providerID == "google.generative-ai")
-    let result = try await model.generateVideo(VideoGenerationRequest(
-        prompt: "cat running",
-        aspectRatio: "16:9",
-        durationSeconds: 5,
-        count: 2,
-        extraBody: ["sampleCount": 1, "resolution": "1920x1080", "seed": 42, "negativePrompt": "rain", "pollIntervalMs": 0]
-    ))
-
-    #expect(result.urls == ["https://generativelanguage.googleapis.com/files/video-123.mp4?alt=media&key=gemini-key"])
-    #expect(result.operationID == "operations/video-1")
-    let requests = await transport.requests()
-    #expect(requests.count == 2)
-    #expect(requests[0].url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning")
-    let body = try decodeJSONBody(try #require(requests[0].body))
-    #expect(body["instances"]?[0]?["prompt"]?.stringValue == "cat running")
-    #expect(body["parameters"]?["sampleCount"]?.intValue == 2)
-    #expect(body["parameters"]?["aspectRatio"]?.stringValue == "16:9")
-    #expect(body["parameters"]?["durationSeconds"]?.intValue == 5)
-    #expect(body["parameters"]?["resolution"]?.stringValue == "1080p")
-    #expect(body["parameters"]?["seed"]?.intValue == 42)
-    #expect(body["parameters"]?["negativePrompt"]?.stringValue == "rain")
-    #expect(requests[1].method == "GET")
-    #expect(requests[1].url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/operations/video-1")
-}
-
-@Test func googleVideoMapsStandardImageAndProviderOptionsLikeUpstream() async throws {
-    let transport = RecordingTransport(responses: [
-        jsonResponse(#"{"name":"operations/video-2","done":false}"#),
-        jsonResponse(#"{"name":"operations/video-2","done":true,"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media"}}]}}}"#)
-    ])
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.videoModel("veo-3.1-generate-preview")
-
-    let result = try await model.generateVideo(VideoGenerationRequest(
-        prompt: "cat running",
-        image: ImageInputFile(data: Data("frame".utf8), mediaType: "image/png"),
-        resolution: "1280x720",
-        seed: 7,
-        providerOptions: [
-            "google": [
-                "referenceImages": [
-                    ["bytesBase64Encoded": "reference-image"],
-                    ["gcsUri": "gs://bucket/reference.png"]
-                ],
-                "personGeneration": "allow_adult",
-                "negativePrompt": "rain",
-                "pollIntervalMs": 0
-            ]
-        ]
-    ))
-
-    #expect(result.urls == ["https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media&key=gemini-key"])
-    #expect(result.providerMetadata["google"]?["videos"]?[0]?["uri"]?.stringValue == "https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media")
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["instances"]?[0]?["image"]?["inlineData"]?["data"]?.stringValue == Data("frame".utf8).base64EncodedString())
-    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["inlineData"]?["data"]?.stringValue == "reference-image")
-    #expect(body["instances"]?[0]?["referenceImages"]?[1]?["gcsUri"]?.stringValue == "gs://bucket/reference.png")
-    #expect(body["parameters"]?["resolution"]?.stringValue == "720p")
-    #expect(body["parameters"]?["seed"]?.intValue == 7)
-    #expect(body["parameters"]?["personGeneration"]?.stringValue == "allow_adult")
-    #expect(body["parameters"]?["negativePrompt"]?.stringValue == "rain")
-    #expect(body["parameters"]?["pollIntervalMs"] == nil)
-}
-
-@Test func googleVideoWarnsAndIgnoresURLImageLikeUpstream() async throws {
-    let transport = RecordingTransport(responses: [
-        jsonResponse(#"{"name":"operations/video-url","done":true,"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"https://generativelanguage.googleapis.com/files/video-url.mp4?alt=media"}}]}}}"#)
-    ])
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.videoModel("veo-3.1-generate-preview")
-
-    let result = try await model.generateVideo(VideoGenerationRequest(
-        prompt: "cat running",
-        image: ImageInputFile(url: "https://example.com/frame.png")
-    ))
-
-    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "URL-based image input" })
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["instances"]?[0]?["image"] == nil)
-}
-
-@Test func googleInteractionsUsesInteractionsEndpointAndInputShape() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"interaction-1","status":"completed","service_tier":"standard","model":"gemini-2.5-flash","usage":{"total_tokens":58,"total_input_tokens":7,"total_output_tokens":19,"total_thought_tokens":32,"total_cached_tokens":0},"steps":[{"type":"thought","summary":[{"type":"text","text":"thinking"}]},{"type":"model_output","content":[{"type":"text","text":"Hello from interactions"}]}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    let result = try await model.generate(LanguageModelRequest(
-        messages: [.system("Be helpful."), .user("Hello")],
-        temperature: 0.3,
-        topP: 0.8,
-        maxOutputTokens: 64,
-        extraBody: [
-            "previousInteractionId": "interaction-old",
-            "serviceTier": "flex",
-            "store": false,
-            "responseModalities": ["text", "image"],
-            "responseFormat": [
-                ["type": "image", "mimeType": "image/png", "aspectRatio": "1:1", "imageSize": "1K"]
-            ],
-            "thinkingLevel": "high",
-            "thinkingSummaries": true
-        ]
-    ))
-
-    #expect(result.text == "Hello from interactions")
-    #expect(result.finishReason == "stop")
-    #expect(result.usage?.inputTokens == 7)
-    #expect(result.usage?.outputTokens == 51)
-    #expect(result.usage?.totalTokens == 58)
-    let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/interactions")
-    #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["Api-Revision"] == "2026-05-20")
-    let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["model"]?.stringValue == "gemini-2.5-flash")
-    #expect(body["system_instruction"]?.stringValue == "Be helpful.")
-    #expect(body["input"]?[0]?["type"]?.stringValue == "user_input")
-    #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "text")
-    #expect(body["input"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hello")
-    #expect(body["generation_config"]?["temperature"]?.doubleValue == 0.3)
-    #expect(body["generation_config"]?["top_p"]?.doubleValue == 0.8)
-    #expect(body["generation_config"]?["max_output_tokens"]?.intValue == 64)
-    #expect(body["generation_config"]?["thinking_level"]?.stringValue == "high")
-    #expect(body["generation_config"]?["thinking_summaries"]?.boolValue == true)
-    #expect(body["previous_interaction_id"]?.stringValue == "interaction-old")
-    #expect(body["service_tier"]?.stringValue == "flex")
-    #expect(body["store"]?.boolValue == false)
-    #expect(body["response_modalities"]?[0]?.stringValue == "text")
-    #expect(body["response_format"]?[0]?["mime_type"]?.stringValue == "image/png")
-    #expect(body["response_format"]?[0]?["aspect_ratio"]?.stringValue == "1:1")
-    #expect(body["response_format"]?[0]?["image_size"]?.stringValue == "1K")
-}
-
-@Test func googleInteractionsMapsStandardStructuredResponseFormat() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"{\\"name\\":\\"Ada\\",\\"age\\":36}"}]}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    let result = try await model.generate(LanguageModelRequest(
-        messages: [.user("Person?")],
-        responseFormat: .json(schema: [
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": [
-                "name": ["type": "string", "description": "Full name."],
-                "age": ["type": "number", "description": "Age in years."]
-            ],
-            "required": ["name", "age"],
-            "additionalProperties": false
-        ])
-    ))
-
-    #expect(result.text == "{\"name\":\"Ada\",\"age\":36}")
-    #expect(result.warnings.isEmpty)
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["response_format"]?[0]?["type"]?.stringValue == "text")
-    #expect(body["response_format"]?[0]?["mime_type"]?.stringValue == "application/json")
-    #expect(body["response_format"]?[0]?["schema"]?["$schema"]?.stringValue == "http://json-schema.org/draft-07/schema#")
-    #expect(body["response_format"]?[0]?["schema"]?["additionalProperties"]?.boolValue == false)
-    #expect(body["response_format"]?[0]?["schema"]?["properties"]?["name"]?["description"]?.stringValue == "Full name.")
-    #expect(body["responseFormat"] == nil)
-}
-
-@Test func googleInteractionsCombinesCallAndProviderResponseFormats() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"{\\"ok\\":true}"}]}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    _ = try await model.generate(LanguageModelRequest(
-        messages: [.user("JSON and image.")],
-        responseFormat: .json(),
-        extraBody: [
-            "google": [
-                "responseFormat": [
-                    ["type": "image", "mimeType": "image/png", "aspectRatio": "1:1"]
-                ]
-            ]
-        ]
-    ))
-
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["response_format"]?[0]?["type"]?.stringValue == "text")
-    #expect(body["response_format"]?[0]?["mime_type"]?.stringValue == "application/json")
-    #expect(body["response_format"]?[0]?["schema"] == nil)
-    #expect(body["response_format"]?[1]?["type"]?.stringValue == "image")
-    #expect(body["response_format"]?[1]?["mime_type"]?.stringValue == "image/png")
-    #expect(body["response_format"]?[1]?["aspect_ratio"]?.stringValue == "1:1")
-    #expect(body["google"] == nil)
-}
-
-@Test func googleInteractionsAgentDropsStandardResponseFormatWithWarning() async throws {
-    let transport = RecordingTransport(responses: [
-        jsonResponse(#"{"id":"agent-interaction","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"agent done"}]}]}"#)
-    ])
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsAgent("deep-research")
-
-    let result = try await model.generate(LanguageModelRequest(
-        messages: [.user("Research.")],
-        responseFormat: .json(schema: ["type": "object"])
-    ))
-
-    #expect(result.text == "agent done")
-    #expect(result.warnings == [
-        AIWarning(
-            type: "other",
-            message: "google.interactions: structured output (responseFormat) is not supported when an agent is set; responseFormat will be ignored."
-        )
-    ])
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["agent"]?.stringValue == "deep-research")
-    #expect(body["response_format"] == nil)
-}
-
-@Test func googleInteractionsResolvesTopLevelInlineMediaType() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"saw image"}]}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-    let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])
-
-    _ = try await model.generate(LanguageModelRequest(messages: [
-        AIMessage(role: .user, content: [.data(mimeType: "image", data: png)])
-    ]))
-
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "image")
-    #expect(body["input"]?[0]?["content"]?[0]?["mime_type"]?.stringValue == "image/png")
-}
-
-@Test func googleInteractionsExtractsSourcesAndProviderMetadata() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"interaction-1","status":"completed","service_tier":"standard","usage":{"total_tokens":12,"total_input_tokens":3,"total_output_tokens":4},"steps":[{"type":"model_output","content":[{"type":"text","text":"Grounded answer","annotations":[{"type":"url_citation","url":"https://example.com/article","title":"Example Article"},{"type":"file_citation","document_uri":"gs://bucket/path/report.pdf","file_name":"report.pdf"},{"type":"place_citation","url":"https://maps.google.com/?q=foo","name":"Foo Place"}]}]},{"type":"url_context_result","call_id":"url-1","result":[{"url":"https://context.example.com/a","status":"success"},{"url":"https://context.example.com/b","status":"error"}]},{"type":"google_search_result","call_id":"search-1","result":[{"url":"https://news.example.com/1","title":"Article 1"},{"search_suggestions":"<html/>"}]},{"type":"file_search_result","call_id":"file-1","result":[{"file_name":"notes.md","source":"fileSearchStores/x/notes.md"},{"document_uri":"https://storage.example.com/file.txt"}]},{"type":"google_maps_result","call_id":"maps-1","result":[{"places":[{"name":"Bar Cafe","url":"https://maps.google.com/?q=bar"},{"name":"No URL"}]}]}]}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    let result = try await model.generate(LanguageModelRequest(messages: [.user("Ground it.")]))
-
-    #expect(result.text == "Grounded answer")
-    #expect(result.providerMetadata["google"]?["interactionId"]?.stringValue == "interaction-1")
-    #expect(result.providerMetadata["google"]?["serviceTier"]?.stringValue == "standard")
-    #expect(result.sources.count == 8)
-    #expect(result.sources[0].sourceType == "url")
-    #expect(result.sources[0].url == "https://example.com/article")
-    #expect(result.sources[0].title == "Example Article")
-    #expect(result.sources[1].sourceType == "document")
-    #expect(result.sources[1].title == "report.pdf")
-    #expect(result.sources[1].mediaType == "application/pdf")
-    #expect(result.sources[1].filename == "report.pdf")
-    #expect(result.sources[2].sourceType == "url")
-    #expect(result.sources[2].url == "https://maps.google.com/?q=foo")
-    #expect(result.sources[2].title == "Foo Place")
-    #expect(result.sources[3].url == "https://context.example.com/a")
-    #expect(result.sources[4].url == "https://news.example.com/1")
-    #expect(result.sources[4].title == "Article 1")
-    #expect(result.sources[5].sourceType == "document")
-    #expect(result.sources[5].title == "notes.md")
-    #expect(result.sources[5].mediaType == "text/markdown")
-    #expect(result.sources[5].filename == "notes.md")
-    #expect(result.sources[6].sourceType == "url")
-    #expect(result.sources[6].url == "https://storage.example.com/file.txt")
-    #expect(result.sources[7].sourceType == "url")
-    #expect(result.sources[7].url == "https://maps.google.com/?q=bar")
-    #expect(result.sources[7].title == "Bar Cafe")
-}
-
-@Test func googleInteractionsStreamsTextAndFinishUsage() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"interaction":{"id":"interaction-1","status":"in_progress"},"event_type":"interaction.created"}
-
-    data: {"index":0,"step":{"type":"model_output"},"event_type":"step.start"}
-
-    data: {"index":0,"delta":{"type":"text","text":"hello "},"event_type":"step.delta"}
-
-    data: {"index":0,"delta":{"type":"text","text":"world"},"event_type":"step.delta"}
-
-    data: {"interaction":{"id":"interaction-1","status":"completed","usage":{"total_tokens":12,"total_input_tokens":3,"total_output_tokens":4,"total_thought_tokens":5}},"event_type":"interaction.completed"}
-
-    data: [DONE]
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    var deltas: [String] = []
-    var finishReason: String?
-    var totalTokens: Int?
-    var outputTokens: Int?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")])) {
-        switch part {
-        case let .textDelta(delta):
-            deltas.append(delta)
-        case let .finish(reason, usage):
-            finishReason = reason
-            totalTokens = usage?.totalTokens
-            outputTokens = usage?.outputTokens
-        default:
-            break
-        }
-    }
-
-    #expect(deltas == ["hello ", "world"])
-    #expect(finishReason == "stop")
-    #expect(totalTokens == 12)
-    #expect(outputTokens == 9)
-    let request = try #require(await transport.requests().first)
-    let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["stream"] == true)
-    #expect(body["model"]?.stringValue == "gemini-2.5-flash")
-}
-
-@Test func googleInteractionsStreamsSourcesAndMetadata() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"interaction":{"id":"interaction-1","status":"in_progress","service_tier":"standard"},"event_type":"interaction.created"}
-
-    data: {"index":0,"step":{"type":"model_output","content":[{"type":"text","text":"","annotations":[{"type":"url_citation","url":"https://example.com/article","title":"Example Article"}]}]},"event_type":"step.start"}
-
-    data: {"index":0,"delta":{"type":"text","text":"hello"},"event_type":"step.delta"}
-
-    data: {"index":0,"delta":{"type":"text_annotation","annotations":[{"type":"url_citation","url":"https://example.com/article","title":"Example Article"},{"type":"file_citation","document_uri":"gs://bucket/report.pdf","file_name":"report.pdf"}]},"event_type":"step.delta"}
-
-    data: {"index":1,"step":{"type":"google_search_result","call_id":"search-1","result":[{"url":"https://news.example.com/1","title":"Article 1"}]},"event_type":"step.start"}
-
-    data: {"interaction":{"id":"interaction-1","status":"completed","service_tier":"priority","usage":{"total_tokens":12,"total_input_tokens":3,"total_output_tokens":4,"total_thought_tokens":5}},"event_type":"interaction.completed"}
-
-    data: [DONE]
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    var text: [String] = []
-    var sources: [AISource] = []
-    var metadata: [[String: JSONValue]] = []
-    var totalTokens: Int?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")])) {
-        switch part {
-        case let .textDelta(delta):
-            text.append(delta)
-        case let .source(source):
-            sources.append(source)
-        case let .metadata(value):
-            metadata.append(value)
-        case let .finish(_, usage):
-            totalTokens = usage?.totalTokens
-        default:
-            break
-        }
-    }
-
-    #expect(text == ["hello"])
-    #expect(sources.count == 3)
-    #expect(sources[0].url == "https://example.com/article")
-    #expect(sources[0].title == "Example Article")
-    #expect(sources[1].sourceType == "document")
-    #expect(sources[1].mediaType == "application/pdf")
-    #expect(sources[1].filename == "report.pdf")
-    #expect(sources[2].url == "https://news.example.com/1")
-    #expect(sources[2].title == "Article 1")
-    #expect(metadata.first?["google"]?["interactionId"]?.stringValue == "interaction-1")
-    #expect(metadata.first?["google"]?["serviceTier"]?.stringValue == "standard")
-    #expect(metadata.last?["google"]?["serviceTier"]?.stringValue == "priority")
-    #expect(totalTokens == 12)
-}
-
-@Test func googleInteractionsParsesFunctionCallSteps() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"interaction-1","status":"requires_action","usage":{"total_tokens":109,"total_input_tokens":53,"total_output_tokens":15,"total_thought_tokens":41},"steps":[{"type":"thought","signature":"sig"},{"id":"zggxzq8r","type":"function_call","name":"getWeather","arguments":{"location":"San Francisco"}}],"model":"gemini-2.5-flash"}
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    let result = try await model.generate(LanguageModelRequest(messages: [.user("Weather?")]))
-
-    #expect(result.text == "")
-    #expect(result.finishReason == "tool-calls")
-    #expect(result.usage?.totalTokens == 109)
-    #expect(result.toolCalls.count == 1)
-    #expect(result.toolCalls[0].id == "zggxzq8r")
-    #expect(result.toolCalls[0].name == "getWeather")
-    #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
-}
-
-@Test func googleInteractionsStreamsFunctionCallSteps() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"interaction":{"id":"interaction-1","status":"in_progress"},"event_type":"interaction.created"}
-
-    data: {"index":1,"step":{"id":"61nzpsv4","signature":"","type":"function_call","name":"getWeather","arguments":{}},"event_type":"step.start"}
-
-    data: {"index":1,"delta":{"arguments":"{\\"location\\":\\"San Francisco\\"}","type":"arguments_delta"},"event_type":"step.delta"}
-
-    data: {"index":1,"event_type":"step.stop"}
-
-    data: {"interaction":{"id":"interaction-1","status":"requires_action","usage":{"total_tokens":133,"total_input_tokens":53,"total_output_tokens":15,"total_thought_tokens":65}},"event_type":"interaction.completed"}
-
-    data: [DONE]
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsModel("gemini-2.5-flash")
-
-    var deltas: [String] = []
-    var inputLifecycle: [String] = []
-    var finalCall: AIToolCall?
-    var finishReason: String?
-    var totalTokens: Int?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
-        switch part {
-        case let .toolInputStart(id, name, _, _, _, _):
-            inputLifecycle.append("start:\(id):\(name)")
-        case let .toolInputDelta(id, delta, _):
-            inputLifecycle.append("delta:\(id):\(delta)")
-        case let .toolInputEnd(id, _):
-            inputLifecycle.append("end:\(id)")
-        case let .toolCallDelta(_, _, argumentsDelta, _):
-            deltas.append(argumentsDelta)
-        case let .toolCall(call):
-            finalCall = call
-        case let .finish(reason, usage):
-            finishReason = reason
-            totalTokens = usage?.totalTokens
-        default:
-            break
-        }
-    }
-
-    let call = try #require(finalCall)
-    #expect(deltas == [#"{"location":"San Francisco"}"#])
-    #expect(inputLifecycle == [
-        "start:61nzpsv4:getWeather",
-        #"delta:61nzpsv4:{"location":"San Francisco"}"#,
-        "end:61nzpsv4"
-    ])
-    #expect(call.id == "61nzpsv4")
-    #expect(call.name == "getWeather")
-    #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")
-    #expect(finishReason == "tool-calls")
-    #expect(totalTokens == 133)
-}
-
-@Test func googleInteractionsAgentUsesAgentAndBackgroundBody() async throws {
-    let transport = RecordingTransport(responses: [
-        jsonResponse(#"{"id":"agent-interaction","status":"in_progress"}"#),
-        jsonResponse(#"{"id":"agent-interaction","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"agent done"}]}],"usage":{"total_tokens":4,"total_input_tokens":1,"total_output_tokens":3}}"#)
-    ])
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = provider.interactionsAgent("deep-research")
-
-    let result = try await model.generate(LanguageModelRequest(
-        messages: [.user("Research")],
-        extraBody: [
-            "background": true,
-            "agentConfig": ["type": "deep-research", "thinkingSummaries": true, "collaborativePlanning": false],
-            "environment": ["type": "remote"]
-        ]
-    ))
-
-    #expect(result.text == "agent done")
-    let requests = await transport.requests()
-    #expect(requests.count == 2)
-    let body = try decodeJSONBody(try #require(requests[0].body))
-    #expect(body["agent"]?.stringValue == "deep-research")
-    #expect(body["model"] == nil)
-    #expect(body["background"]?.boolValue == true)
-    #expect(body["agent_config"]?["type"]?.stringValue == "deep-research")
-    #expect(body["agent_config"]?["thinking_summaries"]?.boolValue == true)
-    #expect(body["agent_config"]?["collaborative_planning"]?.boolValue == false)
-    #expect(body["environment"]?["type"]?.stringValue == "remote")
-    #expect(body["generation_config"] == nil)
-    #expect(requests[1].method == "GET")
-    #expect(requests[1].url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/interactions/agent-interaction")
-}
-
-@Test func googleFilesUploadUsesResumableUploadFlow() async throws {
-    let transport = RecordingTransport(responses: [
-        AIHTTPResponse(statusCode: 200, headers: ["x-goog-upload-url": "https://upload.example.com/session"], body: Data()),
-        jsonResponse("""
-        {"file":{"name":"files/abc","displayName":"Clip","mimeType":"video/mp4","uri":"https://generativelanguage.googleapis.com/v1beta/files/abc","state":"ACTIVE"}}
-        """)
-    ])
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let imageModel = try provider.imageModel("imagen-3.0-generate-002")
-    #expect(imageModel.providerID == "google.generative-ai")
-    let files = provider.files()
-    #expect(files.providerID == "google.generative-ai")
-    let result = try await files.uploadFile(FileUploadRequest(data: Data("video".utf8), mediaType: "video/mp4", displayName: "Clip"))
-
-    #expect(result.providerReference["google"] == "https://generativelanguage.googleapis.com/v1beta/files/abc")
-    let requests = await transport.requests()
-    #expect(requests.count == 2)
-    #expect(requests[0].url.absoluteString == "https://generativelanguage.googleapis.com/upload/v1beta/files")
-    #expect(requests[0].headers["X-Goog-Upload-Protocol"] == "resumable")
-    #expect(requests[0].headers["X-Goog-Upload-Header-Content-Length"] == "5")
-    let startBody = try decodeJSONBody(try #require(requests[0].body))
-    #expect(startBody["file"]?["display_name"]?.stringValue == "Clip")
-    #expect(requests[1].url.absoluteString == "https://upload.example.com/session")
-    #expect(requests[1].headers["X-Goog-Upload-Command"] == "upload, finalize")
-    #expect(requests[1].body == Data("video".utf8))
-}
-
-@Test func googleLanguageStreamsGenerateContentEvents() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"candidates":[{"content":{"parts":[{"text":"gem"}],"role":"model"},"index":0,"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source Title"}}]}}]}
-
-    data: {"candidates":[{"content":{"parts":[{"text":"ini"}],"role":"model"},"finishReason":"STOP","index":0,"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source Title"}}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-
-    var deltas: [String] = []
-    var sources: [AISource] = []
-    var usage: TokenUsage?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Ping")])) {
-        switch part {
-        case let .textDelta(delta):
-            deltas.append(delta)
-        case let .source(source):
-            sources.append(source)
-        case let .finish(_, value):
-            usage = value
-        default:
-            break
-        }
-    }
-
-    #expect(deltas == ["gem", "ini"])
-    #expect(sources.count == 1)
-    #expect(sources[0].id == "grounding-0")
-    #expect(sources[0].url == "https://source.example.com")
-    #expect(sources[0].title == "Source Title")
-    #expect(usage?.totalTokens == 3)
-    let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
-    #expect(request.headers["x-goog-api-key"] == "gemini-key")
-}
-
-@Test func googleLanguageStreamPreservesFinishProviderMetadataAcrossChunks() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"index":0,"groundingMetadata":{"webSearchQueries":["super bowl"],"groundingChunks":[{"web":{"uri":"https://example.com/superbowl","title":"Super Bowl"}}]},"urlContextMetadata":{"urlMetadata":[{"retrievedUrl":"https://example.com/page","urlRetrievalStatus":"URL_RETRIEVAL_STATUS_SUCCESS"}]}}]}
-
-    data: {"candidates":[{"content":{"parts":[{"text":" world"}],"role":"model"},"finishReason":"STOP","finishMessage":"finished","index":0,"safetyRatings":[{"category":"HARM_CATEGORY_DANGEROUS_CONTENT","probability":"NEGLIGIBLE"}]}],"promptFeedback":{"blockReason":"SAFETY"},"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3,"serviceTier":"priority"}}
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-
-    var providerMetadata: [String: JSONValue] = [:]
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Ping")])) {
-        if case let .finishMetadata(_, _, metadata) = part {
-            providerMetadata = metadata
-        }
-    }
-
-    let google = try #require(providerMetadata["google"])
-    #expect(google["groundingMetadata"]?["webSearchQueries"]?[0]?.stringValue == "super bowl")
-    #expect(google["urlContextMetadata"]?["urlMetadata"]?[0]?["retrievedUrl"]?.stringValue == "https://example.com/page")
-    #expect(google["safetyRatings"]?[0]?["category"]?.stringValue == "HARM_CATEGORY_DANGEROUS_CONTENT")
-    #expect(google["promptFeedback"]?["blockReason"]?.stringValue == "SAFETY")
-    #expect(google["finishMessage"]?.stringValue == "finished")
-    #expect(google["serviceTier"]?.stringValue == "priority")
-}
-
-@Test func googleLanguageStreamsFunctionCallPartialArguments() async throws {
-    let transport = RecordingTransport(response: sseResponse("""
-    data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"weather","willContinue":true}}]},"index":0}]}
-
-    data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"partialArgs":[{"jsonPath":"$.location","stringValue":"San ","willContinue":true}],"willContinue":true}}]},"index":0}]}
-
-    data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"partialArgs":[{"jsonPath":"$.location","stringValue":"Francisco","willContinue":true}],"willContinue":true}}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":29,"candidatesTokenCount":15,"totalTokenCount":44}}
-
-    """))
-    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
-    let model = try provider.languageModel("gemini-2.5-flash")
-
-    var inputLifecycle: [String] = []
-    var finalCall: AIToolCall?
-    var finishReason: String?
-    var totalTokens: Int?
-    for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
-        switch part {
-        case let .toolInputStart(id, name, _, _, _, _):
-            inputLifecycle.append("start:\(id):\(name)")
-        case let .toolInputDelta(id, delta, _):
-            inputLifecycle.append("delta:\(id):\(delta)")
-        case let .toolInputEnd(id, _):
-            inputLifecycle.append("end:\(id)")
-        case let .toolCall(call):
-            finalCall = call
-        case let .finish(reason, usage):
-            finishReason = reason
-            totalTokens = usage?.totalTokens
-        default:
-            break
-        }
-    }
-
-    let call = try #require(finalCall)
-    #expect(inputLifecycle == [
-        "start:tool-call-0:weather",
-        #"delta:tool-call-0:{"location":"San "}"#,
-        #"delta:tool-call-0:{"location":"San Francisco"}"#,
-        "end:tool-call-0"
-    ])
-    #expect(call.id == "tool-call-0")
-    #expect(call.name == "weather")
-    #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "San Francisco")
-    #expect(finishReason == "tool-calls")
-    #expect(totalTokens == 44)
 }
