@@ -31,6 +31,8 @@ struct AnthropicStreamingContentBlocks {
             }
             let id = String(index)
             switch type {
+            case "fallback":
+                return []
             case "text":
                 blocks[index] = .text()
                 return [.textStart(id: id)]
@@ -94,10 +96,7 @@ struct AnthropicStreamingContentBlocks {
         case "message_delta":
             return [.finish(
                 reason: anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue),
-                usage: TokenUsage(
-                    inputTokens: raw["usage"]?["input_tokens"]?.intValue,
-                    outputTokens: raw["usage"]?["output_tokens"]?.intValue
-                )
+                usage: anthropicTokenUsage(from: raw["usage"])
             )]
         default:
             return []
@@ -218,4 +217,3 @@ struct AnthropicStreamingToolCalls {
         }
     }
 }
-

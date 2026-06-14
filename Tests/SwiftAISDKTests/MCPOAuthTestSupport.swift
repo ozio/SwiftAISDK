@@ -16,6 +16,41 @@ func oauthAuthorizationMetadataResponse() -> AIHTTPResponse {
     }
     """)
 }
+
+func oauthAuthorizationServerInformation(
+    authorizationServerURL: String = "https://auth.example.com",
+    tokenEndpoint: String = "https://auth.example.com/token"
+) throws -> MCPOAuthAuthorizationServerInformation {
+    MCPOAuthAuthorizationServerInformation(
+        authorizationServerURL: try requireURL(authorizationServerURL),
+        tokenEndpoint: try requireURL(tokenEndpoint)
+    )
+}
+
+func oauthClientInformation(clientID: String = "client123") throws -> MCPOAuthClientInformation {
+    let information = try oauthAuthorizationServerInformation()
+    return MCPOAuthClientInformation(
+        clientID: clientID,
+        authorizationServerURL: information.authorizationServerURL,
+        tokenEndpoint: information.tokenEndpoint
+    )
+}
+
+func oauthTokens(
+    accessToken: String,
+    tokenType: String = "Bearer",
+    refreshToken: String? = nil
+) throws -> MCPOAuthTokens {
+    let information = try oauthAuthorizationServerInformation()
+    return MCPOAuthTokens(
+        accessToken: accessToken,
+        tokenType: tokenType,
+        refreshToken: refreshToken,
+        authorizationServerURL: information.authorizationServerURL,
+        tokenEndpoint: information.tokenEndpoint
+    )
+}
+
 actor TestOAuthClientProvider: MCPOAuthClientProvider {
     nonisolated let redirectURL: URL
     nonisolated let clientMetadata: MCPOAuthClientMetadata
@@ -23,16 +58,20 @@ actor TestOAuthClientProvider: MCPOAuthClientProvider {
 
     private var currentTokens: MCPOAuthTokens?
     private var currentClientInformation: MCPOAuthClientInformation?
+    private var currentAuthorizationServerInformation: MCPOAuthAuthorizationServerInformation?
     private var currentCodeVerifier: String
     private var currentState: String?
     private var currentStoredState: String?
     private var savedTokenValue: MCPOAuthTokens?
     private var savedClientInformationValue: MCPOAuthClientInformation?
+    private var savedAuthorizationServerInformationValue: MCPOAuthAuthorizationServerInformation?
     private var savedStateValue: String?
     private var savedCodeVerifierValue: String?
     private var redirectedURLValue: URL?
     private var invalidationValues: [MCPOAuthCredentialScope] = []
+    private var validatedAuthorizationServerURLValues: [(serverURL: URL, authorizationServerURL: URL)] = []
     private let customAuthentication: MCPOAuthClientAuthenticationHandler?
+    private let customAuthorizationServerValidator: (@Sendable (URL, URL) async throws -> Void)?
 
     init(
         redirectURL: URL = URL(string: "http://localhost:3000/callback")!,
@@ -43,21 +82,25 @@ actor TestOAuthClientProvider: MCPOAuthClientProvider {
         ),
         clientInformation: MCPOAuthClientInformation?,
         tokens: MCPOAuthTokens? = nil,
+        authorizationServerInformation: MCPOAuthAuthorizationServerInformation? = nil,
         codeVerifier: String = "stored-verifier",
         state: String? = nil,
         storedState: String? = nil,
         supportsDynamicClientRegistration: Bool = false,
-        customAuthentication: MCPOAuthClientAuthenticationHandler? = nil
+        customAuthentication: MCPOAuthClientAuthenticationHandler? = nil,
+        customAuthorizationServerValidator: (@Sendable (URL, URL) async throws -> Void)? = nil
     ) {
         self.redirectURL = redirectURL
         self.clientMetadata = clientMetadata
         self.supportsDynamicClientRegistration = supportsDynamicClientRegistration
         self.currentClientInformation = clientInformation
         self.currentTokens = tokens
+        self.currentAuthorizationServerInformation = authorizationServerInformation
         self.currentCodeVerifier = codeVerifier
         self.currentState = state
         self.currentStoredState = storedState
         self.customAuthentication = customAuthentication
+        self.customAuthorizationServerValidator = customAuthorizationServerValidator
     }
 
     func tokens() async throws -> MCPOAuthTokens? {
@@ -96,6 +139,15 @@ actor TestOAuthClientProvider: MCPOAuthClientProvider {
         currentClientInformation
     }
 
+    func authorizationServerInformation() async throws -> MCPOAuthAuthorizationServerInformation? {
+        currentAuthorizationServerInformation
+    }
+
+    func saveAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) async throws {
+        currentAuthorizationServerInformation = information
+        savedAuthorizationServerInformationValue = information
+    }
+
     func saveClientInformation(_ clientInformation: MCPOAuthClientInformation) async throws {
         currentClientInformation = clientInformation
         savedClientInformationValue = clientInformation
@@ -118,12 +170,21 @@ actor TestOAuthClientProvider: MCPOAuthClientProvider {
         try await customAuthentication?(request)
     }
 
+    func validateAuthorizationServerURL(serverURL: URL, authorizationServerURL: URL) async throws {
+        validatedAuthorizationServerURLValues.append((serverURL: serverURL, authorizationServerURL: authorizationServerURL))
+        try await customAuthorizationServerValidator?(serverURL, authorizationServerURL)
+    }
+
     func savedTokens() -> MCPOAuthTokens? {
         savedTokenValue
     }
 
     func savedClientInformation() -> MCPOAuthClientInformation? {
         savedClientInformationValue
+    }
+
+    func savedAuthorizationServerInformation() -> MCPOAuthAuthorizationServerInformation? {
+        savedAuthorizationServerInformationValue
     }
 
     func savedState() -> String? {
@@ -140,6 +201,10 @@ actor TestOAuthClientProvider: MCPOAuthClientProvider {
 
     func invalidations() -> [MCPOAuthCredentialScope] {
         invalidationValues
+    }
+
+    func validatedAuthorizationServerURLs() -> [(serverURL: URL, authorizationServerURL: URL)] {
+        validatedAuthorizationServerURLValues
     }
 }
 enum DiscoveryTransportAction: Sendable {

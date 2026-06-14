@@ -2,20 +2,30 @@ import Foundation
 
 func openAIResponsesTools(from tools: [String: JSONValue]) -> (tools: [JSONValue], customToolNames: Set<String>) {
     var customToolNames: Set<String> = []
-    let mapped = tools.compactMap { name, schema -> JSONValue? in
+    var namespaceIndexes: [String: Int] = [:]
+    var mapped: [JSONValue] = []
+    for (name, schema) in tools {
         let object = schema.objectValue
         let providerToolID = object?["id"]?.stringValue
         if object?["type"]?.stringValue == "provider" || providerToolID?.hasPrefix("openai.") == true {
-            return openAIResponsesProviderTool(name: object?["name"]?.stringValue ?? name, id: providerToolID ?? name, args: object?["args"]?.objectValue ?? [:], customToolNames: &customToolNames)
+            if let tool = openAIResponsesProviderTool(name: object?["name"]?.stringValue ?? name, id: providerToolID ?? name, args: object?["args"]?.objectValue ?? [:], customToolNames: &customToolNames) {
+                mapped.append(tool)
+            }
+            continue
         }
 
         var parameters = schema
+        let openAIOptions = object?["providerOptions"]?["openai"]?.objectValue ?? object?["openai"]?.objectValue
         var function: [String: JSONValue] = [
             "type": .string("function"),
             "name": .string(name),
             "parameters": parameters
         ]
         if var parameterObject = parameters.objectValue {
+            parameterObject.removeValue(forKey: "providerOptions")
+            parameterObject.removeValue(forKey: "openai")
+            parameters = .object(parameterObject)
+            function["parameters"] = parameters
             if let description = parameterObject["description"]?.stringValue {
                 function["description"] = .string(description)
             }
@@ -30,7 +40,30 @@ func openAIResponsesTools(from tools: [String: JSONValue]) -> (tools: [JSONValue
                 function["parameters"] = parameters
             }
         }
-        return .object(function)
+        if let deferLoading = openAIOptions?["deferLoading"] ?? openAIOptions?["defer_loading"] {
+            function["defer_loading"] = deferLoading
+        }
+        if let namespace = openAIOptions?["namespace"]?.objectValue,
+           let namespaceName = namespace["name"]?.stringValue,
+           let namespaceDescription = namespace["description"]?.stringValue {
+            if let index = namespaceIndexes[namespaceName],
+               var namespaceTool = mapped[index].objectValue {
+                var nestedTools = namespaceTool["tools"]?.arrayValue ?? []
+                nestedTools.append(.object(function))
+                namespaceTool["tools"] = .array(nestedTools)
+                mapped[index] = .object(namespaceTool)
+            } else {
+                namespaceIndexes[namespaceName] = mapped.count
+                mapped.append(.object([
+                    "type": .string("namespace"),
+                    "name": .string(namespaceName),
+                    "description": .string(namespaceDescription),
+                    "tools": .array([.object(function)])
+                ]))
+            }
+        } else {
+            mapped.append(.object(function))
+        }
     }
     return (mapped, customToolNames)
 }
@@ -320,4 +353,3 @@ func openAIResponsesSnakeCasedKey(_ key: String) -> String {
     }
     return output
 }
-

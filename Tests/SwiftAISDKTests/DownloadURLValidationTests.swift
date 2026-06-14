@@ -11,7 +11,8 @@ import Testing
         "data:text/plain;base64,aGVsbG8=",
         "http://172.15.0.1/file",
         "http://172.32.0.1/file",
-        "http://[::ffff:203.0.113.1]/file"
+        "http://[::ffff:203.0.113.1]/file",
+        "http://198.20.0.1/file"
     ]
 
     for url in allowed {
@@ -37,8 +38,10 @@ import Testing
 @Test func downloadURLValidationBlocksLocalHostnames() {
     let blocked = [
         "http://localhost/file",
+        "http://localhost./file",
         "http://localhost:3000/file",
         "http://myhost.local/file",
+        "http://myhost.local./file",
         "http://app.localhost/file"
     ]
 
@@ -57,6 +60,13 @@ import Testing
         "http://172.16.0.1/file",
         "http://172.31.255.255/file",
         "http://192.168.1.1/file",
+        "http://100.64.0.1/file",
+        "http://100.127.255.255/file",
+        "http://192.0.0.8/file",
+        "http://198.18.0.1/file",
+        "http://198.19.255.255/file",
+        "http://240.0.0.1/file",
+        "http://255.255.255.255/file",
         "http://169.254.169.254/latest/meta-data/",
         "http://0.0.0.0/file"
     ]
@@ -76,10 +86,16 @@ import Testing
         "http://[fc00::1]/file",
         "http://[fd12::1]/file",
         "http://[fe80::1]/file",
+        "http://[fec0::1]/file",
+        "http://[ff02::1]/file",
+        "http://[::127.0.0.1]/file",
         "http://[::ffff:127.0.0.1]/file",
+        "http://[::ffff:0:127.0.0.1]/file",
         "http://[::ffff:10.0.0.1]/file",
         "http://[::ffff:169.254.169.254]/file",
-        "http://[::ffff:7f00:1]/file"
+        "http://[::ffff:7f00:1]/file",
+        "http://[64:ff9b::169.254.169.254]/file",
+        "http://[64:ff9b:1::169.254.169.254]/file"
     ]
 
     for url in blocked {
@@ -105,6 +121,39 @@ import Testing
     #expect(requests.count == 1)
     #expect(requests[0].url.absoluteString == "https://example.com/image.png")
     #expect(requests[0].maxResponseBytes == AIDefaultMaxDownloadSize)
+}
+
+@Test func downloadURLValidatesRedirectLocationBeforeFetchingNextHop() async throws {
+    let transport = RecordingTransport(responses: [
+        AIHTTPResponse(statusCode: 302, headers: ["location": "http://127.0.0.1/private.png"]),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("should-not-fetch".utf8))
+    ])
+
+    await #expect(throws: AIError.self) {
+        _ = try await downloadURL("https://example.com/image.png", transport: transport)
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 1)
+    #expect(requests[0].url.absoluteString == "https://example.com/image.png")
+    #expect(requests[0].followRedirects == false)
+}
+
+@Test func downloadURLFollowsSafeRedirectsWithValidation() async throws {
+    let transport = RecordingTransport(responses: [
+        AIHTTPResponse(statusCode: 302, headers: ["location": "/cdn/image.png"]),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8), url: URL(string: "https://example.com/cdn/image.png")!)
+    ])
+
+    let response = try await downloadURL("https://example.com/image.png", transport: transport)
+
+    #expect(response.body == Data("png".utf8))
+    let requests = await transport.requests()
+    #expect(requests.map { $0.url.absoluteString } == [
+        "https://example.com/image.png",
+        "https://example.com/cdn/image.png"
+    ])
+    #expect(requests.allSatisfy { $0.followRedirects == false })
 }
 
 @Test func downloadURLRejectsBodiesOverCustomSizeLimit() async throws {

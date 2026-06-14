@@ -52,7 +52,7 @@ private actor TokenStore {
     #expect(request.headers["api-key"] == "azure-key")
     #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
-    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.69")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.74")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -148,6 +148,32 @@ private actor TokenStore {
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "chat-deployment")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")
+}
+
+@Test func azureDeepSeekUsesChatCompletionsAndOmitsThinkingOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"azure deepseek"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#))
+    let provider = try AIProviders.azure(resourceName: "test-resource", settings: ProviderSettings(apiKey: "azure-key", transport: transport))
+    let model = try provider.deepseek("deepseek-deployment")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "deepseek": [
+                "thinking": ["type": "enabled"],
+                "reasoningEffort": "xhigh"
+            ]
+        ]
+    ))
+
+    #expect(model.providerID == "azure.deepseek")
+    #expect(result.text == "azure deepseek")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://test-resource.openai.azure.com/openai/v1/chat/completions?api-version=v1")
+    #expect(request.headers["api-key"] == "azure-key")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"]?.stringValue == "deepseek-deployment")
+    #expect(body["thinking"] == nil)
+    #expect(body["reasoning_effort"]?.stringValue == "xhigh")
 }
 
 @Test func azureProviderAliasesRouteToUpstreamEndpoints() async throws {

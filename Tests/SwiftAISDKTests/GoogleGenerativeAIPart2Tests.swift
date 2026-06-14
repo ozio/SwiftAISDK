@@ -422,3 +422,19 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/operations/video-1")
 }
+
+@Test func googleVeoDoesNotAppendAPIKeyToForeignVideoURI() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"name":"operations/video-foreign","done":true,"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"https://videos.example.com/video-foreign.mp4?alt=media"}}]}}}"#)
+    ])
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.videoModel("veo-3.1-generate-preview")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        extraBody: ["pollIntervalMs": 0]
+    ))
+
+    #expect(result.urls == ["https://videos.example.com/video-foreign.mp4?alt=media"])
+    #expect(result.providerMetadata["google"]?["videos"]?[0]?["uri"]?.stringValue == "https://videos.example.com/video-foreign.mp4?alt=media")
+}

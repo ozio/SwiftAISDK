@@ -336,6 +336,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var responsesRequestMode: ResponsesRequestMode
     var openAIBackedProviderRoot: String?
     var usesGenericOpenAICompatibleProviderOptions: Bool
+    var deepSeekSupportsThinking: Bool
     var url: @Sendable (String, String) throws -> URL
 
     init(
@@ -352,6 +353,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         responsesRequestMode: ResponsesRequestMode = .openAICompatible,
         openAIBackedProviderRoot: String? = nil,
         usesGenericOpenAICompatibleProviderOptions: Bool = false,
+        deepSeekSupportsThinking: Bool = true,
         url: (@Sendable (String, String) throws -> URL)? = nil
     ) {
         self.providerID = providerID
@@ -368,6 +370,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.responsesRequestMode = responsesRequestMode
         self.openAIBackedProviderRoot = openAIBackedProviderRoot
         self.usesGenericOpenAICompatibleProviderOptions = usesGenericOpenAICompatibleProviderOptions
+        self.deepSeekSupportsThinking = deepSeekSupportsThinking
         self.url = url ?? { _, path in
             try openAICompatibleURL("\(normalizedBaseURL)\(path)", queryParams: queryParams)
         }
@@ -426,6 +429,27 @@ struct ModelHTTPConfig: @unchecked Sendable {
             responsesRequestMode: responsesRequestMode,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
+            deepSeekSupportsThinking: deepSeekSupportsThinking,
+            url: url
+        )
+    }
+
+    func withDeepSeekSupportsThinking(_ supportsThinking: Bool) -> ModelHTTPConfig {
+        ModelHTTPConfig(
+            providerID: providerID,
+            baseURL: baseURL,
+            modelURL: modelURL,
+            headers: headers,
+            transport: transport,
+            includeUsage: includeUsage,
+            queryParams: queryParams,
+            supportsStructuredOutputs: supportsStructuredOutputs,
+            maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            transformRequestBody: transformRequestBody,
+            responsesRequestMode: responsesRequestMode,
+            openAIBackedProviderRoot: openAIBackedProviderRoot,
+            usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
+            deepSeekSupportsThinking: supportsThinking,
             url: url
         )
     }
@@ -448,4 +472,3 @@ struct ModelHTTPConfig: @unchecked Sendable {
         )
     }
 }
-

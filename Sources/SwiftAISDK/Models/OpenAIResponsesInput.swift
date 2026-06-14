@@ -11,7 +11,7 @@ struct OpenResponsesPreparedInput {
     var warnings: [AIWarning]
 }
 
-func openResponsesInput(from messages: [AIMessage]) -> OpenResponsesPreparedInput {
+func openResponsesInput(from messages: [AIMessage], toolNamespaces: [String: JSONValue] = [:]) -> OpenResponsesPreparedInput {
     var input: [JSONValue] = []
     var systemMessages: [String] = []
     var warnings: [AIWarning] = []
@@ -40,12 +40,16 @@ func openResponsesInput(from messages: [AIMessage]) -> OpenResponsesPreparedInpu
             }
             for part in message.content {
                 guard case let .toolCall(call) = part else { continue }
-                input.append(.object([
+                var callObject: [String: JSONValue] = [
                     "type": .string("function_call"),
                     "call_id": .string(call.id),
                     "name": .string(call.name),
                     "arguments": .string(call.arguments)
-                ]))
+                ]
+                if let namespace = openAIResponsesNamespace(for: call, toolNamespaces: toolNamespaces) {
+                    callObject["namespace"] = namespace
+                }
+                input.append(.object(callObject))
             }
         case .tool:
             for part in message.content {
@@ -98,6 +102,7 @@ func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContent
     }
 }
 
+
 func openResponsesToolResultOutput(_ result: AIToolResult, warnings: inout [AIWarning]) -> JSONValue {
     if let text = result.modelOutput?.stringValue ?? result.result.stringValue {
         return .string(text)
@@ -145,4 +150,3 @@ func openResponsesToolResultContentPart(_ item: JSONValue, warnings: inout [AIWa
         return nil
     }
 }
-

@@ -24,7 +24,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
         }
         let providerOptions = try bedrockEmbeddingProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
         var body: [String: JSONValue]
-        if modelID.starts(with: "cohere.embed-") {
+        if modelID.contains("cohere.embed-") {
             body = [
                 "input_type": .string(try bedrockEmbeddingStringOption(
                     providerOptions["inputType"],
@@ -81,7 +81,9 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
         guard let embedding = bedrockEmbeddingVector(from: raw) else {
             throw AIError.invalidResponse(provider: providerID, message: "No embedding vector found in Bedrock response.")
         }
-        let tokenCount = raw["inputTextTokenCount"]?.intValue ?? raw["inputTokenCount"]?.intValue
+        let tokenCount = raw["inputTextTokenCount"]?.intValue
+            ?? raw["inputTokenCount"]?.intValue
+            ?? bedrockEmbeddingHeaderTokenCount(response.response.headers)
         return EmbeddingResult(
             embeddings: [embedding],
             usage: tokenCount.map { TokenUsage(inputTokens: $0, totalTokens: $0) },
@@ -94,6 +96,13 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
     private var encodedModelID: String {
         bedrockEncodeModelID(modelID)
     }
+}
+
+private func bedrockEmbeddingHeaderTokenCount(_ headers: [String: String]) -> Int? {
+    for (key, value) in headers where key.caseInsensitiveCompare("x-amzn-bedrock-input-token-count") == .orderedSame {
+        return Int(value)
+    }
+    return nil
 }
 
 func bedrockEmbeddingVector(from raw: JSONValue) -> [Double]? {

@@ -146,6 +146,27 @@ import Testing
         "https://auth.example.com/.well-known/oauth-authorization-server"
     ])
 }
+@Test func mcpOAuthAuthorizationServerDiscoveryRejectsMismatchedIssuerLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "issuer": "https://evil.example.com",
+      "authorization_endpoint": "https://auth.example.com/authorize",
+      "token_endpoint": "https://auth.example.com/token",
+      "response_types_supported": ["code"],
+      "code_challenge_methods_supported": ["S256"]
+    }
+    """))
+
+    do {
+        _ = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata(
+            authorizationServerURL: "https://auth.example.com/tenant1",
+            transport: transport
+        )
+        Issue.record("Expected mismatched OAuth metadata issuer to throw.")
+    } catch let error as MCPClientError {
+        #expect(error.message == "OAuth authorization server metadata issuer https://evil.example.com does not match expected issuer https://auth.example.com/tenant1")
+    }
+}
 @Test func mcpOAuthAuthorizationServerDiscoveryRetriesWithoutProtocolHeaderAfterTransportError() async throws {
     let transport = FailingDiscoveryTransport(actions: [
         .fail,

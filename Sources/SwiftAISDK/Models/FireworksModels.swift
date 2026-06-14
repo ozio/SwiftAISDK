@@ -79,7 +79,8 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
             throw AIError.invalidResponse(provider: providerID, message: "Fireworks async image response did not contain request_id.")
         }
         let imageURL = try await pollAsyncImage(requestID: requestID, headers: request.headers, abortSignal: request.abortSignal)
-        let imageResponse = try await downloadURL(imageURL, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
+        let imageHeaders = isSameOrigin(imageURL, config.baseURL) ? config.headers.mergingHeaders(request.headers) : [:]
+        let imageResponse = try await downloadURL(imageURL, transport: config.transport, headers: imageHeaders, abortSignal: request.abortSignal)
         guard (200..<300).contains(imageResponse.statusCode) else {
             throw apiCallError(provider: providerID, response: imageResponse)
         }

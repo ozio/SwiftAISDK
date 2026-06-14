@@ -35,12 +35,12 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://api.assemblyai.com/v2/upload")
     #expect(requests[0].method == "POST")
     #expect(requests[0].headers["authorization"] == "assembly-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/assemblyai/2.0.33")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/assemblyai/2.0.35")
     #expect(requests[0].headers["content-type"] == "application/octet-stream")
     #expect(requests[0].body == Data("audio".utf8))
 
     #expect(requests[1].url.absoluteString == "https://api.assemblyai.com/v2/transcript")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/assemblyai/2.0.33")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/assemblyai/2.0.35")
     let submitBody = try decodeJSONBody(try #require(requests[1].body))
     #expect(submitBody["speech_models"]?[0]?.stringValue == "best")
     #expect(submitBody["speech_model"] == nil)
@@ -61,7 +61,7 @@ import Testing
 
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://api.assemblyai.com/v2/transcript/job-123")
-    #expect(requests[2].headers["user-agent"] == "ai-sdk/assemblyai/2.0.33")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/assemblyai/2.0.35")
 }
 
 @Test func assemblyAITranscriptionMapsNestedExtraBodyOptions() async throws {

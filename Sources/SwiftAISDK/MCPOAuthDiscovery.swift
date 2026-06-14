@@ -77,7 +77,8 @@ public struct MCPOAuthDiscovery {
             return try MCPOAuthAuthorizationServerMetadata(
                 json: response.jsonValue(),
                 sourceURL: discoveryURL.url,
-                sourceType: discoveryURL.kind
+                sourceType: discoveryURL.kind,
+                expectedIssuer: discoveryURL.expectedIssuer
             )
         }
         return nil
@@ -104,6 +105,7 @@ struct MCPOAuthDiscoveryURL {
 
     var url: URL
     var kind: Kind
+    var expectedIssuer: String
 }
 
 func discoveryGET(url: URL, protocolVersion: String, transport: any AITransport) async throws -> AIHTTPResponse {
@@ -151,18 +153,26 @@ func mcpWellKnownURL(for url: URL, wellKnownName: String, includePath: Bool) -> 
 
 func mcpAuthorizationServerDiscoveryURLs(_ url: URL) -> [MCPOAuthDiscoveryURL] {
     let path = url.path.trimmedTrailingSlashForOAuthDiscovery
+    let rootIssuer = mcpOriginText(url)
     guard !path.isEmpty else {
         return [
-            MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server"), kind: .oauth),
-            MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/openid-configuration"), kind: .oidc)
+            MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server"), kind: .oauth, expectedIssuer: rootIssuer),
+            MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/openid-configuration"), kind: .oidc, expectedIssuer: rootIssuer)
         ]
     }
+    let pathIssuer = "\(mcpOriginText(url))\(path)"
     return [
-        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server\(path)"), kind: .oauth),
-        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server"), kind: .oauth),
-        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/openid-configuration\(path)"), kind: .oidc),
-        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "\(path)/.well-known/openid-configuration"), kind: .oidc)
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server\(path)"), kind: .oauth, expectedIssuer: pathIssuer),
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/oauth-authorization-server"), kind: .oauth, expectedIssuer: rootIssuer),
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "/.well-known/openid-configuration\(path)"), kind: .oidc, expectedIssuer: pathIssuer),
+        MCPOAuthDiscoveryURL(url: mcpURL(origin: url, path: "\(path)/.well-known/openid-configuration"), kind: .oidc, expectedIssuer: pathIssuer)
     ]
+}
+
+private func mcpOriginText(_ url: URL) -> String {
+    guard let scheme = url.scheme, let host = url.host else { return url.absoluteString }
+    let portText = url.port.map { ":\($0)" } ?? ""
+    return "\(scheme)://\(host)\(portText)"
 }
 
 func mcpURL(origin: URL, path: String) -> URL {
@@ -173,4 +183,3 @@ func mcpURL(origin: URL, path: String) -> URL {
     components.path = path
     return components.url ?? origin
 }
-

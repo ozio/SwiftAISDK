@@ -22,6 +22,7 @@ let anthropicLanguageProviderOptionKeys: Set<String> = [
     "taskBudget",
     "speed",
     "inferenceGeo",
+    "fallbacks",
     "anthropicBeta",
     "contextManagement"
 ]
@@ -134,6 +135,9 @@ func anthropicAutomaticBetas(from body: [String: JSONValue]) -> [String] {
 
     if body["speed"]?.stringValue == "fast" {
         add("fast-mode-2026-02-01")
+    }
+    if body["fallbacks"]?.arrayValue?.isEmpty == false {
+        add("server-side-fallback-2026-06-01")
     }
 
     return betas

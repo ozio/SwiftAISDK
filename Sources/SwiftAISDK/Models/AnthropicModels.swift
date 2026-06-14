@@ -190,10 +190,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         return TextGenerationResult(
             text: text,
             finishReason: anthropicFinishReason(raw["stop_reason"]?.stringValue),
-            usage: TokenUsage(
-                inputTokens: raw["usage"]?["input_tokens"]?.intValue,
-                outputTokens: raw["usage"]?["output_tokens"]?.intValue
-            ),
+            usage: anthropicTokenUsage(from: raw["usage"]),
             toolCalls: toolCalls,
             toolResults: toolResults,
             sources: sources,
@@ -239,6 +236,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var finishUsage: TokenUsage?
                     var rawUsage: JSONValue?
                     var stopSequence: JSONValue = .null
+                    var stopDetails: JSONValue = .null
                     var container: JSONValue = .null
                     var contextManagement: JSONValue = .null
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
@@ -260,6 +258,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         case "message_delta":
                             finishReason = anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue)
                             stopSequence = raw["delta"]?["stop_sequence"] ?? stopSequence
+                            stopDetails = anthropicStopDetailsMetadata(from: raw["delta"]?["stop_details"]) ?? stopDetails
                             finishUsage = TokenUsage(
                                 inputTokens: raw["usage"]?["input_tokens"]?.intValue,
                                 outputTokens: raw["usage"]?["output_tokens"]?.intValue
@@ -295,6 +294,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                 providerMetadata: anthropicProviderMetadata(
                                     usage: rawUsage,
                                     stopSequence: stopSequence,
+                                    stopDetails: stopDetails,
                                     container: container,
                                     contextManagement: contextManagement,
                                     providerID: providerID
@@ -492,10 +492,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
         return TextGenerationResult(
             text: text,
             finishReason: anthropicFinishReason(raw["stop_reason"]?.stringValue),
-            usage: TokenUsage(
-                inputTokens: raw["usage"]?["input_tokens"]?.intValue,
-                outputTokens: raw["usage"]?["output_tokens"]?.intValue
-            ),
+            usage: anthropicTokenUsage(from: raw["usage"]),
             toolCalls: toolCalls,
             toolResults: toolResults,
             sources: sources,

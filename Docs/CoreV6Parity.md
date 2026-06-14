@@ -1,19 +1,55 @@
 # Core V6 Parity
 
-Snapshot date: 2026-06-04
+Snapshot date: 2026-06-14
 
 This document tracks SwiftAISDK against the current AI SDK v6 Core and Errors
 reference. It is intentionally high-level: provider package drift belongs in
 `ProviderVersionLedger.md` and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@6.0.196`, `@ai-sdk/react@3.0.198`, and
-`@ai-sdk/provider-utils@4.0.27`.
+snapshots, currently `ai@6.0.204`, `@ai-sdk/provider@3.0.10`,
+`@ai-sdk/provider-utils@4.0.29`, and `@ai-sdk/react@3.0.206`.
 
 References:
 
 - <https://ai-sdk.dev/docs/reference/ai-sdk-core>
 - <https://ai-sdk.dev/docs/reference/ai-sdk-errors>
 - <https://ai-sdk.dev/docs/reference/ai-sdk-ui>
+
+## Latest Core Package Diff Notes
+
+Checked npm package diffs:
+
+- `ai@6.0.200 -> 6.0.204`
+- `@ai-sdk/provider@3.0.10`
+- `@ai-sdk/react@3.0.202 -> 3.0.206`
+- `@ai-sdk/provider-utils@4.0.27 -> 4.0.29`
+
+Port decisions:
+
+- `provider-utils@4.0.29` SSRF hardening is ported in `validateDownloadURL`
+  and `downloadURL`: trailing-dot hostnames are normalized before local-host
+  checks, additional private/reserved IPv4 and IPv6 ranges are blocked,
+  embedded IPv4-in-IPv6 forms are decoded, and redirects are followed manually
+  with each hop validated before the next request is issued.
+- `provider-utils@4.0.29` same-origin credential hardening is ported through the
+  shared `isSameOrigin` helper and provider-specific guards for
+  Black Forest Labs, FAL, Fireworks, Gladia, Google Veo, and Replicate.
+- `ai@6.0.201` array-output transform fix is already Swift-native: array output
+  returns decoded `Element` values from the final validated object array path,
+  and Swift has no Zod-style transform pipeline that could return raw elements.
+- `ai@6.0.202` approval replay HMAC fix has no direct Swift replay path to
+  patch. Swift tool execution only runs fresh tool calls from the current model
+  step after JSON/schema validation and `toolApproval` evaluation; approvals
+  converted from UI history are message content, not an execution trigger.
+- `ai@6.0.203` stream-part prototype-pollution hardening is not directly
+  applicable to Swift value dictionaries and typed reducers; related stream
+  accumulators are keyed by Swift `String`/`Int` values without JS prototype
+  inheritance.
+- `ai@6.0.203` UI-message server error redaction is a JS response-stream
+  default. Swift has no `createUIMessageStream` server helper; local
+  `AIUIMessageStreamReducer` wraps unexpected reducer errors as
+  `AIUIMessageStreamError` for in-process callers rather than serializing a
+  public client error chunk.
 
 ## Status Labels
 

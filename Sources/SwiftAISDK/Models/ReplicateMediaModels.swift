@@ -151,7 +151,8 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
                 throw AIError.invalidResponse(provider: providerID, message: "Replicate video generation timed out.")
             }
             try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
-            let response = try await downloadURL(getURL, transport: config.transport, headers: config.headers, abortSignal: abortSignal)
+            let pollHeaders = isSameOrigin(getURL, config.baseURL) ? config.headers : [:]
+            let response = try await downloadURL(getURL, transport: config.transport, headers: pollHeaders, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw replicateHTTPStatusError(provider: providerID, response: response)
             }
@@ -428,4 +429,3 @@ private func replicateVideoProviderMetadata(from raw: JSONValue) -> [String: JSO
     }
     return replicate.isEmpty ? [:] : ["replicate": .object(replicate)]
 }
-

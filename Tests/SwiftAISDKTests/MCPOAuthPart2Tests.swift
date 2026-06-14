@@ -111,6 +111,9 @@ import Testing
 
     #expect(result == .redirect)
     #expect(await provider.savedClientInformation()?.clientID == "registered-client")
+    #expect(await provider.savedClientInformation()?.authorizationServerURL?.absoluteString == "https://auth.example.com")
+    #expect(await provider.savedClientInformation()?.tokenEndpoint?.absoluteString == "https://auth.example.com/token")
+    #expect(await provider.savedAuthorizationServerInformation()?.authorizationServerURL.absoluteString == "https://auth.example.com")
     #expect(await provider.savedState() == "state123")
     #expect(await provider.savedCodeVerifier()?.isEmpty == false)
     let redirect = try await #require(provider.redirectedURL())
@@ -129,9 +132,47 @@ import Testing
         "https://auth.example.com/register"
     ])
 }
+@Test func mcpOAuthAuthValidatesAuthorizationServerURLBeforeMetadataDiscovery() async throws {
+    struct BlockedAuthorizationServer: Error {}
+
+    let provider = TestOAuthClientProvider(
+        clientInformation: nil,
+        supportsDynamicClientRegistration: true,
+        customAuthorizationServerValidator: { serverURL, authorizationServerURL in
+            #expect(serverURL.absoluteString == "https://resource.example.com/mcp/rpc")
+            #expect(authorizationServerURL.absoluteString == "https://auth.example.com")
+            throw BlockedAuthorizationServer()
+        }
+    )
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {
+          "resource": "https://resource.example.com/mcp",
+          "authorization_servers": ["https://auth.example.com"]
+        }
+        """),
+        oauthAuthorizationMetadataResponse()
+    ])
+
+    do {
+        _ = try await MCPOAuth.auth(
+            provider: provider,
+            serverURL: "https://resource.example.com/mcp/rpc",
+            transport: transport
+        )
+        Issue.record("Expected authorization server URL validator to throw.")
+    } catch is BlockedAuthorizationServer {
+        let validated = await provider.validatedAuthorizationServerURLs()
+        #expect(validated.map { $0.authorizationServerURL.absoluteString } == ["https://auth.example.com"])
+        let requests = await transport.requests()
+        #expect(requests.map(\.url.absoluteString) == [
+            "https://resource.example.com/.well-known/oauth-protected-resource/mcp/rpc"
+        ])
+    }
+}
 @Test func mcpOAuthAuthExchangesCallbackCodeAndValidatesState() async throws {
     let provider = TestOAuthClientProvider(
-        clientInformation: MCPOAuthClientInformation(clientID: "client123"),
+        clientInformation: try oauthClientInformation(),
         codeVerifier: "verifier123",
         storedState: "state123"
     )
@@ -162,6 +203,8 @@ import Testing
 
     #expect(result == .authorized)
     #expect(await provider.savedTokens()?.accessToken == "access-123")
+    #expect(await provider.savedTokens()?.authorizationServerURL?.absoluteString == "https://auth.example.com")
+    #expect(await provider.savedTokens()?.tokenEndpoint?.absoluteString == "https://auth.example.com/token")
     let request = try await #require(transport.requests().last)
     let form = try formItems(request)
     #expect(request.url.absoluteString == "https://auth.example.com/token")
@@ -196,8 +239,8 @@ import Testing
 }
 @Test func mcpOAuthAuthRefreshesExistingTokens() async throws {
     let provider = TestOAuthClientProvider(
-        clientInformation: MCPOAuthClientInformation(clientID: "client123"),
-        tokens: MCPOAuthTokens(accessToken: "old-access", tokenType: "Bearer", refreshToken: "old-refresh")
+        clientInformation: try oauthClientInformation(),
+        tokens: try oauthTokens(accessToken: "old-access", refreshToken: "old-refresh")
     )
     let transport = RecordingTransport(responses: [
         jsonResponse("""
@@ -252,7 +295,7 @@ import Testing
 }
 @Test func mcpOAuthAuthInvalidGrantInvalidatesTokensAndRetries() async throws {
     let provider = TestOAuthClientProvider(
-        clientInformation: MCPOAuthClientInformation(clientID: "client123"),
+        clientInformation: try oauthClientInformation(),
         codeVerifier: "verifier123",
         storedState: "state123"
     )
@@ -299,8 +342,14 @@ import Testing
     #expect(await transport.requests().count == 6)
 }
 @Test func mcpOAuthAuthUsesProviderCustomClientAuthentication() async throws {
+    let information = try oauthAuthorizationServerInformation()
     let provider = TestOAuthClientProvider(
-        clientInformation: MCPOAuthClientInformation(clientID: "client123", clientSecret: "secret123"),
+        clientInformation: MCPOAuthClientInformation(
+            clientID: "client123",
+            clientSecret: "secret123",
+            authorizationServerURL: information.authorizationServerURL,
+            tokenEndpoint: information.tokenEndpoint
+        ),
         codeVerifier: "verifier123",
         storedState: "state123",
         customAuthentication: { request in

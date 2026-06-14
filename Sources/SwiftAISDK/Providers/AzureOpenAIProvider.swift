@@ -6,6 +6,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     public let providerID = "azure"
     public let supportedCapabilities: Set<ModelCapability> = [.language, .completion, .embedding, .image, .transcription, .speech]
     private let provider: OpenAICompatibleProvider
+    private let config: ModelHTTPConfig
 
     public init(
         resourceName: String? = nil,
@@ -30,7 +31,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/3.0.69")
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/3.0.74")
         let baseURL = withoutTrailingSlash(basePrefix)
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
         let config = ModelHTTPConfig(providerID: providerID, baseURL: baseURL, headers: headers, transport: transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody) { modelID, path in
@@ -42,12 +43,16 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             guard let url = components.url else { throw AIError.invalidURL(urlString) }
             return url
         }
+        self.config = config
         provider = OpenAICompatibleProvider(providerID: providerID, supportedCapabilities: supportedCapabilities, config: config)
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel { try provider.responsesModel(modelID) }
     public func chatModel(_ modelID: String) throws -> any LanguageModel { try provider.chatModel(modelID) }
     public func chat(_ modelID: String) throws -> any LanguageModel { try chatModel(modelID) }
+    public func deepseek(_ modelID: String) throws -> any LanguageModel {
+        DeepSeekLanguageModel(modelID: modelID, config: config.withProviderID("azure.deepseek").withDeepSeekSupportsThinking(false))
+    }
     public func completionModel(_ modelID: String) throws -> any LanguageModel { try provider.completionModel(modelID) }
     public func completion(_ modelID: String) throws -> any LanguageModel { try completionModel(modelID) }
     public func responses(_ modelID: String) throws -> any LanguageModel { try languageModel(modelID) }
@@ -57,6 +62,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     public func speechModel(_ modelID: String) throws -> any SpeechModel { try provider.speechModel(modelID) }
     public func videoModel(_ modelID: String) throws -> any VideoModel { try provider.videoModel(modelID) }
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel { try provider.rerankingModel(modelID) }
+
 }
 
 struct AzureOpenAITokenProviderTransport: AITransport {

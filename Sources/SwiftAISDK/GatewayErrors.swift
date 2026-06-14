@@ -5,6 +5,7 @@ public enum GatewayErrorType: String, Equatable, Hashable, Sendable {
     case invalidRequestError = "invalid_request_error"
     case rateLimitExceeded = "rate_limit_exceeded"
     case modelNotFound = "model_not_found"
+    case failedDependency = "failed_dependency"
     case internalServerError = "internal_server_error"
     case responseError = "response_error"
     case timeoutError = "timeout_error"
@@ -50,6 +51,8 @@ public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible 
             return "GatewayRateLimitError"
         case .modelNotFound:
             return "GatewayModelNotFoundError"
+        case .failedDependency:
+            return "GatewayFailedDependencyError"
         case .internalServerError:
             return "GatewayInternalServerError"
         case .responseError:
@@ -118,6 +121,8 @@ private func gatewayErrorType(_ raw: String?) -> GatewayErrorType {
         return .rateLimitExceeded
     case GatewayErrorType.modelNotFound.rawValue:
         return .modelNotFound
+    case GatewayErrorType.failedDependency.rawValue:
+        return .failedDependency
     case GatewayErrorType.internalServerError.rawValue:
         return .internalServerError
     case GatewayErrorType.timeoutError.rawValue:

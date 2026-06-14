@@ -66,7 +66,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/text-embedding-005:predict")
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/4.0.141")
+    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/4.0.145")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["instances"]?[0]?["content"]?.stringValue == "hello")
     #expect(body["instances"]?[0]?["task_type"]?.stringValue == "RETRIEVAL_DOCUMENT")
@@ -87,7 +87,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/4.0.141")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/4.0.145")
 }
 @Test func googleVertexImageAndVideoUsePredictEndpoints() async throws {
     let imageTransport = RecordingTransport(response: jsonResponse("""
@@ -231,7 +231,7 @@ import Testing
     #expect(result.text == "maas")
     #expect(result.usage?.totalTokens == 3)
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/endpoints/openapi/chat/completions")
+    #expect(request.url.absoluteString == "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/endpoints/openapi/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer vertex-token")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "meta/llama-3.1-405b-instruct-maas")

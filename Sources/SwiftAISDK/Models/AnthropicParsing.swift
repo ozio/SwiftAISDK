@@ -258,6 +258,7 @@ func anthropicProviderMetadata(from raw: JSONValue, providerID: String) -> [Stri
     anthropicProviderMetadata(
         usage: raw["usage"],
         stopSequence: raw["stop_sequence"] ?? .null,
+        stopDetails: anthropicStopDetailsMetadata(from: raw["stop_details"]) ?? .null,
         container: anthropicContainerMetadata(from: raw["container"]) ?? .null,
         contextManagement: anthropicContextManagementMetadata(from: raw["context_management"]) ?? .null,
         providerID: providerID
@@ -267,17 +268,22 @@ func anthropicProviderMetadata(from raw: JSONValue, providerID: String) -> [Stri
 func anthropicProviderMetadata(
     usage: JSONValue?,
     stopSequence: JSONValue,
+    stopDetails: JSONValue = .null,
     container: JSONValue,
     contextManagement: JSONValue,
     providerID: String
 ) -> [String: JSONValue] {
-    let metadata: JSONValue = .object([
+    var metadataObject: [String: JSONValue] = [
         "usage": usage ?? .null,
         "stopSequence": stopSequence,
         "iterations": anthropicUsageIterations(from: usage?["iterations"]) ?? .null,
         "container": container,
         "contextManagement": contextManagement
-    ])
+    ]
+    if stopDetails != .null {
+        metadataObject["stopDetails"] = stopDetails
+    }
+    let metadata: JSONValue = .object(metadataObject)
     return [anthropicProviderMetadataKey(from: providerID): metadata]
 }
 
@@ -314,6 +320,38 @@ func anthropicUsageIterations(from value: JSONValue?) -> JSONValue? {
         output["cacheReadInputTokens"] = iteration["cache_read_input_tokens"]
         return .object(output.compactMapValues { $0 })
     })
+}
+
+func anthropicStopDetailsMetadata(from value: JSONValue?) -> JSONValue? {
+    guard var object = value?.objectValue else { return nil }
+    anthropicMoveKey("recommended_model", to: "recommendedModel", in: &object)
+    return .object(object)
+}
+
+func anthropicTokenUsage(from usage: JSONValue?) -> TokenUsage? {
+    guard let usage else { return nil }
+    let iterations = usage["iterations"]?.arrayValue ?? []
+    let servedByFallback = iterations.contains { $0["type"]?.stringValue == "fallback_message" }
+    if !iterations.isEmpty && !servedByFallback {
+        let executorIterations = iterations.filter {
+            let type = $0["type"]?.stringValue
+            return type == "compaction" || type == "message"
+        }
+        return TokenUsage(
+            inputTokens: executorIterations.reduce(0) { $0 + ($1["input_tokens"]?.intValue ?? 0) },
+            outputTokens: executorIterations.reduce(0) { $0 + ($1["output_tokens"]?.intValue ?? 0) },
+            inputTokensCacheRead: executorIterations.reduce(0) { $0 + ($1["cache_read_input_tokens"]?.intValue ?? 0) },
+            inputTokensCacheWrite: executorIterations.reduce(0) { $0 + ($1["cache_creation_input_tokens"]?.intValue ?? 0) },
+            rawValue: usage
+        )
+    }
+    return TokenUsage(
+        inputTokens: usage["input_tokens"]?.intValue,
+        outputTokens: usage["output_tokens"]?.intValue,
+        inputTokensCacheRead: usage["cache_read_input_tokens"]?.intValue,
+        inputTokensCacheWrite: usage["cache_creation_input_tokens"]?.intValue,
+        rawValue: usage
+    )
 }
 
 func anthropicContainerMetadata(from value: JSONValue?) -> JSONValue? {

@@ -123,7 +123,7 @@ private func alibabaVideoMode(_ modelID: String) -> String {
     return "t2v"
 }
 
-private func alibabaNativeBaseURL(_ baseURL: String) -> String {
+func alibabaNativeBaseURL(_ baseURL: String) -> String {
     withoutTrailingSlash(baseURL)
         .replacingOccurrences(of: "/compatible-mode/v1", with: "")
 }
@@ -193,26 +193,26 @@ private func alibabaValidateVideoProviderOptions(_ options: [String: JSONValue])
     return output
 }
 
-private func alibabaRequireStringOrNull(_ value: JSONValue, argument: String, label: String) throws {
+func alibabaRequireStringOrNull(_ value: JSONValue, argument: String, label: String) throws {
     guard value == .null || value.stringValue != nil else {
         throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be a string or null.")
     }
 }
 
-private func alibabaRequireBooleanOrNull(_ value: JSONValue, argument: String, label: String) throws {
+func alibabaRequireBooleanOrNull(_ value: JSONValue, argument: String, label: String) throws {
     guard value == .null || value.boolValue != nil else {
         throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be a boolean or null.")
     }
 }
 
-private func alibabaRequirePositiveNumberOrNull(_ value: JSONValue, argument: String, label: String) throws {
+func alibabaRequirePositiveNumberOrNull(_ value: JSONValue, argument: String, label: String) throws {
     guard value != .null else { return }
     guard let number = value.doubleValue, number > 0 else {
         throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be a positive number or null.")
     }
 }
 
-private func alibabaRequireEnumOrNull(_ value: JSONValue, argument: String, label: String, allowed: Set<String>) throws {
+func alibabaRequireEnumOrNull(_ value: JSONValue, argument: String, label: String, allowed: Set<String>) throws {
     guard value != .null else { return }
     guard let string = value.stringValue, allowed.contains(string) else {
         throw AIError.invalidArgument(argument: argument, message: "Alibaba \(label) must be one of \(allowed.sorted().joined(separator: ", ")) or null.")
@@ -316,4 +316,3 @@ private func alibabaPollTimeout(_ extraBody: [String: JSONValue]) -> UInt64 {
     guard let milliseconds = extraBody["pollTimeoutMs"]?.doubleValue else { return 600_000_000_000 }
     return UInt64(max(milliseconds, 1) * 1_000_000)
 }
-

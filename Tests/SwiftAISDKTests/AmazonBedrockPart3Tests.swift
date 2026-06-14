@@ -77,10 +77,13 @@ import Testing
 
     let cohereV4Transport = RecordingTransport(response: jsonResponse("""
     {"embeddings":{"float":[[0.7,0.8]]}}
-    """))
+    """, headers: ["x-amzn-bedrock-input-token-count": "6"]))
     let cohereV4Provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(region: "us-west-2", apiKey: "bearer-key", transport: cohereV4Transport))
-    let cohereV4Result = try await cohereV4Provider.embeddingModel("cohere.embed-v4:0").embed(EmbeddingRequest(values: ["hello"]))
+    let cohereV4Result = try await cohereV4Provider.embeddingModel("us.cohere.embed-v4:0").embed(EmbeddingRequest(values: ["hello"]))
     #expect(cohereV4Result.embeddings == [[0.7, 0.8]])
+    #expect(cohereV4Result.usage?.totalTokens == 6)
+    let cohereV4Body = try decodeJSONBody(try #require((await cohereV4Transport.requests()).first?.body))
+    #expect(cohereV4Body["texts"]?[0]?.stringValue == "hello")
 }
 @Test func amazonBedrockEmbeddingRejectsTooManyValuesLikeUpstream() async throws {
     let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(

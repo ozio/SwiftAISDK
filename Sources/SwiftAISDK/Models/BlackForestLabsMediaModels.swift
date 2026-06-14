@@ -50,7 +50,8 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         guard let url = raw["result"]?["sample"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs poll response is Ready but missing result.sample")
         }
-        let image = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
+        let imageHeaders = blackForestLabsTrustedHeaders(for: url, baseURL: config.baseURL, headers: config.headers.mergingHeaders(request.headers))
+        let image = try await downloadURL(url, transport: config.transport, headers: imageHeaders, abortSignal: request.abortSignal)
         guard (200..<300).contains(image.statusCode) else {
             throw apiCallError(provider: providerID, response: image)
         }
@@ -69,7 +70,8 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
         let pollURL = appendQueryItemIfMissing(url: url, name: "id", value: id)
         let maxPollAttempts = bflMaxPollAttempts(intervalNanoseconds: intervalNanoseconds, timeoutNanoseconds: timeoutNanoseconds)
         for attempt in 0..<maxPollAttempts {
-            let response = try await downloadURL(pollURL, transport: config.transport, headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal)
+            let pollHeaders = blackForestLabsTrustedHeaders(for: pollURL, baseURL: config.baseURL, headers: config.headers.mergingHeaders(headers))
+            let response = try await downloadURL(pollURL, transport: config.transport, headers: pollHeaders, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw blackForestLabsHTTPStatusError(provider: providerID, response: response)
             }
@@ -87,6 +89,44 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
             }
         }
         throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation timed out.")
+    }
+}
+
+private func blackForestLabsTrustedHeaders(for url: String, baseURL: String, headers: [String: String]) -> [String: String] {
+    blackForestLabsIsTrustedURL(url, baseURL: baseURL) ? headers : [:]
+}
+
+private func blackForestLabsIsTrustedURL(_ url: String, baseURL: String) -> Bool {
+    if isSameOriginURL(url, baseURL) {
+        return true
+    }
+    guard let components = URLComponents(string: url),
+          components.scheme?.lowercased() == "https",
+          let hostname = components.host?.lowercased() else {
+        return false
+    }
+    return hostname == "bfl.ai" || hostname.hasSuffix(".bfl.ai")
+}
+
+private func isSameOriginURL(_ lhs: String, _ rhs: String) -> Bool {
+    guard let left = URLComponents(string: lhs),
+          let right = URLComponents(string: rhs),
+          let leftScheme = left.scheme?.lowercased(),
+          let rightScheme = right.scheme?.lowercased(),
+          let leftHost = left.host?.lowercased(),
+          let rightHost = right.host?.lowercased(),
+          leftScheme == rightScheme,
+          leftHost == rightHost else {
+        return false
+    }
+    return (left.port ?? defaultPort(for: leftScheme)) == (right.port ?? defaultPort(for: rightScheme))
+}
+
+private func defaultPort(for scheme: String) -> Int? {
+    switch scheme {
+    case "http": return 80
+    case "https": return 443
+    default: return nil
     }
 }
 
@@ -346,4 +386,3 @@ private func bflMaxPollAttempts(intervalNanoseconds: UInt64, timeoutNanoseconds:
     let attempts = (timeoutNanoseconds + interval - 1) / interval
     return max(Int(attempts), 1)
 }
-

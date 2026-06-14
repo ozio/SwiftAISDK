@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.71")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-mini")
     #expect(body["messages"]?[1]?["content"]?.stringValue == "Hi")

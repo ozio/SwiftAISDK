@@ -60,7 +60,7 @@ import Testing
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://api.bfl.ai/v1/flux-pro-1.1")
     #expect(requests[0].headers["x-key"] == "bfl-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/black-forest-labs/1.0.34")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/black-forest-labs/1.0.36")
     #expect(requests[0].headers["x-request-id"] == "req-1")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["prompt"]?.stringValue == "cat")
@@ -81,13 +81,13 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.bfl.ai/v1/get_result?id=bfl-1")
     #expect(requests[1].headers["x-key"] == "bfl-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/black-forest-labs/1.0.34")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/black-forest-labs/1.0.36")
     #expect(requests[1].headers["x-request-id"] == "req-1")
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://bfl.example.com/image.png")
-    #expect(requests[2].headers["x-key"] == "bfl-key")
-    #expect(requests[2].headers["user-agent"] == "ai-sdk/black-forest-labs/1.0.34")
-    #expect(requests[2].headers["x-request-id"] == "req-1")
+    #expect(requests[2].headers["x-key"] == nil)
+    #expect(requests[2].headers["user-agent"] == nil)
+    #expect(requests[2].headers["x-request-id"] == nil)
 }
 
 @Test func blackForestLabsAppendsVersionedUserAgentToCustomHeader() async throws {
@@ -110,11 +110,11 @@ import Testing
 
     let requests = await transport.requests()
     #expect(requests[0].headers["x-key"] == "bfl-key")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.34")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.36")
     #expect(requests[1].headers["x-key"] == "bfl-key")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.34")
-    #expect(requests[2].headers["x-key"] == "bfl-key")
-    #expect(requests[2].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.34")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.36")
+    #expect(requests[2].headers["x-key"] == nil)
+    #expect(requests[2].headers["user-agent"] == nil)
 }
 
 @Test func blackForestLabsUsesUpstreamErrorMessageSchema() async throws {

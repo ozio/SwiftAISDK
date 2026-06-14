@@ -12,7 +12,7 @@ priorities, use `Docs/ProductGapAudit.md`. For current provider inventory, use
 
 ## Current Snapshot
 
-- npm version baseline checked: 2026-06-03
+- npm version baseline checked: 2026-06-14
 - Version ledger: `Docs/ProviderVersionLedger.md`
 - Upstream checkout path: `/tmp/vercel-ai-sdk-upstream`
 - Last broad upstream commit used during the audit:
@@ -26,6 +26,181 @@ priorities, use `Docs/ProductGapAudit.md`. For current provider inventory, use
 
 Before a substantial provider pass, refresh either the npm package tarball or
 the upstream checkout and record the exact version/commit used.
+
+## Fast Version Update Workflow
+
+Use this path when the task is "check whether the ported packages have newer
+npm versions and port the diffs." It is optimized for small package-version
+bumps across many providers.
+
+1. Start with the automation script, not memory. It reads
+   `Docs/ProviderVersionLedger.md`, reads the core snapshots from
+   `Docs/CoreV6Parity.md`, queries `npm view <package> version`, and prints only
+   packages whose checked-in baseline is behind npm latest:
+
+   ```sh
+   Scripts/check-upstream-versions.js
+   ```
+
+   Useful variants:
+
+   ```sh
+   Scripts/check-upstream-versions.js --all
+   Scripts/check-upstream-versions.js --json
+   Scripts/check-upstream-versions.js --package @ai-sdk/openai
+   Scripts/check-upstream-versions.js --providers-only
+   Scripts/check-upstream-versions.js --fail-on-outdated
+   Scripts/check-upstream-versions.js --discover-packages
+   Scripts/check-upstream-versions.js --discover-packages --discover-kind provider,adapter,core
+   ```
+
+2. For packages that changed, let the script prepare old-vs-new npm tarball
+   diffs. This downloads both package versions, unpacks them, writes
+   `upstream.diff`, and creates a package summary template under
+   `/tmp/ai-sdk-port-upstream-diffs` by default:
+
+   ```sh
+   Scripts/check-upstream-versions.js --package @ai-sdk/openai --prepare-diffs
+   Scripts/check-upstream-versions.js --prepare-diffs
+   ```
+
+   Use `--work-dir <path>` when you want the diff artifacts somewhere other
+   than `/tmp`.
+
+   To force a single package diff after the ledger has already been bumped, use
+   explicit versions:
+
+   ```sh
+   Scripts/check-upstream-versions.js \
+     --package @ai-sdk/openai \
+     --from 3.0.69 \
+     --to 3.0.71 \
+     --prepare-diffs
+   ```
+
+   This is useful for re-auditing one package, testing the diff pipeline, or
+   rebuilding the upstream artifacts for a review.
+
+3. Read each generated `summary.md` and `upstream.diff` before editing Swift.
+   The script intentionally does not rewrite the port: it prepares the exact
+   package drift and evidence, then the porting pass still updates behavior,
+   tests, and docs package-by-package.
+
+4. Also check whether the upstream npm scope gained new packages:
+
+   ```sh
+   Scripts/check-upstream-versions.js --discover-packages
+   Scripts/check-upstream-versions.js \
+     --discover-packages \
+     --discover-kind provider,adapter,core \
+     --fail-on-new
+   ```
+
+   Discovery compares official `@ai-sdk/*` packages from npm search with the
+   provider ledger and core snapshot list. Treat untracked `provider`, `adapter`,
+   or `core` rows as a product decision: either add and port the package, or
+   document why SwiftAISDK intentionally does not track it. UI/framework,
+   tooling, and schema-helper packages can stay out of scope unless Swift adds a
+   matching product surface.
+
+5. If the script is unavailable or you need to debug it, the equivalent manual
+   ledger read is:
+
+   ```sh
+   awk -F'|' '/@ai-sdk\\// { gsub(/`| /, "", $2); gsub(/`| /, "", $3); print $2, $3 }' Docs/ProviderVersionLedger.md
+   ```
+
+6. Query npm for all ledger packages and write a working list of packages whose
+   latest version differs from the ledger. Do not include unrelated packages
+   just because `rg` finds their old numbers in tests or docs.
+
+   ```sh
+   while read -r package version; do
+     latest=$(npm view "$package" version)
+     if [ "$latest" != "$version" ]; then
+       printf '%s %s -> %s\n' "$package" "$version" "$latest"
+     fi
+   done < <(awk -F'|' '/@ai-sdk\\// { gsub(/`| /, "", $2); gsub(/`| /, "", $3); print $2, $3 }' Docs/ProviderVersionLedger.md)
+   ```
+
+7. For each changed package, download both tarballs into a throwaway directory
+   and diff source, tests, changelog, and dist if source is absent:
+
+   ```sh
+   work=/tmp/ai-sdk-port-upstream-diffs
+   mkdir -p "$work"
+   npm pack <package>@<old> --pack-destination "$work"
+   npm pack <package>@<new> --pack-destination "$work"
+   mkdir -p "$work/<package-name>-old" "$work/<package-name>-new"
+   tar -xzf "$work/<pkg-old>.tgz" -C "$work/<package-name>-old" --strip-components=1
+   tar -xzf "$work/<pkg-new>.tgz" -C "$work/<package-name>-new" --strip-components=1
+   diff -ru "$work/<package-name>-old/src" "$work/<package-name>-new/src" | less
+   ```
+
+   If `src` is missing, diff `dist`, `CHANGELOG.md`, and package tests. Treat
+   generated dist-only changes as real when the package publishes no source.
+
+8. Make one short note per package before editing. Include:
+
+   ```text
+   <package> <old> -> <new>
+   Upstream files changed:
+   Swift surfaces to inspect:
+   Tests to add/update:
+   Docs/version rows to update:
+   ```
+
+9. Port package-by-package. For each package, update behavior first, tests
+   second, version strings last. This prevents user-agent churn from hiding real
+   behavior changes.
+
+10. Common Swift touch points for version bumps:
+
+   - `Sources/SwiftAISDK/Providers/ProviderRegistry.swift`
+   - provider-specific files under `Sources/SwiftAISDK/Providers/*Provider.swift`
+   - provider/model files under `Sources/SwiftAISDK/Models/*`
+   - nearest focused tests under `Tests/SwiftAISDKTests/*`
+   - `Docs/ProviderVersionLedger.md`
+   - `Docs/ProviderSyncStatus.md`
+   - `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift` and
+     `Docs/ProviderCapabilityMatrix.md` only when capabilities/factories changed
+   - `Docs/CoreV6Parity.md` only when `ai`, `@ai-sdk/react`, or shared core
+     behavior changed
+
+11. Mechanical user-agent/version replacements are allowed after behavior tests
+   are in place, but keep the search scoped to `Sources`, `Tests`, and `Docs`:
+
+   ```sh
+   rg -n 'ai-sdk/<provider>/<old>|@ai-sdk/<provider>` \\| `<old>' Sources Tests Docs
+   ```
+
+   Avoid broad replacements over lockfiles or vendored assets.
+
+12. Run a focused filter covering every changed package plus docs drift tests:
+
+   ```sh
+   swift test --filter 'Alibaba|Anthropic|Azure|Gateway|OpenAIResponses|MCP|ByteDance|AmazonBedrock|GoogleVertex|DeepSeek|ProviderCapabilityMatrix'
+   ```
+
+   Adjust the filter to the actual package list. Always run full verification
+   after the focused filter passes:
+
+   ```sh
+   swift test
+   ```
+
+13. Before finishing, run:
+
+   ```sh
+   git diff --stat
+   rg -n '<old-version-1>|<old-version-2>|<old-date>' Sources Tests Docs
+   ```
+
+   Some old versions are legitimate for packages that did not change. Check each
+   match before editing.
+
+14. In the final summary, list changed package versions, notable behavior
+    ports, docs touched, and the exact test commands/results.
 
 ## Source Of Truth
 

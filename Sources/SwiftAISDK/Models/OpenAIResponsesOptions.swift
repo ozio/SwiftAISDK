@@ -27,6 +27,7 @@ func openResponsesProviderOptions(providerOptions: [String: JSONValue], provider
     return output
 }
 
+
 func openResponsesFunctionTools(from tools: [String: JSONValue]) -> [JSONValue] {
     tools.compactMap { name, schema in
         var parameters = schema
@@ -119,7 +120,7 @@ func openAIResponsesOutputText(from raw: JSONValue) -> String? {
     return parts.isEmpty ? nil : parts.joined()
 }
 
-func openAIResponsesInputMessageJSON(_ message: AIMessage, store: Bool, processedApprovalIDs: inout Set<String>) -> [JSONValue] {
+func openAIResponsesInputMessageJSON(_ message: AIMessage, store: Bool, processedApprovalIDs: inout Set<String>, toolNamespaces: [String: JSONValue] = [:]) -> [JSONValue] {
     if message.role == .tool {
         return message.content.flatMap { part -> [JSONValue] in
             switch part {
@@ -156,12 +157,16 @@ func openAIResponsesInputMessageJSON(_ message: AIMessage, store: Bool, processe
     if let call = message.content.compactMap({ part -> AIToolCall? in
         if case let .toolCall(call) = part { call } else { nil }
     }).first {
-        return [.object([
+        var callObject: [String: JSONValue] = [
             "type": .string("function_call"),
             "call_id": .string(call.id),
             "name": .string(call.name),
             "arguments": .string(call.arguments)
-        ])]
+        ]
+        if let namespace = openAIResponsesNamespace(for: call, toolNamespaces: toolNamespaces) {
+            callObject["namespace"] = namespace
+        }
+        return [.object(callObject)]
     }
 
     if message.role == .user {
@@ -182,6 +187,24 @@ func openAIResponsesInputMessageJSON(_ message: AIMessage, store: Bool, processe
         "role": .string(message.role.rawValue),
         "content": .string(message.combinedText)
     ])]
+}
+
+func openAIResponsesToolNamespaces(from tools: [String: JSONValue]) -> [String: JSONValue] {
+    tools.reduce(into: [:]) { output, entry in
+        let object = entry.value.objectValue
+        let openAIOptions = object?["providerOptions"]?["openai"]?.objectValue ?? object?["openai"]?.objectValue
+        if let namespaceName = openAIOptions?["namespace"]?["name"]?.stringValue {
+            output[entry.key] = .string(namespaceName)
+        }
+    }
+}
+
+func openAIResponsesNamespace(for call: AIToolCall, toolNamespaces: [String: JSONValue]) -> JSONValue? {
+    call.providerMetadata["openai"]?["namespace"]
+        ?? call.providerMetadata["openai"]?["item"]?["namespace"]
+        ?? call.providerMetadata["namespace"]
+        ?? call.rawValue?["namespace"]
+        ?? toolNamespaces[call.name]
 }
 
 func openAIResponsesShouldSkipToolResult(_ result: AIToolResult) -> Bool {
@@ -404,4 +427,3 @@ func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue]) throws 
     }
     return output
 }
-

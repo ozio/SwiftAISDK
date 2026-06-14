@@ -75,7 +75,8 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             if DispatchTime.now().uptimeNanoseconds - started > 60_000_000_000 {
                 throw AIError.invalidResponse(provider: providerID, message: "Transcription job polling timed out")
             }
-            let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(request.headers), abortSignal: request.abortSignal)
+            let pollHeaders = isSameOrigin(url, config.baseURL) ? config.headers.mergingHeaders(request.headers) : [:]
+            let response = try await downloadURL(url, transport: config.transport, headers: pollHeaders, abortSignal: request.abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw audioProviderHTTPStatusError(provider: providerID, response: response)
             }
@@ -556,4 +557,3 @@ private func gladiaNestedOptions(_ value: JSONValue, mapping: [String: String]) 
     guard let object = value.objectValue else { return value }
     return .object(mapKeys(object, mapping))
 }
-

@@ -309,10 +309,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         }
         let store = options["store"]?.boolValue ?? true
         var processedApprovalIDs: Set<String> = []
+        let toolNamespaces = openAIResponsesToolNamespaces(from: request.tools)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "input": .array(request.messages.flatMap {
-                openAIResponsesInputMessageJSON($0, store: store, processedApprovalIDs: &processedApprovalIDs)
+                openAIResponsesInputMessageJSON($0, store: store, processedApprovalIDs: &processedApprovalIDs, toolNamespaces: toolNamespaces)
             })
         ]
         if stream { body["stream"] = true }
@@ -377,4 +378,3 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         )
     }
 }
-

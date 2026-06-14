@@ -51,7 +51,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks")
-    #expect(requests[0].headers["Authorization"] == "Bearer ark-key")
+    #expect(requests[0].headers["authorization"] == "Bearer ark-key")
     #expect(requests[0].headers["x-request-id"] == "req-1")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "seedance-1-0-pro")
@@ -65,7 +65,7 @@ import Testing
     #expect(body["openai"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks/task-1")
-    #expect(requests[1].headers["Authorization"] == "Bearer ark-key")
+    #expect(requests[1].headers["authorization"] == "Bearer ark-key")
     #expect(requests[1].headers["x-request-id"] == "req-1")
 }
 
@@ -99,6 +99,7 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["content"]?[0]?["type"]?.stringValue == "text")
     #expect(body["content"]?[1]?["type"]?.stringValue == "image_url")
+    #expect(body["content"]?[1]?["role"]?.stringValue == "first_frame")
     #expect(body["content"]?[1]?["image_url"]?["url"]?.stringValue == "data:image/png;base64,\(imageData.base64EncodedString())")
     #expect(body["content"]?[2]?["role"]?.stringValue == "last_frame")
     #expect(body["content"]?[2]?["image_url"]?["url"]?.stringValue == "https://example.com/end.png")

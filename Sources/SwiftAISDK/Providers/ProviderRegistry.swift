@@ -12,7 +12,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/3.0.67")
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/3.0.71")
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -96,7 +96,7 @@ public enum AIProviders {
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
             ),
-            userAgentSuffix: "ai-sdk/openai-compatible/2.0.48",
+            userAgentSuffix: "ai-sdk/openai-compatible/2.0.50",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
@@ -175,7 +175,7 @@ public enum AIProviders {
     }
 
     public static func alibaba(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "alibaba", defaultBaseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", authorization: .bearer(environmentVariables: ["ALIBABA_API_KEY", "DASHSCOPE_API_KEY"]), supportedCapabilities: [.language, .video], settings: settings)
+        try OpenAICompatibleProvider(providerID: "alibaba", defaultBaseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", authorization: .bearer(environmentVariables: ["ALIBABA_API_KEY", "DASHSCOPE_API_KEY"]), supportedCapabilities: [.language, .embedding, .video], settings: settings)
     }
 
     public static func moonshotAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -194,7 +194,7 @@ public enum AIProviders {
             headers["Authorization"] = "Bearer \(apiKey)"
         }
         headers.merge(settings.headers) { _, custom in custom }
-        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/1.0.16")
+        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/1.0.18")
         let endpoint = try requireURL(url)
         let base = "\(endpoint.scheme ?? "https")://\(endpoint.host ?? "")"
         let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
@@ -291,7 +291,8 @@ private func googleVertexOpenAIBaseURL(project: String?, location: String?) thro
         throw AIError.invalidURL("Google Vertex OpenAI-compatible mode requires project or GOOGLE_VERTEX_PROJECT.")
     }
     let location = location ?? environmentValue(["GOOGLE_VERTEX_LOCATION"]) ?? "global"
-    return "https://aiplatform.googleapis.com/v1/projects/\(project)/locations/\(location)/endpoints/openapi"
+    let host = googleVertexRegionalHost(location: location)
+    return "https://\(host)/v1/projects/\(project)/locations/\(location)/endpoints/openapi"
 }
 
 private func googleVertexAnthropicBaseURL(project: String?, location: String?) throws -> String {
@@ -320,7 +321,7 @@ private func perplexityHeaders(settings: ProviderSettings) throws -> [String: St
         throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
     }
     headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
-    return withUserAgentSuffix(headers, "ai-sdk/perplexity/3.0.33")
+    return withUserAgentSuffix(headers, "ai-sdk/perplexity/3.0.35")
 }
 
 private func klingAIJWT(accessKey: String, secretKey: String, now: Date = Date()) throws -> String {

@@ -17,7 +17,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/3.0.81")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/3.0.84")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?.stringValue == "French.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
@@ -37,7 +37,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-api-key"] == "claude-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/3.0.81")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/3.0.84")
 }
 @Test func anthropicAuthTokenBaseURLAndCustomProviderNameMirrorUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -116,7 +116,7 @@ import Testing
     #expect(request.headers["x-api-key"] == "aws-api-key")
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.3")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.6")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "claude-sonnet-4-6")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hello")
@@ -138,7 +138,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-api-key"] == "aws-api-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic-aws/1.0.3")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic-aws/1.0.6")
 }
 @Test func anthropicAWSAPIKeyOverridesCustomXAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -191,7 +191,7 @@ import Testing
     #expect(request.headers["x-amz-content-sha256"] != nil)
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-west-2/aws-external-anthropic/aws4_request") == true)
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.3")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.6")
 }
 @Test func anthropicAWSSupportsDynamicCredentialProviderLikeUpstream() async throws {
     let fixedDate = DateComponents(
@@ -329,6 +329,52 @@ import Testing
         $0.type == "unsupported" && $0.feature == "topP" && $0.message == "topP is not supported when thinking is enabled"
     })
 }
+
+@Test func anthropicRequestMapsFallbacksBetaStopDetailsAndFallbackUsage() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "content": [
+        {"type":"fallback","message":"primary failed"},
+        {"type":"text","text":"served by fallback"}
+      ],
+      "stop_reason": "end_turn",
+      "stop_details": {"type":"model_context_window_exceeded","recommended_model":"claude-fable-5"},
+      "usage": {
+        "input_tokens": 11,
+        "output_tokens": 7,
+        "iterations": [
+          {"type":"message","model":"claude-sonnet-4-6","input_tokens":100,"output_tokens":50},
+          {"type":"fallback_message","model":"claude-fable-5","input_tokens":11,"output_tokens":7}
+        ]
+      }
+    }
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: [
+            "anthropic": [
+                "fallbacks": [
+                    ["model": "claude-fable-5"]
+                ]
+            ]
+        ]
+    ))
+
+    #expect(result.text == "served by fallback")
+    #expect(result.usage?.inputTokens == 11)
+    #expect(result.usage?.outputTokens == 7)
+    #expect(result.providerMetadata["anthropic"]?["stopDetails"]?["recommendedModel"]?.stringValue == "claude-fable-5")
+    #expect(result.providerMetadata["anthropic"]?["iterations"]?[1]?["type"]?.stringValue == "fallback_message")
+    #expect(result.providerMetadata["anthropic"]?["iterations"]?[1]?["model"]?.stringValue == "claude-fable-5")
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["anthropic-beta"]?.contains("server-side-fallback-2026-06-01") == true)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["fallbacks"]?[0]?["model"]?.stringValue == "claude-fable-5")
+}
+
 @Test func anthropicRequestWarnsAndOmitsUnsupportedStandardSettingsLikeUpstream() async throws {
     let schema: JSONValue = [
         "type": "object",

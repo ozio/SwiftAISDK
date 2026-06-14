@@ -355,6 +355,7 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
 
     private func googleVideoURLWithAPIKey(_ uri: String) -> String {
         guard let key = config.headers["x-goog-api-key"], !key.isEmpty else { return uri }
+        guard isSameOrigin(uri, config.baseURL) else { return uri }
         return "\(uri)\(uri.contains("?") ? "&" : "?")key=\(key)"
     }
 }

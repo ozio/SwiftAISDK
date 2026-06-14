@@ -31,7 +31,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke")
     #expect(request.headers["Authorization"] == "Bearer bedrock-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.112")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.117")
     #expect(request.headers["anthropic-beta"] == nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"] == nil)
@@ -86,18 +86,31 @@ import Testing
     #expect(content[1]["source"]?["media_type"]?.stringValue == "image/png")
     #expect(content[1]["source"]?["data"]?.stringValue == imageData.base64EncodedString())
 }
-@Test func amazonBedrockAnthropicOmitsStructuredOutputForUnsupportedOpusModels() async throws {
-    let transport = RecordingTransport(response: jsonResponse("""
+@Test func amazonBedrockAnthropicOmitsStructuredOutputForUnsupportedOpusAndFableModels() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
     {"content":[{"type":"text","text":"json-ish"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
-    """))
+    """),
+        jsonResponse("""
+    {"content":[{"type":"text","text":"json-ish"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """)
+    ])
     let provider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
         region: "us-east-1",
         apiKey: "bedrock-key",
         transport: transport
     ))
-    let model = try provider.messages("anthropic.claude-opus-4-7")
+    let opus = try provider.messages("anthropic.claude-opus-4-7")
+    let fable = try provider.messages("anthropic.claude-fable-5-20260601-v1:0")
 
-    let result = try await model.generate(LanguageModelRequest(
+    let opusResult = try await opus.generate(LanguageModelRequest(
+        messages: [.user("Return JSON")],
+        responseFormat: .json(schema: .object([
+            "type": .string("object"),
+            "properties": .object(["answer": .object(["type": .string("string")])])
+        ]))
+    ))
+    let fableResult = try await fable.generate(LanguageModelRequest(
         messages: [.user("Return JSON")],
         responseFormat: .json(schema: .object([
             "type": .string("object"),
@@ -105,12 +118,20 @@ import Testing
         ]))
     ))
 
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["output_config"]?["format"] == nil)
-    #expect(result.warnings.contains(AIWarning(
+    let requests = await transport.requests()
+    let opusBody = try decodeJSONBody(try #require(requests.first?.body))
+    let fableBody = try decodeJSONBody(try #require(requests.last?.body))
+    #expect(opusBody["output_config"]?["format"] == nil)
+    #expect(fableBody["output_config"]?["format"] == nil)
+    #expect(opusResult.warnings.contains(AIWarning(
         type: "unsupported",
         feature: "responseFormat",
         message: "Bedrock Anthropic does not support native structured output for anthropic.claude-opus-4-7. The response format is ignored."
+    )))
+    #expect(fableResult.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "responseFormat",
+        message: "Bedrock Anthropic does not support native structured output for anthropic.claude-fable-5-20260601-v1:0. The response format is ignored."
     )))
 }
 @Test func amazonBedrockAnthropicStreamsEventStreamAsAnthropicEvents() async throws {
@@ -164,7 +185,7 @@ import Testing
     #expect(request.url.absoluteString == "https://bedrock-mantle.us-west-2.api.aws/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer mantle-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.112")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.117")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai.gpt-oss-20b")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")

@@ -42,7 +42,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.moonshot.ai/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer moonshot-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/moonshotai/2.0.23")
+    #expect(request.headers["user-agent"] == "ai-sdk/moonshotai/2.0.25")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["moonshotai"] == nil)
     #expect(body["extraRaw"]?.stringValue == "keep-me")
@@ -69,7 +69,7 @@ import Testing
     _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/moonshotai/2.0.23")
+    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/moonshotai/2.0.25")
     #expect(request.headers["authorization"] == "Bearer moonshot-key")
 }
 

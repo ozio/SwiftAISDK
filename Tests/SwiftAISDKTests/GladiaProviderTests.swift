@@ -52,7 +52,7 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.gladia.io/v2/upload")
     #expect(requests[0].headers["x-gladia-key"] == "gladia-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/gladia/2.0.33")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/gladia/2.0.35")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let uploadBody = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(uploadBody.contains("name=\"audio\"; filename=\"audio.wav\""))
@@ -83,6 +83,34 @@ import Testing
 
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://api.gladia.io/v2/pre-recorded/result/job-123")
+    #expect(requests[2].headers["x-gladia-key"] == "gladia-key")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/gladia/2.0.35")
+}
+
+@Test func gladiaTranscriptionDoesNotSendCredentialsToForeignResultURL() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://status.example.com/gladia/job-123"}"#),
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":1.0},"transcription":{"full_transcript":"foreign","languages":["en"],"utterances":[{"start":0,"end":1.0,"text":"foreign"}]}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(
+        apiKey: "gladia-key",
+        headers: ["User-Agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.transcriptionModel("default")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("audio".utf8), mimeType: "audio/wav"))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests[0].headers["x-gladia-key"] == "gladia-key")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.35")
+    #expect(requests[1].headers["x-gladia-key"] == "gladia-key")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.35")
+    #expect(requests[2].url.absoluteString == "https://status.example.com/gladia/job-123")
+    #expect(requests[2].headers["x-gladia-key"] == nil)
+    #expect(requests[2].headers["user-agent"] == nil)
 }
 @Test func gladiaTranscriptionNoArgFactoryAndCustomUserAgentMirrorUpstream() async throws {
     let transport = RecordingTransport(responses: [
@@ -102,9 +130,9 @@ import Testing
     #expect(model.modelID == "default")
     #expect(result.responseMetadata.modelID == "default")
     let requests = await transport.requests()
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.33")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.33")
-    #expect(requests[2].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.33")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.35")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.35")
+    #expect(requests[2].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.35")
 }
 @Test func gladiaTranscriptionIgnoresStandardLanguageLikeUpstream() async throws {
     let transport = RecordingTransport(responses: [

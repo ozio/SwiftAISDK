@@ -16,7 +16,7 @@ import Testing
     #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/language-model")
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
-    #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.123")
+    #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.130")
     #expect(request.headers["ai-language-model-id"] == "openai/gpt-4.1-mini")
     #expect(request.headers["ai-language-model-streaming"] == "false")
     let body = try decodeJSONBody(try #require(request.body))
@@ -39,7 +39,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-client"] == "swift")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/3.0.123")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/3.0.130")
 }
 
 @Test func gatewayUsesVercelOIDCTokenWhenGatewayAPIKeyMissing() async throws {
@@ -59,7 +59,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer oidc-token")
         #expect(request.headers["ai-gateway-auth-method"] == "oidc")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.123")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.130")
     }
 }
 
@@ -88,6 +88,33 @@ import Testing
         #expect(gatewayError.message == "Model not found")
         #expect(gatewayError.generationID == "gen_123")
         #expect(gatewayError.modelID == "missing-model")
+        #expect(!gatewayError.isRetryable)
+    }
+}
+
+@Test func gatewayMapsFailedDependencyErrorResponses() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 424,
+        headers: ["content-type": "application/json"],
+        body: Data("""
+        {"error":{"message":"Upstream dependency failed","type":"failed_dependency"}}
+        """.utf8)
+    ))
+    let provider = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key", transport: transport))
+    let model = try provider.languageModel("openai/gpt-4.1-mini")
+
+    do {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+        Issue.record("Expected Gateway failed_dependency error.")
+    } catch let error as AIError {
+        guard case let .gateway(gatewayError) = error else {
+            Issue.record("Expected AIError.gateway, got \(error).")
+            return
+        }
+        #expect(gatewayError.name == "GatewayFailedDependencyError")
+        #expect(gatewayError.type == .failedDependency)
+        #expect(gatewayError.statusCode == 424)
+        #expect(gatewayError.message == "Upstream dependency failed")
         #expect(!gatewayError.isRetryable)
     }
 }
@@ -395,7 +422,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer gateway-key")
         #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.123")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.130")
     }
 }
 

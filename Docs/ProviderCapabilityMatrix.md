@@ -1,6 +1,6 @@
 # Provider Capability Matrix
 
-Snapshot date: 2026-06-03
+Snapshot date: 2026-06-13
 
 This document is generated from `AIProviderCapabilities` in
 `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`. Update that
@@ -25,7 +25,7 @@ Legend:
 
 | Upstream package | Provider ID | Swift factories | L | C | E | I | T | S | AG | AT | D | V | R | F | K |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `@ai-sdk/alibaba` | `alibaba` | `AIProviders.alibaba` | ✅ |  |  |  |  |  |  |  |  | ✅ |  |  |  |
+| `@ai-sdk/alibaba` | `alibaba` | `AIProviders.alibaba` | ✅ |  | ✅ |  |  |  |  |  |  | ✅ |  |  |  |
 | `@ai-sdk/amazon-bedrock` | `amazon-bedrock` | `AIProviders.amazonBedrock` | ✅ |  | ✅ | ✅ |  |  |  |  |  |  | ✅ |  |  |
 | `@ai-sdk/amazon-bedrock` | `amazon-bedrock.anthropic` | `AIProviders.amazonBedrockAnthropic` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |
 | `@ai-sdk/amazon-bedrock` | `bedrock-mantle` | `AIProviders.bedrockMantle` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |

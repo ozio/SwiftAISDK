@@ -1,6 +1,6 @@
 import Foundation
 
-func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> DeepSeekPreparedCall {
+func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool, supportsThinking: Bool = true) throws -> DeepSeekPreparedCall {
     var options = try deepSeekOptions(from: request)
     let responseFormat = deepSeekResolvedResponseFormat(request: request, options: &options)
     let optionToolChoice = options.removeValue(forKey: "toolChoice")
@@ -28,7 +28,10 @@ func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, st
         }
     }
     body.merge(options) { _, new in new }
-    let reasoningWarnings = deepSeekApplyReasoning(request.reasoning, to: &body)
+    let reasoningWarnings = supportsThinking ? deepSeekApplyReasoning(request.reasoning, to: &body) : []
+    if !supportsThinking {
+        body.removeValue(forKey: "thinking")
+    }
     if let responseFormat, responseFormat["type"]?.stringValue == "json" {
         body["response_format"] = .object(["type": .string("json_object")])
     }

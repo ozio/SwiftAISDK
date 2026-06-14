@@ -111,7 +111,7 @@ func amazonBedrockAnthropicMediaType(contentType: String?, data: Data, url: Stri
 }
 
 func amazonBedrockAnthropicApplyStructuredOutputSupport(modelID: String, prepared: inout AnthropicPreparedCall) {
-    guard modelID.contains("claude-opus-4-7") || modelID.contains("claude-opus-4-8") else {
+    guard modelID.contains("claude-opus-4-7") || modelID.contains("claude-opus-4-8") || modelID.contains("claude-fable-5") else {
         return
     }
     guard var outputConfig = prepared.body["output_config"]?.objectValue,

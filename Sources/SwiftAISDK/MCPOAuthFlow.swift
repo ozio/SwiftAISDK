@@ -273,6 +273,9 @@ func authInternal(
 ) async throws -> MCPOAuthAuthResult {
     var resourceMetadata: MCPOAuthProtectedResourceMetadata?
     var authorizationServerURL: URL?
+    if let resourceMetadataURL, resourceMetadataURL.originText != serverURL.originText {
+        throw MCPClientError(message: "OAuth protected resource metadata URL \(resourceMetadataURL.absoluteString) must have the same origin as the MCP server URL \(serverURL.originText)")
+    }
     do {
         resourceMetadata = try await MCPOAuthDiscovery.discoverProtectedResourceMetadata(
             serverURL: serverURL,
@@ -289,10 +292,18 @@ func authInternal(
         provider: provider,
         resourceMetadata: resourceMetadata
     )
+    try await provider.validateAuthorizationServerURL(
+        serverURL: serverURL,
+        authorizationServerURL: resolvedAuthorizationServerURL
+    )
     let metadata = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata(
         authorizationServerURL: resolvedAuthorizationServerURL,
         protocolVersion: protocolVersion,
         transport: transport
+    )
+    let currentAuthorizationServerInformation = mcpOAuthAuthorizationServerInformation(
+        authorizationServerURL: resolvedAuthorizationServerURL,
+        metadata: metadata
     )
 
     var clientInformation = try await provider.clientInformation()
@@ -309,8 +320,9 @@ func authInternal(
             clientMetadata: provider.clientMetadata,
             transport: transport
         )
-        try await provider.saveClientInformation(fullInformation.clientInformation)
-        clientInformation = fullInformation.clientInformation
+        let pinnedClientInformation = fullInformation.clientInformation.withAuthorizationServerInformation(currentAuthorizationServerInformation)
+        try await provider.saveClientInformation(pinnedClientInformation)
+        clientInformation = pinnedClientInformation
     }
     guard let clientInformation else {
         throw MCPClientError(message: "OAuth client information is unavailable.")
@@ -321,6 +333,10 @@ func authInternal(
         if expectedState != nil, expectedState != callbackState {
             throw MCPClientError(message: "OAuth state parameter mismatch - possible CSRF attack")
         }
+        guard let storedAuthorizationServerInformation = try await storedAuthorizationServerInformation(provider: provider, clientInformation: clientInformation) else {
+            throw MCPClientError(message: "Stored OAuth authorization server metadata is required when exchanging an authorization code")
+        }
+        try assertAuthorizationServerInformationMatches(storedAuthorizationServerInformation, currentAuthorizationServerInformation)
         let tokens = try await MCPOAuth.exchangeAuthorization(
             authorizationServerURL: resolvedAuthorizationServerURL,
             metadata: metadata,
@@ -334,25 +350,32 @@ func authInternal(
             },
             transport: transport
         )
-        try await provider.saveTokens(tokens)
+        try await provider.saveTokens(tokens.withAuthorizationServerInformation(currentAuthorizationServerInformation))
         return .authorized
     }
 
-    if let refreshToken = try await provider.tokens()?.refreshToken {
+    if let currentTokens = try await provider.tokens(), let refreshToken = currentTokens.refreshToken {
+        if let storedAuthorizationServerInformation = try await storedAuthorizationServerInformation(provider: provider, clientInformation: clientInformation, tokens: currentTokens) {
+            try assertAuthorizationServerInformationMatches(storedAuthorizationServerInformation, currentAuthorizationServerInformation)
+        } else {
+            await provider.invalidateCredentials(.tokens)
+        }
         do {
-            let tokens = try await MCPOAuth.refreshAuthorization(
-                authorizationServerURL: resolvedAuthorizationServerURL,
-                metadata: metadata,
-                clientInformation: clientInformation,
-                refreshToken: refreshToken,
-                resource: resource,
-                clientAuthentication: { request in
-                    try await provider.authenticateTokenRequest(request)
-                },
-                transport: transport
-            )
-            try await provider.saveTokens(tokens)
-            return .authorized
+            if try await storedAuthorizationServerInformation(provider: provider, clientInformation: clientInformation, tokens: currentTokens) != nil {
+                let tokens = try await MCPOAuth.refreshAuthorization(
+                    authorizationServerURL: resolvedAuthorizationServerURL,
+                    metadata: metadata,
+                    clientInformation: clientInformation,
+                    refreshToken: refreshToken,
+                    resource: resource,
+                    clientAuthentication: { request in
+                        try await provider.authenticateTokenRequest(request)
+                    },
+                    transport: transport
+                )
+                try await provider.saveTokens(tokens.withAuthorizationServerInformation(currentAuthorizationServerInformation))
+                return .authorized
+            }
         } catch let error as MCPOAuthServerError {
             if let code = error.code, code != "server_error" {
                 throw error
@@ -373,8 +396,105 @@ func authInternal(
         state: state,
         resource: resource
     )
+    try await saveAuthorizationServerInformation(provider: provider, clientInformation: clientInformation, information: currentAuthorizationServerInformation)
     try await provider.saveCodeVerifier(started.codeVerifier)
     try await provider.redirectToAuthorization(started.authorizationURL)
     return .redirect
 }
 
+private func mcpOAuthAuthorizationServerInformation(
+    authorizationServerURL: URL,
+    metadata: MCPOAuthAuthorizationServerMetadata?
+) -> MCPOAuthAuthorizationServerInformation {
+    MCPOAuthAuthorizationServerInformation(
+        authorizationServerURL: authorizationServerURL.absoluteURL,
+        tokenEndpoint: metadata?.tokenEndpoint ?? (URL(string: "/token", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL)
+    )
+}
+
+private func storedAuthorizationServerInformation(
+    provider: any MCPOAuthClientProvider,
+    clientInformation: MCPOAuthClientInformation,
+    tokens: MCPOAuthTokens? = nil
+) async throws -> MCPOAuthAuthorizationServerInformation? {
+    if let information = tokens?.authorizationServerInformation {
+        return information
+    }
+    if let information = try await provider.authorizationServerInformation() {
+        return information.normalized
+    }
+    return clientInformation.authorizationServerInformation
+}
+
+private func saveAuthorizationServerInformation(
+    provider: any MCPOAuthClientProvider,
+    clientInformation: MCPOAuthClientInformation,
+    information: MCPOAuthAuthorizationServerInformation
+) async throws {
+    try await provider.saveAuthorizationServerInformation(information.normalized)
+    try await provider.saveClientInformation(clientInformation.withAuthorizationServerInformation(information))
+}
+
+private func assertAuthorizationServerInformationMatches(
+    _ stored: MCPOAuthAuthorizationServerInformation,
+    _ current: MCPOAuthAuthorizationServerInformation
+) throws {
+    guard stored.normalized == current.normalized else {
+        throw MCPClientError(message: "OAuth authorization server metadata does not match the metadata that issued the stored credentials")
+    }
+}
+
+private extension MCPOAuthTokens {
+    var authorizationServerInformation: MCPOAuthAuthorizationServerInformation? {
+        guard let authorizationServerURL, let tokenEndpoint else { return nil }
+        return MCPOAuthAuthorizationServerInformation(authorizationServerURL: authorizationServerURL, tokenEndpoint: tokenEndpoint).normalized
+    }
+
+    func withAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) -> MCPOAuthTokens {
+        var copy = self
+        copy.authorizationServerURL = information.normalized.authorizationServerURL
+        copy.tokenEndpoint = information.normalized.tokenEndpoint
+        if var object = copy.rawValue.objectValue {
+            object["authorization_server"] = .string(information.normalized.authorizationServerURL.absoluteString)
+            object["token_endpoint"] = .string(information.normalized.tokenEndpoint.absoluteString)
+            copy.rawValue = .object(object)
+        }
+        return copy
+    }
+}
+
+private extension MCPOAuthClientInformation {
+    var authorizationServerInformation: MCPOAuthAuthorizationServerInformation? {
+        guard let authorizationServerURL, let tokenEndpoint else { return nil }
+        return MCPOAuthAuthorizationServerInformation(authorizationServerURL: authorizationServerURL, tokenEndpoint: tokenEndpoint).normalized
+    }
+
+    func withAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) -> MCPOAuthClientInformation {
+        var copy = self
+        copy.authorizationServerURL = information.normalized.authorizationServerURL
+        copy.tokenEndpoint = information.normalized.tokenEndpoint
+        if var object = copy.rawValue.objectValue {
+            object["authorization_server"] = .string(information.normalized.authorizationServerURL.absoluteString)
+            object["token_endpoint"] = .string(information.normalized.tokenEndpoint.absoluteString)
+            copy.rawValue = .object(object)
+        }
+        return copy
+    }
+}
+
+private extension MCPOAuthAuthorizationServerInformation {
+    var normalized: MCPOAuthAuthorizationServerInformation {
+        MCPOAuthAuthorizationServerInformation(
+            authorizationServerURL: authorizationServerURL.absoluteURL,
+            tokenEndpoint: tokenEndpoint.absoluteURL
+        )
+    }
+}
+
+private extension URL {
+    var originText: String {
+        guard let scheme, let host else { return absoluteString }
+        let portText = port.map { ":\($0)" } ?? ""
+        return "\(scheme)://\(host)\(portText)"
+    }
+}

@@ -136,6 +136,62 @@ import Testing
     #expect(body["tool_choice"]?["type"]?.stringValue == "web_search")
     #expect(body["toolChoice"] == nil)
 }
+
+@Test func openAIResponsesGroupsFunctionToolsByNamespaceAndIncludesToolCallNamespace() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            .user("Use namespaced tools."),
+            .assistant(toolCalls: [
+                AIToolCall(
+                    id: "call-1",
+                    name: "sum",
+                    arguments: #"{"a":1,"b":2}"#,
+                    providerMetadata: ["openai": ["namespace": "math"]]
+                )
+            ])
+        ],
+        tools: [
+            "sum": [
+                "type": "object",
+                "properties": ["a": ["type": "number"], "b": ["type": "number"]],
+                "providerOptions": [
+                    "openai": [
+                        "namespace": ["name": "math", "description": "Math tools"],
+                        "deferLoading": true
+                    ]
+                ]
+            ],
+            "multiply": [
+                "type": "object",
+                "properties": ["a": ["type": "number"], "b": ["type": "number"]],
+                "providerOptions": [
+                    "openai": [
+                        "namespace": ["name": "math", "description": "Math tools"]
+                    ]
+                ]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let namespace = try #require(body["tools"]?.arrayValue?.first { $0["type"]?.stringValue == "namespace" })
+    #expect(namespace["name"]?.stringValue == "math")
+    #expect(namespace["description"]?.stringValue == "Math tools")
+    #expect(namespace["tools"]?.arrayValue?.count == 2)
+    let sum = try #require(namespace["tools"]?.arrayValue?.first { $0["name"]?.stringValue == "sum" })
+    #expect(sum["type"]?.stringValue == "function")
+    #expect(sum["defer_loading"]?.boolValue == true)
+    #expect(sum["parameters"]?["providerOptions"] == nil)
+    #expect(sum["parameters"]?["openai"] == nil)
+    let input = try #require(body["input"]?.arrayValue)
+    let functionCall = try #require(input.first { $0["type"]?.stringValue == "function_call" })
+    #expect(functionCall["namespace"]?.stringValue == "math")
+}
+
 @Test func openAIResponsesMapsCustomToolChoice() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"custom"}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
@@ -417,4 +473,36 @@ import Testing
     #expect(toolCall?.name == "lookup")
     #expect(toolCall?.arguments == #"{"query":"weather"}"#)
     #expect(finishReason == "stop")
+}
+@Test func openAIResponsesStreamsPrototypeNamedFunctionItemsSafely() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"__proto__","call_id":"call_proto","name":"lookup","arguments":""}}
+
+    data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"__proto__","delta":"{\\"query\\":"}
+
+    data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"__proto__","delta":"\\"weather\\"}"}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"__proto__","call_id":"call_proto","name":"lookup","arguments":"{\\"query\\":\\"weather\\"}"}}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openResponses(
+        name: "open-responses",
+        url: "https://open.example.test/responses",
+        settings: ProviderSettings(headers: ["Authorization": "Bearer custom-key"], transport: transport)
+    )
+    let model = try provider.languageModel("local-model")
+
+    var toolCall: AIToolCall?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Use a tool.")])) {
+        if case let .toolCall(call) = part {
+            toolCall = call
+        }
+    }
+
+    #expect(toolCall?.id == "call_proto")
+    #expect(toolCall?.name == "lookup")
+    #expect(toolCall?.arguments == #"{"query":"weather"}"#)
+    #expect(toolCall?.providerMetadata["open-responses"]?["itemId"]?.stringValue == "__proto__")
 }

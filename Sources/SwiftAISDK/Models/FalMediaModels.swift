@@ -77,13 +77,14 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         body.merge(falVideoOptions(from: options)) { _, new in new }
 
         let normalized = modelID.replacingOccurrences(of: #"^(fal-ai/|fal/)"#, with: "", options: .regularExpression)
+        let submitURL = "https://queue.fal.run/fal-ai/\(normalized)"
         let queueResponse = try await config.transport.send(config.request(
             path: "/fal-ai/\(normalized)",
             modelID: modelID,
             body: .object(body),
             headers: request.headers,
             abortSignal: request.abortSignal
-        ).withURL(try requireURL("https://queue.fal.run/fal-ai/\(normalized)")))
+        ).withURL(try requireURL(submitURL)))
         guard (200..<300).contains(queueResponse.statusCode) else {
             throw apiCallError(provider: providerID, response: queueResponse)
         }
@@ -93,6 +94,7 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         }
         let finalResponse = try await pollFalResponse(
             url: responseURL,
+            submitURL: submitURL,
             headers: request.headers,
             intervalNanoseconds: falPollInterval(options),
             timeoutNanoseconds: falPollTimeout(options),
@@ -112,10 +114,11 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         )
     }
 
-    private func pollFalResponse(url: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
+    private func pollFalResponse(url: String, submitURL: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await downloadURL(url, transport: config.transport, headers: config.headers.mergingHeaders(headers), abortSignal: abortSignal)
+            let pollHeaders = isSameOrigin(url, submitURL) ? config.headers.mergingHeaders(headers) : [:]
+            let response = try await downloadURL(url, transport: config.transport, headers: pollHeaders, abortSignal: abortSignal)
             if (200..<300).contains(response.statusCode) {
                 return (try response.jsonValue(), response)
             }
@@ -546,4 +549,3 @@ private func sizeToAspectRatio(_ size: String) -> String {
     let divisor = gcd(dimensions[0], dimensions[1])
     return "\(dimensions[0] / divisor):\(dimensions[1] / divisor)"
 }
-

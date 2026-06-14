@@ -41,7 +41,7 @@ import Testing
     #expect(request.headers["authorization"] == "Bearer test-key")
     #expect(request.headers["openai-organization"] == "org-123")
     #expect(request.headers["openai-project"] == "proj-123")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.71")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1")
     #expect(body["temperature"]?.doubleValue == 0.4)
@@ -83,7 +83,7 @@ import Testing
     #expect(request.headers["authorization"] == "Bearer test-key")
     #expect(request.headers["openai-organization"] == "org-123")
     #expect(request.headers["openai-project"] == "proj-header")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.71")
 }
 @Test func openAIProviderAliasesRouteToUpstreamEndpoints() async throws {
     let transport = RecordingTransport(responses: [
@@ -176,7 +176,7 @@ import Testing
     #expect(result.text == "named")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/responses")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.67")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.71")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["store"]?.boolValue == false)
     #expect(body["previous_response_id"]?.stringValue == "resp-old")
@@ -207,7 +207,7 @@ import Testing
     #expect(provider.providerID == "branded")
     #expect(model.providerID == "branded.responses")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai/3.0.67")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai/3.0.71")
 }
 @Test func openAIResponsesMapsNestedProviderOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done","usage":{"total_tokens":3}}"#))

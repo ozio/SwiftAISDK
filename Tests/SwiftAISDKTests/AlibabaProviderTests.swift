@@ -26,7 +26,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis")
     #expect(requests[0].headers["authorization"] == "Bearer dashscope-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/alibaba/1.0.25")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/alibaba/1.0.28")
     #expect(requests[0].headers["X-DashScope-Async"] == "enable")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "wan2.1-t2v-plus")
@@ -39,7 +39,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://dashscope-intl.aliyuncs.com/api/v1/tasks/task-1")
     #expect(requests[1].headers["authorization"] == "Bearer dashscope-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/alibaba/1.0.25")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/alibaba/1.0.28")
 }
 @Test func alibabaVideoMapsNestedI2VAndR2VOptions() async throws {
     let i2vTransport = RecordingTransport(responses: [
@@ -141,7 +141,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer dashscope-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/alibaba/1.0.25")
+    #expect(request.headers["user-agent"] == "ai-sdk/alibaba/1.0.28")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "qwen3-max")
     #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
@@ -174,8 +174,78 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer dashscope-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/alibaba/1.0.25")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/alibaba/1.0.28")
 }
+
+@Test func alibabaEmbeddingUsesDashScopeNativeEndpointAndSparseMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "output": {
+        "embeddings": [
+          {"text_index":1,"embedding":[0.3,0.4],"sparse_embedding":{"12":0.9}},
+          {"text_index":0,"embedding":[0.1,0.2],"sparse_embedding":{"7":0.5}}
+        ]
+      },
+      "usage": {"total_tokens": 6},
+      "request_id": "emb-req-1"
+    }
+    """, headers: ["x-dashscope": "embedding"]))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.embeddingModel("text-embedding-v4")
+
+    let result = try await model.embed(EmbeddingRequest(
+        values: ["hello", "world"],
+        dimensions: 256,
+        providerOptions: [
+            "alibaba": [
+                "textType": "query",
+                "outputType": "dense&sparse"
+            ]
+        ],
+        headers: ["x-request-id": "req-emb"]
+    ))
+
+    #expect(model.providerID == "alibaba.embedding")
+    #expect(result.embeddings == [[0.1, 0.2], [0.3, 0.4]])
+    #expect(result.usage?.totalTokens == 6)
+    #expect(result.providerMetadata["alibaba"]?["sparseEmbeddings"]?[0]?["textIndex"]?.intValue == 0)
+    #expect(result.providerMetadata["alibaba"]?["sparseEmbeddings"]?[0]?["sparseEmbedding"]?["7"]?.doubleValue == 0.5)
+    #expect(result.responseMetadata.id == "emb-req-1")
+    #expect(result.responseMetadata.headers["x-dashscope"] == "embedding")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://dashscope-intl.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding")
+    #expect(request.headers["authorization"] == "Bearer dashscope-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/alibaba/1.0.28")
+    #expect(request.headers["x-request-id"] == "req-emb")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"]?.stringValue == "text-embedding-v4")
+    #expect(body["input"]?["texts"]?[0]?.stringValue == "hello")
+    #expect(body["input"]?["texts"]?[1]?.stringValue == "world")
+    #expect(body["parameters"]?["text_type"]?.stringValue == "query")
+    #expect(body["parameters"]?["dimension"]?.intValue == 256)
+    #expect(body["parameters"]?["output_type"]?.stringValue == "dense&sparse")
+}
+
+@Test func alibabaEmbeddingValidatesBatchSizeAndSparseOnlyOutput() async throws {
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: RecordingTransport(response: jsonResponse("{}"))))
+    let model = try provider.embeddingModel("text-embedding-v4")
+
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "alibaba.embedding",
+        modelID: "text-embedding-v4",
+        maxEmbeddingsPerCall: 10,
+        values: Array(repeating: "value", count: 11)
+    )) {
+        _ = try await model.embed(EmbeddingRequest(values: Array(repeating: "value", count: 11)))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.alibaba.outputType",
+        message: "Alibaba embedding outputType 'sparse' is not supported because embeddings require dense number arrays. Use 'dense' or 'dense&sparse' instead."
+    )) {
+        _ = try await model.embed(EmbeddingRequest(values: ["hello"], providerOptions: ["alibaba": ["outputType": "sparse"]]))
+    }
+}
+
 @Test func alibabaLanguageUsesUpstreamErrorMessageSchema() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(
         statusCode: 429,

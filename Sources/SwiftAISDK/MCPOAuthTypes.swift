@@ -66,11 +66,16 @@ public struct MCPOAuthAuthorizationServerMetadata: Equatable, Sendable {
         self.rawValue = rawValue
     }
 
-    init(json: JSONValue, sourceURL: URL, sourceType: MCPOAuthDiscoveryURL.Kind) throws {
+    init(json: JSONValue, sourceURL: URL, sourceType: MCPOAuthDiscoveryURL.Kind, expectedIssuer: String? = nil) throws {
         guard let issuer = json["issuer"]?.stringValue,
               let authorizationEndpoint = json["authorization_endpoint"]?.stringValue.flatMap(URL.init(string:)),
               let tokenEndpoint = json["token_endpoint"]?.stringValue.flatMap(URL.init(string:)) else {
             throw MCPClientError(message: "Expected OAuth authorization server metadata with issuer, authorization_endpoint, and token_endpoint.")
+        }
+        if let expectedIssuer, issuer != expectedIssuer {
+            throw MCPClientError(
+                message: "OAuth authorization server metadata issuer \(issuer) does not match expected issuer \(expectedIssuer)"
+            )
         }
         let codeChallengeMethods = json["code_challenge_methods_supported"]?.arrayValue?.compactMap(\.stringValue) ?? []
         if sourceType == .oidc, !codeChallengeMethods.contains("S256") {
@@ -99,6 +104,8 @@ public struct MCPOAuthTokens: Equatable, Sendable {
     public var expiresIn: Int?
     public var scope: String?
     public var refreshToken: String?
+    public var authorizationServerURL: URL?
+    public var tokenEndpoint: URL?
     public var rawValue: JSONValue
 
     public init(
@@ -108,6 +115,8 @@ public struct MCPOAuthTokens: Equatable, Sendable {
         expiresIn: Int? = nil,
         scope: String? = nil,
         refreshToken: String? = nil,
+        authorizationServerURL: URL? = nil,
+        tokenEndpoint: URL? = nil,
         rawValue: JSONValue = .object([:])
     ) {
         self.accessToken = accessToken
@@ -116,6 +125,8 @@ public struct MCPOAuthTokens: Equatable, Sendable {
         self.expiresIn = expiresIn
         self.scope = scope
         self.refreshToken = refreshToken
+        self.authorizationServerURL = authorizationServerURL
+        self.tokenEndpoint = tokenEndpoint
         self.rawValue = rawValue
     }
 
@@ -131,6 +142,8 @@ public struct MCPOAuthTokens: Equatable, Sendable {
             expiresIn: json["expires_in"]?.intValue,
             scope: json["scope"]?.stringValue,
             refreshToken: json["refresh_token"]?.stringValue,
+            authorizationServerURL: json["authorization_server"]?.stringValue.flatMap(URL.init(string:)),
+            tokenEndpoint: json["token_endpoint"]?.stringValue.flatMap(URL.init(string:)),
             rawValue: json
         )
     }
@@ -141,6 +154,8 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
     public var clientSecret: String?
     public var clientIDIssuedAt: Int?
     public var clientSecretExpiresAt: Int?
+    public var authorizationServerURL: URL?
+    public var tokenEndpoint: URL?
     public var rawValue: JSONValue
 
     public init(
@@ -148,12 +163,16 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
         clientSecret: String? = nil,
         clientIDIssuedAt: Int? = nil,
         clientSecretExpiresAt: Int? = nil,
+        authorizationServerURL: URL? = nil,
+        tokenEndpoint: URL? = nil,
         rawValue: JSONValue = .object([:])
     ) {
         self.clientID = clientID
         self.clientSecret = clientSecret
         self.clientIDIssuedAt = clientIDIssuedAt
         self.clientSecretExpiresAt = clientSecretExpiresAt
+        self.authorizationServerURL = authorizationServerURL
+        self.tokenEndpoint = tokenEndpoint
         self.rawValue = rawValue
     }
 
@@ -166,8 +185,20 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
             clientSecret: json["client_secret"]?.stringValue,
             clientIDIssuedAt: json["client_id_issued_at"]?.intValue,
             clientSecretExpiresAt: json["client_secret_expires_at"]?.intValue,
+            authorizationServerURL: json["authorization_server"]?.stringValue.flatMap(URL.init(string:)),
+            tokenEndpoint: json["token_endpoint"]?.stringValue.flatMap(URL.init(string:)),
             rawValue: json
         )
+    }
+}
+
+public struct MCPOAuthAuthorizationServerInformation: Equatable, Sendable {
+    public var authorizationServerURL: URL
+    public var tokenEndpoint: URL
+
+    public init(authorizationServerURL: URL, tokenEndpoint: URL) {
+        self.authorizationServerURL = authorizationServerURL
+        self.tokenEndpoint = tokenEndpoint
     }
 }
 
@@ -376,12 +407,15 @@ public protocol MCPOAuthClientProvider: Sendable {
 
     func clientInformation() async throws -> MCPOAuthClientInformation?
     func saveClientInformation(_ clientInformation: MCPOAuthClientInformation) async throws
+    func authorizationServerInformation() async throws -> MCPOAuthAuthorizationServerInformation?
+    func saveAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) async throws
     var supportsDynamicClientRegistration: Bool { get }
 
     func state() async throws -> String?
     func saveState(_ state: String) async throws
     func storedState() async throws -> String?
     func validateResourceURL(serverURL: URL, resource: URL?) async throws -> URL?
+    func validateAuthorizationServerURL(serverURL: URL, authorizationServerURL: URL) async throws
     func authenticateTokenRequest(_ request: MCPOAuthClientAuthenticationRequest) async throws -> MCPOAuthClientAuthenticationRequest?
 }
 
@@ -390,11 +424,14 @@ public extension MCPOAuthClientProvider {
 
     func clientInformation() async throws -> MCPOAuthClientInformation? { nil }
     func saveClientInformation(_ clientInformation: MCPOAuthClientInformation) async throws {}
+    func authorizationServerInformation() async throws -> MCPOAuthAuthorizationServerInformation? { nil }
+    func saveAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) async throws {}
     var supportsDynamicClientRegistration: Bool { false }
 
     func state() async throws -> String? { nil }
     func saveState(_ state: String) async throws {}
     func storedState() async throws -> String? { nil }
     func validateResourceURL(serverURL: URL, resource: URL?) async throws -> URL? { nil }
+    func validateAuthorizationServerURL(serverURL: URL, authorizationServerURL: URL) async throws {}
     func authenticateTokenRequest(_ request: MCPOAuthClientAuthenticationRequest) async throws -> MCPOAuthClientAuthenticationRequest? { nil }
 }

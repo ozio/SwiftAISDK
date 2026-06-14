@@ -132,7 +132,11 @@ private func byteDanceContent(prompt: String, image: ImageInputFile?, options: B
         content.append(.object(["type": .string("text"), "text": .string(prompt)]))
     }
     if let image = try byteDanceMediaURL(from: image) ?? byteDanceMediaURL(known["image"]) {
-        content.append(.object(["type": .string("image_url"), "image_url": .object(["url": .string(image)])]))
+        var imageContent: [String: JSONValue] = ["type": .string("image_url"), "image_url": .object(["url": .string(image)])]
+        if known["lastFrameImage"] != nil {
+            imageContent["role"] = .string("first_frame")
+        }
+        content.append(.object(imageContent))
     }
     if let lastFrameImage = byteDanceMediaURL(known["lastFrameImage"]) {
         content.append(.object([
@@ -383,4 +387,3 @@ private func byteDanceJSONString(_ value: JSONValue) -> String {
     }
     return text
 }
-

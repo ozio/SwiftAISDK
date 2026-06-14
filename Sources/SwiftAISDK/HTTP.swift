@@ -7,14 +7,16 @@ public struct AIHTTPRequest: Sendable {
     public var body: Data?
     public var abortSignal: AIAbortSignal?
     public var maxResponseBytes: Int?
+    public var followRedirects: Bool
 
-    public init(method: String = "POST", url: URL, headers: [String: String] = [:], body: Data? = nil, abortSignal: AIAbortSignal? = nil, maxResponseBytes: Int? = nil) {
+    public init(method: String = "POST", url: URL, headers: [String: String] = [:], body: Data? = nil, abortSignal: AIAbortSignal? = nil, maxResponseBytes: Int? = nil, followRedirects: Bool = true) {
         self.method = method
         self.url = url
         self.headers = headers
         self.body = body
         self.abortSignal = abortSignal
         self.maxResponseBytes = maxResponseBytes
+        self.followRedirects = followRedirects
     }
 }
 
@@ -102,14 +104,16 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
         }
         let preparedRequest = urlRequest
 
+        let delegate: URLSessionTaskDelegate? = request.followRedirects ? nil : NoRedirectURLSessionDelegate()
+
         if let maxResponseBytes = request.maxResponseBytes {
             let (bytes, response): (URLSession.AsyncBytes, URLResponse)
             if let abortSignal = request.abortSignal {
                 (bytes, response) = try await raceAbortSignal(abortSignal) {
-                    try await self.session.bytes(for: preparedRequest)
+                    try await self.session.bytes(for: preparedRequest, delegate: delegate)
                 }
             } else {
-                (bytes, response) = try await session.bytes(for: preparedRequest)
+                (bytes, response) = try await session.bytes(for: preparedRequest, delegate: delegate)
             }
             return try await limitedHTTPResponse(bytes: bytes, response: response, request: request, maxResponseBytes: maxResponseBytes)
         }
@@ -117,10 +121,10 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
         let (data, response): (Data, URLResponse)
         if let abortSignal = request.abortSignal {
             (data, response) = try await raceAbortSignal(abortSignal) {
-                try await self.session.data(for: preparedRequest)
+                try await self.session.data(for: preparedRequest, delegate: delegate)
             }
         } else {
-            (data, response) = try await session.data(for: preparedRequest)
+            (data, response) = try await session.data(for: preparedRequest, delegate: delegate)
         }
         let httpResponse = response as? HTTPURLResponse
         let headers = httpHeaders(from: httpResponse)
@@ -173,6 +177,18 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
                 }
             }
         )
+    }
+}
+
+private final class NoRedirectURLSessionDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }
 
@@ -308,6 +324,28 @@ func requireURL(_ string: String) throws -> URL {
     return url
 }
 
+func isSameOrigin(_ lhs: String, _ rhs: String) -> Bool {
+    guard let left = URLComponents(string: lhs),
+          let right = URLComponents(string: rhs),
+          let leftScheme = left.scheme?.lowercased(),
+          let rightScheme = right.scheme?.lowercased(),
+          let leftHost = left.host?.lowercased(),
+          let rightHost = right.host?.lowercased(),
+          leftScheme == rightScheme,
+          leftHost == rightHost else {
+        return false
+    }
+    return (left.port ?? defaultPort(for: leftScheme)) == (right.port ?? defaultPort(for: rightScheme))
+}
+
+private func defaultPort(for scheme: String) -> Int? {
+    switch scheme {
+    case "http": return 80
+    case "https": return 443
+    default: return nil
+    }
+}
+
 /// Mirrors upstream provider-utils download URL validation before fetching
 /// provider-returned or user-provided remote assets.
 public func validateDownloadURL(_ string: String) throws -> URL {
@@ -329,7 +367,7 @@ public func validateDownloadURL(_ string: String) throws -> URL {
         throw AIError.invalidArgument(argument: "url", message: "URL must have a hostname.")
     }
 
-    let host = rawHost.lowercased()
+    let host = rawHost.lowercased().strippingTrailingDots()
     if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".localhost") {
         throw AIError.invalidArgument(argument: "url", message: "URL with hostname \(host) is not allowed.")
     }
@@ -341,8 +379,10 @@ public func validateDownloadURL(_ string: String) throws -> URL {
         return url
     }
 
-    if let ipv6 = ipv6Bytes(host), isPrivateIPv6(ipv6) {
-        throw AIError.invalidArgument(argument: "url", message: "URL with IPv6 address \(host) is not allowed.")
+    if host.contains(":") {
+        guard let ipv6 = ipv6Bytes(host), !isPrivateIPv6(ipv6) else {
+            throw AIError.invalidArgument(argument: "url", message: "URL with IPv6 address \(host) is not allowed.")
+        }
     }
 
     return url
@@ -355,18 +395,37 @@ func downloadURL(
     abortSignal: AIAbortSignal? = nil,
     maxBytes: Int = AIDefaultMaxDownloadSize
 ) async throws -> AIHTTPResponse {
-    let url = try validateDownloadURL(string)
-    let response = try await transport.send(AIHTTPRequest(method: "GET", url: url, headers: headers, abortSignal: abortSignal, maxResponseBytes: maxBytes))
-    if let finalURL = response.url, finalURL != url {
-        _ = try validateDownloadURL(finalURL.absoluteString)
+    var current = string
+    let maxRedirects = 10
+    for _ in 0...maxRedirects {
+        let url = try validateDownloadURL(current)
+        let response = try await transport.send(AIHTTPRequest(
+            method: "GET",
+            url: url,
+            headers: headers,
+            abortSignal: abortSignal,
+            maxResponseBytes: maxBytes,
+            followRedirects: false
+        ))
+        if (300..<400).contains(response.statusCode),
+           let location = response.headerValue("location"),
+           let nextURL = URL(string: location, relativeTo: url)?.absoluteURL {
+            _ = try validateDownloadURL(nextURL.absoluteString)
+            current = nextURL.absoluteString
+            continue
+        }
+        if let finalURL = response.url, finalURL != url {
+            _ = try validateDownloadURL(finalURL.absoluteString)
+        }
+        if response.body.count > maxBytes {
+            throw AIDownloadError(
+                url: string,
+                message: "Download exceeded maximum size of \(maxBytes) bytes."
+            )
+        }
+        return response
     }
-    if response.body.count > maxBytes {
-        throw AIDownloadError(
-            url: string,
-            message: "Download exceeded maximum size of \(maxBytes) bytes."
-        )
-    }
-    return response
+    throw AIDownloadError(url: string, message: "Too many redirects (max \(maxRedirects)).")
 }
 
 private func ipv4Bytes(_ host: String) -> [UInt8]? {
@@ -385,12 +444,17 @@ private func isPrivateIPv4(_ bytes: [UInt8]) -> Bool {
     guard bytes.count == 4 else { return false }
     let first = bytes[0]
     let second = bytes[1]
+    let third = bytes[2]
     if first == 0 { return true }
     if first == 10 { return true }
+    if first == 100 && (64...127).contains(second) { return true }
     if first == 127 { return true }
     if first == 169 && second == 254 { return true }
     if first == 172 && (16...31).contains(second) { return true }
+    if first == 192 && second == 0 && third == 0 { return true }
     if first == 192 && second == 168 { return true }
+    if first == 198 && (second == 18 || second == 19) { return true }
+    if first >= 240 { return true }
     return false
 }
 
@@ -449,9 +513,15 @@ private func isPrivateIPv6(_ bytes: [UInt8]) -> Bool {
     if bytes.prefix(15).allSatisfy({ $0 == 0 }) && bytes[15] == 1 { return true }
     if (bytes[0] & 0xfe) == 0xfc { return true }
     if bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80 { return true }
-    if bytes.prefix(10).allSatisfy({ $0 == 0 }),
-       bytes[10] == 0xff,
-       bytes[11] == 0xff {
+    if bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0 { return true }
+    if bytes[0] == 0xff { return true }
+
+    let embedsIPv4 = bytes.prefix(12).allSatisfy { $0 == 0 }
+        || (bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff)
+        || (bytes.prefix(8).allSatisfy { $0 == 0 } && bytes[8] == 0xff && bytes[9] == 0xff && bytes[10] == 0 && bytes[11] == 0)
+        || (bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xff && bytes[3] == 0x9b && bytes[4...11].allSatisfy { $0 == 0 })
+        || (bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xff && bytes[3] == 0x9b && bytes[4] == 0 && bytes[5] == 1)
+    if embedsIPv4 {
         return isPrivateIPv4(Array(bytes[12...15]))
     }
     return false
@@ -492,6 +562,16 @@ func withoutTrailingSlash(_ value: String) -> String {
         result.removeLast()
     }
     return result
+}
+
+private extension String {
+    func strippingTrailingDots() -> String {
+        var result = self
+        while result.hasSuffix(".") {
+            result.removeLast()
+        }
+        return result
+    }
 }
 
 func environmentValue(_ names: [String]) -> String? {
