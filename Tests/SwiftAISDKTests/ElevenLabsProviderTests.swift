@@ -23,7 +23,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/text-to-speech/voice-123?enable_logging=false&output_format=mp3_44100_192")
     #expect(request.headers["xi-api-key"] == "eleven-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/elevenlabs/2.0.35")
+    #expect(request.headers["user-agent"] == "ai-sdk/elevenlabs/2.0.36")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
     #expect(body["model_id"]?.stringValue == "eleven_multilingual_v2")

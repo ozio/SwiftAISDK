@@ -52,7 +52,7 @@ private actor TokenStore {
     #expect(request.headers["api-key"] == "azure-key")
     #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
-    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.74")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.77")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")

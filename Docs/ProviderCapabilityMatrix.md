@@ -1,6 +1,6 @@
 # Provider Capability Matrix
 
-Snapshot date: 2026-06-13
+Snapshot date: 2026-06-23
 
 This document is generated from `AIProviderCapabilities` in
 `Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift`. Update that
@@ -47,7 +47,7 @@ Legend:
 | `@ai-sdk/gateway` | `gateway` | `AIProviders.gateway` | ✅ |  | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ | ✅ |  |  |
 | `@ai-sdk/gladia` | `gladia` | `AIProviders.gladia` |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |
 | `@ai-sdk/google` | `google.generative-ai` | `AIProviders.google` | ✅ |  | ✅ | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |
-| `@ai-sdk/google-vertex` | `google.vertex` | `AIProviders.googleVertex` | ✅ |  | ✅ | ✅ |  |  |  |  |  | ✅ |  |  |  |
+| `@ai-sdk/google-vertex` | `google.vertex` | `AIProviders.googleVertex` | ✅ |  | ✅ | ✅ | ✅ |  |  |  |  | ✅ |  |  |  |
 | `@ai-sdk/google-vertex` | `googleVertex.maas` | `AIProviders.googleVertexMaaS` | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
 | `@ai-sdk/google-vertex` | `googleVertex.xai` | `AIProviders.googleVertexXAI` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |
 | `@ai-sdk/google-vertex` | `googleVertex.anthropic` | `AIProviders.googleVertexAnthropic` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |

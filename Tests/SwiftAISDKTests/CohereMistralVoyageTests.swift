@@ -44,7 +44,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer cohere-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/3.0.38")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/3.0.39")
 }
 @Test func cohereUnknownFinishReasonMapsToOther() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -433,7 +433,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer mistral-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/3.0.39")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/3.0.40")
 }
 @Test func mistralMissingFinishReasonMapsToOtherAndUsageCountsCache() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

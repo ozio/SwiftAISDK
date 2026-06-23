@@ -33,7 +33,7 @@ public struct AIProviderCapabilityRow: Equatable, Sendable {
 }
 
 public enum AIProviderCapabilities {
-    public static let markdownSnapshotDate = "2026-06-13"
+    public static let markdownSnapshotDate = "2026-06-23"
 
     public static let all: [AIProviderCapabilityRow] = [
         providerRow("alibaba", "@ai-sdk/alibaba", ["AIProviders.alibaba"], [.language, .embedding, .video]),
@@ -58,7 +58,7 @@ public enum AIProviderCapabilities {
         providerRow("gateway", "@ai-sdk/gateway", ["AIProviders.gateway"], [.language, .embedding, .image, .transcription, .speech, .video, .reranking], notes: "Gateway also exposes model, credits, spend, and generation metadata management APIs."),
         providerRow("gladia", "@ai-sdk/gladia", ["AIProviders.gladia"], [.transcription]),
         providerRow("google.generative-ai", "@ai-sdk/google", ["AIProviders.google"], [.language, .embedding, .image, .video], files: true, notes: "Also exposes Gemini interactions models and agents."),
-        providerRow("google.vertex", "@ai-sdk/google-vertex", ["AIProviders.googleVertex"], [.language, .embedding, .image, .video]),
+        providerRow("google.vertex", "@ai-sdk/google-vertex", ["AIProviders.googleVertex"], [.language, .embedding, .image, .transcription, .video]),
         providerRow("googleVertex.maas", "@ai-sdk/google-vertex", ["AIProviders.googleVertexMaaS"], [.language, .completion, .embedding, .image]),
         providerRow("googleVertex.xai", "@ai-sdk/google-vertex", ["AIProviders.googleVertexXAI"], [.language]),
         providerRow("googleVertex.anthropic", "@ai-sdk/google-vertex", ["AIProviders.googleVertexAnthropic"], [.language]),

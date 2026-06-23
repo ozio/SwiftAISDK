@@ -190,7 +190,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.perplexity.ai/chat/completions")
     #expect(request.headers["authorization"] == "Bearer pplx-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/3.0.35")
+    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/3.0.36")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "sonar")
     #expect(body["temperature"]?.doubleValue == 0.2)

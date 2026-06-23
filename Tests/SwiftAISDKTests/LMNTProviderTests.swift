@@ -28,7 +28,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.lmnt.com/v1/ai/speech/bytes")
     #expect(request.headers["x-api-key"] == "lmnt-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/lmnt/2.0.35")
+    #expect(request.headers["user-agent"] == "ai-sdk/lmnt/2.0.36")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "aurora")
     #expect(body["text"]?.stringValue == "Hi")
@@ -57,7 +57,7 @@ import Testing
     _ = try await model.speak(SpeechRequest(text: "Hi"))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/lmnt/2.0.35")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/lmnt/2.0.36")
 }
 
 @Test func lmntSpeechUsesUpstreamHTTPErrorMessageSchema() async throws {

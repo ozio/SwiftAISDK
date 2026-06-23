@@ -49,11 +49,13 @@ public struct GoogleVertexProviderSettings: Sendable {
 
 public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
     public let providerID = "google.vertex"
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .video]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .video]
     private let config: GoogleVertexConfig
 
     public init(settings: GoogleVertexProviderSettings = GoogleVertexProviderSettings()) throws {
         let apiKey = settings.apiKey ?? environmentValue(["GOOGLE_VERTEX_API_KEY"])
+        let project = settings.project ?? environmentValue(["GOOGLE_VERTEX_PROJECT"])
+        let location = settings.location ?? environmentValue(["GOOGLE_VERTEX_LOCATION"])
         let auth: GoogleVertexAuth
         if let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             auth = .apiKey(apiKey)
@@ -71,8 +73,6 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
         } else if let explicit = settings.baseURL {
             baseURL = withoutTrailingSlash(explicit)
         } else {
-            let project = settings.project ?? environmentValue(["GOOGLE_VERTEX_PROJECT"])
-            let location = settings.location ?? environmentValue(["GOOGLE_VERTEX_LOCATION"])
             guard let project, let location else {
                 throw AIError.invalidURL("Google Vertex OAuth mode requires project/location or baseURL.")
             }
@@ -80,8 +80,8 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
             baseURL = "https://\(host)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         }
 
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/4.0.145")
-        config = GoogleVertexConfig(providerID: providerID, baseURL: baseURL, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/4.0.148")
+        config = GoogleVertexConfig(providerID: providerID, baseURL: baseURL, project: project, location: location, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
@@ -101,7 +101,7 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
     }
 
     public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
-        throw AIError.unsupportedModel(provider: providerID, capability: .transcription, modelID: modelID)
+        GoogleVertexTranscriptionModel(modelID: modelID, config: config.withProviderID("google.vertex.transcription"))
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {
@@ -130,6 +130,8 @@ enum GoogleVertexAuth: Sendable {
 struct GoogleVertexConfig: @unchecked Sendable {
     var providerID: String
     var baseURL: String
+    var project: String?
+    var location: String?
     var headers: [String: String]
     var auth: GoogleVertexAuth
     var transport: any AITransport
@@ -147,7 +149,19 @@ struct GoogleVertexConfig: @unchecked Sendable {
         return (try response.jsonValue(), response)
     }
 
+    func sendJSONResponse(url: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> (json: JSONValue, response: AIHTTPResponse) {
+        let response = try await transport.send(try await request(url: url, body: body, headers: requestHeaders, abortSignal: abortSignal))
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: providerID, response: response)
+        }
+        return (try response.jsonValue(), response)
+    }
+
     func request(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> AIHTTPRequest {
+        try await request(url: "\(withoutTrailingSlash(baseURL))\(path)", body: body, headers: requestHeaders, abortSignal: abortSignal)
+    }
+
+    func request(url: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> AIHTTPRequest {
         var mergedHeaders = headers.mergingHeaders(requestHeaders)
         mergedHeaders["content-type"] = mergedHeaders["content-type"] ?? "application/json"
         switch auth {
@@ -159,13 +173,15 @@ struct GoogleVertexConfig: @unchecked Sendable {
             let token = try await GoogleServiceAccountTokenGenerator.generateAccessToken(credentials: credentials, now: date())
             mergedHeaders["Authorization"] = mergedHeaders["Authorization"] ?? "Bearer \(token)"
         }
-        return AIHTTPRequest(method: "POST", url: try requireURL("\(withoutTrailingSlash(baseURL))\(path)"), headers: mergedHeaders, body: try encodeJSONBody(body), abortSignal: abortSignal)
+        return AIHTTPRequest(method: "POST", url: try requireURL(url), headers: mergedHeaders, body: try encodeJSONBody(body), abortSignal: abortSignal)
     }
 
     func withProviderID(_ providerID: String) -> GoogleVertexConfig {
         GoogleVertexConfig(
             providerID: providerID,
             baseURL: baseURL,
+            project: project,
+            location: location,
             headers: headers,
             auth: auth,
             transport: transport,

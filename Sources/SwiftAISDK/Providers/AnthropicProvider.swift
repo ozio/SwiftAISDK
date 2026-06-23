@@ -20,7 +20,7 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
             }
             headers["x-api-key"] = headers["x-api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/3.0.84")
+        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/3.0.85")
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
         languageProviderID = settings.name ?? "anthropic.messages"
         config = ModelHTTPConfig(

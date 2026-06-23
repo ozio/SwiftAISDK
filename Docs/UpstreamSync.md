@@ -12,7 +12,7 @@ priorities, use `Docs/ProductGapAudit.md`. For current provider inventory, use
 
 ## Current Snapshot
 
-- npm version baseline checked: 2026-06-14
+- npm version baseline checked: 2026-06-23
 - Version ledger: `Docs/ProviderVersionLedger.md`
 - Upstream checkout path: `/tmp/vercel-ai-sdk-upstream`
 - Last broad upstream commit used during the audit:
@@ -74,7 +74,7 @@ bumps across many providers.
    Scripts/check-upstream-versions.js \
      --package @ai-sdk/openai \
      --from 3.0.69 \
-     --to 3.0.71 \
+     --to 3.0.74 \
      --prepare-diffs
    ```
 

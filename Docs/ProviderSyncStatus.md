@@ -141,48 +141,48 @@ record and passes tests, it leaves the active queue.
 
 | Package | Baseline | Evidence |
 | --- | --- | --- |
-| `@ai-sdk/gateway` | `3.0.130` | Version-diff pass: upstream model settings refreshed; Swift keeps model IDs string-based, so no typed-model code change was needed beyond the user-agent/version baseline. |
-| `@ai-sdk/openai` | `3.0.71` | Version-diff pass found only package/dependency/version churn; prior chat/Responses/files/skills/tool helper parity remains covered. |
-| `@ai-sdk/openai-compatible` | `2.0.50` | Version-diff pass found only package/dependency/version churn plus docs-only provider list update; prior generic chat/completion/embedding/image parity remains covered. |
-| `@ai-sdk/open-responses` | `1.0.18` | Version-diff pass: streamed function-call argument storage hardening is not prototype-pollutable in Swift because buffers are keyed by numeric output index, with regression coverage for `__proto__` item IDs; prior request/input/stream/finish parity remains covered. |
-| `@ai-sdk/groq` | `3.0.41` | Version-diff pass found only package/dependency/version churn; prior chat/messages/tools/transcription parity remains covered. |
-| `@ai-sdk/mistral` | `3.0.39` | Version-diff pass found only package/dependency/version churn; prior native chat/embedding parity remains covered. |
-| `@ai-sdk/cohere` | `3.0.38` | Version-diff pass found only package/dependency/version churn; prior chat/prompt/tools/embedding/reranking parity remains covered. |
-| `@ai-sdk/perplexity` | `3.0.35` | Version-diff pass found only package/dependency/version churn; prior chat/search/citation/metadata parity remains covered. |
-| `@ai-sdk/xai` | `3.0.95` | Version-diff pass found only package/dependency/version churn; prior chat/Responses/tools/image/video/files parity remains covered. |
-| `@ai-sdk/deepseek` | `2.0.38` | Version-diff pass found only package/dependency/version churn; prior chat/options/messages/tools/usage/stream parity remains covered. |
-| `@ai-sdk/cerebras` | `2.0.56` | Version-diff pass found only package/dependency/version churn; previous OpenAI-compatible Cerebras parity remains covered. |
-| `@ai-sdk/moonshotai` | `2.0.25` | Version-diff pass found only package/dependency/version churn; prior OpenAI-compatible chat/options/usage parity remains covered. |
-| `@ai-sdk/alibaba` | `1.0.28` | Version-diff pass found only package/dependency/version churn; previous embedding factory/native DashScope endpoint, dense/sparse options, sparse metadata, and chat/video parity still cover the behavior surface. |
-| `@ai-sdk/replicate` | `2.0.35` | Version-diff pass: response-supplied video polling URLs now receive credentials only when same-origin with the Replicate API origin; prior image/video/options/errors parity remains covered. |
-| `@ai-sdk/luma` | `2.0.35` | Version-diff pass found only package/dependency/version churn; prior image/options/errors/polling parity remains covered. |
-| `@ai-sdk/klingai` | `3.0.20` | Version-diff pass found only package/dependency/version churn; prior video/options/errors/polling parity remains covered. |
-| `@ai-sdk/black-forest-labs` | `1.0.36` | Version-diff pass: response-supplied poll/download URLs now receive credentials only for same-origin or trusted `*.bfl.ai` hosts; package version/user-agent bumped after prior image/options/errors/polling parity. |
-| `@ai-sdk/bytedance` | `1.0.17` | Version-diff pass found only package/dependency/version churn; previous ARK auth, request body/media mapping, error schema, failed/no-video/missing-task/timeout messages, metadata, and poll behavior remain covered. |
-| `@ai-sdk/prodia` | `1.0.34` | Version-diff pass: video image URL inputs are routed through Swift's guarded `downloadURL` path before fetch, matching upstream SSRF hardening; package version/user-agent bumped after prior language/image/video parity. |
-| `@ai-sdk/deepgram` | `2.0.35` | Version-diff pass found only package/dependency/version churn; prior transcription/speech/options/errors parity remains covered. |
-| `@ai-sdk/elevenlabs` | `2.0.35` | Version-diff pass found only package/dependency/version churn; prior speech/transcription/options/errors parity remains covered. |
-| `@ai-sdk/assemblyai` | `2.0.35` | Version-diff pass found only package/dependency/version churn; previous transcription/options/errors/upload-submit-poll coverage still matches the published behavior. |
-| `@ai-sdk/gladia` | `2.0.35` | Version-diff pass: response-supplied result URLs now receive credentials only when same-origin with the Gladia API origin. |
-| `@ai-sdk/revai` | `2.0.35` | Version-diff pass found only package/dependency/version churn; prior transcription/options/errors parity remains covered. |
-| `@ai-sdk/hume` | `2.0.35` | Version-diff pass found only package/dependency/version churn; prior speech/options/errors parity remains covered. |
-| `@ai-sdk/lmnt` | `2.0.35` | Version-diff pass found only package/dependency/version churn; prior speech/options/errors parity remains covered. |
-| `@ai-sdk/azure` | `3.0.74` | Version-diff pass found only package/dependency/version churn; Azure DeepSeek factory/URL/thinking omission and inherited OpenAI surface parity remain covered. |
-| `@ai-sdk/baseten` | `1.0.53` | Version-diff pass found only package/dependency/version churn; previous Model API vs `/sync`/`/sync/v1`, `/predict` rejection, dedicated embedding body/batching, error schema, and header behavior remain covered. |
-| `@ai-sdk/deepinfra` | `2.0.54` | Version-diff pass found only package/dependency/version churn; prior OpenAI-compatible chat/completion/embedding/image parity remains covered. |
-| `@ai-sdk/fireworks` | `2.0.56` | Version-diff pass: Fireworks chat/completion streams request usage by default, and response-supplied image URLs receive credentials only when same-origin. |
-| `@ai-sdk/togetherai` | `2.0.55` | Version-diff pass found only package/dependency/version churn; prior image/reranking/OpenAI-compatible parity remains covered. |
-| `@ai-sdk/voyage` | `1.0.6` | Version-diff pass found only README/package/dependency/version churn; prior provider/embedding/reranking/options/errors coverage still matches the published behavior. |
-| `@ai-sdk/mcp` | `1.0.50` | Version-diff pass: OAuth discovery now validates metadata issuer against expected root/path issuer, `MCPOAuthClientProvider` can validate authorization-server URLs before metadata fetch, and existing protocol-version setter remains aligned. Swift has no JS prototype-chain `schemas` allowlist surface; legacy SSE endpoint-lock change is not applicable to the current HTTP/Stdio transports. |
-| `@ai-sdk/anthropic-aws` | `1.0.6` | Version-diff pass found only wrapper version/dependency churn; API-key header precedence and dynamic SigV4 credential-provider parity still match the tiny wrapper. |
-| `@ai-sdk/amazon-bedrock` | `4.0.117` | Version-diff pass: Cohere embedding inference profile IDs now use the Cohere body shape, and embedding usage falls back to the Bedrock token-count response header. |
-| `@ai-sdk/anthropic` | `3.0.84` | Version-diff pass found only package/dependency/version churn; previous Messages/tools/streaming parity remains covered. |
-| `@ai-sdk/google-vertex` | `4.0.145` | Version-diff pass found only package/dependency/version churn; prior Vertex host/media/MaaS/Anthropic parity remains covered. |
-| `@ai-sdk/google` | `3.0.82` | Version-diff pass: Veo response-supplied video URIs only get API-key query auth when same-origin; JS prototype-pollution accumulator fix is not applicable to Swift value dictionaries. |
-| `@ai-sdk/huggingface` | `1.0.52` | Version-diff pass found only package/dependency/version churn; prior Responses-style language parity remains covered. |
-| `@ai-sdk/fal` | `2.0.36` | Version-diff pass: video queue response URLs now receive credentials only when they stay same-origin with the FAL queue submit URL. |
-| `@ai-sdk/quiverai` | `1.0.2` | Version-diff pass found only package/dependency/user-agent churn; existing QuiverAI option/schema/response tests still cover the behavior surface. |
-| `@ai-sdk/vercel` | `2.0.52` | Version-diff pass found only package/dependency/version churn; existing endpoint/header/user-agent/unsupported-family coverage still matches the tiny upstream package. |
+| `@ai-sdk/gateway` | `3.0.133` | Version-diff pass: upstream model settings refreshed; Swift keeps model IDs string-based, so no typed-model code change was needed beyond the user-agent/version baseline. |
+| `@ai-sdk/openai` | `3.0.74` | Version-diff pass found only package/dependency/version churn; prior chat/Responses/files/skills/tool helper parity remains covered. |
+| `@ai-sdk/openai-compatible` | `2.0.51` | Version-diff pass found only package/dependency/version churn plus docs-only provider list update; prior generic chat/completion/embedding/image parity remains covered. |
+| `@ai-sdk/open-responses` | `1.0.19` | Version-diff pass: streamed function-call argument storage hardening is not prototype-pollutable in Swift because buffers are keyed by numeric output index, with regression coverage for `__proto__` item IDs; prior request/input/stream/finish parity remains covered. |
+| `@ai-sdk/groq` | `3.0.42` | Version-diff pass found only package/dependency/version churn; prior chat/messages/tools/transcription parity remains covered. |
+| `@ai-sdk/mistral` | `3.0.40` | Version-diff pass found only package/dependency/version churn; prior native chat/embedding parity remains covered. |
+| `@ai-sdk/cohere` | `3.0.39` | Version-diff pass found only package/dependency/version churn; prior chat/prompt/tools/embedding/reranking parity remains covered. |
+| `@ai-sdk/perplexity` | `3.0.36` | Version-diff pass found only package/dependency/version churn; prior chat/search/citation/metadata parity remains covered. |
+| `@ai-sdk/xai` | `3.0.96` | Version-diff pass found only package/dependency/version churn; prior chat/Responses/tools/image/video/files parity remains covered. |
+| `@ai-sdk/deepseek` | `2.0.39` | Version-diff pass found only package/dependency/version churn; prior chat/options/messages/tools/usage/stream parity remains covered. |
+| `@ai-sdk/cerebras` | `2.0.57` | Version-diff pass found only package/dependency/version churn; previous OpenAI-compatible Cerebras parity remains covered. |
+| `@ai-sdk/moonshotai` | `2.0.26` | Version-diff pass found only package/dependency/version churn; prior OpenAI-compatible chat/options/usage parity remains covered. |
+| `@ai-sdk/alibaba` | `1.0.29` | Version-diff pass found only package/dependency/version churn; previous embedding factory/native DashScope endpoint, dense/sparse options, sparse metadata, and chat/video parity still cover the behavior surface. |
+| `@ai-sdk/replicate` | `2.0.36` | Version-diff pass: response-supplied video polling URLs now receive credentials only when same-origin with the Replicate API origin; prior image/video/options/errors parity remains covered. |
+| `@ai-sdk/luma` | `2.0.36` | Version-diff pass found only package/dependency/version churn; prior image/options/errors/polling parity remains covered. |
+| `@ai-sdk/klingai` | `3.0.21` | Version-diff pass found only package/dependency/version churn; prior video/options/errors/polling parity remains covered. |
+| `@ai-sdk/black-forest-labs` | `1.0.38` | Version-diff pass: response-supplied poll/download URLs now receive credentials only for same-origin or trusted `*.bfl.ai` hosts; package version/user-agent bumped after prior image/options/errors/polling parity. |
+| `@ai-sdk/bytedance` | `1.0.18` | Version-diff pass found only package/dependency/version churn; previous ARK auth, request body/media mapping, error schema, failed/no-video/missing-task/timeout messages, metadata, and poll behavior remain covered. |
+| `@ai-sdk/prodia` | `1.0.35` | Version-diff pass: video image URL inputs are routed through Swift's guarded `downloadURL` path before fetch, matching upstream SSRF hardening; package version/user-agent bumped after prior language/image/video parity. |
+| `@ai-sdk/deepgram` | `2.0.36` | Version-diff pass found only package/dependency/version churn; prior transcription/speech/options/errors parity remains covered. |
+| `@ai-sdk/elevenlabs` | `2.0.36` | Version-diff pass found only package/dependency/version churn; prior speech/transcription/options/errors parity remains covered. |
+| `@ai-sdk/assemblyai` | `2.0.36` | Version-diff pass found only package/dependency/version churn; previous transcription/options/errors/upload-submit-poll coverage still matches the published behavior. |
+| `@ai-sdk/gladia` | `2.0.36` | Version-diff pass: response-supplied result URLs now receive credentials only when same-origin with the Gladia API origin. |
+| `@ai-sdk/revai` | `2.0.36` | Version-diff pass found only package/dependency/version churn; prior transcription/options/errors parity remains covered. |
+| `@ai-sdk/hume` | `2.0.36` | Version-diff pass found only package/dependency/version churn; prior speech/options/errors parity remains covered. |
+| `@ai-sdk/lmnt` | `2.0.36` | Version-diff pass found only package/dependency/version churn; prior speech/options/errors parity remains covered. |
+| `@ai-sdk/azure` | `3.0.77` | Version-diff pass found only package/dependency/version churn; Azure DeepSeek factory/URL/thinking omission and inherited OpenAI surface parity remain covered. |
+| `@ai-sdk/baseten` | `1.0.54` | Version-diff pass found only package/dependency/version churn; previous Model API vs `/sync`/`/sync/v1`, `/predict` rejection, dedicated embedding body/batching, error schema, and header behavior remain covered. |
+| `@ai-sdk/deepinfra` | `2.0.55` | Version-diff pass found only package/dependency/version churn; prior OpenAI-compatible chat/completion/embedding/image parity remains covered. |
+| `@ai-sdk/fireworks` | `2.0.57` | Version-diff pass: Fireworks chat/completion streams request usage by default, and response-supplied image URLs receive credentials only when same-origin. |
+| `@ai-sdk/togetherai` | `2.0.56` | Version-diff pass found only package/dependency/version churn; prior image/reranking/OpenAI-compatible parity remains covered. |
+| `@ai-sdk/voyage` | `1.0.7` | Version-diff pass found only README/package/dependency/version churn; prior provider/embedding/reranking/options/errors coverage still matches the published behavior. |
+| `@ai-sdk/mcp` | `1.0.52` | Version-diff pass: OAuth discovery now validates metadata issuer against expected root/path issuer, `MCPOAuthClientProvider` can validate authorization-server URLs before metadata fetch, and existing protocol-version setter remains aligned. Swift has no JS prototype-chain `schemas` allowlist surface; legacy SSE endpoint-lock change is not applicable to the current HTTP/Stdio transports. |
+| `@ai-sdk/anthropic-aws` | `1.0.7` | Version-diff pass found only wrapper version/dependency churn; API-key header precedence and dynamic SigV4 credential-provider parity still match the tiny wrapper. |
+| `@ai-sdk/amazon-bedrock` | `4.0.120` | Version-diff pass: Cohere embedding inference profile IDs now use the Cohere body shape, and embedding usage falls back to the Bedrock token-count response header. |
+| `@ai-sdk/anthropic` | `3.0.85` | Version-diff pass found only package/dependency/version churn; previous Messages/tools/streaming parity remains covered. |
+| `@ai-sdk/google-vertex` | `4.0.148` | Version-diff pass found only package/dependency/version churn; prior Vertex host/media/MaaS/Anthropic parity remains covered. |
+| `@ai-sdk/google` | `3.0.83` | Version-diff pass: Veo response-supplied video URIs only get API-key query auth when same-origin; JS prototype-pollution accumulator fix is not applicable to Swift value dictionaries. |
+| `@ai-sdk/huggingface` | `1.0.53` | Version-diff pass found only package/dependency/version churn; prior Responses-style language parity remains covered. |
+| `@ai-sdk/fal` | `2.0.37` | Version-diff pass: video queue response URLs now receive credentials only when they stay same-origin with the FAL queue submit URL. |
+| `@ai-sdk/quiverai` | `1.0.3` | Version-diff pass found only package/dependency/user-agent churn; existing QuiverAI option/schema/response tests still cover the behavior surface. |
+| `@ai-sdk/vercel` | `2.0.53` | Version-diff pass found only package/dependency/version churn; existing endpoint/header/user-agent/unsupported-family coverage still matches the tiny upstream package. |
 
 ### Fresh Pass Completion Records
 
@@ -190,7 +190,7 @@ record and passes tests, it leaves the active queue.
 
 ```text
 Package: @ai-sdk/mcp
-Baseline: 1.0.50
+Baseline: 1.0.52
 Upstream inspected: index.ts, types.ts, mcp-client.ts, mcp-transport.ts, mcp-http-transport.ts, mcp-sse-transport.ts, mcp-stdio-transport.ts, oauth.ts, oauth-types.ts, error files.
 Swift files inspected: MCPClient.swift, MCPOAuth.swift, MCPClientTests.swift, MCPStdioTransportTests.swift, MCPOAuthTests.swift.
 Surfaces checked: exported client API and deprecated aliases mapping, latest/supported protocol versions, initialize handshake and initialized notification, serverInfo/instructions, tool listing/calling and cached definitions, model-output conversion for text/image/resource/unknown content, resource list/read/templates, prompt list/get, capability checks, incoming ping and elicitation/create handling, closed-client behavior, HTTP JSON/SSE transport modes, session IDs, inbound SSE reconnect/Last-Event-ID, 401 OAuth retry, Stdio line-delimited transport, OAuth protected-resource and authorization-server discovery, expected issuer validation, authorization-server URL validation hook, PKCE authorization URL, token exchange/refresh/register, custom client authentication, OAuth error parsing, abort propagation.
@@ -204,7 +204,7 @@ Reopen only if: mcp npm version changes, MCP protocol version list changes, clie
 
 ```text
 Package: @ai-sdk/fireworks
-Baseline: 2.0.56
+Baseline: 2.0.57
 Upstream inspected: fireworks-provider.ts, fireworks-image-model.ts, fireworks-image-api.ts, chat/completion/embedding/image option files.
 Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, OpenAICompatible.swift, FireworksModels.swift, FireworksProviderTests.swift.
 Surfaces checked: provider factory, default base URL, FIREWORKS_API_KEY auth, user-agent suffix, language/completion/embedding OpenAI-compatible routes, Fireworks `{error}` error schema, chat thinking/reasoningHistory transform, default streamed usage requests, image workflow/image_generation/workflows_async routing, async request_id polling, credential-scoped binary downloads, input image/mask warnings, size/aspect warnings, providerOptions namespace, response metadata, abort propagation.
@@ -218,7 +218,7 @@ Reopen only if: fireworks npm version changes, model backend routing changes, as
 
 ```text
 Package: @ai-sdk/togetherai
-Baseline: 2.0.55
+Baseline: 2.0.56
 Upstream inspected: togetherai-provider.ts, togetherai-image-model.ts, reranking/togetherai-reranking-model.ts, chat/completion/embedding/image/reranking option files.
 Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, TogetherAIModels.swift, TogetherAIProviderTests.swift.
 Surfaces checked: provider factory and aliases, default base URL, TOGETHER_API_KEY plus deprecated TOGETHER_AI_API_KEY auth fallback, user-agent suffix, OpenAI-compatible language/completion/embedding routes, image generation body, upstream size-triggered aspectRatio warning, single image input warning, mask error, providerOptions image schema, reranking `/rerank` body, rankFields mapping, return_documents false, JSON object documents, response/error validation, metadata, abort propagation.
@@ -232,7 +232,7 @@ Reopen only if: togetherai npm version changes, image/rerank option schemas chan
 
 ```text
 Package: @ai-sdk/voyage
-Baseline: 1.0.6
+Baseline: 1.0.7
 Upstream inspected: voyage-provider.ts, voyage-error.ts, voyage-embedding-model.ts, reranking/voyage-reranking-model.ts, embedding/reranking option files.
 Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, CohereVoyageModels.swift, CohereMistralVoyageTests.swift, VoyageProviderOptionSchemaTests.swift.
 Surfaces checked: provider factory, unsupported language/image surfaces, default base URL, VOYAGE_API_KEY auth, user-agent suffix, embedding/textEmbedding aliases, reranking aliases, embedding request body, providerOptions schema, 128-value preflight rejection before request, reranking request body, object document JSON-string conversion warning, `{detail}` HTTP error schema, response validation, usage/metadata, abort propagation.
@@ -246,7 +246,7 @@ Reopen only if: voyage npm version changes, embedding/rerank request schemas cha
 
 ```text
 Package: @ai-sdk/azure
-Baseline: 3.0.74
+Baseline: 3.0.77
 Upstream inspected: azure-openai-provider.ts, azure-openai-tools.ts, azure-openai-provider-metadata.ts, package docs/API files.
 Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, OpenAICompatible.swift, AlibabaProdiaAzureQuiverTests.swift.
 Surfaces checked: provider factory and aliases, default resource/base URL resolution, v1 vs deployment-based URL building, api-version query, AZURE_API_KEY auth, tokenProvider auth precedence and per-request token calls, user-agent suffix, Responses default model factory, chat/completion/embedding/image/transcription/speech routes inherited from OpenAI, Azure tool helpers, providerOptions namespace, unsupported video/rerank surfaces.
@@ -260,7 +260,7 @@ Reopen only if: azure npm version changes, URL/auth/tool helper behavior changes
 
 ```text
 Package: @ai-sdk/baseten
-Baseline: 1.0.53
+Baseline: 1.0.54
 Upstream inspected: baseten-provider.ts, baseten-chat-options.ts, baseten-embedding-options.ts, package docs/API files.
 Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, BasetenModels.swift, BasetenProviderTests.swift.
 Surfaces checked: provider factory, default Model API base URL, BASETEN_API_KEY bearer auth, user-agent suffix, chat Model API body, custom modelURL `/sync/v1` placeholder model behavior, plain `/sync` fallback to Model API for chat, `/predict` rejection, embedding modelURL requirement, `/sync` and `/sync/v1` embedding routes, dedicated embedding request body, 128-value batching/index adjustment, response metadata, error schema.
@@ -274,7 +274,7 @@ Reopen only if: baseten npm version changes, modelURL routing changes, performan
 
 ```text
 Package: @ai-sdk/deepinfra
-Baseline: 2.0.54
+Baseline: 2.0.55
 Upstream inspected: deepinfra-provider.ts, deepinfra-chat-language-model.ts, deepinfra-image-model.ts, chat/completion/embedding/image option files.
 Swift files inspected: OpenAICompatibleProvider.swift, ProviderRegistry.swift, DeepInfraModels.swift, DeepInfraProviderTests.swift.
 Surfaces checked: provider factory and aliases, DEEPINFRA_API_KEY bearer auth, user-agent suffix, root base URL normalization, `/openai` chat/completion/embedding routing, `/inference` image routing, OpenAI-compatible image edit endpoint, custom baseURL/proxy behavior, providerOptions namespace, size/aspect/seed mapping, maxImagesPerCall, image error/response schemas, Gemma/Gemini reasoning usage correction for generate and stream, response metadata.
@@ -288,7 +288,7 @@ Reopen only if: deepinfra npm version changes, baseURL prefix rules change, imag
 
 ```text
 Package: @ai-sdk/hume
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: hume-provider.ts, hume-error.ts, hume-speech-model.ts, API/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, HumeProviderTests.swift.
 Surfaces checked: provider factory, default base URL, HUME_API_KEY auth, user-agent suffix, no-arg speech model, default voice, TTS file endpoint, utterance body, output format fallback/warnings, language warning, providerOptions context schema/null namespace, generationId and context utterance/voice mappings, HTTP error schema, metadata, abort propagation.
@@ -302,7 +302,7 @@ Reopen only if: hume npm version changes, TTS body/error schema changes, context
 
 ```text
 Package: @ai-sdk/lmnt
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: lmnt-provider.ts, lmnt-error.ts, lmnt-speech-model.ts, API/options/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, LMNTProviderTests.swift.
 Surfaces checked: provider factory, default base URL, LMNT_API_KEY auth, user-agent suffix, speech bytes endpoint, model/voice/text/response_format body, output format fallback/warnings, language passthrough, providerOptions schema/defaults/nullish fields, sampleRate/topP mapping, HTTP error schema, metadata, abort propagation.
@@ -316,7 +316,7 @@ Reopen only if: lmnt npm version changes, speech body/error schema changes, prov
 
 ```text
 Package: @ai-sdk/gladia
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: gladia-provider.ts, gladia-error.ts, gladia-transcription-model.ts, API/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, GladiaProviderTests.swift.
 Surfaces checked: provider factory, default base URL, GLADIA_API_KEY auth, user-agent suffix, no-arg default model, upload/init/poll lifecycle, providerOptions schema/null namespace, legacy extraBody mapping, nested option key conversion, standard language behavior, result status/result validation, failed/empty/timeout lifecycle messages, HTTP error schema on upload/init/poll, metadata, abort propagation.
@@ -330,7 +330,7 @@ Reopen only if: gladia npm version changes, upload/init/poll schemas change, opt
 
 ```text
 Package: @ai-sdk/revai
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: revai-provider.ts, revai-error.ts, revai-transcription-model.ts, API/options/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, RevAIProviderTests.swift.
 Surfaces checked: provider factory, default base URL, REVAI_API_KEY bearer auth, user-agent suffix, multipart job submit, poll job status, transcript fetch, providerOptions schema/defaults/null namespace, nested summarization/translation config defaults, submission language retention, zero-duration segment behavior, failed/timeout lifecycle messages, HTTP error schema on submit/poll/transcript, metadata, abort propagation.
@@ -344,7 +344,7 @@ Reopen only if: revai npm version changes, submit/poll/transcript schemas change
 
 ```text
 Package: @ai-sdk/deepgram
-Baseline: 2.0.33
+Baseline: 2.0.36
 Upstream inspected: deepgram-provider.ts, deepgram-error.ts, deepgram-transcription-model.ts, deepgram-speech-model.ts, option/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, DeepgramProviderTests.swift.
 Surfaces checked: provider factory, default base URL, DEEPGRAM_API_KEY auth, user-agent suffix, raw audio listen upload, transcription query body mapping, default diarize, providerOptions schema/null namespace, speech format parsing, encoding/container/sample_rate/bit_rate cleanup and warnings, unsupported standard speech warnings, metadata, HTTP error schema, abort propagation.
@@ -358,7 +358,7 @@ Reopen only if: deepgram npm version changes, listen/speak option/error schema c
 
 ```text
 Package: @ai-sdk/elevenlabs
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: elevenlabs-provider.ts, elevenlabs-error.ts, elevenlabs-speech-model.ts, elevenlabs-transcription-model.ts, option/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ElevenLabsProviderTests.swift.
 Surfaces checked: provider factory, default base URL, ELEVENLABS_API_KEY auth, user-agent suffix, speech text-to-speech route/query/body, output format aliases, voice settings, pronunciation dictionaries, text normalization fields, enable_logging query, STT multipart route/file/options/defaults, transcription response validation, upstream-style word segment and final-word duration mapping, language, HTTP error schema, metadata, warnings, abort propagation.
@@ -372,7 +372,7 @@ Reopen only if: elevenlabs npm version changes, TTS/STT option/error schema chan
 
 ```text
 Package: @ai-sdk/assemblyai
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: assemblyai-provider.ts, assemblyai-error.ts, assemblyai-transcription-model.ts, option/config files.
 Swift files inspected: AudioProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, AssemblyAIProviderTests.swift.
 Surfaces checked: provider factory, default base URL, ASSEMBLYAI_API_KEY auth, user-agent suffix, upload/submit/poll lifecycle, providerOptions schema/null namespace, submit body mapping including current `speech_models`, status validation, failed transcription message, final transcript text/words/language/audio_duration mapping, HTTP error schema on upload/submit/poll, metadata, abort propagation.
@@ -386,7 +386,7 @@ Reopen only if: assemblyai npm version changes, upload/submit/poll schemas chang
 
 ```text
 Package: @ai-sdk/black-forest-labs
-Baseline: 1.0.36
+Baseline: 1.0.38
 Upstream inspected: black-forest-labs-provider.ts, black-forest-labs-image-model.ts, black-forest-labs-image-settings.ts.
 Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, BlackForestLabsProviderTests.swift.
 Surfaces checked: provider factory, default base URL, BFL_API_KEY auth, user-agent suffix, image create/poll/download flow, size/aspect warnings, input image/mask mapping including fill model naming, providerOptions schema/null namespace, prompt/raw/safety/webhook/options mapping, metadata, poll URL id injection, status/state handling, timeout attempt count, HTTP error schema, Ready-without-sample and missing-status handling, abort propagation.
@@ -400,7 +400,7 @@ Reopen only if: black-forest-labs npm version changes, image option/error/poll s
 
 ```text
 Package: @ai-sdk/bytedance
-Baseline: 1.0.17
+Baseline: 1.0.18
 Upstream inspected: dist/index.mjs from the published package; package tarball has no src files.
 Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ByteDanceProviderTests.swift.
 Surfaces checked: provider factory, default ModelArk base URL, ARK_API_KEY auth, unsupported capability routing, video submit/poll flow, prompt/image/reference media content mapping, aspect/duration/seed/resolution mapping, providerOptions schema/null namespace/nullish fields, passthrough behavior, warnings, provider metadata, operation IDs, HTTP error schema, missing task ID, failed task, no video URL, timeout messages, abort propagation.
@@ -414,7 +414,7 @@ Reopen only if: bytedance npm version changes, ModelArk task schema/options/erro
 
 ```text
 Package: @ai-sdk/prodia
-Baseline: 1.0.41
+Baseline: 1.0.35
 Upstream inspected: prodia-provider.ts, prodia-api.ts, prodia-language-model.ts, prodia-image-model.ts, prodia-video-model.ts, model settings files.
 Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ProdiaProviderTests.swift.
 Surfaces checked: provider factory, default base URL, PRODIA_TOKEN auth, user-agent suffix, language multipart img2img endpoint, image JSON job endpoint, video JSON and multipart img2vid endpoints, generated files/media, providerOptions schema/null namespace, warnings, JSON job wrapper, Prodia error schema, multipart boundary/job/output validation messages, provider metadata, response metadata, abort propagation.
@@ -428,7 +428,7 @@ Reopen only if: prodia npm version changes, job multipart/JSON wrapper/error sch
 
 ```text
 Package: @ai-sdk/replicate
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: replicate-provider.ts, replicate-error.ts, replicate-image-model.ts, replicate-image-settings.ts, replicate-video-model.ts, replicate-video-settings.ts.
 Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, ReplicateProviderTests.swift.
 Surfaces checked: provider factory, default base URL, REPLICATE_API_TOKEN auth, user-agent suffix, versioned/unversioned prediction routes, image/video request bodies, Flux-2 multi-image inputs, prefer wait headers, providerOptions schema/null namespace/nullish fields, polling, output URL download, response metadata, video failed/canceled/no-output messages, HTTP error schemas, abort propagation.
@@ -442,7 +442,7 @@ Reopen only if: replicate npm version changes, prediction routes/error schema/op
 
 ```text
 Package: @ai-sdk/luma
-Baseline: 2.0.35
+Baseline: 2.0.36
 Upstream inspected: luma-provider.ts, luma-image-model.ts, luma-image-settings.ts.
 Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, LumaProviderTests.swift.
 Surfaces checked: provider factory, default base URL, LUMA_API_KEY auth, user-agent suffix, image generation route, submit/poll/download sequence, aspect ratio mapping, unsupported seed/size warnings, reference image/style/character/modify_image flows, providerOptions schema/null namespace/nullish fields, Luma detail error schema, failed/no-image/timeout messages, response metadata, abort propagation.
@@ -456,7 +456,7 @@ Reopen only if: luma npm version changes, image generation/error schema/referenc
 
 ```text
 Package: @ai-sdk/klingai
-Baseline: 3.0.20
+Baseline: 3.0.21
 Upstream inspected: klingai-provider.ts, klingai-auth.ts, klingai-error.ts, klingai-video-model.ts, klingai-video-settings.ts.
 Swift files inspected: MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, KlingAIProviderTests.swift.
 Surfaces checked: provider factory, default Singapore base URL, KLINGAI_API_KEY shortcut plus KLINGAI_ACCESS_KEY/KLINGAI_SECRET_KEY JWT auth, user-agent suffix, T2V/I2V/motion-control endpoint detection, model_name derivation, standard prompt/image/aspect/duration mapping, providerOptions schema/null namespace/nullish fields, passthrough options, poll timing, required motion options, unsupported warnings, provider metadata, `{code,message}` HTTP error schema, failed/timeout/no-video/no-valid-url messages, abort propagation.
@@ -470,7 +470,7 @@ Reopen only if: klingai npm version changes, JWT/auth behavior changes, video bo
 
 ```text
 Package: @ai-sdk/cerebras
-Baseline: 2.0.56
+Baseline: 2.0.57
 Upstream inspected: cerebras-provider.ts, cerebras-chat-language-model.ts, cerebras-chat-options.ts, cerebras-chat-language-model-options.ts, version.ts.
 Swift files inspected: CerebrasModels.swift, OpenAICompatibleProvider.swift, CerebrasProviderTests.swift.
 Surfaces checked: provider factory, chat request body, reasoning_content -> reasoning transform, structured JSON response format, structured-output tool-call filtering, provider options, tool choice/tool warnings, finish/usage mapping, flat Cerebras HTTP error schema, stream parse/error chunks, strict first tool-call delta validation, response metadata, user-agent suffix, abort propagation.
@@ -483,7 +483,7 @@ Reopen only if: cerebras npm version changes, chat/error/stream schema changes, 
 
 ```text
 Package: @ai-sdk/moonshotai
-Baseline: 2.0.25
+Baseline: 2.0.26
 Upstream inspected: moonshotai-provider.ts, moonshotai-chat-language-model.ts, moonshotai-chat-options.ts, convert-moonshotai-chat-usage.ts, version.ts.
 Swift files inspected: OpenAICompatible.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, MoonshotAIProviderTests.swift.
 Surfaces checked: provider factory aliases, default base URL, API key/header/user-agent handling, includeUsage default, thinking/reasoningHistory transform, provider option schema, tool choice/provider-tool warnings, Moonshot usage conversion, HTTP error.message schema, stream parse/error chunks, strict first tool-call delta validation, unsupported embedding/image capabilities, abort propagation.
@@ -496,7 +496,7 @@ Reopen only if: moonshotai npm version changes, thinking/reasoningHistory or usa
 
 ```text
 Package: @ai-sdk/alibaba
-Baseline: 1.0.28
+Baseline: 1.0.29
 Upstream inspected: alibaba-provider.ts, alibaba-chat-language-model.ts, alibaba-chat-options.ts, convert-to-alibaba-chat-messages.ts, convert-alibaba-usage.ts, alibaba-embedding-model.ts, alibaba-embedding-options.ts, alibaba-error.ts, alibaba-video-model.ts, alibaba-video-settings.ts, version.ts.
 Swift files inspected: AlibabaEmbeddingModel.swift, AlibabaModels.swift, MediaProviderModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, AlibabaProviderTests.swift.
 Surfaces checked: language, embedding, and video factories, default compatible/native embedding/video base URLs, API key/header/user-agent handling, chat request body, multimodal message conversion, thinking options, providerOptions.alibaba null namespace and typed schema, embedding request body/options/batching/sparse metadata/usage, tools/tool choice/tool-result serialization, response format, usage/cache-write conversion including missing usage, HTTP error.message schema, stream parse/error chunks, usage-only chunks, strict first tool-call delta validation, video task create/poll flow, video native flat error schema, video provider options/warnings/metadata, abort propagation.
@@ -509,7 +509,7 @@ Reopen only if: alibaba npm version changes, Qwen chat/error/usage schemas chang
 
 ```text
 Package: @ai-sdk/gateway
-Baseline: 3.0.130
+Baseline: 3.0.133
 Upstream inspected: gateway provider package, v3 endpoint behavior, auth/header handling, Gateway error envelope behavior.
 Swift files inspected: GatewayProvider.swift, GatewayModels.swift, GatewayErrors.swift, HTTP.swift, GatewayTests.swift.
 Surfaces checked: provider factory, base URL, API-key auth, Vercel OIDC fallback, auth-method header, user-agent suffix, language/image/video/rerank routing, metadata, typed errors, retryability, retry-after, stream error mapping.
@@ -523,11 +523,11 @@ Reopen only if: gateway npm version changes, Vercel OIDC behavior becomes async-
 
 ```text
 Package: @ai-sdk/openai
-Baseline: 3.0.71
+Baseline: 3.0.74
 Upstream inspected: openai-provider.ts, openai-config.ts, openai-language-model-capabilities.ts, chat/*, responses/*, completion/*, embedding/*, image/*, speech/*, transcription/*, openai-tools.ts, tool/*.ts, openai-error.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, OpenAISkills.swift, FileClients.swift, OpenAIChatTests.swift, OpenAIResponsesTests.swift, OpenAIMediaTests.swift, FileAndSkillClientTests.swift, ProviderCapabilityMatrix.swift.
 Surfaces checked: factory aliases, default base URL, OPENAI_BASE_URL/OPENAI_API_KEY, organization/project headers, custom provider name/root providerOptions routing, user-agent suffix, language defaulting to Responses, chat, completions, Responses, embeddings, image generation/editing, speech, transcription, files, skills, providerOptions/extraBody merging, provider-defined tools, shell/local-shell/apply-patch/tool-search/MCP/custom/code-interpreter/file-search/web-search/image-generation helpers, tool choice/allowed tools, structured text format, automatic Responses includes, logprobs mapping, multimodal/file inputs, multipart image/audio bodies, usage, metadata, stream lifecycle/raw chunks, warnings, and abort propagation through the shared HTTP path.
-Known Swift differences / out of scope: Swift keeps files and skills as first-class provider clients even though the upstream OpenAI provider interface is model-factory focused; Swift settings are static dictionaries rather than upstream async resolvable header functions; upstream generateId/fileIdPrefix customization is not exposed; Swift keeps `OpenAITools.computerUse` as an extension for existing Responses parsing coverage, but upstream `@ai-sdk/openai@3.0.71` does not expose it as an `openaiTools` factory and toolChoice now follows upstream provider-tool allow-list behavior.
+Known Swift differences / out of scope: Swift keeps files and skills as first-class provider clients even though the upstream OpenAI provider interface is model-factory focused; Swift settings are static dictionaries rather than upstream async resolvable header functions; upstream generateId/fileIdPrefix customization is not exposed; Swift keeps `OpenAITools.computerUse` as an extension for existing Responses parsing coverage, but upstream `@ai-sdk/openai@3.0.74` does not expose it as an `openaiTools` factory and toolChoice now follows upstream provider-tool allow-list behavior.
 Tests run: swift test --filter OpenAI; swift test --filter ResponsesEndpoint && swift test --filter OpenAI; swift test with 898 tests.
 Commit evidence: e12b20e.
 Reopen only if: openai npm version changes, OpenAI Responses/chat/completion/image/audio/tool schemas change, providerOptions schemas add/remove fields, Swift core tool/media contracts change, live smoke or user bug reports a concrete mismatch.
@@ -537,7 +537,7 @@ Reopen only if: openai npm version changes, OpenAI Responses/chat/completion/ima
 
 ```text
 Package: @ai-sdk/openai-compatible
-Baseline: 2.0.50
+Baseline: 2.0.51
 Upstream inspected: openai-compatible-provider.ts, chat/openai-compatible-chat-language-model.ts, chat/openai-compatible-chat-options.ts, chat/openai-compatible-prepare-tools.ts, chat/convert-to-openai-compatible-chat-messages.ts, completion/openai-compatible-completion-language-model.ts, completion/convert-to-openai-compatible-completion-prompt.ts, embedding/openai-compatible-embedding-model.ts, image/openai-compatible-image-model.ts, openai-compatible-error.ts, utils/to-camel-case.ts, index.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, OpenAICompatibleTests.swift, OpenAICompatibleWarningTests.swift, OpenAICompatibleResponseMetadataTests.swift, OpenAIChatTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
 Surfaces checked: generic factory aliases, required name/baseURL, optional API key, custom headers, query params, user-agent suffix, upstream provider surface IDs, chat/completion/embedding/image routing, chat providerOptions namespaces including deprecated openai-compatible/openaiCompatible/raw/camel provider keys, completion providerOptions namespaces and upstream chat-like completion prompt/stop sequence conversion, embedding default encoding_format float, embedding providerMetadata passthrough, image raw/camel provider options and b64_json response_format precedence, warnings for deprecated providerOptions keys and unsupported settings, stream metadata/raw-chunk coverage through existing tests, response metadata, transformRequestBody, includeUsage, abort propagation through shared HTTP transport, and generic providerOptions isolation from specialized OpenAI-compatible-backed provider wrappers such as MoonshotAI.
@@ -551,7 +551,7 @@ Reopen only if: openai-compatible npm version changes, providerOptions namespace
 
 ```text
 Package: @ai-sdk/open-responses
-Baseline: 1.0.18
+Baseline: 1.0.19
 Upstream inspected: open-responses-provider.ts, open-responses-config.ts, open-responses-options.ts, open-responses-language-model.ts, convert-to-open-responses-input.ts, map-open-responses-finish-reason.ts, open-responses-api.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatible.swift, ResponsesEndpointTests.swift, OpenAIResponsesTests.swift, ProviderCapabilityMatrix.swift.
 Surfaces checked: custom URL factory, provider ID/providerOptions namespace, optional API key, custom header precedence, versioned user-agent suffix, language-only capability, unsupported capability errors, standard option warnings, reasoning provider options, system instructions, message/file/image input conversion, assistant tool-call replay, tool-result output conversion, function tools, tool choice, JSON schema text format, generate response text/reasoning/tool-call/usage/metadata parsing, Open Responses-specific finish reason mapping, stream-start warnings, text/reasoning/function-call streaming, failed stream events, raw chunks, abort propagation through the shared HTTP request path.
@@ -565,7 +565,7 @@ Reopen only if: open-responses npm version changes, Open Responses request/input
 
 ```text
 Package: @ai-sdk/groq
-Baseline: 3.0.41
+Baseline: 3.0.42
 Upstream inspected: groq-provider.ts, groq-config.ts, groq-chat-language-model.ts, groq-chat-options.ts, convert-to-groq-chat-messages.ts, groq-prepare-tools.ts, groq-tools.ts, tool/browser-search.ts, groq-browser-search-models.ts, groq-transcription-model.ts, groq-transcription-options.ts, groq-api-types.ts, convert-groq-usage.ts, get-response-metadata.ts, map-groq-finish-reason.ts, groq-error.ts, index.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, GroqModels.swift, LanguageStreamParsing.swift, Core.swift, GroqProviderTests.swift, ProviderAbortPropagationTests.swift, NativeAudioRequestMetadataTests.swift, NativeAudioResponseMetadataTests.swift, NativeTranscriptionDetailTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
 Surfaces checked: provider factory, callable/language/chat routing, transcription routing, unsupported embedding/image capabilities, default base URL, GROQ_API_KEY auth, custom header precedence, user-agent suffix, Groq browserSearch tool helper, browser-search supported model gating, function tools, tool choice, provider-defined tool warnings, providerOptions.groq schema validation/nullish behavior, extraBody legacy namespace behavior, structured output and strict JSON schema behavior, reasoning format/effort, parallel tool calls, service tier, user option, topK/structured-output warnings, system/user/assistant/tool message conversion, image URL and inline image parts, non-image rejection, assistant reasoning/tool-call history, tool-result serialization, generate response text/reasoning/tool calls/finish/metadata, stream lifecycle text/reasoning/tool-call/raw chunks/final usage, Groq-specific usage conversion, transcription multipart body and timestamp_granularities[] fields, transcription providerOptions schema/nullish behavior, transcript response validation/details, response metadata, and abort propagation for chat generate/stream and transcription.
@@ -579,7 +579,7 @@ Reopen only if: groq npm version changes, chat/transcription providerOptions sch
 
 ```text
 Package: @ai-sdk/mistral
-Baseline: 3.0.39
+Baseline: 3.0.40
 Upstream inspected: mistral-provider.ts, mistral-chat-language-model.ts, mistral-chat-options.ts, convert-to-mistral-chat-messages.ts, mistral-chat-prompt.ts, mistral-prepare-tools.ts, mistral-embedding-model.ts, mistral-embedding-options.ts, convert-mistral-usage.ts, get-response-metadata.ts, map-mistral-finish-reason.ts, mistral-error.ts, index.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, MistralModels.swift, CohereMistralVoyageTests.swift, ProviderAbortPropagationTests.swift, NativeVectorResponseMetadataTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
 Surfaces checked: provider factory, callable/language/chat routing, embedding aliases, unsupported image capability, default base URL, MISTRAL_API_KEY auth, custom header precedence, user-agent suffix, chat request body, safe prompt, random seed, reasoning effort, document image/page limits, structured outputs, strict JSON schema, JSON-object instruction injection, unsupported standard warnings, message conversion for system/user/assistant/tool roles, inline images, PDF files, unsupported file rejection, assistant reasoning/prefix handling, tool calls, function tools, provider-defined tool warnings, tool choice required/tool filtering, parallel tool-call gating, generate response text/reasoning/tool calls, finish reason mapping, Mistral-specific usage/cache details, response metadata, stream lifecycle text/reasoning/tool input/raw/finish usage, embedding body/limit/float encoding/usage, and abort propagation for generate/stream.
@@ -593,7 +593,7 @@ Reopen only if: mistral npm version changes, chat/embedding providerOptions sche
 
 ```text
 Package: @ai-sdk/cohere
-Baseline: 3.0.38
+Baseline: 3.0.39
 Upstream inspected: cohere-provider.ts, cohere-chat-language-model.ts, cohere-chat-options.ts, convert-to-cohere-chat-prompt.ts, cohere-chat-prompt.ts, cohere-prepare-tools.ts, cohere-embedding-model.ts, cohere-embedding-options.ts, reranking/cohere-reranking-model.ts, reranking/cohere-reranking-options.ts, reranking/cohere-reranking-api.ts, convert-cohere-usage.ts, map-cohere-finish-reason.ts, cohere-error.ts, index.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, CohereVoyageModels.swift, CohereMistralVoyageTests.swift, CohereProviderOptionSchemaTests.swift, ProviderAbortPropagationTests.swift, NativeVectorResponseMetadataTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
 Surfaces checked: provider factory, callable/language routing, embedding aliases, reranking/rerankingModel aliases, unsupported image capability, default base URL, COHERE_API_KEY auth, custom header precedence, user-agent suffix, chat request body, frequency/presence penalties, max tokens, temperature, p/topP, k/topK, seed, stop sequences, JSON response_format schema mapping, providerOptions.cohere.thinking schema/defaulting, image URL/inline image prompt conversion, image media type defaults, text and JSON document extraction, unsupported document rejection, assistant/tool message conversion, tool-result serialization, function tools, provider-defined tool warnings, tool choice none/required/tool filtering, generate text/reasoning/tool calls/citations/finish/usage/metadata, stream lifecycle text/reasoning/tool-input/tool-call/error/raw/finish usage, embedding body/limits/float type/default input_type/truncate/output dimension/usage, reranking text/object document conversion/options/response metadata/warnings, and abort propagation for chat generate/stream.
@@ -607,7 +607,7 @@ Reopen only if: cohere npm version changes, chat/embedding/reranking providerOpt
 
 ```text
 Package: @ai-sdk/perplexity
-Baseline: 3.0.35
+Baseline: 3.0.36
 Upstream inspected: perplexity-provider.ts, perplexity-language-model.ts, perplexity-language-model-options.ts, perplexity-language-model-prompt.ts, convert-to-perplexity-messages.ts, convert-perplexity-usage.ts, map-perplexity-finish-reason.ts, index.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, PerplexityModels.swift, ResponsesEndpointTests.swift, ProviderAbortPropagationTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
 Surfaces checked: provider factory, callable/language routing, unsupported embedding/image capabilities, default base URL, PERPLEXITY_API_KEY auth, custom header precedence, user-agent suffix, chat completions route, request body standard options, unsupported topK/stopSequences/seed warnings, JSON schema response_format, providerOptions.perplexity passthrough, transformRequestBody, text/image/PDF message conversion, tool-message rejection, generate response validation, text output, finish reason mapping, usage/reasoning token conversion, citations as URL sources, images/usage/cost provider metadata, response metadata, stream lifecycle text/source/error/raw/finish metadata, stream usage/provider metadata, and abort propagation for generate/stream.
@@ -621,7 +621,7 @@ Reopen only if: perplexity npm version changes, chat/options/message/usage/strea
 
 ```text
 Package: @ai-sdk/xai
-Baseline: 3.0.95
+Baseline: 3.0.96
 Upstream inspected: xai-provider.ts, xai-chat-language-model.ts, xai-chat-options.ts, convert-to-xai-chat-messages.ts, xai-prepare-tools.ts, convert-xai-chat-usage.ts, map-xai-finish-reason.ts, responses/xai-responses-language-model.ts, responses/xai-responses-options.ts, responses/convert-to-xai-responses-input.ts, responses/xai-responses-prepare-tools.ts, responses/convert-xai-responses-usage.ts, xai-image-model.ts, xai-image-options.ts, xai-video-model.ts, xai-video-options.ts, tool/*.ts, xai-error.ts, index.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, XAIResponses.swift, XAIModels.swift, FileClients.swift, XAIChatProviderTests.swift, XAIProviderTests.swift, ResponsesEndpointTests.swift, FileAndSkillClientTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
 Surfaces checked: factory aliases, provider IDs, default base URL, XAI_API_KEY auth, custom header precedence, user-agent suffix, unsupported embeddings, chat route, Responses route, image route, video route, files route, provider references, chat providerOptions, Responses providerOptions, reasoning effort schemas, logprobs/topLogprobs, seed, structured JSON formats, search parameters, function tools, xAI provider-defined tools, provider-tool toolChoice warnings, message/input conversion, inline image data, non-image Files API references, tool-result serialization, usage/cache/reasoning token conversion, finish reasons, response metadata, media polling/options/metadata, file metadata/team ID, stream usage/raw/error coverage, and abort propagation through language/media/file paths.
@@ -635,7 +635,7 @@ Reopen only if: xai npm version changes, xAI chat/Responses providerOptions sche
 
 ```text
 Package: @ai-sdk/deepseek
-Baseline: 2.0.38
+Baseline: 2.0.39
 Upstream inspected: deepseek-provider.ts, chat/deepseek-chat-language-model.ts, chat/deepseek-chat-options.ts, chat/convert-to-deepseek-chat-messages.ts, chat/deepseek-prepare-tools.ts, chat/convert-to-deepseek-usage.ts, chat/map-deepseek-finish-reason.ts, chat/deepseek-chat-api-types.ts, chat/get-response-metadata.ts, index.ts, version.ts.
 Swift files inspected: ProviderRegistry.swift, OpenAICompatibleProvider.swift, DeepSeekModels.swift, DeepSeekProviderTests.swift, ProviderAbortPropagationTests.swift, ProviderCapabilityMatrix.md, ProviderVersionLedger.md.
 Surfaces checked: factory aliases, provider IDs, default base URL, DEEPSEEK_API_KEY auth, custom header precedence, user-agent suffix, unsupported embedding/image capabilities, chat route, request body standard options, providerOptions.deepseek schema/null handling, thinking/reasoningEffort mapping, topK/seed warnings, JSON response format and schema instruction injection, system/user/assistant/tool message conversion, R1/V4 reasoning history behavior, function tools, provider-defined tool warnings, tool choice mapping, tool-result serialization, generate response text/reasoning/tool calls/finish/usage/metadata, stream lifecycle text/reasoning/tool-input/tool-call/raw/error/finish usage, strict first tool-call delta validation, response metadata, and abort propagation through generate/stream.
@@ -649,7 +649,7 @@ Reopen only if: deepseek npm version changes, DeepSeek chat/providerOptions/mess
 
 ```text
 Package: @ai-sdk/anthropic-aws
-Baseline: 1.0.6
+Baseline: 1.0.7
 Upstream inspected: anthropic-aws-provider.ts, anthropic-aws-fetch.ts, index.ts, version.ts, plus Anthropic core generateId call sites that the AWS wrapper forwards through.
 Swift files inspected: AnthropicAWSProvider.swift, Anthropic.swift, AnthropicTests.swift, AnthropicStreamingAndClientsTests.swift, ProviderRegistryVercelTests.swift.
 Surfaces checked: provider factory, callable/chat/messages aliases, model identity, base URL trimming, workspace/API-key headers, API-key precedence over custom x-api-key, default and custom user-agent behavior, static SigV4 signing, async dynamic credential provider, session-token signing header, file and skill helpers, provider reference keys, inherited URL/PDF support, unsupported embeddings/images and broader Swift unsupported model families.
@@ -663,7 +663,7 @@ Reopen only if: anthropic-aws npm version changes, AWS wrapper auth/header/signi
 
 ```text
 Package: @ai-sdk/amazon-bedrock
-Baseline: 4.0.117
+Baseline: 4.0.120
 Upstream inspected: bedrock-provider.ts, bedrock-sigv4-fetch.ts, bedrock-chat-language-model.ts, bedrock-chat-options.ts, bedrock-prepare-tools.ts, convert-to-bedrock-chat-messages.ts, bedrock-embedding-model.ts, bedrock-embedding-options.ts, bedrock-image-model.ts, bedrock-image-settings.ts, reranking/bedrock-reranking-model.ts, reranking/bedrock-reranking-options.ts, anthropic/bedrock-anthropic-provider.ts, anthropic/bedrock-anthropic-fetch.ts, anthropic/bedrock-anthropic-options.ts, mantle/bedrock-mantle-provider.ts, mantle/bedrock-mantle-options.ts, event-stream/usage/finish helpers, index.ts, version.ts.
 Swift files inspected: AmazonBedrockProvider.swift, AmazonBedrockModels.swift, LanguageStreamParsing.swift, Anthropic.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, Core.swift, AI.swift, AmazonBedrockTests.swift.
 Surfaces checked: main provider factory and capability routing, Bedrock Anthropic subprovider, Bedrock Mantle chat/responses subprovider, runtime and agent-runtime base URLs, bearer auth, static SigV4 auth, async dynamic credential provider, session-token signing behavior, user-agent suffixes, Converse request bodies, providerOptions.bedrock and providerOptions.amazonBedrock merging, extraBody passthrough filtering, unsupported frequency/presence/seed warnings, responseFormat JSON tool behavior, native Anthropic structured output with thinking, function/provider tools, tool choice, reasoningConfig transforms, document/image inputs and citations, response text/reasoning/tool calls, finish reasons, cache/trace/performance/service-tier metadata, event-stream text/reasoning/tool/raw/metadata/final usage, Titan/Cohere/Nova embedding bodies and response shapes, Cohere cross-region inference profile IDs, Bedrock embedding token-count response header fallback, image text/edit modes, image moderation/no-image errors, aspectRatio warning, Nova Canvas count limit, reranking body/options/response, Bedrock Anthropic invoke/stream/download/structured-output behavior, Mantle OpenAI-compatible routes, and abort propagation through focused existing tests.
@@ -677,7 +677,7 @@ Reopen only if: @ai-sdk/amazon-bedrock npm version changes, Bedrock auth/credent
 
 ```text
 Package: @ai-sdk/anthropic
-Baseline: 3.0.84
+Baseline: 3.0.85
 Upstream inspected: anthropic-provider.ts, anthropic-messages-language-model.ts, anthropic-messages-options.ts, anthropic-prepare-tools.ts, convert-to-anthropic-messages-prompt.ts, anthropic-message-metadata.ts, anthropic-messages-api.ts, anthropic-tools.ts, tool helper files, get-cache-control.ts, forward-anthropic-container-id-from-last-step.ts, index.ts, version.ts.
 Swift files inspected: Anthropic.swift, OpenAICompatibleProvider.swift, OpenAICompatible.swift, Core.swift, AI.swift, ProviderRegistry.swift, AnthropicTests.swift, AnthropicStreamingAndClientsTests.swift, NativeResponseMetadataTests.swift.
 Surfaces checked: provider factory, callable/chat/messages aliases, default and custom base URL, API-key auth, Bearer auth token, explicit apiKey/authToken conflict, custom provider name for language models, custom providerOptions key merging, header/user-agent precedence, unsupported embedding/image/audio/video/rerank surfaces, Messages request body, Gemini-style not applicable, system/messages conversion, URL/image/PDF/file/provider-reference parts, file citation metadata, structured output, thinking/adaptive thinking rules, max-token adjustment, unsupported standard option warnings, metadata/context-management/container/mcp/output-config/speed/inference options, automatic beta headers, file and skill clients, Anthropic provider tools, unsupported provider-tool warnings, tool choice, disable_parallel_tool_use, stream eager_input_streaming defaults and opt-out, hosted tool result parsing, MCP tool result parsing, citations/sources, redacted thinking, compaction metadata, stream lifecycle/deltas/raw chunks/metadata, response metadata, and abort propagation through generate and stream.
@@ -691,7 +691,7 @@ Reopen only if: @ai-sdk/anthropic npm version changes, Messages/Files/Skills/too
 
 ```text
 Package: @ai-sdk/google-vertex
-Baseline: 4.0.145
+Baseline: 4.0.148
 Upstream inspected: google-vertex-provider.ts, google-vertex-provider-node.ts, google-vertex-embedding-model.ts, google-vertex-embedding-options.ts, google-vertex-image-model.ts, google-vertex-video-model.ts, google-vertex-video-settings.ts, google-vertex-tools.ts, maas/google-vertex-maas-provider.ts, xai/google-vertex-xai-provider.ts, anthropic/google-vertex-anthropic-provider.ts, index.ts, version.ts.
 Swift files inspected: GoogleVertexProvider.swift, GoogleVertexModels.swift, GoogleGenerativeAI.swift, GoogleTools.swift, ProviderRegistry.swift, OpenAICompatibleProvider.swift, Anthropic.swift, Core.swift, AI.swift, GoogleVertexTests.swift, GoogleMediaResponseMetadataTests.swift.
 Surfaces checked: default factories, callable/chat/language aliases, Express mode API key auth, API-key header precedence, OAuth/access-token/service-account routing, global/eu/us/regional hosts, custom base URL trimming, user-agent suffix, GenerateContent language bodies/streams/tools/grounding/provider metadata, URL/GCS support inherited by language/Gemini image calls, embedding request options/limit/usage, Imagen generation/edit reference images/masks, Gemini image generation path, Veo long-running operation polling, video URL/base64 outputs, video provider metadata, response metadata, MaaS OpenAI-compatible endpoint, xAI reasoning-effort stripping and usage conversion, Vertex Anthropic rawPredict/streamRawPredict shape and tool subset.
@@ -705,7 +705,7 @@ Reopen only if: google-vertex npm version changes, Vertex host/base URL rules ch
 
 ```text
 Package: @ai-sdk/google
-Baseline: 3.0.82
+Baseline: 3.0.83
 Upstream inspected: google-provider.ts, google-generative-ai-language-model.ts, google-generative-ai-embedding-model.ts, google-generative-ai-embedding-options.ts, google-generative-ai-image-model.ts, google-generative-ai-video-model.ts, google-generative-ai-video-settings.ts, google-generative-ai-interactions-language-model.ts, google-generative-ai-files-api.ts, google-generative-ai-options.ts, google-prepare-tools.ts, tool helpers, index.ts, version.ts.
 Swift files inspected: GoogleGenerativeAI.swift, GoogleTools.swift, ProviderRegistry.swift, Core.swift, AI.swift, GoogleGenerativeAITests.swift, GoogleMediaResponseMetadataTests.swift.
 Surfaces checked: provider factory, callable/chat/language aliases, embedding/textEmbedding aliases, image/video/interactions/files/tool helpers, API-key/header precedence, user-agent suffix, base URL trimming, GenerateContent request bodies, Gemini/Gemma system handling, structured outputs, provider generation options, safety/cached/labels top-level options, provider-defined tools, tool choice, code execution, grounding metadata and sources, stream lifecycle/tool-call deltas/provider metadata/raw chunks, embeddings batch/single endpoints, embedding outputDimensionality/taskType/multimodal content/max input limit, Imagen generation shape/warnings/provider metadata, Imagen editing rejection, Gemini image file inputs/googleSearch/provider options, Veo long-running create/poll flow, standard image/seed/resolution/duration fields, reference images, video metadata, files resumable upload, Interactions/agents/streams/sources/tool steps, abort propagation through language/stream/embedding/image/video.
@@ -719,7 +719,7 @@ Reopen only if: @ai-sdk/google npm version changes, GenerateContent/Interactions
 
 ```text
 Package: @ai-sdk/huggingface
-Baseline: 1.0.52
+Baseline: 1.0.53
 Upstream inspected: Hugging Face provider package, responses language model tools handling.
 Swift files inspected: HuggingFaceProvider.swift, HuggingFaceModels.swift, HuggingFaceProviderTests.swift.
 Surfaces checked: provider factory, responses-style language route, provider option schema, tool/tool-choice mapping, provider-defined tool skipping, warnings, unsupported non-language capabilities, response/stream parsing.
@@ -733,7 +733,7 @@ Reopen only if: huggingface npm version changes, provider-defined tool behavior 
 
 ```text
 Package: @ai-sdk/fal
-Baseline: 2.0.36
+Baseline: 2.0.37
 Upstream inspected: fal-image-model.ts, fal-image-options.ts, fal-video-model.ts, fal-speech-model.ts, fal-transcription-model.ts, fal-provider.ts.
 Swift files inspected: MediaProviderModels.swift, AudioProviderModels.swift, FalProviderTests.swift, FalMediaProviderTests.swift.
 Surfaces checked: image run endpoint, video queue endpoint, speech run endpoint, transcription queue endpoint, provider options, deprecated snake_case warnings, file/data URL conversion, polling, downloads, image/video/audio metadata, NSFW metadata normalization, prompt metadata omission, abort propagation.
@@ -747,7 +747,7 @@ Reopen only if: fal npm version changes, queue protocol changes, media metadata 
 
 ```text
 Package: @ai-sdk/quiverai
-Baseline: 1.0.2
+Baseline: 1.0.3
 Upstream inspected: quiverai-image-model.ts, quiverai-image-model-options.ts, quiverai-image-settings.ts, quiverai-provider.ts.
 Swift files inspected: QuiverAIModels.swift, OpenAICompatibleProvider.swift, ProviderRegistry.swift, QuiverAIProviderTests.swift.
 Surfaces checked: image factory aliases, default base URL, API key/env handling, user-agent suffix, SVG generation endpoint, vectorization endpoint, provider option schema, reference limits, response schema, usage, SVG base64 conversion, warnings, unsupported standard image settings.
@@ -761,7 +761,7 @@ Reopen only if: quiverai npm version changes, SVG response schema changes, new o
 
 ```text
 Package: @ai-sdk/vercel
-Baseline: 2.0.52
+Baseline: 2.0.53
 Upstream inspected: vercel provider package and tiny provider wrapper surface.
 Swift files inspected: VercelProvider.swift, ProviderRegistry.swift, ProviderRegistryVercelTests.swift.
 Surfaces checked: factory aliases, default v0 endpoint, API-key/env handling, custom headers, user-agent suffix, language model route, unsupported embedding/image/transcription/speech/video/rerank capabilities.

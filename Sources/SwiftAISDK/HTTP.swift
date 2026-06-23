@@ -585,10 +585,21 @@ func userAgent(_ providerID: String) -> String {
 
 func tokenUsage(from raw: JSONValue) -> TokenUsage? {
     guard let usage = raw["usage"] else { return nil }
+    let inputTokens = usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue
+    let outputTokens = usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue
+    let cachedInputTokens = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
+        ?? usage["input_tokens_details"]?["cached_tokens"]?.intValue
+    let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue
+        ?? usage["output_tokens_details"]?["reasoning_tokens"]?.intValue
     return TokenUsage(
-        inputTokens: usage["prompt_tokens"]?.intValue ?? usage["input_tokens"]?.intValue,
-        outputTokens: usage["completion_tokens"]?.intValue ?? usage["output_tokens"]?.intValue,
-        totalTokens: usage["total_tokens"]?.intValue
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        totalTokens: usage["total_tokens"]?.intValue,
+        inputTokensNoCache: inputTokens.map { $0 - (cachedInputTokens ?? 0) },
+        inputTokensCacheRead: cachedInputTokens,
+        outputTextTokens: outputTokens.map { $0 - (reasoningTokens ?? 0) },
+        outputReasoningTokens: reasoningTokens,
+        rawValue: usage
     )
 }
 

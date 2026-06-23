@@ -149,7 +149,7 @@ func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?
            !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             toolSpec["description"] = .string(description)
         }
-        if let strict = schema["strict"] {
+        if let strict = schema["strict"], bedrockSupportsStrictToolSpec(modelID: modelID) {
             toolSpec["strict"] = strict
         }
         bedrockTools.append(.object(["toolSpec": .object(toolSpec)]))
@@ -167,6 +167,10 @@ func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?
         toolConfig["toolChoice"] = choice
     }
     return BedrockPreparedTools(toolConfig: .object(toolConfig), warnings: warnings)
+}
+
+func bedrockSupportsStrictToolSpec(modelID: String) -> Bool {
+    !modelID.contains("claude-opus-4-7") && !modelID.contains("claude-opus-4-8")
 }
 
 func bedrockUsesAnthropicProviderTools(tools: [String: JSONValue], modelID: String) -> Bool {

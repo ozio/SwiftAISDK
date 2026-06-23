@@ -20,7 +20,7 @@ import Testing
     #expect(result.usage?.rawValue?["completion_tokens"]?.intValue == 1165)
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.54")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.55")
 }
 
 @Test func deepInfraChatCorrectsGemmaReasoningUsageOnStreamFinish() async throws {
@@ -64,7 +64,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepinfra.com/v1/inference/black-forest-labs/FLUX-1-schnell")
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.54")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.55")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["num_images"]?.intValue == 1)
@@ -194,7 +194,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepinfra.com/v1/openai/images/edits")
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.54")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/2.0.55")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = try #require(request.body)
     #expect(body.range(of: Data(#"name="model""#.utf8)) != nil)
@@ -222,7 +222,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/deepinfra/2.0.54")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/deepinfra/2.0.55")
 }
 
 @Test func deepInfraImageSizeMappingMatchesUpstreamSplit() async throws {

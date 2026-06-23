@@ -78,11 +78,12 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        guard request.values.count <= 2048 else {
+        let maxEmbeddingsPerCall = googleVertexUsesEmbedContentEndpoint(modelID) ? 1 : 2048
+        guard request.values.count <= maxEmbeddingsPerCall else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: 2048,
+                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 values: request.values
             )
         }
@@ -99,6 +100,29 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
         }
         let taskType = options["taskType"]
         let title = options["title"]
+        if googleVertexUsesEmbedContentEndpoint(modelID) {
+            var embedContentConfig = parameters
+            if let taskType { embedContentConfig["taskType"] = taskType }
+            if let title { embedContentConfig["title"] = title }
+            let body: [String: JSONValue] = [
+                "content": .object([
+                    "parts": .array([.object(["text": .string(request.values.first ?? "")])])
+                ]),
+                "embedContentConfig": .object(embedContentConfig)
+            ]
+            let response = try await config.sendJSONResponse(path: "/models/\(modelID):embedContent", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+            let raw = response.json
+            guard let embedding = raw["embedding"]?["values"]?.arrayValue?.compactMap(\.doubleValue), !embedding.isEmpty else {
+                throw AIError.invalidResponse(provider: providerID, message: "No embedding returned from Vertex embedContent response.")
+            }
+            return EmbeddingResult(
+                embeddings: [embedding],
+                usage: raw["usageMetadata"]?["promptTokenCount"]?.intValue.map { TokenUsage(inputTokens: $0, totalTokens: $0, rawValue: raw["usageMetadata"]) },
+                rawValue: raw,
+                requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
+                responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            )
+        }
         var body: [String: JSONValue] = [
             "instances": .array(request.values.map { value in
                 var instance: [String: JSONValue] = ["content": .string(value)]
@@ -121,6 +145,69 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
             embeddings: embeddings,
             usage: totalTokens.map { TokenUsage(totalTokens: $0) },
             rawValue: raw,
+            requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
+    }
+}
+
+public final class GoogleVertexTranscriptionModel: TranscriptionModel, @unchecked Sendable {
+    public let providerID: String
+    public let modelID: String
+    private let config: GoogleVertexConfig
+
+    init(modelID: String, config: GoogleVertexConfig) {
+        self.providerID = config.providerID
+        self.modelID = modelID
+        self.config = config
+    }
+
+    public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
+        let options = try googleVertexTranscriptionProviderOptions(from: request)
+        guard let project = config.project, !project.isEmpty else {
+            throw AIError.invalidURL("Google Vertex transcription requires project in settings or GOOGLE_VERTEX_PROJECT.")
+        }
+        let region = options["region"]?.stringValue ?? config.location ?? "global"
+        let languageCodes = options["languageCodes"]?.arrayValue?.compactMap(\.stringValue)
+            ?? request.language.map { [$0] }
+            ?? ["auto"]
+        var features: [String: JSONValue] = [
+            "enableWordTimeOffsets": options["enableWordTimeOffsets"] ?? .bool(true),
+            "enableAutomaticPunctuation": options["enableAutomaticPunctuation"] ?? .bool(true)
+        ]
+        features.merge(request.extraBody["features"]?.objectValue ?? [:]) { _, new in new }
+        var configBody: [String: JSONValue] = [
+            "model": .string(modelID),
+            "languageCodes": .array(languageCodes.map(JSONValue.string)),
+            "autoDecodingConfig": .object([:]),
+            "features": .object(features)
+        ]
+        if let explicitConfig = request.extraBody["config"]?.objectValue {
+            configBody.merge(explicitConfig) { _, new in new }
+        }
+        var body: [String: JSONValue] = [
+            "config": .object(configBody),
+            "content": .string(request.audio.base64EncodedString())
+        ]
+        body.merge(request.extraBody.filter { key, _ in
+            !["config", "features", "region", "languageCodes", "enableAutomaticPunctuation", "enableWordTimeOffsets"].contains(key)
+        }) { _, new in new }
+
+        let host = region == "global" ? "speech.googleapis.com" : "\(region)-speech.googleapis.com"
+        let url = "https://\(host)/v2/projects/\(project)/locations/\(region)/recognizers/_:recognize"
+        let response = try await config.sendJSONResponse(url: url, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+        let raw = response.json
+        let results = raw["results"]?.arrayValue ?? []
+        let text = results.compactMap { result in
+            result["alternatives"]?[0]?["transcript"]?.stringValue
+        }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let segments = googleVertexTranscriptionSegments(from: results)
+        return TranscriptionResult(
+            text: text,
+            rawValue: raw,
+            segments: segments,
+            language: googleVertexISO639Language(from: results.first?["languageCode"]?.stringValue),
+            durationInSeconds: googleVertexDurationSeconds(raw["metadata"]?["totalBilledDuration"]?.stringValue),
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -259,6 +346,10 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
     }
 }
 
+private func googleVertexUsesEmbedContentEndpoint(_ modelID: String) -> Bool {
+    modelID == "gemini-embedding-2" || modelID == "gemini-embedding-2-preview"
+}
+
 private struct GoogleVertexGenerateContentPreparedCall {
     var body: JSONValue
     var warnings: [AIWarning]
@@ -394,6 +485,62 @@ private func googleVertexEmbeddingProviderOptions(from request: EmbeddingRequest
         return google
     }
     return [:]
+}
+
+private func googleVertexTranscriptionProviderOptions(from request: AudioTranscriptionRequest) throws -> [String: JSONValue] {
+    var options = request.extraBody
+    if let googleVertex = request.providerOptions["googleVertex"] {
+        guard let object = googleVertex.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.googleVertex", message: "Google Vertex transcription provider options must be an object.")
+        }
+        options.merge(object) { _, new in new }
+    } else if let vertex = request.providerOptions["vertex"] {
+        guard let object = vertex.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.vertex", message: "Google Vertex transcription provider options must be an object.")
+        }
+        options.merge(object) { _, new in new }
+    } else if let google = request.providerOptions["google"] {
+        guard let object = google.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.google", message: "Google Vertex transcription provider options must be an object.")
+        }
+        options.merge(object) { _, new in new }
+    }
+    if let languageCodes = options["languageCodes"],
+       languageCodes.arrayValue?.allSatisfy({ $0.stringValue != nil }) != true {
+        throw AIError.invalidArgument(argument: "providerOptions.googleVertex.languageCodes", message: "Google Vertex languageCodes must be an array of strings.")
+    }
+    for key in ["enableAutomaticPunctuation", "enableWordTimeOffsets"] where options[key] != nil && options[key]?.boolValue == nil {
+        throw AIError.invalidArgument(argument: "providerOptions.googleVertex.\(key)", message: "Google Vertex \(key) must be a boolean.")
+    }
+    if options["region"] != nil && options["region"]?.stringValue == nil {
+        throw AIError.invalidArgument(argument: "providerOptions.googleVertex.region", message: "Google Vertex region must be a string.")
+    }
+    return options
+}
+
+private func googleVertexTranscriptionSegments(from results: [JSONValue]) -> [TranscriptionSegment] {
+    results.flatMap { result in
+        result["alternatives"]?[0]?["words"]?.arrayValue?.compactMap { word in
+            guard let text = word["word"]?.stringValue,
+                  let start = googleVertexDurationSeconds(word["startOffset"]?.stringValue),
+                  let end = googleVertexDurationSeconds(word["endOffset"]?.stringValue) else {
+                return nil
+            }
+            return TranscriptionSegment(text: text, startSecond: start, endSecond: end)
+        } ?? []
+    }
+}
+
+private func googleVertexDurationSeconds(_ value: String?) -> Double? {
+    guard let value else { return nil }
+    let trimmed = value.hasSuffix("s") ? String(value.dropLast()) : value
+    return Double(trimmed)
+}
+
+private func googleVertexISO639Language(from value: String?) -> String? {
+    guard let value else { return nil }
+    let language = value.split(separator: "-").first.map(String.init) ?? value
+    return language.count == 2 ? language : nil
 }
 
 private func googleVertexVideoProviderOptions(from request: VideoGenerationRequest) -> [String: JSONValue] {

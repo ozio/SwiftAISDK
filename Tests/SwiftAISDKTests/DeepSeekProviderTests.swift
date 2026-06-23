@@ -166,7 +166,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepseek-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/2.0.38")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/2.0.39")
 }
 
 @Test func deepSeekLanguageStreamsErrorChunksAndParseErrorsAsErrorPartsLikeUpstream() async throws {

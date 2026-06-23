@@ -66,12 +66,94 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/text-embedding-005:predict")
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/4.0.145")
+    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/4.0.148")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["instances"]?[0]?["content"]?.stringValue == "hello")
     #expect(body["instances"]?[0]?["task_type"]?.stringValue == "RETRIEVAL_DOCUMENT")
     #expect(body["parameters"]?["outputDimensionality"]?.intValue == 256)
 }
+
+@Test func googleVertexGeminiEmbedding2UsesEmbedContentEndpoint() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"embedding":{"values":[0.1,0.2,0.3]},"usageMetadata":{"promptTokenCount":5}}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        apiKey: "vertex-key",
+        transport: transport
+    ))
+    let model = try provider.embeddingModel("gemini-embedding-2-preview")
+
+    let result = try await model.embed(EmbeddingRequest(
+        values: ["hello"],
+        providerOptions: [
+            "googleVertex": .object([
+                "taskType": "RETRIEVAL_QUERY",
+                "title": "Query",
+                "autoTruncate": false,
+                "outputDimensionality": 128
+            ])
+        ]
+    ))
+
+    #expect(result.embeddings == [[0.1, 0.2, 0.3]])
+    #expect(result.usage?.totalTokens == 5)
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-embedding-2-preview:embedContent")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["content"]?["parts"]?[0]?["text"]?.stringValue == "hello")
+    #expect(body["embedContentConfig"]?["taskType"]?.stringValue == "RETRIEVAL_QUERY")
+    #expect(body["embedContentConfig"]?["title"]?.stringValue == "Query")
+    #expect(body["embedContentConfig"]?["autoTruncate"]?.boolValue == false)
+    #expect(body["embedContentConfig"]?["outputDimensionality"]?.intValue == 128)
+
+    await #expect(throws: AITooManyEmbeddingValuesForCallError.self) {
+        _ = try await model.embed(EmbeddingRequest(values: ["one", "two"]))
+    }
+}
+
+@Test func googleVertexTranscriptionUsesCloudSpeechRecognizeEndpoint() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"results":[{"alternatives":[{"transcript":"hello world","words":[{"word":"hello","startOffset":"0.100s","endOffset":"0.400s"},{"word":"world","startOffset":"0.500s","endOffset":"0.900s"}]}],"languageCode":"en-US"}],"metadata":{"totalBilledDuration":"1.200s"}}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "us-central1",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.transcriptionModel("chirp_3")
+
+    let result = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("audio bytes".utf8),
+        language: "en-US",
+        providerOptions: [
+            "googleVertex": .object([
+                "region": "us",
+                "enableAutomaticPunctuation": false,
+                "enableWordTimeOffsets": true
+            ])
+        ]
+    ))
+
+    #expect(result.text == "hello world")
+    #expect(result.language == "en")
+    #expect(result.durationInSeconds == 1.2)
+    #expect(result.segments == [
+        TranscriptionSegment(text: "hello", startSecond: 0.1, endSecond: 0.4),
+        TranscriptionSegment(text: "world", startSecond: 0.5, endSecond: 0.9)
+    ])
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://us-speech.googleapis.com/v2/projects/test-project/locations/us/recognizers/_:recognize")
+    #expect(request.headers["Authorization"] == "Bearer token")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["config"]?["model"]?.stringValue == "chirp_3")
+    #expect(body["config"]?["languageCodes"]?[0]?.stringValue == "en-US")
+    #expect(body["config"]?["autoDecodingConfig"]?.objectValue?.isEmpty == true)
+    #expect(body["config"]?["features"]?["enableAutomaticPunctuation"]?.boolValue == false)
+    #expect(body["config"]?["features"]?["enableWordTimeOffsets"]?.boolValue == true)
+    #expect(body["content"]?.stringValue == Data("audio bytes".utf8).base64EncodedString())
+}
+
 @Test func googleVertexAppendsVersionedUserAgentToCustomHeader() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"predictions":[{"embeddings":{"values":[0.4,0.5]}}]}
@@ -87,7 +169,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/4.0.145")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/4.0.148")
 }
 @Test func googleVertexImageAndVideoUsePredictEndpoints() async throws {
     let imageTransport = RecordingTransport(response: jsonResponse("""

@@ -31,7 +31,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/3.0.74")
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/3.0.77")
         let baseURL = withoutTrailingSlash(basePrefix)
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
         let config = ModelHTTPConfig(providerID: providerID, baseURL: baseURL, headers: headers, transport: transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody) { modelID, path in

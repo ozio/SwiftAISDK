@@ -37,7 +37,7 @@ import Testing
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-east-1/bedrock/aws4_request") == true)
     #expect(request.headers["authorization"]?.contains("SignedHeaders=") == true)
     #expect(request.headers["custom-header"] == "value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.117")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.120")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?[0]?["text"]?.stringValue == "Brief.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
@@ -83,9 +83,9 @@ import Testing
     let converseRequest = try #require(await converseTransport.requests().first)
     let anthropicRequest = try #require(await anthropicTransport.requests().first)
     let mantleRequest = try #require(await mantleTransport.requests().first)
-    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.117")
-    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.117")
-    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.117")
+    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.120")
+    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.120")
+    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.120")
 }
 @Test func amazonBedrockCredentialProviderSignsAllProviderSurfaces() async throws {
     let fixedDate = DateComponents(
@@ -253,6 +253,36 @@ import Testing
     #expect(body["toolConfig"]?["toolChoice"]?["tool"]?["name"]?.stringValue == "weather")
     #expect(body["amazonBedrock"] == nil)
 }
+
+@Test func amazonBedrockOmitsStrictToolSpecForClaudeOpus47And48() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"tool ready"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "secret",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-opus-4-7-20260219-v1:0")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use weather.")],
+        tools: [
+            "weather": [
+                "type": "object",
+                "strict": true,
+                "properties": ["city": ["type": "string"]]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let toolSpec = try #require(body["toolConfig"]?["tools"]?[0]?["toolSpec"])
+    #expect(toolSpec["name"]?.stringValue == "weather")
+    #expect(toolSpec["strict"] == nil)
+}
+
 @Test func amazonBedrockConverseMapsReasoningConfigLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"output":{"message":{"content":[{"text":"thinking done"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
