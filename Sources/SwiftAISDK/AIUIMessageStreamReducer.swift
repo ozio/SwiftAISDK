@@ -97,7 +97,8 @@ public struct AIUIMessageStreamReducer: Sendable {
 
     public static func snapshots(
         from stream: AsyncThrowingStream<LanguageStreamPart, Error>,
-        messageID: String = UUID().uuidString
+        messageID: String = UUID().uuidString,
+        terminateOnError: Bool = false
     ) -> AsyncThrowingStream<AIUIMessage, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -105,6 +106,9 @@ public struct AIUIMessageStreamReducer: Sendable {
                 do {
                     for try await part in stream {
                         try Task.checkCancellation()
+                        if terminateOnError, case let .error(message, _) = part {
+                            throw AIUIMessageStreamError(message: message, chunkType: "error")
+                        }
                         continuation.yield(try reducer.consume(part))
                     }
                     continuation.finish()

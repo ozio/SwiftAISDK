@@ -11,7 +11,11 @@ import Testing
         "data:text/plain;base64,aGVsbG8=",
         "http://172.15.0.1/file",
         "http://172.32.0.1/file",
+        "http://100.63.0.1/file",
+        "http://100.128.0.1/file",
         "http://[::ffff:203.0.113.1]/file",
+        "http://[64:ff9b::203.0.113.1]/file",
+        "http://[2001:db8::1]/file",
         "http://198.20.0.1/file"
     ]
 
@@ -42,7 +46,8 @@ import Testing
         "http://localhost:3000/file",
         "http://myhost.local/file",
         "http://myhost.local./file",
-        "http://app.localhost/file"
+        "http://app.localhost/file",
+        "http://app.localhost./file"
     ]
 
     for url in blocked {
@@ -62,6 +67,7 @@ import Testing
         "http://192.168.1.1/file",
         "http://100.64.0.1/file",
         "http://100.127.255.255/file",
+        "http://192.0.0.1/file",
         "http://192.0.0.8/file",
         "http://198.18.0.1/file",
         "http://198.19.255.255/file",
@@ -94,8 +100,23 @@ import Testing
         "http://[::ffff:10.0.0.1]/file",
         "http://[::ffff:169.254.169.254]/file",
         "http://[::ffff:7f00:1]/file",
+        "http://[64:ff9b::127.0.0.1]/file",
         "http://[64:ff9b::169.254.169.254]/file",
         "http://[64:ff9b:1::169.254.169.254]/file"
+    ]
+
+    for url in blocked {
+        #expect(throws: Error.self) {
+            _ = try validateDownloadURL(url)
+        }
+    }
+}
+
+@Test func downloadURLValidationBlocksNonDottedIPv4NotationsLikeUpstream() {
+    let blocked = [
+        "http://2130706433/file",
+        "http://0x7f000001/file",
+        "http://0177.0.0.1/file"
     ]
 
     for url in blocked {
@@ -121,6 +142,21 @@ import Testing
     #expect(requests.count == 1)
     #expect(requests[0].url.absoluteString == "https://example.com/image.png")
     #expect(requests[0].maxResponseBytes == AIDefaultMaxDownloadSize)
+}
+
+@Test func downloadURLValidatesInitialURLBeforeFetchingLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "image/png"],
+        body: Data("should-not-fetch".utf8)
+    ))
+
+    await #expect(throws: AIError.self) {
+        _ = try await downloadURL("http://localhost/file", transport: transport)
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.isEmpty)
 }
 
 @Test func downloadURLValidatesRedirectLocationBeforeFetchingNextHop() async throws {
@@ -153,6 +189,21 @@ import Testing
         "https://example.com/image.png",
         "https://example.com/cdn/image.png"
     ])
+    #expect(requests.allSatisfy { $0.followRedirects == false })
+}
+
+@Test func downloadURLRejectsAfterRedirectLimitLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 302,
+        headers: ["location": "https://example.com/next"]
+    ))
+
+    await #expect(throws: AIDownloadError.self) {
+        _ = try await downloadURL("https://example.com/start", transport: transport)
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 11)
     #expect(requests.allSatisfy { $0.followRedirects == false })
 }
 

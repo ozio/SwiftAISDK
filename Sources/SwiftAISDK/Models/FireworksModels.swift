@@ -179,12 +179,7 @@ private func fireworksImageWarnings(for request: ImageGenerationRequest, modelID
 
 private func fireworksImageURL(from file: ImageInputFile?) -> String? {
     guard let file else { return nil }
-    if let url = file.url {
-        return url
-    }
-    guard let data = file.data else { return nil }
-    let mediaType = file.mediaType ?? "image/png"
-    return "data:\(mediaType);base64,\(data.base64EncodedString())"
+    return try? convertImageModelFileToDataURI(file)
 }
 
 private func fireworksContentType(_ headers: [String: String]) -> String? {

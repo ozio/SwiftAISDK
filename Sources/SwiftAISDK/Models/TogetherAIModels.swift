@@ -193,11 +193,7 @@ private func togetherAIImageOptions(from extraBody: [String: JSONValue]) -> [Str
 
 private func togetherAIImageURL(from file: ImageInputFile?) -> String? {
     guard let file else { return nil }
-    if let url = file.url {
-        return url
-    }
-    guard let data = file.data else { return nil }
-    return "data:\(file.mediaType ?? "application/octet-stream");base64,\(data.base64EncodedString())"
+    return try? convertImageModelFileToDataURI(file)
 }
 
 private func togetherAIParseInt(_ value: String?) -> JSONValue {

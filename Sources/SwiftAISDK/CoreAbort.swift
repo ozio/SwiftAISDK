@@ -7,9 +7,11 @@ public enum AIResponseFormat: Equatable, Hashable, Sendable {
 
 public struct AIAbortError: Error, Equatable, Sendable, CustomStringConvertible {
     public var reason: String?
+    public var reasonName: String?
 
-    public init(reason: String? = nil) {
+    public init(reason: String? = nil, reasonName: String? = nil) {
         self.reason = reason
+        self.reasonName = reasonName
     }
 
     public var description: String {
@@ -27,8 +29,8 @@ public final class AIAbortController: @unchecked Sendable {
         self.signal = AIAbortSignal()
     }
 
-    public func abort(reason: String? = nil) {
-        signal.abort(reason: reason)
+    public func abort(reason: String? = nil, reasonName: String? = nil) {
+        signal.abort(reason: reason, reasonName: reasonName)
     }
 }
 
@@ -36,6 +38,7 @@ public final class AIAbortSignal: @unchecked Sendable {
     private let lock = NSLock()
     private var aborted = false
     private var abortReason: String?
+    private var abortReasonName: String?
     private var handlers: [UUID: @Sendable (String?) -> Void] = [:]
     private var continuations: [UUID: CheckedContinuation<String?, Never>] = [:]
 
@@ -51,9 +54,15 @@ public final class AIAbortSignal: @unchecked Sendable {
         return abortReason
     }
 
+    public var reasonName: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return abortReasonName
+    }
+
     public func throwIfAborted() throws {
         if isAborted {
-            throw AIAbortError(reason: reason)
+            throw AIAbortError(reason: reason, reasonName: reasonName)
         }
     }
 
@@ -90,7 +99,7 @@ public final class AIAbortSignal: @unchecked Sendable {
         }
     }
 
-    fileprivate func abort(reason: String?) {
+    fileprivate func abort(reason: String?, reasonName: String?) {
         lock.lock()
         guard !aborted else {
             lock.unlock()
@@ -98,6 +107,7 @@ public final class AIAbortSignal: @unchecked Sendable {
         }
         aborted = true
         abortReason = reason
+        abortReasonName = reasonName
         let handlers = Array(handlers.values)
         self.handlers.removeAll()
         let continuations = Array(continuations.values)
@@ -138,6 +148,145 @@ public final class AIAbortHandlerRegistration: @unchecked Sendable {
     deinit {
         cancel()
     }
+}
+
+public enum AIAbortSource: Sendable {
+    case signal(AIAbortSignal)
+    case timeoutMilliseconds(Int)
+}
+
+@discardableResult
+public func mergeAbortSignals(_ signals: AIAbortSignal?...) -> AIAbortSignal? {
+    mergeAbortSignals(signals)
+}
+
+@discardableResult
+public func mergeAbortSignals(_ signals: [AIAbortSignal?]) -> AIAbortSignal? {
+    mergeNormalizedAbortSignals(signals.compactMap { $0 })
+}
+
+@discardableResult
+public func mergeAbortSignals(sources: AIAbortSource?...) -> AIAbortSignal? {
+    mergeAbortSignals(sources: sources)
+}
+
+@discardableResult
+public func mergeAbortSignals(sources: [AIAbortSource?]) -> AIAbortSignal? {
+    let signals = sources.compactMap { source -> AIAbortSignal? in
+        guard let source else { return nil }
+        switch source {
+        case let .signal(signal):
+            return signal
+        case let .timeoutMilliseconds(timeoutMilliseconds):
+            let controller = AIAbortController()
+            setAbortTimeout(
+                abortController: controller,
+                label: "AbortSignal",
+                timeoutMilliseconds: timeoutMilliseconds
+            )
+            return controller.signal
+        }
+    }
+    return mergeNormalizedAbortSignals(signals)
+}
+
+public func delay(_ delayInMilliseconds: Int? = nil, abortSignal: AIAbortSignal? = nil) async throws {
+    guard let delayInMilliseconds else {
+        return
+    }
+    let milliseconds = UInt64(max(0, delayInMilliseconds))
+    let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+    try await sleepWithAbortSignal(
+        nanoseconds: overflow ? UInt64.max : nanoseconds,
+        abortSignal: abortSignal
+    )
+}
+
+@discardableResult
+public func setAbortTimeout(
+    abortController: AIAbortController?,
+    label: String,
+    timeoutMilliseconds: Int?
+) -> Task<Void, Never>? {
+    guard let abortController,
+          let timeoutMilliseconds else {
+        return nil
+    }
+    let milliseconds = UInt64(max(0, timeoutMilliseconds))
+    let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+    return Task {
+        do {
+            try await Task.sleep(nanoseconds: overflow ? UInt64.max : nanoseconds)
+        } catch {
+            return
+        }
+        guard !Task.isCancelled else { return }
+        abortController.abort(
+            reason: "\(label) timeout of \(timeoutMilliseconds)ms exceeded",
+            reasonName: "TimeoutError"
+        )
+    }
+}
+
+private final class AIMergedAbortSignalsState: @unchecked Sendable {
+    private let lock = NSLock()
+    private let controller: AIAbortController
+    private var registrations: [AIAbortHandlerRegistration] = []
+    private var completed = false
+
+    init(controller: AIAbortController) {
+        self.controller = controller
+    }
+
+    func addRegistration(_ registration: AIAbortHandlerRegistration) {
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            registration.cancel()
+            return
+        }
+        registrations.append(registration)
+        lock.unlock()
+    }
+
+    func abort(reason: String?, reasonName: String?) {
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
+        }
+        completed = true
+        let registrations = self.registrations
+        self.registrations.removeAll()
+        lock.unlock()
+
+        controller.abort(reason: reason, reasonName: reasonName)
+        for registration in registrations {
+            registration.cancel()
+        }
+    }
+}
+
+private func mergeNormalizedAbortSignals(_ signals: [AIAbortSignal]) -> AIAbortSignal? {
+    guard !signals.isEmpty else { return nil }
+    guard signals.count > 1 else { return signals[0] }
+
+    let controller = AIAbortController()
+    let state = AIMergedAbortSignalsState(controller: controller)
+
+    if let signal = signals.first(where: { $0.isAborted }) {
+        controller.abort(reason: signal.reason, reasonName: signal.reasonName)
+        return controller.signal
+    }
+
+    for signal in signals {
+        let registration = signal.addAbortHandler { reason in
+            state.abort(reason: reason, reasonName: signal.reasonName)
+        }
+        state.addRegistration(registration)
+    }
+
+    return controller.signal
 }
 
 private final class AIAbortableSleepState: @unchecked Sendable {

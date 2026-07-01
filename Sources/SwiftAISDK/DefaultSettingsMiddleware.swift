@@ -110,15 +110,5 @@ func applyingDefaultEmbeddingSettings(
 }
 
 func mergeJSONDictionaries(_ defaults: [String: JSONValue], _ overrides: [String: JSONValue]) -> [String: JSONValue] {
-    defaults.merging(overrides) { defaultValue, overrideValue in
-        mergeJSONValues(defaultValue, overrideValue)
-    }
-}
-
-func mergeJSONValues(_ defaultValue: JSONValue, _ overrideValue: JSONValue) -> JSONValue {
-    guard case let .object(defaultObject) = defaultValue,
-          case let .object(overrideObject) = overrideValue else {
-        return overrideValue
-    }
-    return .object(mergeJSONDictionaries(defaultObject, overrideObject))
+    mergeObjects(defaults, overrides) ?? [:]
 }

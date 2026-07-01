@@ -12,20 +12,22 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let mode = try klingMode(modelID)
-        let endpoint = klingEndpoint(mode)
         let options = try klingAIProviderOptions(from: request)
-        let warnings = klingAIWarnings(for: request, mode: mode)
+        let referenceImages = klingAIReferenceImages(from: request)
+        let effectiveMode = mode == "i2v" && referenceImages != nil ? "mi2v" : mode
+        let endpoint = klingEndpoint(effectiveMode)
+        let warnings = klingAIWarnings(for: request, mode: mode, effectiveMode: effectiveMode, options: options, referenceImages: referenceImages)
         var body: [String: JSONValue] = [
-            "model_name": .string(klingAPIModelName(modelID, mode: mode))
+            "model_name": .string(klingAPIModelName(modelID, mode: effectiveMode))
         ]
         if !request.prompt.isEmpty { body["prompt"] = .string(request.prompt) }
-        if let aspectRatio = request.aspectRatio, mode == "t2v" {
+        if let aspectRatio = request.aspectRatio, effectiveMode == "t2v" || effectiveMode == "mi2v" {
             body["aspect_ratio"] = .string(aspectRatio)
         }
-        if let duration = request.durationSeconds, mode != "motion-control" {
+        if let duration = request.durationSeconds, effectiveMode != "motion-control" {
             body["duration"] = .string(formatDuration(duration))
         }
-        body.merge(try klingAIOptions(from: options, mode: mode, requestImage: request.image)) { _, new in new }
+        body.merge(try klingAIOptions(from: options, mode: effectiveMode, request: request, referenceImages: referenceImages)) { _, new in new }
 
         let createResponse = try await config.transport.send(config.request(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
         guard (200..<300).contains(createResponse.statusCode) else {
@@ -134,7 +136,7 @@ private func klingAIExtraBodyOptions(from extraBody: [String: JSONValue]) throws
     return KlingAIResolvedOptions(known: try klingAIValidateKnownOptions(known), passthrough: passthrough)
 }
 
-private func klingAIOptions(from options: KlingAIResolvedOptions, mode: String, requestImage: ImageInputFile?) throws -> [String: JSONValue] {
+private func klingAIOptions(from options: KlingAIResolvedOptions, mode: String, request: VideoGenerationRequest, referenceImages: [ImageInputFile]?) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
     let known = options.known
     if mode == "motion-control" {
@@ -146,7 +148,7 @@ private func klingAIOptions(from options: KlingAIResolvedOptions, mode: String, 
         output["video_url"] = videoURL
         output["character_orientation"] = characterOrientation
         output["mode"] = generationMode
-        if let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: known) {
+        if let image = try klingAIStartImageInput(from: request) ?? klingAIImageInput(from: known) {
             output["image_url"] = image
         }
         if let keepOriginalSound = known["keepOriginalSound"] {
@@ -158,13 +160,23 @@ private func klingAIOptions(from options: KlingAIResolvedOptions, mode: String, 
         if let elementList = known["elementList"] {
             output["element_list"] = elementList
         }
+    } else if mode == "mi2v" {
+        output["image_list"] = .array(try (referenceImages ?? []).map { reference in
+            .object(["image": try klingAIImageInput(from: reference) ?? .null])
+        })
+        if let negativePrompt = known["negativePrompt"] { output["negative_prompt"] = negativePrompt }
+        if let cfgScale = known["cfgScale"] { output["cfg_scale"] = cfgScale }
+        if let mode = known["mode"] { output["mode"] = mode }
+        if let watermarkEnabled = known["watermarkEnabled"] {
+            output["watermark_info"] = .object(["enabled": watermarkEnabled])
+        }
     } else {
-        if mode == "i2v", let image = try klingAIImageInput(from: requestImage) ?? klingAIImageInput(from: known) {
+        if mode == "i2v", let image = try klingAIStartImageInput(from: request) ?? klingAIImageInput(from: known) {
             output["image"] = image
         }
         klingAIMoveSharedOptions(known, to: &output)
         if mode == "i2v" {
-            if let imageTail = known["imageTail"] { output["image_tail"] = imageTail }
+            if let imageTail = try klingAIImageTailInput(from: request, options: known) { output["image_tail"] = imageTail }
             if let staticMask = known["staticMask"] { output["static_mask"] = staticMask }
             if let dynamicMasks = known["dynamicMasks"] { output["dynamic_masks"] = dynamicMasks }
             if let elementList = known["elementList"] { output["element_list"] = elementList }
@@ -175,16 +187,16 @@ private func klingAIOptions(from options: KlingAIResolvedOptions, mode: String, 
     return output
 }
 
-private func klingAIWarnings(for request: VideoGenerationRequest, mode: String) -> [AIWarning] {
+private func klingAIWarnings(for request: VideoGenerationRequest, mode: String, effectiveMode: String, options: KlingAIResolvedOptions, referenceImages: [ImageInputFile]?) -> [AIWarning] {
     var warnings: [AIWarning] = []
-    if mode == "t2v", request.image != nil {
+    if mode == "t2v", klingAIHasStartImage(request) {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "image",
             message: "KlingAI text-to-video does not support image input. Use an image-to-video model instead."
         ))
     }
-    if request.aspectRatio != nil, mode == "i2v" {
+    if request.aspectRatio != nil, effectiveMode == "i2v" {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "aspectRatio",
@@ -203,6 +215,27 @@ private func klingAIWarnings(for request: VideoGenerationRequest, mode: String) 
             type: "unsupported",
             feature: "duration",
             message: "KlingAI Motion Control does not support custom duration. The output duration matches the reference video duration."
+        ))
+    }
+    if referenceImages != nil, effectiveMode != "mi2v" {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "inputReferences",
+            message: "KlingAI only supports inputReferences (reference-to-video) on image-to-video models. The reference images were ignored."
+        ))
+    }
+    if effectiveMode == "mi2v", klingAIHasStartImage(request) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "frameImages",
+            message: "KlingAI reference-to-video does not support a separate start frame. Provide all guidance images via inputReferences instead."
+        ))
+    }
+    if effectiveMode == "mi2v", klingAIHasImageTail(request, options: options.known) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "frameImages",
+            message: "KlingAI reference-to-video does not support a last frame (image_tail). Provide all guidance images via inputReferences instead."
         ))
     }
     if request.resolution != nil {
@@ -487,12 +520,41 @@ private func klingAIMoveSharedOptions(_ options: [String: JSONValue], to output:
     }
 }
 
+private func klingAIReferenceImages(from request: VideoGenerationRequest) -> [ImageInputFile]? {
+    if !request.frameImages.isEmpty {
+        return nil
+    }
+    return request.inputReferences.isEmpty ? nil : request.inputReferences
+}
+
+private func klingAIHasStartImage(_ request: VideoGenerationRequest) -> Bool {
+    request.image != nil || request.frameImages.contains(where: { $0.frameType == .firstFrame })
+}
+
+private func klingAIHasImageTail(_ request: VideoGenerationRequest, options: [String: JSONValue]) -> Bool {
+    request.frameImages.contains(where: { $0.frameType == .lastFrame }) || options["imageTail"] != nil
+}
+
 private func klingAIImageInput(from options: [String: JSONValue]) -> JSONValue? {
     let value = options["image"] ?? options["imageUrl"] ?? options["image_url"]
     if let object = value?.objectValue {
         return object["url"] ?? object["data"]
     }
     return value
+}
+
+private func klingAIStartImageInput(from request: VideoGenerationRequest) throws -> JSONValue? {
+    if let firstFrame = request.frameImages.first(where: { $0.frameType == .firstFrame }) {
+        return try klingAIImageInput(from: firstFrame.image)
+    }
+    return try klingAIImageInput(from: request.image)
+}
+
+private func klingAIImageTailInput(from request: VideoGenerationRequest, options: [String: JSONValue]) throws -> JSONValue? {
+    if let lastFrame = request.frameImages.first(where: { $0.frameType == .lastFrame }) {
+        return try klingAIImageInput(from: lastFrame.image)
+    }
+    return options["imageTail"]
 }
 
 private func klingAIImageInput(from image: ImageInputFile?) throws -> JSONValue? {
@@ -546,6 +608,8 @@ private func klingMode(_ modelID: String) throws -> String {
 
 private func klingEndpoint(_ mode: String) -> String {
     switch mode {
+    case "mi2v":
+        return "/v1/videos/multi-image2video"
     case "i2v":
         return "/v1/videos/image2video"
     case "motion-control":
@@ -556,9 +620,15 @@ private func klingEndpoint(_ mode: String) -> String {
 }
 
 private func klingAPIModelName(_ modelID: String, mode: String) -> String {
-    let suffix = mode == "motion-control" ? "-motion-control" : "-\(mode)"
+    let suffix: String
+    if mode == "motion-control" {
+        suffix = "-motion-control"
+    } else if mode == "mi2v" {
+        suffix = "-i2v"
+    } else {
+        suffix = "-\(mode)"
+    }
     let base = modelID.hasSuffix(suffix) ? String(modelID.dropLast(suffix.count)) : modelID
     let normalized = base.hasSuffix(".0") ? String(base.dropLast(2)) : base
     return normalized.replacingOccurrences(of: ".", with: "-")
 }
-

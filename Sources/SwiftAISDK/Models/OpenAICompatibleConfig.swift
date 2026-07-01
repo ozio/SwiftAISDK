@@ -282,6 +282,7 @@ public struct ProviderSettings: Sendable {
     public var project: String?
     public var headers: [String: String]
     public var queryParams: [String: String]
+    public var environment: [String: String]?
     public var transport: any AITransport
     public var includeUsage: Bool
     public var supportsStructuredOutputs: Bool
@@ -298,6 +299,7 @@ public struct ProviderSettings: Sendable {
         project: String? = nil,
         headers: [String: String] = [:],
         queryParams: [String: String] = [:],
+        environment: [String: String]? = nil,
         transport: any AITransport = URLSessionTransport.shared,
         includeUsage: Bool = false,
         supportsStructuredOutputs: Bool = false,
@@ -313,12 +315,20 @@ public struct ProviderSettings: Sendable {
         self.project = project
         self.headers = headers
         self.queryParams = queryParams
+        self.environment = environment
         self.transport = transport
         self.includeUsage = includeUsage
         self.supportsStructuredOutputs = supportsStructuredOutputs
         self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
         self.transformRequestBody = transformRequestBody
         self.name = name
+    }
+
+    func environmentValue(_ names: [String]) -> String? {
+        if let environment {
+            return names.lazy.compactMap { environment[$0] }.first
+        }
+        return SwiftAISDK.environmentValue(names)
     }
 }
 

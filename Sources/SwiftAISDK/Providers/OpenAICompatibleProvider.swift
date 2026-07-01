@@ -479,7 +479,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return withUserAgentSuffix(headers, userAgentSuffix)
         }
         if providerID == "anthropic" {
-            return withUserAgentSuffix(headers, "ai-sdk/anthropic/3.0.85")
+            return withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.1")
         }
         if providerID == "google.generative-ai" {
             return withUserAgentSuffix(headers, "ai-sdk/google/3.0.83")

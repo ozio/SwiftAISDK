@@ -1,6 +1,6 @@
 import Foundation
 
-func openAIResponsesTools(from tools: [String: JSONValue]) -> (tools: [JSONValue], customToolNames: Set<String>) {
+func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (tools: [JSONValue], customToolNames: Set<String>) {
     var customToolNames: Set<String> = []
     var namespaceIndexes: [String: Int] = [:]
     var mapped: [JSONValue] = []
@@ -8,7 +8,7 @@ func openAIResponsesTools(from tools: [String: JSONValue]) -> (tools: [JSONValue
         let object = schema.objectValue
         let providerToolID = object?["id"]?.stringValue
         if object?["type"]?.stringValue == "provider" || providerToolID?.hasPrefix("openai.") == true {
-            if let tool = openAIResponsesProviderTool(name: object?["name"]?.stringValue ?? name, id: providerToolID ?? name, args: object?["args"]?.objectValue ?? [:], customToolNames: &customToolNames) {
+            if let tool = try openAIResponsesProviderTool(name: object?["name"]?.stringValue ?? name, id: providerToolID ?? name, args: object?["args"]?.objectValue ?? [:], customToolNames: &customToolNames) {
                 mapped.append(tool)
             }
             continue
@@ -24,21 +24,17 @@ func openAIResponsesTools(from tools: [String: JSONValue]) -> (tools: [JSONValue
         if var parameterObject = parameters.objectValue {
             parameterObject.removeValue(forKey: "providerOptions")
             parameterObject.removeValue(forKey: "openai")
-            parameters = .object(parameterObject)
-            function["parameters"] = parameters
-            if let description = parameterObject["description"]?.stringValue {
+            if let description = parameterObject.removeValue(forKey: "description")?.stringValue {
                 function["description"] = .string(description)
             }
             if let strict = parameterObject.removeValue(forKey: "strict") {
                 function["strict"] = strict
-                parameters = .object(parameterObject)
-                function["parameters"] = parameters
             }
             if let deferLoading = parameterObject.removeValue(forKey: "deferLoading") ?? parameterObject.removeValue(forKey: "defer_loading") {
                 function["defer_loading"] = deferLoading
-                parameters = .object(parameterObject)
-                function["parameters"] = parameters
             }
+            parameters = .object(parameterObject)
+            function["parameters"] = parameters
         }
         if let deferLoading = openAIOptions?["deferLoading"] ?? openAIOptions?["defer_loading"] {
             function["defer_loading"] = deferLoading
@@ -48,6 +44,12 @@ func openAIResponsesTools(from tools: [String: JSONValue]) -> (tools: [JSONValue
            let namespaceDescription = namespace["description"]?.stringValue {
             if let index = namespaceIndexes[namespaceName],
                var namespaceTool = mapped[index].objectValue {
+                if namespaceTool["description"]?.stringValue != namespaceDescription {
+                    throw AIError.invalidArgument(
+                        argument: "tools",
+                        message: #"conflicting descriptions for OpenAI tool namespace "\#(namespaceName)""#
+                    )
+                }
                 var nestedTools = namespaceTool["tools"]?.arrayValue ?? []
                 nestedTools.append(.object(function))
                 namespaceTool["tools"] = .array(nestedTools)
@@ -68,7 +70,40 @@ func openAIResponsesTools(from tools: [String: JSONValue]) -> (tools: [JSONValue
     return (mapped, customToolNames)
 }
 
-func openAIResponsesProviderTool(name: String, id: String, args: [String: JSONValue], customToolNames: inout Set<String>) -> JSONValue? {
+func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> [String: String] {
+    var aliases: [String: String] = [:]
+    for (name, schema) in tools {
+        let object = schema.objectValue
+        let providerToolID = object?["id"]?.stringValue
+        guard object?["type"]?.stringValue == "provider" || providerToolID?.hasPrefix("openai.") == true || providerToolID?.hasPrefix("xai.") == true else {
+            continue
+        }
+        let toolName = object?["name"]?.stringValue ?? name
+        switch providerToolID ?? name {
+        case "openai.code_interpreter", "xai.code_execution":
+            aliases["code_interpreter"] = toolName
+        case "openai.file_search", "xai.file_search":
+            aliases["file_search"] = toolName
+        case "openai.image_generation":
+            aliases["image_generation"] = toolName
+        case "openai.web_search", "openai.web_search_preview", "xai.web_search":
+            aliases["web_search"] = toolName
+        case "openai.local_shell":
+            aliases["local_shell"] = toolName
+        case "openai.shell":
+            aliases["shell"] = toolName
+        case "openai.apply_patch":
+            aliases["apply_patch"] = toolName
+        case "openai.tool_search":
+            aliases["tool_search"] = toolName
+        default:
+            break
+        }
+    }
+    return aliases
+}
+
+func openAIResponsesProviderTool(name: String, id: String, args: [String: JSONValue], customToolNames: inout Set<String>) throws -> JSONValue? {
     switch id {
     case "openai.file_search":
         var tool: [String: JSONValue] = ["type": .string("file_search")]
@@ -87,7 +122,7 @@ func openAIResponsesProviderTool(name: String, id: String, args: [String: JSONVa
     case "openai.shell":
         var tool: [String: JSONValue] = ["type": .string("shell")]
         if let environment = args["environment"]?.objectValue {
-            tool["environment"] = openAIResponsesShellEnvironment(environment)
+            tool["environment"] = try openAIResponsesShellEnvironment(environment)
         }
         return .object(tool)
     case "openai.apply_patch":
@@ -257,7 +292,7 @@ func openAIResponsesMCPRequireApproval(_ value: JSONValue?) -> JSONValue? {
     return .object(object)
 }
 
-func openAIResponsesShellEnvironment(_ environment: [String: JSONValue]) -> JSONValue {
+func openAIResponsesShellEnvironment(_ environment: [String: JSONValue]) throws -> JSONValue {
     switch environment["type"]?.stringValue {
     case "containerReference":
         return .object([
@@ -272,27 +307,30 @@ func openAIResponsesShellEnvironment(_ environment: [String: JSONValue]) -> JSON
             mapped["network_policy"] = openAIResponsesShellNetworkPolicy(networkPolicy)
         }
         if let skills = environment["skills"]?.arrayValue {
-            mapped["skills"] = .array(skills.map(openAIResponsesShellSkill))
+            mapped["skills"] = .array(try skills.map(openAIResponsesShellSkill))
         }
         return .object(mapped)
     default:
         var mapped: [String: JSONValue] = ["type": .string("local")]
-        if let skills = environment["skills"] { mapped["skills"] = skills }
+        if let skills = environment["skills"], skills != .null { mapped["skills"] = skills }
         return .object(mapped)
     }
 }
 
-func openAIResponsesShellSkill(_ skill: JSONValue) -> JSONValue {
+func openAIResponsesShellSkill(_ skill: JSONValue) throws -> JSONValue {
     guard let object = skill.objectValue else { return skill }
     if object["type"]?.stringValue == "skillReference" {
         var mapped: [String: JSONValue] = ["type": .string("skill_reference")]
         if let skillID = object["skillId"] ?? object["skill_id"] {
             mapped["skill_id"] = skillID
         } else if let providerReference = object["providerReference"]?.objectValue ?? object["provider_reference"]?.objectValue {
-            mapped["skill_id"] = providerReference["openai"] ?? providerReference.values.first
+            let reference = providerReference.compactMapValues(\.stringValue)
+            mapped["skill_id"] = .string(try resolveProviderReference(reference: reference, provider: "openai"))
         }
         if let version = object["version"] {
             mapped["version"] = version
+        } else {
+            mapped["version"] = .string("latest")
         }
         return .object(mapped)
     }

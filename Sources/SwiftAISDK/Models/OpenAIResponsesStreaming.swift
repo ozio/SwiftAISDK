@@ -2,11 +2,14 @@ import Foundation
 
 struct OpenAIResponsesStreamingToolCalls {
     let providerID: String
+    let toolNameAliases: [String: String]
     private var buffers: [Int: OpenAICompatibleToolCallBuffer] = [:]
     private var hostedToolSearchCallIDs: [String] = []
+    private var approvalToolCallIndex = 0
 
-    init(providerID: String) {
+    init(providerID: String, toolNameAliases: [String: String] = [:]) {
         self.providerID = providerID
+        self.toolNameAliases = toolNameAliases
     }
 
     mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
@@ -27,12 +30,12 @@ struct OpenAIResponsesStreamingToolCalls {
                 return handleApplyPatchAdded(item: item, index: index)
             case "tool_search_call":
                 return handleToolSearchAdded(item: item, index: index)
-            case "tool_search_output", "mcp_call", "mcp_list_tools", "mcp_approval_request":
+            case "local_shell_call", "shell_call", "shell_call_output", "tool_search_output", "mcp_call", "mcp_list_tools", "mcp_approval_request":
                 return []
             default:
                 break
             }
-            guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+            guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
             buffers[index] = OpenAICompatibleToolCallBuffer(
                 id: toolCall.id,
                 name: toolCall.name,
@@ -41,7 +44,7 @@ struct OpenAIResponsesStreamingToolCalls {
                 rawValue: item
             )
             return [
-                .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted, dynamic: toolCall.dynamic, providerMetadata: toolCall.providerMetadata),
+                .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted, dynamic: toolCall.dynamic),
                 .toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: "", index: index)
             ]
         case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
@@ -72,7 +75,7 @@ struct OpenAIResponsesStreamingToolCalls {
                 .toolInputEnd(id: id),
                 .toolCall(AIToolCall(
                     id: id,
-                    name: "code_interpreter",
+                    name: toolNameAliases["code_interpreter"] ?? "code_interpreter",
                     arguments: openAIResponsesJSONString(.object([
                         "code": .string(code),
                         "containerId": .string(containerID)
@@ -87,7 +90,7 @@ struct OpenAIResponsesStreamingToolCalls {
             return [
                 .toolResult(AIToolResult(
                     toolCallID: itemID,
-                    toolName: "image_generation",
+                    toolName: toolNameAliases["image_generation"] ?? "image_generation",
                     result: .object(["result": image]),
                     preliminary: true
                 ))
@@ -119,7 +122,7 @@ struct OpenAIResponsesStreamingToolCalls {
             switch item["type"]?.stringValue {
             case "web_search_call", "file_search_call", "image_generation_call", "code_interpreter_call":
                 buffers[index] = nil
-                return openAIResponsesToolResult(from: item, providerID: providerID).map { [.toolResult($0)] } ?? []
+                return openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases).map { [.toolResult($0)] } ?? []
             case "apply_patch_call":
                 return handleApplyPatchDone(item: item, index: index)
             case "computer_call":
@@ -128,27 +131,55 @@ struct OpenAIResponsesStreamingToolCalls {
                 return handleToolSearchDone(item: item, index: index)
             case "tool_search_output":
                 return handleToolSearchOutputDone(item: item, index: index)
+            case "shell_call_output":
+                buffers[index] = nil
+                return openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases).map { [.toolResult($0)] } ?? []
             case "mcp_call":
                 buffers[index] = nil
-                guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+                guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
                 var parts: [LanguageStreamPart] = [.toolCall(toolCall)]
-                if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID) {
+                if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases) {
                     parts.append(.toolResult(toolResult))
                 }
                 return parts
             case "mcp_list_tools":
                 buffers[index] = nil
                 return []
+            case "mcp_approval_request":
+                buffers[index] = nil
+                let toolCallID = openAIResponsesApprovalToolCallID(from: item, generatedIndex: approvalToolCallIndex)
+                approvalToolCallIndex += 1
+                guard let toolCall = openAIResponsesToolCall(
+                    from: item,
+                    providerID: providerID,
+                    toolNameAliases: toolNameAliases,
+                    approvalToolCallIDOverride: toolCallID
+                ) else { return [] }
+                var parts: [LanguageStreamPart] = [.toolCall(toolCall)]
+                if let approvalRequest = openAIResponsesToolApprovalRequest(
+                    from: item,
+                    providerID: providerID,
+                    approvalToolCallIDOverride: toolCallID
+                ) {
+                    parts.append(.toolApprovalRequest(approvalRequest))
+                }
+                return parts
+            case "local_shell_call", "shell_call":
+                buffers[index] = nil
+                return openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases).map { [.toolCall($0)] } ?? []
             default:
                 break
             }
             buffers[index] = nil
-            guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+            guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
             var parts: [LanguageStreamPart] = [
-                .toolInputEnd(id: toolCall.id),
+                .toolInputEnd(
+                    id: toolCall.id,
+                    providerMetadata: openAIResponsesToolInputEndProviderMetadata(from: item, providerID: providerID)
+                ),
                 .toolCall(toolCall)
             ]
-            if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID) {
+            if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases) {
                 parts.append(.toolResult(toolResult))
             }
             if let approvalRequest = openAIResponsesToolApprovalRequest(from: item, providerID: providerID) {
@@ -165,19 +196,19 @@ struct OpenAIResponsesStreamingToolCalls {
         let isHosted = item["execution"]?.stringValue == "server"
         buffers[index] = OpenAICompatibleToolCallBuffer(
             id: toolCallID,
-            name: "tool_search",
+            name: toolNameAliases["tool_search"] ?? "tool_search",
             arguments: "",
             inputStarted: isHosted,
             rawValue: item
         )
         guard isHosted else { return [] }
         return [
-            .toolInputStart(id: toolCallID, name: "tool_search", providerExecuted: true)
+            .toolInputStart(id: toolCallID, name: toolNameAliases["tool_search"] ?? "tool_search", providerExecuted: true)
         ]
     }
 
     private mutating func handleImmediateHostedToolAdded(item: JSONValue, index: Int, emitInputLifecycle: Bool) -> [LanguageStreamPart] {
-        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
         buffers[index] = OpenAICompatibleToolCallBuffer(
             id: toolCall.id,
             name: toolCall.name,
@@ -195,7 +226,7 @@ struct OpenAIResponsesStreamingToolCalls {
     }
 
     private mutating func handleComputerUseAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {
-        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
         buffers[index] = OpenAICompatibleToolCallBuffer(
             id: toolCall.id,
             name: toolCall.name,
@@ -210,19 +241,19 @@ struct OpenAIResponsesStreamingToolCalls {
 
     private mutating func handleComputerUseDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
         buffers[index] = nil
-        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
         var parts: [LanguageStreamPart] = [
             .toolInputEnd(id: toolCall.id),
             .toolCall(toolCall)
         ]
-        if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID) {
+        if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases) {
             parts.append(.toolResult(toolResult))
         }
         return parts
     }
 
     private mutating func handleCodeInterpreterAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {
-        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
         let containerID = item["container_id"]?.stringValue ?? ""
         buffers[index] = OpenAICompatibleToolCallBuffer(
             id: toolCall.id,
@@ -242,7 +273,7 @@ struct OpenAIResponsesStreamingToolCalls {
     }
 
     private mutating func handleApplyPatchAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {
-        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID) else { return [] }
+        guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
         let operation = item["operation"] ?? .object([:])
         let operationType = operation["type"]?.stringValue ?? ""
         let deleteFile = operationType == "delete_file"
@@ -269,7 +300,7 @@ struct OpenAIResponsesStreamingToolCalls {
 
     private mutating func handleApplyPatchDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
         var buffer = buffers[index]
-        let toolCall = openAIResponsesToolCall(from: item, providerID: providerID)
+        let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases)
         let toolCallID = toolCall?.id ?? buffer?.id ?? item["call_id"]?.stringValue ?? "apply-patch-call"
         var parts: [LanguageStreamPart] = []
         if var currentBuffer = buffer,
@@ -307,20 +338,30 @@ struct OpenAIResponsesStreamingToolCalls {
 
         var parts: [LanguageStreamPart] = []
         if !isHosted {
-            parts.append(.toolInputStart(id: toolCallID, name: "tool_search"))
+            parts.append(.toolInputStart(id: toolCallID, name: toolNameAliases["tool_search"] ?? "tool_search"))
         }
         parts.append(.toolInputEnd(id: toolCallID))
-        parts.append(.toolCall(openAIResponsesToolSearchCall(from: item, id: toolCallID, providerID: providerID, providerExecuted: isHosted)))
+        parts.append(.toolCall(openAIResponsesToolSearchCall(
+            from: item,
+            id: toolCallID,
+            providerID: providerID,
+            providerExecuted: isHosted,
+            name: toolNameAliases["tool_search"] ?? "tool_search"
+        )))
         return parts
     }
 
     private mutating func handleToolSearchOutputDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
         buffers[index] = nil
         let toolCallID = item["call_id"]?.stringValue ?? (hostedToolSearchCallIDs.isEmpty ? nil : hostedToolSearchCallIDs.removeFirst()) ?? item["id"]?.stringValue
-        guard let toolResult = openAIResponsesToolResult(from: item, providerID: providerID, toolCallIDOverride: toolCallID) else {
+        guard let toolResult = openAIResponsesToolResult(
+            from: item,
+            providerID: providerID,
+            toolCallIDOverride: toolCallID,
+            toolNameAliases: toolNameAliases
+        ) else {
             return []
         }
         return [.toolResult(toolResult)]
     }
 }
-

@@ -62,9 +62,31 @@ extension AI {
                 var responseMetadata = AIResponseMetadata()
                 var rawValues: [JSONValue] = []
                 var lastPartialObject: JSONValue?
+                var pendingTextDelta = ""
+
+                func flushPendingTextDelta() {
+                    guard !pendingTextDelta.isEmpty else { return }
+                    continuation.yield(.textDelta(pendingTextDelta))
+                    pendingTextDelta = ""
+                }
+
+                func consumeTextDelta(_ delta: String) {
+                    text += delta
+                    pendingTextDelta += delta
+                    if shouldEmitObjectTextDelta(accumulatedText: text) {
+                        flushPendingTextDelta()
+                    }
+                    if let partial = partialObject(from: text), partial != lastPartialObject {
+                        lastPartialObject = partial
+                        continuation.yield(.partialObject(partial))
+                        if let typedPartial = typedPartialObject(Object.self, from: partial) {
+                            continuation.yield(.partial(typedPartial))
+                        }
+                    }
+                }
 
                 do {
-                    for try await part in streamText(model: model, request: streamRequest, retryPolicy: .none) {
+                    for try await part in streamText(model: model, request: streamRequest, retryPolicy: .none, logWarnings: false) {
                         try Task.checkCancellation()
                         switch part {
                         case let .streamStart(partWarnings):
@@ -73,61 +95,67 @@ extension AI {
                                 continuation.yield(.warning(warning))
                             }
                         case let .textDelta(delta):
-                            text += delta
-                            continuation.yield(.textDelta(delta))
-                            if let partial = partialObject(from: text), partial != lastPartialObject {
-                                lastPartialObject = partial
-                                continuation.yield(.partialObject(partial))
-                                if let typedPartial = typedPartialObject(Object.self, from: partial) {
-                                    continuation.yield(.partial(typedPartial))
-                                }
-                            }
+                            consumeTextDelta(delta)
                         case let .textDeltaPart(_, delta, _):
-                            text += delta
-                            continuation.yield(.textDelta(delta))
-                            if let partial = partialObject(from: text), partial != lastPartialObject {
-                                lastPartialObject = partial
-                                continuation.yield(.partialObject(partial))
-                                if let typedPartial = typedPartialObject(Object.self, from: partial) {
-                                    continuation.yield(.partial(typedPartial))
-                                }
-                            }
+                            consumeTextDelta(delta)
                         case let .reasoningDelta(delta):
+                            flushPendingTextDelta()
                             reasoning += delta
                             continuation.yield(.raw(part))
                         case let .reasoningDeltaPart(_, delta, _):
+                            flushPendingTextDelta()
                             reasoning += delta
                             continuation.yield(.raw(part))
                         case let .source(source):
+                            flushPendingTextDelta()
                             sources.append(source)
                             continuation.yield(.source(source))
                         case let .metadata(metadata):
+                            flushPendingTextDelta()
                             continuation.yield(.metadata(metadata))
                         case let .responseMetadata(metadata):
+                            flushPendingTextDelta()
                             responseMetadata = metadata
                             continuation.yield(.responseMetadata(metadata))
                         case let .raw(raw):
+                            flushPendingTextDelta()
                             rawValues.append(raw)
                             continuation.yield(.raw(part))
                         case let .finish(reason, partUsage):
+                            flushPendingTextDelta()
                             finishReason = reason
                             usage = partUsage
                         case let .finishMetadata(reason, partUsage, metadata):
+                            flushPendingTextDelta()
                             finishReason = reason
                             usage = partUsage
                             providerMetadata.merge(metadata) { _, new in new }
                         default:
+                            flushPendingTextDelta()
                             continuation.yield(.raw(part))
                         }
                     }
 
-                    let parsed = try await parseObject(
-                        Object.self,
-                        from: text,
-                        schema: schema,
-                        repairText: repairText,
-                        providerID: model.providerID
-                    )
+                    flushPendingTextDelta()
+                    let parsed: (object: Object, rawObject: JSONValue, text: String)
+                    do {
+                        parsed = try await parseObject(
+                            Object.self,
+                            from: text,
+                            schema: schema,
+                            repairText: repairText,
+                            providerID: model.providerID
+                        )
+                    } catch {
+                        throw objectGenerationErrorWithResultMetadata(
+                            error,
+                            finishReason: finishReason,
+                            usage: usage,
+                            warnings: warnings,
+                            providerMetadata: providerMetadata,
+                            responseMetadata: responseMetadata
+                        )
+                    }
                     let textResult = TextGenerationResult(
                         text: parsed.text,
                         reasoning: reasoning,
@@ -188,4 +216,30 @@ extension AI {
             callbacks: callbacks
         )
     }
+}
+
+private func shouldEmitObjectTextDelta(accumulatedText: String) -> Bool {
+    !objectTextEndsAtStructuralColon(accumulatedText)
+}
+
+private func objectTextEndsAtStructuralColon(_ text: String) -> Bool {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.last == ":" else { return false }
+
+    var inString = false
+    var isEscaped = false
+    for character in trimmed {
+        if isEscaped {
+            isEscaped = false
+            continue
+        }
+        if inString, character == "\\" {
+            isEscaped = true
+            continue
+        }
+        if character == "\"" {
+            inString.toggle()
+        }
+    }
+    return !inString
 }

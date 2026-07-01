@@ -82,6 +82,17 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
         _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
     ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error>
 
+    internal var requestForOutput: @Sendable (
+        _ request: LanguageModelRequest,
+        _ jsonInstruction: AIJSONInstruction?
+    ) -> LanguageModelRequest
+
+    internal var optionalResultFromTextResult: @Sendable (
+        _ result: TextGenerationResult,
+        _ providerID: String,
+        _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
+    ) async throws -> AIOutputGenerationResult<FinalOutput?>
+
     internal init(
         kind: AIOutputKind,
         schema: JSONValue? = nil,
@@ -103,7 +114,16 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
             _ telemetry: Telemetry.Options?,
             _ jsonInstruction: AIJSONInstruction?,
             _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
-        ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error>
+        ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error>,
+        requestForOutput: @escaping @Sendable (
+            _ request: LanguageModelRequest,
+            _ jsonInstruction: AIJSONInstruction?
+        ) -> LanguageModelRequest,
+        optionalResultFromTextResult: @escaping @Sendable (
+            _ result: TextGenerationResult,
+            _ providerID: String,
+            _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
+        ) async throws -> AIOutputGenerationResult<FinalOutput?>
     ) {
         self.kind = kind
         self.schema = schema
@@ -111,6 +131,8 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
         self.description = description
         self.generateFromRequest = generateFromRequest
         self.streamFromRequest = streamFromRequest
+        self.requestForOutput = requestForOutput
+        self.optionalResultFromTextResult = optionalResultFromTextResult
     }
 }
 
@@ -119,7 +141,9 @@ public enum Output {
         AIOutput<String, String>(
             kind: .text,
             generateFromRequest: { model, request, retryPolicy, telemetry, _, _ in
-                try await AIOutputGenerationResult(
+                var request = request
+                request.responseFormat = request.responseFormat ?? .text
+                return try await AIOutputGenerationResult(
                     textResult: AI.generateText(
                         model: model,
                         request: request,
@@ -129,7 +153,9 @@ public enum Output {
                 )
             },
             streamFromRequest: { model, request, timeoutNanoseconds, retryPolicy, telemetry, _, _ in
-                mapLanguageStreamToOutputStream(
+                var request = request
+                request.responseFormat = request.responseFormat ?? .text
+                return mapLanguageStreamToOutputStream(
                     AI.streamText(
                         model: model,
                         request: request,
@@ -138,6 +164,17 @@ public enum Output {
                         telemetry: telemetry
                     )
                 )
+            },
+            requestForOutput: { request, _ in
+                var request = request
+                request.responseFormat = request.responseFormat ?? .text
+                return request
+            },
+            optionalResultFromTextResult: { result, _, _ in
+                guard shouldParseOutput(from: result) else {
+                    return optionalOutputResult(output: nil, rawOutput: .null, textResult: result)
+                }
+                return optionalOutputResult(output: result.text, rawOutput: .string(result.text), textResult: result)
             }
         )
     }
@@ -185,6 +222,33 @@ public enum Output {
                         repairText: repairText
                     ),
                     outputKind: .object
+                )
+            },
+            requestForOutput: { request, jsonInstruction in
+                objectRequest(
+                    from: request,
+                    schema: schema,
+                    schemaName: name,
+                    schemaDescription: description,
+                    jsonInstruction: jsonInstruction
+                )
+            },
+            optionalResultFromTextResult: { result, providerID, repairText in
+                guard shouldParseOutput(from: result) else {
+                    return optionalOutputResult(output: nil, rawOutput: .null, textResult: result)
+                }
+                let parsed = try await parseObject(
+                    Object.self,
+                    from: result.text,
+                    schema: schema,
+                    repairText: repairText,
+                    providerID: providerID
+                )
+                return optionalOutputResult(
+                    output: parsed.object,
+                    rawOutput: parsed.rawObject,
+                    text: parsed.text,
+                    textResult: result
                 )
             }
         )
@@ -248,6 +312,33 @@ public enum Output {
                     outputKind: .array,
                     partial: { $0 }
                 )
+            },
+            requestForOutput: { request, jsonInstruction in
+                objectRequest(
+                    from: request,
+                    schema: arrayOutputSchema(elementSchema: element),
+                    schemaName: name,
+                    schemaDescription: description,
+                    jsonInstruction: jsonInstruction
+                )
+            },
+            optionalResultFromTextResult: { result, providerID, repairText in
+                guard shouldParseOutput(from: result) else {
+                    return optionalOutputResult(output: nil, rawOutput: .null, textResult: result)
+                }
+                let parsed = try await parseObjectArray(
+                    Element.self,
+                    from: result.text,
+                    elementSchema: element,
+                    repairText: repairText,
+                    providerID: providerID
+                )
+                return optionalOutputResult(
+                    output: parsed.object,
+                    rawOutput: parsed.rawObject,
+                    text: parsed.text,
+                    textResult: result
+                )
             }
         )
     }
@@ -306,6 +397,32 @@ public enum Output {
                     outputKind: .choice,
                     partial: { $0 }
                 )
+            },
+            requestForOutput: { request, jsonInstruction in
+                objectRequest(
+                    from: request,
+                    schema: enumOutputSchema(values: options),
+                    schemaName: name,
+                    schemaDescription: description,
+                    jsonInstruction: jsonInstruction
+                )
+            },
+            optionalResultFromTextResult: { result, providerID, repairText in
+                guard shouldParseOutput(from: result) else {
+                    return optionalOutputResult(output: nil, rawOutput: .null, textResult: result)
+                }
+                let parsed = try await parseEnum(
+                    from: result.text,
+                    values: options,
+                    repairText: repairText,
+                    providerID: providerID
+                )
+                return optionalOutputResult(
+                    output: parsed.object,
+                    rawOutput: parsed.rawObject,
+                    text: parsed.text,
+                    textResult: result
+                )
             }
         )
     }
@@ -348,9 +465,58 @@ public enum Output {
                     outputKind: .json,
                     partial: { $0 }
                 )
+            },
+            requestForOutput: { request, jsonInstruction in
+                objectRequest(
+                    from: request,
+                    schema: nil,
+                    schemaName: name,
+                    schemaDescription: description,
+                    jsonInstruction: jsonInstruction
+                )
+            },
+            optionalResultFromTextResult: { result, providerID, repairText in
+                guard shouldParseOutput(from: result) else {
+                    return optionalOutputResult(output: nil, rawOutput: .null, textResult: result)
+                }
+                let parsed = try await parseJSONValueObject(
+                    from: result.text,
+                    repairText: repairText,
+                    providerID: providerID
+                )
+                return optionalOutputResult(
+                    output: parsed.object,
+                    rawOutput: parsed.rawObject,
+                    text: parsed.text,
+                    textResult: result
+                )
             }
         )
     }
+}
+
+private func shouldParseOutput(from result: TextGenerationResult) -> Bool {
+    !(result.finishReason == "tool-calls" && result.text.isEmpty)
+}
+
+private func optionalOutputResult<Output: Sendable>(
+    output: Output?,
+    rawOutput: JSONValue,
+    text: String? = nil,
+    textResult: TextGenerationResult
+) -> AIOutputGenerationResult<Output?> {
+    AIOutputGenerationResult<Output?>(
+        output: output,
+        text: text ?? textResult.text,
+        rawOutput: rawOutput,
+        reasoning: textResult.reasoning,
+        finishReason: textResult.finishReason,
+        usage: textResult.usage,
+        warnings: textResult.warnings,
+        providerMetadata: textResult.providerMetadata,
+        responseMetadata: textResult.responseMetadata,
+        textResult: textResult
+    )
 }
 
 public extension AIOutputGenerationResult where Output == String {
@@ -398,6 +564,7 @@ private func mapLanguageStreamToOutputStream(
             var usage: TokenUsage?
             var warnings: [AIWarning] = []
             var sources: [AISource] = []
+            var files: [AIStreamFile] = []
             var providerMetadata: [String: JSONValue] = [:]
             var responseMetadata = AIResponseMetadata()
             var rawValues: [JSONValue] = []
@@ -412,10 +579,12 @@ private func mapLanguageStreamToOutputStream(
                             continuation.yield(.warning(warning))
                         }
                     case let .textDelta(delta):
+                        guard !delta.isEmpty else { continue }
                         text += delta
                         continuation.yield(.textDelta(delta))
                         continuation.yield(.partialOutput(text))
                     case let .textDeltaPart(_, delta, _):
+                        guard !delta.isEmpty else { continue }
                         text += delta
                         continuation.yield(.textDelta(delta))
                         continuation.yield(.partialOutput(text))
@@ -428,6 +597,9 @@ private func mapLanguageStreamToOutputStream(
                     case let .source(source):
                         sources.append(source)
                         continuation.yield(.source(source))
+                    case let .file(file):
+                        files.append(file)
+                        continuation.yield(.raw(part))
                     case let .metadata(metadata):
                         continuation.yield(.metadata(metadata))
                     case let .responseMetadata(metadata):
@@ -453,6 +625,7 @@ private func mapLanguageStreamToOutputStream(
                     reasoning: reasoning,
                     finishReason: finishReason,
                     usage: usage,
+                    files: files,
                     sources: sources,
                     providerMetadata: providerMetadata,
                     rawValue: rawValues.isEmpty ? .string(text) : .array(rawValues),

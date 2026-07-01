@@ -82,6 +82,37 @@ public struct AIHTTPStreamResponse: Sendable {
     }
 }
 
+public func readResponseWithSizeLimit(
+    response: AIHTTPStreamResponse,
+    url: String,
+    maxBytes: Int = AIDefaultMaxDownloadSize
+) async throws -> Data {
+    let contentLength = response.headerValue("content-length").flatMap(parseContentLength)
+    if let contentLength, contentLength > maxBytes {
+        throw AIDownloadError(
+            url: url,
+            message: downloadSizeLimitExceededMessage(url: url, maxBytes: maxBytes, contentLength: contentLength)
+        )
+    }
+
+    var data = Data()
+    data.reserveCapacity(max(0, min(maxBytes, contentLength ?? 0)))
+    var totalBytes = 0
+
+    for try await chunk in response.body {
+        totalBytes += chunk.count
+        if totalBytes > maxBytes {
+            throw AIDownloadError(
+                url: url,
+                message: downloadSizeLimitExceededMessage(url: url, maxBytes: maxBytes)
+            )
+        }
+        data.append(chunk)
+    }
+
+    return data
+}
+
 public protocol AIStreamingTransport: AITransport {
     func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse
 }
@@ -106,29 +137,16 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
 
         let delegate: URLSessionTaskDelegate? = request.followRedirects ? nil : NoRedirectURLSessionDelegate()
 
-        if let maxResponseBytes = request.maxResponseBytes {
-            let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-            if let abortSignal = request.abortSignal {
-                (bytes, response) = try await raceAbortSignal(abortSignal) {
-                    try await self.session.bytes(for: preparedRequest, delegate: delegate)
-                }
-            } else {
-                (bytes, response) = try await session.bytes(for: preparedRequest, delegate: delegate)
-            }
-            return try await limitedHTTPResponse(bytes: bytes, response: response, request: request, maxResponseBytes: maxResponseBytes)
-        }
-
-        let (data, response): (Data, URLResponse)
+        let maxResponseBytes = request.maxResponseBytes ?? AIDefaultMaxDownloadSize
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
         if let abortSignal = request.abortSignal {
-            (data, response) = try await raceAbortSignal(abortSignal) {
-                try await self.session.data(for: preparedRequest, delegate: delegate)
+            (bytes, response) = try await raceAbortSignal(abortSignal) {
+                try await self.session.bytes(for: preparedRequest, delegate: delegate)
             }
         } else {
-            (data, response) = try await session.data(for: preparedRequest, delegate: delegate)
+            (bytes, response) = try await session.bytes(for: preparedRequest, delegate: delegate)
         }
-        let httpResponse = response as? HTTPURLResponse
-        let headers = httpHeaders(from: httpResponse)
-        return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data, url: response.url)
+        return try await limitedHTTPResponse(bytes: bytes, response: response, request: request, maxResponseBytes: maxResponseBytes)
     }
 
     public func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
@@ -202,11 +220,11 @@ private func limitedHTTPResponse(
     let headers = httpHeaders(from: httpResponse)
     let urlText = request.url.absoluteString
     if let contentLength = httpResponse?.value(forHTTPHeaderField: "content-length"),
-       let length = Int(contentLength.trimmingCharacters(in: .whitespacesAndNewlines)),
+       let length = parseContentLength(contentLength),
        length > maxResponseBytes {
         throw AIDownloadError(
             url: urlText,
-            message: "Download exceeded maximum size of \(maxResponseBytes) bytes (Content-Length: \(length))."
+            message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes, contentLength: length)
         )
     }
 
@@ -220,7 +238,7 @@ private func limitedHTTPResponse(
         if totalBytes > maxResponseBytes {
             throw AIDownloadError(
                 url: urlText,
-                message: "Download exceeded maximum size of \(maxResponseBytes) bytes."
+                message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes)
             )
         }
         data.append(byte)
@@ -289,6 +307,18 @@ public func combineHeaders(_ headers: [String: String]...) -> [String: String] {
     headers.reduce(into: [String: String]()) { combined, current in
         combined.merge(current) { _, new in new }
     }
+}
+
+public func prepareHeaders(_ headers: [String: String?]?, defaultHeaders: [String: String]) -> [String: String] {
+    var preparedHeaders = normalizeHeaders(headers)
+    for (key, value) in normalizeHeaders(defaultHeaders) where preparedHeaders[key] == nil {
+        preparedHeaders[key] = value
+    }
+    return preparedHeaders
+}
+
+public func prepareHeaders(_ headers: [String: String], defaultHeaders: [String: String]) -> [String: String] {
+    prepareHeaders(headers.mapValues(Optional.some), defaultHeaders: defaultHeaders)
 }
 
 public func withUserAgentSuffix(_ headers: [String: String?]? = nil, _ userAgentSuffixParts: String...) -> [String: String] {
@@ -395,6 +425,11 @@ func downloadURL(
     abortSignal: AIAbortSignal? = nil,
     maxBytes: Int = AIDefaultMaxDownloadSize
 ) async throws -> AIHTTPResponse {
+    let initialURL = try validateDownloadURL(string)
+    if initialURL.scheme?.lowercased() == "data" {
+        return try downloadDataURL(initialURL)
+    }
+
     var current = string
     let maxRedirects = 10
     for _ in 0...maxRedirects {
@@ -420,7 +455,7 @@ func downloadURL(
         if response.body.count > maxBytes {
             throw AIDownloadError(
                 url: string,
-                message: "Download exceeded maximum size of \(maxBytes) bytes."
+                message: downloadSizeLimitExceededMessage(url: string, maxBytes: maxBytes)
             )
         }
         return response
@@ -428,16 +463,113 @@ func downloadURL(
     throw AIDownloadError(url: string, message: "Too many redirects (max \(maxRedirects)).")
 }
 
+private func downloadDataURL(_ url: URL) throws -> AIHTTPResponse {
+    let absoluteString = url.absoluteString
+    guard absoluteString.lowercased().hasPrefix("data:"),
+          let commaIndex = absoluteString.firstIndex(of: ",") else {
+        throw AIDownloadError(url: absoluteString, message: "Invalid data URL.")
+    }
+
+    let metadata = String(absoluteString[absoluteString.index(absoluteString.startIndex, offsetBy: 5)..<commaIndex])
+    let payload = String(absoluteString[absoluteString.index(after: commaIndex)...])
+    let metadataParts = metadata.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
+    let mediaType = metadataParts.first?.isEmpty == false ? metadataParts[0] : "text/plain;charset=US-ASCII"
+    let isBase64 = metadataParts.dropFirst().contains { $0.caseInsensitiveCompare("base64") == .orderedSame }
+
+    let data: Data?
+    if isBase64 {
+        data = Data(base64Encoded: payload.removingPercentEncoding ?? payload)
+    } else if let decoded = payload.removingPercentEncoding {
+        data = Data(decoded.utf8)
+    } else {
+        data = Data(payload.utf8)
+    }
+
+    guard let data else {
+        throw AIDownloadError(url: absoluteString, message: "Invalid data URL payload.")
+    }
+
+    return AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": mediaType],
+        body: data,
+        url: url
+    )
+}
+
+private func parseContentLength(_ value: String) -> Int? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    var result = 0
+    var hasDigit = false
+
+    for scalar in trimmed.unicodeScalars {
+        guard scalar.value >= 48 && scalar.value <= 57 else { break }
+        hasDigit = true
+        let digit = Int(scalar.value - 48)
+        if result > (Int.max - digit) / 10 {
+            return Int.max
+        }
+        result = result * 10 + digit
+    }
+
+    return hasDigit ? result : nil
+}
+
+private func downloadSizeLimitExceededMessage(url: String, maxBytes: Int, contentLength: Int? = nil) -> String {
+    if let contentLength {
+        return "Download of \(url) exceeded maximum size of \(maxBytes) bytes (Content-Length: \(contentLength))."
+    }
+    return "Download of \(url) exceeded maximum size of \(maxBytes) bytes."
+}
+
 private func ipv4Bytes(_ host: String) -> [UInt8]? {
     let parts = host.split(separator: ".", omittingEmptySubsequences: false)
-    guard parts.count == 4 else { return nil }
-    var bytes: [UInt8] = []
-    bytes.reserveCapacity(4)
-    for part in parts {
-        guard let value = UInt8(part), String(value) == part else { return nil }
-        bytes.append(value)
+    guard (1...4).contains(parts.count),
+          parts.allSatisfy({ !$0.isEmpty }) else {
+        return nil
     }
-    return bytes
+
+    var numbers: [UInt32] = []
+    numbers.reserveCapacity(parts.count)
+    for part in parts {
+        guard let value = ipv4PartValue(String(part)) else { return nil }
+        numbers.append(value)
+    }
+
+    for number in numbers.dropLast() where number > 255 {
+        return nil
+    }
+
+    let lastPartMax = (UInt64(1) << UInt64(8 * (5 - numbers.count))) - 1
+    guard let last = numbers.last, UInt64(last) <= lastPartMax else {
+        return nil
+    }
+
+    var value: UInt32 = 0
+    for number in numbers.dropLast() {
+        value = (value << 8) | number
+    }
+    value = (value << UInt32(8 * (5 - numbers.count))) | last
+
+    return [
+        UInt8((value >> 24) & 0xff),
+        UInt8((value >> 16) & 0xff),
+        UInt8((value >> 8) & 0xff),
+        UInt8(value & 0xff)
+    ]
+}
+
+private func ipv4PartValue(_ part: String) -> UInt32? {
+    let lowercased = part.lowercased()
+    if lowercased.hasPrefix("0x") {
+        let digits = lowercased.dropFirst(2)
+        guard !digits.isEmpty else { return nil }
+        return UInt32(digits, radix: 16)
+    }
+    if lowercased.count > 1 && lowercased.hasPrefix("0") {
+        return UInt32(lowercased.dropFirst(), radix: 8)
+    }
+    return UInt32(lowercased, radix: 10)
 }
 
 private func isPrivateIPv4(_ bytes: [UInt8]) -> Bool {
@@ -671,6 +803,62 @@ struct MultipartFormData {
     private mutating func appendBoundary() {
         body.append(Data("--\(boundary)\r\n".utf8))
     }
+}
+
+struct MultipartFormDataFile: Equatable, Sendable {
+    var fileName: String
+    var mimeType: String
+    var data: Data
+
+    init(fileName: String = "blob", mimeType: String = "application/octet-stream", data: Data) {
+        self.fileName = fileName
+        self.mimeType = mimeType
+        self.data = data
+    }
+}
+
+enum MultipartFormDataValue: Equatable, Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case file(MultipartFormDataFile)
+    case array([MultipartFormDataValue])
+    case null
+}
+
+func convertToMultipartFormData(
+    _ values: [String: MultipartFormDataValue?],
+    useArrayBrackets: Bool = true
+) -> MultipartFormData {
+    var form = MultipartFormData()
+
+    func append(name: String, value: MultipartFormDataValue) {
+        switch value {
+        case let .string(string):
+            form.appendField(name: name, value: string)
+        case let .number(number):
+            form.appendField(name: name, value: number.rounded() == number ? String(Int(number)) : String(number))
+        case let .bool(bool):
+            form.appendField(name: name, value: String(bool))
+        case let .file(file):
+            form.appendFile(name: name, fileName: file.fileName, mimeType: file.mimeType, data: file.data)
+        case let .array(array):
+            guard !array.isEmpty else { return }
+            let fieldName = array.count == 1 || !useArrayBrackets ? name : "\(name)[]"
+            for item in array {
+                append(name: fieldName, value: item)
+            }
+        case .null:
+            return
+        }
+    }
+
+    for (name, value) in values {
+        guard let value else { continue }
+        append(name: name, value: value)
+    }
+
+    return form
 }
 
 func jsonScalarString(_ value: JSONValue) -> String? {

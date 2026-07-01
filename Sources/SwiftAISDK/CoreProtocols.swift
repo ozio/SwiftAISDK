@@ -1,13 +1,56 @@
 import Foundation
 
+public struct AISupportedURLPattern: Sendable {
+    private let matcher: @Sendable (String) -> Bool
+
+    public init(_ matcher: @escaping @Sendable (String) -> Bool) {
+        self.matcher = matcher
+    }
+
+    public func test(_ url: String) -> Bool {
+        matcher(url)
+    }
+}
+
+public func isURLSupported(
+    mediaType: String,
+    url: String,
+    supportedURLs: [String: [AISupportedURLPattern]]
+) -> Bool {
+    let lowercasedMediaType = mediaType.lowercased()
+    let lowercasedURL = url.lowercased()
+    let isTopLevelOnly = !lowercasedMediaType.contains("/")
+
+    return supportedURLs.contains { key, patterns in
+        let lowercasedKey = key.lowercased()
+        let mediaTypePrefix = (lowercasedKey == "*" || lowercasedKey == "*/*")
+            ? ""
+            : lowercasedKey.replacingOccurrences(of: "*", with: "")
+
+        let mediaTypeMatches: Bool
+        if mediaTypePrefix.isEmpty {
+            mediaTypeMatches = true
+        } else if isTopLevelOnly {
+            mediaTypeMatches = "\(lowercasedMediaType)/" == mediaTypePrefix
+        } else {
+            mediaTypeMatches = lowercasedMediaType.hasPrefix(mediaTypePrefix)
+        }
+
+        return mediaTypeMatches && patterns.contains { $0.test(lowercasedURL) }
+    }
+}
+
 public protocol LanguageModel: Sendable {
     var providerID: String { get }
     var modelID: String { get }
+    var supportedURLs: [String: [AISupportedURLPattern]] { get }
     func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult
     func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>
 }
 
 public extension LanguageModel {
+    var supportedURLs: [String: [AISupportedURLPattern]] { [:] }
+
     func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
             Task {

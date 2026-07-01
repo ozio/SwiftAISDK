@@ -106,19 +106,27 @@ func generateObjectResult<Output: Sendable>(
             ))
             return result
         } catch {
+            let enrichedError = objectGenerationErrorWithResultMetadata(
+                error,
+                finishReason: textResult?.finishReason,
+                usage: textResult?.usage,
+                warnings: textResult?.warnings ?? [],
+                providerMetadata: textResult?.providerMetadata ?? [:],
+                responseMetadata: textResult?.responseMetadata ?? AIResponseMetadata()
+            )
             await callbacks?.onError?(AIObjectGenerationErrorEvent(
                 callID: callID,
                 providerID: model.providerID,
                 modelID: model.modelID,
                 text: textResult?.text ?? "",
-                errorDescription: String(describing: error),
+                errorDescription: String(describing: enrichedError),
                 finishReason: textResult?.finishReason,
                 usage: textResult?.usage,
                 warnings: textResult?.warnings ?? [],
                 providerMetadata: textResult?.providerMetadata ?? [:],
                 responseMetadata: textResult?.responseMetadata ?? AIResponseMetadata()
             ))
-            throw error
+            throw enrichedError
         }
     }
 }

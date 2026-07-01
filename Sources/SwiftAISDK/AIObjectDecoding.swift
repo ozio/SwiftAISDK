@@ -21,7 +21,7 @@ func parseObject<Object: Decodable>(
             throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw failure
+            throw objectGenerationRepairAttemptedError(failure)
         }
         do {
             return try decodeAndValidateObject(Object.self, from: repaired, schema: schema)
@@ -59,7 +59,7 @@ func parseObjectArray<Element: Decodable>(
             throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw failure
+            throw objectGenerationRepairAttemptedError(failure)
         }
         do {
             return try decodeAndValidateObjectArray(Element.self, from: repaired, schema: schema)
@@ -96,7 +96,7 @@ func parseEnum(
             throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw failure
+            throw objectGenerationRepairAttemptedError(failure)
         }
         do {
             return try decodeAndValidateEnum(from: repaired, schema: schema)
@@ -131,7 +131,7 @@ func parseJSONValueObject(
             throw failure
         }
         guard let repaired = try await repairText(AIObjectRepairContext(text: text, errorMessage: message)) else {
-            throw failure
+            throw objectGenerationRepairAttemptedError(failure)
         }
         do {
             return try decodeJSONValueObject(from: repaired)
@@ -145,6 +145,31 @@ func parseJSONValueObject(
             )
         }
     }
+}
+
+func objectGenerationRepairAttemptedError(_ error: AIObjectGenerationError) -> AIObjectGenerationError {
+    var output = error
+    output.repairAttempted = true
+    return output
+}
+
+func objectGenerationErrorWithResultMetadata(
+    _ error: Error,
+    finishReason: String?,
+    usage: TokenUsage?,
+    warnings: [AIWarning],
+    providerMetadata: [String: JSONValue],
+    responseMetadata: AIResponseMetadata
+) -> Error {
+    guard var output = error as? AIObjectGenerationError else {
+        return error
+    }
+    output.finishReason = finishReason
+    output.usage = usage
+    output.warnings = warnings
+    output.providerMetadata = providerMetadata
+    output.responseMetadata = responseMetadata
+    return output
 }
 
 func objectGenerationError(
@@ -205,11 +230,13 @@ func decodeAndValidateObject<Object: Decodable>(
     from text: String,
     schema: JSONValue?
 ) throws -> (object: Object, rawObject: JSONValue, text: String) {
-    let parsed = try decodeObject(Object.self, from: text)
-    if let schema {
-        try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
+    guard let schema else {
+        return try decodeObject(Object.self, from: text)
     }
-    return parsed
+    let parsed = try decodeObject(JSONValue.self, from: text)
+    try AIJSONSchemaValidator.validate(parsed.rawObject, schema: schema)
+    let data = try encodeJSONBody(parsed.rawObject)
+    return (try JSONDecoder().decode(Object.self, from: data), parsed.rawObject, parsed.text)
 }
 
 func decodeAndValidateObjectArray<Element: Decodable>(

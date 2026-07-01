@@ -171,7 +171,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             stream: stream,
             unwrapOpenAIProviderOptions: isOpenAIBackedProvider(providerID, config: config),
             openAIProviderOptionsRoot: config.openAIBackedProviderRoot,
-            supportsStructuredOutputs: config.supportsStructuredOutputs,
+            supportsStructuredOutputs: config.supportsStructuredOutputs ||
+                (openAICompatibleProviderRoot(providerID) == "moonshotai" &&
+                    moonshotSupportsStructuredOutputs(modelID: modelID)),
             usesGenericOpenAICompatibleProviderOptions: config.usesGenericOpenAICompatibleProviderOptions
         )
         if stream, config.includeUsage {
@@ -232,13 +234,17 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                 body["tool_choice"] = toolChoice
             }
         }
-        let extraBody: [String: JSONValue]
+        var extraBody: [String: JSONValue]
         if unwrapOpenAIProviderOptions {
             extraBody = openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: openAIProviderOptionsRoot)
         } else if usesGenericOpenAICompatibleProviderOptions {
             extraBody = openAICompatibleProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
         } else {
             extraBody = openAICompatibleProviderOptions(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+        }
+        if extraBody["responseFormat"] == nil,
+           let responseFormat = openAICompatibleResponseFormatJSON(request.responseFormat) {
+            extraBody["responseFormat"] = responseFormat
         }
         body.merge(openAICompatibleChatOptions(from: extraBody, supportsStructuredOutputs: supportsStructuredOutputs)) { _, new in new }
         return body
@@ -290,23 +296,25 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
 
         let parts: [JSONValue] = try message.content.map { part in
             switch part {
-            case let .text(text):
+            case let .text(text, _):
                 return .object(["type": .string("text"), "text": .string(text)])
-            case let .imageURL(url):
+            case let .reasoning(text, _):
+                return .object(["type": .string("text"), "text": .string(text)])
+            case let .imageURL(url, _):
                 return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
-            case let .data(mimeType, data), let .file(mimeType, data, _):
+            case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
                 return .object([
                     "type": .string("image_url"),
                     "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
                 ])
-            case let .providerReference(_, reference):
+            case let .providerReference(_, reference, _, _):
                 return .object([
                     "type": .string("file"),
                     "file": .object([
                         "file_id": .string(try resolveProviderReference(reference, provider: openAICompatibleProviderRoot(providerID)))
                     ])
                 ])
-            case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+            case .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
                 return .object(["type": .string("text"), "text": .string("")])
             }
         }
@@ -317,4 +325,3 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         ])
     }
 }
-

@@ -1,5 +1,17 @@
 import Foundation
 
+public func getErrorMessage(_ value: Any?) -> String {
+    guard let value else { return "unknown error" }
+    if let string = value as? String { return string }
+    if let jsonValue = value as? JSONValue { return errorMessageCompactJSONString(jsonValue) }
+    if let bool = value as? Bool { return String(bool) }
+    if let int = value as? Int { return String(int) }
+    if let double = value as? Double { return double.rounded() == double ? String(Int(double)) : String(double) }
+    if let convertible = value as? CustomStringConvertible { return convertible.description }
+    if let error = value as? Error { return String(describing: error) }
+    return String(describing: value)
+}
+
 public struct AIAPICallError: Error, Equatable, CustomStringConvertible, Sendable {
     public var provider: String
     public var url: String?
@@ -36,22 +48,60 @@ public struct AIAPICallError: Error, Equatable, CustomStringConvertible, Sendabl
     }
 }
 
+private func errorMessageCompactJSONString(_ value: JSONValue) -> String {
+    switch value {
+    case let .string(string):
+        return errorMessageJSONStringLiteral(string)
+    case let .number(number):
+        return number.rounded() == number ? String(Int(number)) : String(number)
+    case let .bool(bool):
+        return String(bool)
+    case let .array(array):
+        return "[\(array.map(errorMessageCompactJSONString).joined(separator: ","))]"
+    case let .object(object):
+        return "{\(object.keys.sorted().map { "\(errorMessageJSONStringLiteral($0)):\(errorMessageCompactJSONString(object[$0] ?? .null))" }.joined(separator: ","))}"
+    case .null:
+        return "null"
+    }
+}
+
+private func errorMessageJSONStringLiteral(_ value: String) -> String {
+    guard let data = try? JSONEncoder().encode(value),
+          let string = String(data: data, encoding: .utf8) else {
+        return "\"\(value)\""
+    }
+    return string
+}
+
+public struct AITypeValidationContext: Equatable, Hashable, Sendable {
+    public var field: String
+    public var entityName: String
+
+    public init(field: String, entityName: String) {
+        self.field = field
+        self.entityName = entityName
+    }
+}
+
 public struct AITypeValidationError: Error, Equatable, CustomStringConvertible, Sendable {
     public var value: JSONValue?
     public var schema: JSONValue?
     public var path: String
     public var message: String
+    public var context: AITypeValidationContext?
 
     public init(
         value: JSONValue? = nil,
         schema: JSONValue? = nil,
         path: String,
-        message: String
+        message: String,
+        context: AITypeValidationContext? = nil
     ) {
         self.value = value
         self.schema = schema
         self.path = path
         self.message = message
+        self.context = context
     }
 
     public var description: String {
@@ -158,6 +208,19 @@ public struct AINoSuchToolError: Error, Equatable, CustomStringConvertible, Send
     }
 }
 
+public struct AIMissingToolResultsError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var toolCallIDs: [String]
+
+    public init(toolCallIDs: [String]) {
+        self.toolCallIDs = toolCallIDs
+    }
+
+    public var description: String {
+        let plural = toolCallIDs.count > 1
+        return "Tool result\(plural ? "s are" : " is") missing for tool call\(plural ? "s" : "") \(toolCallIDs.joined(separator: ", "))."
+    }
+}
+
 public struct AIInvalidToolApprovalError: Error, Equatable, CustomStringConvertible, Sendable {
     public var approvalID: String
 
@@ -181,6 +244,22 @@ public struct AIToolCallNotFoundForApprovalError: Error, Equatable, CustomString
 
     public var description: String {
         "Tool call \"\(toolCallID)\" not found for approval request \"\(approvalID)\"."
+    }
+}
+
+public struct AIInvalidToolApprovalSignatureError: Error, Equatable, CustomStringConvertible, Sendable {
+    public var approvalID: String
+    public var toolCallID: String
+    public var reason: String
+
+    public init(approvalID: String, toolCallID: String, reason: String) {
+        self.approvalID = approvalID
+        self.toolCallID = toolCallID
+        self.reason = reason
+    }
+
+    public var description: String {
+        "Invalid tool approval signature for approval \"\(approvalID)\" and tool call \"\(toolCallID)\": \(reason)."
     }
 }
 

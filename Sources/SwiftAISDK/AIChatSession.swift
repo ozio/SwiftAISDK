@@ -104,13 +104,21 @@ public final class AIChatSession: ObservableObject {
             ))
         }
 
-        let responseID = generateMessageID()
-        messages.append(.assistant(id: responseID))
+        let responseID: String
+        let requestMessages: [AIUIMessage]
+        if messages.last?.role == .assistant {
+            responseID = lastMessageID
+            requestMessages = messages
+        } else {
+            responseID = generateMessageID()
+            messages.append(.assistant(id: responseID))
+            requestMessages = Array(messages.dropLast())
+        }
         return startStream(
             trigger: .submitMessage,
             messageID: lastMessageID,
             responseMessageID: responseID,
-            requestMessages: Array(messages.dropLast()),
+            requestMessages: requestMessages,
             options: options
         )
     }

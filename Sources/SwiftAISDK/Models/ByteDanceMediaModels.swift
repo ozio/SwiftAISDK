@@ -15,7 +15,7 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         let warnings = byteDanceWarnings(for: request)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "content": .array(try byteDanceContent(prompt: request.prompt, image: request.image, options: options))
+            "content": .array(try byteDanceContent(from: request, options: options))
         ]
         if let aspectRatio = request.aspectRatio { body["ratio"] = .string(aspectRatio) }
         if let duration = request.durationSeconds { body["duration"] = .number(duration) }
@@ -125,27 +125,28 @@ private func byteDanceExtraBodyOptions(from extraBody: [String: JSONValue]) thro
     return ByteDanceResolvedOptions(known: known, passthrough: passthrough)
 }
 
-private func byteDanceContent(prompt: String, image: ImageInputFile?, options: ByteDanceResolvedOptions) throws -> [JSONValue] {
+private func byteDanceContent(from request: VideoGenerationRequest, options: ByteDanceResolvedOptions) throws -> [JSONValue] {
     var content: [JSONValue] = []
     let known = options.known
-    if !prompt.isEmpty {
-        content.append(.object(["type": .string("text"), "text": .string(prompt)]))
+    if !request.prompt.isEmpty {
+        content.append(.object(["type": .string("text"), "text": .string(request.prompt)]))
     }
-    if let image = try byteDanceMediaURL(from: image) ?? byteDanceMediaURL(known["image"]) {
+    let lastFrameImage = try byteDanceLastFrameImageURL(from: request, known: known)
+    if let image = try byteDanceStartImageURL(from: request, known: known) {
         var imageContent: [String: JSONValue] = ["type": .string("image_url"), "image_url": .object(["url": .string(image)])]
-        if known["lastFrameImage"] != nil {
+        if lastFrameImage != nil {
             imageContent["role"] = .string("first_frame")
         }
         content.append(.object(imageContent))
     }
-    if let lastFrameImage = byteDanceMediaURL(known["lastFrameImage"]) {
+    if let lastFrameImage {
         content.append(.object([
             "type": .string("image_url"),
             "image_url": .object(["url": .string(lastFrameImage)]),
             "role": .string("last_frame")
         ]))
     }
-    for imageURL in byteDanceMediaURLs(known["referenceImages"]) {
+    for imageURL in try byteDanceReferenceImageURLs(from: request, known: known) {
         content.append(.object([
             "type": .string("image_url"),
             "image_url": .object(["url": .string(imageURL)]),
@@ -167,6 +168,33 @@ private func byteDanceContent(prompt: String, image: ImageInputFile?, options: B
         ]))
     }
     return content
+}
+
+private func byteDanceStartImageURL(from request: VideoGenerationRequest, known: [String: JSONValue]) throws -> String? {
+    if let firstFrame = request.frameImages.first(where: { $0.frameType == .firstFrame }) {
+        return try byteDanceMediaURL(from: firstFrame.image)
+    }
+    if let image = try byteDanceMediaURL(from: request.image) {
+        return image
+    }
+    return byteDanceMediaURL(known["image"])
+}
+
+private func byteDanceLastFrameImageURL(from request: VideoGenerationRequest, known: [String: JSONValue]) throws -> String? {
+    if let lastFrame = request.frameImages.first(where: { $0.frameType == .lastFrame }) {
+        return try byteDanceMediaURL(from: lastFrame.image)
+    }
+    return byteDanceMediaURL(known["lastFrameImage"])
+}
+
+private func byteDanceReferenceImageURLs(from request: VideoGenerationRequest, known: [String: JSONValue]) throws -> [String] {
+    if !request.frameImages.isEmpty {
+        return []
+    }
+    if !request.inputReferences.isEmpty {
+        return try request.inputReferences.map { try convertImageModelFileToDataURI($0) }
+    }
+    return byteDanceMediaURLs(known["referenceImages"])
 }
 
 private func byteDanceOptions(from options: ByteDanceResolvedOptions) -> [String: JSONValue] {
@@ -334,14 +362,7 @@ private func byteDanceMediaURL(_ value: JSONValue?) -> String? {
 
 private func byteDanceMediaURL(from image: ImageInputFile?) throws -> String? {
     guard let image else { return nil }
-    if let url = image.url {
-        return url
-    }
-    if let data = image.data {
-        let mediaType = image.mediaType ?? "application/octet-stream"
-        return "data:\(mediaType);base64,\(data.base64EncodedString())"
-    }
-    throw AIError.invalidArgument(argument: "image", message: "ByteDance video image input requires data or URL.")
+    return try convertImageModelFileToDataURI(image)
 }
 
 private func byteDanceMediaURLs(_ value: JSONValue?) -> [String] {

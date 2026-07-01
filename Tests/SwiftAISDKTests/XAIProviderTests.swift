@@ -230,6 +230,153 @@ import Testing
     #expect(videoBody["pollIntervalMs"] == nil)
 }
 
+@Test func xAIVideoMapsFrameImagesLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"frame-images"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/frame-images.mp4","respect_moderation":true}}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.videoModel("grok-2-video")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        image: ImageInputFile(url: "https://example.com/image-input.png"),
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/first.png"), frameType: .firstFrame),
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/last.png"), frameType: .lastFrame)
+        ],
+        providerOptions: [
+            "xai": [
+                "referenceImageUrls": ["https://example.com/legacy-reference.png"],
+                "pollIntervalMs": 1
+            ]
+        ]
+    ))
+
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "frameImages",
+        message: "xAI video models do not support last_frame frameImages. The last_frame image will be ignored."
+    )))
+    let request = try #require((await transport.requests()).first)
+    #expect(request.url.absoluteString == "https://api.x.ai/v1/videos/generations")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["image"]?["url"]?.stringValue == "https://example.com/first.png")
+    #expect(body["reference_images"] == nil)
+}
+
+@Test func xAIVideoMapsFileFrameImageLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"file-frame"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/file-frame.mp4","respect_moderation":true}}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.videoModel("grok-2-video")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png"), frameType: .firstFrame)
+        ],
+        providerOptions: ["xai": ["pollIntervalMs": 1]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image"]?["url"]?.stringValue == "data:image/png;base64,iVBORw==")
+}
+
+@Test func xAIVideoMapsInputReferencesLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"input-references"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/input-references.mp4","respect_moderation":true}}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.videoModel("grok-2-video")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/ref-1.png"),
+            ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png")
+        ],
+        providerOptions: [
+            "xai": [
+                "referenceImageUrls": ["https://example.com/legacy-reference.png"],
+                "pollIntervalMs": 1
+            ]
+        ]
+    ))
+
+    let request = try #require((await transport.requests()).first)
+    #expect(request.url.absoluteString == "https://api.x.ai/v1/videos/generations")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["reference_images"]?[0]?["url"]?.stringValue == "https://example.com/ref-1.png")
+    #expect(body["reference_images"]?[1]?["url"]?.stringValue == "data:image/png;base64,iVBORw==")
+}
+
+@Test func xAIVideoIgnoresInputReferencesWithFrameImagesLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"frame-over-refs"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/frame-over-refs.mp4","respect_moderation":true}}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.videoModel("grok-2-video")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/first.png"), frameType: .firstFrame)
+        ],
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/ref-1.png")
+        ],
+        providerOptions: ["xai": ["pollIntervalMs": 1]]
+    ))
+
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "inputReferences",
+        message: "xAI inputReferences are ignored when frameImages are provided."
+    )))
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image"]?["url"]?.stringValue == "https://example.com/first.png")
+    #expect(body["reference_images"] == nil)
+}
+
+@Test func xAIVideoIgnoresInputReferencesInEditModeLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"edit-over-refs"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/edit-over-refs.mp4","respect_moderation":true}}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.videoModel("grok-2-video")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "make it brighter",
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/ref-1.png")
+        ],
+        providerOptions: [
+            "xai": [
+                "mode": "edit-video",
+                "videoUrl": "https://x.ai/source.mp4",
+                "pollIntervalMs": 1
+            ]
+        ]
+    ))
+
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "inputReferences",
+        message: "xAI video editing does not support inputReferences."
+    )))
+    let request = try #require((await transport.requests()).first)
+    #expect(request.url.absoluteString == "https://api.x.ai/v1/videos/edits")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["video"]?["url"]?.stringValue == "https://x.ai/source.mp4")
+    #expect(body["reference_images"] == nil)
+}
+
 @Test func xAIImageProviderOptionsValidateLikeUpstreamSchema() async throws {
     let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image"}]}"#))))
     let model = try provider.imageModel("grok-2-image")

@@ -302,11 +302,13 @@ private func huggingFaceInputMessage(_ message: AIMessage) throws -> JSONValue? 
 
 private func huggingFaceInputContentPart(_ part: AIContentPart) throws -> JSONValue? {
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return .object(["type": .string("input_text"), "text": .string(text)])
-    case let .imageURL(url):
+    case let .reasoning(text, _):
+        return .object(["type": .string("input_text"), "text": .string(text)])
+    case let .imageURL(url, _):
         return .object(["type": .string("input_image"), "image_url": .string(url)])
-    case let .data(mimeType, data), let .file(mimeType, data, _):
+    case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
         guard mimeType.lowercased().hasPrefix("image/") else {
             throw AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API only supports image file parts; got \(mimeType).")
         }
@@ -314,12 +316,12 @@ private func huggingFaceInputContentPart(_ part: AIContentPart) throws -> JSONVa
             "type": .string("input_image"),
             "image_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")
         ])
-    case let .providerReference(mimeType, _):
+    case let .providerReference(mimeType, _, _, _):
         guard mimeType.lowercased().hasPrefix("image/") else {
             throw AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API only supports image file parts; got \(mimeType).")
         }
         return nil
-    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }

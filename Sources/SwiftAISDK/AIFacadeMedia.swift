@@ -231,23 +231,26 @@ extension AI {
     }
 
     public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> VideoGenerationResult {
-        try await withTelemetry(
+        let normalized = normalizeVideoGenerationRequest(request)
+        return try await withTelemetry(
             operationID: "ai.generateVideo",
             providerID: model.providerID,
             modelID: model.modelID,
-            input: videoRequestTelemetryInput(request),
+            input: videoRequestTelemetryInput(normalized.request),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
-            abortSignal: request.abortSignal,
+            abortSignal: normalized.request.abortSignal,
             output: videoTelemetryOutput,
             usage: { _ in nil },
             warnings: { $0.warnings },
             providerMetadata: { $0.providerMetadata },
-            responseMetadata: { $0.responseMetadata }
+            responseMetadata: { $0.responseMetadata },
+            logEmptyWarnings: false
         ) {
-            var result = try await model.generateVideo(request)
+            var result = try await model.generateVideo(normalized.request)
+            result.warnings = normalized.warnings + result.warnings
             if result.requestMetadata == AIRequestMetadata() {
-                result.requestMetadata = videoGenerationRequestMetadata(request)
+                result.requestMetadata = videoGenerationRequestMetadata(normalized.request)
             }
             guard !result.urls.isEmpty || !result.base64Videos.isEmpty else {
                 throw AINoOutputError(kind: .video, responses: [result.responseMetadata])
@@ -324,4 +327,29 @@ extension AI {
             return result
         }
     }
+}
+
+private func normalizeVideoGenerationRequest(_ request: VideoGenerationRequest) -> (request: VideoGenerationRequest, warnings: [AIWarning]) {
+    var normalized = request
+    var warnings: [AIWarning] = []
+
+    if !normalized.frameImages.isEmpty, !normalized.inputReferences.isEmpty {
+        normalized.inputReferences = []
+        warnings.append(AIWarning(
+            type: "other",
+            message: "inputReferences were ignored because frameImages were provided; frameImages and inputReferences cannot be combined."
+        ))
+    }
+
+    if let firstFrame = normalized.frameImages.first(where: { $0.frameType == .firstFrame }) {
+        if normalized.image != nil, normalized.image != firstFrame.image {
+            warnings.append(AIWarning(
+                type: "other",
+                message: "prompt.image was ignored because a first_frame frameImage was provided; the first_frame frameImage takes precedence as the start image."
+            ))
+        }
+        normalized.image = firstFrame.image
+    }
+
+    return (normalized, warnings)
 }

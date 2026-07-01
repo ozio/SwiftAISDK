@@ -27,7 +27,13 @@ func moonshotChatBody(from input: [String: JSONValue], request: LanguageModelReq
         body["reasoning_history"] = reasoningHistory
     }
 
+    moonshotStripTopLevelDollarSchema(from: &body)
+
     return body
+}
+
+func moonshotSupportsStructuredOutputs(modelID: String) -> Bool {
+    modelID.hasPrefix("kimi-k")
 }
 
 func moonshotProviderOptions(from providerOptions: [String: JSONValue]) throws -> [String: JSONValue] {
@@ -84,6 +90,18 @@ func moonshotValidateLanguageProviderOptions(_ options: [String: JSONValue], arg
 
 func moonshotIsInteger(_ value: Double) -> Bool {
     value.rounded(.towardZero) == value
+}
+
+private func moonshotStripTopLevelDollarSchema(from body: inout [String: JSONValue]) {
+    guard var responseFormat = body["response_format"]?.objectValue,
+          var jsonSchema = responseFormat["json_schema"]?.objectValue,
+          var schema = jsonSchema["schema"]?.objectValue else {
+        return
+    }
+    schema.removeValue(forKey: "$schema")
+    jsonSchema["schema"] = .object(schema)
+    responseFormat["json_schema"] = .object(jsonSchema)
+    body["response_format"] = .object(responseFormat)
 }
 
 func moonshotChatUsage(from raw: JSONValue) -> TokenUsage? {

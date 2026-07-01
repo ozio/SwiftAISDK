@@ -8,7 +8,8 @@ func streamTextWithTelemetry(
     input: JSONValue?,
     retryPolicy: AIRetryPolicy,
     telemetry: Telemetry.Options?,
-    abortSignal: AIAbortSignal? = nil
+    abortSignal: AIAbortSignal? = nil,
+    logWarnings: Bool = true
 ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
     let dispatcher = TelemetryDispatcher(options: telemetry)
     let callID = UUID().uuidString
@@ -80,7 +81,9 @@ func streamTextWithTelemetry(
                                 providerMetadata: result.providerMetadata,
                                 responseMetadata: result.responseMetadata
                             ))
-                            await AIWarningLogging.logWarnings(result.warnings, providerID: providerID, modelID: modelID)
+                            if logWarnings {
+                                await AIWarningLogging.logWarnings(result.warnings, providerID: providerID, modelID: modelID)
+                            }
                         }
                         continuation.finish()
                         return
@@ -100,7 +103,7 @@ func streamTextWithTelemetry(
                         guard attempts <= retryPolicy.maxRetries else {
                             throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
                         }
-                        let sleepDelay = retryAfterDelayNanoseconds(from: error) ?? delay
+                        let sleepDelay = retryDelayNanoseconds(from: error, exponentialBackoffDelay: delay)
                         await dispatcher.record(telemetryEvent(
                             kind: .retry,
                             callID: callID,

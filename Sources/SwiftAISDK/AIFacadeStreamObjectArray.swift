@@ -16,7 +16,7 @@ public static func streamObjectArray<Element: Decodable & Sendable>(
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<ObjectStreamPart<[Element]>, Error> {
         let schema = arrayOutputSchema(elementSchema: elementSchema)
-        return mapObjectStream(
+        return mapArrayObjectStream(
             streamObject(
                 model: model,
                 request: request,
@@ -30,8 +30,7 @@ public static func streamObjectArray<Element: Decodable & Sendable>(
                 callbacks: arrayEnvelopeCallbacks(callbacks),
                 jsonInstruction: jsonInstruction,
                 repairText: repairText
-            ),
-            transform: arrayStreamPart
+            )
         )
     }
 

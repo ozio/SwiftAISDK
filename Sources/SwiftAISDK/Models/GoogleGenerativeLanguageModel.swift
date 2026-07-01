@@ -176,11 +176,13 @@ func googleGenerateContentMessageJSON(_ message: AIMessage, modelID: String, war
 
 func googleGenerateContentParts(_ part: AIContentPart, modelID: String, warnings: inout [AIWarning]) throws -> [JSONValue] {
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return [.object(["text": .string(text)])]
-    case let .imageURL(url):
+    case let .reasoning(text, _):
+        return [.object(["text": .string(text)])]
+    case let .imageURL(url, _):
         return [.object(["fileData": .object(["fileUri": .string(url)])])]
-    case let .data(mimeType, data), let .file(mimeType, data, _):
+    case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
         let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
         return [.object([
             "inlineData": .object([
@@ -188,13 +190,13 @@ func googleGenerateContentParts(_ part: AIContentPart, modelID: String, warnings
                 "data": .string(data.base64EncodedString())
             ])
         ])]
-    case let .providerReference(_, reference):
+    case let .providerReference(_, reference, _, _):
         return [.object(["fileData": .object(["fileUri": .string((try? resolveProviderReference(reference, provider: "google")) ?? reference.values.first ?? "")])])]
     case let .toolCall(call):
         return [googleGenerateContentToolCallPart(call, modelID: modelID, warnings: &warnings)]
     case let .toolResult(result):
         return googleGenerateContentToolResultParts(result, modelID: modelID)
-    case .toolApprovalRequest, .toolApprovalResponse:
+    case .reasoningFile, .custom, .toolApprovalRequest, .toolApprovalResponse:
         return [.object(["text": .string("")])]
     }
 }
@@ -347,4 +349,3 @@ func googleJSONString(_ value: JSONValue) -> String? {
     guard let data = try? encodeJSONBody(value) else { return nil }
     return String(data: data, encoding: .utf8)
 }
-

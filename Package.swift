@@ -24,7 +24,8 @@ let package = Package(
         ),
         .testTarget(
             name: "SwiftAISDKTests",
-            dependencies: ["SwiftAISDK"]
+            dependencies: ["SwiftAISDK"],
+            resources: [.process("Fixtures")]
         ),
     ],
     swiftLanguageModes: [.v6]

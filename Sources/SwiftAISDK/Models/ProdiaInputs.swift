@@ -12,17 +12,17 @@ func prodiaInputImage(from messages: [AIMessage], transport: AITransport, abortS
     guard let user = messages.reversed().first(where: { $0.role == .user }) else { return nil }
     for part in user.content {
         switch part {
-        case let .data(mimeType, data) where topLevelMediaType(mimeType) == "image",
-             let .file(mimeType, data, _) where topLevelMediaType(mimeType) == "image":
+        case let .data(mimeType, data, _) where topLevelMediaType(mimeType) == "image",
+             let .file(mimeType, data, _, _) where topLevelMediaType(mimeType) == "image":
             return (data, prodiaResolvedImageMediaType(mediaType: mimeType, data: data))
-        case let .imageURL(urlString):
+        case let .imageURL(urlString, _):
             let response = try await downloadURL(urlString, transport: transport, abortSignal: abortSignal)
             guard (200..<300).contains(response.statusCode) else {
                 throw apiCallError(provider: "prodia.language", response: response)
             }
             let mediaType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value ?? "image/png"
             return (response.body, prodiaResolvedImageMediaType(mediaType: mediaType, data: response.body))
-        case .text, .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .text, .reasoning, .reasoningFile, .custom, .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             continue
         }
     }

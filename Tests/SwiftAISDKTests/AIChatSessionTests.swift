@@ -38,6 +38,29 @@ import Testing
 }
 
 @MainActor
+@Test func aiChatSessionIncludesUserTextMessageMetadataLikeUpstreamChat() async throws {
+    let transport = RecordingChatTransport()
+    let session = AIChatSession(
+        chatID: "chat-1",
+        transport: transport,
+        generateMessageID: { "response-1" }
+    )
+
+    await session.sendMessage(
+        "Hello, world!",
+        id: "user-1",
+        metadata: ["someData": true]
+    ).value
+
+    let request = try #require(transport.sendRequests.first)
+    #expect(request.messages.map(\.id) == ["user-1"])
+    #expect(request.messages.first?.metadata["someData"]?.boolValue == true)
+    #expect(session.messages.first?.id == "user-1")
+    #expect(session.messages.first?.metadata["someData"]?.boolValue == true)
+    #expect(session.messages.map(\.id) == ["user-1", "response-1"])
+}
+
+@MainActor
 @Test func aiChatSessionReplacesUserMessageBeforeSending() async throws {
     let transport = RecordingChatTransport()
     let session = AIChatSession(
@@ -77,6 +100,32 @@ import Testing
     #expect(request.headers == ["x-submit": "1"])
     #expect(request.messages.map(\.id) == ["user-1"])
     #expect(session.messages.map(\.id) == ["user-1", "response-1"])
+}
+
+@MainActor
+@Test func aiChatSessionContinuesLastAssistantMessageIDLikeUpstreamGetResponseUIMessageID() async throws {
+    let transport = RecordingChatTransport()
+    let session = AIChatSession(
+        transport: transport,
+        messages: [
+            .user("Continue this", id: "user-1"),
+            .assistant(id: "assistant-1", parts: [.text(AIUITextPart(text: "This is"))])
+        ],
+        generateMessageID: {
+            Issue.record("Continuation should reuse the last assistant message ID.")
+            return "new-response"
+        }
+    )
+
+    await session.sendMessage(options: AIChatSessionRequestOptions(headers: ["x-submit": "1"])).value
+
+    let request = try #require(transport.sendRequests.first)
+    #expect(request.messageID == "assistant-1")
+    #expect(request.responseMessageID == "assistant-1")
+    #expect(request.headers == ["x-submit": "1"])
+    #expect(request.messages.map(\.id) == ["user-1", "assistant-1"])
+    #expect(session.messages.map(\.id) == ["user-1", "assistant-1"])
+    #expect(session.messages.last?.text == "Echo assistant-1")
 }
 
 @MainActor
@@ -150,6 +199,23 @@ import Testing
 }
 
 @MainActor
+@Test func aiChatSessionClearErrorResetsStatusLikeUpstreamChat() async throws {
+    let session = AIChatSession(
+        transport: ErroringChatTransport(),
+        generateMessageID: { "response-error" }
+    )
+
+    await session.sendMessage("Hi", id: "user-1").value
+    #expect(session.status == .error)
+    #expect(session.error != nil)
+
+    session.clearError()
+
+    #expect(session.status == .ready)
+    #expect(session.error == nil)
+}
+
+@MainActor
 @Test func aiChatSessionInvokesFinishAndErrorCallbacksLikeUpstreamChat() async throws {
     let finishEvents = RecordingSessionEvents()
     let success = AIChatSession(
@@ -185,6 +251,32 @@ import Testing
 }
 
 @MainActor
+@Test func aiChatSessionStopMarksFinishEventAsAbortLikeUpstreamHandleUIMessageStreamFinish() async throws {
+    let transport = PendingChatTransport()
+    let events = RecordingSessionEvents()
+    let session = AIChatSession(
+        transport: transport,
+        generateMessageID: { "response-1" },
+        onFinish: { events.finishEvents.append($0) }
+    )
+
+    let task = session.sendMessage("Hi", id: "user-1")
+    await waitUntil { session.status == .streaming }
+
+    session.stop(reason: "manual abort")
+    await task.value
+
+    #expect(session.status == .ready)
+    #expect(events.finishEvents.count == 1)
+    let finish = try #require(events.finishEvents.first)
+    #expect(finish.isAbort)
+    #expect(finish.isError == false)
+    #expect(finish.isDisconnect == false)
+    #expect(finish.message?.id == "response-1")
+    #expect(finish.messages.map(\.id) == ["user-1", "response-1"])
+}
+
+@MainActor
 @Test func aiChatSessionCanSendAutomaticallyAfterToolOutput() async throws {
     let transport = RecordingChatTransport()
     let ids = RecordingIDGenerator(["tool-message", "auto-response"])
@@ -208,6 +300,32 @@ import Testing
     #expect(request.headers == ["x-auto": "1"])
     #expect(request.messages.map(\.id) == ["assistant-1", "tool-message"])
     #expect(session.messages.map(\.id) == ["assistant-1", "tool-message", "auto-response"])
+}
+
+@MainActor
+@Test func aiChatSessionForwardsOptionsWhenAutoSendingAfterToolApprovalResponseLikeUpstream() async throws {
+    let transport = RecordingChatTransport()
+    let ids = RecordingIDGenerator(["approval-message", "auto-response"])
+    let session = AIChatSession(
+        transport: transport,
+        messages: [.assistant(id: "assistant-1")],
+        generateMessageID: { ids.next() },
+        sendAutomaticallyWhen: { messages in
+            messages.last?.parts.contains(.toolApprovalResponse(AIToolApprovalResponse(id: "approval-1", approved: true))) == true
+        }
+    )
+    let response = AIToolApprovalResponse(id: "approval-1", approved: true)
+
+    session.addToolApprovalResponse(response, options: AIChatSessionRequestOptions(headers: ["x-auto": "approval"]))
+
+    await waitUntil { transport.sendRequests.count == 1 }
+    await waitUntil { session.status == .ready }
+
+    let request = try #require(transport.sendRequests.first)
+    #expect(request.messageID == "approval-message")
+    #expect(request.headers == ["x-auto": "approval"])
+    #expect(request.messages.map(\.id) == ["assistant-1", "approval-message"])
+    #expect(session.messages.map(\.id) == ["assistant-1", "approval-message", "auto-response"])
 }
 
 private final class RecordingChatTransport: AIChatTransport, @unchecked Sendable {
@@ -243,6 +361,15 @@ private final class RecordingChatTransport: AIChatTransport, @unchecked Sendable
 private final class ErroringChatTransport: AIChatTransport, @unchecked Sendable {
     func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error> {
         throw AIError.invalidResponse(provider: "test", message: "boom")
+    }
+}
+
+private final class PendingChatTransport: AIChatTransport, @unchecked Sendable {
+    func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error> {
+        let responseID = request.responseMessageID ?? "response"
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.assistant(id: responseID, parts: [.text(AIUITextPart(text: "Starting"))]))
+        }
     }
 }
 

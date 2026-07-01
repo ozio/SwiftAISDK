@@ -103,14 +103,29 @@ bumps across many providers.
    tooling, and schema-helper packages can stay out of scope unless Swift adds a
    matching product surface.
 
-5. If the script is unavailable or you need to debug it, the equivalent manual
+5. Refresh the upstream test inventory after version discovery. This keeps a
+   pinned GitHub test checklist for every package group in the Vercel AI SDK
+   monorepo:
+
+   ```sh
+   Scripts/update-upstream-test-inventory.js
+   ```
+
+   The generated `Docs/UpstreamTestInventory.md` records the upstream commit,
+   package-level test counts, untracked test groups, and GitHub links for every
+   upstream test/spec file. Use it with `Docs/TestPortingPlan.md` as a review
+   checklist before porting a package. Translate the behavior into idiomatic
+   Swift tests; do not copy JS tests mechanically when they cover JS-only
+   runtime, framework hooks, codemods, or APIs SwiftAISDK does not expose.
+
+6. If the script is unavailable or you need to debug it, the equivalent manual
    ledger read is:
 
    ```sh
    awk -F'|' '/@ai-sdk\\// { gsub(/`| /, "", $2); gsub(/`| /, "", $3); print $2, $3 }' Docs/ProviderVersionLedger.md
    ```
 
-6. Query npm for all ledger packages and write a working list of packages whose
+7. Query npm for all ledger packages and write a working list of packages whose
    latest version differs from the ledger. Do not include unrelated packages
    just because `rg` finds their old numbers in tests or docs.
 
@@ -123,7 +138,7 @@ bumps across many providers.
    done < <(awk -F'|' '/@ai-sdk\\// { gsub(/`| /, "", $2); gsub(/`| /, "", $3); print $2, $3 }' Docs/ProviderVersionLedger.md)
    ```
 
-7. For each changed package, download both tarballs into a throwaway directory
+8. For each changed package, download both tarballs into a throwaway directory
    and diff source, tests, changelog, and dist if source is absent:
 
    ```sh

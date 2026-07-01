@@ -80,16 +80,32 @@ func messageTelemetryJSON(_ message: AIMessage) -> JSONValue {
 
 func contentPartTelemetryJSON(_ part: AIContentPart) -> JSONValue {
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return .object(["type": .string("text"), "text": .string(text)])
-    case let .imageURL(url):
+    case let .reasoning(text, _):
+        return .object(["type": .string("reasoning"), "text": .string(text)])
+    case let .imageURL(url, _):
         return .object(["type": .string("image-url"), "url": .string(url)])
-    case let .data(mimeType, data):
+    case let .data(mimeType, data, _):
         return .object(["type": .string("data"), "mimeType": .string(mimeType), "byteLength": .number(Double(data.count))])
-    case let .file(mimeType, data, filename):
+    case let .file(mimeType, data, filename, _):
         return .object(["type": .string("file"), "mimeType": .string(mimeType), "byteLength": .number(Double(data.count)), "filename": filename.map(JSONValue.string)])
-    case let .providerReference(mimeType, reference):
-        return .object(["type": .string("provider-reference"), "mimeType": .string(mimeType), "reference": .object(reference.mapValues(JSONValue.string))])
+    case let .reasoningFile(file):
+        return .object([
+            "type": .string("reasoning-file"),
+            "id": file.id.map(JSONValue.string),
+            "mediaType": .string(file.mediaType),
+            "filename": file.filename.map(JSONValue.string)
+        ])
+    case let .custom(value, _):
+        return .object(["type": .string("custom"), "value": value])
+    case let .providerReference(mimeType, reference, filename, _):
+        return .object([
+            "type": .string("provider-reference"),
+            "mimeType": .string(mimeType),
+            "reference": .object(reference.mapValues(JSONValue.string)),
+            "filename": filename.map(JSONValue.string)
+        ])
     case let .toolCall(call):
         return .object(["type": .string("tool-call"), "id": .string(call.id), "name": .string(call.name), "arguments": .string(call.arguments)])
     case let .toolResult(result):
@@ -257,6 +273,8 @@ func videoRequestTelemetryInput(_ request: VideoGenerationRequest) -> JSONValue 
         "aspectRatio": request.aspectRatio.map(JSONValue.string),
         "durationSeconds": request.durationSeconds.map(JSONValue.number),
         "image": request.image.map(imageInputFileRequestMetadata),
+        "frameImages": request.frameImages.isEmpty ? nil : .array(request.frameImages.map(videoFrameImageRequestMetadata)),
+        "inputReferences": request.inputReferences.isEmpty ? nil : .array(request.inputReferences.map(imageInputFileRequestMetadata)),
         "resolution": request.resolution.map(JSONValue.string),
         "fps": request.fps.map(JSONValue.number),
         "seed": request.seed.map { .number(Double($0)) },
@@ -264,6 +282,13 @@ func videoRequestTelemetryInput(_ request: VideoGenerationRequest) -> JSONValue 
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "extraBody": request.extraBody.isEmpty ? nil : .object(request.extraBody),
         "headers": headersTelemetryJSON(request.headers)
+    ])
+}
+
+func videoFrameImageRequestMetadata(_ frameImage: VideoFrameImage) -> JSONValue {
+    .object([
+        "image": imageInputFileRequestMetadata(frameImage.image),
+        "frameType": .string(frameImage.frameType.rawValue)
     ])
 }
 
@@ -323,6 +348,7 @@ func skillUploadRequestTelemetryInput(_ request: SkillUploadRequest) -> JSONValu
                 "byteLength": .number(Double(file.data.count))
             ])
         }),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
         "headers": headersTelemetryJSON(request.headers)
     ])
 }
@@ -336,7 +362,8 @@ func skillUploadRequestMetadataBody(_ request: SkillUploadRequest) -> JSONValue 
                 "mediaType": .string(file.mediaType),
                 "byteLength": .number(Double(file.data.count))
             ])
-        })
+        }),
+        "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions)
     ])
 }
 
@@ -403,6 +430,7 @@ func toolResultTelemetryJSON(_ result: AIToolResult) -> JSONValue {
         "isError": .bool(result.isError),
         "preliminary": .bool(result.preliminary),
         "dynamic": .bool(result.dynamic),
+        "providerExecuted": .bool(result.providerExecuted),
         "providerMetadata": result.providerMetadata.isEmpty ? nil : .object(result.providerMetadata)
     ])
 }

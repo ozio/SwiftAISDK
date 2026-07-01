@@ -9,6 +9,7 @@ import Testing
     #expect(try secureJSONParse(#""X""#) == "X")
     #expect(try secureJSONParse(#"{ "constructor": "string value" }"#) == ["constructor": "string value"])
     #expect(try secureJSONParse(#"{ "constructor": null }"#) == ["constructor": .null])
+    #expect(try secureJSONParse(#"{ "constructor": { "x": 7 } }"#) == ["constructor": ["x": 7]])
 
     #expect(throws: AIJSONParseError.self) {
         _ = try secureJSONParse(#"{ "__proto__": { "isAdmin": true } }"#)
@@ -21,6 +22,21 @@ import Testing
     }
     #expect(throws: AIJSONParseError.self) {
         _ = try secureJSONParse(#"{ "\u0063\u006f\u006e\u0073\u0074\u0072\u0075\u0063\u0074\u006f\u0072": { "prototype": { "isAdmin": true } } }"#)
+    }
+}
+
+@Test func secureJSONParseRejectsNestedPrototypePayloadsLikeUpstream() {
+    #expect(throws: AIJSONParseError.self) {
+        _ = try secureJSONParse(#"{ "a": 5, "b": 6, "__proto__": { "x": 7 }, "c": { "d": 0, "e": "text", "__proto__": { "y": 8 }, "f": { "g": 2 } } }"#)
+    }
+    #expect(throws: AIJSONParseError.self) {
+        _ = try secureJSONParse(#"{ "a": 5, "b": 6, "constructor": { "prototype": { "x": 7 } }, "c": { "d": 0, "e": "text", "f": { "g": 2 } } }"#)
+    }
+    #expect(throws: AIJSONParseError.self) {
+        _ = try secureJSONParse(#"{ "\u005f\u005f\u0070\u0072\u006f\u0074\u006f\u005f\u005f": { "isAdmin": true } }"#)
+    }
+    #expect(throws: AIJSONParseError.self) {
+        _ = try secureJSONParse(#"{ "\u0063\u006fnstructor": { "prototype": { "isAdmin": true } } }"#)
     }
 }
 
@@ -63,6 +79,82 @@ import Testing
     #expect(parseFailure.rawValue == nil)
 }
 
+@Test func validateTypesEquivalentReturnsValidatedObjectLikeUpstream() throws {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "name": ["type": "string"],
+            "age": ["type": "number"]
+        ],
+        "required": ["name", "age"]
+    ]
+
+    let input = #"{"name":"John","age":30}"#
+    #expect(try parseJSON(input, schema: schema) == ["name": "John", "age": 30])
+}
+
+@Test func validateTypesEquivalentThrowsTypedErrorForInvalidInputLikeUpstream() throws {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "name": ["type": "string"],
+            "age": ["type": "number"]
+        ],
+        "required": ["name", "age"]
+    ]
+    let input: JSONValue = ["name": "John", "age": "30"]
+
+    do {
+        _ = try parseJSON(#"{"name":"John","age":"30"}"#, schema: schema)
+        Issue.record("Expected AITypeValidationError to be thrown.")
+    } catch let error as AITypeValidationError {
+        #expect(error.value == input)
+        #expect(error.schema == schema)
+        #expect(error.path == "$.age")
+        #expect(error.message.contains("expected number"))
+        #expect(error.description.contains("expected number"))
+    }
+}
+
+@Test func safeValidateTypesEquivalentReturnsSuccessAndRawValueLikeUpstream() {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "name": ["type": "string"],
+            "age": ["type": "number"]
+        ],
+        "required": ["name", "age"]
+    ]
+    let input: JSONValue = ["name": "John", "age": 30]
+
+    let result = safeParseJSON(#"{"name":"John","age":30}"#, schema: schema)
+
+    #expect(result.success)
+    #expect(result.value == input)
+    #expect(result.rawValue == input)
+    #expect(result.errorDescription == nil)
+}
+
+@Test func safeValidateTypesEquivalentReturnsTypedErrorAndRawValueLikeUpstream() {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "name": ["type": "string"],
+            "age": ["type": "number"]
+        ],
+        "required": ["name", "age"]
+    ]
+    let input: JSONValue = ["name": "John", "age": "30"]
+
+    let result = safeParseJSON(#"{"name":"John","age":"30"}"#, schema: schema)
+
+    #expect(!result.success)
+    #expect(result.value == nil)
+    #expect(result.rawValue == input)
+    #expect(result.errorDescription?.contains("$.age") == true)
+    #expect(result.errorDescription?.contains("expected number") == true)
+}
+
 @Test func isParsableJSONUsesSecureParser() {
     #expect(isParsableJSON(#"{"foo":"bar"}"#))
     #expect(isParsableJSON("[1,2,3]"))
@@ -77,9 +169,13 @@ import Testing
     #expect(isJSONSerializable("test"))
     #expect(isJSONSerializable(42))
     #expect(isJSONSerializable(true))
+    #expect(isJSONSerializable(false))
     #expect(isJSONSerializable(["test", 42, true, nil, ["nested": ["value"]]] as [Any?]))
     #expect(isJSONSerializable(["string": "test", "nested": ["array": ["value"]]] as [String: Any]))
 
+    #expect(!isJSONSerializable(["test", Date()] as [Any]))
+    #expect(!isJSONSerializable(["nested": ["callback": Date()]] as [String: Any]))
     #expect(!isJSONSerializable(Date()))
+    #expect(!isJSONSerializable(NSRegularExpression()))
     #expect(!isJSONSerializable(TestClass()))
 }

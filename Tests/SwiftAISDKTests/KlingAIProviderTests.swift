@@ -287,6 +287,144 @@ import Testing
     #expect(body["aspect_ratio"] == nil)
 }
 
+@Test func klingAII2VMapsFrameImagesLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "task-frame-images", videoURL: "https://kling.example.com/frame-images.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-i2v")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "animate",
+        image: ImageInputFile(url: "https://example.com/legacy-start.png"),
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/new-start.png"), frameType: .firstFrame),
+            VideoFrameImage(image: ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png"), frameType: .lastFrame)
+        ],
+        providerOptions: [
+            "klingai": .object([
+                "mode": "std",
+                "imageTail": "https://example.com/legacy-end.png",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image"]?.stringValue == "https://example.com/new-start.png")
+    #expect(body["image_tail"]?.stringValue == Data([137, 80, 78, 71]).base64EncodedString())
+}
+
+@Test func klingAII2VMapsOnlyLastFrameWithoutStartImageLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "task-last-frame", videoURL: "https://kling.example.com/last-frame.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-i2v")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "animate",
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/end-frame.png"), frameType: .lastFrame)
+        ],
+        providerOptions: ["klingai": .object(["mode": "std", "pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image_tail"]?.stringValue == "https://example.com/end-frame.png")
+    #expect(body["image"] == nil)
+}
+
+@Test func klingAIMultiImageMapsInputReferencesLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "task-mi2v", videoURL: "https://kling.example.com/mi2v.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-i2v")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "animate references",
+        aspectRatio: "16:9",
+        durationSeconds: 10,
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/ref-1.png"),
+            ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png")
+        ],
+        providerOptions: [
+            "klingai": .object([
+                "mode": "pro",
+                "negativePrompt": "blurry",
+                "cfgScale": 0.5,
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    #expect(result.warnings.contains { $0.feature == "aspectRatio" } == false)
+    let requests = await transport.requests()
+    #expect(requests[0].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/multi-image2video")
+    #expect(requests[1].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/multi-image2video/task-mi2v")
+    let body = try decodeJSONBody(try #require(requests[0].body))
+    #expect(body["model_name"]?.stringValue == "kling-v2-6")
+    #expect(body["image_list"]?[0]?["image"]?.stringValue == "https://example.com/ref-1.png")
+    #expect(body["image_list"]?[1]?["image"]?.stringValue == Data([137, 80, 78, 71]).base64EncodedString())
+    #expect(body["aspect_ratio"]?.stringValue == "16:9")
+    #expect(body["duration"]?.stringValue == "10")
+    #expect(body["mode"]?.stringValue == "pro")
+    #expect(body["negative_prompt"]?.stringValue == "blurry")
+    #expect(body["cfg_scale"]?.doubleValue == 0.5)
+}
+
+@Test func klingAIMultiImageWarnsForStartAndTailLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "task-mi2v-warn", videoURL: "https://kling.example.com/mi2v-warn.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-i2v")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "animate references",
+        image: ImageInputFile(url: "https://example.com/start-frame.png"),
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/ref-1.png"),
+            ImageInputFile(url: "https://example.com/ref-2.png")
+        ],
+        providerOptions: [
+            "klingai": .object([
+                "mode": "std",
+                "imageTail": "https://example.com/end-frame.png",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    #expect(result.warnings.filter { $0.feature == "frameImages" }.count == 2)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["image_list"]?[0]?["image"]?.stringValue == "https://example.com/ref-1.png")
+    #expect(body["image"] == nil)
+    #expect(body["image_tail"] == nil)
+}
+
+@Test func klingAIT2VWarnsAndIgnoresInputReferencesLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "task-t2v-refs", videoURL: "https://kling.example.com/t2v-refs.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-t2v")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "scene",
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/ref-1.png"),
+            ImageInputFile(url: "https://example.com/ref-2.png")
+        ],
+        providerOptions: ["klingai": .object(["mode": "std", "pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+    ))
+
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "inputReferences",
+        message: "KlingAI only supports inputReferences (reference-to-video) on image-to-video models. The reference images were ignored."
+    )))
+    let requests = await transport.requests()
+    #expect(requests[0].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/text2video")
+    let body = try decodeJSONBody(try #require(requests[0].body))
+    #expect(body["image_list"] == nil)
+}
+
 @Test func klingAIMotionControlMapsRequiredOptionsAndWarnings() async throws {
     let transport = klingAITransport(taskID: "task-motion", videoURL: "https://kling.example.com/motion.mp4")
     let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))

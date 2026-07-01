@@ -22,28 +22,54 @@ public enum MessageRole: String, Codable, Hashable, Sendable {
 }
 
 public enum AIContentPart: Equatable, Hashable, Sendable {
-    case text(String)
-    case imageURL(String)
-    case data(mimeType: String, data: Data)
-    case file(mimeType: String, data: Data, filename: String? = nil)
-    case providerReference(mimeType: String, reference: AIProviderReference)
+    case text(String, providerMetadata: [String: JSONValue] = [:])
+    case reasoning(String, providerMetadata: [String: JSONValue] = [:])
+    case imageURL(String, providerMetadata: [String: JSONValue] = [:])
+    case data(mimeType: String, data: Data, providerMetadata: [String: JSONValue] = [:])
+    case file(mimeType: String, data: Data, filename: String? = nil, providerMetadata: [String: JSONValue] = [:])
+    case reasoningFile(AIStreamFile)
+    case custom(JSONValue, providerMetadata: [String: JSONValue] = [:])
+    case providerReference(mimeType: String, reference: AIProviderReference, filename: String? = nil, providerMetadata: [String: JSONValue] = [:])
     case toolCall(AIToolCall)
     case toolResult(AIToolResult)
     case toolApprovalRequest(AIToolApprovalRequest)
     case toolApprovalResponse(AIToolApprovalResponse)
 
     public var text: String? {
-        if case let .text(value) = self { value } else { nil }
+        if case let .text(value, _) = self { value } else { nil }
     }
 
     public var filePayload: (mimeType: String, data: Data, filename: String?)? {
         switch self {
-        case let .data(mimeType, data):
+        case let .data(mimeType, data, _):
             return (mimeType, data, nil)
-        case let .file(mimeType, data, filename):
+        case let .file(mimeType, data, filename, _):
             return (mimeType, data, filename)
-        case .text, .imageURL, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .text, .reasoning, .reasoningFile, .custom, .imageURL, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             return nil
+        }
+    }
+
+    public var providerMetadata: [String: JSONValue] {
+        switch self {
+        case let .text(_, providerMetadata),
+             let .reasoning(_, providerMetadata),
+             let .imageURL(_, providerMetadata),
+             let .data(_, _, providerMetadata),
+             let .file(_, _, _, providerMetadata),
+             let .custom(_, providerMetadata),
+             let .providerReference(_, _, _, providerMetadata):
+            return providerMetadata
+        case let .reasoningFile(file):
+            return file.providerMetadata
+        case let .toolCall(toolCall):
+            return toolCall.providerMetadata
+        case let .toolResult(toolResult):
+            return toolResult.providerMetadata
+        case let .toolApprovalRequest(request):
+            return request.providerMetadata
+        case let .toolApprovalResponse(response):
+            return response.providerMetadata
         }
     }
 }
@@ -52,11 +78,18 @@ public struct AIMessage: Equatable, Hashable, Sendable {
     public var role: MessageRole
     public var content: [AIContentPart]
     public var reasoning: String?
+    public var providerMetadata: [String: JSONValue]
 
-    public init(role: MessageRole, content: [AIContentPart], reasoning: String? = nil) {
+    public init(
+        role: MessageRole,
+        content: [AIContentPart],
+        reasoning: String? = nil,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
         self.role = role
         self.content = content
         self.reasoning = reasoning
+        self.providerMetadata = providerMetadata
     }
 
     public static func system(_ text: String) -> AIMessage {

@@ -88,22 +88,24 @@ func mistralJSONString(_ value: JSONValue) -> String? {
 
 func mistralContentPartJSON(_ part: AIContentPart) throws -> JSONValue {
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return .object(["type": .string("text"), "text": .string(text)])
-    case let .imageURL(url):
+    case let .reasoning(text, _):
+        return .object(["type": .string("text"), "text": .string(text)])
+    case let .imageURL(url, _):
         return .object(["type": .string("image_url"), "image_url": .string(url)])
-    case let .data(mimeType, data) where mimeType.hasPrefix("image/"),
-         let .file(mimeType, data, _) where mimeType.hasPrefix("image/"):
+    case let .data(mimeType, data, _) where mimeType.hasPrefix("image/"),
+         let .file(mimeType, data, _, _) where mimeType.hasPrefix("image/"):
         let mediaType = mimeType == "image/*" ? "image/jpeg" : mimeType
         return .object(["type": .string("image_url"), "image_url": .string("data:\(mediaType);base64,\(data.base64EncodedString())")])
-    case let .data(mimeType, data) where mimeType == "application/pdf",
-         let .file(mimeType, data, _) where mimeType == "application/pdf":
+    case let .data(mimeType, data, _) where mimeType == "application/pdf",
+         let .file(mimeType, data, _, _) where mimeType == "application/pdf":
         return .object(["type": .string("document_url"), "document_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
-    case let .data(mimeType, _), let .file(mimeType, _, _):
+    case let .data(mimeType, _, _), let .file(mimeType, _, _, _):
         throw AIError.invalidArgument(argument: "files", message: "Mistral chat API only supports image and PDF file parts; got \(mimeType).")
     case .providerReference:
         throw AIError.invalidArgument(argument: "files", message: "Mistral chat API only supports image URL, inline image file, and PDF file parts.")
-    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         throw AIError.invalidArgument(argument: "messages", message: "Mistral user messages only support text, image file, and PDF file parts.")
     }
 }

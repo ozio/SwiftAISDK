@@ -125,11 +125,11 @@ func alibabaUserContentParts(_ content: [AIContentPart]) -> AlibabaPreparedMessa
     var warnings: [AIWarning] = []
     let parts = content.compactMap { part -> JSONValue? in
         switch part {
-        case let .text(text):
+        case let .text(text, _):
             return .object(["type": .string("text"), "text": .string(text)])
-        case let .imageURL(url):
+        case let .imageURL(url, _):
             return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
-        case let .data(mimeType, data), let .file(mimeType, data, _):
+        case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
             guard mimeType.lowercased().hasPrefix("image/") else {
                 warnings.append(AIWarning(type: "unsupported", feature: "user message part type: file"))
                 return nil
@@ -138,7 +138,7 @@ func alibabaUserContentParts(_ content: [AIContentPart]) -> AlibabaPreparedMessa
                 "type": .string("image_url"),
                 "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
             ])
-        case .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .reasoning, .reasoningFile, .custom, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             warnings.append(AIWarning(type: "unsupported", feature: alibabaUserPartFeature(part)))
             return nil
         }
@@ -158,6 +158,12 @@ func alibabaUserPartFeature(_ part: AIContentPart) -> String {
         return "user message part type: tool-approval-request"
     case .toolApprovalResponse:
         return "user message part type: tool-approval-response"
+    case .reasoning:
+        return "user message part type: reasoning"
+    case .reasoningFile:
+        return "user message part type: reasoning-file"
+    case .custom:
+        return "user message part type: custom"
     case .imageURL:
         return "user message part type: image"
     case .text:

@@ -11,7 +11,11 @@ struct OpenResponsesPreparedInput {
     var warnings: [AIWarning]
 }
 
-func openResponsesInput(from messages: [AIMessage], toolNamespaces: [String: JSONValue] = [:]) -> OpenResponsesPreparedInput {
+func openResponsesInput(
+    from messages: [AIMessage],
+    providerID: String,
+    toolNamespaces: [String: JSONValue] = [:]
+) -> OpenResponsesPreparedInput {
     var input: [JSONValue] = []
     var systemMessages: [String] = []
     var warnings: [AIWarning] = []
@@ -28,7 +32,7 @@ func openResponsesInput(from messages: [AIMessage], toolNamespaces: [String: JSO
             ]))
         case .assistant:
             let outputText = message.content.compactMap { part -> JSONValue? in
-                guard case let .text(text) = part else { return nil }
+                guard case let .text(text, _) = part else { return nil }
                 return .object(["type": .string("output_text"), "text": .string(text)])
             }
             if !outputText.isEmpty {
@@ -44,7 +48,7 @@ func openResponsesInput(from messages: [AIMessage], toolNamespaces: [String: JSO
                     "type": .string("function_call"),
                     "call_id": .string(call.id),
                     "name": .string(call.name),
-                    "arguments": .string(call.arguments)
+                    "arguments": .string(openAIResponsesSerializedToolCallArguments(call.arguments))
                 ]
                 if let namespace = openAIResponsesNamespace(for: call, toolNamespaces: toolNamespaces) {
                     callObject["namespace"] = namespace
@@ -57,7 +61,7 @@ func openResponsesInput(from messages: [AIMessage], toolNamespaces: [String: JSO
                 input.append(.object([
                     "type": .string("function_call_output"),
                     "call_id": .string(result.toolCallID),
-                    "output": openResponsesToolResultOutput(result, warnings: &warnings)
+                    "output": openResponsesToolResultOutput(result, providerID: providerID, warnings: &warnings)
                 ]))
             }
         }
@@ -73,11 +77,13 @@ func openResponsesInput(from messages: [AIMessage], toolNamespaces: [String: JSO
 func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContentPart]>.Element) -> JSONValue? {
     let (_, part) = indexAndPart
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return .object(["type": .string("input_text"), "text": .string(text)])
-    case let .imageURL(url):
+    case let .reasoning(text, _):
+        return .object(["type": .string("input_text"), "text": .string(text)])
+    case let .imageURL(url, _):
         return .object(["type": .string("input_image"), "image_url": .string(url)])
-    case let .data(mimeType, data):
+    case let .data(mimeType, data, _):
         let dataURL = "data:\(mimeType);base64,\(data.base64EncodedString())"
         if mimeType.lowercased().hasPrefix("image/") {
             return .object(["type": .string("input_image"), "image_url": .string(dataURL)])
@@ -87,7 +93,7 @@ func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContent
             "filename": .string("data"),
             "file_data": .string(dataURL)
         ])
-    case let .file(mimeType, data, filename):
+    case let .file(mimeType, data, filename, _):
         let dataURL = "data:\(mimeType);base64,\(data.base64EncodedString())"
         if mimeType.lowercased().hasPrefix("image/") {
             return .object(["type": .string("input_image"), "image_url": .string(dataURL)])
@@ -97,13 +103,13 @@ func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContent
             "filename": .string(filename ?? "data"),
             "file_data": .string(dataURL)
         ])
-    case .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .reasoningFile, .custom, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }
 
 
-func openResponsesToolResultOutput(_ result: AIToolResult, warnings: inout [AIWarning]) -> JSONValue {
+func openResponsesToolResultOutput(_ result: AIToolResult, providerID: String, warnings: inout [AIWarning]) -> JSONValue {
     if let text = result.modelOutput?.stringValue ?? result.result.stringValue {
         return .string(text)
     }
@@ -115,14 +121,14 @@ func openResponsesToolResultOutput(_ result: AIToolResult, warnings: inout [AIWa
         if type == "content" {
             let content = object["value"]?.arrayValue ?? []
             return .array(content.compactMap { item in
-                openResponsesToolResultContentPart(item, warnings: &warnings)
+                openResponsesToolResultContentPart(item, providerID: providerID, warnings: &warnings)
             })
         }
     }
     return .string(openAIResponsesJSONString(result.modelOutput ?? result.result) ?? "")
 }
 
-func openResponsesToolResultContentPart(_ item: JSONValue, warnings: inout [AIWarning]) -> JSONValue? {
+func openResponsesToolResultContentPart(_ item: JSONValue, providerID: String, warnings: inout [AIWarning]) -> JSONValue? {
     switch item["type"]?.stringValue {
     case "text":
         return .object([
@@ -130,23 +136,116 @@ func openResponsesToolResultContentPart(_ item: JSONValue, warnings: inout [AIWa
             "text": item["text"] ?? .string("")
         ])
     case "image-data":
-        return .object([
+        var image: [String: JSONValue] = [
             "type": .string("input_image"),
             "image_url": .string("data:\(item["mediaType"]?.stringValue ?? "image/jpeg");base64,\(item["data"]?.stringValue ?? "")")
-        ])
+        ]
+        if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
+            image["detail"] = detail
+        }
+        return .object(image)
     case "image-url":
-        return .object([
+        var image: [String: JSONValue] = [
             "type": .string("input_image"),
             "image_url": item["url"] ?? .string("")
-        ])
+        ]
+        if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
+            image["detail"] = detail
+        }
+        return .object(image)
     case "file-data":
         return .object([
             "type": .string("input_file"),
             "filename": item["filename"] ?? .string("data"),
             "file_data": .string("data:\(item["mediaType"]?.stringValue ?? "application/octet-stream");base64,\(item["data"]?.stringValue ?? "")")
         ])
+    case "file":
+        return openResponsesToolResultFilePart(item, providerID: providerID, warnings: &warnings)
     default:
         warnings.append(AIWarning(type: "other", message: "unsupported tool content part type: \(item["type"]?.stringValue ?? "unknown")"))
         return nil
     }
+}
+
+private func openResponsesToolResultFilePart(
+    _ item: JSONValue,
+    providerID: String,
+    warnings: inout [AIWarning]
+) -> JSONValue? {
+    let mediaType = item["mediaType"]?.stringValue ?? "application/octet-stream"
+    let filename = item["filename"] ?? .string("data")
+    let data = item["data"]
+    switch data?["type"]?.stringValue {
+    case "data":
+        let payload = data?["data"]?.stringValue ?? ""
+        if mediaType.lowercased().hasPrefix("image/") {
+            var image: [String: JSONValue] = [
+                "type": .string("input_image"),
+                "image_url": .string("data:\(mediaType);base64,\(payload)")
+            ]
+            if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
+                image["detail"] = detail
+            }
+            return .object(image)
+        }
+        return .object([
+            "type": .string("input_file"),
+            "filename": filename,
+            "file_data": .string("data:\(mediaType);base64,\(payload)")
+        ])
+    case "url":
+        if mediaType.lowercased().hasPrefix("image/") {
+            var image: [String: JSONValue] = [
+                "type": .string("input_image"),
+                "image_url": data?["url"] ?? .string("")
+            ]
+            if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
+                image["detail"] = detail
+            }
+            return .object(image)
+        }
+        return .object([
+            "type": .string("input_file"),
+            "file_url": data?["url"] ?? .string("")
+        ])
+    case "reference":
+        guard let fileID = openResponsesProviderReferenceID(data?["reference"], providerID: providerID) else {
+            warnings.append(AIWarning(type: "other", message: "unsupported tool content part type: file with missing provider reference"))
+            return nil
+        }
+        return .object([
+            "type": .string("input_file"),
+            "filename": filename,
+            "file_id": .string(fileID)
+        ])
+    case "text":
+        let text = data?["text"]?.stringValue ?? ""
+        return .object([
+            "type": .string("input_file"),
+            "filename": filename,
+            "file_data": .string("data:\(mediaType);base64,\(Data(text.utf8).base64EncodedString())")
+        ])
+    default:
+        warnings.append(AIWarning(
+            type: "other",
+            message: "unsupported tool content part type: file with data type: \(data?["type"]?.stringValue ?? "unknown")"
+        ))
+        return nil
+    }
+}
+
+private func openResponsesImageDetail(from item: JSONValue, providerID: String) -> JSONValue? {
+    let providerRoot = openAICompatibleProviderRoot(providerID)
+    return item["providerOptions"]?[providerRoot]?["imageDetail"]
+        ?? item["providerOptions"]?["openai"]?["imageDetail"]
+        ?? item[providerRoot]?["imageDetail"]
+        ?? item["openai"]?["imageDetail"]
+}
+
+private func openResponsesProviderReferenceID(_ value: JSONValue?, providerID: String) -> String? {
+    guard let reference = value?.objectValue else { return nil }
+    let providerRoot = openAICompatibleProviderRoot(providerID)
+    return reference[providerRoot]?.stringValue
+        ?? reference["openai"]?.stringValue
+        ?? reference.values.compactMap(\.stringValue).first
 }

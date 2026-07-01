@@ -274,21 +274,36 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
         if !request.prompt.isEmpty {
             instance["prompt"] = .string(request.prompt)
         }
-        if let image = request.image {
+        if let firstFrame = request.frameImages.first(where: { $0.frameType == .firstFrame }) {
+            if let image = googleVertexVideoImage(firstFrame.image) {
+                instance["image"] = image
+            } else if firstFrame.image.url != nil {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "URL-based image input",
+                    message: "Vertex AI video models require base64-encoded images or GCS URIs. URL will be ignored."
+                ))
+            }
+        } else if let image = request.image {
             if image.url != nil {
                 warnings.append(AIWarning(
                     type: "unsupported",
                     feature: "URL-based image input",
                     message: "Vertex AI video models require base64-encoded images or GCS URIs. URL will be ignored."
                 ))
-            } else if let data = image.data {
-                instance["image"] = .object([
-                    "bytesBase64Encoded": .string(data.base64EncodedString()),
-                    "mimeType": .string(image.mediaType ?? "image/png")
-                ])
+            } else if let image = googleVertexVideoImage(image) {
+                instance["image"] = image
             }
         }
-        if let referenceImages = options["referenceImages"] {
+        if let lastFrame = request.frameImages.first(where: { $0.frameType == .lastFrame }), let image = googleVertexVideoImage(lastFrame.image) {
+            instance["lastFrame"] = image
+        }
+        if !request.inputReferences.isEmpty {
+            let referenceImages = request.inputReferences.compactMap(googleVertexVideoReferenceImage)
+            if !referenceImages.isEmpty {
+                instance["referenceImages"] = .array(referenceImages)
+            }
+        } else if let referenceImages = options["referenceImages"] {
             instance["referenceImages"] = referenceImages
         }
 
@@ -558,6 +573,41 @@ private let googleVertexVideoInternalOptionKeys: Set<String> = [
     "pollTimeoutMs",
     "referenceImages"
 ]
+
+private func googleVertexVideoImage(_ image: ImageInputFile) -> JSONValue? {
+    if let data = image.data {
+        return .object([
+            "bytesBase64Encoded": .string(data.base64EncodedString()),
+            "mimeType": .string(image.mediaType ?? "image/png")
+        ])
+    }
+    if let url = image.url, url.hasPrefix("gs://") {
+        return .object([
+            "gcsUri": .string(url),
+            "mimeType": .string(image.mediaType ?? googleVertexVideoMimeType(for: url))
+        ])
+    }
+    return nil
+}
+
+private func googleVertexVideoReferenceImage(_ image: ImageInputFile) -> JSONValue? {
+    guard let prepared = googleVertexVideoImage(image) else { return nil }
+    return .object([
+        "image": prepared,
+        "referenceType": .string("asset")
+    ])
+}
+
+private func googleVertexVideoMimeType(for url: String) -> String {
+    let path = URL(string: url)?.path.lowercased() ?? url.lowercased()
+    if path.hasSuffix(".jpg") || path.hasSuffix(".jpeg") {
+        return "image/jpeg"
+    }
+    if path.hasSuffix(".webp") {
+        return "image/webp"
+    }
+    return "image/png"
+}
 
 private func googleVertexVideoResolution(_ resolution: String) -> String {
     switch resolution {

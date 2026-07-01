@@ -89,12 +89,20 @@ public struct SkillUploadFile: Equatable, Sendable {
 public struct SkillUploadRequest: Sendable {
     public var files: [SkillUploadFile]
     public var displayTitle: String?
+    public var providerOptions: [String: JSONValue]
     public var headers: [String: String]
     public var abortSignal: AIAbortSignal?
 
-    public init(files: [SkillUploadFile], displayTitle: String? = nil, headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil) {
+    public init(
+        files: [SkillUploadFile],
+        displayTitle: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil
+    ) {
         self.files = files
         self.displayTitle = displayTitle
+        self.providerOptions = providerOptions
         self.headers = headers
         self.abortSignal = abortSignal
     }

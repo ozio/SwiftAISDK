@@ -44,69 +44,79 @@ typealias AIJSONSchemaValidationIssue = AITypeValidationError
 
 enum AIJSONSchemaValidator {
     static func validate(_ value: JSONValue, schema: JSONValue, path: String = "$") throws {
+        try validate(value, schema: schema, path: path, rootValue: value, rootSchema: schema)
+    }
+
+    private static func validate(
+        _ value: JSONValue,
+        schema: JSONValue,
+        path: String,
+        rootValue: JSONValue,
+        rootSchema: JSONValue
+    ) throws {
         guard let object = schema.objectValue else { return }
 
         if let anyOf = object["anyOf"]?.arrayValue {
             guard anyOf.contains(where: { schema in
-                (try? validate(value, schema: schema, path: path)) != nil
+                (try? validate(value, schema: schema, path: path, rootValue: rootValue, rootSchema: rootSchema)) != nil
             }) else {
-                throw issue(path, "does not match any allowed schema")
+                throw issue(path, "does not match any allowed schema", value: rootValue, schema: rootSchema)
             }
         }
 
         if let oneOf = object["oneOf"]?.arrayValue {
             let matches = oneOf.reduce(0) { count, schema in
-                count + ((try? validate(value, schema: schema, path: path)) != nil ? 1 : 0)
+                count + ((try? validate(value, schema: schema, path: path, rootValue: rootValue, rootSchema: rootSchema)) != nil ? 1 : 0)
             }
             guard matches == 1 else {
-                throw issue(path, "must match exactly one schema")
+                throw issue(path, "must match exactly one schema", value: rootValue, schema: rootSchema)
             }
         }
 
         if let allOf = object["allOf"]?.arrayValue {
             for schema in allOf {
-                try validate(value, schema: schema, path: path)
+                try validate(value, schema: schema, path: path, rootValue: rootValue, rootSchema: rootSchema)
             }
         }
 
-        if let not = object["not"], (try? validate(value, schema: not, path: path)) != nil {
-            throw issue(path, "matches a disallowed schema")
+        if let not = object["not"], (try? validate(value, schema: not, path: path, rootValue: rootValue, rootSchema: rootSchema)) != nil {
+            throw issue(path, "matches a disallowed schema", value: rootValue, schema: rootSchema)
         }
 
         if let enumValues = object["enum"]?.arrayValue, !enumValues.contains(value) {
-            throw issue(path, "must be one of \(enumValues.map(describe).joined(separator: ", "))")
+            throw issue(path, "must be one of \(enumValues.map(describe).joined(separator: ", "))", value: rootValue, schema: rootSchema)
         }
 
         if let constant = object["const"], constant != value {
-            throw issue(path, "must equal \(describe(constant))")
+            throw issue(path, "must equal \(describe(constant))", value: rootValue, schema: rootSchema)
         }
 
         if let type = object["type"] {
             let allowedTypes = schemaTypes(from: type)
             if !allowedTypes.isEmpty && !allowedTypes.contains(where: { matches(value, type: $0) }) {
-                throw issue(path, "expected \(allowedTypes.joined(separator: " or ")), got \(typeName(for: value))")
+                throw issue(path, "expected \(allowedTypes.joined(separator: " or ")), got \(typeName(for: value))", value: rootValue, schema: rootSchema)
             }
         }
 
-        try validateObject(value, schema: object, path: path)
-        try validateArray(value, schema: object, path: path)
-        try validateString(value, schema: object, path: path)
-        try validateNumber(value, schema: object, path: path)
+        try validateObject(value, schema: object, path: path, rootValue: rootValue, rootSchema: rootSchema)
+        try validateArray(value, schema: object, path: path, rootValue: rootValue, rootSchema: rootSchema)
+        try validateString(value, schema: object, path: path, rootValue: rootValue, rootSchema: rootSchema)
+        try validateNumber(value, schema: object, path: path, rootValue: rootValue, rootSchema: rootSchema)
     }
 
-    private static func validateObject(_ value: JSONValue, schema: [String: JSONValue], path: String) throws {
+    private static func validateObject(_ value: JSONValue, schema: [String: JSONValue], path: String, rootValue: JSONValue, rootSchema: JSONValue) throws {
         guard let valueObject = value.objectValue else { return }
 
         if let required = schema["required"]?.arrayValue {
             for field in required.compactMap(\.stringValue) where valueObject[field] == nil {
-                throw issue(childPath(path, field), "is required")
+                throw issue(childPath(path, field), "is required", value: rootValue, schema: rootSchema)
             }
         }
 
         let properties = schema["properties"]?.objectValue ?? [:]
         for (key, propertySchema) in properties {
             if let propertyValue = valueObject[key] {
-                try validate(propertyValue, schema: propertySchema, path: childPath(path, key))
+                try validate(propertyValue, schema: propertySchema, path: childPath(path, key), rootValue: rootValue, rootSchema: rootSchema)
             }
         }
 
@@ -115,71 +125,71 @@ enum AIJSONSchemaValidator {
         let unknownKeys = valueObject.keys.filter { !knownProperties.contains($0) }.sorted()
 
         if additionalProperties?.boolValue == false, let key = unknownKeys.first {
-            throw issue(childPath(path, key), "additional properties are not allowed")
+            throw issue(childPath(path, key), "additional properties are not allowed", value: rootValue, schema: rootSchema)
         }
 
         if let additionalSchema = additionalProperties?.objectValue.map(JSONValue.object) {
             for key in unknownKeys {
-                try validate(valueObject[key] ?? .null, schema: additionalSchema, path: childPath(path, key))
+                try validate(valueObject[key] ?? .null, schema: additionalSchema, path: childPath(path, key), rootValue: rootValue, rootSchema: rootSchema)
             }
         }
     }
 
-    private static func validateArray(_ value: JSONValue, schema: [String: JSONValue], path: String) throws {
+    private static func validateArray(_ value: JSONValue, schema: [String: JSONValue], path: String, rootValue: JSONValue, rootSchema: JSONValue) throws {
         guard let array = value.arrayValue else { return }
 
         if let minItems = schema["minItems"]?.intValue, array.count < minItems {
-            throw issue(path, "must contain at least \(minItems) item(s)")
+            throw issue(path, "must contain at least \(minItems) item(s)", value: rootValue, schema: rootSchema)
         }
         if let maxItems = schema["maxItems"]?.intValue, array.count > maxItems {
-            throw issue(path, "must contain at most \(maxItems) item(s)")
+            throw issue(path, "must contain at most \(maxItems) item(s)", value: rootValue, schema: rootSchema)
         }
 
         if schema["uniqueItems"]?.boolValue == true && Set(array).count != array.count {
-            throw issue(path, "must contain unique items")
+            throw issue(path, "must contain unique items", value: rootValue, schema: rootSchema)
         }
 
         if let itemSchema = schema["items"] {
             if let tupleSchemas = itemSchema.arrayValue {
                 for (index, item) in array.enumerated() where index < tupleSchemas.count {
-                    try validate(item, schema: tupleSchemas[index], path: "\(path)[\(index)]")
+                    try validate(item, schema: tupleSchemas[index], path: "\(path)[\(index)]", rootValue: rootValue, rootSchema: rootSchema)
                 }
             } else {
                 for (index, item) in array.enumerated() {
-                    try validate(item, schema: itemSchema, path: "\(path)[\(index)]")
+                    try validate(item, schema: itemSchema, path: "\(path)[\(index)]", rootValue: rootValue, rootSchema: rootSchema)
                 }
             }
         }
     }
 
-    private static func validateString(_ value: JSONValue, schema: [String: JSONValue], path: String) throws {
+    private static func validateString(_ value: JSONValue, schema: [String: JSONValue], path: String, rootValue: JSONValue, rootSchema: JSONValue) throws {
         guard let string = value.stringValue else { return }
         if let minLength = schema["minLength"]?.intValue, string.count < minLength {
-            throw issue(path, "must contain at least \(minLength) character(s)")
+            throw issue(path, "must contain at least \(minLength) character(s)", value: rootValue, schema: rootSchema)
         }
         if let maxLength = schema["maxLength"]?.intValue, string.count > maxLength {
-            throw issue(path, "must contain at most \(maxLength) character(s)")
+            throw issue(path, "must contain at most \(maxLength) character(s)", value: rootValue, schema: rootSchema)
         }
     }
 
-    private static func validateNumber(_ value: JSONValue, schema: [String: JSONValue], path: String) throws {
+    private static func validateNumber(_ value: JSONValue, schema: [String: JSONValue], path: String, rootValue: JSONValue, rootSchema: JSONValue) throws {
         guard let number = value.doubleValue else { return }
         if let minimum = schema["minimum"]?.doubleValue, number < minimum {
-            throw issue(path, "must be >= \(minimum)")
+            throw issue(path, "must be >= \(minimum)", value: rootValue, schema: rootSchema)
         }
         if let maximum = schema["maximum"]?.doubleValue, number > maximum {
-            throw issue(path, "must be <= \(maximum)")
+            throw issue(path, "must be <= \(maximum)", value: rootValue, schema: rootSchema)
         }
         if let exclusiveMinimum = schema["exclusiveMinimum"]?.doubleValue, number <= exclusiveMinimum {
-            throw issue(path, "must be > \(exclusiveMinimum)")
+            throw issue(path, "must be > \(exclusiveMinimum)", value: rootValue, schema: rootSchema)
         }
         if let exclusiveMaximum = schema["exclusiveMaximum"]?.doubleValue, number >= exclusiveMaximum {
-            throw issue(path, "must be < \(exclusiveMaximum)")
+            throw issue(path, "must be < \(exclusiveMaximum)", value: rootValue, schema: rootSchema)
         }
         if let multipleOf = schema["multipleOf"]?.doubleValue, multipleOf != 0 {
             let divided = number / multipleOf
             if divided.rounded() != divided {
-                throw issue(path, "must be a multiple of \(multipleOf)")
+                throw issue(path, "must be a multiple of \(multipleOf)", value: rootValue, schema: rootSchema)
             }
         }
     }
@@ -247,7 +257,7 @@ enum AIJSONSchemaValidator {
         }
     }
 
-    private static func issue(_ path: String, _ message: String) -> AIJSONSchemaValidationIssue {
-        AIJSONSchemaValidationIssue(path: path, message: message)
+    private static func issue(_ path: String, _ message: String, value: JSONValue, schema: JSONValue) -> AIJSONSchemaValidationIssue {
+        AIJSONSchemaValidationIssue(value: value, schema: schema, path: path, message: message)
     }
 }

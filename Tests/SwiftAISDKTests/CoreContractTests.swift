@@ -406,9 +406,56 @@ import Testing
     #expect(messages[1].role == .user)
     #expect(messages[1].combinedText == "What is this?")
     #expect(messages[1].content.count == 3)
-    #expect(messages[2].reasoning == "Need a lookup.")
-    #expect(messages[2].content == [.toolCall(call)])
+    #expect(messages[2].reasoning == nil)
+    #expect(messages[2].content == [.reasoning("Need a lookup."), .toolCall(call)])
     #expect(messages[3].content == [.toolResult(result)])
+}
+
+@Test func convertToModelMessagesPreservesReasoningProviderMetadata() throws {
+    let messages = try convertToModelMessages([
+        AIUIMessage(
+            id: "assistant-1",
+            role: .assistant,
+            parts: [
+                .reasoning(AIUIReasoningPart(
+                    text: "Need a lookup.",
+                    providerMetadata: ["anthropic": ["signature": "sig_123"]]
+                )),
+                .text(AIUITextPart(text: "Done."))
+            ]
+        )
+    ])
+
+    let message = try #require(messages.first)
+    #expect(message.reasoning == nil)
+    #expect(message.content[0].providerMetadata["anthropic"]?["signature"]?.stringValue == "sig_123")
+}
+
+@Test func convertToModelMessagesPreservesContentPartProviderMetadata() throws {
+    let fileData = Data("%PDF-1.7\n".utf8)
+    let messages = try convertToModelMessages([
+        AIUIMessage(
+            id: "user-1",
+            role: .user,
+            parts: [
+                .text(AIUITextPart(
+                    text: "Read this.",
+                    providerMetadata: ["anthropic": ["cacheControl": ["type": "ephemeral"]]]
+                )),
+                .file(AIStreamFile(
+                    mediaType: "application/pdf",
+                    data: fileData,
+                    filename: "doc.pdf",
+                    providerMetadata: ["anthropic": ["citations": ["enabled": true]]]
+                ))
+            ]
+        )
+    ])
+
+    let message = try #require(messages.first)
+    #expect(message.content.count == 2)
+    #expect(message.content[0].providerMetadata["anthropic"]?["cacheControl"]?["type"]?.stringValue == "ephemeral")
+    #expect(message.content[1].providerMetadata["anthropic"]?["citations"]?["enabled"]?.boolValue == true)
 }
 
 @Test func convertToModelMessagesRejectsUnsupportedURLFiles() throws {

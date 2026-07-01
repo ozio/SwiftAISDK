@@ -371,11 +371,6 @@ import Testing
     #expect(body["responseFormat"] == nil)
 }
 
-private struct OpenAIObjectAnswer: Codable, Equatable, Sendable {
-    var value: String
-    var count: Int
-}
-
 @Test func openAICompatibleChatParsesToolCalls() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"query\\":\\"weather\\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}
@@ -465,4 +460,9 @@ private struct OpenAIObjectAnswer: Codable, Equatable, Sendable {
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
     #expect(body["stream_options"] == nil)
+}
+
+private struct OpenAIObjectAnswer: Codable, Equatable, Sendable {
+    var value: String
+    var count: Int
 }

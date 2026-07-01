@@ -167,7 +167,7 @@ func objectStreamWithTelemetry<Object: Sendable>(
                         guard attempts <= retryPolicy.maxRetries else {
                             throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
                         }
-                        let sleepDelay = retryAfterDelayNanoseconds(from: error) ?? delay
+                        let sleepDelay = retryDelayNanoseconds(from: error, exponentialBackoffDelay: delay)
                         await dispatcher.record(telemetryEvent(
                             kind: .retry,
                             callID: callID,

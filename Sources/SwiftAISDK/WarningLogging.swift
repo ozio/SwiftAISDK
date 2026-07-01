@@ -89,7 +89,6 @@ public enum AIWarningLogging {
     }
 
     static func logWarnings(_ warnings: [AIWarning], providerID: String?, modelID: String?) async {
-        guard !warnings.isEmpty else { return }
         let event = AIWarningLogEvent(warnings: warnings, providerID: providerID, modelID: modelID)
         switch scopedState {
         case let .custom(logger):

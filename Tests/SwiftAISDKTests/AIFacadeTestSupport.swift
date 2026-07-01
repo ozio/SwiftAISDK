@@ -49,6 +49,17 @@ actor PrepareStepCapture {
         responseMessages
     }
 }
+actor PrepareStepToolContextCapture {
+    private var toolContexts: [[String: JSONValue]] = []
+
+    func record(_ value: [String: JSONValue]) {
+        toolContexts.append(value)
+    }
+
+    func values() -> [[String: JSONValue]] {
+        toolContexts
+    }
+}
 final class MockLanguageModel: LanguageModel, @unchecked Sendable {
     let providerID = "mock"
     let modelID = "mock-language"
@@ -148,6 +159,15 @@ struct ExecutionWrappingTelemetry: Telemetry.Integration {
         let result = try await context.execute()
         await log.append("\(name)-tool-end")
         return result
+    }
+}
+struct StartEventTelemetry: Telemetry.Integration {
+    var name: String
+    var log: ExecutionWrapperLog
+
+    func record(_ event: Telemetry.Event) async {
+        guard event.kind == .start else { return }
+        await log.append(name)
     }
 }
 final class SlowLanguageModel: LanguageModel, @unchecked Sendable {

@@ -31,7 +31,7 @@ func withRetry<Output: Sendable>(
             guard attempts <= policy.maxRetries else {
                 throw AIRetryError(reason: .maxRetriesExceeded, attempts: attempts, errors: errors)
             }
-            let sleepDelay = retryAfterDelayNanoseconds(from: error) ?? delay
+            let sleepDelay = retryDelayNanoseconds(from: error, exponentialBackoffDelay: delay)
             await onRetry(AIRetryAttemptTelemetry(
                 attempt: attempts,
                 maxRetries: policy.maxRetries,
@@ -196,10 +196,33 @@ func isRetryableHTTPStatus(_ statusCode: Int) -> Bool {
     statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
 }
 
-func retryAfterDelayNanoseconds(from error: Error) -> UInt64? {
+func retryDelayNanoseconds(from error: Error, exponentialBackoffDelay: UInt64, now: Date = Date()) -> UInt64 {
+    retryHeaderDelayNanoseconds(
+        from: error,
+        exponentialBackoffDelay: exponentialBackoffDelay,
+        now: now
+    ) ?? exponentialBackoffDelay
+}
+
+func retryHeaderDelayNanoseconds(from error: Error, exponentialBackoffDelay: UInt64, now: Date = Date()) -> UInt64? {
     guard let headers = httpHeaders(from: error) else { return nil }
-    guard let value = headerValue("retry-after", in: headers) else { return nil }
-    return retryAfterDelayNanoseconds(from: value, now: Date())
+    var delayNanoseconds: UInt64?
+
+    if let retryAfterMs = headerValue("retry-after-ms", in: headers),
+       let parsedDelay = retryAfterDelayNanoseconds(fromMilliseconds: retryAfterMs) {
+        delayNanoseconds = parsedDelay
+    }
+
+    if delayNanoseconds == nil,
+       let retryAfter = headerValue("retry-after", in: headers) {
+        delayNanoseconds = retryAfterDelayNanoseconds(from: retryAfter, now: now)
+    }
+
+    guard let delayNanoseconds,
+          isReasonableRetryDelay(delayNanoseconds, exponentialBackoffDelay: exponentialBackoffDelay) else {
+        return nil
+    }
+    return delayNanoseconds
 }
 
 func httpHeaders(from error: Error) -> [String: String]? {
@@ -235,8 +258,30 @@ func retryAfterDelayNanoseconds(from value: String, now: Date) -> UInt64? {
     return nanoseconds(fromSeconds: date.timeIntervalSince(now))
 }
 
+func retryAfterDelayNanoseconds(fromMilliseconds value: String) -> UInt64? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, let milliseconds = Double(trimmed) else { return nil }
+    return nanoseconds(fromMilliseconds: milliseconds)
+}
+
+func isReasonableRetryDelay(_ delayNanoseconds: UInt64, exponentialBackoffDelay: UInt64) -> Bool {
+    delayNanoseconds < 60_000_000_000 || delayNanoseconds < exponentialBackoffDelay
+}
+
+func nanoseconds(fromMilliseconds milliseconds: Double) -> UInt64? {
+    guard milliseconds.isFinite else { return nil }
+    guard milliseconds >= 0 else { return nil }
+    let nanoseconds = milliseconds * 1_000_000
+    guard nanoseconds.isFinite else { return UInt64.max }
+    if nanoseconds >= Double(UInt64.max) {
+        return UInt64.max
+    }
+    return UInt64(nanoseconds.rounded(.up))
+}
+
 func nanoseconds(fromSeconds seconds: Double) -> UInt64? {
     guard seconds.isFinite else { return nil }
+    guard seconds >= 0 else { return nil }
     guard seconds > 0 else { return 0 }
     let nanoseconds = seconds * 1_000_000_000
     guard nanoseconds.isFinite else { return UInt64.max }

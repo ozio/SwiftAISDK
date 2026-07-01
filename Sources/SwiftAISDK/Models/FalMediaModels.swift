@@ -471,14 +471,7 @@ private func falImageInputs(from files: [ImageInputFile], mask: ImageInputFile?,
 }
 
 private func falImageFileInput(_ file: ImageInputFile) throws -> String {
-    if let url = file.url {
-        return url
-    }
-    guard let data = file.data else {
-        throw AIError.invalidArgument(argument: "files", message: "Fal image input must contain either data or URL.")
-    }
-    let mediaType = file.mediaType ?? "image/png"
-    return "data:\(mediaType);base64,\(data.base64EncodedString())"
+    try convertImageModelFileToDataURI(file)
 }
 
 private func falVideoImageInput(from request: VideoGenerationRequest, options: [String: JSONValue]) throws -> JSONValue? {

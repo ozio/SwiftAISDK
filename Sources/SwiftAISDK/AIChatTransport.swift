@@ -81,6 +81,7 @@ public struct AIChatRequestOptions: Sendable {
     public var responseFormat: AIResponseFormat?
     public var reasoning: String?
     public var tools: [String: JSONValue]
+    public var toolContexts: [String: JSONValue]
     public var toolChoice: JSONValue?
     public var includeRawChunks: Bool
     public var providerOptions: [String: JSONValue]
@@ -99,6 +100,7 @@ public struct AIChatRequestOptions: Sendable {
         responseFormat: AIResponseFormat? = nil,
         reasoning: String? = nil,
         tools: [String: JSONValue] = [:],
+        toolContexts: [String: JSONValue] = [:],
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
@@ -116,6 +118,7 @@ public struct AIChatRequestOptions: Sendable {
         self.responseFormat = responseFormat
         self.reasoning = reasoning
         self.tools = tools
+        self.toolContexts = toolContexts
         self.toolChoice = toolChoice
         self.includeRawChunks = includeRawChunks
         self.providerOptions = providerOptions
@@ -141,6 +144,7 @@ public struct AIChatRequestOptions: Sendable {
             responseFormat: responseFormat,
             reasoning: reasoning,
             tools: tools,
+            toolContexts: toolContexts,
             toolChoice: toolChoice,
             includeRawChunks: includeRawChunks,
             providerOptions: providerOptions,

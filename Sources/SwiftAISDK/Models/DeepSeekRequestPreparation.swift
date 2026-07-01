@@ -80,7 +80,7 @@ func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue?, model
         case .user:
             var text = ""
             for part in message.content {
-                if case let .text(value) = part {
+                if case let .text(value, _) = part {
                     text += value
                 } else {
                     warnings.append(AIWarning(type: "unsupported", feature: deepSeekUserPartFeature(part)))
@@ -144,6 +144,12 @@ func deepSeekUserPartFeature(_ part: AIContentPart) -> String {
         return "user message part type: tool-approval-request"
     case .toolApprovalResponse:
         return "user message part type: tool-approval-response"
+    case .reasoning:
+        return "user message part type: reasoning"
+    case .reasoningFile:
+        return "user message part type: reasoning-file"
+    case .custom:
+        return "user message part type: custom"
     case .text:
         return "user message part type: text"
     }

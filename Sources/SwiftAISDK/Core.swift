@@ -86,3 +86,13 @@ public struct AIRetryPolicy: Equatable, Sendable {
     public static let `default` = AIRetryPolicy()
     public static let none = AIRetryPolicy(maxRetries: 0, initialDelayNanoseconds: 0)
 }
+
+public func prepareRetries(maxRetries: Int? = nil) throws -> AIRetryPolicy {
+    guard let maxRetries else {
+        return .default
+    }
+    guard maxRetries >= 0 else {
+        throw AIError.invalidArgument(argument: "maxRetries", message: "maxRetries must be >= 0")
+    }
+    return AIRetryPolicy(maxRetries: maxRetries)
+}

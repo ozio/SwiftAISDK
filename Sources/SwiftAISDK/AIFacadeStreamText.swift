@@ -1,13 +1,30 @@
 import Foundation
 
 extension AI {
-    public static func streamText(
+    static func streamText(
         model: any LanguageModel,
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: Telemetry.Options? = nil
+        telemetry: Telemetry.Options? = nil,
+        logWarnings: Bool
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        let preparedRequest: LanguageModelRequest
+        do {
+            preparedRequest = try prepareLanguageModelCallOptions(request)
+        } catch {
+            return streamTextWithTelemetry(
+                makeStream: { failingPartStream(error) },
+                operationID: "ai.streamText",
+                providerID: model.providerID,
+                modelID: model.modelID,
+                input: languageRequestTelemetryInput(request),
+                retryPolicy: retryPolicy,
+                telemetry: telemetry,
+                abortSignal: request.abortSignal,
+                logWarnings: logWarnings
+            )
+        }
         if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
             return streamTextWithTelemetry(
                 makeStream: {
@@ -19,26 +36,49 @@ extension AI {
                 operationID: "ai.streamText",
                 providerID: model.providerID,
                 modelID: model.modelID,
-                input: languageRequestTelemetryInput(request),
+                input: languageRequestTelemetryInput(preparedRequest),
                 retryPolicy: retryPolicy,
                 telemetry: telemetry,
-                abortSignal: request.abortSignal
+                abortSignal: preparedRequest.abortSignal,
+                logWarnings: logWarnings
             )
         }
         return streamTextWithTelemetry(
             makeStream: {
-                streamWithTimeout(
-                    streamWithAbortSignal(model.stream(request), abortSignal: request.abortSignal),
+                let stream = streamWithAbortSignal(
+                    model.stream(preparedRequest),
+                    abortSignal: preparedRequest.abortSignal
+                )
+                return streamWithTimeout(
+                    forwardedLanguageStream(stream, request: preparedRequest),
                     timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
                 )
             },
             operationID: "ai.streamText",
             providerID: model.providerID,
             modelID: model.modelID,
-            input: languageRequestTelemetryInput(request),
+            input: languageRequestTelemetryInput(preparedRequest),
             retryPolicy: retryPolicy,
             telemetry: telemetry,
-            abortSignal: request.abortSignal
+            abortSignal: preparedRequest.abortSignal,
+            logWarnings: logWarnings
+        )
+    }
+
+    public static func streamText(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil
+    ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        streamText(
+            model: model,
+            request: request,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            logWarnings: true
         )
     }
 
@@ -50,6 +90,7 @@ extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
         timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
@@ -58,11 +99,15 @@ extension AI {
             let task = Task {
                 do {
                     guard !executableTools.isEmpty || prepareStep != nil else {
+                        let request = try prepareLanguageModelCallOptions(request)
+                        var innerRetryPolicy = retryPolicy
+                        innerRetryPolicy.timeoutNanoseconds = nil
                         for try await part in streamText(
                             model: model,
                             request: request,
                             timeoutNanoseconds: nil,
-                            retryPolicy: retryPolicy
+                            retryPolicy: innerRetryPolicy,
+                            telemetry: nil
                         ) {
                             continuation.yield(part)
                         }
@@ -78,6 +123,7 @@ extension AI {
                     currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
                     var steps: [AIToolStep] = []
                     var responseMessages: [AIMessage] = []
+                    var pendingProviderExecutedToolCallIDs: Set<String> = []
                     let toolTelemetry = AIToolLoopTelemetryContext(
                         operationID: "ai.streamText",
                         providerID: model.providerID,
@@ -86,6 +132,24 @@ extension AI {
                     )
 
                     for index in 0..<maxSteps {
+                        let historicalApprovalExecution = try await executeHistoricalToolApprovals(
+                            request: currentRequest,
+                            toolsByName: try toolsByName(from: executableTools),
+                            toolApproval: toolApproval,
+                            telemetry: toolTelemetry,
+                            stepIndex: index
+                        )
+                        if !historicalApprovalExecution.responseMessages.isEmpty {
+                            responseMessages.append(contentsOf: historicalApprovalExecution.responseMessages)
+                            currentRequest.messages.append(contentsOf: historicalApprovalExecution.responseMessages)
+                            for approvalResponse in historicalApprovalExecution.approvalResponses {
+                                continuation.yield(.toolApprovalResponse(approvalResponse))
+                            }
+                            for toolResult in historicalApprovalExecution.toolResults {
+                                continuation.yield(.toolResult(toolResult))
+                            }
+                        }
+
                         let prepared = try await prepareStep?(AIPrepareStepContext(
                             model: model,
                             stepNumber: index,
@@ -97,8 +161,12 @@ extension AI {
                         let stepModel = prepared?.model ?? model
                         let stepTools = prepared?.executableTools ?? executableTools
                         let toolsByName = try toolsByName(from: stepTools)
-                        var stepRequest = prepared?.request ?? currentRequest
-                        stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
+                        var stepRequest = try prepareLanguageModelCallOptions(prepared?.request ?? currentRequest)
+                        if prepared?.executableTools != nil {
+                            stepRequest.tools = toolsDictionary(from: stepTools)
+                        } else {
+                            stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
+                        }
 
                         await toolTelemetry.recordStepStart(
                             index: index,
@@ -110,9 +178,22 @@ extension AI {
                         let step = try await forwardLanguageStream(
                             streamText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy),
                             to: continuation,
-                            toolsByName: toolsByName
+                            toolsByName: toolsByName,
+                            request: stepRequest,
+                            repairToolCall: repairToolCall
                         )
                         let executableCalls = step.toolCalls.filter { !$0.providerExecuted }
+                        let providerExecutedToolCallIDs = Set(step.toolCalls.filter(\.providerExecuted).map(\.id))
+                        pendingProviderExecutedToolCallIDs.formUnion(providerExecutedToolCallIDs)
+                        let providerExecutedToolResultIDs = Set(step.streamedToolResults.compactMap { result -> String? in
+                            if result.providerExecuted
+                                || providerExecutedToolCallIDs.contains(result.toolCallID)
+                                || pendingProviderExecutedToolCallIDs.contains(result.toolCallID) {
+                                return result.toolCallID
+                            }
+                            return nil
+                        })
+                        pendingProviderExecutedToolCallIDs.subtract(providerExecutedToolResultIDs)
 
                         guard !executableCalls.isEmpty else {
                             let completedStep = step.toolStep(
@@ -121,9 +202,24 @@ extension AI {
                                 approvalRequests: [],
                                 approvalResponses: []
                             )
+                            steps.append(completedStep)
                             await toolTelemetry.recordStepEnd(completedStep)
-                            continuation.finish()
-                            return
+                            if try await isStopConditionMet(stopWhen, steps: steps) {
+                                continuation.finish()
+                                return
+                            }
+                            let stepResponseMessages = try await toResponseMessages(
+                                content: completedStep.content.compactMap(\.responseMessagePart),
+                                toolsByName: toolsByName
+                            )
+                            responseMessages.append(contentsOf: stepResponseMessages)
+                            currentRequest = stepRequest
+                            currentRequest.messages.append(contentsOf: stepResponseMessages)
+                            guard !pendingProviderExecutedToolCallIDs.isEmpty, index < maxSteps - 1 else {
+                                continuation.finish()
+                                return
+                            }
+                            continue
                         }
 
                         let toolExecution = try await executeToolCalls(
@@ -131,8 +227,11 @@ extension AI {
                             toolsByName: toolsByName,
                             request: stepRequest,
                             toolApproval: toolApproval,
+                            repairToolCall: repairToolCall,
                             telemetry: toolTelemetry,
-                            stepIndex: index
+                            stepIndex: index,
+                            convertToolErrorsToResults: true,
+                            invokeInputAvailableCallbacks: false
                         )
                         for approvalRequest in toolExecution.approvalRequests {
                             continuation.yield(.toolApprovalRequest(approvalRequest))
@@ -160,20 +259,13 @@ extension AI {
                             continuation.finish()
                             return
                         }
-                        let assistantMessage = AIMessage.assistant(
-                            text: step.text,
-                            toolCalls: step.toolCalls,
-                            toolApprovalRequests: toolExecution.approvalRequests
+                        let stepResponseMessages = try await toResponseMessages(
+                            content: completedStep.content.compactMap(\.responseMessagePart),
+                            toolsByName: toolsByName
                         )
-                        let toolResultMessages = toolResponseMessages(
-                            approvalResponses: toolExecution.approvalResponses,
-                            toolResults: toolExecution.results
-                        )
-                        responseMessages.append(assistantMessage)
-                        responseMessages.append(contentsOf: toolResultMessages)
+                        responseMessages.append(contentsOf: stepResponseMessages)
                         currentRequest = stepRequest
-                        currentRequest.messages.append(assistantMessage)
-                        currentRequest.messages.append(contentsOf: toolResultMessages)
+                        currentRequest.messages.append(contentsOf: stepResponseMessages)
                     }
 
                     continuation.finish()
@@ -199,7 +291,8 @@ extension AI {
             input: languageRequestTelemetryInput(request),
             retryPolicy: .none,
             telemetry: telemetry,
-            abortSignal: request.abortSignal
+            abortSignal: request.abortSignal,
+            logWarnings: false
         )
     }
 
@@ -222,6 +315,7 @@ extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
@@ -271,6 +365,7 @@ extension AI {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
+            repairToolCall: repairToolCall,
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy,
             telemetry: telemetry

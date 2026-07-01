@@ -16,6 +16,7 @@ import Testing
     #expect(!isProviderReference(taggedReference))
     #expect(!isProviderReference(taggedData))
     #expect(isProviderReference(nonStringValue))
+    #expect(!isProviderReference([1, 2, 3]))
     #expect(!isProviderReference(.null))
     #expect(!isProviderReference("some-string"))
     #expect(!isProviderReference(42))
@@ -29,6 +30,8 @@ import Testing
 
     #expect(try resolveProviderReference(reference: reference, provider: "openai") == "file-abc")
     #expect(try resolveProviderReference(reference, provider: "anthropic") == "file-xyz")
+
+    #expect(try resolveProviderReference(reference: ["openai": "file-only"], provider: "openai") == "file-only")
 }
 
 @Test func resolveProviderReferenceThrowsTypedErrorWhenMissing() {

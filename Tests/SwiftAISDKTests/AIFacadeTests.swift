@@ -233,6 +233,33 @@ private struct NativeAPISummary: Decodable, Sendable, Equatable {
         telemetry: Telemetry.Options()
     )
     #expect(await recorder.events().map(\.kind) == [.start, .end])
+
+    let perCallLog = ExecutionWrapperLog()
+    _ = try await AI.generateText(
+        model: model,
+        prompt: "Prefer per-call integration.",
+        telemetry: Telemetry.Options(integrations: [
+            StartEventTelemetry(name: "per-call", log: perCallLog)
+        ])
+    )
+    #expect(await recorder.events().map(\.kind) == [.start, .end])
+    #expect(await perCallLog.entries() == ["per-call"])
+}
+
+@Test func aiGenerateTextTelemetryCallsMultiplePerCallIntegrationsLikeUpstream() async throws {
+    let log = ExecutionWrapperLog()
+    let model = MockLanguageModel(result: TextGenerationResult(text: "ok", rawValue: .object([:])))
+
+    _ = try await AI.generateText(
+        model: model,
+        prompt: "Record two per-call integrations.",
+        telemetry: Telemetry.Options(integrations: [
+            StartEventTelemetry(name: "first", log: log),
+            StartEventTelemetry(name: "second", log: log)
+        ])
+    )
+
+    #expect(await log.entries() == ["first", "second"])
 }
 
 @Test func aiGenerateTextTelemetryRecordsErrorsAndRespectsOutputFlag() async throws {

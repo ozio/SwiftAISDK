@@ -22,6 +22,11 @@ struct AIToolExecutionBatch: Sendable {
     var needsUserApproval = false
 }
 
+struct AIParsedToolCall: Equatable, Sendable {
+    var toolCall: AIToolCall
+    var input: JSONValue
+}
+
 func toolResponseMessages(
     approvalResponses: [AIToolApprovalResponse],
     toolResults: [AIToolResult]
@@ -67,40 +72,174 @@ func annotateStreamPart(_ part: LanguageStreamPart, toolsByName: [String: AITool
     }
 }
 
+func parseToolCall(
+    _ call: AIToolCall,
+    toolsByName: [String: AITool]?,
+    repairToolCall: AIToolCallRepair? = nil,
+    request: LanguageModelRequest? = nil
+) async throws -> AIParsedToolCall {
+    guard let toolsByName else {
+        if call.providerExecuted {
+            return AIParsedToolCall(toolCall: call, input: try toolArguments(from: call))
+        }
+        throw AINoSuchToolError(toolName: call.name)
+    }
+
+    do {
+        return try await parseToolCallWithoutRepair(call, toolsByName: toolsByName)
+    } catch {
+        guard let repairToolCall, isRepairableToolCallError(error) else {
+            throw error
+        }
+        let repairedCall: AIToolCall?
+        do {
+            repairedCall = try await repairToolCall(AIToolCallRepairContext(
+                toolCall: call,
+                toolsByName: toolsByName,
+                request: request,
+                error: error
+            ))
+        } catch {
+            throw AIToolCallRepairError(
+                toolName: call.name,
+                toolCallID: call.id,
+                originalError: String(describing: error)
+            )
+        }
+        guard let repairedCall else {
+            throw error
+        }
+        return try await parseToolCallWithoutRepair(repairedCall, toolsByName: toolsByName)
+    }
+}
+
+private func parseToolCallWithoutRepair(
+    _ call: AIToolCall,
+    toolsByName: [String: AITool]
+) async throws -> AIParsedToolCall {
+    guard let tool = toolsByName[call.name] else {
+        if call.providerExecuted {
+            return AIParsedToolCall(toolCall: call, input: try toolArguments(from: call))
+        }
+        throw AINoSuchToolError(toolName: call.name, availableToolNames: Array(toolsByName.keys))
+    }
+    let arguments = try toolArguments(from: call)
+    let refinedArguments: JSONValue
+    do {
+        refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
+    } catch {
+        throw AIToolCallRepairError(
+            toolName: call.name,
+            toolCallID: call.id,
+            originalError: String(describing: error)
+        )
+    }
+    try validateToolArguments(refinedArguments, schema: tool.parameters, call: call)
+
+    var parsedCall = call
+    if arguments != refinedArguments {
+        parsedCall.arguments = canonicalJSONText(refinedArguments) ?? parsedCall.arguments
+    }
+    if tool.dynamic {
+        parsedCall.dynamic = true
+    }
+    return AIParsedToolCall(toolCall: parsedCall, input: refinedArguments)
+}
+
+private func isRepairableToolCallError(_ error: any Error) -> Bool {
+    error is AINoSuchToolError || error is AIInvalidToolInputError
+}
+
+func resolveToolApproval(
+    toolsByName: [String: AITool],
+    toolCall: AIToolCall,
+    arguments: JSONValue,
+    request: LanguageModelRequest,
+    toolApproval: AIToolApproval?
+) async throws -> AIToolApprovalStatus {
+    guard let tool = toolsByName[toolCall.name] else {
+        throw AINoSuchToolError(toolName: toolCall.name, availableToolNames: Array(toolsByName.keys))
+    }
+
+    if let toolApproval {
+        return try await toolApproval(AIToolApprovalContext(
+            toolCall: toolCall,
+            arguments: arguments,
+            tool: tool,
+            request: request,
+            toolContext: rawToolContext(for: tool, toolCall: toolCall, request: request)
+        )) ?? .notApplicable
+    }
+
+    guard let needsApproval = tool.needsApproval else {
+        return .notApplicable
+    }
+
+    let toolContext = try validatedToolContext(for: tool, toolCall: toolCall, request: request)
+    let needsUserApproval = try await needsApproval(arguments, AIToolNeedsApprovalContext(
+        toolCallID: toolCall.id,
+        messages: request.messages,
+        context: toolContext
+    ))
+    return needsUserApproval ? .userApproval : .notApplicable
+}
+
+private func rawToolContext(for tool: AITool, toolCall: AIToolCall, request: LanguageModelRequest) -> JSONValue? {
+    request.toolContexts[tool.name] ?? toolCall.providerMetadata["context"]
+}
+
+private func validatedToolContext(for tool: AITool, toolCall: AIToolCall, request: LanguageModelRequest) throws -> JSONValue? {
+    guard let rawContext = rawToolContext(for: tool, toolCall: toolCall, request: request) else { return nil }
+    return try validateToolContext(
+        toolName: tool.name,
+        context: rawContext,
+        contextSchema: tool.contextSchema
+    )
+}
+
 func executeToolCalls(
     _ calls: [AIToolCall],
     toolsByName: [String: AITool],
     request: LanguageModelRequest,
     toolApproval: AIToolApproval?,
+    repairToolCall: AIToolCallRepair? = nil,
     telemetry: AIToolLoopTelemetryContext? = nil,
-    stepIndex: Int = 0
+    stepIndex: Int = 0,
+    convertToolErrorsToResults: Bool = false,
+    invokeInputAvailableCallbacks: Bool = true
 ) async throws -> AIToolExecutionBatch {
     var batch = AIToolExecutionBatch()
     for call in calls {
-        guard let tool = toolsByName[call.name] else {
-            throw AINoSuchToolError(toolName: call.name, availableToolNames: Array(toolsByName.keys))
-        }
-        await telemetry?.recordToolStart(stepIndex: stepIndex, call: call, tool: tool)
         do {
-            let arguments = try toolArguments(from: call)
-            let refinedArguments: JSONValue
-            do {
-                refinedArguments = try await tool.refineArguments?(arguments) ?? arguments
-            } catch {
-                throw AIToolCallRepairError(
-                    toolName: call.name,
-                    toolCallID: call.id,
-                    originalError: String(describing: error)
-                )
-            }
-            try validateToolArguments(refinedArguments, schema: tool.parameters, call: call)
-            let approvalStatus = try await toolApproval?(AIToolApprovalContext(
-                toolCall: call,
-                arguments: refinedArguments,
-                tool: tool,
+            let parsedToolCall = try await parseToolCall(
+                call,
+                toolsByName: toolsByName,
+                repairToolCall: repairToolCall,
                 request: request
-            )) ?? .notApplicable
-            let approvalID = "approval-\(call.id)"
+            )
+            let parsedCall = parsedToolCall.toolCall
+            let refinedArguments = parsedToolCall.input
+            guard let tool = toolsByName[parsedCall.name] else {
+                throw AINoSuchToolError(toolName: parsedCall.name, availableToolNames: Array(toolsByName.keys))
+            }
+            if invokeInputAvailableCallbacks {
+                await tool.onInputAvailable?(AIToolInputAvailableContext(
+                    toolCallID: parsedCall.id,
+                    input: refinedArguments,
+                    messages: request.messages,
+                    abortSignal: request.abortSignal,
+                    toolContext: request.toolContexts[tool.name]
+                ))
+            }
+            await telemetry?.recordToolStart(stepIndex: stepIndex, call: parsedCall, tool: tool)
+            let approvalStatus = try await resolveToolApproval(
+                toolsByName: toolsByName,
+                toolCall: parsedCall,
+                arguments: refinedArguments,
+                request: request,
+                toolApproval: toolApproval
+            )
+            let approvalID = "approval-\(parsedCall.id)"
             var approvalRequest: AIToolApprovalRequest?
             var approvalResponse: AIToolApprovalResponse?
             switch approvalStatus {
@@ -109,51 +248,51 @@ func executeToolCalls(
             case let .approved(reason):
                 approvalRequest = AIToolApprovalRequest(
                     id: approvalID,
-                    toolName: call.name,
-                    arguments: call.arguments,
-                    toolCallID: call.id,
+                    toolName: parsedCall.name,
+                    arguments: parsedCall.arguments,
+                    toolCallID: parsedCall.id,
                     isAutomatic: true,
-                    providerMetadata: call.providerMetadata
+                    providerMetadata: parsedCall.providerMetadata
                 )
                 approvalResponse = AIToolApprovalResponse(
                     id: approvalID,
                     approved: true,
                     reason: reason,
-                    providerExecuted: call.providerExecuted,
-                    providerMetadata: call.providerMetadata
+                    providerExecuted: parsedCall.providerExecuted,
+                    providerMetadata: parsedCall.providerMetadata
                 )
                 batch.approvalRequests.append(approvalRequest!)
                 batch.approvalResponses.append(approvalResponse!)
             case let .denied(reason):
                 approvalRequest = AIToolApprovalRequest(
                     id: approvalID,
-                    toolName: call.name,
-                    arguments: call.arguments,
-                    toolCallID: call.id,
+                    toolName: parsedCall.name,
+                    arguments: parsedCall.arguments,
+                    toolCallID: parsedCall.id,
                     isAutomatic: true,
-                    providerMetadata: call.providerMetadata
+                    providerMetadata: parsedCall.providerMetadata
                 )
                 approvalResponse = AIToolApprovalResponse(
                     id: approvalID,
                     approved: false,
                     reason: reason,
-                    providerExecuted: call.providerExecuted,
-                    providerMetadata: call.providerMetadata
+                    providerExecuted: parsedCall.providerExecuted,
+                    providerMetadata: parsedCall.providerMetadata
                 )
                 batch.approvalRequests.append(approvalRequest!)
                 batch.approvalResponses.append(approvalResponse!)
-                let dynamic = call.dynamic || tool.dynamic
+                let dynamic = parsedCall.dynamic || tool.dynamic
                 let result = AIToolResult(
-                    toolCallID: call.id,
-                    toolName: call.name,
+                    toolCallID: parsedCall.id,
+                    toolName: parsedCall.name,
                     result: executionDeniedResult(reason: reason),
                     dynamic: dynamic,
-                    providerMetadata: call.providerMetadata
+                    providerMetadata: parsedCall.providerMetadata
                 )
                 batch.results.append(result)
                 await telemetry?.recordToolEnd(
                     stepIndex: stepIndex,
-                    call: call,
+                    call: parsedCall,
                     status: "denied",
                     arguments: refinedArguments,
                     result: result,
@@ -164,16 +303,16 @@ func executeToolCalls(
             case .userApproval:
                 approvalRequest = AIToolApprovalRequest(
                     id: approvalID,
-                    toolName: call.name,
-                    arguments: call.arguments,
-                    toolCallID: call.id,
-                    providerMetadata: call.providerMetadata
+                    toolName: parsedCall.name,
+                    arguments: parsedCall.arguments,
+                    toolCallID: parsedCall.id,
+                    providerMetadata: parsedCall.providerMetadata
                 )
                 batch.approvalRequests.append(approvalRequest!)
                 batch.needsUserApproval = true
                 await telemetry?.recordToolEnd(
                     stepIndex: stepIndex,
-                    call: call,
+                    call: parsedCall,
                     status: "userApproval",
                     arguments: refinedArguments,
                     approvalRequest: approvalRequest
@@ -181,37 +320,51 @@ func executeToolCalls(
                 continue
             }
             let resultValue: JSONValue
+            let toolContext = try validatedToolContext(for: tool, toolCall: parsedCall, request: request)
             let executionContext = AIToolExecutionContext(
-                toolCallID: call.id,
+                toolCallID: parsedCall.id,
                 messages: request.messages,
                 abortSignal: request.abortSignal,
-                metadata: call.providerMetadata
+                metadata: parsedCall.providerMetadata,
+                toolContext: toolContext
             )
-            if let telemetry {
-                resultValue = try await telemetry.executeTool(call: call) {
-                    try await tool.executeWithContext(refinedArguments, executionContext)
+            do {
+                if let telemetry {
+                    resultValue = try await telemetry.executeTool(call: parsedCall) {
+                        try await tool.executeWithContext(refinedArguments, executionContext)
+                    }
+                } else {
+                    resultValue = try await tool.executeWithContext(refinedArguments, executionContext)
                 }
-            } else {
-                resultValue = try await tool.executeWithContext(refinedArguments, executionContext)
+            } catch {
+                guard convertToolErrorsToResults else { throw error }
+                await telemetry?.recordToolError(stepIndex: stepIndex, call: parsedCall, error: error)
+                let dynamic = parsedCall.dynamic || tool.dynamic
+                batch.results.append(toolExecutionErrorResult(
+                    error,
+                    toolCall: parsedCall,
+                    dynamic: dynamic
+                ))
+                continue
             }
             let modelOutput = try await tool.toModelOutput?(AIToolModelOutputContext(
-                toolCallID: call.id,
+                toolCallID: parsedCall.id,
                 input: refinedArguments,
                 output: resultValue
             ))
-            let dynamic = call.dynamic || tool.dynamic
+            let dynamic = parsedCall.dynamic || tool.dynamic
             let result = AIToolResult(
-                toolCallID: call.id,
-                toolName: call.name,
+                toolCallID: parsedCall.id,
+                toolName: parsedCall.name,
                 result: resultValue,
                 modelOutput: modelOutput,
                 dynamic: dynamic,
-                providerMetadata: call.providerMetadata
+                providerMetadata: parsedCall.providerMetadata
             )
             batch.results.append(result)
             await telemetry?.recordToolEnd(
                 stepIndex: stepIndex,
-                call: call,
+                call: parsedCall,
                 status: "executed",
                 arguments: refinedArguments,
                 result: result,
@@ -220,10 +373,91 @@ func executeToolCalls(
             )
         } catch {
             await telemetry?.recordToolError(stepIndex: stepIndex, call: call, error: error)
+            if convertToolErrorsToResults, isToolCallResultError(error) {
+                batch.results.append(toolCallErrorResult(
+                    error,
+                    toolCall: call,
+                    dynamic: call.dynamic || (toolsByName[call.name]?.dynamic == true)
+                ))
+                continue
+            }
             throw error
         }
     }
     return batch
+}
+
+struct AIHistoricalToolApprovalExecution: Sendable {
+    var responseMessages: [AIMessage] = []
+    var toolResults: [AIToolResult] = []
+    var approvalResponses: [AIToolApprovalResponse] = []
+}
+
+func executeHistoricalToolApprovals(
+    request: LanguageModelRequest,
+    toolsByName: [String: AITool],
+    toolApproval: AIToolApproval?,
+    toolApprovalSecret: String? = nil,
+    telemetry: AIToolLoopTelemetryContext? = nil,
+    stepIndex: Int = 0
+) async throws -> AIHistoricalToolApprovalExecution {
+    let collected = try collectToolApprovals(messages: request.messages)
+    guard !collected.approvedToolApprovals.isEmpty || !collected.deniedToolApprovals.isEmpty else {
+        return AIHistoricalToolApprovalExecution()
+    }
+
+    let localApprovedApprovals = collected.approvedToolApprovals.filter {
+        !$0.toolCall.providerExecuted && !$0.approvalResponse.providerExecuted
+    }
+    let localDeniedApprovals = collected.deniedToolApprovals.filter {
+        !$0.toolCall.providerExecuted && !$0.approvalResponse.providerExecuted
+    }
+    let providerExecutedDeniedApprovals = collected.deniedToolApprovals.filter {
+        $0.toolCall.providerExecuted || $0.approvalResponse.providerExecuted
+    }
+
+    let validated = try await validateApprovedToolApprovals(
+        approvedToolApprovals: localApprovedApprovals,
+        toolsByName: toolsByName,
+        request: request,
+        toolApproval: toolApproval,
+        toolApprovalSecret: toolApprovalSecret
+    )
+    let approvedBatch = try await executeToolCalls(
+        validated.approvedToolApprovals.map(\.toolCall),
+        toolsByName: toolsByName,
+        request: request,
+        toolApproval: { _ in .notApplicable },
+        telemetry: telemetry,
+        stepIndex: stepIndex,
+        convertToolErrorsToResults: true
+    )
+
+    let deniedApprovals = localDeniedApprovals + providerExecutedDeniedApprovals + validated.deniedToolApprovals
+    let deniedResults = deniedApprovals.map { approval in
+        let toolCall = approval.toolCall
+        let providerExecuted = toolCall.providerExecuted || approval.approvalResponse.providerExecuted
+        let providerMetadata = toolCall.providerMetadata
+            .merging(approval.approvalResponse.providerMetadata) { current, _ in current }
+        return AIToolResult(
+            toolCallID: toolCall.id,
+            toolName: toolCall.name,
+            result: executionDeniedResult(reason: approval.approvalResponse.reason),
+            dynamic: toolCall.dynamic || (toolsByName[toolCall.name]?.dynamic == true),
+            providerExecuted: providerExecuted,
+            providerMetadata: providerMetadata
+        )
+    }
+    let toolResults = approvedBatch.results + deniedResults
+
+    return AIHistoricalToolApprovalExecution(
+        responseMessages: toolResponseMessages(
+            approvalResponses: [],
+            toolResults: toolResults
+        ),
+        toolResults: toolResults,
+        approvalResponses: []
+    )
 }
 
 func executionDeniedResult(reason: String?) -> JSONValue {
@@ -231,6 +465,38 @@ func executionDeniedResult(reason: String?) -> JSONValue {
         "type": .string("execution-denied"),
         "reason": reason.map(JSONValue.string)
     ].compactMapValues { $0 })
+}
+
+func toolExecutionErrorResult(_ error: Error, toolCall: AIToolCall, dynamic: Bool) -> AIToolResult {
+    AIToolResult(
+        toolCallID: toolCall.id,
+        toolName: toolCall.name,
+        result: [
+            "type": .string("error-text"),
+            "value": .string("Error: \(String(describing: error))")
+        ],
+        isError: true,
+        dynamic: dynamic,
+        providerMetadata: toolCall.providerMetadata
+    )
+}
+
+func toolCallErrorResult(_ error: Error, toolCall: AIToolCall, dynamic: Bool) -> AIToolResult {
+    AIToolResult(
+        toolCallID: toolCall.id,
+        toolName: toolCall.name,
+        result: [
+            "type": .string("error-text"),
+            "value": .string(String(describing: error))
+        ],
+        isError: true,
+        dynamic: dynamic,
+        providerMetadata: toolCall.providerMetadata
+    )
+}
+
+func isToolCallResultError(_ error: Error) -> Bool {
+    error is AIInvalidToolInputError || error is AINoSuchToolError || error is AIToolCallRepairError
 }
 
 func toolArguments(from call: AIToolCall) throws -> JSONValue {

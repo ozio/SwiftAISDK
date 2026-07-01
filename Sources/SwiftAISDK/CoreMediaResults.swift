@@ -114,6 +114,17 @@ public struct ImageInputFile: Sendable, Equatable {
     }
 }
 
+public func convertImageModelFileToDataURI(_ file: ImageInputFile) throws -> String {
+    if let url = file.url {
+        return url
+    }
+    guard let data = file.data else {
+        throw AIError.invalidArgument(argument: "file", message: "Image file must contain either data or URL.")
+    }
+    let mediaType = file.mediaType ?? "image/png"
+    return "data:\(mediaType);base64,\(data.base64EncodedString())"
+}
+
 public struct ImageGenerationResult: Sendable {
     public var urls: [String]
     public var base64Images: [String]
@@ -144,4 +155,3 @@ public struct ImageGenerationResult: Sendable {
         self.responseMetadata = responseMetadata
     }
 }
-

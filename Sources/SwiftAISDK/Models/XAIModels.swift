@@ -158,7 +158,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let options = try xaiProviderOptions(from: request)
-        let mode = xaiVideoMode(from: options)
+        let mode = xaiVideoMode(from: options, request: request)
         let endpoint: String
         if mode == "edit-video" {
             endpoint = "/videos/edits"
@@ -210,7 +210,15 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
                 body[key] = value
             }
         }
-        if let image = xaiVideoImageInput(from: options), body["image"] == nil {
+        if !request.frameImages.isEmpty || mode == "edit-video" {
+            body["reference_images"] = nil
+        }
+        if !request.inputReferences.isEmpty, request.frameImages.isEmpty, mode != "edit-video" {
+            body["reference_images"] = .array(request.inputReferences.map { .object(["url": .string(xaiImageFileURL($0))]) })
+        }
+        if let firstFrame = request.frameImages.first(where: { $0.frameType == .firstFrame }) {
+            body["image"] = .object(["url": .string(xaiImageFileURL(firstFrame.image))])
+        } else if let image = xaiVideoImageInput(from: options), body["image"] == nil {
             body["image"] = .object(["url": image])
         }
         if let image = request.image, body["image"] == nil {
@@ -450,6 +458,26 @@ private func xaiVideoWarnings(for request: VideoGenerationRequest, options: [Str
             message: "xAI video extension does not support custom resolution."
         ))
     }
+    if request.frameImages.contains(where: { $0.frameType == .lastFrame }) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "frameImages",
+            message: "xAI video models do not support last_frame frameImages. The last_frame image will be ignored."
+        ))
+    }
+    if !request.inputReferences.isEmpty, !request.frameImages.isEmpty {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "inputReferences",
+            message: "xAI inputReferences are ignored when frameImages are provided."
+        ))
+    } else if !request.inputReferences.isEmpty, mode == "edit-video" {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "inputReferences",
+            message: "xAI video editing does not support inputReferences."
+        ))
+    }
     return warnings
 }
 
@@ -480,12 +508,7 @@ private func xaiImageEditInputs(from files: [ImageInputFile]) -> [String: JSONVa
 }
 
 private func xaiImageFileURL(_ file: ImageInputFile) -> String {
-    if let url = file.url {
-        return url
-    }
-    guard let data = file.data else { return "" }
-    let mediaType = file.mediaType ?? "image/png"
-    return "data:\(mediaType);base64,\(data.base64EncodedString())"
+    (try? convertImageModelFileToDataURI(file)) ?? ""
 }
 
 private func xaiVideoImageInput(from options: [String: JSONValue]) -> JSONValue? {
@@ -502,7 +525,7 @@ private func xaiVideoImageInput(from options: [String: JSONValue]) -> JSONValue?
     return value
 }
 
-private func xaiVideoMode(from extraBody: [String: JSONValue]) -> String? {
+private func xaiVideoMode(from extraBody: [String: JSONValue], request: VideoGenerationRequest) -> String? {
     if let mode = extraBody["mode"]?.stringValue {
         return mode
     }
@@ -511,6 +534,9 @@ private func xaiVideoMode(from extraBody: [String: JSONValue]) -> String? {
     }
     let references = extraBody["referenceImageUrls"]?.arrayValue ?? extraBody["reference_image_urls"]?.arrayValue
     if references?.isEmpty == false {
+        return "reference-to-video"
+    }
+    if !request.inputReferences.isEmpty, request.frameImages.isEmpty {
         return "reference-to-video"
     }
     return nil

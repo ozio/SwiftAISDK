@@ -158,7 +158,7 @@ private func xaiResponsesInputMessageJSON(_ message: AIMessage, warnings: inout 
         var items: [JSONValue] = []
         for part in message.content {
             switch part {
-            case let .text(text):
+            case let .text(text, _):
                 let item: [String: JSONValue] = [
                     "role": .string("assistant"),
                     "content": .string(text)
@@ -180,8 +180,10 @@ private func xaiResponsesInputMessageJSON(_ message: AIMessage, warnings: inout 
                 items.append(.object(item))
             case .toolResult:
                 break
-            case .data, .file, .imageURL, .providerReference, .toolApprovalRequest, .toolApprovalResponse:
+            case .data, .file, .reasoningFile, .custom, .imageURL, .providerReference, .toolApprovalRequest, .toolApprovalResponse:
                 warnings.append(AIWarning(type: "other", message: "xAI Responses API does not support this assistant content type."))
+            case .reasoning:
+                warnings.append(AIWarning(type: "other", message: "Reasoning parts without xAI itemId or encrypted content cannot be sent back to xAI. Skipping."))
             }
         }
         if let reasoning = message.reasoning, !reasoning.isEmpty {
@@ -202,11 +204,11 @@ private func xaiResponsesInputMessageJSON(_ message: AIMessage, warnings: inout 
 
 private func xaiResponsesUserContentPart(_ part: AIContentPart) throws -> JSONValue? {
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return .object(["type": .string("input_text"), "text": .string(text)])
-    case let .imageURL(url):
+    case let .imageURL(url, _):
         return .object(["type": .string("input_image"), "image_url": .string(url)])
-    case let .data(mimeType, data), let .file(mimeType, data, _):
+    case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
         if mimeType.lowercased().hasPrefix("image/") {
             let resolvedMimeType = mimeType == "image/*" ? "image/jpeg" : mimeType
             return .object([
@@ -218,12 +220,12 @@ private func xaiResponsesUserContentPart(_ part: AIContentPart) throws -> JSONVa
             argument: "messages",
             message: "xAI Responses requires a URL or Files API provider reference for non-image file parts."
         )
-    case let .providerReference(_, reference):
+    case let .providerReference(_, reference, _, _):
         return .object([
             "type": .string("input_file"),
             "file_id": .string(try resolveProviderReference(reference: reference, provider: "xai"))
         ])
-    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .reasoning, .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }

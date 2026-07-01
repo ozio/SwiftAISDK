@@ -116,7 +116,7 @@ func groqMessageJSON(_ message: AIMessage) throws -> [JSONValue] {
     case .system:
         return [.object(["role": .string("system"), "content": .string(message.combinedText)])]
     case .user:
-        if message.content.count == 1, case let .text(text) = message.content[0] {
+        if message.content.count == 1, case let .text(text, _) = message.content[0] {
             return [.object(["role": .string("user"), "content": .string(text)])]
         }
         return [.object([
@@ -162,11 +162,13 @@ func groqMessageJSON(_ message: AIMessage) throws -> [JSONValue] {
 
 func groqUserContentPart(_ part: AIContentPart) throws -> JSONValue {
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return .object(["type": .string("text"), "text": .string(text)])
-    case let .imageURL(url):
+    case let .reasoning(text, _):
+        return .object(["type": .string("text"), "text": .string(text)])
+    case let .imageURL(url, _):
         return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
-    case let .data(mimeType, data), let .file(mimeType, data, _):
+    case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
         guard mimeType.hasPrefix("image/") else {
             throw AIError.invalidArgument(argument: "files", message: "Groq chat API only supports image file parts; got \(mimeType).")
         }
@@ -177,7 +179,7 @@ func groqUserContentPart(_ part: AIContentPart) throws -> JSONValue {
         ])
     case .providerReference:
         throw AIError.invalidArgument(argument: "files", message: "Groq chat API only supports image URL and inline image file parts.")
-    case .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         throw AIError.invalidArgument(argument: "messages", message: "Groq user messages only support text and image file parts.")
     }
 }

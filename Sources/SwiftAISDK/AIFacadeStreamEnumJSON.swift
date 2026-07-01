@@ -18,7 +18,7 @@ public static func streamEnum(
             return failingPartStream(AIError.invalidArgument(argument: "values", message: "Enum values are required."))
         }
         let schema = enumOutputSchema(values: values)
-        return mapObjectStream(
+        return mapEnumObjectStream(
             streamObject(
                 model: model,
                 request: request,
@@ -33,7 +33,7 @@ public static func streamEnum(
                 jsonInstruction: jsonInstruction,
                 repairText: repairText
             ),
-            transform: enumStreamPart
+            values: values
         )
     }
 

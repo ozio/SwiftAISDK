@@ -77,7 +77,7 @@ public final class AnthropicAWSProvider: AIProvider, @unchecked Sendable {
         var headers = settings.headers
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
         headers["anthropic-workspace-id"] = headers["anthropic-workspace-id"] ?? workspaceID
-        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic-aws/1.0.7")
+        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic-aws/1.0.8")
 
         let transport: any AITransport
         if let apiKey = settings.apiKey ?? environmentValue(["ANTHROPIC_AWS_API_KEY"]) {
@@ -141,7 +141,8 @@ public final class AnthropicAWSProvider: AIProvider, @unchecked Sendable {
             providerID: "anthropic-aws.messages",
             providerReferenceKey: "anthropic-aws",
             config: config,
-            betaHeader: ("anthropic-beta", "files-api-2025-04-14")
+            betaHeader: ("anthropic-beta", "files-api-2025-04-14"),
+            defaultFilename: "blob"
         )
     }
 

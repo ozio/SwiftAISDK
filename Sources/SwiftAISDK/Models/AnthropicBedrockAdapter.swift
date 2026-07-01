@@ -40,14 +40,19 @@ func amazonBedrockAnthropicResolveURLContent(
         resolvedParts.reserveCapacity(message.content.count)
         for part in message.content {
             switch part {
-            case let .imageURL(url):
+            case let .imageURL(url, _):
                 let downloaded = try await amazonBedrockAnthropicDownloadContent(url, transport: transport, abortSignal: abortSignal, providerID: providerID)
                 resolvedParts.append(.data(mimeType: downloaded.mimeType, data: downloaded.data))
-            case .text, .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+            case .text, .reasoning, .data, .file, .reasoningFile, .custom, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
                 resolvedParts.append(part)
             }
         }
-        resolvedMessages.append(AIMessage(role: message.role, content: resolvedParts))
+        resolvedMessages.append(AIMessage(
+            role: message.role,
+            content: resolvedParts,
+            reasoning: message.reasoning,
+            providerMetadata: message.providerMetadata
+        ))
     }
 
     return resolvedMessages
@@ -97,7 +102,7 @@ func amazonBedrockAnthropicDataURL(_ url: String) -> (mimeType: String, data: Da
 func amazonBedrockAnthropicMediaType(contentType: String?, data: Data, url: String) -> String {
     if let contentType {
         let mediaType = contentType.split(separator: ";", maxSplits: 1).first.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-        if isFullMediaType(mediaType) {
+        if isFullMediaType(mediaType), mediaType.lowercased() != "application/octet-stream" {
             return mediaType
         }
     }

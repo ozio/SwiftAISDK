@@ -38,6 +38,8 @@ func videoGenerationRequestMetadata(_ request: VideoGenerationRequest, body: JSO
             "aspectRatio": request.aspectRatio.map(JSONValue.string),
             "durationSeconds": request.durationSeconds.map(JSONValue.number),
             "image": request.image.map(imageInputFileRequestMetadata),
+            "frameImages": request.frameImages.isEmpty ? nil : .array(request.frameImages.map(videoFrameImageRequestMetadata)),
+            "inputReferences": request.inputReferences.isEmpty ? nil : .array(request.inputReferences.map(imageInputFileRequestMetadata)),
             "resolution": request.resolution.map(JSONValue.string),
             "fps": request.fps.map(JSONValue.number),
             "seed": request.seed.map { .number(Double($0)) },

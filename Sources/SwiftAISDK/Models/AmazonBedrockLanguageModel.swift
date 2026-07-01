@@ -110,11 +110,15 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             .map { message -> JSONValue in
                 let content = try message.content.map { part -> JSONValue in
                     switch part {
-                    case let .text(text):
+                    case let .text(text, _):
                         return .object(["text": .string(text)])
-                    case let .imageURL(url):
+                    case let .reasoning(text, _):
+                        return .object(["text": .string(text)])
+                    case .reasoningFile, .custom:
+                        return .object(["text": .string("")])
+                    case let .imageURL(url, _):
                         return .object(["image": .object(["source": .object(["s3Location": .object(["uri": .string(url)])])])])
-                    case let .data(mimeType, data), let .file(mimeType, data, _):
+                    case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
                         if let imageFormat = bedrockImageFormat(for: mimeType) {
                             return .object([
                                 "image": .object([

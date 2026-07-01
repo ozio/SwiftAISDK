@@ -19,6 +19,11 @@ import Testing
 
     #expect(result.providerReference["anthropic"] == "file_abc")
     #expect(result.mediaType == "application/pdf")
+    #expect(result.providerMetadata["anthropic"]?["filename"]?.stringValue == "data.pdf")
+    #expect(result.providerMetadata["anthropic"]?["mimeType"]?.stringValue == "application/pdf")
+    #expect(result.providerMetadata["anthropic"]?["sizeBytes"]?.intValue == 10)
+    #expect(result.providerMetadata["anthropic"]?["createdAt"]?.stringValue == "2026-01-01T00:00:00Z")
+    #expect(result.providerMetadata["anthropic"]?["downloadable"]?.boolValue == true)
     #expect(result.responseMetadata.id == "file_abc")
     #expect(result.responseMetadata.headers["anthropic-request-id"] == "file-request")
     #expect(result.requestMetadata.body?["file"]?["filename"]?.stringValue == "data.pdf")
@@ -34,10 +39,38 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/files")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/3.0.85")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"file\"; filename=\"data.pdf\""))
+    #expect(bodyText.contains("Content-Type: application/pdf"))
     #expect(!bodyText.contains("Data"))
     #expect(!bodyText.contains("assistants"))
+}
+
+@Test func anthropicFilesUseUpstreamDefaultFilenameAndOmitNullDownloadableMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"file_abc","type":"file","filename":"test.pdf","mime_type":"application/pdf","size_bytes":12345,"created_at":"2025-04-14T12:00:00Z","downloadable":null}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let files = provider.files()
+
+    let result = try await files.uploadFile(FileUploadRequest(
+        data: Data([1, 2, 3]),
+        mediaType: "application/octet-stream"
+    ))
+
+    #expect(result.providerReference == ["anthropic": "file_abc"])
+    #expect(result.providerMetadata["anthropic"]?["filename"]?.stringValue == "test.pdf")
+    #expect(result.providerMetadata["anthropic"]?["mimeType"]?.stringValue == "application/pdf")
+    #expect(result.providerMetadata["anthropic"]?["sizeBytes"]?.intValue == 12345)
+    #expect(result.providerMetadata["anthropic"]?["createdAt"]?.stringValue == "2025-04-14T12:00:00Z")
+    #expect(result.providerMetadata["anthropic"]?["downloadable"] == nil)
+    #expect(result.requestMetadata.body?["file"]?["filename"]?.stringValue == "blob")
+
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"file\"; filename=\"blob\""))
+    #expect(bodyText.contains("Content-Type: application/octet-stream"))
 }
 
 @Test func anthropicSkillsUploadAddsBetaHeaderAndFetchesVersionMetadata() async throws {
@@ -82,7 +115,7 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://api.anthropic.com/v1/skills")
     #expect(requests[0].headers["x-api-key"] == "claude-key")
     #expect(requests[0].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/3.0.85")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"display_title\""))
@@ -92,7 +125,31 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.anthropic.com/v1/skills/skill_01/versions/1772078378207930")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/3.0.85")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
+}
+
+@Test func anthropicSkillsOmitDisplayTitleWhenNotProvidedLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"id":"skill_01","display_title":"Test Capture Skill","latest_version":"1772078378207930","source":"custom","created_at":"2026-02-26T03:59:39.314772Z","updated_at":"2026-02-26T03:59:39.314772Z"}
+        """),
+        jsonResponse("""
+        {"type":"skill_version","skill_id":"skill_01","name":"test-capture-skill","description":"An updated test skill for fixture capture"}
+        """)
+    ])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let skills = provider.skills()
+
+    let result = try await skills.uploadSkill(SkillUploadRequest(files: [
+        SkillUploadFile(path: "index.ts", data: Data("console.log('hi')".utf8), mediaType: "text/typescript")
+    ]))
+
+    #expect(result.warnings.isEmpty)
+    #expect(result.requestMetadata.body?["displayTitle"] == nil)
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(!bodyText.contains("name=\"display_title\""))
+    #expect(bodyText.contains("name=\"files[]\"; filename=\"index.ts\""))
 }
 
 @Test func anthropicAWSFilesAndSkillsUseUpstreamProviderIDs() async throws {
@@ -135,12 +192,12 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/files")
     #expect(requests[0].headers["x-api-key"] == "aws-api-key")
     #expect(requests[0].headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.7")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
     #expect(requests[1].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.7")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
     #expect(requests[2].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills/skill_aws/versions/v1")
-    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.7")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
 }
 
 @Test func anthropicLanguageStreamsMessagesEvents() async throws {
@@ -592,6 +649,103 @@ import Testing
     #expect(finalToolCall.providerExecuted == false)
     #expect(try decodeJSONBody(Data(finalToolCall.arguments.utf8))["query"]?.stringValue == "weather")
     #expect(finishReason == "tool-calls")
+}
+
+@Test func anthropicLanguageStreamsProviderCodeExecutionInputTypesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    event: content_block_start
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srv_text_1","name":"text_editor_code_execution","input":{}}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"command\\":"}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\\"create\\",\\"path\\":\\"/tmp/demo.py\\"}"}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":0}
+
+    event: content_block_start
+    data: {"type":"content_block_start","index":1,"content_block":{"type":"server_tool_use","id":"srv_bash_1","name":"bash_code_execution","input":{}}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"command\\":"}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\\"python /tmp/demo.py\\"}"}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":1}
+
+    event: content_block_start
+    data: {"type":"content_block_start","index":2,"content_block":{"type":"server_tool_use","id":"srv_programmatic_1","name":"code_execution","input":{}}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\\"code\\":"}}
+
+    event: content_block_delta
+    data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\\"print(1)\\"}"}}
+
+    event: content_block_stop
+    data: {"type":"content_block_stop","index":2}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var inputStarts: [String] = []
+    var inputDeltas: [String: [String]] = [:]
+    var toolCallDeltas: [String: [String]] = [:]
+    var toolCalls: [AIToolCall] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Use code execution.")])) {
+        switch part {
+        case let .toolInputStart(id, name, providerExecuted, _, _, _):
+            inputStarts.append("\(id):\(name):\(providerExecuted)")
+        case let .toolInputDelta(id, delta, _):
+            inputDeltas[id, default: []].append(delta)
+        case let .toolCallDelta(id, _, argumentsDelta, _):
+            toolCallDeltas[id ?? "", default: []].append(argumentsDelta)
+        case let .toolCall(call):
+            toolCalls.append(call)
+        default:
+            break
+        }
+    }
+
+    #expect(inputStarts == [
+        "srv_text_1:code_execution:true",
+        "srv_bash_1:code_execution:true",
+        "srv_programmatic_1:code_execution:true"
+    ])
+    #expect(inputDeltas["srv_text_1"] == [
+        #"{"type":"text_editor_code_execution","command":"#,
+        #""create","path":"/tmp/demo.py"}"#
+    ])
+    #expect(inputDeltas["srv_bash_1"] == [
+        #"{"type":"bash_code_execution","command":"#,
+        #""python /tmp/demo.py"}"#
+    ])
+    #expect(inputDeltas["srv_programmatic_1"] == [
+        #"{"type":"programmatic-tool-call","code":"#,
+        #""print(1)"}"#
+    ])
+    #expect(toolCallDeltas["srv_text_1"] == [""] + (inputDeltas["srv_text_1"] ?? []))
+    #expect(toolCallDeltas["srv_bash_1"] == [""] + (inputDeltas["srv_bash_1"] ?? []))
+    #expect(toolCallDeltas["srv_programmatic_1"] == [""] + (inputDeltas["srv_programmatic_1"] ?? []))
+    #expect(toolCalls.map(\.name) == ["code_execution", "code_execution", "code_execution"])
+    #expect(toolCalls.map(\.providerExecuted) == [true, true, true])
+    let textEditorCall = try #require(toolCalls.first { $0.id == "srv_text_1" })
+    let bashCall = try #require(toolCalls.first { $0.id == "srv_bash_1" })
+    let programmaticCall = try #require(toolCalls.first { $0.id == "srv_programmatic_1" })
+    #expect(try decodeJSONBody(Data(textEditorCall.arguments.utf8))["type"]?.stringValue == "text_editor_code_execution")
+    #expect(try decodeJSONBody(Data(bashCall.arguments.utf8))["type"]?.stringValue == "bash_code_execution")
+    #expect(try decodeJSONBody(Data(programmaticCall.arguments.utf8))["type"]?.stringValue == "programmatic-tool-call")
 }
 
 @Test func anthropicLanguageStreamsProviderExecutedToolResultsLikeUpstream() async throws {

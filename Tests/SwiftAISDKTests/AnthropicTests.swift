@@ -17,9 +17,9 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/3.0.85")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
     let body = try decodeJSONBody(try #require(request.body))
-    #expect(body["system"]?.stringValue == "French.")
+    #expect(body["system"] == [["type": "text", "text": "French."]])
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
 }
 @Test func anthropicAppendsVersionedUserAgentToCustomHeader() async throws {
@@ -37,8 +37,38 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-api-key"] == "claude-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/3.0.85")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/4.0.1")
 }
+
+@Test func anthropicMovesAssistantToolUseBlocksToEnd() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-3-5-haiku-latest")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(
+            role: .assistant,
+            content: [
+                .text("I'll check."),
+                .toolCall(AIToolCall(id: "toolu_1", name: "lookup", arguments: #"{"query":"weather"}"#)),
+                .text("Still checking.")
+            ]
+        ),
+        .user("continue")
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    let assistantContent = try #require(body["messages"]?[0]?["content"]?.arrayValue)
+    #expect(assistantContent.map { $0["type"]?.stringValue } == ["text", "text", "tool_use"])
+    #expect(assistantContent[0]["text"]?.stringValue == "I'll check.")
+    #expect(assistantContent[1]["text"]?.stringValue == "Still checking.")
+    #expect(assistantContent[2]["id"]?.stringValue == "toolu_1")
+    #expect(assistantContent[2]["input"]?["query"]?.stringValue == "weather")
+}
+
 @Test func anthropicAuthTokenBaseURLAndCustomProviderNameMirrorUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"custom"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
@@ -73,6 +103,86 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["metadata"]?["user_id"]?.stringValue == "custom-user")
 }
+
+@Test func anthropicBaseURLConfigurationMirrorsUpstream() async throws {
+    let defaultTransport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"default"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let defaultProvider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", environment: [:], transport: defaultTransport))
+    let defaultModel = try defaultProvider.languageModel("claude-3-haiku-20240307")
+
+    _ = try await defaultModel.generate(LanguageModelRequest(messages: [.user("Hello")]))
+
+    let defaultRequest = try #require(await defaultTransport.requests().first)
+    #expect(defaultRequest.url.absoluteString == "https://api.anthropic.com/v1/messages")
+
+    let envTransport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"env"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let envProvider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        environment: ["ANTHROPIC_BASE_URL": "https://proxy.anthropic.example/v1/"],
+        transport: envTransport
+    ))
+    let envModel = try envProvider.languageModel("claude-3-haiku-20240307")
+
+    _ = try await envModel.generate(LanguageModelRequest(messages: [.user("Hello")]))
+
+    let envRequest = try #require(await envTransport.requests().first)
+    #expect(envRequest.url.absoluteString == "https://proxy.anthropic.example/v1/messages")
+
+    let optionTransport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"option"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let optionProvider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        baseURL: "https://option.anthropic.example/v1/",
+        environment: ["ANTHROPIC_BASE_URL": "https://env.anthropic.example/v1"],
+        transport: optionTransport
+    ))
+    let optionModel = try optionProvider.languageModel("claude-3-haiku-20240307")
+
+    _ = try await optionModel.generate(LanguageModelRequest(messages: [.user("Hello")]))
+
+    let optionRequest = try #require(await optionTransport.requests().first)
+    #expect(optionRequest.url.absoluteString == "https://option.anthropic.example/v1/messages")
+}
+
+@Test func anthropicFilesAndSkillsUseCustomProviderNameLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {"id":"file_custom","type":"file","filename":"data.pdf","mime_type":"application/pdf","size_bytes":10}
+        """),
+        jsonResponse("""
+        {"id":"skill_custom","display_title":"Custom Skill","latest_version":"v1","source":"custom"}
+        """),
+        jsonResponse("""
+        {"type":"skill_version","skill_id":"skill_custom","name":"custom-skill","description":"Custom hosted skill"}
+        """)
+    ])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        transport: transport,
+        name: "custom-anthropic.messages"
+    ))
+
+    let files = provider.files()
+    #expect(files.providerID == "custom-anthropic.messages")
+    let file = try await files.uploadFile(FileUploadRequest(data: Data([1, 2, 3]), mediaType: "application/pdf", filename: "data.pdf"))
+    #expect(file.providerReference["anthropic"] == "file_custom")
+
+    let skills = provider.skills()
+    #expect(skills.providerID == "custom-anthropic.skills")
+    let skill = try await skills.uploadSkill(SkillUploadRequest(
+        files: [
+            SkillUploadFile(path: "index.ts", data: Data("console.log('hi')".utf8), mediaType: "text/typescript")
+        ],
+        displayTitle: "Custom Skill"
+    ))
+    #expect(skill.providerReference["anthropic"] == "skill_custom")
+    #expect(skill.providerMetadata["anthropic"]?["source"]?.stringValue == "custom")
+}
+
 @Test func anthropicRejectsExplicitAPIKeyAndAuthTokenLikeUpstream() throws {
     #expect(throws: AIError.invalidArgument(
         argument: "apiKey/authToken",
@@ -81,6 +191,16 @@ import Testing
         _ = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", authToken: "auth-token"))
     }
 }
+
+@Test func anthropicSupportedURLsMirrorUpstream() throws {
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: RecordingTransport(response: jsonResponse("{}"))))
+    let model = try provider.languageModel("claude-3-haiku-20240307")
+
+    let supportedURLs = model.supportedURLs
+    #expect(supportedURLs["image/*"]?.first?.test("https://example.com/image.png") == true)
+    #expect(supportedURLs["application/pdf"]?.first?.test("https://arxiv.org/pdf/2401.00001") == true)
+}
+
 @Test func anthropicMessagesAliasUsesMessagesModel() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"alias"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
@@ -95,6 +215,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
 }
+
 @Test func anthropicAWSUsesWorkspaceAndAPIKeyHeaders() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"aws claude"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}
@@ -116,7 +237,7 @@ import Testing
     #expect(request.headers["x-api-key"] == "aws-api-key")
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.7")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "claude-sonnet-4-6")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hello")
@@ -138,7 +259,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-api-key"] == "aws-api-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic-aws/1.0.7")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic-aws/1.0.8")
 }
 @Test func anthropicAWSAPIKeyOverridesCustomXAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -191,7 +312,7 @@ import Testing
     #expect(request.headers["x-amz-content-sha256"] != nil)
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-west-2/aws-external-anthropic/aws4_request") == true)
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.7")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
 }
 @Test func anthropicAWSSupportsDynamicCredentialProviderLikeUpstream() async throws {
     let fixedDate = DateComponents(
@@ -343,8 +464,8 @@ import Testing
         "input_tokens": 11,
         "output_tokens": 7,
         "iterations": [
-          {"type":"message","model":"claude-sonnet-4-6","input_tokens":100,"output_tokens":50},
-          {"type":"fallback_message","model":"claude-fable-5","input_tokens":11,"output_tokens":7}
+          {"type":"message","model":"claude-sonnet-4-6","input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":9},
+          {"type":"fallback_message","model":"claude-fable-5","input_tokens":11,"output_tokens":7,"cache_creation_input_tokens":3}
         ]
       }
     }
@@ -369,6 +490,8 @@ import Testing
     #expect(result.providerMetadata["anthropic"]?["stopDetails"]?["recommendedModel"]?.stringValue == "claude-fable-5")
     #expect(result.providerMetadata["anthropic"]?["iterations"]?[1]?["type"]?.stringValue == "fallback_message")
     #expect(result.providerMetadata["anthropic"]?["iterations"]?[1]?["model"]?.stringValue == "claude-fable-5")
+    #expect(result.providerMetadata["anthropic"]?["iterations"]?[0]?["cacheCreationInputTokens"] == nil)
+    #expect(result.providerMetadata["anthropic"]?["iterations"]?[1]?["cacheCreationInputTokens"] == nil)
     let request = try #require(await transport.requests().first)
     #expect(request.headers["anthropic-beta"]?.contains("server-side-fallback-2026-06-01") == true)
     let body = try decodeJSONBody(try #require(request.body))

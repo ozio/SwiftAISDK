@@ -23,6 +23,7 @@ Checked npm package diffs:
 - `@ai-sdk/provider@3.0.10`
 - `@ai-sdk/react@3.0.206 -> 3.0.210`
 - `@ai-sdk/provider-utils@4.0.29 -> 4.0.30`
+- `@ai-sdk/provider-utils@4.0.30 -> 5.0.1` response size-limit patch
 
 Port decisions:
 
@@ -34,6 +35,11 @@ Port decisions:
 - `provider-utils@4.0.30` same-origin credential hardening is ported through the
   shared `isSameOrigin` helper and provider-specific guards for
   Black Forest Labs, FAL, Fireworks, Gladia, Google Veo, and Replicate.
+- `provider-utils@5.0.1` response-handler memory hardening is ported at the
+  Swift transport boundary: `URLSessionTransport.send` now applies
+  `AIDefaultMaxDownloadSize` even when a request does not pass an explicit
+  `maxResponseBytes`, so buffered JSON/error responses are rejected from
+  `Content-Length` or while streaming before unbounded accumulation.
 - `ai@6.0.201` array-output transform fix is already Swift-native: array output
   returns decoded `Element` values from the final validated object array path,
   and Swift has no Zod-style transform pipeline that could return raw elements.

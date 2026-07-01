@@ -2,8 +2,9 @@ import Foundation
 
 public func convertToModelMessages(_ messages: [AIUIMessage]) throws -> [AIMessage] {
     _ = try validateUIMessages(messages)
-    return try messages.enumerated().map { index, message in
-        try convertToModelMessage(message, path: "messages[\(index)]")
+    return try messages.enumerated().flatMap { index, message in
+        let modelMessage = try convertToModelMessage(message, path: "messages[\(index)]")
+        return splitAssistantResponseMessages(modelMessage)
     }
 }
 
@@ -13,18 +14,22 @@ public func convertToModelMessage(_ message: AIUIMessage) throws -> AIMessage {
 
 private func convertToModelMessage(_ message: AIUIMessage, path: String) throws -> AIMessage {
     var content: [AIContentPart] = []
-    var reasoningParts: [String] = []
+    var providerMetadata: [String: JSONValue] = [:]
+    var systemText = ""
 
     for (partIndex, part) in message.parts.enumerated() {
         let partPath = "\(path).parts[\(partIndex)]"
         switch part {
         case let .text(text):
-            if !text.text.isEmpty {
-                content.append(.text(text.text))
+            if message.role == .system {
+                systemText += text.text
+                providerMetadata.merge(text.providerMetadata) { _, new in new }
+            } else if !text.text.isEmpty {
+                content.append(.text(text.text, providerMetadata: text.providerMetadata))
             }
         case let .reasoning(reasoning):
             if !reasoning.text.isEmpty {
-                reasoningParts.append(reasoning.text)
+                content.append(.reasoning(reasoning.text, providerMetadata: reasoning.providerMetadata))
             }
         case let .file(file):
             try appendModelFile(file, path: partPath, content: &content)
@@ -36,16 +41,86 @@ private func convertToModelMessage(_ message: AIUIMessage, path: String) throws 
             content.append(.toolApprovalRequest(request))
         case let .toolApprovalResponse(response):
             content.append(.toolApprovalResponse(response))
-        case .source, .reasoningFile, .data, .metadata, .error, .custom, .raw:
+        case let .custom(value, providerMetadata):
+            content.append(.custom(value, providerMetadata: providerMetadata))
+        case .source, .reasoningFile, .data, .metadata, .error, .raw:
             break
         }
+    }
+
+    if message.role == .system, !systemText.isEmpty {
+        content.insert(.text(systemText), at: 0)
     }
 
     return AIMessage(
         role: message.role,
         content: content,
-        reasoning: reasoningParts.isEmpty ? nil : reasoningParts.joined()
+        providerMetadata: providerMetadata
     )
+}
+
+private func splitAssistantResponseMessages(_ message: AIMessage) -> [AIMessage] {
+    guard message.role == .assistant else {
+        return [message]
+    }
+
+    var assistantParts: [AIContentPart] = []
+    var toolParts: [AIContentPart] = []
+    var toolCallsByID: [String: AIToolCall] = [:]
+    var approvalRequestsByID: [String: AIToolApprovalRequest] = [:]
+    let explicitToolResultIDs = Set(message.content.compactMap { part -> String? in
+        if case let .toolResult(result) = part {
+            return result.toolCallID
+        }
+        return nil
+    })
+
+    for part in message.content {
+        switch part {
+        case let .toolCall(call):
+            toolCallsByID[call.id] = call
+            assistantParts.append(part)
+        case let .toolApprovalRequest(request):
+            approvalRequestsByID[request.id] = request
+            assistantParts.append(part)
+        case let .toolApprovalResponse(response):
+            toolParts.append(.toolApprovalResponse(response))
+            if !response.approved,
+               let request = approvalRequestsByID[response.id],
+               let toolCallID = request.toolCallID,
+               !explicitToolResultIDs.contains(toolCallID) {
+                toolParts.append(.toolResult(AIToolResult(
+                    toolCallID: toolCallID,
+                    toolName: request.toolName,
+                    result: executionDeniedResult(reason: response.reason),
+                    providerExecuted: response.providerExecuted,
+                    providerMetadata: response.providerMetadata
+                )))
+            }
+        case let .toolResult(result):
+            let providerExecuted = result.providerExecuted || (toolCallsByID[result.toolCallID]?.providerExecuted ?? false)
+            if providerExecuted {
+                assistantParts.append(.toolResult(result))
+            } else {
+                toolParts.append(.toolResult(result))
+            }
+        default:
+            assistantParts.append(part)
+        }
+    }
+
+    var messages: [AIMessage] = []
+    if !assistantParts.isEmpty {
+        messages.append(AIMessage(
+            role: .assistant,
+            content: assistantParts,
+            providerMetadata: message.providerMetadata
+        ))
+    }
+    if !toolParts.isEmpty {
+        messages.append(AIMessage(role: .tool, content: toolParts))
+    }
+    return messages
 }
 
 private func appendModelFile(
@@ -53,13 +128,28 @@ private func appendModelFile(
     path: String,
     content: inout [AIContentPart]
 ) throws {
+    if let providerReference = file.providerReference {
+        content.append(.providerReference(
+            mimeType: file.mediaType,
+            reference: providerReference,
+            filename: file.filename,
+            providerMetadata: file.providerMetadata
+        ))
+        return
+    }
+
     if let data = file.data {
-        content.append(.file(mimeType: file.mediaType, data: data, filename: file.filename))
+        content.append(.file(
+            mimeType: file.mediaType,
+            data: data,
+            filename: file.filename,
+            providerMetadata: file.providerMetadata
+        ))
         return
     }
 
     if let url = file.url, file.mediaType.lowercased().hasPrefix("image/") {
-        content.append(.imageURL(url))
+        content.append(.imageURL(url, providerMetadata: file.providerMetadata))
         return
     }
 

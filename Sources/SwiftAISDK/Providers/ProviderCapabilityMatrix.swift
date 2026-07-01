@@ -69,7 +69,7 @@ public enum AIProviderCapabilities {
         providerRow("lmnt", "@ai-sdk/lmnt", ["AIProviders.lmnt"], [.speech]),
         providerRow("luma", "@ai-sdk/luma", ["AIProviders.luma"], [.image]),
         providerRow("mistral", "@ai-sdk/mistral", ["AIProviders.mistral"], [.language, .embedding]),
-        providerRow("moonshotai", "@ai-sdk/moonshotai", ["AIProviders.moonshotAI"], [.language], notes: "Chat requests stream usage by default and maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema."),
+        providerRow("moonshotai", "@ai-sdk/moonshotai", ["AIProviders.moonshotAI"], [.language], notes: "Chat requests stream usage by default, maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema, and enables structured outputs for upstream `kimi-k*` models while stripping top-level `$schema`."),
         providerRow("open-responses.responses", "@ai-sdk/open-responses", ["AIProviders.openResponses"], [.language], notes: "Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, and the caller supplied providerOptions namespace."),
         providerRow("openai", "@ai-sdk/openai", ["AIProviders.openAI"], [.language, .completion, .embedding, .image, .transcription, .speech], files: true, skills: true),
         providerRow("openai-compatible", "@ai-sdk/openai-compatible", ["AIProviders.openAICompatible"], [.language, .completion, .embedding, .image], notes: "Generic OpenAI-compatible factory; caller supplies provider ID and base URL."),

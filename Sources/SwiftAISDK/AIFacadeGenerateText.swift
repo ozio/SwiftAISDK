@@ -5,9 +5,11 @@ extension AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: Telemetry.Options? = nil
+        telemetry: Telemetry.Options? = nil,
+        includeResponseBody: Bool = false
     ) async throws -> TextGenerationResult {
-        try await withTelemetry(
+        let request = try prepareLanguageModelCallOptions(request)
+        return try await withTelemetry(
             operationID: "ai.generateText",
             providerID: model.providerID,
             modelID: model.modelID,
@@ -23,8 +25,31 @@ extension AI {
             wrapLanguageModelCall: true
         ) {
             var result = try await model.generate(request)
+            result.responseMetadata = result.responseMetadata.includingBody(includeResponseBody)
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = AIRequestMetadata(body: languageRequestMetadataBody(request), headers: request.headers)
+            }
+            try await result.ensureResponseMessages()
+            if result.steps.isEmpty {
+                result.steps = [
+                    AIToolStep(
+                        index: 0,
+                        content: result.content,
+                        text: result.text,
+                        reasoning: result.reasoning,
+                        finishReason: result.finishReason,
+                        usage: result.usage,
+                        files: result.files,
+                        toolCalls: result.toolCalls,
+                        toolResults: result.toolResults,
+                        toolApprovalRequests: result.toolApprovalRequests,
+                        toolApprovalResponses: result.toolApprovalResponses,
+                        sources: result.sources,
+                        warnings: result.warnings,
+                        providerMetadata: result.providerMetadata,
+                        responseMetadata: result.responseMetadata.includingBody(includeResponseBody)
+                    )
+                ]
             }
             return result
         }
@@ -38,11 +63,20 @@ extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
         retryPolicy: AIRetryPolicy = .default,
-        telemetry: Telemetry.Options? = nil
+        telemetry: Telemetry.Options? = nil,
+        includeResponseBody: Bool = false
     ) async throws -> TextGenerationResult {
         guard !executableTools.isEmpty || prepareStep != nil else {
-            return try await generateText(model: model, request: request, retryPolicy: retryPolicy, telemetry: telemetry)
+            return try await generateText(
+                model: model,
+                request: request,
+                retryPolicy: retryPolicy,
+                telemetry: telemetry,
+                includeResponseBody: includeResponseBody
+            )
         }
         guard maxSteps > 0 else {
             throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
@@ -56,6 +90,9 @@ extension AI {
         var allToolResults: [AIToolResult] = []
         var allApprovalRequests: [AIToolApprovalRequest] = []
         var allApprovalResponses: [AIToolApprovalResponse] = []
+        var allContent: [AIResultContentPart] = []
+        var allWarnings: [AIWarning] = []
+        var totalUsage: TokenUsage?
         var responseMessages: [AIMessage] = []
         var lastResult: TextGenerationResult?
         let toolTelemetry = AIToolLoopTelemetryContext(
@@ -66,6 +103,21 @@ extension AI {
         )
 
         for index in 0..<maxSteps {
+            let historicalApprovalExecution = try await executeHistoricalToolApprovals(
+                request: currentRequest,
+                toolsByName: try toolsByName(from: executableTools),
+                toolApproval: toolApproval,
+                toolApprovalSecret: toolApprovalSecret,
+                telemetry: toolTelemetry,
+                stepIndex: index
+            )
+            if !historicalApprovalExecution.responseMessages.isEmpty {
+                responseMessages.append(contentsOf: historicalApprovalExecution.responseMessages)
+                currentRequest.messages.append(contentsOf: historicalApprovalExecution.responseMessages)
+                allToolResults.append(contentsOf: historicalApprovalExecution.toolResults)
+                allApprovalResponses.append(contentsOf: historicalApprovalExecution.approvalResponses)
+            }
+
             let prepared = try await prepareStep?(AIPrepareStepContext(
                 model: model,
                 stepNumber: index,
@@ -78,7 +130,11 @@ extension AI {
             let stepTools = prepared?.executableTools ?? executableTools
             let toolsByName = try toolsByName(from: stepTools)
             var stepRequest = prepared?.request ?? currentRequest
-            stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
+            if prepared?.executableTools != nil {
+                stepRequest.tools = toolsDictionary(from: stepTools)
+            } else {
+                stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
+            }
 
             await toolTelemetry.recordStepStart(
                 index: index,
@@ -87,26 +143,80 @@ extension AI {
                 request: stepRequest,
                 tools: stepTools
             )
-            var result = try await generateText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy, telemetry: telemetry)
-            result.toolCalls = annotateToolCalls(result.toolCalls, toolsByName: toolsByName)
-            let executableCalls = result.toolCalls.filter { !$0.providerExecuted }
+            var result = try await generateText(
+                model: stepModel,
+                request: stepRequest,
+                retryPolicy: retryPolicy,
+                telemetry: telemetry,
+                includeResponseBody: includeResponseBody
+            )
+            allWarnings.append(contentsOf: result.warnings)
+            totalUsage = sumTokenUsage(totalUsage, result.usage)
+            var forwardedCalls: [AIToolCall] = []
+            var preExecutionToolResults: [AIToolResult] = []
+            var preExecutionToolResultIDs = Set<String>()
+            for call in result.toolCalls {
+                do {
+                    let forwarded = try await forwardedToolCall(
+                        call,
+                        toolsByName: toolsByName,
+                        repairToolCall: repairToolCall,
+                        request: stepRequest
+                    )
+                    forwardedCalls.append(forwarded.call)
+                } catch {
+                    guard isToolCallResultError(error) else { throw error }
+                    await toolTelemetry.recordToolError(stepIndex: index, call: call, error: error)
+                    let annotatedCall = annotateToolCalls([call], toolsByName: toolsByName)[0]
+                    forwardedCalls.append(annotatedCall)
+                    preExecutionToolResults.append(toolCallErrorResult(
+                        error,
+                        toolCall: annotatedCall,
+                        dynamic: annotatedCall.dynamic || (toolsByName[annotatedCall.name]?.dynamic == true)
+                    ))
+                    preExecutionToolResultIDs.insert(annotatedCall.id)
+                }
+            }
+            result.toolCalls = forwardedCalls
+            result.replaceToolCallContent(with: forwardedCalls)
+            let executableCalls = result.toolCalls.filter { !$0.providerExecuted && !preExecutionToolResultIDs.contains($0.id) }
+            if !preExecutionToolResults.isEmpty {
+                allToolResults.append(contentsOf: preExecutionToolResults)
+                result.appendGeneratedToolContent(
+                    approvalRequests: [],
+                    approvalResponses: [],
+                    toolResults: preExecutionToolResults
+                )
+            }
 
             if executableCalls.isEmpty {
+                let finalContent = allContent + result.content
+                let finalResponseMessages = responseMessages + (try await makeResponseMessages(from: result.content))
                 let finalStep = AIToolStep(
                     index: index,
+                    content: result.content,
                     text: result.text,
                     reasoning: result.reasoning,
                     finishReason: result.finishReason,
                     usage: result.usage,
+                    files: result.files,
                     toolCalls: result.toolCalls,
+                    toolResults: result.toolResults,
                     toolApprovalRequests: result.toolApprovalRequests,
                     toolApprovalResponses: result.toolApprovalResponses,
+                    sources: result.sources,
+                    warnings: result.warnings,
                     providerMetadata: result.providerMetadata,
-                    responseMetadata: result.responseMetadata
+                    responseMetadata: result.responseMetadata.includingBody(includeResponseBody)
                 )
                 result.toolResults = allToolResults
                 result.toolApprovalRequests = allApprovalRequests
                 result.toolApprovalResponses = allApprovalResponses
+                result.content = finalContent
+                result.refreshDerivedContent()
+                result.usage = totalUsage
+                result.warnings = allWarnings
+                result.responseMessages = finalResponseMessages
                 result.steps = steps + [finalStep]
                 await toolTelemetry.recordStepEnd(finalStep)
                 return result
@@ -117,24 +227,38 @@ extension AI {
                 toolsByName: toolsByName,
                 request: stepRequest,
                 toolApproval: toolApproval,
+                repairToolCall: repairToolCall,
                 telemetry: toolTelemetry,
-                stepIndex: index
+                stepIndex: index,
+                convertToolErrorsToResults: true
             )
             allApprovalRequests.append(contentsOf: toolExecution.approvalRequests)
             allApprovalResponses.append(contentsOf: toolExecution.approvalResponses)
             allToolResults.append(contentsOf: toolExecution.results)
+            let stepToolResults = preExecutionToolResults + toolExecution.results
+            result.appendGeneratedToolContent(
+                approvalRequests: toolExecution.approvalRequests,
+                approvalResponses: toolExecution.approvalResponses,
+                toolResults: toolExecution.results
+            )
+            let stepResponseMessages = try await makeResponseMessages(from: result.content)
+            allContent.append(contentsOf: result.content)
             let step = AIToolStep(
                 index: index,
+                content: result.content,
                 text: result.text,
                 reasoning: result.reasoning,
                 finishReason: result.finishReason,
                 usage: result.usage,
+                files: result.files,
                 toolCalls: result.toolCalls,
-                toolResults: toolExecution.results,
+                toolResults: stepToolResults,
                 toolApprovalRequests: toolExecution.approvalRequests,
                 toolApprovalResponses: toolExecution.approvalResponses,
+                sources: result.sources,
+                warnings: result.warnings,
                 providerMetadata: result.providerMetadata,
-                responseMetadata: result.responseMetadata
+                responseMetadata: result.responseMetadata.includingBody(includeResponseBody)
             )
             steps.append(step)
             await toolTelemetry.recordStepEnd(step)
@@ -142,6 +266,11 @@ extension AI {
             result.toolResults = allToolResults
             result.toolApprovalRequests = allApprovalRequests
             result.toolApprovalResponses = allApprovalResponses
+            result.content = allContent
+            result.refreshDerivedContent()
+            result.usage = totalUsage
+            result.warnings = allWarnings
+            result.responseMessages = responseMessages + stepResponseMessages
             result.steps = steps
             lastResult = result
             if toolExecution.needsUserApproval {
@@ -150,20 +279,9 @@ extension AI {
             if try await isStopConditionMet(stopWhen, steps: steps) {
                 return result
             }
-            let assistantMessage = AIMessage.assistant(
-                text: result.text,
-                toolCalls: result.toolCalls,
-                toolApprovalRequests: toolExecution.approvalRequests
-            )
-            let toolResultMessages = toolResponseMessages(
-                approvalResponses: toolExecution.approvalResponses,
-                toolResults: toolExecution.results
-            )
-            responseMessages.append(assistantMessage)
-            responseMessages.append(contentsOf: toolResultMessages)
+            responseMessages.append(contentsOf: stepResponseMessages)
             currentRequest = stepRequest
-            currentRequest.messages.append(assistantMessage)
-            currentRequest.messages.append(contentsOf: toolResultMessages)
+            currentRequest.messages.append(contentsOf: stepResponseMessages)
         }
 
         guard var result = lastResult else {
@@ -172,6 +290,11 @@ extension AI {
         result.toolResults = allToolResults
         result.toolApprovalRequests = allApprovalRequests
         result.toolApprovalResponses = allApprovalResponses
+        result.content = allContent
+        result.refreshDerivedContent()
+        result.usage = totalUsage
+        result.warnings = allWarnings
+        result.responseMessages = responseMessages
         result.steps = steps
         return result
     }
@@ -195,9 +318,12 @@ extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
         retryPolicy: AIRetryPolicy = .default,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
+        includeResponseBody: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
@@ -226,7 +352,13 @@ extension AI {
         )
 
         if executableTools.isEmpty && prepareStep == nil {
-            return try await generateText(model: model, request: request, retryPolicy: retryPolicy, telemetry: telemetry)
+            return try await generateText(
+                model: model,
+                request: request,
+                retryPolicy: retryPolicy,
+                telemetry: telemetry,
+                includeResponseBody: includeResponseBody
+            )
         }
 
         return try await generateText(
@@ -237,8 +369,11 @@ extension AI {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
+            repairToolCall: repairToolCall,
             retryPolicy: retryPolicy,
-            telemetry: telemetry
+            telemetry: telemetry,
+            includeResponseBody: includeResponseBody
         )
     }
 
@@ -259,6 +394,39 @@ extension AI {
             jsonInstruction,
             repairText
         )
+    }
+
+    public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        executableTools: [AITool],
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> AIOutputGenerationResult<FinalOutput?> {
+        let outputRequest = output.requestForOutput(request, jsonInstruction)
+        let textResult = try await generateText(
+            model: model,
+            request: outputRequest,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
+            repairToolCall: repairToolCall,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
+        )
+        return try await output.optionalResultFromTextResult(textResult, model.providerID, repairText)
     }
 
     public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
@@ -309,4 +477,75 @@ extension AI {
         )
     }
 
+    public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        executableTools: [AITool],
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> AIOutputGenerationResult<FinalOutput?> {
+        try await generateText(
+            model: model,
+            request: LanguageModelRequest(
+                messages: [.user(prompt)],
+                temperature: temperature,
+                topP: topP,
+                topK: topK,
+                presencePenalty: presencePenalty,
+                frequencyPenalty: frequencyPenalty,
+                seed: seed,
+                maxOutputTokens: maxOutputTokens,
+                stopSequences: stopSequences,
+                reasoning: reasoning,
+                providerOptions: providerOptions,
+                extraBody: extraBody,
+                headers: headers,
+                abortSignal: abortSignal
+            ),
+            output: output,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
+            repairToolCall: repairToolCall,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
+            repairText: repairText
+        )
+    }
+
+}
+
+private extension AIResponseMetadata {
+    func includingBody(_ includeBody: Bool) -> AIResponseMetadata {
+        guard !includeBody else { return self }
+        var metadata = self
+        metadata.body = nil
+        return metadata
+    }
 }

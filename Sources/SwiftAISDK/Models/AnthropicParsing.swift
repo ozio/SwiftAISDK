@@ -4,6 +4,18 @@ func anthropicToolCalls(from value: JSONValue?) -> [AIToolCall] {
     value?.arrayValue?.compactMap(anthropicToolCall) ?? []
 }
 
+func anthropicTextContent(from value: JSONValue?) -> String? {
+    guard let parts = value?.arrayValue else { return nil }
+    return parts.compactMap { part -> String? in
+        if part["type"]?.stringValue == "tool_use",
+           part["name"]?.stringValue == "json",
+           let input = part["input"] {
+            return anthropicJSONString(input)
+        }
+        return part["text"]?.stringValue
+    }.joined()
+}
+
 func anthropicToolResults(from value: JSONValue?, providerID: String) -> [AIToolResult] {
     var serverToolNames: [String: String] = [:]
     var mcpToolNames: [String: String] = [:]
@@ -254,14 +266,15 @@ func anthropicToolSearchToolName(_ providerToolName: String?) -> String {
     }
 }
 
-func anthropicProviderMetadata(from raw: JSONValue, providerID: String) -> [String: JSONValue] {
+func anthropicProviderMetadata(from raw: JSONValue, providerID: String, requestProviderOptions: [String: JSONValue] = [:]) -> [String: JSONValue] {
     anthropicProviderMetadata(
         usage: raw["usage"],
         stopSequence: raw["stop_sequence"] ?? .null,
         stopDetails: anthropicStopDetailsMetadata(from: raw["stop_details"]) ?? .null,
         container: anthropicContainerMetadata(from: raw["container"]) ?? .null,
         contextManagement: anthropicContextManagementMetadata(from: raw["context_management"]) ?? .null,
-        providerID: providerID
+        providerID: providerID,
+        requestProviderOptions: requestProviderOptions
     )
 }
 
@@ -271,7 +284,8 @@ func anthropicProviderMetadata(
     stopDetails: JSONValue = .null,
     container: JSONValue,
     contextManagement: JSONValue,
-    providerID: String
+    providerID: String,
+    requestProviderOptions: [String: JSONValue] = [:]
 ) -> [String: JSONValue] {
     var metadataObject: [String: JSONValue] = [
         "usage": usage ?? .null,
@@ -284,7 +298,9 @@ func anthropicProviderMetadata(
         metadataObject["stopDetails"] = stopDetails
     }
     let metadata: JSONValue = .object(metadataObject)
-    return [anthropicProviderMetadataKey(from: providerID): metadata]
+    return Dictionary(uniqueKeysWithValues: anthropicProviderMetadataKeys(from: providerID, requestProviderOptions: requestProviderOptions).map {
+        ($0, metadata)
+    })
 }
 
 func anthropicProviderMetadataKey(from providerID: String) -> String {
@@ -298,6 +314,16 @@ func anthropicProviderMetadataKey(from providerID: String) -> String {
         return "googleVertex.anthropic"
     }
     return "anthropic"
+}
+
+func anthropicProviderMetadataKeys(from providerID: String, requestProviderOptions: [String: JSONValue]) -> [String] {
+    let canonicalKey = anthropicProviderMetadataKey(from: providerID)
+    guard canonicalKey == "anthropic" else { return [canonicalKey] }
+    let providerOptionsName = anthropicProviderOptionsName(from: providerID)
+    guard providerOptionsName != "anthropic", requestProviderOptions[providerOptionsName] != nil else {
+        return ["anthropic"]
+    }
+    return ["anthropic", providerOptionsName]
 }
 
 func anthropicMergedUsage(_ existing: JSONValue, _ update: JSONValue) -> JSONValue {
@@ -316,7 +342,6 @@ func anthropicUsageIterations(from value: JSONValue?) -> JSONValue? {
         output["model"] = iteration["model"]
         output["inputTokens"] = iteration["input_tokens"]
         output["outputTokens"] = iteration["output_tokens"]
-        output["cacheCreationInputTokens"] = iteration["cache_creation_input_tokens"]
         output["cacheReadInputTokens"] = iteration["cache_read_input_tokens"]
         return .object(output.compactMapValues { $0 })
     })
@@ -330,6 +355,8 @@ func anthropicStopDetailsMetadata(from value: JSONValue?) -> JSONValue? {
 
 func anthropicTokenUsage(from usage: JSONValue?) -> TokenUsage? {
     guard let usage else { return nil }
+    let cacheReadTokens = usage["cache_read_input_tokens"]?.intValue ?? 0
+    let cacheWriteTokens = usage["cache_creation_input_tokens"]?.intValue ?? 0
     let iterations = usage["iterations"]?.arrayValue ?? []
     let servedByFallback = iterations.contains { $0["type"]?.stringValue == "fallback_message" }
     if !iterations.isEmpty && !servedByFallback {
@@ -337,21 +364,62 @@ func anthropicTokenUsage(from usage: JSONValue?) -> TokenUsage? {
             let type = $0["type"]?.stringValue
             return type == "compaction" || type == "message"
         }
+        if executorIterations.isEmpty {
+            let inputTokens = usage["input_tokens"]?.intValue
+            return TokenUsage(
+                inputTokens: inputTokens.map { $0 + cacheReadTokens + cacheWriteTokens },
+                outputTokens: usage["output_tokens"]?.intValue,
+                inputTokensNoCache: inputTokens,
+                inputTokensCacheRead: cacheReadTokens,
+                inputTokensCacheWrite: cacheWriteTokens,
+                rawValue: usage
+            )
+        }
+        let inputTokens = executorIterations.reduce(0) { $0 + ($1["input_tokens"]?.intValue ?? 0) }
         return TokenUsage(
-            inputTokens: executorIterations.reduce(0) { $0 + ($1["input_tokens"]?.intValue ?? 0) },
+            inputTokens: inputTokens + cacheReadTokens + cacheWriteTokens,
             outputTokens: executorIterations.reduce(0) { $0 + ($1["output_tokens"]?.intValue ?? 0) },
-            inputTokensCacheRead: executorIterations.reduce(0) { $0 + ($1["cache_read_input_tokens"]?.intValue ?? 0) },
-            inputTokensCacheWrite: executorIterations.reduce(0) { $0 + ($1["cache_creation_input_tokens"]?.intValue ?? 0) },
+            inputTokensNoCache: inputTokens,
+            inputTokensCacheRead: cacheReadTokens,
+            inputTokensCacheWrite: cacheWriteTokens,
             rawValue: usage
         )
     }
+    let inputTokens = usage["input_tokens"]?.intValue
     return TokenUsage(
-        inputTokens: usage["input_tokens"]?.intValue,
+        inputTokens: inputTokens.map { $0 + cacheReadTokens + cacheWriteTokens },
         outputTokens: usage["output_tokens"]?.intValue,
-        inputTokensCacheRead: usage["cache_read_input_tokens"]?.intValue,
-        inputTokensCacheWrite: usage["cache_creation_input_tokens"]?.intValue,
+        inputTokensNoCache: inputTokens,
+        inputTokensCacheRead: cacheReadTokens,
+        inputTokensCacheWrite: cacheWriteTokens,
         rawValue: usage
     )
+}
+
+func anthropicHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = anthropicErrorMessage(from: response.body) ?? response.bodyText
+    guard !response.headers.isEmpty else {
+        return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
+    }
+    return .apiCall(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+func anthropicStreamError(from raw: JSONValue, provider: String, headers: [String: String]) -> AIError? {
+    guard raw["type"]?.stringValue == "error" else { return nil }
+    let error = raw["error"] ?? raw
+    let message = error["message"]?.stringValue ?? "Anthropic stream returned an error event."
+    let statusCode = error["type"]?.stringValue == "overloaded_error" ? 529 : 500
+    return .apiCall(provider: provider, statusCode: statusCode, body: message, headers: headers)
+}
+
+func anthropicErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data) else { return nil }
+    return json["error"]?["message"]?.stringValue ?? json["message"]?.stringValue
 }
 
 func anthropicContainerMetadata(from value: JSONValue?) -> JSONValue? {
@@ -391,16 +459,16 @@ struct AnthropicCitationDocument {
 func anthropicCitationDocuments(from messages: [AIMessage]) -> [AnthropicCitationDocument] {
     messages.flatMap(\.content).compactMap { part in
         switch part {
-        case let .data(mimeType, _), let .file(mimeType, _, _):
+        case let .data(mimeType, _, _), let .file(mimeType, _, _, _):
             guard mimeType.lowercased().hasPrefix("text/") || mimeType.lowercased() == "application/pdf" else {
                 return nil
             }
             return AnthropicCitationDocument(title: "Document", filename: nil, mediaType: mimeType)
-        case let .imageURL(url):
+        case let .imageURL(url, _):
             guard url.lowercased().contains(".pdf") else { return nil }
             let filename = url.split(separator: "/").last.map(String.init)
             return AnthropicCitationDocument(title: filename ?? "Document", filename: filename, mediaType: "application/pdf")
-        case .text, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .text, .reasoning, .reasoningFile, .custom, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             return nil
         }
     }
@@ -519,6 +587,7 @@ func anthropicToolCall(from part: JSONValue) -> AIToolCall? {
     switch type {
     case "tool_use":
         guard let id = part["id"]?.stringValue, let name = part["name"]?.stringValue else { return nil }
+        guard name != "json" else { return nil }
         return AIToolCall(
             id: id,
             name: name,
@@ -529,7 +598,7 @@ func anthropicToolCall(from part: JSONValue) -> AIToolCall? {
         guard let id = part["id"]?.stringValue, let name = part["name"]?.stringValue else { return nil }
         return AIToolCall(
             id: id,
-            name: name,
+            name: anthropicCustomToolName(forProviderToolName: name),
             arguments: anthropicJSONString(part["input"] ?? .object([:])) ?? "{}",
             providerExecuted: true,
             rawValue: part
@@ -545,6 +614,15 @@ func anthropicToolCall(from part: JSONValue) -> AIToolCall? {
         )
     default:
         return nil
+    }
+}
+
+func anthropicCustomToolName(forProviderToolName name: String) -> String {
+    switch name {
+    case "text_editor_code_execution", "bash_code_execution":
+        return "code_execution"
+    default:
+        return name
     }
 }
 
@@ -570,4 +648,15 @@ func anthropicFinishReason(_ reason: String?) -> String? {
     default:
         return "other"
     }
+}
+
+func anthropicFinishReason(_ reason: String?, toolCalls: [AIToolCall]) -> String? {
+    anthropicFinishReason(reason, toolCallCount: toolCalls.count)
+}
+
+func anthropicFinishReason(_ reason: String?, toolCallCount: Int) -> String? {
+    if reason == "tool_use", toolCallCount == 0 {
+        return "stop"
+    }
+    return anthropicFinishReason(reason)
 }

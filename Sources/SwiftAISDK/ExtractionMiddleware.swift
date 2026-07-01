@@ -94,7 +94,15 @@ public func simulateStreamingMiddleware() -> AILanguageModelMiddleware {
                         continuation.yield(.toolResult(toolResult))
                     }
 
-                    continuation.yield(.finish(reason: result.finishReason, usage: result.usage))
+                    if result.providerMetadata.isEmpty {
+                        continuation.yield(.finish(reason: result.finishReason, usage: result.usage))
+                    } else {
+                        continuation.yield(.finishMetadata(
+                            reason: result.finishReason,
+                            usage: result.usage,
+                            providerMetadata: result.providerMetadata
+                        ))
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -184,6 +192,28 @@ func extractTaggedSections(
     tagName: String,
     separator: String
 ) -> (reasoning: String, text: String)? {
+    guard let segments = extractTaggedSegments(text: text, tagName: tagName) else {
+        return nil
+    }
+
+    let reasoning = segments.compactMap { segment -> String? in
+        if case let .reasoning(value) = segment { return value }
+        return nil
+    }.joined(separator: separator)
+    let textWithoutReasoning = segments.compactMap { segment -> String? in
+        if case let .text(value) = segment { return value }
+        return nil
+    }.joined(separator: separator)
+
+    return (reasoning: reasoning, text: textWithoutReasoning)
+}
+
+private enum ExtractedTaggedSegment {
+    case reasoning(String)
+    case text(String)
+}
+
+private func extractTaggedSegments(text: String, tagName: String) -> [ExtractedTaggedSegment]? {
     let openingTag = "<\(tagName)>"
     let closingTag = "</\(tagName)>"
     let pattern = NSRegularExpression.escapedPattern(for: openingTag)
@@ -193,27 +223,40 @@ func extractTaggedSections(
         return nil
     }
 
-    let range = NSRange(text.startIndex..<text.endIndex, in: text)
-    let matches = regex.matches(in: text, range: range)
+    let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+    let matches = regex.matches(in: text, range: fullRange)
     guard !matches.isEmpty else {
         return nil
     }
 
-    let reasoning = matches.compactMap { match -> String? in
-        guard let range = Range(match.range(at: 1), in: text) else { return nil }
-        return String(text[range])
-    }.joined(separator: separator)
+    var segments: [ExtractedTaggedSegment] = []
+    var cursor = text.startIndex
 
-    var textWithoutReasoning = text
-    for match in matches.reversed() {
-        guard let matchRange = Range(match.range, in: textWithoutReasoning) else { continue }
-        let before = String(textWithoutReasoning[..<matchRange.lowerBound])
-        let after = String(textWithoutReasoning[matchRange.upperBound...])
-        let joiner = (!before.isEmpty && !after.isEmpty) ? separator : ""
-        textWithoutReasoning = before + joiner + after
+    for match in matches {
+        guard let matchRange = Range(match.range, in: text),
+              let reasoningRange = Range(match.range(at: 1), in: text) else {
+            continue
+        }
+
+        if cursor < matchRange.lowerBound {
+            let textSegment = String(text[cursor..<matchRange.lowerBound])
+            if !textSegment.isEmpty {
+                segments.append(.text(textSegment))
+            }
+        }
+
+        segments.append(.reasoning(String(text[reasoningRange])))
+        cursor = matchRange.upperBound
     }
 
-    return (reasoning: reasoning, text: textWithoutReasoning)
+    if cursor < text.endIndex {
+        let textSegment = String(text[cursor..<text.endIndex])
+        if !textSegment.isEmpty {
+            segments.append(.text(textSegment))
+        }
+    }
+
+    return segments
 }
 
 func appendSeparated(_ existing: String, _ next: String, separator: String) -> String {
@@ -233,35 +276,65 @@ func extractReasoningStream(
             do {
                 var textBuffer = ""
                 var textID = "0"
+                var textStartMetadata: [String: JSONValue] = [:]
                 var sawTextPart = false
 
                 func flushExtractedText() {
                     guard sawTextPart else { return }
                     let input = startWithReasoning ? "<\(tagName)>" + textBuffer : textBuffer
-                    if let extracted = extractTaggedSections(text: input, tagName: tagName, separator: separator) {
-                        if !extracted.reasoning.isEmpty {
-                            continuation.yield(.reasoningStart(id: "reasoning-0"))
-                            continuation.yield(.reasoningDeltaPart(id: "reasoning-0", delta: extracted.reasoning))
-                            continuation.yield(.reasoningEnd(id: "reasoning-0"))
+                    if let segments = extractTaggedSegments(text: input, tagName: tagName) {
+                        var reasoningIndex = 0
+                        var reasoningSegmentCount = 0
+                        var textSegmentCount = 0
+                        var emittedTextStart = false
+
+                        for segment in segments {
+                            switch segment {
+                            case let .reasoning(reasoning):
+                                let reasoningID = "reasoning-\(reasoningIndex)"
+                                continuation.yield(.reasoningStart(id: reasoningID))
+                                let delta = (reasoningSegmentCount > 0 ? separator : "") + reasoning
+                                if !delta.isEmpty {
+                                    continuation.yield(.reasoningDeltaPart(id: reasoningID, delta: delta))
+                                }
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                                reasoningIndex += 1
+                                reasoningSegmentCount += 1
+                            case let .text(text):
+                                if !emittedTextStart {
+                                    continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
+                                    emittedTextStart = true
+                                }
+                                let delta = (textSegmentCount > 0 ? separator : "") + text
+                                if !delta.isEmpty {
+                                    continuation.yield(.textDeltaPart(id: textID, delta: delta))
+                                }
+                                textSegmentCount += 1
+                            }
                         }
-                        if !extracted.text.isEmpty {
-                            continuation.yield(.textStart(id: textID))
-                            continuation.yield(.textDeltaPart(id: textID, delta: extracted.text))
-                            continuation.yield(.textEnd(id: textID))
+
+                        if !emittedTextStart {
+                            continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
                         }
+                        continuation.yield(.textEnd(id: textID))
                     } else if !textBuffer.isEmpty {
-                        continuation.yield(.textStart(id: textID))
+                        continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
                         continuation.yield(.textDeltaPart(id: textID, delta: textBuffer))
+                        continuation.yield(.textEnd(id: textID))
+                    } else {
+                        continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
                         continuation.yield(.textEnd(id: textID))
                     }
                     textBuffer = ""
+                    textStartMetadata = [:]
                     sawTextPart = false
                 }
 
                 for try await part in stream {
                     switch part {
-                    case let .textStart(id, _):
+                    case let .textStart(id, providerMetadata):
                         textID = id
+                        textStartMetadata = providerMetadata
                         sawTextPart = true
                     case let .textDelta(delta):
                         textBuffer += delta
@@ -271,7 +344,7 @@ func extractReasoningStream(
                         textBuffer += delta
                         sawTextPart = true
                     case .textEnd:
-                        break
+                        flushExtractedText()
                     case .finish:
                         flushExtractedText()
                         continuation.yield(part)

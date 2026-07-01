@@ -13,6 +13,7 @@ public struct LanguageModelRequest: Sendable {
     public var responseFormat: AIResponseFormat?
     public var reasoning: String?
     public var tools: [String: JSONValue]
+    public var toolContexts: [String: JSONValue]
     public var toolChoice: JSONValue?
     public var includeRawChunks: Bool
     public var providerOptions: [String: JSONValue]
@@ -33,6 +34,7 @@ public struct LanguageModelRequest: Sendable {
         responseFormat: AIResponseFormat? = nil,
         reasoning: String? = nil,
         tools: [String: JSONValue] = [:],
+        toolContexts: [String: JSONValue] = [:],
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
         providerOptions: [String: JSONValue] = [:],
@@ -52,6 +54,7 @@ public struct LanguageModelRequest: Sendable {
         self.responseFormat = responseFormat
         self.reasoning = reasoning
         self.tools = tools
+        self.toolContexts = toolContexts
         self.toolChoice = toolChoice
         self.includeRawChunks = includeRawChunks
         self.providerOptions = providerOptions
@@ -60,4 +63,3 @@ public struct LanguageModelRequest: Sendable {
         self.abortSignal = abortSignal
     }
 }
-

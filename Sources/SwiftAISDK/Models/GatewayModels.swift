@@ -206,20 +206,22 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                     "role": .string(message.role.rawValue),
                     "content": .array(message.content.map { part in
                         switch part {
-                        case let .text(text):
+                        case let .text(text, _):
                             return .object(["type": .string("text"), "text": .string(text)])
-                        case let .imageURL(url):
+                        case let .reasoning(text, providerMetadata):
+                            return .object(["type": .string("reasoning"), "text": .string(text), "providerMetadata": .object(providerMetadata)])
+                        case let .imageURL(url, _):
                             return .object([
                                 "type": .string("file"),
                                 "data": .object(["type": .string("url"), "url": .string(url)])
                             ])
-                        case let .data(mimeType, data):
+                        case let .data(mimeType, data, _):
                             return .object([
                                 "type": .string("file"),
                                 "mediaType": .string(mimeType),
                                 "data": .object(["type": .string("data"), "data": .string(data.base64EncodedString())])
                             ])
-                        case let .file(mimeType, data, filename):
+                        case let .file(mimeType, data, filename, _):
                             var file: [String: JSONValue] = [
                                 "type": .string("file"),
                                 "mediaType": .string(mimeType),
@@ -227,7 +229,22 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                             ]
                             if let filename { file["filename"] = .string(filename) }
                             return .object(file)
-                        case let .providerReference(mimeType, reference):
+                        case let .reasoningFile(file):
+                            var output: [String: JSONValue] = [
+                                "type": .string("reasoning-file"),
+                                "mediaType": .string(file.mediaType)
+                            ]
+                            if let id = file.id { output["id"] = .string(id) }
+                            if let filename = file.filename { output["filename"] = .string(filename) }
+                            if let data = file.data {
+                                output["data"] = .object(["type": .string("data"), "data": .string(data.base64EncodedString())])
+                            } else if let url = file.url {
+                                output["data"] = .object(["type": .string("url"), "url": .string(url)])
+                            }
+                            return .object(output)
+                        case let .custom(value, providerMetadata):
+                            return .object(["type": .string("custom"), "value": value, "providerMetadata": .object(providerMetadata)])
+                        case let .providerReference(mimeType, reference, _, _):
                             return .object([
                                 "type": .string("file"),
                                 "mediaType": .string(mimeType),
@@ -281,4 +298,3 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
 private func gatewayToolArguments(_ arguments: String) -> JSONValue {
     (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
 }
-

@@ -13,7 +13,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let mode = alibabaVideoMode(modelID)
         let options = try alibabaVideoProviderOptions(from: request)
-        let warnings = alibabaVideoWarnings(for: request)
+        let warnings = alibabaVideoWarnings(for: request, mode: mode)
         var input: [String: JSONValue] = [:]
         if !request.prompt.isEmpty { input["prompt"] = .string(request.prompt) }
         if let negativePrompt = options["negativePrompt"] ?? options["negative_prompt"] {
@@ -25,7 +25,7 @@ public final class AlibabaVideoModel: VideoModel, @unchecked Sendable {
         if mode == "i2v", let image = alibabaVideoImageInput(from: request, options: options) {
             input["img_url"] = image
         }
-        if mode == "r2v", let referenceURLs = options["referenceUrls"] ?? options["reference_urls"] {
+        if mode == "r2v", let referenceURLs = alibabaVideoReferenceURLs(from: request, options: options) {
             input["reference_urls"] = referenceURLs
         }
 
@@ -227,13 +227,11 @@ private func alibabaRequireStringArrayOrNull(_ value: JSONValue, argument: Strin
 }
 
 private func alibabaVideoImageInput(from request: VideoGenerationRequest, options: [String: JSONValue]) -> JSONValue? {
+    if let firstFrame = request.frameImages.first(where: { $0.frameType == .firstFrame }) {
+        return alibabaVideoImageString(firstFrame.image)
+    }
     if let image = request.image {
-        if let url = image.url {
-            return .string(url)
-        }
-        if let data = image.data {
-            return .string(data.base64EncodedString())
-        }
+        return alibabaVideoImageString(image)
     }
     let value = options["image"] ?? options["imageUrl"] ?? options["image_url"] ?? options["imgUrl"] ?? options["img_url"]
     if let object = value?.objectValue {
@@ -242,12 +240,33 @@ private func alibabaVideoImageInput(from request: VideoGenerationRequest, option
     return value
 }
 
+private func alibabaVideoImageString(_ image: ImageInputFile) -> JSONValue? {
+    if let url = image.url {
+        return .string(url)
+    }
+    if let data = image.data {
+        return .string(data.base64EncodedString())
+    }
+    return nil
+}
+
+private func alibabaVideoReferenceURLs(from request: VideoGenerationRequest, options: [String: JSONValue]) -> JSONValue? {
+    if !request.frameImages.isEmpty {
+        return nil
+    }
+    if !request.inputReferences.isEmpty {
+        let urls = request.inputReferences.compactMap(\.url)
+        return urls.isEmpty ? nil : .array(urls.map { .string($0) })
+    }
+    return options["referenceUrls"] ?? options["reference_urls"]
+}
+
 private struct AlibabaPollResult {
     var raw: JSONValue
     var response: AIHTTPResponse
 }
 
-private func alibabaVideoWarnings(for request: VideoGenerationRequest) -> [AIWarning] {
+private func alibabaVideoWarnings(for request: VideoGenerationRequest, mode: String) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if request.aspectRatio != nil {
         warnings.append(AIWarning(
@@ -268,6 +287,26 @@ private func alibabaVideoWarnings(for request: VideoGenerationRequest) -> [AIWar
             type: "unsupported",
             feature: "n",
             message: "Alibaba video models only support generating 1 video per call."
+        ))
+    }
+    if request.frameImages.contains(where: { $0.frameType == .lastFrame }) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "frameImages",
+            message: "Alibaba video models do not support last_frame frameImages. The last_frame image will be ignored."
+        ))
+    }
+    if !request.inputReferences.isEmpty, mode != "r2v" {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "inputReferences",
+            message: "Alibaba inputReferences are only supported by R2V video models."
+        ))
+    } else if mode == "r2v", request.inputReferences.contains(where: { $0.url == nil }) {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "inputReferences",
+            message: "Alibaba R2V inputReferences only support URL references. Non-URL references will be ignored."
         ))
     }
     return warnings

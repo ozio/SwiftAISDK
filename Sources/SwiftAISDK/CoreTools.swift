@@ -2,39 +2,51 @@ import Foundation
 
 public struct AIToolStep: Sendable {
     public var index: Int
+    public var content: [AIResultContentPart]
     public var text: String
     public var reasoning: String
     public var finishReason: String?
     public var usage: TokenUsage?
+    public var files: [AIStreamFile]
     public var toolCalls: [AIToolCall]
     public var toolResults: [AIToolResult]
     public var toolApprovalRequests: [AIToolApprovalRequest]
     public var toolApprovalResponses: [AIToolApprovalResponse]
+    public var sources: [AISource]
+    public var warnings: [AIWarning]
     public var providerMetadata: [String: JSONValue]
     public var responseMetadata: AIResponseMetadata
 
     public init(
         index: Int,
+        content: [AIResultContentPart] = [],
         text: String,
         reasoning: String = "",
         finishReason: String? = nil,
         usage: TokenUsage? = nil,
+        files: [AIStreamFile] = [],
         toolCalls: [AIToolCall] = [],
         toolResults: [AIToolResult] = [],
         toolApprovalRequests: [AIToolApprovalRequest] = [],
         toolApprovalResponses: [AIToolApprovalResponse] = [],
+        sources: [AISource] = [],
+        warnings: [AIWarning] = [],
         providerMetadata: [String: JSONValue] = [:],
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.index = index
+        self.content = content
         self.text = text
         self.reasoning = reasoning
         self.finishReason = finishReason
         self.usage = usage
+        self.files = files
         self.toolCalls = toolCalls
         self.toolResults = toolResults
         self.toolApprovalRequests = toolApprovalRequests
         self.toolApprovalResponses = toolApprovalResponses
+        self.sources = sources
+        self.warnings = warnings
         self.providerMetadata = providerMetadata
         self.responseMetadata = responseMetadata
     }
@@ -186,6 +198,7 @@ public struct AIToolResult: Equatable, Hashable, Sendable {
     public var isError: Bool
     public var preliminary: Bool
     public var dynamic: Bool
+    public var providerExecuted: Bool
     public var providerMetadata: [String: JSONValue]
 
     public init(
@@ -196,6 +209,7 @@ public struct AIToolResult: Equatable, Hashable, Sendable {
         isError: Bool = false,
         preliminary: Bool = false,
         dynamic: Bool = false,
+        providerExecuted: Bool = false,
         providerMetadata: [String: JSONValue] = [:]
     ) {
         self.toolCallID = toolCallID
@@ -205,6 +219,7 @@ public struct AIToolResult: Equatable, Hashable, Sendable {
         self.isError = isError
         self.preliminary = preliminary
         self.dynamic = dynamic
+        self.providerExecuted = providerExecuted
         self.providerMetadata = providerMetadata
     }
 }
@@ -268,33 +283,153 @@ public struct AIToolApprovalContext: Sendable {
     public var arguments: JSONValue
     public var tool: AITool
     public var request: LanguageModelRequest
+    public var toolContext: JSONValue?
 
-    public init(toolCall: AIToolCall, arguments: JSONValue, tool: AITool, request: LanguageModelRequest) {
+    public init(
+        toolCall: AIToolCall,
+        arguments: JSONValue,
+        tool: AITool,
+        request: LanguageModelRequest,
+        toolContext: JSONValue? = nil
+    ) {
         self.toolCall = toolCall
         self.arguments = arguments
         self.tool = tool
         self.request = request
+        self.toolContext = toolContext
     }
 }
 
 public typealias AIToolApproval = @Sendable (AIToolApprovalContext) async throws -> AIToolApprovalStatus?
+
+public struct AIToolNeedsApprovalContext: Sendable {
+    public var toolCallID: String
+    public var messages: [AIMessage]
+    public var context: JSONValue?
+
+    public init(toolCallID: String, messages: [AIMessage], context: JSONValue? = nil) {
+        self.toolCallID = toolCallID
+        self.messages = messages
+        self.context = context
+    }
+}
+
+public typealias AIToolNeedsApproval = @Sendable (JSONValue, AIToolNeedsApprovalContext) async throws -> Bool
+
+public struct AIToolInputStartContext: Sendable {
+    public var toolCallID: String
+    public var messages: [AIMessage]
+    public var abortSignal: AIAbortSignal?
+    public var toolContext: JSONValue?
+
+    public init(
+        toolCallID: String,
+        messages: [AIMessage] = [],
+        abortSignal: AIAbortSignal? = nil,
+        toolContext: JSONValue? = nil
+    ) {
+        self.toolCallID = toolCallID
+        self.messages = messages
+        self.abortSignal = abortSignal
+        self.toolContext = toolContext
+    }
+}
+
+public struct AIToolInputDeltaContext: Sendable {
+    public var toolCallID: String
+    public var inputTextDelta: String
+    public var messages: [AIMessage]
+    public var abortSignal: AIAbortSignal?
+    public var toolContext: JSONValue?
+
+    public init(
+        toolCallID: String,
+        inputTextDelta: String,
+        messages: [AIMessage] = [],
+        abortSignal: AIAbortSignal? = nil,
+        toolContext: JSONValue? = nil
+    ) {
+        self.toolCallID = toolCallID
+        self.inputTextDelta = inputTextDelta
+        self.messages = messages
+        self.abortSignal = abortSignal
+        self.toolContext = toolContext
+    }
+}
+
+public struct AIToolInputAvailableContext: Sendable {
+    public var toolCallID: String
+    public var input: JSONValue
+    public var messages: [AIMessage]
+    public var abortSignal: AIAbortSignal?
+    public var toolContext: JSONValue?
+
+    public init(
+        toolCallID: String,
+        input: JSONValue,
+        messages: [AIMessage] = [],
+        abortSignal: AIAbortSignal? = nil,
+        toolContext: JSONValue? = nil
+    ) {
+        self.toolCallID = toolCallID
+        self.input = input
+        self.messages = messages
+        self.abortSignal = abortSignal
+        self.toolContext = toolContext
+    }
+}
+
+public typealias AIToolInputStartCallback = @Sendable (AIToolInputStartContext) async -> Void
+public typealias AIToolInputDeltaCallback = @Sendable (AIToolInputDeltaContext) async -> Void
+public typealias AIToolInputAvailableCallback = @Sendable (AIToolInputAvailableContext) async -> Void
+
+public struct AIToolCallRepairContext: @unchecked Sendable {
+    public var toolCall: AIToolCall
+    public var toolsByName: [String: AITool]
+    public var request: LanguageModelRequest?
+    public var error: any Error
+
+    public init(
+        toolCall: AIToolCall,
+        toolsByName: [String: AITool],
+        request: LanguageModelRequest? = nil,
+        error: any Error
+    ) {
+        self.toolCall = toolCall
+        self.toolsByName = toolsByName
+        self.request = request
+        self.error = error
+    }
+
+    public func inputSchema(for toolName: String) throws -> JSONValue {
+        guard let tool = toolsByName[toolName] else {
+            throw AINoSuchToolError(toolName: toolName, availableToolNames: Array(toolsByName.keys))
+        }
+        return tool.parameters
+    }
+}
+
+public typealias AIToolCallRepair = @Sendable (AIToolCallRepairContext) async throws -> AIToolCall?
 
 public struct AIToolExecutionContext: Sendable {
     public var toolCallID: String?
     public var messages: [AIMessage]
     public var abortSignal: AIAbortSignal?
     public var metadata: [String: JSONValue]
+    public var toolContext: JSONValue?
 
     public init(
         toolCallID: String? = nil,
         messages: [AIMessage] = [],
         abortSignal: AIAbortSignal? = nil,
-        metadata: [String: JSONValue] = [:]
+        metadata: [String: JSONValue] = [:],
+        toolContext: JSONValue? = nil
     ) {
         self.toolCallID = toolCallID
         self.messages = messages
         self.abortSignal = abortSignal
         self.metadata = metadata
+        self.toolContext = toolContext
     }
 }
 
@@ -316,6 +451,14 @@ public struct AITool: Sendable {
     public var parameters: JSONValue
     public var dynamic: Bool
     public var providerMetadata: [String: JSONValue]
+    public var providerOptions: [String: JSONValue]
+    public var strict: Bool?
+    public var inputExamples: [JSONValue]
+    public var contextSchema: JSONValue?
+    public var needsApproval: AIToolNeedsApproval?
+    public var onInputStart: AIToolInputStartCallback?
+    public var onInputDelta: AIToolInputDeltaCallback?
+    public var onInputAvailable: AIToolInputAvailableCallback?
     public var refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)?
     public var execute: @Sendable (JSONValue) async throws -> JSONValue
     public var executeWithContext: @Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue
@@ -327,6 +470,14 @@ public struct AITool: Sendable {
         parameters: JSONValue,
         dynamic: Bool = false,
         providerMetadata: [String: JSONValue] = [:],
+        providerOptions: [String: JSONValue] = [:],
+        strict: Bool? = nil,
+        inputExamples: [JSONValue] = [],
+        contextSchema: JSONValue? = nil,
+        needsApproval: AIToolNeedsApproval? = nil,
+        onInputStart: AIToolInputStartCallback? = nil,
+        onInputDelta: AIToolInputDeltaCallback? = nil,
+        onInputAvailable: AIToolInputAvailableCallback? = nil,
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
         toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
         executeWithContext: (@Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue)? = nil,
@@ -337,6 +488,14 @@ public struct AITool: Sendable {
         self.parameters = parameters
         self.dynamic = dynamic
         self.providerMetadata = providerMetadata
+        self.providerOptions = providerOptions
+        self.strict = strict
+        self.inputExamples = inputExamples
+        self.contextSchema = contextSchema
+        self.needsApproval = needsApproval
+        self.onInputStart = onInputStart
+        self.onInputDelta = onInputDelta
+        self.onInputAvailable = onInputAvailable
         self.refineArguments = refineArguments
         self.toModelOutput = toModelOutput
         self.execute = execute
@@ -350,6 +509,14 @@ public struct AITool: Sendable {
         description: String? = nil,
         parameters: JSONValue,
         providerMetadata: [String: JSONValue] = [:],
+        providerOptions: [String: JSONValue] = [:],
+        strict: Bool? = nil,
+        inputExamples: [JSONValue] = [],
+        contextSchema: JSONValue? = nil,
+        needsApproval: AIToolNeedsApproval? = nil,
+        onInputStart: AIToolInputStartCallback? = nil,
+        onInputDelta: AIToolInputDeltaCallback? = nil,
+        onInputAvailable: AIToolInputAvailableCallback? = nil,
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
         toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
         executeWithContext: (@Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue)? = nil,
@@ -361,6 +528,14 @@ public struct AITool: Sendable {
             parameters: parameters,
             dynamic: true,
             providerMetadata: providerMetadata,
+            providerOptions: providerOptions,
+            strict: strict,
+            inputExamples: inputExamples,
+            contextSchema: contextSchema,
+            needsApproval: needsApproval,
+            onInputStart: onInputStart,
+            onInputDelta: onInputDelta,
+            onInputAvailable: onInputAvailable,
             refineArguments: refineArguments,
             toModelOutput: toModelOutput,
             executeWithContext: executeWithContext,
@@ -369,9 +544,19 @@ public struct AITool: Sendable {
     }
 
     public var schema: JSONValue {
-        guard let description else { return parameters }
         var object = parameters.objectValue ?? ["type": .string("object")]
-        object["description"] = .string(description)
+        if let description {
+            object["description"] = .string(description)
+        }
+        if !providerOptions.isEmpty {
+            object["providerOptions"] = .object(providerOptions)
+        }
+        if let strict {
+            object["strict"] = .bool(strict)
+        }
+        if !inputExamples.isEmpty {
+            object["inputExamples"] = .array(inputExamples)
+        }
         return .object(object)
     }
 }
@@ -382,6 +567,7 @@ public struct AIStreamFile: Equatable, Hashable, Sendable {
     public var data: Data?
     public var url: String?
     public var filename: String?
+    public var providerReference: AIProviderReference?
     public var providerMetadata: [String: JSONValue]
     public var rawValue: JSONValue?
 
@@ -391,6 +577,7 @@ public struct AIStreamFile: Equatable, Hashable, Sendable {
         data: Data? = nil,
         url: String? = nil,
         filename: String? = nil,
+        providerReference: AIProviderReference? = nil,
         providerMetadata: [String: JSONValue] = [:],
         rawValue: JSONValue? = nil
     ) {
@@ -399,6 +586,7 @@ public struct AIStreamFile: Equatable, Hashable, Sendable {
         self.data = data
         self.url = url
         self.filename = filename
+        self.providerReference = providerReference
         self.providerMetadata = providerMetadata
         self.rawValue = rawValue
     }

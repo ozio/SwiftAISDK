@@ -1,6 +1,12 @@
 import Testing
 @testable import SwiftAISDK
 
+@Test func normalizeHeadersHandlesNilAndEmptyInputsLikeUpstream() {
+    #expect(normalizeHeaders(nil as [String: String?]?) == [:])
+    #expect(normalizeHeaders([:]) == [:])
+    #expect(normalizeHeaderEntries([]) == [:])
+}
+
 @Test func normalizeHeadersLowercasesKeysAndFiltersNilValues() {
     let headers: [String: String?] = [
         "Authorization": "Bearer token",
@@ -14,8 +20,9 @@ import Testing
     ])
     #expect(normalizeHeaderEntries([
         ("Authorization", "Bearer token"),
+        ("X-Feature", "beta"),
         ("X-Ignore", nil)
-    ]) == ["authorization": "Bearer token"])
+    ]) == ["authorization": "Bearer token", "x-feature": "beta"])
 }
 
 @Test func combineHeadersUsesLaterValuesLikeProviderUtils() {

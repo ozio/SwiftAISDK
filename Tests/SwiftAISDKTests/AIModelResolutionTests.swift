@@ -54,6 +54,41 @@ import Testing
     #expect(AIDefaultProvider.current() == nil)
 }
 
+@Test func aiResolveModelHelpersUseExplicitProviderForAllSwiftModelFamiliesLikeUpstream() throws {
+    let language = ResolutionLanguageModel()
+    let embedding = ResolutionEmbeddingModel()
+    let image = ResolutionImageModel()
+    let transcription = ResolutionTranscriptionModel()
+    let speech = ResolutionSpeechModel()
+    let video = ResolutionVideoModel()
+    let reranking = ResolutionRerankingModel()
+    let provider = customProvider(
+        providerID: "resolution-provider",
+        languageModels: ["language": language],
+        embeddingModels: ["embedding": embedding],
+        imageModels: ["image": image],
+        transcriptionModels: ["transcription": transcription],
+        speechModels: ["speech": speech],
+        videoModels: ["video": video],
+        rerankingModels: ["reranking": reranking]
+    )
+
+    #expect(try AI.resolveLanguageModel("language", provider: provider).modelID == "language")
+    #expect(try AI.resolveEmbeddingModel("embedding", provider: provider).modelID == "embedding")
+    #expect(try AI.resolveImageModel("image", provider: provider).modelID == "image")
+    #expect(try AI.resolveTranscriptionModel("transcription", provider: provider).modelID == "transcription")
+    #expect(try AI.resolveSpeechModel("speech", provider: provider).modelID == "speech")
+    #expect(try AI.resolveVideoModel("video", provider: provider).modelID == "video")
+    #expect(try AI.resolveRerankingModel("reranking", provider: provider).modelID == "reranking")
+    #expect(try AI.resolveLanguageModel("language", provider: provider).providerID == "resolution")
+    #expect(try AI.resolveEmbeddingModel("embedding", provider: provider).providerID == "resolution")
+    #expect(try AI.resolveImageModel("image", provider: provider).providerID == "resolution")
+    #expect(try AI.resolveTranscriptionModel("transcription", provider: provider).providerID == "resolution")
+    #expect(try AI.resolveSpeechModel("speech", provider: provider).providerID == "resolution")
+    #expect(try AI.resolveVideoModel("video", provider: provider).providerID == "resolution")
+    #expect(try AI.resolveRerankingModel("reranking", provider: provider).providerID == "resolution")
+}
+
 @Test func aiStringModelObjectFacadeForwardsJSONInstruction() async throws {
     let language = ResolutionLanguageModel(resultText: #"{"value":"resolved","count":4}"#)
     let registry = createProviderRegistry([
@@ -150,5 +185,41 @@ private final class ResolutionImageModel: ImageModel, @unchecked Sendable {
     func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         requests.append(request)
         return ImageGenerationResult(urls: ["https://example.com/image.png"], rawValue: .object([:]))
+    }
+}
+
+private final class ResolutionTranscriptionModel: TranscriptionModel, @unchecked Sendable {
+    let providerID = "resolution"
+    let modelID = "transcription"
+
+    func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
+        fatalError("Resolution-only test model")
+    }
+}
+
+private final class ResolutionSpeechModel: SpeechModel, @unchecked Sendable {
+    let providerID = "resolution"
+    let modelID = "speech"
+
+    func speak(_ request: SpeechRequest) async throws -> SpeechResult {
+        fatalError("Resolution-only test model")
+    }
+}
+
+private final class ResolutionVideoModel: VideoModel, @unchecked Sendable {
+    let providerID = "resolution"
+    let modelID = "video"
+
+    func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
+        fatalError("Resolution-only test model")
+    }
+}
+
+private final class ResolutionRerankingModel: RerankingModel, @unchecked Sendable {
+    let providerID = "resolution"
+    let modelID = "reranking"
+
+    func rerank(_ request: RerankingRequest) async throws -> RerankingResult {
+        fatalError("Resolution-only test model")
     }
 }

@@ -162,5 +162,8 @@ private func skillUploadRequestMetadata(_ request: SkillUploadRequest, includeDi
     if includeDisplayTitle, let displayTitle = request.displayTitle {
         body["displayTitle"] = .string(displayTitle)
     }
+    if !request.providerOptions.isEmpty {
+        body["providerOptions"] = .object(request.providerOptions)
+    }
     return AIRequestMetadata(body: .object(body), headers: request.headers)
 }

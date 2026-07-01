@@ -71,11 +71,13 @@ func googleInteractionsStep(_ message: AIMessage) throws -> JSONValue? {
 func googleInteractionsContent(_ content: [AIContentPart]) throws -> [JSONValue] {
     try content.map { part in
         switch part {
-        case let .text(text):
+        case let .text(text, _):
             return .object(["type": .string("text"), "text": .string(text)])
-        case let .imageURL(url):
+        case let .reasoning(text, _):
+            return .object(["type": .string("text"), "text": .string(text)])
+        case let .imageURL(url, _):
             return .object(["type": .string("image"), "uri": .string(url)])
-        case let .data(mimeType, data), let .file(mimeType, data, _):
+        case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
             let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
             let topLevel = resolvedMimeType.split(separator: "/").first.map(String.init) ?? "document"
             let type = ["image", "audio", "video"].contains(topLevel) ? topLevel : "document"
@@ -84,7 +86,7 @@ func googleInteractionsContent(_ content: [AIContentPart]) throws -> [JSONValue]
                 "mime_type": .string(resolvedMimeType),
                 "data": .string(data.base64EncodedString())
             ])
-        case let .providerReference(mimeType, reference):
+        case let .providerReference(mimeType, reference, _, _):
             let topLevel = mimeType.split(separator: "/").first.map(String.init) ?? "document"
             let type = ["image", "audio", "video"].contains(topLevel) ? topLevel : "document"
             return .object([
@@ -104,7 +106,7 @@ func googleInteractionsContent(_ content: [AIContentPart]) throws -> [JSONValue]
                 "name": .string(result.toolName),
                 "response": result.modelOutput ?? result.result
             ])
-        case .toolApprovalRequest, .toolApprovalResponse:
+        case .reasoningFile, .custom, .toolApprovalRequest, .toolApprovalResponse:
             return .object(["type": .string("text"), "text": .string("")])
         }
     }

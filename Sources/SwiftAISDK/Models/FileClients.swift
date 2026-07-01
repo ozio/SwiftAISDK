@@ -6,18 +6,20 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
     private let config: ModelHTTPConfig
     private let betaHeader: (String, String)?
     private let includePurpose: Bool
+    private let defaultFilename: String
 
-    init(providerID: String, providerReferenceKey: String, config: ModelHTTPConfig, betaHeader: (String, String)? = nil, includePurpose: Bool = false) {
+    init(providerID: String, providerReferenceKey: String, config: ModelHTTPConfig, betaHeader: (String, String)? = nil, includePurpose: Bool = false, defaultFilename: String = "file") {
         self.providerID = providerID
         self.providerReferenceKey = providerReferenceKey
         self.config = config
         self.betaHeader = betaHeader
         self.includePurpose = includePurpose
+        self.defaultFilename = defaultFilename
     }
 
     public func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
         var form = MultipartFormData()
-        form.appendFile(name: "file", fileName: request.filename ?? "file", mimeType: request.mediaType, data: request.data)
+        form.appendFile(name: "file", fileName: request.filename ?? defaultFilename, mimeType: request.mediaType, data: request.data)
         if includePurpose {
             form.appendField(name: "purpose", value: request.purpose ?? "assistants")
         }
@@ -50,7 +52,8 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
             metadata: fileMetadata(from: raw),
             rawValue: raw,
             warnings: multipartFileUploadWarnings(request, includePurpose: includePurpose),
-            requestMetadata: multipartFileUploadRequestMetadata(request, includePurpose: includePurpose),
+            providerMetadata: [providerReferenceKey: fileProviderMetadata(from: raw)],
+            requestMetadata: multipartFileUploadRequestMetadata(request, includePurpose: includePurpose, defaultFilename: defaultFilename),
             responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
     }
@@ -220,9 +223,21 @@ private func fileMetadata(from raw: JSONValue) -> [String: JSONValue] {
     return object
 }
 
-private func multipartFileUploadRequestMetadata(_ request: FileUploadRequest, includePurpose: Bool) -> AIRequestMetadata {
+private func fileProviderMetadata(from raw: JSONValue) -> JSONValue {
+    var metadata: [String: JSONValue] = [:]
+    metadata["filename"] = raw["filename"]
+    metadata["mimeType"] = raw["mime_type"]
+    metadata["sizeBytes"] = raw["size_bytes"]
+    metadata["createdAt"] = raw["created_at"]
+    if let downloadable = raw["downloadable"], downloadable != .null {
+        metadata["downloadable"] = downloadable
+    }
+    return .object(metadata.compactMapValues { $0 })
+}
+
+private func multipartFileUploadRequestMetadata(_ request: FileUploadRequest, includePurpose: Bool, defaultFilename: String) -> AIRequestMetadata {
     var body: [String: JSONValue] = [
-        "file": .object(fileUploadMetadata(request, defaultFilename: "file")),
+        "file": .object(fileUploadMetadata(request, defaultFilename: defaultFilename)),
         "mediaType": .string(request.mediaType)
     ]
     if includePurpose {

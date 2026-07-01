@@ -15,6 +15,17 @@ func openAICompatibleResponseMetadata(from raw: JSONValue? = nil, response: AIHT
     )
 }
 
+func openAIResponsesStreamResponseMetadata(from raw: JSONValue, response: AIHTTPResponse, modelID: String? = nil) -> AIResponseMetadata {
+    let createdAt = raw["created_at"]?.doubleValue ?? raw["created"]?.doubleValue
+    return AIResponseMetadata(
+        id: raw["id"]?.stringValue,
+        timestamp: createdAt.map { Date(timeIntervalSince1970: $0) },
+        modelID: raw["model"]?.stringValue ?? modelID,
+        headers: response.headers,
+        body: raw
+    )
+}
+
 func openAICompatibleProviderMetadataNamespace(_ providerID: String) -> String {
     openAIBackedProviderRoot(providerID) ?? openAICompatibleProviderRoot(providerID)
 }
@@ -72,6 +83,34 @@ func openAIResponsesProviderMetadata(from raw: JSONValue, providerID: String) ->
     return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
 }
 
+func openAIResponsesProviderMetadataByPreservingResponseID(_ providerMetadata: [String: JSONValue], responseID: JSONValue?, providerID: String) -> [String: JSONValue] {
+    guard let responseID else {
+        return providerMetadata
+    }
+    let namespace = openAICompatibleProviderMetadataNamespace(providerID)
+    var namespaceMetadata = providerMetadata[namespace]?.objectValue ?? [:]
+    namespaceMetadata["responseId"] = responseID
+    var updated = providerMetadata
+    updated[namespace] = .object(namespaceMetadata)
+    return updated
+}
+
+func openAIResponsesProviderMetadataByApplyingStreamLogprobs(
+    _ providerMetadata: [String: JSONValue],
+    streamOutputLogprobs: [JSONValue],
+    providerID: String
+) -> [String: JSONValue] {
+    guard !streamOutputLogprobs.isEmpty else {
+        return providerMetadata
+    }
+    let namespace = openAICompatibleProviderMetadataNamespace(providerID)
+    var namespaceMetadata = providerMetadata[namespace]?.objectValue ?? [:]
+    namespaceMetadata["logprobs"] = .array(streamOutputLogprobs)
+    var updated = providerMetadata
+    updated[namespace] = .object(namespaceMetadata)
+    return updated
+}
+
 func openAIResponsesOutputLogprobs(from raw: JSONValue) -> [JSONValue] {
     raw["output"]?.arrayValue?.flatMap { item in
         item["content"]?.arrayValue?.compactMap { content in
@@ -86,9 +125,18 @@ func openAIResponsesTextProviderMetadata(itemID: String, phase: JSONValue?, anno
         metadata["phase"] = phase
     }
     if !annotations.isEmpty {
-        metadata["annotations"] = .array(annotations)
+        metadata["annotations"] = .array(annotations.map(openAIResponsesTextAnnotationProviderMetadata))
     }
     return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+}
+
+func openAIResponsesTextAnnotationProviderMetadata(_ annotation: JSONValue) -> JSONValue {
+    guard annotation["type"]?.stringValue == "container_file_citation",
+          var object = annotation.objectValue else {
+        return annotation
+    }
+    object["index"] = nil
+    return .object(object)
 }
 
 func openAIResponsesReasoningProviderMetadata(itemID: String, encryptedContent: JSONValue? = nil, includeEncryptedContent: Bool = false, providerID: String) -> [String: JSONValue] {
@@ -118,6 +166,14 @@ func openAIResponsesItemProviderMetadata(itemID: String?, providerID: String, ex
     return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
 }
 
+func openAIResponsesToolInputEndProviderMetadata(from item: JSONValue, providerID: String) -> [String: JSONValue] {
+    guard item["type"]?.stringValue == "function_call",
+          let namespace = item["namespace"] else {
+        return [:]
+    }
+    return openAICompatibleNamespacedProviderMetadata(["namespace": namespace], providerID: providerID)
+}
+
 enum OpenAIResponsesReasoningSummaryState {
     case active
     case canConclude
@@ -142,7 +198,7 @@ func openAIResponsesSources(from raw: JSONValue, providerID: String) -> [AISourc
 func openAIResponsesSources(fromAnnotations annotations: [JSONValue], providerID: String, sourceCounter: inout Int) -> [AISource] {
     annotations.compactMap { annotation in
         defer { sourceCounter += 1 }
-        return openAIResponsesSource(from: annotation, id: "openai-responses-source-\(sourceCounter)", providerID: providerID)
+        return openAIResponsesSource(from: annotation, id: "id-\(sourceCounter)", providerID: providerID)
     }
 }
 

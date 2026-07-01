@@ -350,13 +350,13 @@ private func perplexityMessageJSON(_ message: AIMessage) throws -> JSONValue {
 
     let multipart = message.content.contains { part in
         switch part {
-        case .text:
+        case .text, .reasoning:
             return false
         case .imageURL:
             return true
-        case let .data(mimeType, _), let .file(mimeType, _, _):
+        case let .data(mimeType, _, _), let .file(mimeType, _, _, _):
             return mimeType.hasPrefix("image/") || mimeType == "application/pdf"
-        case .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .reasoningFile, .custom, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             return false
         }
     }
@@ -370,32 +370,34 @@ private func perplexityMessageJSON(_ message: AIMessage) throws -> JSONValue {
 
     let parts = message.content.enumerated().compactMap { index, part -> JSONValue? in
         switch part {
-        case let .text(text):
+        case let .text(text, _):
             return .object(["type": .string("text"), "text": .string(text)])
-        case let .imageURL(url):
+        case let .reasoning(text, _):
+            return .object(["type": .string("text"), "text": .string(text)])
+        case let .imageURL(url, _):
             return .object([
                 "type": .string("image_url"),
                 "image_url": .object(["url": .string(url)])
             ])
-        case let .data(mimeType, data) where mimeType == "application/pdf":
+        case let .data(mimeType, data, _) where mimeType == "application/pdf":
             return .object([
                 "type": .string("file_url"),
                 "file_url": .object(["url": .string(data.base64EncodedString())]),
                 "file_name": .string("document-\(index).pdf")
             ])
-        case let .file(mimeType, data, filename) where mimeType == "application/pdf":
+        case let .file(mimeType, data, filename, _) where mimeType == "application/pdf":
             return .object([
                 "type": .string("file_url"),
                 "file_url": .object(["url": .string(data.base64EncodedString())]),
                 "file_name": .string(filename ?? "document-\(index).pdf")
             ])
-        case let .data(mimeType, data) where mimeType.hasPrefix("image/"),
-             let .file(mimeType, data, _) where mimeType.hasPrefix("image/"):
+        case let .data(mimeType, data, _) where mimeType.hasPrefix("image/"),
+             let .file(mimeType, data, _, _) where mimeType.hasPrefix("image/"):
             return .object([
                 "type": .string("image_url"),
                 "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
             ])
-        case .data, .file, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+        case .data, .file, .reasoningFile, .custom, .providerReference, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
             return nil
         }
     }

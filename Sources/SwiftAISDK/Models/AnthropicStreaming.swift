@@ -6,6 +6,8 @@ struct AnthropicToolCallBuffer {
     var arguments: String
     var providerExecuted: Bool
     var rawValue: JSONValue
+    var firstDelta: Bool = true
+    var providerToolInputType: String?
 }
 
 enum AnthropicStreamingContentBlock {
@@ -16,12 +18,14 @@ enum AnthropicStreamingContentBlock {
 struct AnthropicStreamingContentBlocks {
     private var blocks: [Int: AnthropicStreamingContentBlock] = [:]
     private let providerID: String
+    private let ignoresTextBlocks: Bool
 
-    init(providerID: String) {
+    init(providerID: String, ignoresTextBlocks: Bool = false) {
         self.providerID = providerID
+        self.ignoresTextBlocks = ignoresTextBlocks
     }
 
-    mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
+    mutating func apply(event raw: JSONValue, toolCallCount: Int? = nil, usage: JSONValue? = nil) -> [LanguageStreamPart] {
         switch raw["type"]?.stringValue {
         case "content_block_start":
             guard let index = raw["index"]?.intValue,
@@ -34,6 +38,7 @@ struct AnthropicStreamingContentBlocks {
             case "fallback":
                 return []
             case "text":
+                guard !ignoresTextBlocks else { return [] }
                 blocks[index] = .text()
                 return [.textStart(id: id)]
             case "thinking":
@@ -60,6 +65,10 @@ struct AnthropicStreamingContentBlocks {
             let delta = raw["delta"]
             switch delta?["type"]?.stringValue {
             case "text_delta":
+                guard !ignoresTextBlocks else { return [] }
+                if let block = blocks[index] {
+                    guard case .text = block else { return [] }
+                }
                 guard let text = delta?["text"]?.stringValue else { return [] }
                 return [.textDelta(text), .textDeltaPart(id: id, delta: text)]
             case "thinking_delta":
@@ -95,9 +104,47 @@ struct AnthropicStreamingContentBlocks {
             }
         case "message_delta":
             return [.finish(
-                reason: anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue),
-                usage: anthropicTokenUsage(from: raw["usage"])
+                reason: toolCallCount.map {
+                    anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue, toolCallCount: $0)
+                } ?? anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue),
+                usage: anthropicTokenUsage(from: usage ?? raw["usage"])
             )]
+        default:
+            return []
+        }
+    }
+}
+
+struct AnthropicStreamingJSONToolText {
+    private var indexes: Set<Int> = []
+
+    mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
+        switch raw["type"]?.stringValue {
+        case "content_block_start":
+            guard let index = raw["index"]?.intValue,
+                  let block = raw["content_block"],
+                  block["type"]?.stringValue == "tool_use",
+                  block["name"]?.stringValue == "json" else {
+                return []
+            }
+            indexes.insert(index)
+            return [.textStart(id: String(index))]
+        case "content_block_delta":
+            guard let index = raw["index"]?.intValue,
+                  indexes.contains(index),
+                  raw["delta"]?["type"]?.stringValue == "input_json_delta" else {
+                return []
+            }
+            let delta = raw["delta"]?["partial_json"]?.stringValue ?? ""
+            guard !delta.isEmpty else { return [] }
+            let id = String(index)
+            return [.textDelta(delta), .textDeltaPart(id: id, delta: delta)]
+        case "content_block_stop":
+            guard let index = raw["index"]?.intValue,
+                  indexes.remove(index) != nil else {
+                return []
+            }
+            return [.textEnd(id: String(index))]
         default:
             return []
         }
@@ -174,7 +221,9 @@ struct AnthropicStreamingToolCalls {
                 name: toolCall.name,
                 arguments: initialArguments,
                 providerExecuted: toolCall.providerExecuted,
-                rawValue: block
+                rawValue: block,
+                firstDelta: initialArguments.isEmpty,
+                providerToolInputType: anthropicProviderToolInputType(from: block)
             )
             var parts: [LanguageStreamPart] = [
                 .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted)
@@ -191,11 +240,15 @@ struct AnthropicStreamingToolCalls {
                 return []
             }
             let delta = raw["delta"]?["partial_json"]?.stringValue ?? ""
-            buffer.arguments += delta
-            buffers[index] = buffer
-            var parts: [LanguageStreamPart] = [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: delta, index: index)]
+            let patchedDelta = buffer.firstDelta ? anthropicPatchProviderToolInputDelta(delta, inputType: buffer.providerToolInputType) : delta
+            buffer.arguments += patchedDelta
             if !delta.isEmpty {
-                parts.append(.toolInputDelta(id: buffer.id, delta: delta))
+                buffer.firstDelta = false
+            }
+            buffers[index] = buffer
+            var parts: [LanguageStreamPart] = [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: patchedDelta, index: index)]
+            if !patchedDelta.isEmpty {
+                parts.append(.toolInputDelta(id: buffer.id, delta: patchedDelta))
             }
             return parts
         case "content_block_stop":
@@ -216,4 +269,25 @@ struct AnthropicStreamingToolCalls {
             return []
         }
     }
+}
+
+func anthropicProviderToolInputType(from block: JSONValue) -> String? {
+    guard block["type"]?.stringValue == "server_tool_use",
+          let name = block["name"]?.stringValue else {
+        return nil
+    }
+    switch name {
+    case "text_editor_code_execution", "bash_code_execution":
+        return name
+    case "code_execution":
+        return "programmatic-tool-call"
+    default:
+        return nil
+    }
+}
+
+func anthropicPatchProviderToolInputDelta(_ delta: String, inputType: String?) -> String {
+    guard !delta.isEmpty, let inputType else { return delta }
+    guard delta.first == "{" else { return delta }
+    return #"{"type":"\#(inputType)",\#(delta.dropFirst())"#
 }

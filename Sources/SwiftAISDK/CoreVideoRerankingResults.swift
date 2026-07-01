@@ -1,10 +1,27 @@
 import Foundation
 
+public enum VideoFrameType: String, Sendable {
+    case firstFrame = "first_frame"
+    case lastFrame = "last_frame"
+}
+
+public struct VideoFrameImage: Sendable, Equatable {
+    public var image: ImageInputFile
+    public var frameType: VideoFrameType
+
+    public init(image: ImageInputFile, frameType: VideoFrameType) {
+        self.image = image
+        self.frameType = frameType
+    }
+}
+
 public struct VideoGenerationRequest: Sendable {
     public var prompt: String
     public var aspectRatio: String?
     public var durationSeconds: Double?
     public var image: ImageInputFile?
+    public var frameImages: [VideoFrameImage]
+    public var inputReferences: [ImageInputFile]
     public var resolution: String?
     public var fps: Double?
     public var seed: Int?
@@ -19,6 +36,8 @@ public struct VideoGenerationRequest: Sendable {
         aspectRatio: String? = nil,
         durationSeconds: Double? = nil,
         image: ImageInputFile? = nil,
+        frameImages: [VideoFrameImage] = [],
+        inputReferences: [ImageInputFile] = [],
         resolution: String? = nil,
         fps: Double? = nil,
         seed: Int? = nil,
@@ -32,6 +51,8 @@ public struct VideoGenerationRequest: Sendable {
         self.aspectRatio = aspectRatio
         self.durationSeconds = durationSeconds
         self.image = image
+        self.frameImages = frameImages
+        self.inputReferences = inputReferences
         self.resolution = resolution
         self.fps = fps
         self.seed = seed

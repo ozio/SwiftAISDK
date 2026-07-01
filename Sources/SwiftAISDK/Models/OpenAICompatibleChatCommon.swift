@@ -199,6 +199,26 @@ func openAICompatibleResponseFormat(from value: JSONValue, supportsStructuredOut
     ])
 }
 
+func openAICompatibleResponseFormatJSON(_ responseFormat: AIResponseFormat?) -> JSONValue? {
+    guard let responseFormat else { return nil }
+    switch responseFormat {
+    case .text:
+        return nil
+    case let .json(schema, name, description):
+        var output: [String: JSONValue] = ["type": .string("json")]
+        if let schema {
+            output["schema"] = schema
+        }
+        if let name {
+            output["name"] = .string(name)
+        }
+        if let description {
+            output["description"] = .string(description)
+        }
+        return .object(output)
+    }
+}
+
 struct OpenAICompatibleToolCallBuffer {
     var id: String?
     var name: String?

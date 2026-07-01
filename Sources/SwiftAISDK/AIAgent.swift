@@ -60,6 +60,7 @@ public struct AIToolLoopAgent: AIAgent {
     public var executableTools: [AITool]
     public var maxSteps: Int
     public var stopWhen: [AIStopCondition]
+    public var allowSystemInMessages: Bool
     public var prepareStep: AIPrepareStep?
     public var toolApproval: AIToolApproval?
     public var requestOptions: AIChatRequestOptions
@@ -73,6 +74,7 @@ public struct AIToolLoopAgent: AIAgent {
         executableTools: [AITool] = [],
         maxSteps: Int = 20,
         stopWhen: [AIStopCondition] = [],
+        allowSystemInMessages: Bool = false,
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
         requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
@@ -85,6 +87,7 @@ public struct AIToolLoopAgent: AIAgent {
         self.executableTools = executableTools
         self.maxSteps = maxSteps
         self.stopWhen = stopWhen
+        self.allowSystemInMessages = allowSystemInMessages
         self.prepareStep = prepareStep
         self.toolApproval = toolApproval
         self.requestOptions = requestOptions
@@ -99,13 +102,13 @@ public struct AIToolLoopAgent: AIAgent {
     public func generate(messages: [AIMessage], options: AIAgentCallOptions = AIAgentCallOptions()) async throws -> TextGenerationResult {
         try await AI.generateText(
             model: model,
-            request: request(messages: messages, options: options),
+            request: try request(messages: messages, options: options),
             executableTools: executableTools,
             maxSteps: maxSteps,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
-            retryPolicy: options.retryPolicy ?? retryPolicy,
+            retryPolicy: retryPolicy(for: options),
             telemetry: options.telemetry ?? telemetry
         )
     }
@@ -115,21 +118,34 @@ public struct AIToolLoopAgent: AIAgent {
     }
 
     public func stream(messages: [AIMessage], options: AIAgentCallOptions = AIAgentCallOptions()) -> AsyncThrowingStream<LanguageStreamPart, Error> {
-        AI.streamText(
+        let preparedRequest: LanguageModelRequest
+        do {
+            preparedRequest = try request(messages: messages, options: options)
+        } catch {
+            return failingPartStream(error)
+        }
+        return AI.streamText(
             model: model,
-            request: request(messages: messages, options: options),
+            request: preparedRequest,
             executableTools: executableTools,
             maxSteps: maxSteps,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
             timeoutNanoseconds: options.timeoutNanoseconds,
-            retryPolicy: options.retryPolicy ?? retryPolicy,
+            retryPolicy: retryPolicy(for: options),
             telemetry: options.telemetry ?? telemetry
         )
     }
 
-    private func request(messages: [AIMessage], options: AIAgentCallOptions) -> LanguageModelRequest {
+    private func request(messages: [AIMessage], options: AIAgentCallOptions) throws -> LanguageModelRequest {
+        guard allowSystemInMessages || !messages.contains(where: { $0.role == .system }) else {
+            throw AIError.invalidArgument(
+                argument: "messages",
+                message: "System messages are not allowed in the prompt or messages fields. Use the instructions option instead."
+            )
+        }
+
         let effectiveOptions = mergedRequestOptions(options.requestOptions)
         var requestMessages = messages
         if let instructions, !instructions.isEmpty {
@@ -154,12 +170,21 @@ public struct AIToolLoopAgent: AIAgent {
         merged.responseFormat = options.responseFormat ?? merged.responseFormat
         merged.reasoning = options.reasoning ?? merged.reasoning
         if !options.tools.isEmpty { merged.tools.merge(options.tools) { _, new in new } }
+        if !options.toolContexts.isEmpty { merged.toolContexts.merge(options.toolContexts) { _, new in new } }
         merged.toolChoice = options.toolChoice ?? merged.toolChoice
         merged.includeRawChunks = options.includeRawChunks || merged.includeRawChunks
         if !options.providerOptions.isEmpty { merged.providerOptions.merge(options.providerOptions) { _, new in new } }
         if !options.extraBody.isEmpty { merged.extraBody.merge(options.extraBody) { _, new in new } }
         if !options.headers.isEmpty { merged.headers.merge(options.headers) { _, new in new } }
         return merged
+    }
+
+    private func retryPolicy(for options: AIAgentCallOptions) -> AIRetryPolicy {
+        var policy = options.retryPolicy ?? retryPolicy
+        if let timeoutNanoseconds = options.timeoutNanoseconds {
+            policy.timeoutNanoseconds = timeoutNanoseconds
+        }
+        return policy
     }
 }
 

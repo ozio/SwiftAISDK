@@ -1,14 +1,13 @@
 import Foundation
 
 func partialObject(from text: String) -> JSONValue? {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
-    if let value = try? decodeJSONBody(Data(trimmed.utf8)) {
-        return value
+    let result = parsePartialJSON(text)
+    switch result.state {
+    case .successfulParse, .repairedParse:
+        return result.value
+    case .failedParse, .undefinedInput:
+        return nil
     }
-    let repaired = fixPartialJSON(trimmed)
-    guard repaired != trimmed, !repaired.isEmpty else { return nil }
-    return try? decodeJSONBody(Data(repaired.utf8))
 }
 
 func typedPartialObject<Object: Decodable>(_ type: Object.Type, from partial: JSONValue) -> Object? {
@@ -16,11 +15,35 @@ func typedPartialObject<Object: Decodable>(_ type: Object.Type, from partial: JS
     return try? JSONDecoder().decode(Object.self, from: data)
 }
 
+func arrayPartialElements(from text: String) -> JSONValue? {
+    let result = parsePartialJSON(text)
+    switch result.state {
+    case .failedParse, .undefinedInput:
+        return nil
+    case .successfulParse, .repairedParse:
+        guard var elements = result.value?["elements"]?.arrayValue else {
+            return nil
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endedAfterCompleteElement = trimmed.hasSuffix(",") || trimmed.hasSuffix("]")
+        if result.state == .repairedParse, !elements.isEmpty, !endedAfterCompleteElement {
+            elements.removeLast()
+        }
+        return .array(elements)
+    }
+}
+
+func typedPartialArray<Element: Decodable>(_ type: Element.Type, from partial: JSONValue) -> [Element]? {
+    guard let elements = partial.arrayValue else { return nil }
+    return elements.compactMap { typedPartialObject(Element.self, from: $0) }
+}
+
 enum PartialJSONState {
     case root
     case finish
     case insideString
     case insideStringEscape
+    case insideStringUnicodeEscape
     case insideLiteral
     case insideNumber
     case insideObjectStart
@@ -34,11 +57,25 @@ enum PartialJSONState {
     case insideArrayAfterComma
 }
 
-func fixPartialJSON(_ input: String) -> String {
+public func fixJson(_ input: String) -> String {
     let characters = Array(input)
     var stack: [PartialJSONState] = [.root]
     var lastValidIndex: Int?
     var literalStart: Int?
+    var unicodeEscapeDigits = 0
+
+    func isHexDigit(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first,
+              scalar == character.unicodeScalars.last else {
+            return false
+        }
+        switch scalar.value {
+        case 48...57, 65...70, 97...102:
+            return true
+        default:
+            return false
+        }
+    }
 
     func replaceTop(with states: PartialJSONState...) {
         _ = stack.popLast()
@@ -175,7 +212,21 @@ func fixPartialJSON(_ input: String) -> String {
 
         case .insideStringEscape:
             _ = stack.popLast()
-            lastValidIndex = index
+            if character == "u" {
+                unicodeEscapeDigits = 0
+                stack.append(.insideStringUnicodeEscape)
+            } else {
+                lastValidIndex = index
+            }
+
+        case .insideStringUnicodeEscape:
+            if isHexDigit(character) {
+                unicodeEscapeDigits += 1
+                if unicodeEscapeDigits == 4 {
+                    _ = stack.popLast()
+                    lastValidIndex = index
+                }
+            }
 
         case .insideNumber:
             switch character {
@@ -254,10 +305,48 @@ func fixPartialJSON(_ input: String) -> String {
             } else if "null".hasPrefix(partialLiteral) {
                 result += String("null".dropFirst(partialLiteral.count))
             }
-        case .root, .finish, .insideStringEscape, .insideNumber:
+        case .root, .finish, .insideStringEscape, .insideStringUnicodeEscape, .insideNumber:
             break
         }
     }
 
     return result
+}
+
+func fixPartialJSON(_ input: String) -> String {
+    fixJson(input)
+}
+
+public enum AIParsePartialJSONState: String, Equatable, Sendable {
+    case undefinedInput = "undefined-input"
+    case successfulParse = "successful-parse"
+    case repairedParse = "repaired-parse"
+    case failedParse = "failed-parse"
+}
+
+public struct AIParsePartialJSONResult: Equatable, Sendable {
+    public var value: JSONValue?
+    public var state: AIParsePartialJSONState
+
+    public init(value: JSONValue?, state: AIParsePartialJSONState) {
+        self.value = value
+        self.state = state
+    }
+}
+
+public func parsePartialJSON(_ jsonText: String?) -> AIParsePartialJSONResult {
+    guard let jsonText else {
+        return AIParsePartialJSONResult(value: nil, state: .undefinedInput)
+    }
+
+    if let value = try? secureJSONParse(jsonText) {
+        return AIParsePartialJSONResult(value: value, state: .successfulParse)
+    }
+
+    let fixedJSON = fixJson(jsonText)
+    if let value = try? secureJSONParse(fixedJSON) {
+        return AIParsePartialJSONResult(value: value, state: .repairedParse)
+    }
+
+    return AIParsePartialJSONResult(value: nil, state: .failedParse)
 }

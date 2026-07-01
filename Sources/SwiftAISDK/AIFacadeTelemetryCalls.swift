@@ -15,12 +15,16 @@ func withTelemetry<Output: Sendable>(
     providerMetadata: @escaping @Sendable (Output) -> [String: JSONValue],
     responseMetadata: @escaping @Sendable (Output) -> AIResponseMetadata,
     wrapLanguageModelCall: Bool = false,
+    logEmptyWarnings: Bool = true,
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
     let dispatcher = TelemetryDispatcher(options: telemetry)
     guard dispatcher.isEnabled else {
         let result = try await withRetry(policy: retryPolicy, abortSignal: abortSignal, operation: operation)
-        await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
+        let resultWarnings = warnings(result)
+        if logEmptyWarnings || !resultWarnings.isEmpty {
+            await AIWarningLogging.logWarnings(resultWarnings, providerID: providerID, modelID: modelID)
+        }
         return result
     }
 
@@ -80,7 +84,10 @@ func withTelemetry<Output: Sendable>(
             providerMetadata: providerMetadata(result),
             responseMetadata: responseMetadata(result)
         ))
-        await AIWarningLogging.logWarnings(warnings(result), providerID: providerID, modelID: modelID)
+        let resultWarnings = warnings(result)
+        if logEmptyWarnings || !resultWarnings.isEmpty {
+            await AIWarningLogging.logWarnings(resultWarnings, providerID: providerID, modelID: modelID)
+        }
         return result
     } catch {
         let eventKind: Telemetry.Event.Kind = isCancellationTelemetryError(error) ? .abort : .error
@@ -98,4 +105,3 @@ func withTelemetry<Output: Sendable>(
         throw error
     }
 }
-

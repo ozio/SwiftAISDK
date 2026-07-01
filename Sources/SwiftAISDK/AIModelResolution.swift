@@ -53,6 +53,7 @@ public extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) async throws -> TextGenerationResult {
@@ -64,6 +65,7 @@ public extension AI {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
             retryPolicy: retryPolicy,
             telemetry: telemetry
         )
@@ -89,6 +91,7 @@ public extension AI {
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
         retryPolicy: AIRetryPolicy = .default,
         toolChoice: JSONValue? = nil,
         includeRawChunks: Bool = false,
@@ -117,6 +120,7 @@ public extension AI {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
             retryPolicy: retryPolicy,
             toolChoice: toolChoice,
             includeRawChunks: includeRawChunks,

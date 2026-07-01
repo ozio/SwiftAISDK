@@ -12,6 +12,8 @@ func anthropicPrepareTools(
     from tools: [String: JSONValue],
     toolChoice: JSONValue? = nil,
     disableParallelToolUse: Bool? = nil,
+    supportsStructuredOutput: Bool = true,
+    supportsStrictTools: Bool = true,
     defaultEagerInputStreaming: Bool = false
 ) -> AnthropicPreparedTools {
     var prepared = AnthropicPreparedTools()
@@ -22,13 +24,63 @@ func anthropicPrepareTools(
         }
     }
 
+    var cacheBreakpointCount = 0
     for (name, schema) in tools {
         let object = schema.objectValue
         let isProviderTool = object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue?.hasPrefix("anthropic.") == true
         guard isProviderTool else {
-            var tool: [String: JSONValue] = ["name": .string(name), "input_schema": schema]
-            if defaultEagerInputStreaming {
+            var tool: [String: JSONValue] = ["name": .string(name)]
+            var inputSchema = schema.objectValue
+            let providerOptions = inputSchema?.removeValue(forKey: "providerOptions")?["anthropic"]?.objectValue ?? [:]
+            if let strict = inputSchema?.removeValue(forKey: "strict")?.boolValue {
+                if supportsStrictTools {
+                    tool["strict"] = .bool(strict)
+                } else {
+                    prepared.warnings.append(AIWarning(
+                        type: "unsupported",
+                        feature: "strict",
+                        message: "Tool '\(name)' has strict: \(strict), but strict mode is not supported by this provider. The strict property will be ignored."
+                    ))
+                }
+            }
+            if supportsStructuredOutput {
+                addBeta("structured-outputs-2025-11-13")
+            }
+            if let inputExamples = inputSchema?.removeValue(forKey: "inputExamples")?.arrayValue {
+                tool["input_examples"] = .array(inputExamples.map { example in
+                    example["input"] ?? example
+                })
+                addBeta("advanced-tool-use-2025-11-20")
+            }
+            if let description = inputSchema?.removeValue(forKey: "description")?.stringValue {
+                tool["description"] = .string(description)
+            }
+            tool["input_schema"] = inputSchema.map(JSONValue.object) ?? schema
+            if let eagerInputStreaming = providerOptions["eagerInputStreaming"]?.boolValue {
+                tool["eager_input_streaming"] = .bool(eagerInputStreaming)
+            } else if defaultEagerInputStreaming {
                 tool["eager_input_streaming"] = true
+            }
+            if let deferLoading = providerOptions["deferLoading"]?.boolValue {
+                tool["defer_loading"] = .bool(deferLoading)
+            }
+            if let allowedCallers = providerOptions["allowedCallers"]?.arrayValue {
+                tool["allowed_callers"] = .array(allowedCallers.compactMap { caller in
+                    caller.stringValue.map(JSONValue.string)
+                })
+                addBeta("advanced-tool-use-2025-11-20")
+            }
+            if let cacheControl = providerOptions["cacheControl"], cacheControl != .null {
+                cacheBreakpointCount += 1
+                if cacheBreakpointCount <= 4 {
+                    tool["cache_control"] = cacheControl
+                } else {
+                    prepared.warnings.append(AIWarning(
+                        type: "unsupported",
+                        feature: "cacheControl breakpoint limit",
+                        message: "Maximum 4 cache breakpoints exceeded (found \(cacheBreakpointCount)). This breakpoint will be ignored."
+                    ))
+                }
             }
             prepared.tools.append(.object(tool))
             continue
@@ -198,10 +250,13 @@ func anthropicHeaders(_ requestHeaders: [String: String], configHeaders: [String
     return headers
 }
 
+func anthropicModelSupportsStructuredOutput(_ modelID: String) -> Bool {
+    anthropicModelCapabilities(modelID).supportsStructuredOutput
+}
+
 func anthropicProviderReferenceKey(from providerID: String) -> String {
     if providerID.hasPrefix("anthropic-aws") {
         return "anthropic-aws"
     }
     return "anthropic"
 }
-

@@ -508,6 +508,58 @@ import Testing
     #expect(body["mask"]?["data"]?.stringValue == Data([4, 5, 6]).base64EncodedString())
 }
 
+@Test func gatewayVideoMapsFrameImagesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"videos":[{"url":"https://gateway.example.com/video.mp4"}]}
+
+    """))
+    let provider = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key", transport: transport))
+    let model = try provider.videoModel("fal/luma-ray-2")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "A sunset",
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(data: Data("Hello".utf8), mediaType: "image/png"), frameType: .firstFrame),
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/last-frame.png"), frameType: .lastFrame)
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["frameImages"]?[0]?["frameType"]?.stringValue == "first_frame")
+    #expect(body["frameImages"]?[0]?["image"]?["type"]?.stringValue == "file")
+    #expect(body["frameImages"]?[0]?["image"]?["mediaType"]?.stringValue == "image/png")
+    #expect(body["frameImages"]?[0]?["image"]?["data"]?.stringValue == Data("Hello".utf8).base64EncodedString())
+    #expect(body["frameImages"]?[1]?["frameType"]?.stringValue == "last_frame")
+    #expect(body["frameImages"]?[1]?["image"]?["type"]?.stringValue == "url")
+    #expect(body["frameImages"]?[1]?["image"]?["url"]?.stringValue == "https://example.com/last-frame.png")
+    #expect(body["inputReferences"] == nil)
+}
+
+@Test func gatewayVideoMapsInputReferencesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"videos":[{"url":"https://gateway.example.com/video.mp4"}]}
+
+    """))
+    let provider = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key", transport: transport))
+    let model = try provider.videoModel("fal/luma-ray-2")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "A sunset",
+        inputReferences: [
+            ImageInputFile(data: Data("Hello".utf8), mediaType: "image/png"),
+            ImageInputFile(url: "https://example.com/reference.png")
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["inputReferences"]?[0]?["type"]?.stringValue == "file")
+    #expect(body["inputReferences"]?[0]?["mediaType"]?.stringValue == "image/png")
+    #expect(body["inputReferences"]?[0]?["data"]?.stringValue == Data("Hello".utf8).base64EncodedString())
+    #expect(body["inputReferences"]?[1]?["type"]?.stringValue == "url")
+    #expect(body["inputReferences"]?[1]?["url"]?.stringValue == "https://example.com/reference.png")
+    #expect(body["frameImages"] == nil)
+}
+
 @Test func gatewayVideoThrowsOnErrorEvent() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"type":"error","message":"Rate limit exceeded","errorType":"rate_limit_exceeded","statusCode":429,"param":null}

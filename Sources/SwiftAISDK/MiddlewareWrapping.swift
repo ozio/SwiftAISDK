@@ -136,6 +136,9 @@ final class AIWrappedLanguageModel: LanguageModel, @unchecked Sendable {
     private let middleware: AILanguageModelMiddleware
     let providerID: String
     let modelID: String
+    var supportedURLs: [String: [AISupportedURLPattern]] {
+        model.supportedURLs
+    }
 
     init(
         model: any LanguageModel,

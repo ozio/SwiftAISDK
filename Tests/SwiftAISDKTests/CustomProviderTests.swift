@@ -64,6 +64,59 @@ import Testing
     }
 }
 
+@Test func providerRegistryReportsInvalidIDsForEveryModelFamilyLikeUpstream() throws {
+    let registry = createProviderRegistry([:])
+
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "model", modelType: "languageModel", separator: ":")) {
+        _ = try registry.languageModel("model")
+    }
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "model", modelType: "embeddingModel", separator: ":")) {
+        _ = try registry.embeddingModel("model")
+    }
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "model", modelType: "imageModel", separator: ":")) {
+        _ = try registry.imageModel("model")
+    }
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "model", modelType: "transcriptionModel", separator: ":")) {
+        _ = try registry.transcriptionModel("model")
+    }
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "model", modelType: "speechModel", separator: ":")) {
+        _ = try registry.speechModel("model")
+    }
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "model", modelType: "videoModel", separator: ":")) {
+        _ = try registry.videoModel("model")
+    }
+    #expect(throws: AIProviderRegistryError.invalidModelID(modelID: "model", modelType: "rerankingModel", separator: ":")) {
+        _ = try registry.rerankingModel("model")
+    }
+}
+
+@Test func providerRegistryReportsMissingProvidersForEveryModelFamilyLikeUpstream() throws {
+    let registry = createProviderRegistry(["app": RegistryLanguageOnlyProvider()])
+    let availableProviders = ["app"]
+
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "languageModel", availableProviders: availableProviders)) {
+        _ = try registry.languageModel("missing:model")
+    }
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "embeddingModel", availableProviders: availableProviders)) {
+        _ = try registry.embeddingModel("missing:model")
+    }
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "imageModel", availableProviders: availableProviders)) {
+        _ = try registry.imageModel("missing:model")
+    }
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "transcriptionModel", availableProviders: availableProviders)) {
+        _ = try registry.transcriptionModel("missing:model")
+    }
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "speechModel", availableProviders: availableProviders)) {
+        _ = try registry.speechModel("missing:model")
+    }
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "videoModel", availableProviders: availableProviders)) {
+        _ = try registry.videoModel("missing:model")
+    }
+    #expect(throws: AIProviderRegistryError.noSuchProvider(providerID: "missing", modelType: "rerankingModel", availableProviders: availableProviders)) {
+        _ = try registry.rerankingModel("missing:model")
+    }
+}
+
 @Test func customProviderReturnsConfiguredModelsAndClients() async throws {
     let language = CustomLanguageModel(modelID: "local-language")
     let embedding = CustomEmbeddingModel(modelID: "local-embedding")
@@ -152,6 +205,32 @@ import Testing
     }
     #expect(throws: AIError.invalidArgument(argument: "skills", message: "Provider 'app' does not support skills.")) {
         _ = try provider.skills()
+    }
+}
+
+@Test func customProviderThrowsWhenEveryModelFamilyAndFallbackAreMissingLikeUpstream() throws {
+    let provider = customProvider(providerID: "app")
+
+    #expect(throws: AIError.unsupportedModel(provider: "app", capability: .language, modelID: "missing")) {
+        _ = try provider.languageModel("missing")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "app", capability: .embedding, modelID: "missing")) {
+        _ = try provider.embeddingModel("missing")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "app", capability: .image, modelID: "missing")) {
+        _ = try provider.imageModel("missing")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "app", capability: .transcription, modelID: "missing")) {
+        _ = try provider.transcriptionModel("missing")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "app", capability: .speech, modelID: "missing")) {
+        _ = try provider.speechModel("missing")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "app", capability: .video, modelID: "missing")) {
+        _ = try provider.videoModel("missing")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "app", capability: .reranking, modelID: "missing")) {
+        _ = try provider.rerankingModel("missing")
     }
 }
 

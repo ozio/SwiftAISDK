@@ -32,6 +32,7 @@ public struct LanguageGenerationOptions: Sendable {
     public var responseFormat: AIResponseFormat?
     public var reasoning: String?
     public var includeRawChunks: Bool
+    public var includeResponseBody: Bool
     public var providerOptions: [String: JSONValue]
     public var extraBody: [String: JSONValue]
     public var headers: [String: String]
@@ -51,6 +52,7 @@ public struct LanguageGenerationOptions: Sendable {
         responseFormat: AIResponseFormat? = nil,
         reasoning: String? = nil,
         includeRawChunks: Bool = false,
+        includeResponseBody: Bool = false,
         providerOptions: [String: JSONValue] = [:],
         extraBody: [String: JSONValue] = [:],
         headers: [String: String] = [:],
@@ -69,6 +71,7 @@ public struct LanguageGenerationOptions: Sendable {
         self.responseFormat = responseFormat
         self.reasoning = reasoning
         self.includeRawChunks = includeRawChunks
+        self.includeResponseBody = includeResponseBody
         self.providerOptions = providerOptions
         self.extraBody = extraBody
         self.headers = headers
@@ -93,6 +96,7 @@ public struct LanguageGenerationOptions: Sendable {
             responseFormat: responseFormat,
             reasoning: reasoning,
             tools: tools.rawTools,
+            toolContexts: tools.toolContexts,
             toolChoice: tools.choice,
             includeRawChunks: includeRawChunks,
             providerOptions: providerOptions,
@@ -105,6 +109,7 @@ public struct LanguageGenerationOptions: Sendable {
 
 public struct LanguageToolOptions: Sendable {
     public var rawTools: [String: JSONValue]
+    public var toolContexts: [String: JSONValue]
     public var executableTools: [AITool]
     public var maxSteps: Int
     public var stopWhen: [AIStopCondition]
@@ -114,6 +119,7 @@ public struct LanguageToolOptions: Sendable {
 
     public init(
         rawTools: [String: JSONValue] = [:],
+        toolContexts: [String: JSONValue] = [:],
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
@@ -122,6 +128,7 @@ public struct LanguageToolOptions: Sendable {
         choice: JSONValue? = nil
     ) {
         self.rawTools = rawTools
+        self.toolContexts = toolContexts
         self.executableTools = executableTools
         self.maxSteps = maxSteps
         self.stopWhen = stopWhen
@@ -132,6 +139,7 @@ public struct LanguageToolOptions: Sendable {
 
     public init(
         _ executableTools: [AITool],
+        toolContexts: [String: JSONValue] = [:],
         maxSteps: Int = 5,
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
@@ -139,6 +147,7 @@ public struct LanguageToolOptions: Sendable {
         choice: JSONValue? = nil
     ) {
         self.init(
+            toolContexts: toolContexts,
             executableTools: executableTools,
             maxSteps: maxSteps,
             stopWhen: stopWhen,
@@ -604,7 +613,8 @@ public extension AI {
                 model: model,
                 request: request,
                 retryPolicy: options.retryPolicy,
-                telemetry: options.telemetry
+                telemetry: options.telemetry,
+                includeResponseBody: options.includeResponseBody
             )
         }
 
@@ -617,7 +627,8 @@ public extension AI {
             prepareStep: tools.prepareStep,
             toolApproval: tools.approval,
             retryPolicy: options.retryPolicy,
-            telemetry: options.telemetry
+            telemetry: options.telemetry,
+            includeResponseBody: options.includeResponseBody
         )
     }
 

@@ -106,6 +106,18 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let aspectRatio = request.aspectRatio { body["aspectRatio"] = .string(aspectRatio) }
         if let durationSeconds = request.durationSeconds { body["duration"] = .number(durationSeconds) }
+        if let count = request.count { body["n"] = .number(Double(count)) }
+        if let resolution = request.resolution { body["resolution"] = .string(resolution) }
+        if let fps = request.fps { body["fps"] = .number(fps) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
+        if let image = request.image { body["image"] = gatewayVideoFile(image) }
+        if !request.frameImages.isEmpty {
+            body["frameImages"] = .array(request.frameImages.map(gatewayVideoFrameImage))
+        }
+        if !request.inputReferences.isEmpty {
+            body["inputReferences"] = .array(request.inputReferences.map(gatewayVideoFile))
+        }
         body.merge(request.extraBody) { _, new in new }
         let httpRequest = try config.request(path: "/video-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-video-model-specification-version": "4",
@@ -146,6 +158,17 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
+}
+
+func gatewayVideoFile(_ file: ImageInputFile) -> JSONValue {
+    gatewayImageFile(file)
+}
+
+private func gatewayVideoFrameImage(_ frameImage: VideoFrameImage) -> JSONValue {
+    .object([
+        "frameType": .string(frameImage.frameType.rawValue),
+        "image": gatewayVideoFile(frameImage.image)
+    ])
 }
 
 public final class GatewayRerankingModel: RerankingModel, @unchecked Sendable {

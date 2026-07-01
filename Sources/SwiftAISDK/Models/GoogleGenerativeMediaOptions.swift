@@ -74,20 +74,25 @@ func googleVideoProviderOptions(from request: VideoGenerationRequest) -> [String
 func googleVideoInstance(for request: VideoGenerationRequest, options: [String: JSONValue]) -> (instance: [String: JSONValue], warnings: [AIWarning]) {
     var instance: [String: JSONValue] = ["prompt": .string(request.prompt)]
     var warnings: [AIWarning] = []
-    if let image = request.image {
+    if let firstFrame = request.frameImages.first(where: { $0.frameType == .firstFrame }) {
+        if let image = googleVideoInlineImage(firstFrame.image) {
+            instance["image"] = image
+        } else if firstFrame.image.url != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "URL-based image input",
+                message: "Google Generative AI video models require base64-encoded images. URL will be ignored."
+            ))
+        }
+    } else if let image = request.image {
         if image.url != nil {
             warnings.append(AIWarning(
                 type: "unsupported",
                 feature: "URL-based image input",
                 message: "Google Generative AI video models require base64-encoded images. URL will be ignored."
             ))
-        } else if let data = image.data {
-            instance["image"] = .object([
-                "inlineData": .object([
-                    "mimeType": .string(image.mediaType ?? "image/png"),
-                    "data": .string(data.base64EncodedString())
-                ])
-            ])
+        } else if let image = googleVideoInlineImage(image) {
+            instance["image"] = image
         }
     } else if let image = options["image"]?.objectValue {
         if let data = image["data"]?.stringValue {
@@ -99,7 +104,15 @@ func googleVideoInstance(for request: VideoGenerationRequest, options: [String: 
             ])
         }
     }
-    if let referenceImages = options["referenceImages"]?.arrayValue {
+    if let lastFrame = request.frameImages.first(where: { $0.frameType == .lastFrame }), let image = googleVideoInlineImage(lastFrame.image) {
+        instance["lastFrame"] = image
+    }
+    if !request.inputReferences.isEmpty {
+        let referenceImages = request.inputReferences.compactMap(googleVideoReferenceImage)
+        if !referenceImages.isEmpty {
+            instance["referenceImages"] = .array(referenceImages)
+        }
+    } else if let referenceImages = options["referenceImages"]?.arrayValue {
         instance["referenceImages"] = .array(referenceImages.map { reference in
             guard let object = reference.objectValue else { return reference }
             if let bytesBase64Encoded = object["bytesBase64Encoded"]?.stringValue {
@@ -117,6 +130,24 @@ func googleVideoInstance(for request: VideoGenerationRequest, options: [String: 
         })
     }
     return (instance, warnings)
+}
+
+func googleVideoInlineImage(_ image: ImageInputFile) -> JSONValue? {
+    guard let data = image.data else { return nil }
+    return .object([
+        "inlineData": .object([
+            "mimeType": .string(image.mediaType ?? "image/png"),
+            "data": .string(data.base64EncodedString())
+        ])
+    ])
+}
+
+func googleVideoReferenceImage(_ image: ImageInputFile) -> JSONValue? {
+    guard let prepared = googleVideoInlineImage(image) else { return nil }
+    return .object([
+        "image": prepared,
+        "referenceType": .string("asset")
+    ])
 }
 
 func googleVideoParameters(for request: VideoGenerationRequest, options: [String: JSONValue]) -> [String: JSONValue] {
@@ -180,4 +211,3 @@ func googlePollInterval(_ extraBody: [String: JSONValue]) -> UInt64 {
     let milliseconds = extraBody["pollIntervalMs"]?.intValue ?? 10_000
     return UInt64(milliseconds) * 1_000_000
 }
-

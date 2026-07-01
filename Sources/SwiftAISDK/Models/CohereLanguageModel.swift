@@ -445,12 +445,14 @@ func cohereJSONString(_ value: JSONValue) -> String? {
 
 func cohereContentPartJSON(_ part: AIContentPart) throws -> JSONValue? {
     switch part {
-    case let .text(text):
+    case let .text(text, _):
         return text.isEmpty ? nil : .object(["type": .string("text"), "text": .string(text)])
-    case let .imageURL(url):
+    case let .reasoning(text, _):
+        return text.isEmpty ? nil : .object(["type": .string("text"), "text": .string(text)])
+    case let .imageURL(url, _):
         return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
-    case let .data(mimeType, data) where cohereIsImageMediaType(mimeType),
-         let .file(mimeType, data, _) where cohereIsImageMediaType(mimeType):
+    case let .data(mimeType, data, _) where cohereIsImageMediaType(mimeType),
+         let .file(mimeType, data, _, _) where cohereIsImageMediaType(mimeType):
         return .object([
             "type": .string("image_url"),
             "image_url": .object(["url": .string("data:\(cohereImageDataURLMediaType(mimeType));base64,\(data.base64EncodedString())")])
@@ -460,7 +462,7 @@ func cohereContentPartJSON(_ part: AIContentPart) throws -> JSONValue? {
             argument: "files",
             message: "Cohere chat API expects file URLs to be downloaded before prompt conversion."
         )
-    case .data, .file, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
+    case .data, .file, .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
 }
