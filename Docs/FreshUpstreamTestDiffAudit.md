@@ -22,7 +22,7 @@ Status meanings:
 - `covered`: existing Swift coverage already proves the changed behavior.
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
-  SwiftAISDK per `Docs/TestPortingPlan.md`.
+  SwiftAISDK per `Docs/AgentPortingGuide.md`.
 
 ## 2026-06-30 Diff
 

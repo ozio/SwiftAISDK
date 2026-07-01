@@ -28,7 +28,9 @@ struct StreamTextExample {
 }
 ```
 
-Streaming emits structured lifecycle parts, not just raw strings. That lets you render text, reasoning, tool calls, tool results, source citations, files, raw chunks, and finish metadata with one loop.
+Streaming emits structured lifecycle parts, not just raw strings. That lets you render text, reasoning, tool input deltas, tool calls, tool approval requests and responses, tool results, source citations, files, raw chunks, response metadata, and finish metadata with one loop.
+
+Tool input can arrive before the final tool call. Use `toolInputStart`, `toolInputDelta`, and `toolInputEnd` parts when you want to show streamed arguments in a UI, and handle `toolApprovalRequest` / `toolApprovalResponse` parts when a tool requires human or policy approval.
 
 ## Retry Behavior
 

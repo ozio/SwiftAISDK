@@ -5,8 +5,8 @@ baselines. Before a provider-complete pass, compare the package listed here with
 the current npm package or upstream repository state, then update the row if the
 pass uses a newer version.
 
-Provider sweep status is tracked separately in `Docs/ProviderSyncStatus.md`.
-This table is an inventory and version ledger, not the remaining work list.
+Provider/product status is tracked separately in `Docs/PortingStatus.md`. This
+table is an inventory and version ledger, not the remaining work list.
 
 Versions below were checked with `npm view <package> version` on 2026-06-29.
 

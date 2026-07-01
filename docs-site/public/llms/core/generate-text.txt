@@ -32,6 +32,7 @@ Common options map to provider-agnostic model settings:
 - `providerOptions`
 - `extraBody`
 - `abortSignal`
+- `retryPolicy`, `timeoutNanoseconds`, and `telemetry`
 
 Use `providerOptions` for documented provider-specific behavior. Use `extraBody` only as a low-level escape hatch when the provider has not yet grown a typed option.
 
@@ -53,10 +54,24 @@ let result = try await model.generateText(
 
 `TextGenerationResult` includes the normalized text plus metadata you can use for logging, billing, and debugging:
 
+- `content`
 - `text`
 - `reasoning`
 - `finishReason`
 - `usage`
+- `files`
+- `sources`
+- `toolCalls`
+- `toolResults`
+- `toolApprovalRequests`
+- `toolApprovalResponses`
+- `steps`
+- `responseMessages`
 - `warnings`
+- `requestMetadata`
 - `providerMetadata`
 - `responseMetadata`
+
+`content` preserves the ordered result parts, including text, reasoning, files, sources, tool calls, tool results, approval requests, approval responses, and custom provider parts. The convenience arrays are derived from the same content when possible.
+
+When you enable tools, `steps` records each model/tool loop step and `responseMessages` contains the assistant/tool messages that can be appended to the next request or stored in conversation history.

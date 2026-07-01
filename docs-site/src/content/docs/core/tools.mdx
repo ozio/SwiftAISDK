@@ -18,9 +18,77 @@ An `AITool` has:
 - an optional `description`
 - a JSON Schema `parameters` value
 - an async `execute` function
-- optional argument refinement, approvals, context, and model-facing output mapping
+- optional `strict` mode, provider metadata, provider options, and input examples
+- optional argument refinement, approval policy, context schema, streamed-input callbacks, and model-facing output mapping
 
 Use `maxSteps` to let the model call tools, receive results, and make a follow-up model call until it returns a final answer or the step limit is reached.
+
+## Tool Loops
+
+Tool-enabled `generateText` and `streamText` can be customized with `LanguageToolOptions`:
+
+```swift
+let options = LanguageToolOptions(
+    [weather],
+    maxSteps: 5,
+    stopWhen: [.hasToolCall("weather")],
+    prepareStep: { context in
+        AIPrepareStepResult(request: context.request)
+    }
+)
+
+let result = try await model.generateText(
+    "Plan my afternoon.",
+    tools: options
+)
+```
+
+Each tool-loop result records `steps`, `toolCalls`, `toolResults`, approval parts, and `responseMessages` so you can inspect what happened or continue the conversation.
+
+## Approvals
+
+Use `needsApproval` on a tool when a specific tool call should pause for approval, or use a call-level approval policy when one central policy should evaluate every tool call.
+
+```swift
+let transfer = AITool(
+    name: "transfer_funds",
+    description: "Transfer money between accounts.",
+    parameters: [
+        "type": "object",
+        "properties": ["amount": ["type": "number"]],
+        "required": ["amount"],
+    ],
+    needsApproval: { input, _ in
+        input["amount"]?.numberValue ?? 0 > 100
+    }
+) { input in
+    ["status": "queued", "amount": input["amount"] ?? .null]
+}
+```
+
+Approval requests and responses are represented as typed result and stream parts. When you use signed approval replay, pass a `toolApprovalSecret` so approvals from persisted messages can be verified before a tool is executed. Invalid or tampered signatures fail with `AIInvalidToolApprovalSignatureError`.
+
+## Streamed Tool Input
+
+Tools can observe streamed arguments before execution:
+
+```swift
+let search = AITool(
+    name: "search",
+    parameters: ["type": "object"],
+    onInputDelta: { context in
+        print("tool input delta:", context.inputTextDelta)
+    }
+) { input in
+    ["results": []]
+}
+```
+
+Use `onInputStart`, `onInputDelta`, and `onInputAvailable` to update a UI as a model is still producing arguments. These callbacks receive the tool call ID, request messages, abort signal, and per-tool context.
+
+## Model-Facing Output
+
+Set `toModelOutput` when the value your app stores should differ from the value sent back to the model. The public `AIToolResult` keeps both `result` and optional `modelOutput`.
 
 ## Dynamic Tools
 

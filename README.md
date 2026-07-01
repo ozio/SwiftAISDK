@@ -236,11 +236,15 @@ LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
 
 Useful project docs:
 
-- [Docs/ProviderCapabilityMatrix.md](Docs/ProviderCapabilityMatrix.md): current provider/capability table.
+- [Docs/README.md](Docs/README.md): documentation map and ownership.
+- [Docs/ProductDocumentation.md](Docs/ProductDocumentation.md): public documentation contract and verification gates.
+- [Docs/PortingStatus.md](Docs/PortingStatus.md): current porting status, active gaps, and release-readiness checklist.
+- [Docs/AgentPortingGuide.md](Docs/AgentPortingGuide.md): workflow for porting upstream code, tests, and docs.
+- [Docs/ProviderCapabilityMatrix.md](Docs/ProviderCapabilityMatrix.md): generated provider/capability table.
 - [Docs/ProviderVersionLedger.md](Docs/ProviderVersionLedger.md): tracked npm package baselines and evidence files.
-- [Docs/UpstreamSync.md](Docs/UpstreamSync.md): workflow for finding upstream changes and porting them.
-- [Docs/ProductGapAudit.md](Docs/ProductGapAudit.md): remaining product-level gaps and review checklist.
-- [Docs/DocumentationDoD.md](Docs/DocumentationDoD.md): documentation scope, quality bar, and verification gates.
+
+Future coding agents should also read [AGENTS.md](AGENTS.md) before making
+porting changes.
 
 The user-facing documentation site lives in `docs-site` and is generated before
 build:

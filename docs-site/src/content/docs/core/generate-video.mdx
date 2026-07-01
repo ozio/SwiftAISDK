@@ -26,11 +26,28 @@ let result = try await model.generateVideo(
 )
 ```
 
+Some providers accept explicit frame images or reference images instead of a single starting image:
+
+```swift
+let result = try await model.generateVideo(
+    "Animate the transition between these frames.",
+    frameImages: [
+        VideoFrameImage(image: firstFrame, frameType: .firstFrame),
+        VideoFrameImage(image: lastFrame, frameType: .lastFrame),
+    ],
+    inputReferences: [styleReference]
+)
+```
+
+`frameImages` is used for providers that distinguish first and last frames. `inputReferences` is used for reference-to-video or style/reference-image workflows. Providers that do not support a combination return warnings or provider-specific errors rather than silently changing the request.
+
 ## Options
 
 - `aspectRatio`, `resolution`, and `fps` describe output shape and playback.
 - `durationSeconds` requests clip duration.
 - `image` supplies an image-to-video starting frame.
+- `frameImages` supplies typed first-frame and last-frame images.
+- `inputReferences` supplies reference images for providers that support them.
 - `seed` requests deterministic output when supported.
 - `count` requests multiple videos.
 - `providerOptions` carries provider-specific controls, including polling settings for async providers.

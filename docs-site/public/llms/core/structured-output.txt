@@ -61,3 +61,28 @@ print(result.output.bullets)
 ```
 
 Use `generateObject` when you want the most direct Swift API. Use `Output` when you want one facade for text, object, array, choice, and JSON strategies.
+
+## Output Strategies
+
+- `Output.text()` returns plain text through the same result wrapper used by the other strategies.
+- `Output.object(schema:as:)` validates JSON, decodes a `Decodable` Swift value, and keeps the raw output.
+- `Output.array(elementSchema:as:)` expects an `elements` envelope and returns decoded array elements.
+- `Output.choice(choices:)` constrains output to one of the provided strings.
+- `Output.json()` returns schema-free `JSONValue`.
+
+All strategies preserve text, reasoning, usage, warnings, provider metadata, response metadata, and the underlying `TextGenerationResult`.
+
+## Streaming Output
+
+`streamText(..., output:)` maps language stream parts into `AIOutputStreamPart`:
+
+- `textDelta` for raw text deltas
+- `partialOutput` for incremental structured values when available
+- `output` for the final validated output
+- `source`, `warning`, `metadata`, `responseMetadata`, `finish`, and `raw` for surrounding stream state
+
+Partial object and array parsing uses the Swift partial JSON repair path, so incomplete trailing fragments can be ignored while already-complete fields or elements continue to stream.
+
+## Repair Hooks
+
+The object facades and `Output` strategies can use `repairText` to make one model output repair attempt after invalid JSON, schema validation, or decoding failures. Errors carry `AIObjectGenerationError` context including the strategy, failure kind, generated text, and whether repair was attempted.

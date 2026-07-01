@@ -7,11 +7,12 @@ description: Public SwiftAISDK APIs for errors.
 
 | Symbol kind | Count |
 | --- | --- |
-| Case | 14 |
+| Case | 16 |
 | Enumeration | 2 |
-| Initializer | 11 |
-| Instance Property | 60 |
-| Structure | 11 |
+| Function | 1 |
+| Initializer | 14 |
+| Instance Property | 69 |
+| Structure | 14 |
 | Type Method | 1 |
 
 ## Public symbols
@@ -26,6 +27,8 @@ description: Public SwiftAISDK APIs for errors.
 | Case | `AINoOutputKind.transcript` | `case transcript` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Case | `AINoOutputKind.video` | `case video` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Case | `GatewayErrorType.authenticationError` | `case authenticationError` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
+| Case | `GatewayErrorType.failedDependency` | `case failedDependency` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
+| Case | `GatewayErrorType.forbidden` | `case forbidden` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Case | `GatewayErrorType.internalServerError` | `case internalServerError` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Case | `GatewayErrorType.invalidRequestError` | `case invalidRequestError` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Case | `GatewayErrorType.modelNotFound` | `case modelNotFound` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
@@ -34,23 +37,31 @@ description: Public SwiftAISDK APIs for errors.
 | Case | `GatewayErrorType.timeoutError` | `case timeoutError` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Enumeration | `AINoOutputKind` | `enum AINoOutputKind` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Enumeration | `GatewayErrorType` | `enum GatewayErrorType` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
+| Function | `getErrorMessage(_:)` | `func getErrorMessage(_ value: Any?) -> String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(approvalID:)` | `init(approvalID: String)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Initializer | `init(approvalID:toolCallID:reason:)` | `init(approvalID: String, toolCallID: String, reason: String)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Initializer | `init(field:entityName:)` | `init(field: String, entityName: String)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(message:chunkType:chunkID:rawValue:validationIssues:)` | `init(message: String, chunkType: String? = nil, chunkID: String? = nil, rawValue: JSONValue? = nil, validationIssues: [AIUIMessageValidationIssue] = [])` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(provider:kind:structuredOutputKind:responses:message:)` | `init(provider: String? = nil, kind: AINoOutputKind = .output, structuredOutputKind: AIOutputKind? = nil, responses: [AIResponseMetadata] = [], message: String? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(provider:modelID:maxEmbeddingsPerCall:values:)` | `init(provider: String, modelID: String, maxEmbeddingsPerCall: Int, values: [String])` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(provider:url:requestBody:statusCode:responseHeaders:responseBody:isRetryable:)` | `init(provider: String, url: String? = nil, requestBody: JSONValue? = nil, statusCode: Int, responseHeaders: [String : String] = [:], responseBody: String, isRetryable: Bool? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(toolCallID:approvalID:)` | `init(toolCallID: String, approvalID: String)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Initializer | `init(toolCallIDs:)` | `init(toolCallIDs: [String])` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(toolName:availableToolNames:)` | `init(toolName: String, availableToolNames: [String] = [])` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(toolName:toolCallID:input:message:validationError:)` | `init(toolName: String, toolCallID: String? = nil, input: JSONValue? = nil, message: String, validationError: AITypeValidationError? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(toolName:toolCallID:originalError:repairedInput:)` | `init(toolName: String, toolCallID: String? = nil, originalError: String, repairedInput: JSONValue? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(type:message:statusCode:generationID:modelID:response:headers:isRetryable:)` | `init(type: GatewayErrorType, message: String, statusCode: Int = 500, generationID: String? = nil, modelID: String? = nil, response: JSONValue? = nil, headers: [String : String] = [:], isRetryable: Bool? = nil)` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
-| Initializer | `init(value:schema:path:message:)` | `init(value: JSONValue? = nil, schema: JSONValue? = nil, path: String, message: String)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Initializer | `init(value:schema:path:message:context:)` | `init(value: JSONValue? = nil, schema: JSONValue? = nil, path: String, message: String, context: AITypeValidationContext? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `apiCallError` | `var apiCallError: AIAPICallError? { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `approvalID` | `var approvalID: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `approvalID` | `var approvalID: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `approvalID` | `var approvalID: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `availableToolNames` | `var availableToolNames: [String]` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `chunkID` | `var chunkID: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `chunkType` | `var chunkType: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `context` | `var context: AITypeValidationContext?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
@@ -62,6 +73,8 @@ description: Public SwiftAISDK APIs for errors.
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
+| Instance Property | `entityName` | `var entityName: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `field` | `var field: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `generationID` | `var generationID: String?` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Instance Property | `headers` | `var headers: [String : String]` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Instance Property | `input` | `var input: JSONValue?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
@@ -83,6 +96,7 @@ description: Public SwiftAISDK APIs for errors.
 | Instance Property | `provider` | `var provider: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `provider` | `var provider: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `rawValue` | `var rawValue: JSONValue?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `reason` | `var reason: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `repairedInput` | `var repairedInput: JSONValue?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `requestBody` | `var requestBody: JSONValue?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `response` | `var response: JSONValue?` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
@@ -94,8 +108,10 @@ description: Public SwiftAISDK APIs for errors.
 | Instance Property | `statusCode` | `var statusCode: Int` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Instance Property | `structuredOutputKind` | `var structuredOutputKind: AIOutputKind?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `toolCallID` | `var toolCallID: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `toolCallID` | `var toolCallID: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `toolCallID` | `var toolCallID: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `toolCallID` | `var toolCallID: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `toolCallIDs` | `var toolCallIDs: [String]` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `toolName` | `var toolName: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `toolName` | `var toolName: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `toolName` | `var toolName: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
@@ -107,12 +123,15 @@ description: Public SwiftAISDK APIs for errors.
 | Instance Property | `values` | `var values: [String]` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AIAPICallError` | `struct AIAPICallError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AIInvalidToolApprovalError` | `struct AIInvalidToolApprovalError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Structure | `AIInvalidToolApprovalSignatureError` | `struct AIInvalidToolApprovalSignatureError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AIInvalidToolInputError` | `struct AIInvalidToolInputError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Structure | `AIMissingToolResultsError` | `struct AIMissingToolResultsError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AINoOutputError` | `struct AINoOutputError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AINoSuchToolError` | `struct AINoSuchToolError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AIToolCallNotFoundForApprovalError` | `struct AIToolCallNotFoundForApprovalError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AIToolCallRepairError` | `struct AIToolCallRepairError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AITooManyEmbeddingValuesForCallError` | `struct AITooManyEmbeddingValuesForCallError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Structure | `AITypeValidationContext` | `struct AITypeValidationContext` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AITypeValidationError` | `struct AITypeValidationError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `AIUIMessageStreamError` | `struct AIUIMessageStreamError` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Structure | `GatewayError` | `struct GatewayError` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |

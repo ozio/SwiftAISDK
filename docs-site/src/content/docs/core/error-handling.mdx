@@ -29,7 +29,7 @@ Other public error types cover narrower workflows:
 - `AIRetryError` when retry orchestration fails or is cancelled.
 - `AINoOutputError` when a provider returns a valid response without usable output.
 - `AITypeValidationError` and `AIObjectGenerationError` for structured output parsing, schema validation, and decoding.
-- `AINoSuchToolError`, `AIInvalidToolInputError`, `AIToolCallRepairError`, `AIInvalidToolApprovalError`, and `AIToolCallNotFoundForApprovalError` for tool execution and approval flows.
+- `AINoSuchToolError`, `AIInvalidToolInputError`, `AIToolCallRepairError`, `AIInvalidToolApprovalError`, `AIInvalidToolApprovalSignatureError`, and `AIToolCallNotFoundForApprovalError` for tool execution and approval flows.
 - `MCPClientError` for MCP protocol, transport, and server errors.
 
 ## HTTP Failures

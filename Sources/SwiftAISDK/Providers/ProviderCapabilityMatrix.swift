@@ -36,11 +36,11 @@ public enum AIProviderCapabilities {
     public static let markdownSnapshotDate = "2026-06-23"
 
     public static let all: [AIProviderCapabilityRow] = [
-        providerRow("alibaba", "@ai-sdk/alibaba", ["AIProviders.alibaba"], [.language, .embedding, .video]),
+        providerRow("alibaba", "@ai-sdk/alibaba", ["AIProviders.alibaba"], [.language, .embedding, .video], notes: "Embeddings use the DashScope embedding endpoint with dense and sparse option mapping; video requests support first/last frame images and input references where the upstream API exposes them."),
         providerRow("amazon-bedrock", "@ai-sdk/amazon-bedrock", ["AIProviders.amazonBedrock"], [.language, .embedding, .image, .reranking]),
         providerRow("amazon-bedrock.anthropic", "@ai-sdk/amazon-bedrock", ["AIProviders.amazonBedrockAnthropic"], [.language]),
         providerRow("bedrock-mantle", "@ai-sdk/amazon-bedrock", ["AIProviders.bedrockMantle"], [.language]),
-        providerRow("anthropic", "@ai-sdk/anthropic", ["AIProviders.anthropic"], [.language], files: true, skills: true),
+        providerRow("anthropic", "@ai-sdk/anthropic", ["AIProviders.anthropic"], [.language], files: true, skills: true, notes: "Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. Files and skills clients add the required Anthropic beta headers."),
         providerRow("anthropic-aws", "@ai-sdk/anthropic-aws", ["AIProviders.anthropicAWS"], [.language], files: true, skills: true),
         providerRow("assemblyai", "@ai-sdk/assemblyai", ["AIProviders.assemblyAI"], [.transcription]),
         providerRow("azure", "@ai-sdk/azure", ["AIProviders.azure"], [.language, .completion, .embedding, .image, .transcription, .speech]),
@@ -58,7 +58,7 @@ public enum AIProviderCapabilities {
         providerRow("gateway", "@ai-sdk/gateway", ["AIProviders.gateway"], [.language, .embedding, .image, .transcription, .speech, .video, .reranking], notes: "Gateway also exposes model, credits, spend, and generation metadata management APIs."),
         providerRow("gladia", "@ai-sdk/gladia", ["AIProviders.gladia"], [.transcription]),
         providerRow("google.generative-ai", "@ai-sdk/google", ["AIProviders.google"], [.language, .embedding, .image, .video], files: true, notes: "Also exposes Gemini interactions models and agents."),
-        providerRow("google.vertex", "@ai-sdk/google-vertex", ["AIProviders.googleVertex"], [.language, .embedding, .image, .transcription, .video]),
+        providerRow("google.vertex", "@ai-sdk/google-vertex", ["AIProviders.googleVertex"], [.language, .embedding, .image, .transcription, .video], notes: "Vertex covers Gemini language, embeddings, Imagen image generation/editing, transcription, and Veo video. Video requests support first/last frame images and reference images through the shared video request shape."),
         providerRow("googleVertex.maas", "@ai-sdk/google-vertex", ["AIProviders.googleVertexMaaS"], [.language, .completion, .embedding, .image]),
         providerRow("googleVertex.xai", "@ai-sdk/google-vertex", ["AIProviders.googleVertexXAI"], [.language]),
         providerRow("googleVertex.anthropic", "@ai-sdk/google-vertex", ["AIProviders.googleVertexAnthropic"], [.language]),
@@ -70,8 +70,8 @@ public enum AIProviderCapabilities {
         providerRow("luma", "@ai-sdk/luma", ["AIProviders.luma"], [.image]),
         providerRow("mistral", "@ai-sdk/mistral", ["AIProviders.mistral"], [.language, .embedding]),
         providerRow("moonshotai", "@ai-sdk/moonshotai", ["AIProviders.moonshotAI"], [.language], notes: "Chat requests stream usage by default, maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema, and enables structured outputs for upstream `kimi-k*` models while stripping top-level `$schema`."),
-        providerRow("open-responses.responses", "@ai-sdk/open-responses", ["AIProviders.openResponses"], [.language], notes: "Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, and the caller supplied providerOptions namespace."),
-        providerRow("openai", "@ai-sdk/openai", ["AIProviders.openAI"], [.language, .completion, .embedding, .image, .transcription, .speech], files: true, skills: true),
+        providerRow("open-responses.responses", "@ai-sdk/open-responses", ["AIProviders.openResponses"], [.language], notes: "Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, caller supplied providerOptions namespace, function tools, tool choice, structured text formats, and Responses streaming lifecycle parsing."),
+        providerRow("openai", "@ai-sdk/openai", ["AIProviders.openAI"], [.language, .completion, .embedding, .image, .transcription, .speech], files: true, skills: true, notes: "Supports Chat Completions and Responses-style language models, completions, embeddings, images, speech, transcription, files, skills, hosted Responses tools, provider tool helpers, organization/project headers, structured output, usage, metadata, warnings, and raw stream chunks."),
         providerRow("openai-compatible", "@ai-sdk/openai-compatible", ["AIProviders.openAICompatible"], [.language, .completion, .embedding, .image], notes: "Generic OpenAI-compatible factory; caller supplies provider ID and base URL."),
         providerRow("perplexity", "@ai-sdk/perplexity", ["AIProviders.perplexity"], [.language]),
         providerRow("prodia", "@ai-sdk/prodia", ["AIProviders.prodia"], [.language, .image, .video]),

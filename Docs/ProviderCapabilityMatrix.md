@@ -76,11 +76,15 @@ Legend:
 
 | Provider ID | Note |
 | --- | --- |
+| `alibaba` | Embeddings use the DashScope embedding endpoint with dense and sparse option mapping; video requests support first/last frame images and input references where the upstream API exposes them. |
+| `anthropic` | Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. Files and skills clients add the required Anthropic beta headers. |
 | `baseten` | `ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1` and mirror the upstream performance-client body plus 128-input batching. |
 | `gateway` | Gateway also exposes model, credits, spend, and generation metadata management APIs. |
 | `google.generative-ai` | Also exposes Gemini interactions models and agents. |
+| `google.vertex` | Vertex covers Gemini language, embeddings, Imagen image generation/editing, transcription, and Veo video. Video requests support first/last frame images and reference images through the shared video request shape. |
 | `moonshotai` | Chat requests stream usage by default, maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema, and enables structured outputs for upstream `kimi-k*` models while stripping top-level `$schema`. |
-| `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, and the caller supplied providerOptions namespace. |
+| `open-responses.responses` | Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, caller supplied providerOptions namespace, function tools, tool choice, structured text formats, and Responses streaming lifecycle parsing. |
+| `openai` | Supports Chat Completions and Responses-style language models, completions, embeddings, images, speech, transcription, files, skills, hosted Responses tools, provider tool helpers, organization/project headers, structured output, usage, metadata, warnings, and raw stream chunks. |
 | `openai-compatible` | Generic OpenAI-compatible factory; caller supplies provider ID and base URL. |
 | `togetherai` | Image generation mirrors upstream `maxImagesPerCall = 1`; image and reranking responses are validated against the upstream-focused JSON shapes. |
 

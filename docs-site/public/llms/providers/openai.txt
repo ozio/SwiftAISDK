@@ -21,6 +21,10 @@ Source URL: /providers/openai/
 - Files
 - Skills
 
+## Notes
+
+Supports Chat Completions and Responses-style language models, completions, embeddings, images, speech, transcription, files, skills, hosted Responses tools, provider tool helpers, organization/project headers, structured output, usage, metadata, warnings, and raw stream chunks.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

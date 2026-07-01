@@ -11,7 +11,7 @@ Source URL: /components/providers/
 | Enumeration | 4 |
 | Function | 11 |
 | Initializer | 25 |
-| Instance Method | 159 |
+| Instance Method | 160 |
 | Instance Property | 128 |
 | Structure | 14 |
 | Type Alias | 2 |
@@ -96,6 +96,7 @@ Source URL: /components/providers/
 | Instance Method | `completionModel(_:)` | `func completionModel(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/AzureOpenAIProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AzureOpenAIProvider.swift) |
 | Instance Method | `completionModel(_:)` | `func completionModel(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `credits()` | `func credits() async throws -> GatewayCredits` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
+| Instance Method | `deepseek(_:)` | `func deepseek(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/AzureOpenAIProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AzureOpenAIProvider.swift) |
 | Instance Method | `dubbing()` | `func dubbing() throws -> ElevenLabsDubbingClient` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `embeddingModel(_:)` | `func embeddingModel(_ modelID: String) throws -> any EmbeddingModel` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Method | `embeddingModel(_:)` | `func embeddingModel(_ modelID: String) throws -> any EmbeddingModel` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |

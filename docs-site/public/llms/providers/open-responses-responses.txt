@@ -16,7 +16,7 @@ Source URL: /providers/open-responses-responses/
 
 ## Notes
 
-Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, and the caller supplied providerOptions namespace.
+Custom URL factory; provider ID is derived from the caller supplied name. Uses the upstream open-responses request builder, optional API key, versioned user-agent suffix, caller supplied providerOptions namespace, function tools, tool choice, structured text formats, and Responses streaming lifecycle parsing.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

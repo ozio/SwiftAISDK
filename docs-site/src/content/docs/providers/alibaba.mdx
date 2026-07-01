@@ -14,7 +14,12 @@ description: "alibaba provider capabilities and factories."
 ## Capabilities
 
 - Language
+- Embedding
 - Video
+
+## Notes
+
+Embeddings use the DashScope embedding endpoint with dense and sparse option mapping; video requests support first/last frame images and input references where the upstream API exposes them.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

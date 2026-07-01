@@ -3,8 +3,9 @@
 Snapshot date: 2026-06-23
 
 This document tracks SwiftAISDK against the current AI SDK v6 Core and Errors
-reference. It is intentionally high-level: provider package drift belongs in
-`ProviderVersionLedger.md` and provider behavior belongs in focused tests.
+reference. It is intentionally high-level: product status belongs in
+`PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
+and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
 snapshots, currently `ai@6.0.208`, `@ai-sdk/provider@3.0.10`,
 `@ai-sdk/provider-utils@4.0.30`, and `@ai-sdk/react@3.0.210`.
