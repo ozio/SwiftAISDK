@@ -17,6 +17,9 @@ in sync in the same change.
 - Commit and deploy/push directly from the current branch only when the user
   asks. If rollback is needed, prefer returning to an older commit over adding a
   branch workflow.
+- For release-style pushes, bump the release tag first: inspect the latest
+  semantic-version tag, create the next appropriate annotated tag on the commit
+  being released, then push the branch and tag together.
 
 ## Porting Requirements
 
@@ -49,4 +52,3 @@ Every porting pass must update:
   ```
 
 - Optional live checks stay behind `LIVE_AI_TESTS=1`.
-
