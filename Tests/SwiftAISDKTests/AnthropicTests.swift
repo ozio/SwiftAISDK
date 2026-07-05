@@ -17,7 +17,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.8")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"] == [["type": "text", "text": "French."]])
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
@@ -37,7 +37,24 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-api-key"] == "claude-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/4.0.1")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/4.0.8")
+}
+
+@Test func anthropicBareAPIBaseURLNormalizesToVersionedMessagesEndpoint() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        baseURL: "https://api.anthropic.com/",
+        transport: transport
+    ))
+    let model = try provider.languageModel("claude-3-5-haiku-latest")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
 }
 
 @Test func anthropicMovesAssistantToolUseBlocksToEnd() async throws {

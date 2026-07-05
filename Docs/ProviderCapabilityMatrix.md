@@ -77,7 +77,7 @@ Legend:
 | Provider ID | Note |
 | --- | --- |
 | `alibaba` | Embeddings use the DashScope embedding endpoint with dense and sparse option mapping; video requests support first/last frame images and input references where the upstream API exposes them. |
-| `anthropic` | Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. Files and skills clients add the required Anthropic beta headers. |
+| `anthropic` | Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. `thinking: disabled` is forwarded to the Messages API. Files and skills clients add the required Anthropic beta headers. |
 | `baseten` | `ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1` and mirror the upstream performance-client body plus 128-input batching. |
 | `gateway` | Gateway also exposes model, credits, spend, and generation metadata management APIs. |
 | `google.generative-ai` | Also exposes Gemini interactions models and agents. |

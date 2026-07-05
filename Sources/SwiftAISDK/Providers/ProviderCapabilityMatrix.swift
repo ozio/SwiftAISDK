@@ -40,7 +40,7 @@ public enum AIProviderCapabilities {
         providerRow("amazon-bedrock", "@ai-sdk/amazon-bedrock", ["AIProviders.amazonBedrock"], [.language, .embedding, .image, .reranking]),
         providerRow("amazon-bedrock.anthropic", "@ai-sdk/amazon-bedrock", ["AIProviders.amazonBedrockAnthropic"], [.language]),
         providerRow("bedrock-mantle", "@ai-sdk/amazon-bedrock", ["AIProviders.bedrockMantle"], [.language]),
-        providerRow("anthropic", "@ai-sdk/anthropic", ["AIProviders.anthropic"], [.language], files: true, skills: true, notes: "Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. Files and skills clients add the required Anthropic beta headers."),
+        providerRow("anthropic", "@ai-sdk/anthropic", ["AIProviders.anthropic"], [.language], files: true, skills: true, notes: "Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. `thinking: disabled` is forwarded to the Messages API. Files and skills clients add the required Anthropic beta headers."),
         providerRow("anthropic-aws", "@ai-sdk/anthropic-aws", ["AIProviders.anthropicAWS"], [.language], files: true, skills: true),
         providerRow("assemblyai", "@ai-sdk/assemblyai", ["AIProviders.assemblyAI"], [.transcription]),
         providerRow("azure", "@ai-sdk/azure", ["AIProviders.azure"], [.language, .completion, .embedding, .image, .transcription, .speech]),

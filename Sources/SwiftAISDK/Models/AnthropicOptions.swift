@@ -285,7 +285,8 @@ func anthropicStandardWarnings(for request: LanguageModelRequest) -> [AIWarning]
 func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities {
     if modelID.contains("claude-opus-4-8") ||
         modelID.contains("claude-opus-4-7") ||
-        modelID.contains("claude-fable-5") {
+        modelID.contains("claude-fable-5") ||
+        modelID.contains("claude-sonnet-5") {
         return AnthropicModelCapabilities(
             maxOutputTokens: 128_000,
             supportsStructuredOutput: true,
@@ -730,9 +731,6 @@ func applyAnthropicThinkingRules(
     guard var thinking = body["thinking"]?.objectValue,
           let type = thinking["type"]?.stringValue,
           type == "enabled" || type == "adaptive" else {
-        if body["thinking"]?["type"]?.stringValue == "disabled" {
-            body.removeValue(forKey: "thinking")
-        }
         if isAnthropicModel, requestTemperature != nil, requestTopP != nil {
             body["top_p"] = nil
             warnings.append(AIWarning(

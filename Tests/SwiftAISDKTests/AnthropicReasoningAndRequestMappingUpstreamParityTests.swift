@@ -9,7 +9,7 @@ import Testing
     #expect(providerDefault.warnings.isEmpty)
 
     let none = try await anthropicGeneratedBody(modelID: "claude-sonnet-4-6", reasoning: "none")
-    #expect(none.body["thinking"] == nil)
+    #expect(none.body["thinking"] == ["type": "disabled"])
     #expect(none.body["output_config"] == nil)
     #expect(none.warnings.isEmpty)
 
@@ -45,7 +45,7 @@ import Testing
     #expect(providerDefault.warnings.isEmpty)
 
     let none = try await anthropicGeneratedBody(modelID: "claude-sonnet-4-5", reasoning: "none")
-    #expect(none.body["thinking"] == nil)
+    #expect(none.body["thinking"] == ["type": "disabled"])
     #expect(none.warnings.isEmpty)
 
     for (reasoning, budget) in [
@@ -103,7 +103,7 @@ import Testing
         reasoning: "high",
         providerOptions: ["anthropic": ["thinking": ["type": "disabled"]]]
     )
-    #expect(disabled.body["thinking"] == nil)
+    #expect(disabled.body["thinking"] == ["type": "disabled"])
     #expect(disabled.body["output_config"] == nil)
 
     let effort = try await anthropicGeneratedBody(
@@ -556,4 +556,3 @@ import Testing
     #expect(otherTool.body["tools"]?[1]?["name"]?.stringValue == "json")
     #expect(otherTool.body["tool_choice"]?["type"]?.stringValue == "any")
 }
-

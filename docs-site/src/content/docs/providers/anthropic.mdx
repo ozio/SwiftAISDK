@@ -19,7 +19,7 @@ description: "anthropic provider capabilities and factories."
 
 ## Notes
 
-Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. Files and skills clients add the required Anthropic beta headers.
+Messages support thinking, citations, cache control, hosted/provider-defined tools, streamed code-execution input subtypes, files, skills, and provider metadata. `thinking: disabled` is forwarded to the Messages API. Files and skills clients add the required Anthropic beta headers.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

@@ -39,7 +39,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/files")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.8")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"file\"; filename=\"data.pdf\""))
     #expect(bodyText.contains("Content-Type: application/pdf"))
@@ -115,7 +115,7 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://api.anthropic.com/v1/skills")
     #expect(requests[0].headers["x-api-key"] == "claude-key")
     #expect(requests[0].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/4.0.8")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"display_title\""))
@@ -125,7 +125,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.anthropic.com/v1/skills/skill_01/versions/1772078378207930")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/4.0.1")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/4.0.8")
 }
 
 @Test func anthropicSkillsOmitDisplayTitleWhenNotProvidedLikeUpstream() async throws {

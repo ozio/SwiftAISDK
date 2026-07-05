@@ -21,13 +21,13 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
             }
             headers["x-api-key"] = headers["x-api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.1")
+        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.8")
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
         languageProviderID = settings.name ?? "anthropic.messages"
         skillsProviderID = anthropicSkillsProviderID(from: languageProviderID)
         config = ModelHTTPConfig(
             providerID: providerID,
-            baseURL: settings.baseURL ?? settings.environmentValue(["ANTHROPIC_BASE_URL"]) ?? "https://api.anthropic.com/v1",
+            baseURL: anthropicNormalizedBaseURL(settings.baseURL ?? settings.environmentValue(["ANTHROPIC_BASE_URL"])),
             headers: headers,
             transport: settings.transport,
             includeUsage: settings.includeUsage,
@@ -89,4 +89,12 @@ private func anthropicSkillsProviderID(from languageProviderID: String) -> Strin
         return String(languageProviderID.dropLast(".messages".count)) + ".skills"
     }
     return languageProviderID + ".skills"
+}
+
+private func anthropicNormalizedBaseURL(_ baseURL: String?) -> String {
+    let apiURL = "https://api.anthropic.com"
+    let versionedAPIURL = "\(apiURL)/v1"
+    guard let baseURL else { return versionedAPIURL }
+    let normalized = withoutTrailingSlash(baseURL)
+    return normalized == apiURL ? versionedAPIURL : normalized
 }

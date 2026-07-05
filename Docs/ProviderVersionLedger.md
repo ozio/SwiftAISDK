@@ -9,12 +9,13 @@ Provider/product status is tracked separately in `Docs/PortingStatus.md`. This
 table is an inventory and version ledger, not the remaining work list.
 
 Versions below were checked with `npm view <package> version` on 2026-06-29.
+Rows updated after that date reflect the later package-specific porting pass.
 
 | Package | Version baseline | Main Swift evidence |
 | --- | --- | --- |
 | `@ai-sdk/alibaba` | `1.0.29` | `AIProviders.alibaba`, `AlibabaLanguageModel`, `AlibabaEmbeddingModel`, `AlibabaProviderTests.swift` |
 | `@ai-sdk/amazon-bedrock` | `4.0.120` | `AIProviders.amazonBedrock`, `AIProviders.amazonBedrockAnthropic`, `AIProviders.bedrockMantle`, `AmazonBedrockModels.swift`, `AmazonBedrockTests.swift` |
-| `@ai-sdk/anthropic` | `4.0.2` | `AIProviders.anthropic`, `AnthropicLanguageModel`, `AnthropicTools`, `AnthropicTests.swift`, `AnthropicStreamingAndClientsTests.swift` |
+| `@ai-sdk/anthropic` | `4.0.8` | `AIProviders.anthropic`, `AnthropicLanguageModel`, `AnthropicTools`, `AnthropicTests.swift`, `AnthropicStreamingAndClientsTests.swift` |
 | `@ai-sdk/anthropic-aws` | `1.0.8` | `AIProviders.anthropicAWS`, `AnthropicAWSProvider`, `AnthropicTests.swift` |
 | `@ai-sdk/assemblyai` | `2.0.36` | `AIProviders.assemblyAI`, `AssemblyAITranscriptionModel`, `AssemblyAIProviderTests.swift` |
 | `@ai-sdk/azure` | `3.0.77` | `AIProviders.azure`, `AzureOpenAIProvider`, `AzureOpenAITools`, `AlibabaProdiaAzureQuiverTests.swift` |

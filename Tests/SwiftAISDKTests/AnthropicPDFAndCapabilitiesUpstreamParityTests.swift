@@ -163,6 +163,13 @@ import Testing
     #expect(fable.rejectsSamplingParameters == true)
     #expect(fable.supportsXhighEffort == true)
 
+    let sonnet5 = anthropicModelCapabilities("claude-sonnet-5")
+    #expect(sonnet5.maxOutputTokens == 128_000)
+    #expect(sonnet5.supportsStructuredOutput == true)
+    #expect(sonnet5.supportsAdaptiveThinking == true)
+    #expect(sonnet5.rejectsSamplingParameters == true)
+    #expect(sonnet5.supportsXhighEffort == true)
+
     let opus47 = anthropicModelCapabilities("claude-opus-4-7")
     #expect(opus47.maxOutputTokens == 128_000)
     #expect(opus47.rejectsSamplingParameters == true)
@@ -178,4 +185,3 @@ import Testing
     #expect(sonnet46.supportsXhighEffort == false)
     #expect(sonnet46.supportsAdaptiveThinking == true)
 }
-
