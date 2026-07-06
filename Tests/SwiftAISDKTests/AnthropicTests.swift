@@ -254,7 +254,7 @@ import Testing
     #expect(request.headers["x-api-key"] == "aws-api-key")
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.0")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "claude-sonnet-4-6")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hello")
@@ -276,7 +276,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-api-key"] == "aws-api-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic-aws/1.0.8")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic-aws/2.0.0")
 }
 @Test func anthropicAWSAPIKeyOverridesCustomXAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -329,7 +329,7 @@ import Testing
     #expect(request.headers["x-amz-content-sha256"] != nil)
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-west-2/aws-external-anthropic/aws4_request") == true)
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.0")
 }
 @Test func anthropicAWSSupportsDynamicCredentialProviderLikeUpstream() async throws {
     let fixedDate = DateComponents(

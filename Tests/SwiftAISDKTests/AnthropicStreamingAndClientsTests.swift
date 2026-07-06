@@ -192,12 +192,12 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/files")
     #expect(requests[0].headers["x-api-key"] == "aws-api-key")
     #expect(requests[0].headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.0")
     #expect(requests[1].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.0")
     #expect(requests[2].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills/skill_aws/versions/v1")
-    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/1.0.8")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.0")
 }
 
 @Test func anthropicLanguageStreamsMessagesEvents() async throws {

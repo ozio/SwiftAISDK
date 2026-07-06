@@ -30,7 +30,7 @@ Use it as a review checklist before porting behavior into SwiftAISDK; do not cop
 | `alibaba` | `@ai-sdk/alibaba` | `1.0.29` | provider | 7 | AIProviders.alibaba, AlibabaLanguageModel, AlibabaEmbeddingModel, AlibabaProviderTests.swift |
 | `amazon-bedrock` | `@ai-sdk/amazon-bedrock` | `4.0.120` | provider | 17 | AIProviders.amazonBedrock, AIProviders.amazonBedrockAnthropic, AIProviders.bedrockMantle, AmazonBedrockModels.swift, AmazonBedrockTests.swift |
 | `anthropic` | `@ai-sdk/anthropic` | `4.0.1` | provider | 11 | AIProviders.anthropic, AnthropicLanguageModel, AnthropicTools, AnthropicTests.swift |
-| `anthropic-aws` | `@ai-sdk/anthropic-aws` | `1.0.8` | provider | 2 | AIProviders.anthropicAWS, AnthropicAWSProvider, AnthropicTests.swift |
+| `anthropic-aws` | `@ai-sdk/anthropic-aws` | `2.0.0` | provider | 2 | AIProviders.anthropicAWS, AnthropicAWSProvider, AnthropicTests.swift |
 | `assemblyai` | `@ai-sdk/assemblyai` | `2.0.36` | provider | 2 | AIProviders.assemblyAI, AssemblyAITranscriptionModel, AssemblyAIProviderTests.swift |
 | `azure` | `@ai-sdk/azure` | `3.0.77` | provider | 1 | AIProviders.azure, AzureOpenAIProvider, AzureOpenAITools, AlibabaProdiaAzureQuiverTests.swift |
 | `baseten` | `@ai-sdk/baseten` | `1.0.54` | provider | 1 | AIProviders.baseten, OpenAICompatibleProvider, BasetenProviderTests.swift |
@@ -281,7 +281,7 @@ These are visible in the upstream monorepo but are not currently tracked in the 
 - [`packages/anthropic/src/tool/bash_20241022.test.ts`](https://github.com/vercel/ai/blob/a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95/packages/anthropic/src/tool/bash_20241022.test.ts)
 - [`packages/anthropic/src/tool/bash_20250124.test.ts`](https://github.com/vercel/ai/blob/a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95/packages/anthropic/src/tool/bash_20250124.test.ts)
 
-### `anthropic-aws (@ai-sdk/anthropic-aws@1.0.8)`
+### `anthropic-aws (@ai-sdk/anthropic-aws@2.0.0)`
 
 - [`packages/anthropic-aws/src/anthropic-aws-fetch.test.ts`](https://github.com/vercel/ai/blob/a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95/packages/anthropic-aws/src/anthropic-aws-fetch.test.ts)
 - [`packages/anthropic-aws/src/anthropic-aws-provider.test.ts`](https://github.com/vercel/ai/blob/a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95/packages/anthropic-aws/src/anthropic-aws-provider.test.ts)
@@ -969,4 +969,3 @@ These are visible in the upstream monorepo but are not currently tracked in the 
 - [`packages/xai/src/xai-speech-model.test.ts`](https://github.com/vercel/ai/blob/a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95/packages/xai/src/xai-speech-model.test.ts)
 - [`packages/xai/src/xai-transcription-model.test.ts`](https://github.com/vercel/ai/blob/a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95/packages/xai/src/xai-transcription-model.test.ts)
 - [`packages/xai/src/xai-video-model.test.ts`](https://github.com/vercel/ai/blob/a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95/packages/xai/src/xai-video-model.test.ts)
-
