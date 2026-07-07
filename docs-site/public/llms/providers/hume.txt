@@ -14,6 +14,10 @@ Source URL: /providers/hume/
 
 - Speech
 
+## Notes
+
+Hume speech mirrors upstream 3.0.5: `HUME_API_KEY`, `X-Hume-Api-Key` auth, custom headers, versioned user-agent suffix, no-argument `speech`/`speechModel` aliases, default voice ID, `/v0/tts/file`, binary audio responses, mp3/pcm/wav output formats, language warnings, `providerOptions.hume.context` schema mapping, response metadata, and unsupported language/embedding/image families.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

@@ -223,10 +223,6 @@ public enum AzureOpenAITools {
         OpenAITools.codeInterpreter(container: container)
     }
 
-    public static func computerUse(displayWidth: Int? = nil, displayHeight: Int? = nil, environment: String? = nil, extraArgs: [String: JSONValue] = [:]) -> JSONValue {
-        OpenAITools.computerUse(displayWidth: displayWidth, displayHeight: displayHeight, environment: environment, extraArgs: extraArgs)
-    }
-
     public static func fileSearch(vectorStoreIDs: [String], maxNumResults: Int? = nil, ranking: JSONValue? = nil, filters: JSONValue? = nil) -> JSONValue {
         OpenAITools.fileSearch(vectorStoreIDs: vectorStoreIDs, maxNumResults: maxNumResults, ranking: ranking, filters: filters)
     }

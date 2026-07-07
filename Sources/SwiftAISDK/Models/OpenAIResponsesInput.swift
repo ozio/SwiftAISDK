@@ -116,7 +116,7 @@ func openResponsesToolResultOutput(_ result: AIToolResult, providerID: String, w
     if let object = (result.modelOutput ?? result.result).objectValue,
        let type = object["type"]?.stringValue {
         if type == "execution-denied" {
-            return .string(object["reason"]?.stringValue ?? "Tool execution denied.")
+            return .string(object["reason"]?.stringValue ?? "Tool call execution denied.")
         }
         if type == "content" {
             let content = object["value"]?.arrayValue ?? []

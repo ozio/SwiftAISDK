@@ -17,6 +17,10 @@ Source URL: /providers/amazon-bedrock/
 - Image
 - Reranking
 
+## Notes
+
+Amazon Bedrock Converse, embeddings, images, and reranking mirror upstream 5.0.12: SigV4 and bearer auth, versioned user-agent suffix, Converse request/stream parsing, provider options under `amazonBedrock`/`bedrock`, service tiers, guardrails, top-level reasoning mapping, reasoning replay metadata, cache points, document citations, rich tool-result content, JSON response tool fallback, Cohere batch embeddings up to 96 inputs, Nova/Titan/Cohere embedding response shapes, and the current `bedrockRerankingConfiguration` rerank request key. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

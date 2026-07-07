@@ -18,7 +18,7 @@ description: "baseten provider capabilities and factories."
 
 ## Notes
 
-`ProviderSettings.modelURL` selects dedicated Baseten endpoints: chat uses `/sync/v1`, rejects `/predict`, and falls back to the Model API for plain `/sync`, while embeddings require `/sync` or `/sync/v1` and mirror the upstream performance-client body plus 128-input batching.
+Chat and embedding endpoints mirror upstream Baseten 2.0.5: `BASETEN_API_KEY`, versioned user-agent suffix, custom Model API base URL, `/sync/v1` chat model URLs, `/sync` or `/sync/v1` embedding model URLs, upstream performance-client body plus 128-input batching, unsupported image models, and string `error` envelope parsing.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

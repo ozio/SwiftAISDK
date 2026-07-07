@@ -15,6 +15,10 @@ Source URL: /providers/groq/
 - Language
 - Transcription
 
+## Notes
+
+Groq mirrors upstream 4.0.5: `GROQ_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language aliases, transcription aliases, chat `/openai/v1/chat/completions`, transcription `/openai/v1/audio/transcriptions`, OpenAI-compatible prompt conversion, Qwen/gpt-oss reasoning content, top-level reasoning to reasoning_effort mapping with providerOptions precedence and compatibility warnings, Groq provider options, browser_search provider tool gating, service tiers, structured outputs, stream usage/metadata, tool-call streaming validation, transcription multipart options/validation, response metadata, Groq error schema, and unsupported embedding/image families. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export renames, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

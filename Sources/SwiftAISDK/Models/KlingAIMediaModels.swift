@@ -58,6 +58,7 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(
             urls: urls,
             operationID: taskID,
+            mediaType: "video/mp4",
             rawValue: raw,
             warnings: warnings,
             providerMetadata: [
@@ -175,6 +176,9 @@ private func klingAIOptions(from options: KlingAIResolvedOptions, mode: String, 
             output["image"] = image
         }
         klingAIMoveSharedOptions(known, to: &output)
+        if let generateAudio = request.generateAudio {
+            output["sound"] = .string(generateAudio ? "on" : "off")
+        }
         if mode == "i2v" {
             if let imageTail = try klingAIImageTailInput(from: request, options: known) { output["image_tail"] = imageTail }
             if let staticMask = known["staticMask"] { output["static_mask"] = staticMask }

@@ -28,7 +28,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.lmnt.com/v1/ai/speech/bytes")
     #expect(request.headers["x-api-key"] == "lmnt-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/lmnt/2.0.36")
+    #expect(request.headers["user-agent"] == "ai-sdk/lmnt/3.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "aurora")
     #expect(body["text"]?.stringValue == "Hi")
@@ -57,7 +57,29 @@ import Testing
     _ = try await model.speak(SpeechRequest(text: "Hi"))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/lmnt/2.0.36")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/lmnt/3.0.5")
+}
+
+@Test func lmntProviderExposesSpeechAliasesAndUnsupportedFamiliesLikeUpstreamV4() async throws {
+    let provider = try AIProviders.lmnt(settings: ProviderSettings(apiKey: "lmnt-key"))
+
+    let speechModel = try provider.speechModel("aurora")
+    #expect(speechModel.providerID == "lmnt.speech")
+    #expect(speechModel.modelID == "aurora")
+
+    let speechAlias = try provider.speech("blizzard")
+    #expect(speechAlias.providerID == "lmnt.speech")
+    #expect(speechAlias.modelID == "blizzard")
+
+    #expect(throws: AIError.unsupportedModel(provider: "lmnt", capability: .language, modelID: "chat")) {
+        _ = try provider.languageModel("chat")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "lmnt", capability: .embedding, modelID: "embed")) {
+        _ = try provider.embeddingModel("embed")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "lmnt", capability: .image, modelID: "image")) {
+        _ = try provider.imageModel("image")
+    }
 }
 
 @Test func lmntSpeechUsesUpstreamHTTPErrorMessageSchema() async throws {

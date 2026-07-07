@@ -18,6 +18,10 @@ description: "deepinfra provider capabilities and factories."
 - Embedding
 - Image
 
+## Notes
+
+DeepInfra mirrors upstream 3.0.5: `DEEPINFRA_API_KEY`, bearer auth, custom base URL and headers, versioned user-agent suffix, callable/chat/language aliases, completion/embedding/textEmbedding aliases, image/imageModel aliases, `deepinfra.chat`/`.completion`/`.embedding`/`.image` provider IDs, `/openai/*` language/embedding routes, `/inference/{model}` image generation, OpenAI-compatible multipart image edits, Gemma/Gemini reasoning usage correction, `providerOptions.deepinfra` passthrough, max-one generated image per call, and response metadata.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

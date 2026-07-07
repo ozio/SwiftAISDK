@@ -146,7 +146,7 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     let messages = try #require(body["messages"]?.arrayValue)
-    #expect(messages[0]["content"]?.stringValue == "Tool execution denied.")
+    #expect(messages[0]["content"]?.stringValue == "Tool call execution denied.")
     #expect(messages[1]["content"]?.stringValue == #"{"ok":true}"#)
     let contentValue = try decodeJSONBody(Data(try #require(messages[2]["content"]?.stringValue).utf8))
     #expect(contentValue[0]?["type"]?.stringValue == "text")
@@ -166,7 +166,21 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepseek-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/2.0.39")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.5")
+}
+
+@Test func deepSeekLanguageGeneratesMissingToolCallIDLikeUpstreamV4() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"ds-generate","model":"deepseek-chat","choices":[{"message":{"content":"","tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{\"location\":\"Tokyo\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-chat")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Weather?")]))
+
+    let call = try #require(result.toolCalls.first)
+    #expect(call.id.count == 16)
+    #expect(call.id != "tool-call-0")
+    #expect(call.name == "weather")
+    #expect(try decodeJSONBody(Data(call.arguments.utf8))["location"]?.stringValue == "Tokyo")
 }
 
 @Test func deepSeekLanguageStreamsErrorChunksAndParseErrorsAsErrorPartsLikeUpstream() async throws {

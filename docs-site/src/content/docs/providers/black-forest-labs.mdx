@@ -15,6 +15,10 @@ description: "black-forest-labs provider capabilities and factories."
 
 - Image
 
+## Notes
+
+Black Forest Labs images mirror upstream 2.0.5: `BFL_API_KEY`, `x-key` auth, custom base URL and headers, versioned user-agent suffix, `image`/`imageModel` aliases, `black-forest-labs.image` provider IDs, current FLUX model IDs, `/v1/{model}` submit URLs, response-supplied polling with trusted `bfl.ai` sibling-host credential forwarding, unauthenticated foreign image download, `providerOptions.blackForestLabs` schema mapping, fill-model `image` input field, warnings for size/aspect-ratio handling, response/provider metadata, and unsupported language/embedding families.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

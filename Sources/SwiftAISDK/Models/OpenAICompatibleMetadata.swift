@@ -26,13 +26,21 @@ func openAIResponsesStreamResponseMetadata(from raw: JSONValue, response: AIHTTP
     )
 }
 
-func openAICompatibleProviderMetadataNamespace(_ providerID: String) -> String {
-    openAIBackedProviderRoot(providerID) ?? openAICompatibleProviderRoot(providerID)
+func openAICompatibleProviderMetadataNamespace(_ providerID: String, providerOptions: [String: JSONValue]? = nil) -> String {
+    if let providerOptions,
+       openAIBackedProviderRoot(providerID) == nil {
+        let raw = openAICompatibleProviderRoot(providerID)
+        let camel = openAICompatibleCamelCase(raw)
+        if camel != raw, providerOptions[camel] != nil {
+            return camel
+        }
+    }
+    return openAIBackedProviderRoot(providerID) ?? openAICompatibleProviderRoot(providerID)
 }
 
-func openAICompatibleNamespacedProviderMetadata(_ metadata: [String: JSONValue], providerID: String) -> [String: JSONValue] {
+func openAICompatibleNamespacedProviderMetadata(_ metadata: [String: JSONValue], providerID: String, namespace: String? = nil) -> [String: JSONValue] {
     guard !metadata.isEmpty else { return [:] }
-    return [openAICompatibleProviderMetadataNamespace(providerID): .object(metadata)]
+    return [namespace ?? openAICompatibleProviderMetadataNamespace(providerID): .object(metadata)]
 }
 
 func openAICompatibleMergeProviderMetadata(_ source: [String: JSONValue], into target: inout [String: JSONValue]) {
@@ -46,7 +54,7 @@ func openAICompatibleMergeProviderMetadata(_ source: [String: JSONValue], into t
     }
 }
 
-func openAICompatibleChatProviderMetadata(from raw: JSONValue, choice: JSONValue?, providerID: String) -> [String: JSONValue] {
+func openAICompatibleChatProviderMetadata(from raw: JSONValue, choice: JSONValue?, providerID: String, namespace: String? = nil) -> [String: JSONValue] {
     var metadata: [String: JSONValue] = [:]
     if let accepted = raw["usage"]?["completion_tokens_details"]?["accepted_prediction_tokens"] {
         metadata["acceptedPredictionTokens"] = accepted
@@ -57,15 +65,15 @@ func openAICompatibleChatProviderMetadata(from raw: JSONValue, choice: JSONValue
     if let logprobs = choice?["logprobs"]?["content"] {
         metadata["logprobs"] = logprobs
     }
-    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID, namespace: namespace)
 }
 
-func openAICompatibleCompletionProviderMetadata(from choice: JSONValue?, providerID: String) -> [String: JSONValue] {
+func openAICompatibleCompletionProviderMetadata(from choice: JSONValue?, providerID: String, namespace: String? = nil) -> [String: JSONValue] {
     var metadata: [String: JSONValue] = [:]
     if let logprobs = choice?["logprobs"] {
         metadata["logprobs"] = logprobs
     }
-    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID)
+    return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID, namespace: namespace)
 }
 
 func openAIResponsesProviderMetadata(from raw: JSONValue, providerID: String) -> [String: JSONValue] {

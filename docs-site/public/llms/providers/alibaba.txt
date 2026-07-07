@@ -18,7 +18,7 @@ Source URL: /providers/alibaba/
 
 ## Notes
 
-Embeddings use the DashScope embedding endpoint with dense and sparse option mapping; video requests support first/last frame images and input references where the upstream API exposes them.
+Alibaba mirrors upstream 2.0.7: `ALIBABA_API_KEY`, versioned user-agent suffix, chat/language callable aliases, DashScope chat completions with thinking/reasoning mapping, generated fallback IDs for missing tool-call IDs, cache-aware usage, DashScope embedding endpoint with dense and sparse option mapping, video submit/poll flow, wan2.6 legacy video protocol, wan2.7 media/ratio video protocol, provider option validation, warnings, provider metadata, and unsupported image families. ProviderV4 type names, ESM-only packaging, Node 22 engines, and workflow serialization helpers are JS-only upstream concerns.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

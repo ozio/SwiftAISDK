@@ -9,7 +9,8 @@ public final class HuggingFaceProvider: AIProvider, @unchecked Sendable {
         let headers = try OpenAICompatibleProvider.buildHeaders(
             providerID: providerID,
             authorization: .bearer(environmentVariables: ["HUGGINGFACE_API_KEY"]),
-            settings: settings
+            settings: settings,
+            userAgentSuffix: "ai-sdk/huggingface/2.0.5"
         )
         config = ModelHTTPConfig(
             providerID: "huggingface.responses",

@@ -19,6 +19,10 @@ Source URL: /providers/azure/
 - Transcription
 - Speech
 
+## Notes
+
+Azure OpenAI mirrors upstream 4.0.8: `AZURE_API_KEY` or per-request Microsoft Entra token provider auth, `AZURE_RESOURCE_NAME`, versioned user-agent suffix, Responses as default callable/language surface, chat/deepseek/completion/embedding/textEmbedding/image/transcription/speech aliases, Azure provider metadata namespace, deployment-based transcription URLs, Azure OpenAI base URLs with `/v1` and `api-version`, custom non-Azure gateway base URLs used as-is, DeepSeek reasoning mapping without thinking support, OpenAI option namespace mapping, and Azure-specific hosted tool helpers.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

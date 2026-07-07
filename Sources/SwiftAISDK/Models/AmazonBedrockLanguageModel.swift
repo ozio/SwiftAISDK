@@ -62,9 +62,16 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
 
     private func converseBody(for request: LanguageModelRequest) throws -> BedrockPreparedConverseCall {
         var providerOptions = try bedrockRequestProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody)
+        var warnings: [AIWarning] = []
+        bedrockApplyTopLevelReasoning(
+            request.reasoning,
+            modelID: modelID,
+            maxOutputTokens: request.maxOutputTokens,
+            providerOptions: &providerOptions,
+            warnings: &warnings
+        )
         let enableDocumentCitations = bedrockDocumentCitationsEnabled(providerOptions)
         var documentCounter = 0
-        var warnings: [AIWarning] = []
         if request.frequencyPenalty != nil {
             warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
         }
@@ -103,29 +110,48 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
 
         let system = request.messages
             .filter { $0.role == .system }
-            .flatMap { message in message.content.compactMap(\.text).map { JSONValue.object(["text": .string($0)]) } }
+            .flatMap { message -> [JSONValue] in
+                var blocks = message.content.compactMap(\.text).map { JSONValue.object(["text": .string($0)]) }
+                if let cachePoint = bedrockCachePoint(from: message.providerMetadata) {
+                    blocks.append(cachePoint)
+                }
+                return blocks
+            }
 
         let messages = try request.messages
             .filter { $0.role != .system }
             .map { message -> JSONValue in
-                let content = try message.content.map { part -> JSONValue in
+                var content: [JSONValue] = []
+                for part in message.content {
                     switch part {
-                    case let .text(text, _):
-                        return .object(["text": .string(text)])
-                    case let .reasoning(text, _):
-                        return .object(["text": .string(text)])
+                    case let .text(text, providerMetadata):
+                        content.append(.object(["text": .string(text)]))
+                        if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                            content.append(cachePoint)
+                        }
+                    case let .reasoning(text, providerMetadata):
+                        if let reasoning = bedrockReasoningContentBlock(text: text, providerMetadata: providerMetadata) {
+                            content.append(reasoning)
+                        }
+                        if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                            content.append(cachePoint)
+                        }
                     case .reasoningFile, .custom:
-                        return .object(["text": .string("")])
+                        content.append(.object(["text": .string("")]))
                     case let .imageURL(url, _):
-                        return .object(["image": .object(["source": .object(["s3Location": .object(["uri": .string(url)])])])])
-                    case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
+                        content.append(.object(["image": .object(["source": .object(["s3Location": .object(["uri": .string(url)])])])]))
+                    case let .data(mimeType, data, providerMetadata):
                         if let imageFormat = bedrockImageFormat(for: mimeType) {
-                            return .object([
+                            content.append(.object([
                                 "image": .object([
                                     "format": .string(imageFormat),
                                     "source": .object(["bytes": .string(data.base64EncodedString())])
                                 ])
-                            ])
+                            ]))
+                            if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                                content.append(cachePoint)
+                            }
+                            continue
                         }
 
                         guard let documentFormat = bedrockDocumentFormat(for: mimeType) else {
@@ -141,10 +167,47 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             "name": .string("document-\(documentCounter)"),
                             "source": .object(["bytes": .string(data.base64EncodedString())])
                         ]
-                        if enableDocumentCitations {
+                        if enableDocumentCitations || bedrockDocumentCitationsEnabled(providerMetadata) {
                             document["citations"] = .object(["enabled": .bool(true)])
                         }
-                        return .object(["document": .object(document)])
+                        content.append(.object(["document": .object(document)]))
+                        if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                            content.append(cachePoint)
+                        }
+                    case let .file(mimeType, data, filename, providerMetadata):
+                        if let imageFormat = bedrockImageFormat(for: mimeType) {
+                            content.append(.object([
+                                "image": .object([
+                                    "format": .string(imageFormat),
+                                    "source": .object(["bytes": .string(data.base64EncodedString())])
+                                ])
+                            ]))
+                            if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                                content.append(cachePoint)
+                            }
+                            continue
+                        }
+
+                        guard let documentFormat = bedrockDocumentFormat(for: mimeType) else {
+                            throw AIError.invalidArgument(
+                                argument: "messages.content.file.mimeType",
+                                message: "Amazon Bedrock Converse supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")) or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mimeType)."
+                            )
+                        }
+
+                        documentCounter += 1
+                        var document: [String: JSONValue] = [
+                            "format": .string(documentFormat),
+                            "name": .string(filename.map(stripFileExtension) ?? "document-\(documentCounter)"),
+                            "source": .object(["bytes": .string(data.base64EncodedString())])
+                        ]
+                        if enableDocumentCitations || bedrockDocumentCitationsEnabled(providerMetadata) {
+                            document["citations"] = .object(["enabled": .bool(true)])
+                        }
+                        content.append(.object(["document": .object(document)]))
+                        if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                            content.append(cachePoint)
+                        }
                     case let .toolCall(call):
                         if preparedTools.toolConfig == nil {
                             warnings.append(AIWarning(
@@ -152,15 +215,16 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                                 feature: "toolContent",
                                 message: "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools."
                             ))
-                            return .object(["text": .string("")])
+                            content.append(.object(["text": .string("")]))
+                            continue
                         }
-                        return .object([
+                        content.append(.object([
                             "toolUse": .object([
                                 "toolUseId": .string(call.id),
                                 "name": .string(call.name),
                                 "input": bedrockToolArguments(call.arguments)
                             ])
-                        ])
+                        ]))
                     case let .toolResult(result):
                         if preparedTools.toolConfig == nil {
                             warnings.append(AIWarning(
@@ -168,18 +232,25 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                                 feature: "toolContent",
                                 message: "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools."
                             ))
-                            return .object(["text": .string("")])
+                            content.append(.object(["text": .string("")]))
+                            continue
                         }
-                        return .object([
+                        content.append(.object([
                             "toolResult": .object([
                                 "toolUseId": .string(result.toolCallID),
-                                "content": .array([.object(["json": result.modelOutput ?? result.result])]),
+                                "content": .array(try bedrockToolResultContent(result, documentCounter: &documentCounter)),
                                 "status": .string(result.isError ? "error" : "success")
                             ])
-                        ])
+                        ]))
+                        if let cachePoint = bedrockCachePoint(from: result.providerMetadata) {
+                            content.append(cachePoint)
+                        }
                     case .providerReference, .toolApprovalRequest, .toolApprovalResponse:
-                        return .object(["text": .string("")])
+                        content.append(.object(["text": .string("")]))
                     }
+                }
+                if let cachePoint = bedrockCachePoint(from: message.providerMetadata) {
+                    content.append(cachePoint)
                 }
 
                 return JSONValue.object([

@@ -19,7 +19,7 @@ Source URL: /providers/openai-compatible/
 
 ## Notes
 
-Generic OpenAI-compatible factory; caller supplies provider ID and base URL.
+Generic OpenAI-compatible factory mirrors upstream 3.0.5: caller supplies provider ID and base URL, custom headers/query params, versioned user-agent suffix, upstream surface IDs, chat/completion/embedding/image models, providerOptions namespace unwrapping with raw and camelCase keys, deprecated raw-key warnings, structured outputs, stream usage, response/provider metadata, and camelCase provider metadata namespace selection when camelCase providerOptions are used. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

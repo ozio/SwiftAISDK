@@ -52,7 +52,7 @@ private actor TokenStore {
     #expect(request.headers["api-key"] == "azure-key")
     #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
-    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/3.0.77")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/4.0.8")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -150,6 +150,23 @@ private actor TokenStore {
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")
 }
 
+@Test func azureCustomGatewayBaseURLIsUsedAsIsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"gateway chat"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#))
+    let provider = try AIProviders.azure(settings: ProviderSettings(
+        apiKey: "azure-key",
+        baseURL: "https://our-gateway.example.com/azure",
+        transport: transport
+    ))
+    let model = try provider.chat("test-deployment")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "gateway chat")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://our-gateway.example.com/azure/chat/completions")
+    #expect(request.headers["api-key"] == "azure-key")
+}
+
 @Test func azureDeepSeekUsesChatCompletionsAndOmitsThinkingOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"azure deepseek"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#))
     let provider = try AIProviders.azure(resourceName: "test-resource", settings: ProviderSettings(apiKey: "azure-key", transport: transport))
@@ -239,6 +256,7 @@ private actor TokenStore {
         messages: [.user("Search docs.")],
         tools: [
             "web_search": AzureOpenAITools.webSearch(searchContextSize: "low"),
+            "web_search_preview": AzureOpenAITools.webSearchPreview(searchContextSize: "medium"),
             "file_search": AzureOpenAITools.fileSearch(vectorStoreIDs: ["vs_azure"], maxNumResults: 2),
             "code_interpreter": AzureOpenAITools.codeInterpreter(),
             "image_generation": AzureOpenAITools.imageGeneration(size: "1024x1024")
@@ -249,6 +267,7 @@ private actor TokenStore {
     let body = try decodeJSONBody(try #require(request.body))
     let tools = try #require(body["tools"]?.arrayValue)
     #expect(tools.contains { $0["type"]?.stringValue == "web_search" && $0["search_context_size"]?.stringValue == "low" })
+    #expect(tools.contains { $0["type"]?.stringValue == "web_search_preview" && $0["search_context_size"]?.stringValue == "medium" })
     #expect(tools.contains { $0["type"]?.stringValue == "file_search" && $0["vector_store_ids"]?[0]?.stringValue == "vs_azure" })
     #expect(tools.contains { $0["type"]?.stringValue == "code_interpreter" && $0["container"]?["type"]?.stringValue == "auto" })
     #expect(tools.contains { $0["type"]?.stringValue == "image_generation" && $0["size"]?.stringValue == "1024x1024" })

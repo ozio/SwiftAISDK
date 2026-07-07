@@ -277,6 +277,7 @@ func videoRequestTelemetryInput(_ request: VideoGenerationRequest) -> JSONValue 
         "inputReferences": request.inputReferences.isEmpty ? nil : .array(request.inputReferences.map(imageInputFileRequestMetadata)),
         "resolution": request.resolution.map(JSONValue.string),
         "fps": request.fps.map(JSONValue.number),
+        "generateAudio": request.generateAudio.map(JSONValue.bool),
         "seed": request.seed.map { .number(Double($0)) },
         "count": request.count.map { .number(Double($0)) },
         "providerOptions": request.providerOptions.isEmpty ? nil : .object(request.providerOptions),
@@ -580,6 +581,7 @@ func videoTelemetryOutput(_ result: VideoGenerationResult) -> JSONValue {
         "urls": .array(result.urls.map(JSONValue.string)),
         "base64VideoCount": .number(Double(result.base64Videos.count)),
         "operationID": result.operationID.map(JSONValue.string),
+        "mediaType": result.mediaType.map(JSONValue.string),
         "requestMetadata": aiRequestMetadataJSON(result.requestMetadata),
         "rawValue": result.rawValue
     ])

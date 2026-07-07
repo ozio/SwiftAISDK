@@ -14,6 +14,10 @@ Source URL: /providers/cerebras/
 
 - Language
 
+## Notes
+
+Cerebras chat models mirror upstream Cerebras 3.0.5: `CEREBRAS_API_KEY`, custom base URL and headers, callable provider plus `languageModel`/`chat` aliases, `cerebras.chat` provider IDs, versioned user-agent suffix, current model IDs such as `gpt-oss-120b` and `qwen-3-235b-a22b-thinking-2507`, structured outputs, reasoning transform, structured-output tool-call normalization, flat Cerebras error schema, provider options, and unsupported embedding/image families.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

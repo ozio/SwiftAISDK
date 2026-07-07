@@ -2,6 +2,125 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func xAISpeechAndTranscriptionUseNativeAudioEndpoints() async throws {
+    let speechTransport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "audio/wav", "xai-request-id": "speech-request"],
+        body: Data("xai-speech".utf8)
+    ))
+    let speechProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: speechTransport))
+    let speechModel = try speechProvider.speech()
+
+    let speech = try await speechModel.speak(SpeechRequest(
+        text: "Hello [pause] world",
+        voice: "eve",
+        format: "wav",
+        speed: 1.1,
+        language: "ja",
+        instructions: "speak softly",
+        providerOptions: [
+            "xai": [
+                "sampleRate": 24_000,
+                "bitRate": 128_000,
+                "optimizeStreamingLatency": 2,
+                "textNormalization": true
+            ]
+        ]
+    ))
+
+    #expect(speech.audio == Data("xai-speech".utf8))
+    #expect(speech.contentType == "audio/wav")
+    #expect(speech.warnings == [
+        AIWarning(type: "unsupported", feature: "instructions", message: "xAI speech models do not support the `instructions` option. Use xAI speech tags in `text` to control delivery."),
+        AIWarning(type: "unsupported", feature: "providerOptions", message: "xAI `bitRate` is supported only for mp3 output. It was ignored.")
+    ])
+    #expect(speech.responseMetadata.headers["xai-request-id"] == "speech-request")
+    let speechRequest = try #require(await speechTransport.requests().first)
+    #expect(speechRequest.url.absoluteString == "https://api.x.ai/v1/tts")
+    #expect(speechRequest.headers["authorization"] == "Bearer xai-key")
+    #expect(speechRequest.headers["user-agent"] == "ai-sdk/xai/4.0.7")
+    let speechBody = try decodeJSONBody(try #require(speechRequest.body))
+    #expect(speechBody["text"]?.stringValue == "Hello [pause] world")
+    #expect(speechBody["voice_id"]?.stringValue == "eve")
+    #expect(speechBody["language"]?.stringValue == "ja")
+    #expect(speechBody["speed"]?.doubleValue == 1.1)
+    #expect(speechBody["output_format"]?["codec"]?.stringValue == "wav")
+    #expect(speechBody["output_format"]?["sample_rate"]?.intValue == 24_000)
+    #expect(speechBody["output_format"]?["bit_rate"] == nil)
+    #expect(speechBody["optimize_streaming_latency"]?.intValue == 2)
+    #expect(speechBody["text_normalization"]?.boolValue == true)
+
+    let transcriptionTransport = RecordingTransport(response: jsonResponse("""
+    {"text":"hello xai","language":"en","duration":1.25,"words":[{"text":"hello","start":0.1,"end":0.5},{"text":"xai","start":0.7,"end":1.2}]}
+    """, headers: ["xai-request-id": "stt-request"]))
+    let transcriptionProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transcriptionTransport))
+    let transcriptionModel = try transcriptionProvider.transcription()
+    let transcription = try await transcriptionModel.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        mimeType: "audio/wav",
+        providerOptions: [
+            "xai": [
+                "audioFormat": "pcm",
+                "sampleRate": 16_000,
+                "language": "en",
+                "format": true,
+                "multichannel": true,
+                "channels": 2,
+                "diarize": true,
+                "keyterm": ["Grok", "xAI"],
+                "fillerWords": true
+            ]
+        ]
+    ))
+
+    #expect(transcription.text == "hello xai")
+    #expect(transcription.language == "en")
+    #expect(transcription.durationInSeconds == 1.25)
+    #expect(transcription.segments == [
+        TranscriptionSegment(text: "hello", startSecond: 0.1, endSecond: 0.5),
+        TranscriptionSegment(text: "xai", startSecond: 0.7, endSecond: 1.2)
+    ])
+    #expect(transcription.responseMetadata.headers["xai-request-id"] == "stt-request")
+    let transcriptionRequest = try #require(await transcriptionTransport.requests().first)
+    #expect(transcriptionRequest.url.absoluteString == "https://api.x.ai/v1/stt")
+    #expect(transcriptionRequest.headers["authorization"] == "Bearer xai-key")
+    #expect(transcriptionRequest.headers["user-agent"] == "ai-sdk/xai/4.0.7")
+    #expect(transcriptionRequest.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
+    let transcriptionBody = String(data: try #require(transcriptionRequest.body), encoding: .utf8) ?? ""
+    #expect(transcriptionBody.contains("name=\"audio_format\""))
+    #expect(transcriptionBody.contains("pcm"))
+    #expect(transcriptionBody.contains("name=\"sample_rate\""))
+    #expect(transcriptionBody.contains("16000"))
+    #expect(transcriptionBody.contains("name=\"keyterm\""))
+    #expect(transcriptionBody.contains("Grok"))
+    #expect(transcriptionBody.contains("xAI"))
+    #expect(transcriptionBody.contains("name=\"file\"; filename=\"audio.wav\""))
+    #expect(transcription.requestMetadata.body?["audio_format"]?.stringValue == "pcm")
+    #expect(transcription.requestMetadata.body?["sample_rate"]?.intValue == 16_000)
+    #expect(transcription.requestMetadata.body?["keyterm"]?[0]?.stringValue == "Grok")
+    #expect(transcription.requestMetadata.body?["file"]?["filename"]?.stringValue == "audio.wav")
+}
+
+@Test func xAIAudioProviderOptionsValidateLikeUpstreamSchemas() async throws {
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: RecordingTransport(responses: [])))
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.sampleRate", message: "xAI sampleRate must be one of 8000, 16000, 22050, 24000, 44100, 48000.")) {
+        _ = try await provider.speech().speak(SpeechRequest(text: "Hi", providerOptions: ["xai": ["sampleRate": 12_345]]))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.optimizeStreamingLatency", message: "xAI optimizeStreamingLatency must be 0, 1, or 2.")) {
+        _ = try await provider.speech().speak(SpeechRequest(text: "Hi", providerOptions: ["xai": ["optimizeStreamingLatency": 3]]))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.audioFormat", message: "xAI audioFormat must be pcm, mulaw, or alaw.")) {
+        _ = try await provider.transcription().transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8), providerOptions: ["xai": ["audioFormat": "mp3"]]))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.channels", message: "xAI channels must be an integer from 2 to 8.")) {
+        _ = try await provider.transcription().transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8), providerOptions: ["xai": ["channels": 1]]))
+    }
+}
+
 @Test func xAIImageAndVideoUseNativeEndpoints() async throws {
     let imageTransport = RecordingTransport(responses: [
         jsonResponse(#"{"data":[{"url":"https://x.ai/image.png","revised_prompt":"cat!"}],"usage":{"cost_in_usd_ticks":123}}"#),
@@ -21,7 +140,7 @@ import Testing
     let imageRequest = try #require(imageRequests.first)
     #expect(imageRequest.url.absoluteString == "https://api.x.ai/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk/xai/3.0.96")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/xai/4.0.7")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "grok-2-image")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -53,7 +172,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.x.ai/v1/videos/generations")
     #expect(requests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/xai/3.0.96")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/xai/4.0.7")
     let videoBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(videoBody["model"]?.stringValue == "grok-2-video")
     #expect(videoBody["prompt"]?.stringValue == "cat running")
@@ -63,7 +182,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.x.ai/v1/videos/vid-1")
     #expect(requests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/xai/3.0.96")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/xai/4.0.7")
 
     let editTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"edit-1"}"#),
@@ -85,9 +204,9 @@ import Testing
     let editRequests = await editTransport.requests()
     #expect(editRequests[0].url.absoluteString == "https://api.x.ai/v1/videos/edits")
     #expect(editRequests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[0].headers["user-agent"] == "ai-sdk/xai/3.0.96")
+    #expect(editRequests[0].headers["user-agent"] == "ai-sdk/xai/4.0.7")
     #expect(editRequests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[1].headers["user-agent"] == "ai-sdk/xai/3.0.96")
+    #expect(editRequests[1].headers["user-agent"] == "ai-sdk/xai/4.0.7")
     let editBody = try decodeJSONBody(try #require(editRequests[0].body))
     #expect(editBody["video"]?["url"]?.stringValue == "https://x.ai/source.mp4")
     #expect(editBody["aspect_ratio"] == nil)

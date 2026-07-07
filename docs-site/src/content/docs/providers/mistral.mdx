@@ -16,6 +16,10 @@ description: "mistral provider capabilities and factories."
 - Language
 - Embedding
 
+## Notes
+
+Mistral chat and embeddings mirror upstream Mistral 4.0.5: `MISTRAL_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language/chat and embedding/textEmbedding aliases, chat `/v1/chat/completions`, embeddings `/v1/embeddings`, structured outputs, JSON-object instruction injection, stop sequences via native `stop`, top-level reasoning mapped to supported Mistral reasoning effort with providerOptions precedence, provider option schema validation, tool/tool-choice mapping, tool-result output conversion, image/PDF user file support, streaming text/reasoning/tool lifecycle, cached-token usage accounting, response metadata, Mistral error schema, and unsupported image/speech/transcription families. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

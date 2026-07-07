@@ -80,6 +80,98 @@ public enum XAITools {
     }
 }
 
+public final class XAISpeechModel: SpeechModel, @unchecked Sendable {
+    public let providerID = "xai.speech"
+    public let modelID = ""
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        self.config = config
+    }
+
+    public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
+        let options = try xaiSpeechProviderOptions(from: request)
+        let prepared = try xaiSpeechBody(for: request, options: options)
+        let response = try await config.transport.send(config.request(
+            path: "/tts",
+            modelID: modelID,
+            body: .object(prepared.body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(response.statusCode) else {
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
+        }
+        return SpeechResult(
+            audio: response.body,
+            contentType: response.headers.contentType,
+            warnings: prepared.warnings,
+            requestMetadata: AIRequestMetadata(body: .object(prepared.body), headers: request.headers),
+            responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
+        )
+    }
+}
+
+public final class XAITranscriptionModel: TranscriptionModel, @unchecked Sendable {
+    public let providerID = "xai.transcription"
+    public let modelID = ""
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        self.config = config
+    }
+
+    public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
+        let options = try xaiTranscriptionProviderOptions(from: request)
+        var form = MultipartFormData()
+        var metadataBody: [String: JSONValue] = [
+            "file": .object([
+                "filename": .string("audio.\(mediaTypeToExtension(request.mimeType))"),
+                "mimeType": .string(request.mimeType),
+                "byteLength": .number(Double(request.audio.count))
+            ])
+        ]
+        for (key, value) in xaiTranscriptionFields(from: request, options: options) {
+            if key == "keyterm", case let .array(items) = value {
+                metadataBody[key] = value
+                for item in items {
+                    if let scalar = jsonScalarString(item) {
+                        form.appendField(name: key, value: scalar)
+                    }
+                }
+            } else if let scalar = jsonScalarString(value) {
+                form.appendField(name: key, value: scalar)
+                metadataBody[key] = value
+            }
+        }
+        let fileName = "audio.\(mediaTypeToExtension(request.mimeType))"
+        form.appendFile(name: "file", fileName: fileName, mimeType: request.mimeType, data: request.audio)
+
+        let response = try await config.transport.send(config.rawRequest(
+            path: "/stt",
+            modelID: modelID,
+            body: form.finalize(),
+            contentType: "multipart/form-data; boundary=\(form.boundary)",
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(response.statusCode) else {
+            throw audioProviderHTTPStatusError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        let segments = xaiTranscriptionSegments(from: raw)
+        return TranscriptionResult(
+            text: raw["text"]?.stringValue ?? "",
+            rawValue: raw,
+            segments: segments,
+            language: raw["language"]?.stringValue,
+            durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
+    }
+}
+
 public final class XAIImageModel: ImageModel, @unchecked Sendable {
     public let providerID = "xai.image"
     public let modelID: String
@@ -313,12 +405,224 @@ private func xaiProviderOptions(
         output.merge(nested) { _, nested in nested }
     }
     if let value = providerOptions["xai"] {
+        guard value != .null else { return output }
         guard let nested = value.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI provider options must be an object.")
         }
         output.merge(try validateProviderOptions(nested)) { _, nested in nested }
     }
     return output
+}
+
+private struct XAIPreparedSpeechBody {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
+}
+
+private func xaiSpeechBody(for request: SpeechRequest, options: [String: JSONValue]) throws -> XAIPreparedSpeechBody {
+    var warnings: [AIWarning] = []
+    let codec: String
+    if let format = request.format {
+        if ["mp3", "wav", "pcm", "mulaw", "alaw"].contains(format) {
+            codec = format
+        } else {
+            codec = "mp3"
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "outputFormat",
+                message: "Unsupported output format: \(format). Using mp3 instead."
+            ))
+        }
+    } else {
+        codec = "mp3"
+    }
+
+    if request.instructions != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "instructions",
+            message: "xAI speech models do not support the `instructions` option. Use xAI speech tags in `text` to control delivery."
+        ))
+    }
+
+    var outputFormat: [String: JSONValue] = ["codec": .string(codec)]
+    if let sampleRate = options["sampleRate"] {
+        outputFormat["sample_rate"] = sampleRate
+    }
+    if let bitRate = options["bitRate"] {
+        if codec == "mp3" {
+            outputFormat["bit_rate"] = bitRate
+        } else {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "providerOptions",
+                message: "xAI `bitRate` is supported only for mp3 output. It was ignored."
+            ))
+        }
+    }
+
+    var body: [String: JSONValue] = [
+        "text": .string(request.text),
+        "voice_id": .string(request.voice ?? "eve"),
+        "language": .string(request.language ?? "auto"),
+        "output_format": .object(outputFormat)
+    ]
+    if let speed = request.speed {
+        body["speed"] = .number(speed)
+    }
+    if let latency = options["optimizeStreamingLatency"] {
+        body["optimize_streaming_latency"] = latency
+    }
+    if let textNormalization = options["textNormalization"] {
+        body["text_normalization"] = textNormalization
+    }
+    return XAIPreparedSpeechBody(body: body, warnings: warnings)
+}
+
+private func xaiSpeechProviderOptions(from request: SpeechRequest) throws -> [String: JSONValue] {
+    try xaiNamespacedProviderOptions(
+        providerOptions: request.providerOptions,
+        extraBody: request.extraBody,
+        validateProviderOptions: xaiValidateSpeechProviderOptions
+    )
+}
+
+private func xaiTranscriptionProviderOptions(from request: AudioTranscriptionRequest) throws -> [String: JSONValue] {
+    try xaiNamespacedProviderOptions(
+        providerOptions: request.providerOptions,
+        extraBody: request.extraBody,
+        validateProviderOptions: xaiValidateTranscriptionProviderOptions
+    )
+}
+
+private func xaiNamespacedProviderOptions(
+    providerOptions: [String: JSONValue],
+    extraBody: [String: JSONValue],
+    validateProviderOptions: ([String: JSONValue]) throws -> [String: JSONValue]
+) throws -> [String: JSONValue] {
+    var output = extraBody
+    if let nested = output.removeValue(forKey: "xai")?.objectValue {
+        output.merge(nested) { _, nested in nested }
+    }
+    if let value = providerOptions["xai"] {
+        guard value != .null else { return output }
+        guard let nested = value.objectValue else {
+            throw AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI provider options must be an object.")
+        }
+        output.merge(try validateProviderOptions(nested)) { _, nested in nested }
+    }
+    return output
+}
+
+private func xaiValidateSpeechProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options {
+        switch key {
+        case "sampleRate":
+            guard let sampleRate = value.intValue,
+                  value.doubleValue == Double(sampleRate),
+                  [8_000, 16_000, 22_050, 24_000, 44_100, 48_000].contains(sampleRate) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.sampleRate", message: "xAI sampleRate must be one of 8000, 16000, 22050, 24000, 44100, 48000.")
+            }
+            output[key] = value
+        case "bitRate":
+            guard let bitRate = value.intValue,
+                  value.doubleValue == Double(bitRate),
+                  [32_000, 64_000, 96_000, 128_000, 192_000].contains(bitRate) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.bitRate", message: "xAI bitRate must be one of 32000, 64000, 96000, 128000, 192000.")
+            }
+            output[key] = value
+        case "optimizeStreamingLatency":
+            guard let latency = value.intValue,
+                  value.doubleValue == Double(latency),
+                  [0, 1, 2].contains(latency) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.optimizeStreamingLatency", message: "xAI optimizeStreamingLatency must be 0, 1, or 2.")
+            }
+            output[key] = value
+        case "textNormalization":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.textNormalization", message: "xAI textNormalization must be a boolean.")
+            }
+            output[key] = value
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func xaiValidateTranscriptionProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
+    var output: [String: JSONValue] = [:]
+    for (key, value) in options {
+        switch key {
+        case "audioFormat":
+            guard let format = value.stringValue, ["pcm", "mulaw", "alaw"].contains(format) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.audioFormat", message: "xAI audioFormat must be pcm, mulaw, or alaw.")
+            }
+            output[key] = value
+        case "sampleRate":
+            guard let sampleRate = value.intValue,
+                  value.doubleValue == Double(sampleRate),
+                  [8_000, 16_000, 22_050, 24_000, 44_100, 48_000].contains(sampleRate) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.sampleRate", message: "xAI sampleRate must be one of 8000, 16000, 22050, 24000, 44100, 48000.")
+            }
+            output[key] = value
+        case "language":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.language", message: "xAI language must be a string.")
+            }
+            output[key] = value
+        case "format", "multichannel", "diarize", "fillerWords":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.\(key)", message: "xAI \(key) must be a boolean.")
+            }
+            output[key] = value
+        case "channels":
+            guard let channels = value.intValue,
+                  value.doubleValue == Double(channels),
+                  (2...8).contains(channels) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.channels", message: "xAI channels must be an integer from 2 to 8.")
+            }
+            output[key] = value
+        case "keyterm":
+            if value.stringValue != nil {
+                output[key] = value
+            } else if let array = value.arrayValue, array.allSatisfy({ $0.stringValue != nil }) {
+                output[key] = value
+            } else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.keyterm", message: "xAI keyterm must be a string or an array of strings.")
+            }
+        case "streaming":
+            continue
+        default:
+            break
+        }
+    }
+    return output
+}
+
+private func xaiTranscriptionFields(from request: AudioTranscriptionRequest, options: [String: JSONValue]) -> [String: JSONValue] {
+    var fields: [String: JSONValue] = [:]
+    if let audioFormat = options["audioFormat"] { fields["audio_format"] = audioFormat }
+    if let sampleRate = options["sampleRate"] { fields["sample_rate"] = sampleRate }
+    if let language = request.language.map(JSONValue.string) ?? options["language"] { fields["language"] = language }
+    if let format = options["format"] { fields["format"] = format }
+    if let multichannel = options["multichannel"] { fields["multichannel"] = multichannel }
+    if let channels = options["channels"] { fields["channels"] = channels }
+    if let diarize = options["diarize"] { fields["diarize"] = diarize }
+    if let fillerWords = options["fillerWords"] { fields["filler_words"] = fillerWords }
+    if let keyterm = options["keyterm"] {
+        if let string = keyterm.stringValue {
+            fields["keyterm"] = .array([.string(string)])
+        } else {
+            fields["keyterm"] = keyterm
+        }
+    }
+    return fields
+}
+
+private func xaiTranscriptionSegments(from raw: JSONValue) -> [TranscriptionSegment] {
+    transcriptionSegments(from: raw["words"])
 }
 
 private func xaiValidateImageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {

@@ -15,6 +15,10 @@ Source URL: /providers/deepgram/
 - Transcription
 - Speech
 
+## Notes
+
+Deepgram transcription and speech mirror upstream 3.0.5: `DEEPGRAM_API_KEY`, `Token` auth, custom headers, versioned user-agent suffix, `transcription`/`transcriptionModel` and `speech`/`speechModel` aliases, `/v1/listen` raw-audio transcription with model/diarize defaults and providerOptions.deepgram query mapping, `/v1/speak` JSON TTS with output format to encoding/container/sample-rate mapping, documented TTS provider options, incompatible audio parameter cleanup warnings, unsupported voice/speed/language/instructions warnings, response metadata, Deepgram error schema, and unsupported language/embedding/image families. ProviderV4, ESM-only packaging, Node 22 engines, experimental streaming transcription types, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

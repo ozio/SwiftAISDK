@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/responses")
     #expect(request.headers["authorization"] == "Bearer xai-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/xai/3.0.96")
+    #expect(request.headers["user-agent"] == "ai-sdk/xai/4.0.7")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "grok-4")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -36,7 +36,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer xai-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/xai/3.0.96")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/xai/4.0.7")
 }
 @Test func xAIProviderAliasesUseUpstreamProviderIDsAndOptions() async throws {
     let responsesTransport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai responses"}"#))
@@ -58,6 +58,8 @@ import Testing
     #expect(try provider.chat("grok-4").providerID == "xai.chat")
     #expect(try provider.imageModel("grok-2-image").providerID == "xai.image")
     #expect(try provider.videoModel("grok-2-video").providerID == "xai.video")
+    #expect(try provider.speech().providerID == "xai.speech")
+    #expect(try provider.transcription().providerID == "xai.transcription")
     #expect(provider.files().providerID == "xai.files")
 
     let responsesBody = try decodeJSONBody(try #require((await responsesTransport.requests()).first?.body))
@@ -136,7 +138,7 @@ import Testing
         ))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be low, medium, or high.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")) {
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
             providerOptions: ["xai": ["reasoningEffort": "minimal"]]
@@ -332,6 +334,7 @@ import Testing
         maxOutputTokens: 12,
         stopSequences: ["ignored"],
         responseFormat: .json(schema: ["type": "object"], name: "answer", description: "Answer schema"),
+        reasoning: "xhigh",
         tools: [
             "lookup": ["type": "object", "description": "Lookup things", "strict": true],
             "hosted": ["type": "provider", "id": "openai.web_search"]
@@ -339,7 +342,7 @@ import Testing
         toolChoice: ["type": "tool", "toolName": "lookup"],
         providerOptions: [
             "lmstudio": [
-                "reasoningEffort": "xhigh",
+                "reasoningEffort": "low",
                 "reasoningSummary": "auto",
                 "unknown": "dropped"
             ]
@@ -350,14 +353,14 @@ import Testing
     #expect(result.text == "custom text")
     #expect(result.usage?.totalTokens == 3)
     #expect(model.providerID == "lmstudio.responses")
-    #expect(result.warnings.map(\.feature).contains("stopSequences"))
-    #expect(result.warnings.map(\.feature).contains("topK"))
-    #expect(result.warnings.map(\.feature).contains("seed"))
+    #expect(result.warnings.map { $0.feature }.contains("stopSequences"))
+    #expect(result.warnings.map { $0.feature }.contains("topK"))
+    #expect(result.warnings.map { $0.feature }.contains("seed"))
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://open.example.test/custom/responses")
     #expect(request.headers["authorization"] == "Bearer open-key")
     #expect(request.headers["x-custom"] == "yes")
-    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/1.0.19")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "local-model")
     #expect(body["instructions"]?.stringValue == "Be terse.")
@@ -402,7 +405,7 @@ import Testing
     #expect(model.providerID == "open-responses.responses")
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer custom-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/1.0.19")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.5")
 
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.open-responses", message: "Open Responses provider options must be an object.")) {
         _ = try await model.generate(LanguageModelRequest(
@@ -411,10 +414,49 @@ import Testing
         ))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.open-responses.reasoningEffort", message: "Open Responses reasoningEffort must be none, low, medium, high, or xhigh.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.open-responses.reasoningSummary", message: "Open Responses reasoningSummary must be concise, detailed, or auto.")) {
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
-            providerOptions: ["open-responses": ["reasoningEffort": "minimal"]]
+            providerOptions: ["open-responses": ["reasoningSummary": "verbose"]]
         ))
     }
+}
+
+@Test func openResponsesTopLevelReasoningMapsLikeUpstreamV2() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"ok"}"#),
+        jsonResponse(#"{"id":"resp-2","status":"completed","output_text":"ok"}"#),
+        jsonResponse(#"{"id":"resp-3","status":"completed","output_text":"ok"}"#)
+    ])
+    let provider = try AIProviders.openResponses(
+        name: "open-responses",
+        url: "https://open.example.test/responses",
+        settings: ProviderSettings(apiKey: "open-key", transport: transport)
+    )
+    let model = try provider.languageModel("local-model")
+
+    let minimal = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "minimal"))
+    let providerDefault = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        reasoning: "provider-default",
+        providerOptions: ["open-responses": ["reasoningSummary": "concise"]]
+    ))
+    let unsupported = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "extreme"))
+
+    let requests = await transport.requests()
+    let minimalBody = try decodeJSONBody(try #require(requests[0].body))
+    let providerDefaultBody = try decodeJSONBody(try #require(requests[1].body))
+    let unsupportedBody = try decodeJSONBody(try #require(requests[2].body))
+
+    #expect(minimalBody["reasoning"]?["effort"]?.stringValue == "low")
+    #expect(minimal.warnings == [
+        AIWarning(type: "compatibility", feature: "reasoning", message: #"reasoning "minimal" is not directly supported by this model. mapped to effort "low"."#)
+    ])
+    #expect(providerDefaultBody["reasoning"]?["effort"] == nil)
+    #expect(providerDefaultBody["reasoning"]?["summary"]?.stringValue == "concise")
+    #expect(providerDefault.warnings.isEmpty)
+    #expect(unsupportedBody["reasoning"] == nil)
+    #expect(unsupported.warnings == [
+        AIWarning(type: "unsupported", feature: "reasoning", message: #"reasoning "extreme" is not supported by this model."#)
+    ])
 }

@@ -43,7 +43,7 @@ import Testing
     let assemblyTransport = RecordingTransport(responses: [
         jsonResponse(#"{"upload_url":"https://cdn.example.com/audio.wav"}"#),
         jsonResponse(#"{"id":"assembly-job","status":"queued"}"#),
-        jsonResponse(#"{"id":"assembly-job","status":"completed","text":"assembly text","language_code":"fr","audio_duration":3.2,"words":[{"text":"assembly","start":0.2,"end":1.4},{"text":"text","start":1.5,"end":3.2}]}"#)
+        jsonResponse(#"{"id":"assembly-job","status":"completed","text":"assembly text","language_code":"fr","audio_duration":3.2,"words":[{"text":"assembly","start":200,"end":1400},{"text":"text","start":1500,"end":3200}]}"#)
     ])
     let assembly = try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: "assembly-key", transport: assemblyTransport))
     let assemblyResult = try await assembly.transcriptionModel("best").transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8)))

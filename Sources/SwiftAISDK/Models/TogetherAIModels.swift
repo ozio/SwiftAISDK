@@ -32,15 +32,14 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
                 message: "Together AI only supports a single input image. Additional images are ignored."
             ))
         }
-        if let count = request.count, count > 1 {
-            throw AIError.invalidArgument(argument: "count", message: "TogetherAI image models support at most 1 image per call.")
-        }
-
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "prompt": .string(request.prompt),
             "response_format": .string("base64")
         ]
+        if let count = request.count, count > 1 {
+            body["n"] = .number(Double(count))
+        }
         if let seed = request.seed {
             body["seed"] = .number(Double(seed))
         }

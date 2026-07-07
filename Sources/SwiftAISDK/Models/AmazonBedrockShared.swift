@@ -74,7 +74,10 @@ func bedrockPassthroughExtraBody(_ extraBody: [String: JSONValue]) -> [String: J
 }
 
 func bedrockDocumentCitationsEnabled(_ providerOptions: [String: JSONValue]) -> Bool {
-    providerOptions["citations"]?["enabled"]?.boolValue ?? false
+    providerOptions["citations"]?["enabled"]?.boolValue
+        ?? providerOptions["amazonBedrock"]?["citations"]?["enabled"]?.boolValue
+        ?? providerOptions["bedrock"]?["citations"]?["enabled"]?.boolValue
+        ?? false
 }
 
 func bedrockResponseJSONSchema(from responseFormat: AIResponseFormat?) -> JSONValue? {
@@ -101,6 +104,38 @@ func bedrockApplyRequestProviderOptions(_ providerOptions: [String: JSONValue], 
             body["serviceTier"] = serviceTier
         }
     }
+}
+
+func bedrockCachePoint(from providerMetadata: [String: JSONValue]) -> JSONValue? {
+    let cachePoint = providerMetadata["amazonBedrock"]?["cachePoint"]
+        ?? providerMetadata["bedrock"]?["cachePoint"]
+        ?? providerMetadata["cachePoint"]
+    guard let cachePoint else { return nil }
+    return .object(["cachePoint": cachePoint])
+}
+
+func bedrockReasoningContentBlock(text: String, providerMetadata: [String: JSONValue]) -> JSONValue? {
+    let metadata = providerMetadata["amazonBedrock"]?.objectValue
+        ?? providerMetadata["bedrock"]?.objectValue
+        ?? providerMetadata
+    if let signature = metadata["signature"]?.stringValue {
+        return .object([
+            "reasoningContent": .object([
+                "reasoningText": .object([
+                    "text": .string(text),
+                    "signature": .string(signature)
+                ])
+            ])
+        ])
+    }
+    if let redactedData = metadata["redactedData"]?.stringValue {
+        return .object([
+            "reasoningContent": .object([
+                "redactedReasoning": .object(["data": .string(redactedData)])
+            ])
+        ])
+    }
+    return nil
 }
 
 func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?, modelID: String) -> BedrockPreparedTools {
@@ -242,7 +277,9 @@ func bedrockApplyReasoningConfig(
     let isOpenAIModel = modelID.hasPrefix("openai.")
     let isAnthropicThinkingEnabled = isAnthropicModel && (type == "enabled" || type == "adaptive")
 
-    if isAnthropicThinkingEnabled {
+    if isAnthropicModel && type == "disabled" {
+        bedrockMergeAdditionalModelRequestFields(["thinking": .object(["type": .string("disabled")])], into: &providerOptions)
+    } else if isAnthropicThinkingEnabled {
         if let budgetTokens, type == "enabled" {
             let existingMaxTokens = inferenceConfig["maxTokens"]?.intValue
             inferenceConfig["maxTokens"] = .number(Double((existingMaxTokens ?? 4096) + budgetTokens))
@@ -298,6 +335,58 @@ func bedrockApplyReasoningConfig(
     }
 }
 
+func bedrockApplyTopLevelReasoning(
+    _ reasoning: String?,
+    modelID: String,
+    maxOutputTokens: Int?,
+    providerOptions: inout [String: JSONValue],
+    warnings: inout [AIWarning]
+) {
+    guard isCustomReasoning(reasoning), let reasoning else { return }
+    let existing = providerOptions["reasoningConfig"]?.objectValue ?? [:]
+    let isAnthropicModel = modelID.contains("anthropic.")
+    var reasoningConfig: [String: JSONValue]
+
+    if reasoning == "none" {
+        reasoningConfig = ["type": .string("disabled")]
+    } else if isAnthropicModel {
+        let budget = mapReasoningToProviderBudget(
+            reasoning: reasoning,
+            maxOutputTokens: maxOutputTokens ?? 4096,
+            maxReasoningBudget: maxOutputTokens ?? 4096,
+            warnings: &warnings
+        )
+        reasoningConfig = ["type": .string("enabled")]
+        if let budget {
+            reasoningConfig["budgetTokens"] = .number(Double(budget))
+        }
+    } else {
+        reasoningConfig = [:]
+        if let effort = mapReasoningToProviderEffort(
+            reasoning: reasoning,
+            effortMap: [
+                "minimal": "low",
+                "low": "low",
+                "medium": "medium",
+                "high": "high",
+                "xhigh": "max"
+            ],
+            warnings: &warnings
+        ) {
+            reasoningConfig["maxReasoningEffort"] = .string(effort)
+        }
+    }
+
+    reasoningConfig.merge(existing) { _, existing in existing }
+    if reasoningConfig["type"]?.stringValue == "disabled" {
+        reasoningConfig.removeValue(forKey: "budgetTokens")
+        reasoningConfig.removeValue(forKey: "maxReasoningEffort")
+    }
+    if !reasoningConfig.isEmpty {
+        providerOptions["reasoningConfig"] = .object(reasoningConfig)
+    }
+}
+
 func bedrockMergeAdditionalModelRequestFields(_ fields: [String: JSONValue], into providerOptions: inout [String: JSONValue]) {
     var existing = providerOptions["additionalModelRequestFields"]?.objectValue ?? [:]
     existing.merge(fields) { old, new in
@@ -343,6 +432,74 @@ func bedrockToolArguments(_ value: JSONValue?) -> String {
         return "{}"
     }
     return text
+}
+
+func bedrockJSONString(_ value: JSONValue) -> String? {
+    guard let data = try? encodeJSONBody(value) else { return nil }
+    return String(data: data, encoding: .utf8)
+}
+
+func bedrockToolResultContent(_ result: AIToolResult, documentCounter: inout Int) throws -> [JSONValue] {
+    let output = result.modelOutput ?? result.result
+    if let text = output.stringValue {
+        return [.object(["text": .string(text)])]
+    }
+    guard let object = output.objectValue, let type = object["type"]?.stringValue else {
+        return [.object(["json": output])]
+    }
+    switch type {
+    case "content":
+        return try (object["value"]?.arrayValue ?? []).map { item in
+            try bedrockToolResultContentPart(item, documentCounter: &documentCounter)
+        }
+    case "text", "error-text":
+        return [.object(["text": object["value"] ?? .string("")])]
+    case "execution-denied":
+        return [.object(["text": object["reason"] ?? .string("Tool call execution denied.")])]
+    case "json", "error-json":
+        return [.object(["text": .string(bedrockJSONString(object["value"] ?? .object([:])) ?? "")])]
+    default:
+        return [.object(["text": .string(bedrockJSONString(object["value"] ?? output) ?? "")])]
+    }
+}
+
+func bedrockToolResultContentPart(_ item: JSONValue, documentCounter: inout Int) throws -> JSONValue {
+    switch item["type"]?.stringValue {
+    case "text":
+        return .object(["text": item["text"] ?? item["value"] ?? .string("")])
+    case "image-data", "file-data", "file":
+        let mediaType = item["mediaType"]?.stringValue ?? item["mimeType"]?.stringValue ?? "application/octet-stream"
+        let data = item["data"]?.stringValue ?? ""
+        if let imageFormat = bedrockImageFormat(for: mediaType) {
+            return .object([
+                "image": .object([
+                    "format": .string(imageFormat),
+                    "source": .object(["bytes": .string(data)])
+                ])
+            ])
+        }
+        guard let documentFormat = bedrockDocumentFormat(for: mediaType) else {
+            throw AIError.invalidArgument(
+                argument: "toolResult.content.mediaType",
+                message: "Amazon Bedrock tool result content supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")) or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mediaType)."
+            )
+        }
+        documentCounter += 1
+        var document: [String: JSONValue] = [
+            "format": .string(documentFormat),
+            "name": .string(item["filename"]?.stringValue.map(stripFileExtension) ?? "document-\(documentCounter)"),
+            "source": .object(["bytes": .string(data)])
+        ]
+        if bedrockDocumentCitationsEnabled(item["providerMetadata"]?.objectValue ?? item.objectValue ?? [:]) {
+            document["citations"] = .object(["enabled": .bool(true)])
+        }
+        return .object(["document": .object(document)])
+    default:
+        throw AIError.invalidArgument(
+            argument: "toolResult.content.type",
+            message: "Amazon Bedrock does not support tool result content part type \(item["type"]?.stringValue ?? "unknown")."
+        )
+    }
 }
 
 func bedrockReasoningText(from value: JSONValue?) -> String {

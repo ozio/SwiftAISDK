@@ -8,6 +8,30 @@ import Testing
     }
 }
 
+@Test func byteDanceProviderExposesCurrentVideoModelIDsLikeUpstream() throws {
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(
+        apiKey: "ark-key",
+        transport: RecordingTransport(responses: [])
+    ))
+
+    let modelIDs = [
+        "dreamina-seedance-2-0-fast-260128",
+        "dreamina-seedance-2-0-260128",
+        "seedance-1-5-pro-251215",
+        "seedance-1-0-pro-250528",
+        "seedance-1-0-pro-fast-251015",
+        "seedance-1-0-lite-t2v-250428",
+        "seedance-1-0-lite-i2v-250428",
+        "custom-model-id"
+    ]
+
+    for modelID in modelIDs {
+        let model = try provider.video(modelID)
+        #expect(model.providerID == "bytedance.video")
+        #expect(model.modelID == modelID)
+    }
+}
+
 @Test func byteDanceVideoSubmitsPollsAndPreservesMetadata() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"task-1"}"#),
@@ -17,7 +41,7 @@ import Testing
         )
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     let result = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -52,9 +76,10 @@ import Testing
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks")
     #expect(requests[0].headers["authorization"] == "Bearer ark-key")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/bytedance/2.0.6")
     #expect(requests[0].headers["x-request-id"] == "req-1")
     let body = try decodeJSONBody(try #require(requests[0].body))
-    #expect(body["model"]?.stringValue == "seedance-1-0-pro")
+    #expect(body["model"]?.stringValue == "seedance-1-0-pro-250528")
     #expect(body["content"]?[0]?["type"]?.stringValue == "text")
     #expect(body["content"]?[0]?["text"]?.stringValue == "cat running")
     #expect(body["ratio"]?.stringValue == "16:9")
@@ -66,6 +91,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks/task-1")
     #expect(requests[1].headers["authorization"] == "Bearer ark-key")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/bytedance/2.0.6")
     #expect(requests[1].headers["x-request-id"] == "req-1")
 }
 
@@ -75,7 +101,7 @@ import Testing
         jsonResponse(#"{"id":"task-2","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/with-refs.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
     let imageData = Data([1, 2, 3])
 
     _ = try await model.generateVideo(VideoGenerationRequest(
@@ -119,7 +145,7 @@ import Testing
         jsonResponse(#"{"id":"task-frame-images","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/frame-images.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -152,7 +178,7 @@ import Testing
         jsonResponse(#"{"id":"task-first-frame","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/first-frame.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -174,7 +200,7 @@ import Testing
         jsonResponse(#"{"id":"task-last-frame","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/last-frame.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -195,7 +221,7 @@ import Testing
         jsonResponse(#"{"id":"task-input-references","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/input-references.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -226,7 +252,7 @@ import Testing
         jsonResponse(#"{"id":"task-3","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/options.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     let result = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -277,13 +303,37 @@ import Testing
     #expect(body["bytedance"] == nil)
 }
 
+@Test func byteDanceVideoMapsTopLevelGenerateAudioOverProviderOptionLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-generate-audio"}"#),
+        jsonResponse(#"{"id":"task-generate-audio","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/generate-audio.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        generateAudio: false,
+        providerOptions: [
+            "bytedance": .object([
+                "generateAudio": true,
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generate_audio"]?.boolValue == false)
+}
+
 @Test func byteDanceExtraBodyKeepsLegacyMediaAliasesAndResolutionMapping() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"task-extra"}"#),
         jsonResponse(#"{"id":"task-extra","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/extra.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -314,7 +364,7 @@ import Testing
 
 @Test func byteDanceProviderOptionsValidateKnownSchemaFields() async throws {
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"unused"}"#))))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.bytedance", message: "ByteDance provider options must be an object.")) {
         _ = try await model.generateVideo(VideoGenerationRequest(
@@ -358,7 +408,7 @@ import Testing
         jsonResponse(#"{"id":"task-null-namespace","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/null-namespace.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -384,7 +434,7 @@ import Testing
         jsonResponse(#"{"id":"task-snake","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/snake.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -411,7 +461,7 @@ import Testing
         jsonResponse(#"{"id":"task-null","model":"seedance","status":"succeeded","content":{"video_url":"https://bytedance.example.com/null.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     _ = try await model.generateVideo(VideoGenerationRequest(
         prompt: "cat running",
@@ -439,7 +489,7 @@ import Testing
 @Test func byteDanceVideoThrowsForMissingTaskID() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"model":"seedance"}"#))
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     await #expect(throws: AIError.invalidResponse(provider: "bytedance.video", message: "No task ID returned from API")) {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
@@ -461,7 +511,7 @@ import Testing
         body: "Invalid API key",
         headers: ["x-bytedance": "bad"]
     )) {
-        _ = try await submitProvider.videoModel("seedance-1-0-pro").generateVideo(VideoGenerationRequest(prompt: "bad auth"))
+        _ = try await submitProvider.videoModel("seedance-1-0-pro-250528").generateVideo(VideoGenerationRequest(prompt: "bad auth"))
     }
 
     let pollProvider = try AIProviders.byteDance(settings: ProviderSettings(
@@ -476,7 +526,7 @@ import Testing
         statusCode: 500,
         body: "Poll failed"
     )) {
-        _ = try await pollProvider.videoModel("seedance-1-0-pro").generateVideo(VideoGenerationRequest(
+        _ = try await pollProvider.videoModel("seedance-1-0-pro-250528").generateVideo(VideoGenerationRequest(
             prompt: "poll error",
             providerOptions: ["bytedance": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1000])]
         ))
@@ -489,7 +539,7 @@ import Testing
         jsonResponse(#"{"id":"task-failed","status":"failed"}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     do {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
@@ -510,7 +560,7 @@ import Testing
         jsonResponse(#"{"id":"task-empty","status":"succeeded","content":{}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     await #expect(throws: AIError.invalidResponse(provider: "bytedance.video", message: "No video URL in response")) {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat running"))
@@ -523,7 +573,7 @@ import Testing
         jsonResponse(#"{"id":"task-timeout","status":"processing"}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
 
     await #expect(throws: AIError.invalidResponse(provider: "bytedance.video", message: "Video generation timed out after 1ms")) {
         _ = try await model.generateVideo(VideoGenerationRequest(

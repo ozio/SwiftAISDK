@@ -165,6 +165,60 @@ public struct MCPCallToolResult: Equatable, Hashable, Sendable {
     }
 }
 
+public struct MCPCompleteArgument: Equatable, Hashable, Sendable {
+    public var name: String
+    public var value: String
+    public var rawValue: JSONValue
+
+    public init(name: String, value: String, rawValue: JSONValue? = nil) {
+        self.name = name
+        self.value = value
+        self.rawValue = rawValue ?? .object([
+            "name": .string(name),
+            "value": .string(value)
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let name = json["name"]?.stringValue, let value = json["value"]?.stringValue else {
+            throw MCPClientError(message: "Expected MCP completion argument with name and value.")
+        }
+        self.init(name: name, value: value, rawValue: json)
+    }
+}
+
+public struct MCPCompleteResult: Equatable, Hashable, Sendable {
+    public var values: [String]
+    public var total: Int?
+    public var hasMore: Bool?
+    public var rawValue: JSONValue
+
+    public init(values: [String], total: Int? = nil, hasMore: Bool? = nil, rawValue: JSONValue? = nil) {
+        self.values = values
+        self.total = total
+        self.hasMore = hasMore
+        self.rawValue = rawValue ?? .object([
+            "completion": .object([
+                "values": .array(values.map(JSONValue.string)),
+                "total": total.map { .number(Double($0)) },
+                "hasMore": hasMore.map(JSONValue.bool)
+            ])
+        ])
+    }
+
+    init(json: JSONValue) throws {
+        guard let values = json["completion"]?["values"]?.arrayValue else {
+            throw MCPClientError(message: "Expected MCP completion result with completion values array.")
+        }
+        self.init(
+            values: values.compactMap(\.stringValue),
+            total: json["completion"]?["total"]?.intValue,
+            hasMore: json["completion"]?["hasMore"]?.boolValue,
+            rawValue: json
+        )
+    }
+}
+
 public struct MCPResource: Equatable, Hashable, Sendable {
     public var uri: String
     public var name: String
@@ -235,18 +289,24 @@ public struct MCPListResourcesResult: Equatable, Hashable, Sendable {
 
 public struct MCPResourceContent: Equatable, Hashable, Sendable {
     public var uri: String
+    public var name: String?
+    public var title: String?
     public var mimeType: String?
     public var text: String?
     public var blob: String?
     public var rawValue: JSONValue
 
-    public init(uri: String, mimeType: String? = nil, text: String? = nil, blob: String? = nil, rawValue: JSONValue? = nil) {
+    public init(uri: String, name: String? = nil, title: String? = nil, mimeType: String? = nil, text: String? = nil, blob: String? = nil, rawValue: JSONValue? = nil) {
         self.uri = uri
+        self.name = name
+        self.title = title
         self.mimeType = mimeType
         self.text = text
         self.blob = blob
         self.rawValue = rawValue ?? .object([
             "uri": .string(uri),
+            "name": name.map(JSONValue.string),
+            "title": title.map(JSONValue.string),
             "mimeType": mimeType.map(JSONValue.string),
             "text": text.map(JSONValue.string),
             "blob": blob.map(JSONValue.string)
@@ -259,6 +319,8 @@ public struct MCPResourceContent: Equatable, Hashable, Sendable {
         }
         self.init(
             uri: uri,
+            name: json["name"]?.stringValue,
+            title: json["title"]?.stringValue,
             mimeType: json["mimeType"]?.stringValue,
             text: json["text"]?.stringValue,
             blob: json["blob"]?.stringValue,
@@ -565,4 +627,3 @@ public extension MCPTransport {
         return try await request(message)
     }
 }
-

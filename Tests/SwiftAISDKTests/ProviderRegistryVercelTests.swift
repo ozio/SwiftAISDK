@@ -113,10 +113,30 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.v0.dev/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer vercel-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/vercel/2.0.53")
+    #expect(request.headers["user-agent"] == "ai-sdk/vercel/3.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "v0-1.5-md")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Build UI")
+}
+
+@Test func vercelCallableProviderReturnsChatModelLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"callable v0"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}
+    """))
+    let provider = try AIProviders.vercel(settings: ProviderSettings(apiKey: "vercel-key", transport: transport))
+    let model = try provider("v0-1.5-lg")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Build UI")]))
+
+    #expect(model.providerID == "vercel.chat")
+    #expect(model.modelID == "v0-1.5-lg")
+    #expect(result.text == "callable v0")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.v0.dev/v1/chat/completions")
+    #expect(request.headers["authorization"] == "Bearer vercel-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/vercel/3.0.5")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"]?.stringValue == "v0-1.5-lg")
 }
 
 @Test func vercelLanguageUsesCustomSettingsLikeUpstreamProvider() async throws {
@@ -141,7 +161,7 @@ import Testing
     #expect(request.url.absoluteString == "https://custom.v0.example/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer custom-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/vercel/2.0.53")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/vercel/3.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "v0-1.0-md")
 }

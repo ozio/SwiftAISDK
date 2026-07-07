@@ -18,6 +18,10 @@ description: "fireworks provider capabilities and factories."
 - Embedding
 - Image
 
+## Notes
+
+Fireworks mirrors upstream Fireworks 3.0.6: `FIREWORKS_API_KEY`, bearer auth, custom base URL and headers, versioned user-agent suffix, callable/chat/language/completion/embedding/textEmbedding/image/imageModel aliases, flat error schema, includeUsage streaming by default, current Kimi K2.6 and Minimax M2 model IDs, thinking/reasoningHistory/promptCacheKey/serviceTier mapping, reasoning_effort minimal/xhigh normalization, sync and async image endpoints, same-origin credential forwarding for async downloads, providerOptions.fireworks passthrough, warnings, and response metadata. ProviderV4, ESM-only packaging, Node 22 engines, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

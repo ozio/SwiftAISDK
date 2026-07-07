@@ -2,6 +2,60 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func voyageProviderExposesEmbeddingAndRerankingAliasesLikeUpstream() throws {
+    let provider = try AIProviders.voyage(settings: ProviderSettings(
+        apiKey: "voyage-key",
+        transport: RecordingTransport(response: jsonResponse("{}"))
+    ))
+
+    let embeddingModelIDs = [
+        "voyage-4-large",
+        "voyage-4",
+        "voyage-4-lite",
+        "voyage-4-nano",
+        "voyage-code-3.5",
+        "voyage-code-3",
+        "voyage-3-large",
+        "voyage-3.5",
+        "voyage-3.5-lite",
+        "voyage-3",
+        "voyage-3-lite",
+        "voyage-finance-2",
+        "voyage-law-2",
+        "voyage-multilingual-2",
+        "voyage-code-2",
+        "voyage-2",
+        "custom-embedding-model"
+    ]
+    for modelID in embeddingModelIDs {
+        #expect(try provider.embeddingModel(modelID).providerID == "voyage.embedding")
+        #expect(try provider.embedding(modelID).modelID == modelID)
+        #expect(try provider.textEmbeddingModel(modelID).modelID == modelID)
+        #expect(try provider.textEmbedding(modelID).modelID == modelID)
+    }
+
+    let rerankingModelIDs = [
+        "rerank-2.5",
+        "rerank-2.5-lite",
+        "rerank-2",
+        "rerank-2-lite",
+        "rerank-1",
+        "rerank-lite-1",
+        "custom-reranking-model"
+    ]
+    for modelID in rerankingModelIDs {
+        #expect(try provider.rerankingModel(modelID).providerID == "voyage.reranking")
+        #expect(try provider.reranking(modelID).modelID == modelID)
+    }
+
+    #expect(throws: AIError.unsupportedModel(provider: "voyage", capability: .language, modelID: "some-model")) {
+        _ = try provider.languageModel("some-model")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "voyage", capability: .image, modelID: "some-model")) {
+        _ = try provider.imageModel("some-model")
+    }
+}
+
 @Test func voyageEmbeddingProviderOptionsFollowUpstreamSchema() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"embedding":[0.1]}],"usage":{"total_tokens":1}}"#))
     let provider = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key", transport: transport))
@@ -81,7 +135,7 @@ import Testing
 @Test func voyageEmbeddingResponseValidationMatchesUpstreamSchema() async throws {
     let provider = try AIProviders.voyage(settings: ProviderSettings(
         apiKey: "voyage-key",
-        transport: RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"embedding":[0.1]}]}"#))
+        transport: RecordingTransport(response: jsonResponse(#"{"usage":{"total_tokens":"bad"},"data":[{"index":0,"embedding":[0.1]}]}"#))
     ))
     let model = try provider.embeddingModel("voyage-4")
 
@@ -110,7 +164,7 @@ import Testing
 @Test func voyageRerankingResponseValidationMatchesUpstreamSchema() async throws {
     let provider = try AIProviders.voyage(settings: ProviderSettings(
         apiKey: "voyage-key",
-        transport: RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"relevance_score":0.8}]}"#))
+        transport: RecordingTransport(response: jsonResponse(#"{"data":[{"index":"bad","relevance_score":0.8}]}"#))
     ))
     let model = try provider.rerankingModel("rerank-2.5")
 

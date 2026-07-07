@@ -7,6 +7,7 @@ public func toResponseMessages(
     var assistantParts: [AIContentPart] = []
     var toolParts: [AIContentPart] = []
     var toolCallsByID: [String: AIToolCall] = [:]
+    var toolCallOrderByID: [String: Int] = [:]
     var approvalRequestsByID: [String: AIToolApprovalRequest] = [:]
     let explicitToolResultIDs = Set(content.compactMap { part -> String? in
         if case let .toolResult(result) = part {
@@ -22,6 +23,9 @@ public func toResponseMessages(
         case let .reasoning(text, _) where text.isEmpty:
             continue
         case let .toolCall(call):
+            if toolCallOrderByID[call.id] == nil {
+                toolCallOrderByID[call.id] = toolCallOrderByID.count
+            }
             toolCallsByID[call.id] = call
             assistantParts.append(.toolCall(sanitizedToolCall(call)))
         case let .toolApprovalRequest(request):
@@ -62,9 +66,43 @@ public func toResponseMessages(
         messages.append(AIMessage(role: .assistant, content: assistantParts))
     }
     if !toolParts.isEmpty {
-        messages.append(AIMessage(role: .tool, content: toolParts))
+        messages.append(AIMessage(
+            role: .tool,
+            content: sortToolResultsByToolCallOrder(toolParts, orderByToolCallID: toolCallOrderByID)
+        ))
     }
     return messages
+}
+
+private func sortToolResultsByToolCallOrder(
+    _ parts: [AIContentPart],
+    orderByToolCallID: [String: Int]
+) -> [AIContentPart] {
+    let sortedResults = parts.enumerated().compactMap { index, part -> (index: Int, part: AIContentPart, order: Int?)? in
+        guard case let .toolResult(result) = part else { return nil }
+        return (index, part, orderByToolCallID[result.toolCallID])
+    }
+    .sorted { lhs, rhs in
+        switch (lhs.order, rhs.order) {
+        case let (lhsOrder?, rhsOrder?):
+            return lhsOrder == rhsOrder ? lhs.index < rhs.index : lhsOrder < rhsOrder
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        case (nil, nil):
+            return lhs.index < rhs.index
+        }
+    }
+
+    guard !sortedResults.isEmpty else { return parts }
+
+    var resultIndex = 0
+    return parts.map { part in
+        guard case .toolResult = part else { return part }
+        defer { resultIndex += 1 }
+        return sortedResults[resultIndex].part
+    }
 }
 
 private func sanitizedToolCall(_ call: AIToolCall) -> AIToolCall {

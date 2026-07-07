@@ -468,6 +468,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     private func openResponsesPreparedRequest(for request: LanguageModelRequest, stream: Bool, providerOptionsName: String) throws -> OpenAICompatibleResponsesPreparedRequest {
         let preparedInput = openResponsesInput(from: request.messages, providerID: providerID)
         let providerOptions = try openResponsesProviderOptions(providerOptions: request.providerOptions, providerOptionsName: providerOptionsName)
+        var warnings = openResponsesWarnings(for: request, includePenaltyWarnings: false) + preparedInput.warnings
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "input": preparedInput.input
@@ -480,7 +481,22 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
         if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
         var reasoning: [String: JSONValue] = [:]
-        if let effort = providerOptions["reasoningEffort"] { reasoning["effort"] = effort }
+        if isCustomReasoning(request.reasoning),
+           let requestedReasoning = request.reasoning,
+           let effort = mapReasoningToProviderEffort(
+               reasoning: requestedReasoning,
+               effortMap: [
+                   "none": "none",
+                   "minimal": "low",
+                   "low": "low",
+                   "medium": "medium",
+                   "high": "high",
+                   "xhigh": "xhigh"
+               ],
+               warnings: &warnings
+           ) {
+            reasoning["effort"] = .string(effort)
+        }
         if let summary = providerOptions["reasoningSummary"] { reasoning["summary"] = summary }
         if !reasoning.isEmpty { body["reasoning"] = .object(reasoning) }
         let tools = openResponsesFunctionTools(from: request.tools)
@@ -493,7 +509,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         }
         return OpenAICompatibleResponsesPreparedRequest(
             body: config.transformRequestBody?(body) ?? body,
-            warnings: openResponsesWarnings(for: request) + preparedInput.warnings
+            warnings: warnings
         )
     }
 }

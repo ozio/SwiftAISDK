@@ -16,6 +16,10 @@ description: "voyage provider capabilities and factories."
 - Embedding
 - Reranking
 
+## Notes
+
+Voyage embeddings and reranking mirror upstream Voyage 2.0.5: `VOYAGE_API_KEY`, custom base URL and headers, versioned user-agent suffix, `embedding`/`embeddingModel`/`textEmbedding`/`textEmbeddingModel` aliases, `reranking`/`rerankingModel` aliases, current Voyage 4/3.5/code and rerank model IDs, provider option schema mapping, 128-input embedding preflight, sorted embedding responses by index, nullish embedding usage as zero tokens, object-document reranking warnings, and v4 rerank response validation without required usage.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

@@ -16,11 +16,12 @@ Source URL: /providers/google-vertex/
 - Embedding
 - Image
 - Transcription
+- Speech
 - Video
 
 ## Notes
 
-Vertex covers Gemini language, embeddings, Imagen image generation/editing, transcription, and Veo video. Video requests support first/last frame images and reference images through the shared video request shape.
+Vertex mirrors upstream Google Vertex 5.0.11 across Gemini language, tuned endpoint models, embeddings, Imagen image generation/editing, Gemini TTS speech, Cloud Speech-to-Text transcription, Veo video, and the Vertex Interactions API. Video supports first/last frame images, reference images, and top-level generateAudio precedence. Speech maps Gemini TTS generateContent requests with WAV-wrapped PCM by default, raw PCM opt-in, multi-speaker provider options, sample-rate metadata, and upstream warnings. Node google-auth-library options, workflow serialization, ProviderV4 type names, and ESM-only packaging remain JS-runtime/package-surface concerns.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

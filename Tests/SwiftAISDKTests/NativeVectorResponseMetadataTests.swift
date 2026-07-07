@@ -188,7 +188,7 @@ import Testing
     ))
     let rerank = try await rerankProvider.rerankingModel("cohere.rerank-v3-5:0").rerank(RerankingRequest(query: "q", documents: ["a", "b"], topK: 1))
 
-    #expect(rerank.requestMetadata.body?["rerankingConfiguration"]?["amazonBedrockRerankingConfiguration"]?["numberOfResults"]?.intValue == 1)
+    #expect(rerank.requestMetadata.body?["rerankingConfiguration"]?["bedrockRerankingConfiguration"]?["numberOfResults"]?.intValue == 1)
     #expect(rerank.responseMetadata.id == "bedrock-rerank")
     #expect(rerank.responseMetadata.modelID == "cohere.rerank-v3-5:0")
     #expect(rerank.responseMetadata.headers["bedrock-header"] == "rerank")

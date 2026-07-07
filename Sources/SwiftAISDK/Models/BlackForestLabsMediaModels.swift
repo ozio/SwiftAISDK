@@ -290,19 +290,24 @@ private func blackForestLabsWarnings(for request: ImageGenerationRequest) -> [AI
 
 private func blackForestLabsProviderMetadata(submit: JSONValue, poll: JSONValue) -> [String: JSONValue] {
     let imageMetadata: JSONValue = .object([
-        "seed": poll["result"]?["seed"],
-        "start_time": poll["result"]?["start_time"],
-        "end_time": poll["result"]?["end_time"],
-        "duration": poll["result"]?["duration"],
-        "cost": submit["cost"],
-        "inputMegapixels": submit["input_mp"],
-        "outputMegapixels": submit["output_mp"]
+        "seed": blackForestLabsNonNull(poll["result"]?["seed"]),
+        "start_time": blackForestLabsNonNull(poll["result"]?["start_time"]),
+        "end_time": blackForestLabsNonNull(poll["result"]?["end_time"]),
+        "duration": blackForestLabsNonNull(poll["result"]?["duration"]),
+        "cost": blackForestLabsNonNull(submit["cost"]),
+        "inputMegapixels": blackForestLabsNonNull(submit["input_mp"]),
+        "outputMegapixels": blackForestLabsNonNull(submit["output_mp"])
     ])
     return [
         "blackForestLabs": .object([
             "images": .array([imageMetadata])
         ])
     ]
+}
+
+private func blackForestLabsNonNull(_ value: JSONValue?) -> JSONValue? {
+    guard value != .null else { return nil }
+    return value
 }
 
 private func blackForestLabsImageInputs(files: [ImageInputFile], mask: ImageInputFile?, modelID: String) throws -> [String: JSONValue] {

@@ -13,6 +13,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions)
+        let metadataNamespace = metadataNamespace(for: request)
         let httpResponse = try await config.transport.send(config.request(
             path: "/chat/completions",
             modelID: modelID,
@@ -39,7 +40,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             finishReason: openAICompatibleFinishReason(choice?["finish_reason"]?.stringValue),
             usage: usage(from: raw),
             toolCalls: toolCalls,
-            providerMetadata: openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID),
+            providerMetadata: openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID, namespace: metadataNamespace),
             rawValue: raw,
             warnings: warnings,
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
@@ -51,6 +52,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             Task {
                 do {
                     let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions)
+                    let metadataNamespace = metadataNamespace(for: request)
                     let body = JSONValue.object(try body(for: request, stream: true))
                     let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
@@ -89,7 +91,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                         }
                         let choice = raw["choices"]?[0]
                         openAICompatibleMergeProviderMetadata(
-                            openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID),
+                            openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID, namespace: metadataNamespace),
                             into: &providerMetadata
                         )
                         finishUsage = usage(from: raw) ?? finishUsage
@@ -194,6 +196,11 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         return config.transformRequestBody?(body) ?? body
     }
 
+    private func metadataNamespace(for request: LanguageModelRequest) -> String? {
+        guard config.usesGenericOpenAICompatibleProviderOptions else { return nil }
+        return openAICompatibleProviderMetadataNamespace(providerID, providerOptions: request.providerOptions)
+    }
+
     private func usage(from raw: JSONValue) -> TokenUsage? {
         switch openAICompatibleProviderRoot(providerID) {
         case "xai":
@@ -294,19 +301,36 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             ])
         }
 
-        let parts: [JSONValue] = try message.content.map { part in
+        let parts: [JSONValue] = try message.content.enumerated().map { index, part in
             switch part {
             case let .text(text, _):
                 return .object(["type": .string("text"), "text": .string(text)])
             case let .reasoning(text, _):
                 return .object(["type": .string("text"), "text": .string(text)])
-            case let .imageURL(url, _):
-                return .object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])])
-            case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
-                return .object([
-                    "type": .string("image_url"),
-                    "image_url": .object(["url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")])
-                ])
+            case let .imageURL(url, providerMetadata):
+                var imageURL: [String: JSONValue] = ["url": .string(url)]
+                if let imageDetail = openAIChatImageDetail(from: providerMetadata, providerID: providerID) {
+                    imageURL["detail"] = imageDetail
+                }
+                return .object(["type": .string("image_url"), "image_url": .object(imageURL)])
+            case let .data(mimeType, data, providerMetadata):
+                return try chatFilePart(
+                    mimeType: mimeType,
+                    data: data,
+                    filename: nil,
+                    providerMetadata: providerMetadata,
+                    index: index,
+                    providerID: providerID
+                )
+            case let .file(mimeType, data, filename, providerMetadata):
+                return try chatFilePart(
+                    mimeType: mimeType,
+                    data: data,
+                    filename: filename,
+                    providerMetadata: providerMetadata,
+                    index: index,
+                    providerID: providerID
+                )
             case let .providerReference(_, reference, _, _):
                 return .object([
                     "type": .string("file"),
@@ -324,4 +348,54 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             "content": .array(parts)
         ])
     }
+}
+
+private func chatFilePart(
+    mimeType: String,
+    data: Data,
+    filename: String?,
+    providerMetadata: [String: JSONValue],
+    index: Int,
+    providerID: String
+) throws -> JSONValue {
+    let base64 = data.base64EncodedString()
+    if mimeType.hasPrefix("image/") {
+        var imageURL: [String: JSONValue] = ["url": .string("data:\(mimeType);base64,\(base64)")]
+        if let imageDetail = openAIChatImageDetail(from: providerMetadata, providerID: providerID) {
+            imageURL["detail"] = imageDetail
+        }
+        return .object(["type": .string("image_url"), "image_url": .object(imageURL)])
+    }
+    switch mimeType {
+    case "audio/wav":
+        return .object([
+            "type": .string("input_audio"),
+            "input_audio": .object(["data": .string(base64), "format": .string("wav")])
+        ])
+    case "audio/mp3", "audio/mpeg":
+        return .object([
+            "type": .string("input_audio"),
+            "input_audio": .object(["data": .string(base64), "format": .string("mp3")])
+        ])
+    case "application/pdf":
+        return .object([
+            "type": .string("file"),
+            "file": .object([
+                "filename": .string(filename ?? "part-\(index).pdf"),
+                "file_data": .string("data:application/pdf;base64,\(base64)")
+            ])
+        ])
+    default:
+        throw AIError.invalidArgument(
+            argument: "messages",
+            message: "OpenAI chat file part media type \(mimeType) is not supported."
+        )
+    }
+}
+
+private func openAIChatImageDetail(from providerMetadata: [String: JSONValue], providerID: String) -> JSONValue? {
+    let providerRoot = openAICompatibleProviderRoot(providerID)
+    return providerMetadata[providerRoot]?["imageDetail"]
+        ?? providerMetadata["openai"]?["imageDetail"]
+        ?? providerMetadata["imageDetail"]
 }

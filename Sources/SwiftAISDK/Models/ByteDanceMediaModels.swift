@@ -24,6 +24,9 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
             body["resolution"] = .string(byteDanceResolutionMap[resolution] ?? resolution)
         }
         body.merge(byteDanceOptions(from: options)) { _, new in new }
+        if let generateAudio = request.generateAudio {
+            body["generate_audio"] = .bool(generateAudio)
+        }
 
         let createResponse = try await config.transport.send(config.request(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
         guard (200..<300).contains(createResponse.statusCode) else {

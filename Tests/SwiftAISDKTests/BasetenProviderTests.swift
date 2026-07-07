@@ -14,9 +14,52 @@ import Testing
     #expect(result.text == "baseten")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.baseten.co/v1/chat/completions")
-    #expect(request.headers["Authorization"] == "Bearer baseten-key")
+    #expect(request.headers["authorization"] == "Bearer baseten-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "deepseek-ai/DeepSeek-V3-0324")
+}
+
+@Test func basetenChatUsesCustomBaseURLHeadersAndUserAgentLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"custom-base"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+    """))
+    let provider = try AIProviders.baseten(settings: ProviderSettings(
+        apiKey: "baseten-key",
+        baseURL: "https://custom.baseten.co/v1/",
+        headers: ["user-agent": "CustomApp/1.0", "Custom-Header": "custom-value"],
+        transport: transport
+    ))
+    let model = try provider.chatModel("deepseek-ai/DeepSeek-V3-0324")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "custom-base")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://custom.baseten.co/v1/chat/completions")
+    #expect(request.headers["authorization"] == "Bearer baseten-key")
+    #expect(request.headers["custom-header"] == "custom-value")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/baseten/2.0.5")
+}
+
+@Test func basetenReadsEnvironmentAPIKeyAndReportsMissingKeyLikeUpstream() async throws {
+    try await withTemporaryBasetenEnvironment(["BASETEN_API_KEY": "env-baseten-key"]) {
+        let transport = RecordingTransport(response: jsonResponse("""
+        {"choices":[{"message":{"content":"env"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+        """))
+        let provider = try AIProviders.baseten(settings: ProviderSettings(transport: transport))
+        _ = try await provider.chatModel("deepseek-ai/DeepSeek-V3-0324").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+        let request = try #require(await transport.requests().first)
+        #expect(request.headers["authorization"] == "Bearer env-baseten-key")
+        #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.5")
+    }
+
+    _ = await withTemporaryBasetenEnvironment(["BASETEN_API_KEY": nil]) {
+        #expect(throws: AIError.missingAPIKey(provider: "baseten", environmentVariables: ["BASETEN_API_KEY"])) {
+            _ = try AIProviders.baseten(settings: ProviderSettings())
+        }
+    }
 }
 
 @Test func basetenChatUsesModelURLAndDefaultPlaceholderModel() async throws {
@@ -110,7 +153,8 @@ import Testing
     #expect(model.modelID == "embeddings")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://model-123.api.baseten.co/environments/production/sync/v1/embeddings")
-    #expect(request.headers["Authorization"] == "Bearer baseten-key")
+    #expect(request.headers["authorization"] == "Bearer baseten-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.5")
     #expect(request.headers["x-baseten-customer-request-id"] != nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "embeddings")
@@ -186,4 +230,62 @@ import Testing
         _ = try await provider.embeddingModel().embed(EmbeddingRequest(values: []))
     }
     #expect(await transport.requests().isEmpty)
+}
+
+@Test func basetenImageModelIsUnsupportedLikeUpstreamNoSuchModel() throws {
+    let provider = try AIProviders.baseten(settings: ProviderSettings(apiKey: "baseten-key", transport: RecordingTransport(response: jsonResponse("{}"))))
+
+    #expect(throws: AIError.unsupportedModel(provider: "baseten", capability: .image, modelID: "test-model")) {
+        _ = try provider.imageModel("test-model")
+    }
+}
+
+@Test func basetenChatUsesUpstreamStringErrorEnvelope() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 429,
+        headers: ["content-type": "application/json"],
+        body: Data(#"{"error":"rate limit exceeded"}"#.utf8)
+    ))
+    let provider = try AIProviders.baseten(settings: ProviderSettings(apiKey: "baseten-key", transport: transport))
+    let model = try provider.chatModel("deepseek-ai/DeepSeek-V3-0324")
+
+    do {
+        _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+        Issue.record("Expected Baseten API error.")
+    } catch let error as AIError {
+        let apiError = try #require(error.apiCallError)
+        #expect(apiError.provider == "baseten.chat")
+        #expect(apiError.statusCode == 429)
+        #expect(apiError.responseBody == "rate limit exceeded")
+        #expect(apiError.isRetryable)
+    }
+}
+
+private func withTemporaryBasetenEnvironment<T>(_ updates: [String: String?], operation: () async throws -> T) async rethrows -> T {
+    var previous: [String: String] = [:]
+    var missing = Set<String>()
+    for key in updates.keys {
+        if let value = getenv(key).map({ String(cString: $0) }) {
+            previous[key] = value
+        } else {
+            missing.insert(key)
+        }
+    }
+    for (key, value) in updates {
+        if let value {
+            setenv(key, value, 1)
+        } else {
+            unsetenv(key)
+        }
+    }
+    defer {
+        for key in updates.keys {
+            if missing.contains(key) {
+                unsetenv(key)
+            } else if let value = previous[key] {
+                setenv(key, value, 1)
+            }
+        }
+    }
+    return try await operation()
 }

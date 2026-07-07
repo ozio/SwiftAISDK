@@ -15,8 +15,14 @@ description: "xai provider capabilities and factories."
 
 - Language
 - Image
+- Transcription
+- Speech
 - Video
 - Files
+
+## Notes
+
+xAI mirrors upstream 4.0.7: `XAI_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language Responses default, chat/responses/image/video/files aliases, no-argument `speech`/`speechModel` and `transcription`/`transcriptionModel` aliases, Responses provider options and hosted tools, chat reasoningEffort values `none`/`low`/`medium`/`high`, image generation/editing, video generation/edit/extend/reference modes, `/tts` speech generation with voice/language/output_format/provider options, `/stt` multipart batch transcription with options and word segments, Files API provider references, response metadata, and xAI error schema. Upstream realtime speech-to-speech and WebSocket streaming STT are experimental JS runtime surfaces not yet represented by SwiftAISDK protocols; ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers/WebSocket config, and workflow serialization helpers are JS-only upstream concerns.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

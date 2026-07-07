@@ -114,6 +114,34 @@ import Testing
     #expect(toolOutput[8]["filename"]?.stringValue == "inline.txt")
     #expect(toolOutput[8]["file_data"]?.stringValue == "data:text/plain;base64,\(Data("inline text".utf8).base64EncodedString())")
 }
+
+@Test func openResponsesProviderUsesUpstreamExecutionDeniedDefaultMessage() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"ok"}"#))
+    let provider = try AIProviders.openResponses(
+        name: "open-responses",
+        url: "https://open.example.test/responses",
+        settings: ProviderSettings(apiKey: "open-key", transport: transport)
+    )
+    let model = try provider.languageModel("local-model")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .assistant, content: [
+            .toolCall(AIToolCall(id: "call-1", name: "lookup", arguments: "{}"))
+        ]),
+        .toolResponses(toolResults: [
+            AIToolResult(
+                toolCallID: "call-1",
+                toolName: "lookup",
+                result: ["type": "execution-denied"]
+            )
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?[1]?["type"]?.stringValue == "function_call_output")
+    #expect(body["input"]?[1]?["output"]?.stringValue == "Tool call execution denied.")
+}
+
 @Test func openResponsesProviderMapsFinishReasonsLikeUpstream() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"resp-tool","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"query\":\"weather\"}"}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}"#),
@@ -240,7 +268,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.perplexity.ai/chat/completions")
     #expect(request.headers["authorization"] == "Bearer pplx-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/3.0.36")
+    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/4.0.6")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "sonar")
     #expect(body["temperature"]?.doubleValue == 0.2)
@@ -256,6 +284,23 @@ import Testing
     #expect(content?[2]?["type"]?.stringValue == "file_url")
     #expect(content?[2]?["file_url"]?["url"]?.stringValue == Data("pdf".utf8).base64EncodedString())
     #expect(content?[2]?["file_name"]?.stringValue == "brief.pdf")
+}
+@Test func perplexityLanguageTreatsProviderDefaultReasoningAsNoopLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"ppl-provider-default","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
+    let model = try provider.languageModel("sonar")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        reasoning: "provider-default"
+    ))
+
+    #expect(result.text == "answer")
+    #expect(result.warnings == [])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["reasoning"] == nil)
 }
 @Test func perplexityLanguageAppliesTransformRequestBodyToGenerateAndStream() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
@@ -419,6 +464,8 @@ import Testing
 }
 @Test func perplexityLanguageStreamsNativeChunksWithUsage() async throws {
     let transport = RecordingTransport(response: sseResponse("""
+    data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":null},"finish_reason":null}]}
+
     data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"hel"},"finish_reason":null}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3},"citations":["https://example.com/a"]}
 
     data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"lo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4,"reasoning_tokens":1,"citation_tokens":1,"num_search_queries":1}}

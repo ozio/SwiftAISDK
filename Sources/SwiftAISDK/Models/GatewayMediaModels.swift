@@ -13,6 +13,7 @@ public final class GatewayEmbeddingModel: EmbeddingModel, @unchecked Sendable {
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         var body: [String: JSONValue] = ["values": .array(request.values)]
+        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         body.merge(request.extraBody) { _, new in new }
         let response = try await config.sendJSONResponse(path: "/embedding-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-embedding-model-specification-version": "4",
@@ -26,6 +27,8 @@ public final class GatewayEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             embeddings: embeddings,
             usage: gatewayEmbeddingUsage(from: raw),
             rawValue: raw,
+            warnings: gatewayWarnings(from: raw["warnings"]),
+            providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -54,6 +57,9 @@ public final class GatewayImageModel: ImageModel, @unchecked Sendable {
         var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let count = request.count { body["n"] = .number(Double(count)) }
         if let size = request.size { body["size"] = .string(size) }
+        if let aspectRatio = request.aspectRatio { body["aspectRatio"] = .string(aspectRatio) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         body.merge(request.extraBody) { _, new in new }
         if !request.files.isEmpty {
             body["files"] = .array(request.files.map(gatewayImageFile))
@@ -71,6 +77,8 @@ public final class GatewayImageModel: ImageModel, @unchecked Sendable {
             urls: images.compactMap { $0["url"]?.stringValue },
             base64Images: images.compactMap { $0["data"]?.stringValue ?? $0.stringValue ?? $0["b64_json"]?.stringValue },
             rawValue: raw,
+            warnings: gatewayWarnings(from: raw["warnings"]),
+            providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -110,6 +118,7 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
         if let resolution = request.resolution { body["resolution"] = .string(resolution) }
         if let fps = request.fps { body["fps"] = .number(fps) }
         if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+        if let generateAudio = request.generateAudio { body["generateAudio"] = .bool(generateAudio) }
         if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         if let image = request.image { body["image"] = gatewayVideoFile(image) }
         if !request.frameImages.isEmpty {
@@ -152,8 +161,12 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
         let videos = raw["videos"]?.arrayValue ?? raw["data"]?.arrayValue ?? []
         return VideoGenerationResult(
             urls: videos.compactMap { $0["url"]?.stringValue ?? $0.stringValue },
+            base64Videos: videos.compactMap { $0["base64"]?.stringValue ?? $0["data"]?.stringValue },
             operationID: raw["id"]?.stringValue,
+            mediaType: videos.first?["mediaType"]?.stringValue,
             rawValue: raw,
+            warnings: gatewayWarnings(from: raw["warnings"]),
+            providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
@@ -188,6 +201,7 @@ public final class GatewayRerankingModel: RerankingModel, @unchecked Sendable {
             "documents": .array(request.documents)
         ]
         if let topK = request.topK { body["topN"] = .number(Double(topK)) }
+        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         body.merge(request.extraBody) { _, new in new }
         let response = try await config.sendJSONResponse(path: "/reranking-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-reranking-model-specification-version": "4",
@@ -201,7 +215,7 @@ public final class GatewayRerankingModel: RerankingModel, @unchecked Sendable {
                 return nil
             }
             return RerankedDocument(index: index, score: score)
-        }, rawValue: raw, requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers), responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID))
+        }, rawValue: raw, warnings: gatewayWarnings(from: raw["warnings"]), providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]), requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers), responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID))
     }
 }
 
@@ -220,6 +234,10 @@ public final class GatewaySpeechModel: SpeechModel, @unchecked Sendable {
         var body: [String: JSONValue] = ["text": .string(request.text)]
         if let voice = request.voice { body["voice"] = .string(voice) }
         if let format = request.format { body["outputFormat"] = .string(format) }
+        if let instructions = request.instructions { body["instructions"] = .string(instructions) }
+        if let speed = request.speed { body["speed"] = .number(speed) }
+        if let language = request.language { body["language"] = .string(language) }
+        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         body.merge(request.extraBody) { _, new in new }
         let response = try await config.sendJSONResponse(path: "/speech-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-speech-model-specification-version": "4",
@@ -231,6 +249,8 @@ public final class GatewaySpeechModel: SpeechModel, @unchecked Sendable {
         }
         return SpeechResult(
             audio: data,
+            warnings: gatewayWarnings(from: raw["warnings"]),
+            providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
@@ -253,6 +273,7 @@ public final class GatewayTranscriptionModel: TranscriptionModel, @unchecked Sen
             "audio": .string(request.audio.base64EncodedString()),
             "mediaType": .string(request.mimeType)
         ]
+        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         body.merge(request.extraBody) { _, new in new }
         let response = try await config.sendJSONResponse(path: "/transcription-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-transcription-model-specification-version": "4",
@@ -268,9 +289,22 @@ public final class GatewayTranscriptionModel: TranscriptionModel, @unchecked Sen
             rawValue: raw,
             segments: segments,
             language: raw["language"]?.stringValue,
-            durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            durationInSeconds: raw["durationInSeconds"]?.doubleValue ?? raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            warnings: gatewayWarnings(from: raw["warnings"]),
+            providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
+}
+
+private func gatewayWarnings(from value: JSONValue?) -> [AIWarning] {
+    value?.arrayValue?.map { warning in
+        AIWarning(
+            type: warning["type"]?.stringValue ?? "other",
+            feature: warning["feature"]?.stringValue,
+            setting: warning["setting"]?.stringValue,
+            message: warning["message"]?.stringValue ?? warning["details"]?.stringValue
+        )
+    } ?? []
 }

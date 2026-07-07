@@ -17,6 +17,20 @@ import Testing
     #expect(result.toolCalls[0].name == "weather")
     #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["location"]?.stringValue == "San Francisco")
 }
+
+@Test func alibabaLanguageGeneratesMissingToolCallIDLikeUpstreamV4() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{\"location\":\"San Francisco\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}"#))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.languageModel("qwen3-max")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Weather?")]))
+
+    #expect(result.toolCalls.count == 1)
+    #expect(result.toolCalls[0].id.count == 16)
+    #expect(result.toolCalls[0].id != "tool-call-0")
+    #expect(result.toolCalls[0].name == "weather")
+}
+
 @Test func alibabaLanguageMapsMissingUsageToEmptyUsageLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop","index":0}]}"#))
     let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
@@ -111,7 +125,7 @@ import Testing
     #expect(finishReason == "error")
     #expect(usage == TokenUsage(inputTokensNoCache: 0, inputTokensCacheWrite: 0))
 }
-@Test func alibabaLanguageStreamRequiresFirstToolDeltaIDAndNameLikeUpstream() async throws {
+@Test func alibabaLanguageStreamGeneratesMissingFirstToolDeltaIDLikeUpstreamV4() async throws {
     let transport = RecordingTransport(response: sseResponse(#"""
     data: {"choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":null,"index":0}]}
 
@@ -121,9 +135,25 @@ import Testing
     let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
     let model = try provider.languageModel("qwen-plus")
 
-    await #expect(throws: AIError.invalidResponse(provider: "alibaba.chat", message: "Expected 'id' to be a string.")) {
-        for try await _ in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {}
+    var inputStartID: String?
+    var finalCall: AIToolCall?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
+        switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            inputStartID = id
+            #expect(name == "weather")
+        case let .toolCall(call):
+            finalCall = call
+        default:
+            break
+        }
     }
+
+    let id = try #require(inputStartID)
+    #expect(id.count == 16)
+    #expect(id != "tool-call-0")
+    #expect(finalCall?.id == id)
+    #expect(finalCall?.name == "weather")
 }
 @Test func alibabaVideoMapsStandardFieldsProviderOptionsWarningsAndMetadata() async throws {
     let transport = RecordingTransport(responses: [
@@ -366,4 +396,100 @@ import Testing
     )) {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "wave"))
     }
+}
+
+@Test func alibabaVideoMapsWan27ReferenceMediaRatioAndWarningsLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-wan27-r2v"},"request_id":"req-1"}"#),
+        jsonResponse(#"{"output":{"task_id":"task-wan27-r2v","task_status":"SUCCEEDED","video_url":"https://dashscope.example.com/wan27-r2v.mp4"},"request_id":"req-2"}"#)
+    ])
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.videoModel("wan2.7-r2v")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "Image 1 and Video 1 meet",
+        aspectRatio: "9:16",
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/opening-frame.png"), frameType: .firstFrame)
+        ],
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/character.png"),
+            ImageInputFile(url: "https://example.com/motion.mp4"),
+            ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png")
+        ],
+        resolution: "1920x1080",
+        generateAudio: true,
+        providerOptions: ["alibaba": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["model"]?.stringValue == "wan2.7-r2v")
+    #expect(body["input"]?["reference_urls"] == nil)
+    #expect(body["input"]?["media"]?[0]?["type"]?.stringValue == "reference_image")
+    #expect(body["input"]?["media"]?[0]?["url"]?.stringValue == "https://example.com/character.png")
+    #expect(body["input"]?["media"]?[1]?["type"]?.stringValue == "reference_video")
+    #expect(body["input"]?["media"]?[1]?["url"]?.stringValue == "https://example.com/motion.mp4")
+    #expect(body["input"]?["media"]?[2]?["type"]?.stringValue == "reference_image")
+    #expect(body["input"]?["media"]?[2]?["url"]?.stringValue == "data:image/png;base64,\(Data([137, 80, 78, 71]).base64EncodedString())")
+    #expect(body["input"]?["media"]?[3]?["type"]?.stringValue == "first_frame")
+    #expect(body["input"]?["media"]?[3]?["url"]?.stringValue == "https://example.com/opening-frame.png")
+    #expect(body["parameters"]?["resolution"]?.stringValue == "1080P")
+    #expect(body["parameters"]?["ratio"]?.stringValue == "9:16")
+    #expect(body["parameters"]?["size"] == nil)
+    #expect(body["parameters"]?["audio"] == nil)
+    #expect(result.warnings.contains { $0.feature == "aspectRatio" } == false)
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "generateAudio",
+        message: "wan2.7 models always generate audio. The audio option was ignored."
+    )))
+}
+
+@Test func alibabaVideoMapsWan27ProviderMediaOverrideAndT2VOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-wan27-media"},"request_id":"req-1"}"#),
+        jsonResponse(#"{"output":{"task_id":"task-wan27-media","task_status":"SUCCEEDED","video_url":"https://dashscope.example.com/wan27-media.mp4"},"request_id":"req-2"}"#),
+        jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-wan27-t2v"},"request_id":"req-3"}"#),
+        jsonResponse(#"{"output":{"task_id":"task-wan27-t2v","task_status":"SUCCEEDED","video_url":"https://dashscope.example.com/wan27-t2v.mp4"},"request_id":"req-4"}"#)
+    ])
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+
+    _ = try await provider.videoModel("wan2.7-r2v-2026-06-12").generateVideo(VideoGenerationRequest(
+        prompt: "Use explicit media",
+        aspectRatio: "9:16",
+        inputReferences: [ImageInputFile(url: "https://example.com/ignored.png")],
+        providerOptions: [
+            "alibaba": [
+                "ratio": "16:9",
+                "media": [
+                    ["type": "reference_video", "url": "https://example.com/character.mp4", "referenceVoice": "https://example.com/voice.mp3"],
+                    ["type": "first_frame", "url": "https://example.com/opening-frame.png"]
+                ],
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ]
+        ]
+    ))
+
+    var body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["parameters"]?["ratio"]?.stringValue == "16:9")
+    #expect(body["input"]?["media"]?[0]?["type"]?.stringValue == "reference_video")
+    #expect(body["input"]?["media"]?[0]?["reference_voice"]?.stringValue == "https://example.com/voice.mp3")
+    #expect(body["input"]?["media"]?[1]?["type"]?.stringValue == "first_frame")
+
+    let t2vResult = try await provider.videoModel("wan2.7-t2v").generateVideo(VideoGenerationRequest(
+        prompt: "wide cinematic",
+        resolution: "1920x1080",
+        generateAudio: false,
+        providerOptions: ["alibaba": ["shotType": "multi", "pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+
+    body = try decodeJSONBody(try #require((await transport.requests())[2].body))
+    #expect(body["parameters"]?["resolution"]?.stringValue == "1080P")
+    #expect(body["parameters"]?["ratio"]?.stringValue == "16:9")
+    #expect(body["parameters"]?["size"] == nil)
+    #expect(body["parameters"]?["audio"] == nil)
+    #expect(body["parameters"]?["shot_type"] == nil)
+    #expect(t2vResult.warnings.contains { $0.feature == "shotType" })
+    #expect(t2vResult.warnings.contains { $0.feature == "generateAudio" })
 }

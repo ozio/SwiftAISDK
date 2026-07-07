@@ -15,7 +15,7 @@ func openAICompatibleHTTPStatusError(provider: String, response: AIHTTPResponse)
 
 func openAICompatibleErrorMessage(from data: Data) -> String? {
     guard let json = try? decodeJSONBody(data) else { return nil }
-    return json["error"]?["message"]?.stringValue ?? json["message"]?.stringValue
+    return json["error"]?["message"]?.stringValue ?? json["error"]?.stringValue ?? json["message"]?.stringValue
 }
 
 func openAICompatibleStreamError(from raw: JSONValue) -> (message: String, rawValue: JSONValue)? {

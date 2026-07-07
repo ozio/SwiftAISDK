@@ -143,6 +143,50 @@ import Testing
     #expect(converted.modelOutput?["value"]?["output"]?["processed"]?.intValue == 42)
 }
 
+@Test func aiToResponseMessagesSortsToolResultsByToolCallOrderLikeUpstream() async throws {
+    let firstCall = responseMessageToolCall(
+        id: "call-1",
+        name: "firstTool",
+        arguments: #"{"value":1}"#
+    )
+    let secondCall = responseMessageToolCall(
+        id: "call-2",
+        name: "secondTool",
+        arguments: #"{"value":2}"#
+    )
+    let firstResult = AIToolResult(
+        toolCallID: firstCall.id,
+        toolName: firstCall.name,
+        result: ["value": 1]
+    )
+    let secondResult = AIToolResult(
+        toolCallID: secondCall.id,
+        toolName: secondCall.name,
+        result: ["value": 2]
+    )
+    let approvalResponse = AIToolApprovalResponse(id: "approval-1", approved: true)
+
+    let messages = try await toResponseMessages(content: [
+        .toolCall(firstCall),
+        .toolCall(secondCall),
+        .toolResult(secondResult),
+        .toolApprovalResponse(approvalResponse),
+        .toolResult(firstResult)
+    ])
+
+    #expect(messages == [
+        AIMessage(role: .assistant, content: [
+            .toolCall(firstCall),
+            .toolCall(secondCall)
+        ]),
+        AIMessage(role: .tool, content: [
+            .toolResult(firstResult),
+            .toolApprovalResponse(approvalResponse),
+            .toolResult(secondResult)
+        ])
+    ])
+}
+
 @Test func aiToResponseMessagesAddsExecutionDeniedResultForDeniedApprovalLikeUpstream() async throws {
     let call = responseMessageToolCall(arguments: #"{"path":"/tmp/file"}"#)
     let request = AIToolApprovalRequest(

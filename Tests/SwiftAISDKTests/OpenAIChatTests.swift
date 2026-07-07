@@ -16,10 +16,53 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/3.0.74")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.8")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-mini")
     #expect(body["messages"]?[1]?["content"]?.stringValue == "Hi")
+}
+
+@Test func openAIChatMapsFilePartsByMediaTypeLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.chatModel("gpt-4.1-mini")
+    let image = Data([0x89, 0x50, 0x4E, 0x47])
+    let audio = Data("RIFF".utf8)
+    let pdf = Data("%PDF".utf8)
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .text("Inspect these."),
+            .data(mimeType: "image/png", data: image, providerMetadata: ["openai": ["imageDetail": "high"]]),
+            .data(mimeType: "audio/wav", data: audio),
+            .file(mimeType: "application/pdf", data: pdf, filename: "brief.pdf")
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let content = try #require(body["messages"]?[0]?["content"]?.arrayValue)
+    #expect(content[1]["type"]?.stringValue == "image_url")
+    #expect(content[1]["image_url"]?["url"]?.stringValue == "data:image/png;base64,\(image.base64EncodedString())")
+    #expect(content[1]["image_url"]?["detail"]?.stringValue == "high")
+    #expect(content[2]["type"]?.stringValue == "input_audio")
+    #expect(content[2]["input_audio"]?["data"]?.stringValue == audio.base64EncodedString())
+    #expect(content[2]["input_audio"]?["format"]?.stringValue == "wav")
+    #expect(content[3]["type"]?.stringValue == "file")
+    #expect(content[3]["file"]?["filename"]?.stringValue == "brief.pdf")
+    #expect(content[3]["file"]?["file_data"]?.stringValue == "data:application/pdf;base64,\(pdf.base64EncodedString())")
+}
+
+@Test func openAIChatRejectsUnsupportedFileMediaTypeLikeUpstream() async throws {
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: RecordingTransport(response: jsonResponse("{}"))))
+    let model = try provider.chatModel("gpt-4.1-mini")
+
+    await #expect(throws: AIError.invalidArgument(argument: "messages", message: "OpenAI chat file part media type text/plain is not supported.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [.file(mimeType: "text/plain", data: Data("hello".utf8), filename: "hello.txt")])
+        ]))
+    }
 }
 
 @Test func openAICompatibleChatForwardsAbortSignalToHTTPTransport() async throws {

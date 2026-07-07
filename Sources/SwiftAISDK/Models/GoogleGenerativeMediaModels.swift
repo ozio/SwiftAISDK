@@ -276,6 +276,132 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
     }
 }
 
+public final class GoogleSpeechModel: SpeechModel, @unchecked Sendable {
+    public let providerID: String
+    public let modelID: String
+    private let config: ModelHTTPConfig
+
+    init(modelID: String, config: ModelHTTPConfig) {
+        self.providerID = config.providerID
+        self.modelID = modelID
+        self.config = config
+    }
+
+    public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
+        let options = googleSpeechProviderOptions(from: request)
+        let multiSpeakerVoiceConfig = options["multiSpeakerVoiceConfig"]
+        var warnings: [AIWarning] = []
+        if request.speed != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "speed",
+                message: "Google speech models do not support the `speed` option."
+            ))
+        }
+        if request.language != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "language",
+                message: "Google speech models do not support the `language` option."
+            ))
+        }
+
+        let text: String
+        if let instructions = request.instructions, !instructions.isEmpty {
+            if multiSpeakerVoiceConfig != nil {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "instructions",
+                    message: "Google speech models ignore `instructions` when `multiSpeakerVoiceConfig` is set."
+                ))
+                text = request.text
+            } else {
+                text = "\(instructions): \(request.text)"
+            }
+        } else {
+            text = request.text
+        }
+
+        let outputFormat: GoogleSpeechOutputFormat
+        switch request.format?.lowercased() {
+        case nil, "wav":
+            outputFormat = .wav
+        case "pcm":
+            outputFormat = .pcm
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "outputFormat",
+                message: "Google speech returns raw PCM only when `format` is `pcm`; WAV is the default wrapped output."
+            ))
+        case let format?:
+            outputFormat = .wav
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "outputFormat",
+                message: "Google speech does not support `\(format)`. Falling back to WAV."
+            ))
+        }
+
+        var speechConfig: [String: JSONValue] = [:]
+        if let multiSpeakerVoiceConfig {
+            speechConfig["multiSpeakerVoiceConfig"] = multiSpeakerVoiceConfig
+        } else {
+            speechConfig["voiceConfig"] = .object([
+                "prebuiltVoiceConfig": .object([
+                    "voiceName": .string(request.voice ?? "Kore")
+                ])
+            ])
+        }
+        let body = JSONValue.object([
+            "contents": .array([
+                .object([
+                    "role": .string("user"),
+                    "parts": .array([.object(["text": .string(text)])])
+                ])
+            ]),
+            "generationConfig": .object([
+                "responseModalities": .array([.string("AUDIO")]),
+                "speechConfig": .object(speechConfig)
+            ])
+        ])
+
+        let response = try await config.sendJSONResponse(
+            path: "/models/\(modelID):generateContent",
+            modelID: modelID,
+            body: body,
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        )
+        let raw = response.json
+        let inlineData = googleSpeechInlineData(from: raw)
+        let mimeType = inlineData.mimeType
+        let sampleRate = googleSpeechSampleRate(from: mimeType) ?? 24_000
+        let pcm = inlineData.data.flatMap { Data(base64Encoded: $0) } ?? Data()
+        let audio: Data
+        let contentType: String
+        switch outputFormat {
+        case .wav:
+            audio = pcm.isEmpty ? pcm : googleSpeechWAVData(fromPCM: pcm, sampleRate: sampleRate)
+            contentType = "audio/wav"
+        case .pcm:
+            audio = pcm
+            contentType = mimeType ?? "audio/L16;rate=\(sampleRate)"
+        }
+
+        return SpeechResult(
+            audio: audio,
+            contentType: contentType,
+            warnings: warnings,
+            providerMetadata: ["google": .object([
+                "sampleRate": .number(Double(sampleRate)),
+                "mimeType": mimeType.map(JSONValue.string) ?? .null
+            ])],
+            requestMetadata: AIRequestMetadata(body: body, headers: request.headers),
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
+    }
+}
+
 public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
@@ -358,4 +484,67 @@ public final class GoogleVideoGenerationModel: VideoModel, @unchecked Sendable {
         guard isSameOrigin(uri, config.baseURL) else { return uri }
         return "\(uri)\(uri.contains("?") ? "&" : "?")key=\(key)"
     }
+}
+
+private enum GoogleSpeechOutputFormat {
+    case wav
+    case pcm
+}
+
+private func googleSpeechInlineData(from raw: JSONValue) -> (mimeType: String?, data: String?) {
+    let parts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
+    for part in parts {
+        if let inlineData = part["inlineData"]?.objectValue {
+            return (
+                inlineData["mimeType"]?.stringValue,
+                inlineData["data"]?.stringValue
+            )
+        }
+    }
+    return (nil, nil)
+}
+
+private func googleSpeechSampleRate(from mimeType: String?) -> Int? {
+    guard let mimeType else { return nil }
+    for component in mimeType.split(separator: ";") {
+        let trimmed = component.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("rate=") else { continue }
+        return Int(trimmed.dropFirst("rate=".count))
+    }
+    return nil
+}
+
+private func googleSpeechWAVData(fromPCM pcm: Data, sampleRate: Int) -> Data {
+    let channelCount = 1
+    let bitsPerSample = 16
+    let byteRate = sampleRate * channelCount * bitsPerSample / 8
+    let blockAlign = channelCount * bitsPerSample / 8
+    var data = Data()
+    data.append(Data("RIFF".utf8))
+    googleSpeechAppendUInt32LE(UInt32(36 + pcm.count), to: &data)
+    data.append(Data("WAVE".utf8))
+    data.append(Data("fmt ".utf8))
+    googleSpeechAppendUInt32LE(16, to: &data)
+    googleSpeechAppendUInt16LE(1, to: &data)
+    googleSpeechAppendUInt16LE(UInt16(channelCount), to: &data)
+    googleSpeechAppendUInt32LE(UInt32(sampleRate), to: &data)
+    googleSpeechAppendUInt32LE(UInt32(byteRate), to: &data)
+    googleSpeechAppendUInt16LE(UInt16(blockAlign), to: &data)
+    googleSpeechAppendUInt16LE(UInt16(bitsPerSample), to: &data)
+    data.append(Data("data".utf8))
+    googleSpeechAppendUInt32LE(UInt32(pcm.count), to: &data)
+    data.append(pcm)
+    return data
+}
+
+private func googleSpeechAppendUInt16LE(_ value: UInt16, to data: inout Data) {
+    data.append(UInt8(value & 0xff))
+    data.append(UInt8((value >> 8) & 0xff))
+}
+
+private func googleSpeechAppendUInt32LE(_ value: UInt32, to data: inout Data) {
+    data.append(UInt8(value & 0xff))
+    data.append(UInt8((value >> 8) & 0xff))
+    data.append(UInt8((value >> 16) & 0xff))
+    data.append(UInt8((value >> 24) & 0xff))
 }

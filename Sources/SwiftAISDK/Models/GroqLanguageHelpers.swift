@@ -26,10 +26,11 @@ func groqPreparedCall(for request: LanguageModelRequest, modelID: String, stream
         body["response_format"] = groqResponseFormat(from: responseFormat, options: options)
     }
     body.merge(groqLanguageOptions(from: options)) { _, new in new }
-    groqApplyReasoning(request.reasoning, to: &body)
+    var warnings = groqWarnings(request: request, responseFormat: responseFormat, options: options)
+    groqApplyReasoning(request.reasoning, to: &body, warnings: &warnings)
     return GroqPreparedCall(
         body: body,
-        warnings: groqWarnings(request: request, responseFormat: responseFormat, options: options) + preparedTools.warnings
+        warnings: warnings + preparedTools.warnings
     )
 }
 
@@ -302,11 +303,24 @@ func groqReasoningEffort(_ value: String) -> String {
     }
 }
 
-func groqApplyReasoning(_ reasoning: String?, to body: inout [String: JSONValue]) {
+func groqApplyReasoning(_ reasoning: String?, to body: inout [String: JSONValue], warnings: inout [AIWarning]) {
     guard let reasoning,
+          isCustomReasoning(reasoning),
           reasoning != "none",
           body["reasoning_effort"] == nil else {
         return
     }
-    body["reasoning_effort"] = .string(groqReasoningEffort(reasoning))
+    if let effort = mapReasoningToProviderEffort(
+        reasoning: reasoning,
+        effortMap: [
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high"
+        ],
+        warnings: &warnings
+    ) {
+        body["reasoning_effort"] = .string(effort)
+    }
 }

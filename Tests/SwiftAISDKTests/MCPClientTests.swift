@@ -45,6 +45,63 @@ import Testing
     #expect(sent[3]["params"]?["name"]?.stringValue == "search")
     #expect(sent[3]["params"]?["arguments"]?["query"]?.stringValue == "swift")
 }
+
+@Test func mcpClientCanResumeFromInitialInitializeResultAndCompleteLikeUpstreamV2() async throws {
+    let transport = MockMCPTransport(capabilities: fullMCPCapabilities())
+    let initializeResult: JSONValue = [
+        "protocolVersion": .string(MCPClient.latestProtocolVersion),
+        "capabilities": fullMCPCapabilities(),
+        "serverInfo": [
+            "name": "cached-server",
+            "version": "2.0.0",
+            "title": "Cached Server"
+        ],
+        "instructions": "Use cached initialization."
+    ]
+    let client = try await MCPClient.connect(
+        transport: transport,
+        initialInitializeResult: initializeResult
+    )
+
+    #expect(await client.serverInfo == MCPImplementation(name: "cached-server", version: "2.0.0", title: "Cached Server"))
+    #expect(await client.instructions == "Use cached initialization.")
+    #expect(await client.initializeResult["serverInfo"]?["name"]?.stringValue == "cached-server")
+
+    let completion = try await client.complete(
+        ref: ["type": "ref/prompt", "name": "summarize"],
+        argument: MCPCompleteArgument(name: "topic", value: "swift"),
+        contextArguments: ["locale": "en"]
+    )
+    #expect(completion.values == ["swift-one", "swift-two"])
+    #expect(completion.total == 2)
+    #expect(completion.hasMore == false)
+
+    let sent = await transport.sentMessages()
+    #expect(sent.map { $0["method"]?.stringValue } == ["completion/complete"])
+    #expect(sent[0]["params"]?["ref"]?["type"]?.stringValue == "ref/prompt")
+    #expect(sent[0]["params"]?["argument"]?["name"]?.stringValue == "topic")
+    #expect(sent[0]["params"]?["context"]?["arguments"]?["locale"]?.stringValue == "en")
+}
+
+@Test func mcpClientRetriesTransientToolCallFailuresLikeUpstreamV2() async throws {
+    let transport = MockMCPTransport(
+        capabilities: fullMCPCapabilities(),
+        transientToolFailures: 1
+    )
+    let client = try await MCPClient.connect(transport: transport, maxRetries: 1)
+
+    let result = try await client.callTool(name: "search", arguments: ["query": "retry"])
+    #expect(result.content.first?["text"]?.stringValue == "Result for retry")
+
+    let sent = await transport.sentMessages()
+    #expect(sent.map { $0["method"]?.stringValue } == [
+        "initialize",
+        "notifications/initialized",
+        "tools/call",
+        "tools/call"
+    ])
+}
+
 @Test func mcpToolModelOutputConvertsImagesAndUnknownContent() async throws {
     let transport = MockMCPTransport(
         capabilities: fullMCPCapabilities(),
@@ -92,6 +149,79 @@ import Testing
     #expect(modelOutput["type"]?.stringValue == "json")
     #expect(modelOutput["value"]?["structuredContent"]?["ok"]?.boolValue == true)
 }
+
+@Test func mcpAppsHelpersMirrorUpstreamV2MetadataAndResources() throws {
+    let definitions = MCPListToolsResult(tools: [
+        MCPToolDefinition(
+            name: "model_search",
+            inputSchema: ["type": "object"],
+            metadata: [
+                "ui": [
+                    "resourceUri": "ui://app/search.html",
+                    "visibility": ["model", "app"],
+                    "theme": "dark"
+                ]
+            ]
+        ),
+        MCPToolDefinition(
+            name: "app_only",
+            inputSchema: ["type": "object"],
+            metadata: [
+                "ui": [
+                    "resourceUri": "ui://app/panel.html",
+                    "visibility": ["app"]
+                ]
+            ]
+        ),
+        MCPToolDefinition(
+            name: "legacy",
+            inputSchema: ["type": "object"],
+            metadata: [
+                "ui/resourceUri": "ui://app/legacy.html"
+            ]
+        )
+    ])
+
+    let maybeMeta = try MCPApps.toolMeta(from: definitions.tools[0])
+    let meta = try #require(maybeMeta)
+    #expect(meta.resourceURI == "ui://app/search.html")
+    #expect(meta.visibility == [.model, .app])
+    #expect(try MCPApps.resourceURIs(from: definitions) == [
+        "ui://app/search.html",
+        "ui://app/panel.html",
+        "ui://app/legacy.html"
+    ])
+
+    let split = try MCPApps.splitTools(definitions)
+    #expect(split.modelVisible.tools.map(\.name) == ["model_search", "legacy"])
+    #expect(split.appVisible.tools.map(\.name) == ["model_search", "app_only"])
+
+    let html = "<main>Hello</main>"
+    let read = MCPReadResourceResult(contents: [
+        MCPResourceContent(
+            uri: "ui://app/search.html",
+            mimeType: MCPApps.appMIMEType,
+            text: html,
+            rawValue: [
+                "uri": "ui://app/search.html",
+                "mimeType": .string(MCPApps.appMIMEType),
+                "text": .string(html),
+                "_meta": [
+                    "ui": [
+                        "prefersBorder": true,
+                        "permissions": ["clipboard": true]
+                    ]
+                ]
+            ]
+        )
+    ])
+    let resource = try MCPApps.resource(uri: "ui://app/search.html", from: read)
+    #expect(resource.html == html)
+    #expect(resource.mimeType == MCPApps.appMIMEType)
+    #expect(resource.metadata?["prefersBorder"]?.boolValue == true)
+    #expect(MCPApps.clientCapabilities["extensions"]?[MCPApps.extensionName]?["mimeTypes"]?[0]?.stringValue == MCPApps.appMIMEType)
+}
+
 @Test func mcpClientCreatesToolsFromCachedDefinitionsWithoutListingAgain() async throws {
     let transport = MockMCPTransport()
     let client = try await MCPClient.connect(transport: transport)
@@ -446,4 +576,55 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[1].method == "DELETE")
     #expect(requests[1].headers["mcp-session-id"] == "session-1")
+}
+
+@Test func mcpHTTPTransportSupportsSessionResumeCallbacksAndNoTerminateLikeUpstreamV2() async throws {
+    let recorder = MCPSessionRecorder()
+    let http = RecordingTransport(responses: [
+        jsonResponse(#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#, headers: ["mcp-session-id": "session-2"]),
+        AIHTTPResponse(statusCode: 404, body: Data("expired".utf8))
+    ])
+    let transport = try MCPHTTPTransport(
+        url: "https://mcp.example.com/rpc",
+        transport: http,
+        initialSessionID: "session-1",
+        initialProtocolVersion: "2025-06-18",
+        terminateSessionOnClose: false,
+        onSessionIDChange: { sessionID in
+            Task { await recorder.recordChange(sessionID) }
+        },
+        onSessionExpired: { sessionID in
+            Task { await recorder.recordExpiration(sessionID) }
+        }
+    )
+
+    _ = try await transport.request([
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": [:]
+    ])
+
+    do {
+        _ = try await transport.request([
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "ping"
+        ])
+        Issue.record("Expected expired MCP session request to throw.")
+    } catch let error as MCPClientError {
+        #expect(error.statusCode == 404)
+        #expect(error.message.contains("session expired"))
+    }
+
+    try await transport.close()
+    try await Task.sleep(nanoseconds: 20_000_000)
+
+    let requests = await http.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].headers["mcp-session-id"] == nil)
+    #expect(requests[0].headers["mcp-protocol-version"] == "2025-06-18")
+    #expect(requests[1].headers["mcp-session-id"] == "session-2")
+    #expect(await recorder.changedSessionIDs().compactMap { $0 } == ["session-2"])
+    #expect(await recorder.expiredSessionIDs() == ["session-2"])
 }

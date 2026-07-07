@@ -126,7 +126,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
     private func body(for request: LanguageModelRequest, stream: Bool) throws -> MistralPreparedCall {
         var options = try mistralProviderOptions(from: request)
         let responseFormat = mistralResolvedResponseFormat(request: request, options: &options)
-        let warnings = mistralWarnings(for: request, modelID: modelID)
+        var warnings = mistralWarnings(for: request, modelID: modelID)
         let messages = mistralMessages(request.messages, responseFormat: responseFormat)
         var body: [String: JSONValue] = [
             "model": .string(modelID),
@@ -175,9 +175,9 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
             }
         }
         if body["reasoning_effort"] == nil,
-           let reasoning = request.reasoning,
-           mistralSupportsReasoningEffort(modelID) {
-            body["reasoning_effort"] = .string(reasoning == "none" ? "none" : "high")
+           mistralSupportsReasoningEffort(modelID),
+           let reasoningEffort = mistralReasoningEffort(request.reasoning, warnings: &warnings) {
+            body["reasoning_effort"] = reasoningEffort
         }
         return MistralPreparedCall(body: body, warnings: warnings + preparedTools.warnings)
     }
@@ -192,4 +192,3 @@ struct MistralPreparedTools {
     var tools: [JSONValue]
     var warnings: [AIWarning]
 }
-

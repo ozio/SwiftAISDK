@@ -37,7 +37,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.cerebras.ai/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer cerebras-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/cerebras/2.0.57")
+    #expect(request.headers["user-agent"] == "ai-sdk/cerebras/3.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[1]?["reasoning"]?.stringValue == "I should call a tool.")
     #expect(body["messages"]?[1]?["reasoning_content"] == nil)
@@ -110,8 +110,34 @@ import Testing
     _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/cerebras/2.0.57")
+    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/cerebras/3.0.5")
     #expect(request.headers["authorization"] == "Bearer cerebras-key")
+}
+
+@Test func cerebrasProviderExposesCallableLanguageAndChatAliasesLikeUpstream() async throws {
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: RecordingTransport(responses: [])))
+
+    let callable = try provider("gpt-oss-120b")
+    let language = try provider.languageModel("qwen-3-235b-a22b-thinking-2507")
+    let chat = try provider.chat("llama3.1-8b")
+
+    #expect(callable.providerID == "cerebras.chat")
+    #expect(callable.modelID == "gpt-oss-120b")
+    #expect(language.providerID == "cerebras.chat")
+    #expect(language.modelID == "qwen-3-235b-a22b-thinking-2507")
+    #expect(chat.providerID == "cerebras.chat")
+    #expect(chat.modelID == "llama3.1-8b")
+}
+
+@Test func cerebrasProviderRejectsUnsupportedModelFamiliesLikeUpstream() async throws {
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: RecordingTransport(responses: [])))
+
+    #expect(throws: AIError.unsupportedModel(provider: "cerebras", capability: .embedding, modelID: "embed")) {
+        _ = try provider.embeddingModel("embed")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "cerebras", capability: .image, modelID: "image")) {
+        _ = try provider.imageModel("image")
+    }
 }
 
 @Test func cerebrasLanguageMapsProviderOptionsAndStandardSettings() async throws {

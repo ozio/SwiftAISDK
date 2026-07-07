@@ -273,8 +273,14 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
         ]
         if let temperature = request.temperature { body["temperature"] = .number(temperature) }
         if let topP = request.topP { body["topP"] = .number(topP) }
+        if let topK = request.topK { body["topK"] = .number(Double(topK)) }
+        if let presencePenalty = request.presencePenalty { body["presencePenalty"] = .number(presencePenalty) }
+        if let frequencyPenalty = request.frequencyPenalty { body["frequencyPenalty"] = .number(frequencyPenalty) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
         if let maxOutputTokens = request.maxOutputTokens { body["maxOutputTokens"] = .number(Double(maxOutputTokens)) }
         if !request.stopSequences.isEmpty { body["stopSequences"] = .array(request.stopSequences) }
+        if let reasoning = request.reasoning { body["reasoning"] = .string(reasoning) }
+        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
         let tools = gatewayTools(from: request.tools)
         if !tools.isEmpty {
             body["tools"] = .array(tools)

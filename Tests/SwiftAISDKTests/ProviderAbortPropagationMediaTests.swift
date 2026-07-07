@@ -231,7 +231,7 @@ import Testing
         jsonResponse(#"{"id":"bytedance-task","status":"succeeded","content":{"video_url":"https://bytedance.example.com/video.mp4"}}"#)
     ])
     let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
-    let model = try provider.videoModel("seedance-1-0-pro")
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
     let controller = AIAbortController()
 
     _ = try await model.generateVideo(VideoGenerationRequest(

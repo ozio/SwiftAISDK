@@ -13,10 +13,10 @@ import Testing
 
     #expect(result.text == "via gateway")
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/language-model")
+    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/language-model")
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
-    #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.133")
+    #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.12")
     #expect(request.headers["ai-language-model-id"] == "openai/gpt-4.1-mini")
     #expect(request.headers["ai-language-model-streaming"] == "false")
     let body = try decodeJSONBody(try #require(request.body))
@@ -39,7 +39,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-client"] == "swift")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/3.0.133")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/4.0.12")
 }
 
 @Test func gatewayUsesVercelOIDCTokenWhenGatewayAPIKeyMissing() async throws {
@@ -59,7 +59,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer oidc-token")
         #expect(request.headers["ai-gateway-auth-method"] == "oidc")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.133")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.12")
     }
 }
 
@@ -173,9 +173,16 @@ import Testing
                 "args": ["maxResults": 5]
             ]
         ],
+        providerOptions: [
+            "gateway": [
+                "order": ["openai", "anthropic"],
+                "has": ["implicit-caching"],
+                "sort": "ttft",
+                "disallowPromptTraining": true
+            ]
+        ],
         extraBody: [
-            "toolChoice": ["type": "tool", "toolName": "lookup"],
-            "providerOptions": ["gateway": ["order": ["openai", "anthropic"]]]
+            "toolChoice": ["type": "tool", "toolName": "lookup"]
         ]
     ))
 
@@ -214,6 +221,9 @@ import Testing
     #expect(body["toolChoice"]?["type"]?.stringValue == "tool")
     #expect(body["toolChoice"]?["toolName"]?.stringValue == "lookup")
     #expect(body["providerOptions"]?["gateway"]?["order"]?[0]?.stringValue == "openai")
+    #expect(body["providerOptions"]?["gateway"]?["has"]?[0]?.stringValue == "implicit-caching")
+    #expect(body["providerOptions"]?["gateway"]?["sort"]?.stringValue == "ttft")
+    #expect(body["providerOptions"]?["gateway"]?["disallowPromptTraining"]?.boolValue == true)
 }
 
 @Test func gatewayToolsHelpersMirrorProviderExecutedToolFactories() async throws {
@@ -359,23 +369,34 @@ import Testing
     {"embeddings":[[0.1,0.2]],"usage":{"tokens":3}}
     """))
     let gateway = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key", transport: embeddingTransport))
-    let embeddings = try await gateway.embeddingModel("text-embedding").embed(EmbeddingRequest(values: ["a"]))
+    let embeddings = try await gateway.embeddingModel("text-embedding").embed(EmbeddingRequest(
+        values: ["a"],
+        providerOptions: ["gateway": ["quotaEntityId": "tenant-1"]]
+    ))
     #expect(embeddings.embeddings == [[0.1, 0.2]])
     #expect(embeddings.usage?.totalTokens == 3)
     let embeddingRequest = try #require(await embeddingTransport.requests().first)
-    #expect(embeddingRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/embedding-model")
+    #expect(embeddingRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/embedding-model")
     #expect(embeddingRequest.headers["ai-model-id"] == "text-embedding")
+    let embeddingBody = try decodeJSONBody(try #require(embeddingRequest.body))
+    #expect(embeddingBody["providerOptions"]?["gateway"]?["quotaEntityId"]?.stringValue == "tenant-1")
 
     let rerankTransport = RecordingTransport(response: jsonResponse("""
     {"ranking":[{"index":1,"relevanceScore":0.9}]}
     """))
     let rerankGateway = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key", transport: rerankTransport))
-    let ranking = try await rerankGateway.rerankingModel("reranker").rerank(RerankingRequest(query: "q", documents: ["a", "b"], topK: 1))
+    let ranking = try await rerankGateway.rerankingModel("reranker").rerank(RerankingRequest(
+        query: "q",
+        documents: ["a", "b"],
+        topK: 1,
+        providerOptions: ["gateway": ["serviceTier": "flex"]]
+    ))
     #expect(ranking.results == [RerankedDocument(index: 1, score: 0.9)])
     let rerankRequest = try #require(await rerankTransport.requests().first)
-    #expect(rerankRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/reranking-model")
+    #expect(rerankRequest.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/reranking-model")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["topN"]?.intValue == 1)
+    #expect(rerankBody["providerOptions"]?["gateway"]?["serviceTier"]?.stringValue == "flex")
 }
 
 @Test func gatewayMetadataMethodsUseManagementEndpointsAndMapResponses() async throws {
@@ -450,7 +471,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer gateway-key")
         #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/3.0.133")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.12")
     }
 }
 
@@ -462,20 +483,18 @@ import Testing
     let result = try await model.generateImage(ImageGenerationRequest(
         prompt: "Edit these images",
         size: "1024x1024",
+        aspectRatio: "16:9",
+        seed: 42,
         count: 2,
         files: [
             ImageInputFile(data: Data([1, 2, 3]), mediaType: "image/png"),
             ImageInputFile(url: "https://example.com/reference.png")
         ],
         mask: ImageInputFile(data: Data([4, 5, 6]), mediaType: "image/png"),
-        extraBody: [
-            "aspectRatio": "16:9",
-            "seed": 42,
-            "providerOptions": [
-                "gateway": [
-                    "order": ["vertex", "openai"],
-                    "serviceTier": "priority"
-                ]
+        providerOptions: [
+            "gateway": [
+                "order": ["vertex", "openai"],
+                "serviceTier": "priority"
             ]
         ]
     ))
@@ -487,7 +506,7 @@ import Testing
     #expect(result.requestMetadata.body?["files"]?[1]?["url"]?.stringValue == "https://example.com/reference.png")
     #expect(result.requestMetadata.body?["mask"]?["data"]?["type"]?.stringValue == "omitted-media")
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/image-model")
+    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/image-model")
     #expect(request.headers["ai-image-model-specification-version"] == "4")
     #expect(request.headers["ai-model-id"] == "google/imagen-4.0-generate")
     let body = try decodeJSONBody(try #require(request.body))
@@ -521,7 +540,9 @@ import Testing
         frameImages: [
             VideoFrameImage(image: ImageInputFile(data: Data("Hello".utf8), mediaType: "image/png"), frameType: .firstFrame),
             VideoFrameImage(image: ImageInputFile(url: "https://example.com/last-frame.png"), frameType: .lastFrame)
-        ]
+        ],
+        generateAudio: true,
+        providerOptions: ["gateway": ["hipaaCompliant": true]]
     ))
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
@@ -532,6 +553,8 @@ import Testing
     #expect(body["frameImages"]?[1]?["frameType"]?.stringValue == "last_frame")
     #expect(body["frameImages"]?[1]?["image"]?["type"]?.stringValue == "url")
     #expect(body["frameImages"]?[1]?["image"]?["url"]?.stringValue == "https://example.com/last-frame.png")
+    #expect(body["generateAudio"]?.boolValue == true)
+    #expect(body["providerOptions"]?["gateway"]?["hipaaCompliant"]?.boolValue == true)
     #expect(body["inputReferences"] == nil)
 }
 
@@ -596,7 +619,7 @@ import Testing
     }
 
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v3/ai/video-model")
+    #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/video-model")
     #expect(request.headers["ai-video-model-specification-version"] == "4")
     #expect(request.headers["ai-model-id"] == "fal/luma-ray-2")
     #expect(request.headers["accept"] == "text/event-stream")

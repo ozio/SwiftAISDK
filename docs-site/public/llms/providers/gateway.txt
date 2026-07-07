@@ -22,7 +22,7 @@ Source URL: /providers/gateway/
 
 ## Notes
 
-Gateway also exposes model, credits, spend, and generation metadata management APIs.
+Gateway mirrors upstream 4.0.12: default `/v4/ai` base URL, `AI_GATEWAY_API_KEY`/`VERCEL_OIDC_TOKEN` auth, team scoping, protocol/auth-method headers, versioned user-agent suffix, language/embedding/image/video/reranking/speech/transcription aliases, v4 model headers, Gateway providerOptions including BYOK/routing/compliance/sort/serviceTier/quota/tags, base64 inline file forwarding, response warnings/provider metadata, model/credits/spend/generation metadata APIs, Gateway error mapping/retryability, and provider tools. Experimental realtime client-secret/WebSocket support, Vercel o11y headers, ProviderV4 type names, ESM-only packaging, Node 22 engines, and workflow serialization helpers are JS/runtime-only gaps.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

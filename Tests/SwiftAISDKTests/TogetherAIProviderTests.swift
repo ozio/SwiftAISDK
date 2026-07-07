@@ -24,7 +24,7 @@ import Testing
     let imageRequest = try #require(await imageTransport.requests().first)
     #expect(imageRequest.url.absoluteString == "https://api.together.xyz/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer together-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/2.0.56")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.6")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "black-forest-labs/FLUX.1-schnell-Free")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -49,7 +49,7 @@ import Testing
     let rerankRequest = try #require(await rerankTransport.requests().first)
     #expect(rerankRequest.url.absoluteString == "https://api.together.xyz/v1/rerank")
     #expect(rerankRequest.headers["authorization"] == "Bearer together-key")
-    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/2.0.56")
+    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.6")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["top_n"]?.intValue == 1)
     #expect(rerankBody["return_documents"]?.boolValue == false)
@@ -69,7 +69,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer together-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/2.0.56")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/3.0.6")
 }
 
 @Test func togetherAIMapsNestedProviderOptions() async throws {
@@ -185,13 +185,18 @@ import Testing
     }
 }
 
-@Test func togetherAIImageRejectsMultipleImagesPerCallLikeUpstream() async throws {
-    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image"}]}"#))))
+@Test func togetherAIImageIncludesNWhenRequestingMultipleImagesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"image"}]}"#))
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: transport))
     let model = try provider.imageModel("black-forest-labs/FLUX.1-schnell-Free")
 
-    await #expect(throws: AIError.invalidArgument(argument: "count", message: "TogetherAI image models support at most 1 image per call.")) {
-        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", count: 2))
-    }
+    _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", size: "1024x1024", seed: 42, count: 3))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["n"]?.intValue == 3)
+    #expect(body["seed"]?.intValue == 42)
+    #expect(body["width"]?.intValue == 1024)
+    #expect(body["height"]?.intValue == 1024)
 }
 
 @Test func togetherAIImageRejectsInvalidResponseShapeLikeUpstreamSchema() async throws {

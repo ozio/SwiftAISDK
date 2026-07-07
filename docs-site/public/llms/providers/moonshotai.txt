@@ -16,7 +16,7 @@ Source URL: /providers/moonshotai/
 
 ## Notes
 
-Chat requests stream usage by default, maps `providerOptions.moonshotai` thinking/reasoningHistory through the upstream option schema, and enables structured outputs for upstream `kimi-k*` models while stripping top-level `$schema`.
+MoonshotAI chat models mirror upstream MoonshotAI 3.0.7: `MOONSHOT_API_KEY`, custom base URL and headers, callable provider plus `languageModel`/`chat` aliases, `moonshotai.chat` provider IDs, versioned user-agent suffix, stream usage by default, current model IDs such as `kimi-k2.5`, `kimi-k2.6`, and `kimi-k2.7-code`, `providerOptions.moonshotai` thinking/reasoningHistory mapping, structured outputs for `kimi-k*` models with top-level `$schema` stripping, Moonshot error schema, and unsupported embedding/image families.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

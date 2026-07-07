@@ -153,6 +153,7 @@ import Testing
     ))
 
     #expect(result.urls == ["https://fal.example.com/video.mp4"])
+    #expect(result.mediaType == "video/mp4")
     #expect(result.providerMetadata["fal"]?["videos"]?[0]?["url"]?.stringValue == "https://fal.example.com/video.mp4")
     #expect(result.providerMetadata["fal"]?["videos"]?[0]?["contentType"]?.stringValue == "video/mp4")
     #expect(result.providerMetadata["fal"]?["seed"]?.intValue == 42)
@@ -169,6 +170,39 @@ import Testing
     #expect(body["negative_prompt"]?.stringValue == "rain")
     #expect(body["pollIntervalMs"] == nil)
     #expect(body["fal"] == nil)
+}
+
+@Test func falVideoDefaultsMediaTypeWhenContentTypeIsMissingLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"req-default-media","response_url":"https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-default-media"}"#),
+        jsonResponse(#"{"video":{"url":"https://fal.example.com/video.mp4"}}"#)
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try provider.videoModel("fal-ai/luma-dream-machine")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "Animate",
+        providerOptions: ["fal": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+
+    #expect(result.urls == ["https://fal.example.com/video.mp4"])
+    #expect(result.mediaType == "video/mp4")
+}
+
+@Test func falVideoThrowsUpstreamMessageWhenVideoURLIsMissing() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"req-no-url","response_url":"https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-no-url"}"#),
+        jsonResponse(#"{"video":{"content_type":"video/mp4"}}"#)
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try provider.videoModel("fal-ai/luma-dream-machine")
+
+    await #expect(throws: AIError.invalidResponse(provider: "fal.video", message: "No video URL in response")) {
+        _ = try await model.generateVideo(VideoGenerationRequest(
+            prompt: "Animate",
+            providerOptions: ["fal": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+        ))
+    }
 }
 
 @Test func falVideoProviderOptionsValidateNullishAndPassthroughLikeUpstreamSchema() async throws {

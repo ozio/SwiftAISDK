@@ -71,6 +71,17 @@ func googleVideoProviderOptions(from request: VideoGenerationRequest) -> [String
     return options
 }
 
+func googleSpeechProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+    var options = request.extraBody
+    if let google = request.extraBody["google"]?.objectValue {
+        options = google
+    }
+    if let google = request.providerOptions["google"]?.objectValue {
+        options.merge(google) { _, new in new }
+    }
+    return options.filter { $0.key != "google" && $0.key != "googleVertex" && $0.key != "vertex" }
+}
+
 func googleVideoInstance(for request: VideoGenerationRequest, options: [String: JSONValue]) -> (instance: [String: JSONValue], warnings: [AIWarning]) {
     var instance: [String: JSONValue] = ["prompt": .string(request.prompt)]
     var warnings: [AIWarning] = []

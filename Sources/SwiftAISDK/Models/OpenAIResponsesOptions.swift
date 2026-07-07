@@ -6,15 +6,11 @@ func openResponsesProviderOptions(providerOptions: [String: JSONValue], provider
     guard let options = value.objectValue else {
         throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName)", message: "Open Responses provider options must be an object.")
     }
-    let allowedKeys: Set<String> = ["reasoningEffort", "reasoningSummary"]
+    let allowedKeys: Set<String> = ["reasoningSummary"]
     var output: [String: JSONValue] = [:]
     for (key, value) in options where allowedKeys.contains(key) {
         guard value != .null else { continue }
         switch key {
-        case "reasoningEffort":
-            guard let effort = value.stringValue, ["none", "low", "medium", "high", "xhigh"].contains(effort) else {
-                throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName).reasoningEffort", message: "Open Responses reasoningEffort must be none, low, medium, high, or xhigh.")
-            }
         case "reasoningSummary":
             guard let summary = value.stringValue, ["concise", "detailed", "auto"].contains(summary) else {
                 throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName).reasoningSummary", message: "Open Responses reasoningSummary must be concise, detailed, or auto.")
@@ -101,12 +97,14 @@ func openAIResponsesTextFormat(from responseFormat: AIResponseFormat?, strictJso
     return .object(format)
 }
 
-func openResponsesWarnings(for request: LanguageModelRequest) -> [AIWarning] {
+func openResponsesWarnings(for request: LanguageModelRequest, includePenaltyWarnings: Bool = true) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if request.topK != nil { warnings.append(AIWarning(type: "unsupported", feature: "topK")) }
     if request.seed != nil { warnings.append(AIWarning(type: "unsupported", feature: "seed")) }
-    if request.presencePenalty != nil { warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty")) }
-    if request.frequencyPenalty != nil { warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty")) }
+    if includePenaltyWarnings {
+        if request.presencePenalty != nil { warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty")) }
+        if request.frequencyPenalty != nil { warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty")) }
+    }
     if !request.stopSequences.isEmpty { warnings.append(AIWarning(type: "unsupported", feature: "stopSequences")) }
     return warnings
 }

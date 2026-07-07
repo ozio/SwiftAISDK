@@ -309,21 +309,48 @@ private func huggingFaceInputContentPart(_ part: AIContentPart) throws -> JSONVa
     case let .imageURL(url, _):
         return .object(["type": .string("input_image"), "image_url": .string(url)])
     case let .data(mimeType, data, _), let .file(mimeType, data, _, _):
-        guard mimeType.lowercased().hasPrefix("image/") else {
+        guard let mediaType = huggingFaceResolvedImageMediaType(mimeType, data: data) else {
             throw AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API only supports image file parts; got \(mimeType).")
         }
         return .object([
             "type": .string("input_image"),
-            "image_url": .string("data:\(mimeType);base64,\(data.base64EncodedString())")
+            "image_url": .string("data:\(mediaType);base64,\(data.base64EncodedString())")
         ])
-    case let .providerReference(mimeType, _, _, _):
-        guard mimeType.lowercased().hasPrefix("image/") else {
-            throw AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API only supports image file parts; got \(mimeType).")
-        }
-        return nil
+    case .providerReference:
+        throw AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API does not support file parts with provider references.")
     case .reasoningFile, .custom, .toolCall, .toolResult, .toolApprovalRequest, .toolApprovalResponse:
         return nil
     }
+}
+
+private func huggingFaceResolvedImageMediaType(_ mimeType: String, data: Data) -> String? {
+    let normalized = mimeType.lowercased()
+    if normalized.hasPrefix("image/"), normalized != "image/*" {
+        return normalized
+    }
+    guard normalized == "image" || normalized == "image/*" else {
+        return nil
+    }
+    return huggingFaceDetectedImageMediaType(data)
+}
+
+private func huggingFaceDetectedImageMediaType(_ data: Data) -> String? {
+    let bytes = Array(data.prefix(12))
+    if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
+        return "image/png"
+    }
+    if bytes.starts(with: [0xFF, 0xD8, 0xFF]) {
+        return "image/jpeg"
+    }
+    if bytes.starts(with: [0x47, 0x49, 0x46, 0x38]) {
+        return "image/gif"
+    }
+    if bytes.count >= 12,
+       bytes[0..<4].elementsEqual([0x52, 0x49, 0x46, 0x46]),
+       bytes[8..<12].elementsEqual([0x57, 0x45, 0x42, 0x50]) {
+        return "image/webp"
+    }
+    return nil
 }
 
 private func huggingFaceTools(from tools: [String: JSONValue]) -> (tools: [JSONValue], warnings: [AIWarning]) {

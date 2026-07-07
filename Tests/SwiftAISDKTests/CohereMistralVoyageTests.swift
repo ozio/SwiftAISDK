@@ -44,8 +44,108 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer cohere-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/3.0.39")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/4.0.5")
 }
+
+@Test func cohereLanguageMapsTopLevelReasoningLikeUpstreamV4() async throws {
+    let response = jsonResponse("""
+    {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
+    """)
+    let transport = RecordingTransport(responses: [response, response, response, response, response])
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
+    let model = try provider.languageModel("command-a-reasoning-08-2025")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "high"))
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "none"))
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        reasoning: "none",
+        providerOptions: ["cohere": ["thinking": ["type": "enabled"]]]
+    ))
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "provider-default"))
+    let unsupported = try await model.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "unsupported-level"))
+
+    let requests = await transport.requests()
+    let highBody = try decodeJSONBody(try #require(requests[0].body))
+    #expect(highBody["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(highBody["thinking"]?["token_budget"]?.intValue == 19661)
+
+    let noneBody = try decodeJSONBody(try #require(requests[1].body))
+    #expect(noneBody["thinking"]?["type"]?.stringValue == "disabled")
+    #expect(noneBody["thinking"]?["token_budget"] == nil)
+
+    let providerOptionsBody = try decodeJSONBody(try #require(requests[2].body))
+    #expect(providerOptionsBody["thinking"]?["type"]?.stringValue == "enabled")
+    #expect(providerOptionsBody["thinking"]?["token_budget"] == nil)
+
+    let providerDefaultBody = try decodeJSONBody(try #require(requests[3].body))
+    #expect(providerDefaultBody["thinking"] == nil)
+
+    let unsupportedBody = try decodeJSONBody(try #require(requests[4].body))
+    #expect(unsupportedBody["thinking"] == nil)
+    #expect(unsupported.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "reasoning",
+            message: #"reasoning "unsupported-level" is not supported by this model."#
+        )
+    ])
+}
+
+@Test func coherePassesProviderAndRequestHeadersLikeUpstream() async throws {
+    let chatTransport = RecordingTransport(response: jsonResponse("""
+    {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
+    """))
+    let chatProvider = try AIProviders.cohere(settings: ProviderSettings(
+        apiKey: "cohere-key",
+        headers: ["Custom-Provider-Header": "provider-header-value"],
+        transport: chatTransport
+    ))
+    _ = try await chatProvider.languageModel("command-r-plus").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        headers: ["Custom-Request-Header": "request-header-value"]
+    ))
+    let chatRequest = try #require(await chatTransport.requests().first)
+    #expect(chatRequest.headers["authorization"] == "Bearer cohere-key")
+    #expect(chatRequest.headers["custom-provider-header"] == "provider-header-value")
+    #expect(chatRequest.headers["Custom-Request-Header"] == "request-header-value")
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"type":"message-start","id":"msg-1"}
+
+    data: {"type":"message-end","delta":{"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}}
+
+    """))
+    let streamProvider = try AIProviders.cohere(settings: ProviderSettings(
+        apiKey: "cohere-key",
+        headers: ["Custom-Provider-Header": "provider-header-value"],
+        transport: streamTransport
+    ))
+    for try await _ in try streamProvider.languageModel("command-r-plus").stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        headers: ["Custom-Request-Header": "request-header-value"]
+    )) {}
+    let streamRequest = try #require(await streamTransport.requests().first)
+    #expect(streamRequest.headers["custom-provider-header"] == "provider-header-value")
+    #expect(streamRequest.headers["Custom-Request-Header"] == "request-header-value")
+
+    let embeddingTransport = RecordingTransport(response: jsonResponse("""
+    {"embeddings":{"float":[[0.1,0.2]]},"meta":{"billed_units":{"input_tokens":1}}}
+    """))
+    let embeddingProvider = try AIProviders.cohere(settings: ProviderSettings(
+        apiKey: "cohere-key",
+        headers: ["Custom-Provider-Header": "provider-header-value"],
+        transport: embeddingTransport
+    ))
+    _ = try await embeddingProvider.embeddingModel("embed-english-v3.0").embed(EmbeddingRequest(
+        values: ["hello"],
+        headers: ["Custom-Request-Header": "request-header-value"]
+    ))
+    let embeddingRequest = try #require(await embeddingTransport.requests().first)
+    #expect(embeddingRequest.headers["custom-provider-header"] == "provider-header-value")
+    #expect(embeddingRequest.headers["Custom-Request-Header"] == "request-header-value")
+}
+
 @Test func cohereUnknownFinishReasonMapsToOther() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"SOMETHING_NEW","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
@@ -433,7 +533,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer mistral-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/3.0.40")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/4.0.5")
 }
 @Test func mistralMissingFinishReasonMapsToOtherAndUsageCountsCache() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

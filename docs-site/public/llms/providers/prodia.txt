@@ -16,6 +16,10 @@ Source URL: /providers/prodia/
 - Image
 - Video
 
+## Notes
+
+Prodia language, image, and video models mirror upstream Prodia 2.0.6: `PRODIA_TOKEN`/`PRODIA_API_KEY`, custom base URL and headers, versioned user-agent suffix, language/image/video aliases, `/v2/job?price=true` JSON and multipart job submission, multipart text/image/video responses, language image input MIME detection, providerOptions.prodia schemas, custom reasoning warnings with provider-default no-op, request/response metadata, Prodia job provider metadata including price, Prodia error schema, SSRF-guarded video image downloads, and unsupported embedding/speech/transcription families. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export renames, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

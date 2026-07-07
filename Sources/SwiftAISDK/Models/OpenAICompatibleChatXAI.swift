@@ -96,8 +96,8 @@ func xaiValidateChatProviderOptions(_ options: [String: JSONValue]) throws -> [S
     for (key, value) in options where allowedKeys.contains(key) {
         switch key {
         case "reasoningEffort":
-            guard let effort = value.stringValue, ["low", "high"].contains(effort) else {
-                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be low or high.")
+            guard let effort = value.stringValue, ["none", "low", "medium", "high"].contains(effort) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")
             }
         case "logprobs", "parallel_function_calling":
             guard value.boolValue != nil else {

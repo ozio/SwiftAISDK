@@ -107,7 +107,7 @@ private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue],
         switch key {
         case "reasoningEffort":
             guard let effort = value.stringValue, ["low", "medium", "high"].contains(effort) else {
-                throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningEffort", message: "xAI reasoningEffort must be low, medium, or high.")
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")
             }
         case "logprobs", "store":
             guard value.boolValue != nil else {

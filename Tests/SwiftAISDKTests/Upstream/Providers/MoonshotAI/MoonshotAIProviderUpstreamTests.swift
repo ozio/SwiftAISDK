@@ -42,3 +42,14 @@ import Testing
     let legacyBody = try decodeJSONBody(try #require((await legacyTransport.requests()).first?.body))
     #expect(legacyBody["response_format"] == ["type": "json_object"])
 }
+
+@Test func moonshotStructuredOutputSupportMatchesUpstreamModelHelper() {
+    #expect(moonshotSupportsStructuredOutputs(modelID: "kimi-k2.5"))
+    #expect(moonshotSupportsStructuredOutputs(modelID: "kimi-k2.6"))
+    #expect(moonshotSupportsStructuredOutputs(modelID: "kimi-k2.7-code"))
+    #expect(moonshotSupportsStructuredOutputs(modelID: "kimi-k2.7-code-highspeed"))
+    #expect(!moonshotSupportsStructuredOutputs(modelID: "moonshot-v1-8k"))
+    #expect(!moonshotSupportsStructuredOutputs(modelID: "moonshot-v1-32k"))
+    #expect(!moonshotSupportsStructuredOutputs(modelID: "moonshot-v1-128k"))
+    #expect(!moonshotSupportsStructuredOutputs(modelID: "custom-model-id"))
+}

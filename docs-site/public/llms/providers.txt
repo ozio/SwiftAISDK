@@ -8,8 +8,8 @@ Language: 31
 Completion: 7
 Embedding: 16
 Image: 18
-Transcription: 11
-Speech: 8
+Transcription: 12
+Speech: 11
 Audio generation: 1
 Audio transformation: 1
 Dubbing: 1
@@ -41,8 +41,8 @@ Skills: 3
 | [`fireworks`](fireworks/) | `@ai-sdk/fireworks` | `AIProviders.fireworks` | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
 | [`gateway`](gateway/) | `@ai-sdk/gateway` | `AIProviders.gateway` | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ | ✅ |  |  |
 | [`gladia`](gladia/) | `@ai-sdk/gladia` | `AIProviders.gladia` |  |  |  | ✅ |  |  |  |  |  |  |  |  |
-| [`google.generative-ai`](google-generative-ai/) | `@ai-sdk/google` | `AIProviders.google` | ✅ | ✅ | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |
-| [`google.vertex`](google-vertex/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertex` | ✅ | ✅ | ✅ | ✅ |  |  |  |  | ✅ |  |  |  |
+| [`google.generative-ai`](google-generative-ai/) | `@ai-sdk/google` | `AIProviders.google` | ✅ | ✅ | ✅ |  | ✅ |  |  |  | ✅ |  | ✅ |  |
+| [`google.vertex`](google-vertex/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertex` | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ |  |  |  |
 | [`googleVertex.maas`](googlevertex-maas/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertexMaaS` | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
 | [`googleVertex.xai`](googlevertex-xai/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertexXAI` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`googleVertex.anthropic`](googlevertex-anthropic/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertexAnthropic` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
@@ -65,4 +65,4 @@ Skills: 3
 | [`togetherai`](togetherai/) | `@ai-sdk/togetherai` | `AIProviders.togetherAI` | ✅ | ✅ | ✅ |  |  |  |  |  |  | ✅ |  |  |
 | [`vercel`](vercel/) | `@ai-sdk/vercel` | `AIProviders.vercel` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`voyage`](voyage/) | `@ai-sdk/voyage` | `AIProviders.voyage` |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |
-| [`xai`](xai/) | `@ai-sdk/xai` | `AIProviders.xAI` | ✅ |  | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |
+| [`xai`](xai/) | `@ai-sdk/xai` | `AIProviders.xAI` | ✅ |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |

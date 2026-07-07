@@ -134,6 +134,7 @@ public final class ReplicateVideoModel: VideoModel, @unchecked Sendable {
         return VideoGenerationResult(
             urls: mediaURLs(from: raw["output"]),
             operationID: raw["id"]?.stringValue,
+            mediaType: "video/mp4",
             rawValue: raw,
             providerMetadata: replicateVideoProviderMetadata(from: raw),
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),

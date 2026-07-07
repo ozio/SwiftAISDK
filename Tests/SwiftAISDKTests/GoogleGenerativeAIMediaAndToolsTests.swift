@@ -388,6 +388,128 @@ import Testing
     _ = try await imageModel.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: imageController.signal))
 
     #expect((await imageTransport.requests()).first?.abortSignal === imageController.signal)
+
+    let speechTransport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/L16;rate=24000","data":"AQIDBAUGBwg="}}]}}]}"#))
+    let speechProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: speechTransport))
+    let speechModel = try speechProvider.speechModel("gemini-2.5-flash-preview-tts")
+    let speechController = AIAbortController()
+
+    _ = try await speechModel.speak(SpeechRequest(text: "hello", abortSignal: speechController.signal))
+
+    #expect((await speechTransport.requests()).first?.abortSignal === speechController.signal)
+}
+
+@Test func googleSpeechUsesGenerateContentDefaultVoiceAndWAVWrapping() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/L16;rate=16000","data":"AQIDBAUGBwg="}}]}}]}"#, headers: ["x-request-id": "req-google-speech"]))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.speechModel("gemini-2.5-flash-preview-tts")
+
+    #expect(model.providerID == "google.generative-ai.speech")
+    let result = try await model.speak(SpeechRequest(text: "Hello from SwiftAISDK!"))
+
+    #expect(result.contentType == "audio/wav")
+    #expect(result.audio.count == 52)
+    #expect(Array(result.audio.prefix(4)) == [0x52, 0x49, 0x46, 0x46])
+    #expect(Array(result.audio.dropFirst(8).prefix(4)) == [0x57, 0x41, 0x56, 0x45])
+    #expect(googleSpeechTestUInt32LE(result.audio, offset: 24) == 16_000)
+    #expect(googleSpeechTestUInt16LE(result.audio, offset: 22) == 1)
+    #expect(googleSpeechTestUInt16LE(result.audio, offset: 34) == 16)
+    #expect(Array(result.audio.dropFirst(44)) == [1, 2, 3, 4, 5, 6, 7, 8])
+    #expect(result.providerMetadata["google"]?["sampleRate"]?.intValue == 16_000)
+    #expect(result.providerMetadata["google"]?["mimeType"]?.stringValue == "audio/L16;rate=16000")
+    #expect(result.responseMetadata.headers["x-request-id"] == "req-google-speech")
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")
+    #expect(request.headers["x-goog-api-key"] == "gemini-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.8")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
+    #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hello from SwiftAISDK!")
+    #expect(body["generationConfig"]?["responseModalities"]?[0]?.stringValue == "AUDIO")
+    #expect(body["generationConfig"]?["speechConfig"]?["voiceConfig"]?["prebuiltVoiceConfig"]?["voiceName"]?.stringValue == "Kore")
+}
+
+@Test func googleSpeechMapsVoiceInstructionsAndMultiSpeakerProviderOptions() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/L16;rate=24000","data":"AQIDBAUGBwg="}}]}}]}"#),
+        jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/L16;rate=24000","data":"AQIDBAUGBwg="}}]}}]}"#)
+    ])
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.speechModel("gemini-2.5-flash-preview-tts")
+
+    _ = try await model.speak(SpeechRequest(text: "Hello there", voice: "Puck", instructions: "Say cheerfully"))
+
+    let multiSpeakerVoiceConfig: JSONValue = [
+        "speakerVoiceConfigs": [
+            [
+                "speaker": "Joe",
+                "voiceConfig": ["prebuiltVoiceConfig": ["voiceName": "Kore"]]
+            ],
+            [
+                "speaker": "Jane",
+                "voiceConfig": ["prebuiltVoiceConfig": ["voiceName": "Puck"]]
+            ]
+        ]
+    ]
+    let multiResult = try await model.speak(SpeechRequest(
+        text: "Joe: Hi. Jane: Hello.",
+        instructions: "Say cheerfully",
+        providerOptions: ["google": ["multiSpeakerVoiceConfig": multiSpeakerVoiceConfig]]
+    ))
+
+    let requests = await transport.requests()
+    let singleBody = try decodeJSONBody(try #require(requests[0].body))
+    #expect(singleBody["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Say cheerfully: Hello there")
+    #expect(singleBody["generationConfig"]?["speechConfig"]?["voiceConfig"]?["prebuiltVoiceConfig"]?["voiceName"]?.stringValue == "Puck")
+
+    let multiBody = try decodeJSONBody(try #require(requests[1].body))
+    #expect(multiBody["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Joe: Hi. Jane: Hello.")
+    #expect(multiBody["generationConfig"]?["speechConfig"]?["multiSpeakerVoiceConfig"]?["speakerVoiceConfigs"]?[0]?["speaker"]?.stringValue == "Joe")
+    #expect(multiBody["generationConfig"]?["speechConfig"]?["voiceConfig"] == nil)
+    #expect(multiResult.warnings.contains { $0.type == "unsupported" && $0.feature == "instructions" })
+}
+
+@Test func googleSpeechReturnsRawPCMForPCMFormatAndWarnsForUnsupportedOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/L16;rate=24000","data":"AQIDBAUGBwg="}}]}}]}"#))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.speechModel("gemini-2.5-flash-preview-tts")
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Hello",
+        format: "pcm",
+        speed: 1.5,
+        language: "en"
+    ))
+
+    #expect(result.audio == Data([1, 2, 3, 4, 5, 6, 7, 8]))
+    #expect(result.contentType == "audio/L16;rate=24000")
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "outputFormat" })
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "speed" })
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "language" })
+}
+
+@Test func googleSpeechReturnsEmptyAudioWhenInlineDataIsMissing() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"text":"no audio here"}]}}]}"#))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.speechModel("gemini-2.5-flash-preview-tts")
+
+    let result = try await model.speak(SpeechRequest(text: "Hello"))
+
+    #expect(result.audio.isEmpty)
+    #expect(result.contentType == "audio/wav")
+    #expect(result.providerMetadata["google"]?["sampleRate"]?.intValue == 24_000)
+    #expect(result.providerMetadata["google"]?["mimeType"] == .null)
+}
+
+private func googleSpeechTestUInt16LE(_ data: Data, offset: Int) -> UInt16 {
+    let bytes = Array(data.dropFirst(offset).prefix(2))
+    return UInt16(bytes[0]) | (UInt16(bytes[1]) << 8)
+}
+
+private func googleSpeechTestUInt32LE(_ data: Data, offset: Int) -> UInt32 {
+    let bytes = Array(data.dropFirst(offset).prefix(4))
+    return UInt32(bytes[0]) | (UInt32(bytes[1]) << 8) | (UInt32(bytes[2]) << 16) | (UInt32(bytes[3]) << 24)
 }
 @Test func googleVeoCreatesLongRunningOperationAndPollsVideoURL() async throws {
     let transport = RecordingTransport(responses: [

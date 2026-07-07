@@ -15,12 +15,28 @@ import Testing
     #expect(result.usage?.totalTokens == 3)
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://router.huggingface.co/v1/responses")
-    #expect(request.headers["Authorization"] == "Bearer hf-key")
+    #expect(request.headers["authorization"] == "Bearer hf-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/huggingface/2.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai/gpt-oss-120b")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
     #expect(body["input"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
     #expect(body["max_output_tokens"]?.intValue == 24)
+}
+
+@Test func huggingFaceAppendsCustomUserAgentLikeUpstreamProviderVersion() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-ua","status":"completed","output_text":"hf text"}"#))
+    let provider = try AIProviders.huggingFace(settings: ProviderSettings(
+        apiKey: "hf-key",
+        headers: ["user-agent": "CustomApp/1.0"],
+        transport: transport
+    ))
+    let model = try provider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/huggingface/2.0.5")
 }
 
 @Test func huggingFaceResponsesAliasAndUnsupportedFamiliesMatchProviderWrapper() async throws {
@@ -277,6 +293,25 @@ import Testing
     #expect(tools.first?["type"]?.stringValue == "function")
 }
 
+@Test func huggingFaceLanguageResolvesTopLevelImageMediaTypesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-hf-image","status":"completed","output_text":"hf text"}"#))
+    let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
+    let model = try provider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+    let pngBytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .file(mimeType: "image", data: pngBytes, filename: "inline.png"),
+            .file(mimeType: "image/*", data: pngBytes, filename: "wildcard.png")
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let content = try #require(body["input"]?[0]?["content"]?.arrayValue)
+    #expect(content[0]["image_url"]?.stringValue == "data:image/png;base64,\(pngBytes.base64EncodedString())")
+    #expect(content[1]["image_url"]?.stringValue == "data:image/png;base64,\(pngBytes.base64EncodedString())")
+}
+
 @Test func huggingFaceLanguageRejectsUnsupportedFilePartsLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-hf-1","status":"completed","output_text":"hf text"}"#))
     let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
@@ -286,6 +321,27 @@ import Testing
         _ = try await model.generate(LanguageModelRequest(messages: [
             AIMessage(role: .user, content: [
                 .file(mimeType: "text/plain", data: Data("unsupported".utf8), filename: "notes.txt")
+            ])
+        ]))
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.isEmpty)
+}
+
+@Test func huggingFaceLanguageRejectsProviderReferenceFilePartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-hf-1","status":"completed","output_text":"hf text"}"#))
+    let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
+    let model = try provider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+
+    await #expect(throws: AIError.invalidArgument(argument: "files", message: "Hugging Face Responses API does not support file parts with provider references.")) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .providerReference(
+                    mimeType: "image/jpeg",
+                    reference: ["huggingface": "file-ref-123"],
+                    filename: "remote.jpg"
+                )
             ])
         ]))
     }

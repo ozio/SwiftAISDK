@@ -31,15 +31,23 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/3.0.77")
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.8")
         let baseURL = withoutTrailingSlash(basePrefix)
+        let useAzureOpenAIEndpoint = settings.baseURL.map(isAzureOpenAIBaseURL) ?? true
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
         let config = ModelHTTPConfig(providerID: providerID, baseURL: baseURL, headers: headers, transport: transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody) { modelID, path in
-            let urlString = useDeploymentBasedURLs
-                ? "\(baseURL)/deployments/\(modelID)\(path)"
-                : "\(baseURL)/v1\(path)"
+            let urlString: String
+            if useDeploymentBasedURLs {
+                urlString = "\(baseURL)/deployments/\(modelID)\(path)"
+            } else if useAzureOpenAIEndpoint {
+                urlString = "\(baseURL)/v1\(path)"
+            } else {
+                urlString = "\(baseURL)\(path)"
+            }
             guard var components = URLComponents(string: urlString) else { throw AIError.invalidURL(urlString) }
-            components.queryItems = [URLQueryItem(name: "api-version", value: apiVersion)]
+            if useAzureOpenAIEndpoint || useDeploymentBasedURLs {
+                components.queryItems = [URLQueryItem(name: "api-version", value: apiVersion)]
+            }
             guard let url = components.url else { throw AIError.invalidURL(urlString) }
             return url
         }
@@ -63,6 +71,11 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     public func videoModel(_ modelID: String) throws -> any VideoModel { try provider.videoModel(modelID) }
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel { try provider.rerankingModel(modelID) }
 
+}
+
+private func isAzureOpenAIBaseURL(_ baseURL: String) -> Bool {
+    guard let host = URLComponents(string: baseURL)?.host else { return false }
+    return host.hasSuffix(".openai.azure.com")
 }
 
 struct AzureOpenAITokenProviderTransport: AITransport {

@@ -15,7 +15,11 @@ import Testing
         extraBody: [
             "thinking": .object(["type": "enabled", "budgetTokens": 2048]),
             "reasoningHistory": "interleaved",
-            "reasoning_effort": "xhigh"
+            "reasoning_effort": "xhigh",
+            "prompt_cache_key": "raw-session",
+            "promptCacheKey": "typed-session",
+            "service_tier": "standard",
+            "serviceTier": "priority"
         ]
     ))
 
@@ -23,7 +27,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/2.0.57")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.6")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["thinking"]?["type"]?.stringValue == "enabled")
     #expect(body["thinking"]?["budget_tokens"]?.intValue == 2048)
@@ -31,6 +35,25 @@ import Testing
     #expect(body["reasoning_history"]?.stringValue == "interleaved")
     #expect(body["reasoningHistory"] == nil)
     #expect(body["reasoning_effort"]?.stringValue == "high")
+    #expect(body["prompt_cache_key"]?.stringValue == "typed-session")
+    #expect(body["promptCacheKey"] == nil)
+    #expect(body["service_tier"]?.stringValue == "priority")
+    #expect(body["serviceTier"] == nil)
+}
+
+@Test func fireworksCurrentKimiK26ModelIDUsesChatRoute() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"fw"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+    """))
+    let provider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: transport))
+    let model = try provider.chatModel("accounts/fireworks/models/kimi-k2p6")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/chat/completions")
+    #expect(body["model"]?.stringValue == "accounts/fireworks/models/kimi-k2p6")
 }
 
 @Test func fireworksLanguageStreamsIncludeUsageByDefaultLikeUpstream() async throws {
@@ -68,7 +91,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image")
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/2.0.57")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.6")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["samples"]?.intValue == 1)
@@ -98,7 +121,7 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro")
     #expect(requests[0].headers["authorization"] == "Bearer fireworks-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/fireworks/2.0.57")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/fireworks/3.0.6")
     let submitBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(submitBody["prompt"]?.stringValue == "cat")
     #expect(submitBody["samples"]?.intValue == 2)
@@ -106,7 +129,7 @@ import Testing
     #expect(submitBody["height"]?.stringValue == "768")
     #expect(requests[1].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro/get_result")
     #expect(requests[1].headers["authorization"] == "Bearer fireworks-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/fireworks/2.0.57")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/fireworks/3.0.6")
     let pollBody = try decodeJSONBody(try #require(requests[1].body))
     #expect(pollBody["id"]?.stringValue == "fw-1")
     #expect(requests[2].method == "GET")
@@ -128,7 +151,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/fireworks/2.0.57")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/fireworks/3.0.6")
 }
 
 @Test func fireworksImageMapsProviderOptionsAndInputImage() async throws {

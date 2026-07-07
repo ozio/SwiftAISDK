@@ -2,7 +2,7 @@ import Foundation
 
 public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
     public let providerID = "google.generative-ai"
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .video]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .speech, .video]
     private let config: ModelHTTPConfig
 
     public init(settings: ProviderSettings = ProviderSettings()) throws {
@@ -56,7 +56,7 @@ public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {
-        throw AIError.unsupportedModel(provider: providerID, capability: .speech, modelID: modelID)
+        GoogleSpeechModel(modelID: modelID, config: config.withProviderID("\(providerID).speech"))
     }
 
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {

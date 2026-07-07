@@ -21,7 +21,7 @@ description: "togetherai provider capabilities and factories."
 
 ## Notes
 
-Image generation mirrors upstream `maxImagesPerCall = 1`; image and reranking responses are validated against the upstream-focused JSON shapes.
+TogetherAI mirrors upstream TogetherAI 3.0.6: `TOGETHER_API_KEY` with deprecated `TOGETHER_AI_API_KEY` fallback, versioned user-agent suffix, language/completion/embedding/image/reranking factories, image `n` request mapping despite upstream `maxImagesPerCall = 1`, loose image provider options, reranking `rankFields`, and upstream-focused image/reranking response validation. ProviderV4, ESM-only packaging, Node 22 engines, and workflow serialization helpers are JS-only upstream concerns.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

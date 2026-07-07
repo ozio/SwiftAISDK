@@ -37,7 +37,7 @@ import Testing
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-east-1/bedrock/aws4_request") == true)
     #expect(request.headers["authorization"]?.contains("SignedHeaders=") == true)
     #expect(request.headers["custom-header"] == "value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/4.0.120")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.12")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?[0]?["text"]?.stringValue == "Brief.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
@@ -83,9 +83,9 @@ import Testing
     let converseRequest = try #require(await converseTransport.requests().first)
     let anthropicRequest = try #require(await anthropicTransport.requests().first)
     let mantleRequest = try #require(await mantleTransport.requests().first)
-    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.120")
-    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.120")
-    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/4.0.120")
+    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.12")
+    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.12")
+    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.12")
 }
 @Test func amazonBedrockCredentialProviderSignsAllProviderSurfaces() async throws {
     let fixedDate = DateComponents(
@@ -252,6 +252,66 @@ import Testing
     #expect(tools[0]["toolSpec"]?["inputSchema"]?["json"]?["properties"]?["city"]?["type"]?.stringValue == "string")
     #expect(body["toolConfig"]?["toolChoice"]?["tool"]?["name"]?.stringValue == "weather")
     #expect(body["amazonBedrock"] == nil)
+}
+@Test func amazonBedrockConverseMapsRichToolResultContentAndCachePoints() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"tool consumed"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+    let imageData = Data([0x89, 0x50, 0x4E, 0x47]).base64EncodedString()
+    let pdfData = Data("pdf bytes".utf8).base64EncodedString()
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            AIMessage(role: .tool, content: [
+                .toolResult(AIToolResult(
+                    toolCallID: "tool-1",
+                    toolName: "lookup",
+                    result: ["fallback": "ignored"],
+                    modelOutput: [
+                        "type": "content",
+                        "value": [
+                            ["type": "text", "text": "first result"],
+                            ["type": "image-data", "mediaType": "image/png", "data": .string(imageData)],
+                            [
+                                "type": "file-data",
+                                "mediaType": "application/pdf",
+                                "filename": "report.pdf",
+                                "data": .string(pdfData),
+                                "providerMetadata": ["amazonBedrock": ["citations": ["enabled": true]]]
+                            ]
+                        ]
+                    ],
+                    providerMetadata: ["amazonBedrock": ["cachePoint": ["type": "default"]]]
+                ))
+            ])
+        ],
+        tools: [
+            "lookup": [
+                "type": "object",
+                "properties": ["query": ["type": "string"]]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let content = try #require(body["messages"]?[0]?["content"]?.arrayValue)
+    let toolResult = try #require(content[0]["toolResult"])
+    #expect(toolResult["toolUseId"]?.stringValue == "tool-1")
+    #expect(toolResult["status"]?.stringValue == "success")
+    #expect(toolResult["content"]?[0]?["text"]?.stringValue == "first result")
+    #expect(toolResult["content"]?[1]?["image"]?["format"]?.stringValue == "png")
+    #expect(toolResult["content"]?[1]?["image"]?["source"]?["bytes"]?.stringValue == imageData)
+    #expect(toolResult["content"]?[2]?["document"]?["format"]?.stringValue == "pdf")
+    #expect(toolResult["content"]?[2]?["document"]?["name"]?.stringValue == "report")
+    #expect(toolResult["content"]?[2]?["document"]?["source"]?["bytes"]?.stringValue == pdfData)
+    #expect(toolResult["content"]?[2]?["document"]?["citations"]?["enabled"]?.boolValue == true)
+    #expect(content[1]["cachePoint"]?["type"]?.stringValue == "default")
 }
 
 @Test func amazonBedrockOmitsStrictToolSpecForClaudeOpus47And48() async throws {

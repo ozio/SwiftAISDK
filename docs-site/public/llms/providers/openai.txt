@@ -23,7 +23,7 @@ Source URL: /providers/openai/
 
 ## Notes
 
-Supports Chat Completions and Responses-style language models, completions, embeddings, images, speech, transcription, files, skills, hosted Responses tools, provider tool helpers, organization/project headers, structured output, usage, metadata, warnings, and raw stream chunks.
+OpenAI mirrors upstream 4.0.8 across Chat Completions, Responses language models, completions, embeddings, images, speech, transcription, files, skills, hosted Responses tools, provider tool helpers, organization/project headers, structured output, usage details, response/provider metadata, warnings, raw stream chunks, provider references, Responses allowedTools/tool-search/namespace handling, server-side compaction items, retryable pre-output stream failures, and Chat file-part mapping for image/audio/PDF inputs. Realtime/WebSocket models, ProviderV4 type names, ESM-only packaging, Node 22 engines, and workflow serialization helpers remain JS-runtime/package-surface concerns.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

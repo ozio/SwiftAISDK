@@ -24,8 +24,8 @@ import Testing
     #expect(try fireworks.imageModel("image").providerID == "fireworks.image")
 
     let moonshot = try AIProviders.moonshotAI(settings: settings)
-    #expect(try moonshot.languageModel("kimi-k2").providerID == "moonshotai.chat")
-    #expect(try moonshot.chatModel("kimi-k2").providerID == "moonshotai.chat")
+    #expect(try moonshot.languageModel("kimi-k2.5").providerID == "moonshotai.chat")
+    #expect(try moonshot.chatModel("kimi-k2.5").providerID == "moonshotai.chat")
 
     let together = try AIProviders.togetherAI(settings: settings)
     #expect(try together.languageModel("chat").providerID == "togetherai.chat")

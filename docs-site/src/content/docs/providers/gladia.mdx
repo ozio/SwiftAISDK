@@ -15,6 +15,10 @@ description: "gladia provider capabilities and factories."
 
 - Transcription
 
+## Notes
+
+Gladia transcription mirrors upstream 3.0.5: `GLADIA_API_KEY`, `x-gladia-key` auth, custom headers, versioned user-agent suffix, `transcription`/`transcriptionModel` aliases, `/v2/upload` multipart audio upload, `/v2/pre-recorded` initiation, provider-supplied result polling with same-origin credential forwarding, foreign result URL credential stripping, providerOptions.gladia schema and snake_case mapping, result text/language/segments/duration, response/provider metadata, Gladia error schema, lifecycle errors, and unsupported language/embedding/image families. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

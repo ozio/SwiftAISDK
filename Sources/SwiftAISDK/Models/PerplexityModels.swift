@@ -74,9 +74,9 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                         }
                         latestUsage = perplexityUsage(from: raw) ?? latestUsage
                         perplexityMergeProviderMetadata(from: raw, into: &providerMetadata)
-                        if !didEmitSources {
+                        if !didEmitSources, let citations = raw["citations"], citations != .null {
                             didEmitSources = true
-                            for source in perplexitySources(from: raw["citations"]) {
+                            for source in perplexitySources(from: citations) {
                                 continuation.yield(.source(source))
                             }
                         }
@@ -187,7 +187,7 @@ private func perplexityWarnings(for request: LanguageModelRequest) -> [AIWarning
     if request.seed != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "seed"))
     }
-    if request.reasoning != nil {
+    if isCustomReasoning(request.reasoning) {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "reasoning",

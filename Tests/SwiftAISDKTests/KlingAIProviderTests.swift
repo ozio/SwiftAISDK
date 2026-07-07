@@ -23,6 +23,7 @@ import Testing
 
     #expect(result.urls == ["https://kling.example.com/video.mp4"])
     #expect(result.operationID == "task-1")
+    #expect(result.mediaType == "video/mp4")
     #expect(result.providerMetadata["klingai"]?["taskId"]?.stringValue == "task-1")
     #expect(result.providerMetadata["klingai"]?["videos"]?[0]?["id"]?.stringValue == "vid-1")
     #expect(result.providerMetadata["klingai"]?["videos"]?[0]?["url"]?.stringValue == "https://kling.example.com/video.mp4")
@@ -36,7 +37,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/text2video")
     #expect(requests[0].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/klingai/3.0.21")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/klingai/4.0.6")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model_name"]?.stringValue == "kling-v2-1")
     #expect(body["prompt"]?.stringValue == "cat running")
@@ -50,7 +51,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/text2video/task-1")
     #expect(requests[1].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/klingai/3.0.21")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/klingai/4.0.6")
 }
 
 @Test func klingAIAppendsVersionedUserAgentToCustomHeader() async throws {
@@ -69,9 +70,9 @@ import Testing
 
     let requests = await transport.requests()
     #expect(requests[0].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/3.0.21")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/4.0.6")
     #expect(requests[1].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/3.0.21")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/4.0.6")
 }
 
 @Test func klingAIT2VMapsProviderOptionsAndWarnings() async throws {
@@ -124,6 +125,43 @@ import Testing
     #expect(body["element_list"] == nil)
     #expect(body["image"] == nil)
     #expect(body["n"] == nil)
+}
+
+@Test func klingAIT2VMapsGenerateAudioToSoundLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "task-audio", videoURL: "https://kling.example.com/audio.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-t2v")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "scene with audio",
+        generateAudio: true,
+        providerOptions: ["klingai": .object(["mode": "std", "pollIntervalMs": 1, "pollTimeoutMs": 1000])]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["sound"]?.stringValue == "on")
+}
+
+@Test func klingAIT2VGenerateAudioOverridesLegacySoundLikeUpstream() async throws {
+    let transport = klingAITransport(taskID: "task-audio-override", videoURL: "https://kling.example.com/audio-override.mp4")
+    let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
+    let model = try provider.videoModel("kling-v2.6-t2v")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "scene without audio",
+        generateAudio: false,
+        providerOptions: [
+            "klingai": .object([
+                "mode": "std",
+                "sound": "on",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["sound"]?.stringValue == "off")
 }
 
 @Test func klingAIProviderOptionsValidateKnownSchemaFields() async throws {

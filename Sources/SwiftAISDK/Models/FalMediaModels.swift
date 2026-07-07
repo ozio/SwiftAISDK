@@ -102,11 +102,12 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         )
         let raw = finalResponse.json
         guard let videoURL = raw["video"]?["url"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "Fal response did not contain video.url.")
+            throw AIError.invalidResponse(provider: providerID, message: "No video URL in response")
         }
         return VideoGenerationResult(
             urls: [videoURL],
             operationID: queued["request_id"]?.stringValue,
+            mediaType: raw["video"]?["content_type"]?.stringValue ?? "video/mp4",
             rawValue: raw,
             providerMetadata: falVideoProviderMetadata(from: raw),
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),

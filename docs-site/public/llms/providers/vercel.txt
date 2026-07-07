@@ -14,6 +14,10 @@ Source URL: /providers/vercel/
 
 - Language
 
+## Notes
+
+Vercel v0 chat models mirror upstream Vercel 3.0.5: `VERCEL_API_KEY`, custom base URL and headers, callable provider and `languageModel` aliases, `vercel.chat` provider IDs, versioned user-agent suffix, and unsupported embedding/image families.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

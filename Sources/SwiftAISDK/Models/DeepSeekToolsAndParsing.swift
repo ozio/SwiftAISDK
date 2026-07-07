@@ -123,7 +123,7 @@ func deepSeekToolResultContent(_ result: AIToolResult) -> String {
     case "text", "error-text":
         return object["value"]?.stringValue ?? ""
     case "execution-denied":
-        return object["reason"]?.stringValue ?? "Tool execution denied."
+        return object["reason"]?.stringValue ?? "Tool call execution denied."
     case "json", "error-json":
         return deepSeekJSONString(object["value"] ?? .object([:])) ?? ""
     case "content":
@@ -137,7 +137,7 @@ func deepSeekToolCalls(from value: JSONValue?) -> [AIToolCall] {
     value?.arrayValue?.enumerated().compactMap { index, item in
         guard let name = item["function"]?["name"]?.stringValue else { return nil }
         return AIToolCall(
-            id: item["id"]?.stringValue ?? "tool-call-\(index)",
+            id: item["id"]?.stringValue ?? generateId(),
             name: name,
             arguments: item["function"]?["arguments"]?.stringValue ?? "",
             rawValue: item

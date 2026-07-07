@@ -14,6 +14,10 @@ Source URL: /providers/amazon-bedrock-anthropic/
 
 - Language
 
+## Notes
+
+Bedrock Anthropic mirrors upstream 5.0.12 invoke-model behavior: Anthropic Messages request conversion, Bedrock auth and user-agent handling, URL/data media resolution, native Anthropic tool helpers, structured-output omissions for unsupported models, event-stream decoding, response metadata, and Bedrock-specific request URLs. JS fetch/header injection hooks remain JS-only.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

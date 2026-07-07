@@ -59,7 +59,13 @@ import Testing
         }
     }
 
-    #expect(streamStartWarnings == [])
+    #expect(streamStartWarnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "reasoning",
+            message: #"reasoning "xhigh" is not directly supported by this model. mapped to effort "high"."#
+        )
+    ])
     #expect(responseMetadata?.id == "groq-1")
     #expect(responseMetadata?.modelID == "qwen/qwen3-32b")
     #expect(responseMetadata?.headers["x-groq"] == "stream")
@@ -96,7 +102,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer groq-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/3.0.42")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/4.0.5")
 }
 @Test func groqLanguageMapsMissingFinishReasonToOther() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"index":0,"message":{"content":"ok"},"finish_reason":null}]}"#))
@@ -118,6 +124,64 @@ import Testing
     #expect(result.text == "")
     #expect(result.reasoning == "thinking only")
     #expect(result.finishReason == "stop")
+}
+@Test func groqLanguageMapsTopLevelReasoningLikeUpstream() async throws {
+    func bodyAndWarnings(
+        reasoning: String?,
+        providerOptions: [String: JSONValue] = [:]
+    ) async throws -> ([String: JSONValue], [AIWarning]) {
+        let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"openai/gpt-oss-20b","choices":[{"message":{"content":"answer"},"finish_reason":"stop"}]}"#))
+        let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+        let model = try provider.languageModel("openai/gpt-oss-20b")
+
+        let result = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            reasoning: reasoning,
+            providerOptions: providerOptions
+        ))
+
+        let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+        return (try #require(body.objectValue), result.warnings)
+    }
+
+    let (highBody, highWarnings) = try await bodyAndWarnings(reasoning: "high")
+    #expect(highBody["reasoning_effort"]?.stringValue == "high")
+    #expect(highWarnings.isEmpty)
+
+    let (minimalBody, minimalWarnings) = try await bodyAndWarnings(reasoning: "minimal")
+    #expect(minimalBody["reasoning_effort"]?.stringValue == "low")
+    #expect(minimalWarnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "reasoning",
+            message: #"reasoning "minimal" is not directly supported by this model. mapped to effort "low"."#
+        )
+    ])
+
+    let (xhighBody, xhighWarnings) = try await bodyAndWarnings(reasoning: "xhigh")
+    #expect(xhighBody["reasoning_effort"]?.stringValue == "high")
+    #expect(xhighWarnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "reasoning",
+            message: #"reasoning "xhigh" is not directly supported by this model. mapped to effort "high"."#
+        )
+    ])
+
+    let (noneBody, noneWarnings) = try await bodyAndWarnings(reasoning: "none")
+    #expect(noneBody["reasoning_effort"] == nil)
+    #expect(noneWarnings.isEmpty)
+
+    let (providerDefaultBody, providerDefaultWarnings) = try await bodyAndWarnings(reasoning: "provider-default")
+    #expect(providerDefaultBody["reasoning_effort"] == nil)
+    #expect(providerDefaultWarnings.isEmpty)
+
+    let (providerOptionsBody, providerOptionsWarnings) = try await bodyAndWarnings(
+        reasoning: "medium",
+        providerOptions: ["groq": .object(["reasoningEffort": "high"])]
+    )
+    #expect(providerOptionsBody["reasoning_effort"]?.stringValue == "high")
+    #expect(providerOptionsWarnings.isEmpty)
 }
 @Test func groqLanguageMapsNestedProviderOptions() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"openai/gpt-oss-20b","choices":[{"message":{"content":"answer"},"finish_reason":"stop"}]}"#))

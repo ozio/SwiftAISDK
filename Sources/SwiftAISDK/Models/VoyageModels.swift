@@ -45,10 +45,12 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
         let response = try await config.sendJSONResponse(path: "/embeddings", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         try validateVoyageEmbeddingResponse(raw, providerID: providerID)
-        let embeddings = raw["data"]?.arrayValue?.map { $0["embedding"]?.arrayValue?.compactMap(\.doubleValue) ?? [] } ?? []
+        let embeddings = raw["data"]?.arrayValue?
+            .sorted { ($0["index"]?.doubleValue ?? 0) < ($1["index"]?.doubleValue ?? 0) }
+            .map { $0["embedding"]?.arrayValue?.compactMap(\.doubleValue) ?? [] } ?? []
         return EmbeddingResult(
             embeddings: embeddings,
-            usage: TokenUsage(totalTokens: raw["usage"]?["total_tokens"]?.intValue),
+            usage: TokenUsage(totalTokens: raw["usage"]?["total_tokens"]?.intValue ?? 0),
             rawValue: raw,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
@@ -211,8 +213,10 @@ func voyageRequireNumber(_ value: JSONValue, argument: String, message: String) 
 }
 
 func validateVoyageEmbeddingResponse(_ raw: JSONValue, providerID: String) throws {
-    guard raw["usage"]?["total_tokens"]?.doubleValue != nil,
-          let data = raw["data"]?.arrayValue else {
+    guard let data = raw["data"]?.arrayValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "Voyage embedding response is invalid.")
+    }
+    if let usage = raw["usage"], usage != .null, usage["total_tokens"]?.doubleValue == nil {
         throw AIError.invalidResponse(provider: providerID, message: "Voyage embedding response is invalid.")
     }
     for item in data {
@@ -225,8 +229,7 @@ func validateVoyageEmbeddingResponse(_ raw: JSONValue, providerID: String) throw
 }
 
 func validateVoyageRerankingResponse(_ raw: JSONValue, providerID: String) throws {
-    guard raw["usage"]?["total_tokens"]?.doubleValue != nil,
-          let data = raw["data"]?.arrayValue else {
+    guard let data = raw["data"]?.arrayValue else {
         throw AIError.invalidResponse(provider: providerID, message: "Voyage reranking response is invalid.")
     }
     for item in data {

@@ -202,7 +202,7 @@ func prodiaLanguageWarnings(for request: LanguageModelRequest) -> [AIWarning] {
     if case .json = request.responseFormat {
         warnings.append(AIWarning(type: "unsupported", feature: "responseFormat"))
     }
-    if request.reasoning != nil {
+    if isCustomReasoning(request.reasoning) {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "reasoning",

@@ -14,6 +14,10 @@ Source URL: /providers/perplexity/
 
 - Language
 
+## Notes
+
+Perplexity chat mirrors upstream Perplexity 4.0.6: `PERPLEXITY_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language aliases, `/chat/completions`, text/image/PDF message conversion, JSON schema response format, providerOptions.perplexity passthrough, citations/images/cost metadata, optional and null streaming delta content, reasoning-token usage accounting, Perplexity error schema, and warnings for unsupported topK/stop/seed/custom reasoning while treating provider-default reasoning as a no-op. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

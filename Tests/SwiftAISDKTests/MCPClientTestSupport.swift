@@ -6,14 +6,17 @@ actor MockMCPTransport: MCPTransport {
     private var messages: [JSONValue] = []
     private let capabilities: JSONValue
     private let toolResult: JSONValue?
+    private var transientToolFailuresRemaining: Int
     private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
 
     init(
         capabilities: JSONValue = .object(["tools": .object(["listChanged": .bool(false)])]),
-        toolResult: JSONValue? = nil
+        toolResult: JSONValue? = nil,
+        transientToolFailures: Int = 0
     ) {
         self.capabilities = capabilities
         self.toolResult = toolResult
+        self.transientToolFailuresRemaining = transientToolFailures
     }
 
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {
@@ -64,6 +67,10 @@ actor MockMCPTransport: MCPTransport {
                 ]
             ]
         case "tools/call":
+            if transientToolFailuresRemaining > 0 {
+                transientToolFailuresRemaining -= 1
+                throw MCPClientError(message: "MCP HTTP Transport Error: POST failed with HTTP 503", statusCode: 503)
+            }
             let query = message["params"]?["arguments"]?["query"]?.stringValue ?? ""
             return [
                 "jsonrpc": "2.0",
@@ -76,6 +83,22 @@ actor MockMCPTransport: MCPTransport {
                         ]
                     ],
                     "isError": false
+                ]
+            ]
+        case "completion/complete":
+            let value = message["params"]?["argument"]?["value"]?.stringValue ?? ""
+            return [
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [
+                    "completion": [
+                        "values": [
+                            .string("\(value)-one"),
+                            .string("\(value)-two")
+                        ],
+                        "total": 2,
+                        "hasMore": false
+                    ]
                 ]
             ]
         case "resources/list":
@@ -211,6 +234,7 @@ func fullMCPCapabilities() -> JSONValue {
         "tools": .object(["listChanged": .bool(false)]),
         "resources": .object(["listChanged": .bool(false)]),
         "prompts": .object(["listChanged": .bool(false)]),
+        "completions": .object([:]),
         "elicitation": .object(["applyDefaults": .bool(true)])
     ])
 }
@@ -225,6 +249,28 @@ actor MCPElicitationRecorder {
         recordedRequest
     }
 }
+
+actor MCPSessionRecorder {
+    private var changes: [String?] = []
+    private var expirations: [String] = []
+
+    func recordChange(_ sessionID: String?) {
+        changes.append(sessionID)
+    }
+
+    func recordExpiration(_ sessionID: String) {
+        expirations.append(sessionID)
+    }
+
+    func changedSessionIDs() -> [String?] {
+        changes
+    }
+
+    func expiredSessionIDs() -> [String] {
+        expirations
+    }
+}
+
 actor MockMCPOAuthProvider: MCPOAuthProvider {
     private var token: String?
     private let authorizedToken: String?

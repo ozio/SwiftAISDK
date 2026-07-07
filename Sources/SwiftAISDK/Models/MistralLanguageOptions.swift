@@ -33,7 +33,7 @@ func mistralWarnings(for request: LanguageModelRequest, modelID: String) -> [AIW
     if request.presencePenalty != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty"))
     }
-    if request.reasoning != nil, !mistralSupportsReasoningEffort(modelID) {
+    if isCustomReasoning(request.reasoning), !mistralSupportsReasoningEffort(modelID) {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "reasoning",
@@ -50,6 +50,24 @@ func mistralSupportsReasoningEffort(_ modelID: String) -> Bool {
     default:
         return false
     }
+}
+
+func mistralReasoningEffort(_ reasoning: String?, warnings: inout [AIWarning]) -> JSONValue? {
+    guard isCustomReasoning(reasoning), let reasoning else { return nil }
+    if reasoning == "none" {
+        return .string("none")
+    }
+    return mapReasoningToProviderEffort(
+        reasoning: reasoning,
+        effortMap: [
+            "minimal": "high",
+            "low": "high",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "high"
+        ],
+        warnings: &warnings
+    ).map(JSONValue.string)
 }
 
 func mistralMessages(_ messages: [AIMessage], responseFormat: JSONValue?) -> [AIMessage] {

@@ -23,7 +23,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/text-to-speech/voice-123?enable_logging=false&output_format=mp3_44100_192")
     #expect(request.headers["xi-api-key"] == "eleven-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/elevenlabs/2.0.36")
+    #expect(request.headers["user-agent"] == "ai-sdk/elevenlabs/3.0.6")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
     #expect(body["model_id"]?.stringValue == "eleven_multilingual_v2")
@@ -285,6 +285,29 @@ import Testing
             providerOptions: ["elevenlabs": .object(["enableLogging": .string("false")])]
         ))
     }
+}
+
+@Test func elevenLabsTranscriptionPassesProviderAndRequestHeadersLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"language_code":"en","language_probability":0.99,"text":"headers","words":[]}"#))
+    let provider = try AIProviders.elevenLabs(settings: ProviderSettings(
+        apiKey: "eleven-key",
+        headers: ["Custom-Provider-Header": "provider-header-value"],
+        transport: transport
+    ))
+
+    _ = try await provider.transcriptionModel("scribe_v2").transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        mimeType: "audio/wav",
+        headers: ["Custom-Request-Header": "request-header-value"]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.elevenlabs.io/v1/speech-to-text")
+    #expect(request.headers["xi-api-key"] == "eleven-key")
+    #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
+    #expect(request.headers["custom-provider-header"] == "provider-header-value")
+    #expect(request.headers["Custom-Request-Header"] == "request-header-value")
+    #expect(request.headers["user-agent"] == "ai-sdk/elevenlabs/3.0.6")
 }
 
 @Test func elevenLabsTranscriptionRejectsInvalidResponseShapeLikeUpstreamSchema() async throws {

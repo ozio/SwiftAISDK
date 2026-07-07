@@ -85,6 +85,25 @@ import Testing
     let cohereV4Body = try decodeJSONBody(try #require((await cohereV4Transport.requests()).first?.body))
     #expect(cohereV4Body["texts"]?[0]?.stringValue == "hello")
 }
+@Test func amazonBedrockCohereEmbeddingBatchesMultipleInputsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"embeddings":[[0.1,0.2],[0.3,0.4]]}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-west-2",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.embeddingModel("cohere.embed-english-v3")
+
+    let result = try await model.embed(EmbeddingRequest(values: ["hello", "world"]))
+
+    #expect(result.embeddings == [[0.1, 0.2], [0.3, 0.4]])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["texts"]?[0]?.stringValue == "hello")
+    #expect(body["texts"]?[1]?.stringValue == "world")
+    #expect(body["input_type"]?.stringValue == "search_query")
+}
 @Test func amazonBedrockEmbeddingRejectsTooManyValuesLikeUpstream() async throws {
     let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
         region: "us-west-2",
@@ -100,6 +119,17 @@ import Testing
         values: ["hello", "world"]
     )) {
         _ = try await model.embed(EmbeddingRequest(values: ["hello", "world"]))
+    }
+
+    let cohere = try provider.embeddingModel("cohere.embed-english-v3")
+    let values = (0..<97).map { "value-\($0)" }
+    await #expect(throws: AITooManyEmbeddingValuesForCallError(
+        provider: "amazon-bedrock",
+        modelID: "cohere.embed-english-v3",
+        maxEmbeddingsPerCall: 96,
+        values: values
+    )) {
+        _ = try await cohere.embed(EmbeddingRequest(values: values))
     }
 }
 @Test func amazonBedrockRerankingUsesAgentRuntimeShapeAndNestedOptions() async throws {
@@ -137,11 +167,11 @@ import Testing
     #expect(body["sources"]?[1]?["inlineDocumentSource"]?["textDocument"]?["text"]?.stringValue == "rainy city")
     let rerankingConfig = body["rerankingConfiguration"]
     #expect(rerankingConfig?["type"]?.stringValue == "BEDROCK_RERANKING_MODEL")
-    let bedrockConfig = rerankingConfig?["amazonBedrockRerankingConfiguration"]
+    let bedrockConfig = rerankingConfig?["bedrockRerankingConfiguration"]
     #expect(bedrockConfig?["numberOfResults"]?.intValue == 2)
     #expect(bedrockConfig?["modelConfiguration"]?["modelArn"]?.stringValue == "arn:aws:bedrock:us-west-2::foundation-model/cohere.rerank-v3-5:0")
     #expect(bedrockConfig?["modelConfiguration"]?["additionalModelRequestFields"]?["truncate"]?.stringValue == "END")
-    #expect(rerankingConfig?["bedrockRerankingConfiguration"] == nil)
+    #expect(rerankingConfig?["amazonBedrockRerankingConfiguration"] == nil)
     #expect(body["amazonBedrock"] == nil)
 }
 @Test func amazonBedrockImageMapsTextOptions() async throws {

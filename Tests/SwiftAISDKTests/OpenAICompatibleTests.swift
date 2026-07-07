@@ -45,7 +45,7 @@ import Testing
     #expect(requests.count == 4)
     #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
     #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/2.0.51" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.5" })
 }
 
 @Test func openAICompatibleStreamsIncludeUsageWhenEnabled() async throws {
@@ -515,6 +515,94 @@ import Testing
     #expect(imageBody["response_format"]?.stringValue == "b64_json")
     #expect(imageBody["test-provider"] == nil)
     #expect(imageBody["testProvider"] == nil)
+}
+
+@Test func openAICompatibleProviderMetadataUsesCamelCaseProviderOptionsNamespace() async throws {
+    let chatTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop","logprobs":{"content":[{"token":"hello","logprob":-0.1}]}}],"usage":{"completion_tokens_details":{"accepted_prediction_tokens":5,"rejected_prediction_tokens":1}}}
+    """))
+    let chatProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: chatTransport
+    )
+    let chat = try await chatProvider.chatModel("chat-model").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["testProvider": ["custom": "camel"]]
+    ))
+
+    #expect(chat.providerMetadata["testProvider"]?["acceptedPredictionTokens"]?.intValue == 5)
+    #expect(chat.providerMetadata["testProvider"]?["rejectedPredictionTokens"]?.intValue == 1)
+    #expect(chat.providerMetadata["testProvider"]?["logprobs"]?[0]?["token"]?.stringValue == "hello")
+    #expect(chat.providerMetadata["test-provider"] == nil)
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"content":"hi"},"logprobs":{"content":[{"token":"hi","logprob":-0.2}]}}],"usage":{"completion_tokens_details":{"accepted_prediction_tokens":3}}}
+
+    data: {"choices":[{"finish_reason":"stop"}],"usage":{"completion_tokens_details":{"rejected_prediction_tokens":2}}}
+
+    data: [DONE]
+
+    """))
+    let streamProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: streamTransport
+    )
+
+    var streamMetadata: [String: JSONValue] = [:]
+    let streamModel = try streamProvider.chatModel("chat-model")
+    for try await part in streamModel.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["testProvider": ["custom": "camel"]]
+    )) {
+        if case let .finishMetadata(_, _, metadata) = part {
+            streamMetadata = metadata
+        }
+    }
+
+    #expect(streamMetadata["testProvider"]?["acceptedPredictionTokens"]?.intValue == 3)
+    #expect(streamMetadata["testProvider"]?["rejectedPredictionTokens"]?.intValue == 2)
+    #expect(streamMetadata["testProvider"]?["logprobs"]?[0]?["token"]?.stringValue == "hi")
+    #expect(streamMetadata["test-provider"] == nil)
+
+    let completionTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"text":"done","finish_reason":"stop","logprobs":{"tokens":["done"],"token_logprobs":[-0.3]}}],"usage":{"total_tokens":2}}
+    """))
+    let completionProvider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: completionTransport
+    )
+    let completion = try await completionProvider.completionModel("completion-model").generate(LanguageModelRequest(
+        messages: [.user("Finish")],
+        providerOptions: ["testProvider": ["custom": "camel"]]
+    ))
+
+    #expect(completion.providerMetadata["testProvider"]?["logprobs"]?["tokens"]?[0]?.stringValue == "done")
+    #expect(completion.providerMetadata["test-provider"] == nil)
+}
+
+@Test func openAICompatibleProviderMetadataKeepsRawProviderOptionsNamespaceWhenRawKeyIsUsed() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"completion_tokens_details":{"accepted_prediction_tokens":4}}}
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+    let result = try await provider.chatModel("chat-model").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["test-provider": ["custom": "raw"]]
+    ))
+
+    #expect(result.providerMetadata["test-provider"]?["acceptedPredictionTokens"]?.intValue == 4)
+    #expect(result.providerMetadata["testProvider"] == nil)
 }
 
 @Test func openAICompatibleImageRejectsMoreThanMaxImagesPerCall() async throws {

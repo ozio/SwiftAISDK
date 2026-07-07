@@ -12,7 +12,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/3.0.74")
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.8")
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -96,7 +96,7 @@ public enum AIProviders {
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
             ),
-            userAgentSuffix: "ai-sdk/openai-compatible/2.0.51",
+            userAgentSuffix: "ai-sdk/openai-compatible/3.0.5",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
@@ -106,7 +106,7 @@ public enum AIProviders {
     }
 
     public static func xAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "xai", defaultBaseURL: "https://api.x.ai/v1", authorization: .bearer(environmentVariables: ["XAI_API_KEY"]), supportedCapabilities: [.language, .image, .video], settings: settings)
+        try OpenAICompatibleProvider(providerID: "xai", defaultBaseURL: "https://api.x.ai/v1", authorization: .bearer(environmentVariables: ["XAI_API_KEY"]), supportedCapabilities: [.language, .image, .transcription, .speech, .video], settings: settings)
     }
 
     public static func deepSeek(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -194,7 +194,7 @@ public enum AIProviders {
             headers["Authorization"] = "Bearer \(apiKey)"
         }
         headers.merge(settings.headers) { _, custom in custom }
-        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/1.0.19")
+        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.5")
         let endpoint = try requireURL(url)
         let base = "\(endpoint.scheme ?? "https")://\(endpoint.host ?? "")"
         let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
@@ -321,7 +321,7 @@ private func perplexityHeaders(settings: ProviderSettings) throws -> [String: St
         throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
     }
     headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
-    return withUserAgentSuffix(headers, "ai-sdk/perplexity/3.0.36")
+    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.6")
 }
 
 private func klingAIJWT(accessKey: String, secretKey: String, now: Date = Date()) throws -> String {

@@ -15,6 +15,10 @@ description: "huggingface provider capabilities and factories."
 
 - Language
 
+## Notes
+
+Hugging Face Responses language models mirror upstream Hugging Face 2.0.5: `HUGGINGFACE_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language/responses aliases, `/v1/responses` request builder, providerOptions.huggingface metadata/instructions/strictJsonSchema/reasoningEffort schema, structured text formats, function tools/tool choice, reasoning and MCP/tool-call parsing, streaming lifecycle and metadata, image URL/data file parts including top-level `image` and `image/*` MIME resolution, explicit provider-reference file rejection, and unsupported embedding/image families. ProviderV4 type names, ESM-only packaging, Node 22 engines, default export rename to `huggingFace`, optional JS headers config, TypeScript option export split, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

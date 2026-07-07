@@ -15,6 +15,10 @@ description: "assemblyai provider capabilities and factories."
 
 - Transcription
 
+## Notes
+
+AssemblyAI transcription mirrors upstream 3.0.5: `ASSEMBLYAI_API_KEY`, custom headers, versioned user-agent suffix, `transcription`/`transcriptionModel` aliases, `/v2/upload` plus `/v2/transcript` submit/poll flow, legacy `best` via `speech_model`, current `universal-3-5-pro`/`universal-3-pro`/`universal-2` via `speech_models`, deprecation and migration warnings, providerOptions.assemblyai schema including Universal 3 Pro and GA nested options, millisecond-to-second word segment conversion, audio-intelligence provider metadata, raw final response metadata, AssemblyAI error schema, and unsupported language/embedding/image families. ProviderV4, ESM-only packaging, Node 22 engines, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

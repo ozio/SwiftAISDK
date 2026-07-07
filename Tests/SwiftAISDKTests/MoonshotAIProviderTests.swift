@@ -42,7 +42,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.moonshot.ai/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer moonshot-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/moonshotai/2.0.26")
+    #expect(request.headers["user-agent"] == "ai-sdk/moonshotai/3.0.7")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["moonshotai"] == nil)
     #expect(body["extraRaw"]?.stringValue == "keep-me")
@@ -64,13 +64,28 @@ import Testing
         headers: ["User-Agent": "TestApp/1.0"],
         transport: transport
     ))
-    let model = try provider.languageModel("kimi-k2")
+    let model = try provider.languageModel("kimi-k2.5")
 
     _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/moonshotai/2.0.26")
+    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/moonshotai/3.0.7")
     #expect(request.headers["authorization"] == "Bearer moonshot-key")
+}
+
+@Test func moonshotProviderExposesCallableLanguageAndChatAliasesLikeUpstream() async throws {
+    let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: RecordingTransport(responses: [])))
+
+    let callable = try provider("kimi-k2.5")
+    let language = try provider.languageModel("kimi-k2.6")
+    let chat = try provider.chat("kimi-k2.7-code-highspeed")
+
+    #expect(callable.providerID == "moonshotai.chat")
+    #expect(callable.modelID == "kimi-k2.5")
+    #expect(language.providerID == "moonshotai.chat")
+    #expect(language.modelID == "kimi-k2.6")
+    #expect(chat.providerID == "moonshotai.chat")
+    #expect(chat.modelID == "kimi-k2.7-code-highspeed")
 }
 
 @Test func moonshotLanguageUsesUpstreamErrorMessageSchema() async throws {
@@ -80,7 +95,7 @@ import Testing
         body: Data(#"{"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}"#.utf8)
     ))
     let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
-    let model = try provider.languageModel("kimi-k2")
+    let model = try provider.languageModel("kimi-k2.5")
 
     await #expect(throws: AIError.apiCall(
         provider: "moonshotai.chat",
@@ -142,7 +157,7 @@ import Testing
     {"choices":[{"message":{"content":"moon"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
     """))
     let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
-    let model = try provider.languageModel("kimi-k2")
+    let model = try provider.languageModel("kimi-k2.5")
 
     let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Lookup.")],
@@ -200,7 +215,7 @@ import Testing
     {"choices":[{"message":{"content":"moon"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":1}}
     """))
     let generateProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: generateTransport))
-    let generate = try await generateProvider.languageModel("kimi-k2").generate(LanguageModelRequest(messages: [.user("Hi")]))
+    let generate = try await generateProvider.languageModel("kimi-k2.5").generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     #expect(generate.finishReason == "other")
 
@@ -211,7 +226,7 @@ import Testing
 
     """))
     let streamProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: streamTransport))
-    let streamModel = try streamProvider.languageModel("kimi-k2")
+    let streamModel = try streamProvider.languageModel("kimi-k2.5")
     var finishReason: String?
     var usage: TokenUsage?
     for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
@@ -297,7 +312,7 @@ import Testing
         {"choices":[{"message":{"content":"\(label)"},"finish_reason":"stop"}],"usage":\(usageJSON)}
         """))
         let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
-        let result = try await provider.languageModel("kimi-k2").generate(LanguageModelRequest(messages: [.user("Hi")]))
+        let result = try await provider.languageModel("kimi-k2.5").generate(LanguageModelRequest(messages: [.user("Hi")]))
 
         #expect(result.text == label)
         #expect(result.usage?.inputTokens == inputTokens)
@@ -314,7 +329,7 @@ import Testing
     {"choices":[{"message":{"content":"moon"},"finish_reason":"stop"}]}
     """))
     let generateProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: generateTransport))
-    let generate = try await generateProvider.languageModel("kimi-k2").generate(LanguageModelRequest(messages: [.user("Hi")]))
+    let generate = try await generateProvider.languageModel("kimi-k2.5").generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     #expect(generate.text == "moon")
     #expect(generate.usage == TokenUsage())
@@ -329,7 +344,7 @@ import Testing
     """))
     let streamProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: streamTransport))
     var finishUsage: TokenUsage?
-    let streamModel = try streamProvider.languageModel("kimi-k2")
+    let streamModel = try streamProvider.languageModel("kimi-k2.5")
     for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         if case let .finish(_, usage) = part {
             finishUsage = usage
@@ -349,7 +364,7 @@ import Testing
 
     """#))
     let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
-    let model = try provider.languageModel("kimi-k2")
+    let model = try provider.languageModel("kimi-k2.5")
 
     var errors: [String] = []
     var finishReason: String?
@@ -371,13 +386,13 @@ import Testing
 
 @Test func moonshotLanguageStreamRequiresFirstToolDeltaIDAndNameLikeUpstream() async throws {
     let transport = RecordingTransport(response: sseResponse(#"""
-    data: {"id":"moonshot-1","model":"kimi-k2","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":null}]}
+    data: {"id":"moonshot-1","model":"kimi-k2.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"weather","arguments":"{}"}}]},"finish_reason":null}]}
 
     data: [DONE]
 
     """#))
     let provider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: transport))
-    let model = try provider.languageModel("kimi-k2")
+    let model = try provider.languageModel("kimi-k2.5")
 
     await #expect(throws: AIError.invalidResponse(provider: "moonshotai.chat", message: "Expected 'id' to be a string.")) {
         for try await _ in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {}

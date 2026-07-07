@@ -14,6 +14,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let prepared = try body(for: request, stream: false)
         let body = prepared.body
+        let metadataNamespace = metadataNamespace(for: request)
         let response = try await config.sendJSONResponse(path: "/completions", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         guard let text = raw["choices"]?[0]?["text"]?.stringValue else {
@@ -23,7 +24,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
             text: text,
             finishReason: raw["choices"]?[0]?["finish_reason"]?.stringValue,
             usage: tokenUsage(from: raw),
-            providerMetadata: openAICompatibleCompletionProviderMetadata(from: raw["choices"]?[0], providerID: providerID),
+            providerMetadata: openAICompatibleCompletionProviderMetadata(from: raw["choices"]?[0], providerID: providerID, namespace: metadataNamespace),
             rawValue: raw,
             warnings: prepared.warnings,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
@@ -36,6 +37,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
             Task {
                 do {
                     let prepared = try body(for: request, stream: true)
+                    let metadataNamespace = metadataNamespace(for: request)
                     let body = JSONValue.object(prepared.body)
                     let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
@@ -52,7 +54,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                         }
                         let choice = raw["choices"]?[0]
                         openAICompatibleMergeProviderMetadata(
-                            openAICompatibleCompletionProviderMetadata(from: choice, providerID: providerID),
+                            openAICompatibleCompletionProviderMetadata(from: choice, providerID: providerID, namespace: metadataNamespace),
                             into: &providerMetadata
                         )
                         if let delta = choice?["text"]?.stringValue {
@@ -104,6 +106,11 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
         body.merge(openAICompletionOptions(from: extraBody)) { _, new in new }
         return (body, openAICompletionWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions))
     }
+
+    private func metadataNamespace(for request: LanguageModelRequest) -> String? {
+        guard config.usesGenericOpenAICompatibleProviderOptions else { return nil }
+        return openAICompatibleProviderMetadataNamespace(providerID, providerOptions: request.providerOptions)
+    }
 }
 
 func openAICompatibleCompletionPrompt(from messages: [AIMessage]) throws -> (text: String, stopSequences: [String]) {
@@ -137,4 +144,3 @@ func openAICompatibleCompletionPrompt(from messages: [AIMessage]) throws -> (tex
     text += "assistant:\n"
     return (text, ["\nuser:"])
 }
-

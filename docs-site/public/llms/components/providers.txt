@@ -11,7 +11,7 @@ Source URL: /components/providers/
 | Enumeration | 4 |
 | Function | 11 |
 | Initializer | 25 |
-| Instance Method | 160 |
+| Instance Method | 162 |
 | Instance Property | 128 |
 | Structure | 14 |
 | Type Alias | 2 |
@@ -138,7 +138,9 @@ Source URL: /components/providers/
 | Instance Method | `imageModel(_:)` | `func imageModel(_ modelID: String) throws -> any ImageModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `imageModel(_:)` | `func imageModel(_ modelID: String) throws -> any ImageModel` | [Sources/SwiftAISDK/Providers/VercelProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/VercelProvider.swift) |
 | Instance Method | `interactionsAgent(_:)` | `func interactionsAgent(_ agentName: String) -> any LanguageModel` | [Sources/SwiftAISDK/Providers/GoogleGenerativeAIProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleGenerativeAIProvider.swift) |
+| Instance Method | `interactionsAgent(_:)` | `func interactionsAgent(_ agentName: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
 | Instance Method | `interactionsModel(_:)` | `func interactionsModel(_ modelID: String) -> any LanguageModel` | [Sources/SwiftAISDK/Providers/GoogleGenerativeAIProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleGenerativeAIProvider.swift) |
+| Instance Method | `interactionsModel(_:)` | `func interactionsModel(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
 | Instance Method | `languageModel(_:)` | `func languageModel(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Method | `languageModel(_:)` | `func languageModel(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Method | `languageModel(_:)` | `func languageModel(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |

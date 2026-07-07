@@ -14,6 +14,10 @@ Source URL: /providers/quiverai/
 
 - Image
 
+## Notes
+
+SVG image generation and vectorization mirror upstream QuiverAI 2.0.5: `QUIVERAI_API_KEY`/`QUIVERAI_BASE_URL`, versioned user-agent suffix, `arrow-1`/`arrow-1.1`/`arrow-1.1-max`, `providerOptions.quiverai` generation and vectorize options, reference limits, warnings for unsupported standard image options, and retryable API error metadata.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

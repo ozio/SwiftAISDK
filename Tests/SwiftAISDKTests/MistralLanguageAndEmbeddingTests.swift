@@ -145,7 +145,35 @@ import Testing
 
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
-    #expect(result.finishReason == "error")
+    #expect(result.finishReason == "other")
+}
+@Test func mistralTopLevelReasoningMatchesUpstreamMapping() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#),
+        jsonResponse(#"{"id":"cmpl-2","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#),
+        jsonResponse(#"{"id":"cmpl-3","object":"chat.completion","model":"mistral-large-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#)
+    ])
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let reasoningModel = try provider.languageModel("mistral-small-latest")
+    let nonReasoningModel = try provider.languageModel("mistral-large-latest")
+
+    let mapped = try await reasoningModel.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "medium"))
+    _ = try await reasoningModel.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "provider-default"))
+    let unsupported = try await nonReasoningModel.generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "provider-default"))
+
+    let requests = await transport.requests()
+    let mappedBody = try decodeJSONBody(try #require(requests[0].body))
+    let providerDefaultBody = try decodeJSONBody(try #require(requests[1].body))
+    let unsupportedBody = try decodeJSONBody(try #require(requests[2].body))
+    #expect(mappedBody["reasoning_effort"]?.stringValue == "high")
+    #expect(mapped.warnings.contains(AIWarning(
+        type: "compatibility",
+        feature: "reasoning",
+        message: #"reasoning "medium" is not directly supported by this model. mapped to effort "high"."#
+    )))
+    #expect(providerDefaultBody["reasoning_effort"] == nil)
+    #expect(unsupportedBody["reasoning_effort"] == nil)
+    #expect(unsupported.warnings.isEmpty)
 }
 @Test func mistralProviderDefinedToolsAreSkippedWithWarning() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -272,12 +300,31 @@ import Testing
     #expect(messages[4]["role"]?.stringValue == "tool")
     #expect(messages[4]["name"]?.stringValue == "deny")
     #expect(messages[4]["tool_call_id"]?.stringValue == "call_denied")
-    #expect(messages[4]["content"]?.stringValue == "Tool execution denied.")
+    #expect(messages[4]["content"]?.stringValue == "Tool call execution denied.")
 
     let content = try #require(messages[2]["content"]?.stringValue)
     let contentJSON = try decodeJSONBody(Data(content.utf8))
     #expect(contentJSON[0]?["text"]?.stringValue == "Sunny in Paris")
     #expect(contentJSON[0]?["raw"] == nil)
+}
+@Test func mistralToolResultExecutionDeniedUsesUpstreamDefaultMessage() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"cmpl-2","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("mistral-small-latest")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage.toolResult(AIToolResult(
+            toolCallID: "tool-1",
+            toolName: "lookup",
+            result: ["ignored": true],
+            modelOutput: ["type": "execution-denied"]
+        ))
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["content"]?.stringValue == "Tool call execution denied.")
 }
 @Test func mistralLanguageStreamsNativeChunks() async throws {
     let transport = RecordingTransport(response: sseResponse("""

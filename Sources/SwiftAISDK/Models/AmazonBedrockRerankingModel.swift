@@ -30,7 +30,7 @@ public final class AmazonBedrockRerankingModel: RerankingModel, @unchecked Senda
             "sources": .array(request.documents.map { .object(["type": "INLINE", "inlineDocumentSource": .object(["type": "TEXT", "textDocument": .object(["text": .string($0)])])]) }),
             "rerankingConfiguration": .object([
                 "type": "BEDROCK_RERANKING_MODEL",
-                "amazonBedrockRerankingConfiguration": .object(bedrockRerankingConfiguration)
+                "bedrockRerankingConfiguration": .object(bedrockRerankingConfiguration)
             ])
         ]
         if let nextToken = providerOptions["nextToken"] {

@@ -11,14 +11,15 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        guard let value = request.values.first else {
+        guard !request.values.isEmpty else {
             return EmbeddingResult(embeddings: [], rawValue: .object([:]))
         }
-        guard request.values.count <= 1 else {
+        let maxEmbeddingsPerCall = bedrockMaxEmbeddingsPerCall(modelID: modelID)
+        guard request.values.count <= maxEmbeddingsPerCall else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: 1,
+                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 values: request.values
             )
         }
@@ -31,7 +32,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
                     argument: "providerOptions.bedrock.inputType",
                     allowed: ["search_document", "search_query", "classification", "clustering"]
                 ) ?? "search_query"),
-                "texts": .array([.string(value)])
+                "texts": .array(request.values.map(JSONValue.string))
             ]
             if let truncate = try bedrockEmbeddingStringOption(providerOptions["truncate"], argument: "providerOptions.bedrock.truncate", allowed: ["NONE", "START", "END"]) {
                 body["truncate"] = .string(truncate)
@@ -40,6 +41,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
                 body["output_dimension"] = .number(Double(outputDimension))
             }
         } else if modelID.starts(with: "amazon.nova-"), modelID.contains("embed") {
+            let value = request.values[0]
             let embeddingPurpose = try bedrockEmbeddingStringOption(
                 providerOptions["embeddingPurpose"],
                 argument: "providerOptions.bedrock.embeddingPurpose",
@@ -66,6 +68,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
                 ])
             ]
         } else {
+            let value = request.values[0]
             body = ["inputText": .string(value)]
             let providerDimensions = try bedrockEmbeddingIntOption(providerOptions["dimensions"], argument: "providerOptions.bedrock.dimensions", allowed: [256, 512, 1024])
             if let dimensions = request.dimensions ?? providerDimensions {
@@ -78,14 +81,15 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
         body.merge(bedrockEmbeddingPassthroughExtraBody(request.extraBody)) { _, new in new }
         let response = try await config.sendJSONResponse(path: "/model/\(encodedModelID)/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        guard let embedding = bedrockEmbeddingVector(from: raw) else {
+        let embeddings = bedrockEmbeddingVectors(from: raw)
+        guard !embeddings.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No embedding vector found in Bedrock response.")
         }
         let tokenCount = raw["inputTextTokenCount"]?.intValue
             ?? raw["inputTokenCount"]?.intValue
             ?? bedrockEmbeddingHeaderTokenCount(response.response.headers)
         return EmbeddingResult(
-            embeddings: [embedding],
+            embeddings: embeddings,
             usage: tokenCount.map { TokenUsage(inputTokens: $0, totalTokens: $0) },
             rawValue: raw,
             requestMetadata: AIRequestMetadata(body: .object(body), headers: request.headers),
@@ -98,6 +102,10 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
     }
 }
 
+func bedrockMaxEmbeddingsPerCall(modelID: String) -> Int {
+    modelID.contains("cohere.embed-") ? 96 : 1
+}
+
 private func bedrockEmbeddingHeaderTokenCount(_ headers: [String: String]) -> Int? {
     for (key, value) in headers where key.caseInsensitiveCompare("x-amzn-bedrock-input-token-count") == .orderedSame {
         return Int(value)
@@ -106,10 +114,21 @@ private func bedrockEmbeddingHeaderTokenCount(_ headers: [String: String]) -> In
 }
 
 func bedrockEmbeddingVector(from raw: JSONValue) -> [Double]? {
-    raw["embedding"]?.arrayValue?.compactMap(\.doubleValue)
-        ?? raw["embeddings"]?[0]?.arrayValue?.compactMap(\.doubleValue)
-        ?? raw["embeddings"]?[0]?["embedding"]?.arrayValue?.compactMap(\.doubleValue)
-        ?? raw["embeddings"]?["float"]?[0]?.arrayValue?.compactMap(\.doubleValue)
+    bedrockEmbeddingVectors(from: raw).first
+}
+
+func bedrockEmbeddingVectors(from raw: JSONValue) -> [[Double]] {
+    if let embedding = raw["embedding"]?.arrayValue?.compactMap(\.doubleValue) {
+        return [embedding]
+    }
+    return raw["embeddings"]?.arrayValue?.compactMap { item in
+            item.arrayValue?.compactMap(\.doubleValue)
+                ?? item["embedding"]?.arrayValue?.compactMap(\.doubleValue)
+        }
+        ?? raw["embeddings"]?["float"]?.arrayValue?.compactMap { item in
+            item.arrayValue?.compactMap(\.doubleValue)
+        }
+        ?? []
 }
 
 let bedrockEmbeddingProviderOptionKeys: Set<String> = [

@@ -2,10 +2,13 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Suite(.serialized)
+struct QuiverAIProviderTests {
+
 @Test func quiverAIImageGeneratesSVGAndForwardsOptions() async throws {
     let svg = #"<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>"#
     let transport = RecordingTransport(response: quiverAIResponse(svg: svg, id: "svg-gen-1", created: 1_713_374_400, usage: true, headers: ["x-quiver": "image"]))
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
     let model = try provider.imageModel("arrow-1")
 
     let result = try await model.generateImage(ImageGenerationRequest(
@@ -39,7 +42,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.quiver.ai/v1/svgs/generations")
     #expect(request.headers["authorization"] == "Bearer quiver-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/1.0.3")
+    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/2.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "arrow-1")
     #expect(body["prompt"]?.stringValue == "Draw a square icon.")
@@ -58,6 +61,7 @@ import Testing
     let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-custom"))
     let provider = try AIProviders.quiverAI(settings: ProviderSettings(
         apiKey: "quiver-key",
+        baseURL: "https://api.quiver.ai/v1",
         headers: ["User-Agent": "CustomApp/1.0"],
         transport: transport
     ))
@@ -67,13 +71,80 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer quiver-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/quiverai/1.0.3")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/quiverai/2.0.5")
+}
+
+@Test func quiverAIReadsEnvironmentSettingsLikeUpstream() async throws {
+    try await withTemporaryQuiverAIEnvironment([
+        "QUIVERAI_API_KEY": "env-quiver-key",
+        "QUIVERAI_BASE_URL": "https://env.quiver.ai/v1/"
+    ]) {
+        let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-env"))
+        let provider = try AIProviders.quiverAI(settings: ProviderSettings(transport: transport))
+        let model = try provider.imageModel("arrow-1")
+
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "Draw from env."))
+
+        let request = try #require(await transport.requests().first)
+        #expect(request.url.absoluteString == "https://env.quiver.ai/v1/svgs/generations")
+        #expect(request.headers["authorization"] == "Bearer env-quiver-key")
+        let body = try decodeJSONBody(try #require(request.body))
+        #expect(body["model"]?.stringValue == "arrow-1")
+    }
+}
+
+@Test func quiverAIMissingAPIKeyMatchesUpstreamLoadError() async throws {
+    _ = await withTemporaryQuiverAIEnvironment([
+        "QUIVERAI_API_KEY": nil
+    ]) {
+        #expect(throws: AIError.missingAPIKey(provider: "quiverai", environmentVariables: ["QUIVERAI_API_KEY"])) {
+            _ = try AIProviders.quiverAI(settings: ProviderSettings(transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "unused"))))
+        }
+    }
+}
+
+@Test func quiverAIPrefersExplicitSettingsAndSupportsCanonicalModelIDsLikeUpstream() async throws {
+    try await withTemporaryQuiverAIEnvironment([
+        "QUIVERAI_API_KEY": "env-quiver-key",
+        "QUIVERAI_BASE_URL": "https://env.quiver.ai/v1"
+    ]) {
+        let transport = RecordingTransport(responses: [
+            quiverAIResponse(svg: "<svg>1</svg>", id: "svg-arrow-1"),
+            quiverAIResponse(svg: "<svg>2</svg>", id: "svg-arrow-1-1"),
+            quiverAIResponse(svg: "<svg>3</svg>", id: "svg-arrow-1-1-max")
+        ])
+        let provider = try AIProviders.quiverAI(settings: ProviderSettings(
+            apiKey: "explicit-quiver-key",
+            baseURL: "https://override.quiver.ai/v1/",
+            headers: ["X-QuiverAI-Test": "1"],
+            transport: transport
+        ))
+
+        for modelID in ["arrow-1", "arrow-1.1", "arrow-1.1-max"] {
+            let imageModel = try provider.imageModel(modelID)
+            #expect(imageModel.providerID == "quiverai.image")
+            #expect(imageModel.modelID == modelID)
+            let result = try await imageModel.generateImage(ImageGenerationRequest(prompt: "Draw \(modelID)."))
+            #expect(result.responseMetadata.modelID == modelID)
+        }
+
+        let requests = await transport.requests()
+        #expect(requests.map(\.url.absoluteString) == [
+            "https://override.quiver.ai/v1/svgs/generations",
+            "https://override.quiver.ai/v1/svgs/generations",
+            "https://override.quiver.ai/v1/svgs/generations"
+        ])
+        #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer explicit-quiver-key" })
+        #expect(requests.allSatisfy { $0.headers["x-quiverai-test"] == "1" })
+        let bodies = try requests.map { try decodeJSONBody(try #require($0.body)) }
+        #expect(bodies.map { $0["model"]?.stringValue } == ["arrow-1", "arrow-1.1", "arrow-1.1-max"])
+    }
 }
 
 @Test func quiverAIVectorizesSingleImage() async throws {
     let svg = #"<svg viewBox="0 0 4 4"><path d="M0 0L4 4"/></svg>"#
     let transport = RecordingTransport(response: quiverAIResponse(svg: svg, id: "svg-vec-1", created: 1_713_374_460))
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
     let model = try provider.imageModel("arrow-1")
 
     let result = try await model.generateImage(ImageGenerationRequest(
@@ -116,7 +187,7 @@ import Testing
 
 @Test func quiverAIProviderOptionsAreSchemaScopedLikeUpstream() async throws {
     let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-schema"))
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
     let model = try provider.imageModel("arrow-1")
 
     _ = try await model.generateImage(ImageGenerationRequest(
@@ -165,7 +236,7 @@ import Testing
 
 @Test func quiverAIProviderOptionsValidateLikeUpstreamSchema() async throws {
     let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-schema-validation"))
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
     let model = try provider.imageModel("arrow-1")
 
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.quiverai", message: "QuiverAI provider options must be an object.")) {
@@ -210,7 +281,7 @@ import Testing
 }
 
 @Test func quiverAIRejectsMoreThanMaxImagesPerCallLikeUpstream() async throws {
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "unused"))))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "unused"))))
     let model = try provider.imageModel("arrow-1.1-max")
 
     await #expect(throws: AIError.invalidArgument(argument: "count", message: "QuiverAI image models support at most 16 images per call.")) {
@@ -219,7 +290,7 @@ import Testing
 }
 
 @Test func quiverAIRejectsInvalidResponseShapeLikeUpstreamSchema() async throws {
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: RecordingTransport(response: jsonResponse(#"{"id":"svg-bad","created":1,"data":[{"svg":"","mime_type":"image/svg+xml"}]}"#))))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: RecordingTransport(response: jsonResponse(#"{"id":"svg-bad","created":1,"data":[{"svg":"","mime_type":"image/svg+xml"}]}"#))))
     let model = try provider.imageModel("arrow-1")
 
     await #expect(throws: AIError.invalidResponse(provider: "quiverai.image", message: "QuiverAI image response is invalid.")) {
@@ -227,9 +298,50 @@ import Testing
     }
 }
 
+@Test func quiverAIUsesUpstreamHTTPErrorEnvelopeRetryability() async throws {
+    let retryableTransport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 429,
+        headers: ["content-type": "application/json"],
+        body: Data(#"{"status":429,"code":"rate_limit","message":"Slow down.","request_id":"req_1"}"#.utf8)
+    ))
+    let retryableProvider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: retryableTransport))
+    let retryableModel = try retryableProvider.imageModel("arrow-1")
+
+    do {
+        _ = try await retryableModel.generateImage(ImageGenerationRequest(prompt: "Draw"))
+        Issue.record("Expected QuiverAI retryable API error.")
+    } catch let error as AIError {
+        let apiError = try #require(error.apiCallError)
+        #expect(apiError.provider == "quiverai.image")
+        #expect(apiError.statusCode == 429)
+        #expect(apiError.isRetryable)
+        #expect(apiError.responseBody.contains("Slow down."))
+        #expect(apiError.responseBody.contains(#""request_id":"req_1""#))
+    }
+
+    let clientTransport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 400,
+        headers: ["content-type": "application/json"],
+        body: Data(#"{"status":400,"code":"bad_request","message":"Prompt is invalid.","request_id":"req_2"}"#.utf8)
+    ))
+    let clientProvider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: clientTransport))
+    let clientModel = try clientProvider.imageModel("arrow-1")
+
+    do {
+        _ = try await clientModel.generateImage(ImageGenerationRequest(prompt: "Draw"))
+        Issue.record("Expected QuiverAI non-retryable API error.")
+    } catch let error as AIError {
+        let apiError = try #require(error.apiCallError)
+        #expect(apiError.provider == "quiverai.image")
+        #expect(apiError.statusCode == 400)
+        #expect(!apiError.isRetryable)
+        #expect(apiError.responseBody.contains("Prompt is invalid."))
+    }
+}
+
 @Test func quiverAIWarnsForUnsupportedStandardImageOptions() async throws {
     let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-warnings"))
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: transport))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
     let model = try provider.imageModel("arrow-1")
 
     let result = try await model.generateImage(ImageGenerationRequest(
@@ -254,7 +366,7 @@ import Testing
 }
 
 @Test func quiverAIReferenceLimitsMatchUpstreamModels() async throws {
-    let maxProvider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-max"))))
+    let maxProvider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-max"))))
     let maxModel = try maxProvider.imageModel("arrow-1.1-max")
 
     _ = try await maxModel.generateImage(ImageGenerationRequest(
@@ -272,7 +384,7 @@ import Testing
         #expect(String(describing: error).contains("supports up to 16 reference images"))
     }
 
-    let regularProvider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-regular"))))
+    let regularProvider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-regular"))))
     let regularModel = try regularProvider.imageModel("arrow-1")
     do {
         _ = try await regularModel.generateImage(ImageGenerationRequest(
@@ -286,7 +398,7 @@ import Testing
 }
 
 @Test func quiverAIFailsFastForInvalidOperationInputs() async throws {
-    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "unused"))))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "unused"))))
     let model = try provider.imageModel("arrow-1")
 
     do {
@@ -321,9 +433,40 @@ import Testing
     }
 }
 
+}
+
 private func quiverAIResponse(svg: String, id: String, created: Int = 1_713_374_400, usage: Bool = false, headers: [String: String] = [:]) -> AIHTTPResponse {
     let usageJSON = usage ? #","usage":{"total_tokens":21,"input_tokens":12,"output_tokens":9}"# : ""
     return jsonResponse("""
     {"id":"\(id)","created":\(created),"data":[{"svg":"\(svg.replacingOccurrences(of: "\"", with: "\\\""))","mime_type":"image/svg+xml"}]\(usageJSON)}
     """, headers: headers)
+}
+
+private func withTemporaryQuiverAIEnvironment<T>(_ updates: [String: String?], operation: () async throws -> T) async rethrows -> T {
+    var previous: [String: String] = [:]
+    var missing = Set<String>()
+    for key in updates.keys {
+        if let existing = getenv(key).map({ String(cString: $0) }) {
+            previous[key] = existing
+        } else {
+            missing.insert(key)
+        }
+    }
+    for (key, value) in updates {
+        if let value {
+            setenv(key, value, 1)
+        } else {
+            unsetenv(key)
+        }
+    }
+    defer {
+        for key in updates.keys {
+            if missing.contains(key) {
+                unsetenv(key)
+            } else if let value = previous[key] {
+                setenv(key, value, 1)
+            }
+        }
+    }
+    return try await operation()
 }

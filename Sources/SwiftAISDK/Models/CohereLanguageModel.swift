@@ -156,6 +156,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     private func body(for request: LanguageModelRequest, stream: Bool) throws -> CoherePreparedCall {
+        var warnings: [AIWarning] = []
         var options = try cohereProviderOptions(from: request)
         let responseFormat = cohereResolvedResponseFormat(request: request, options: &options)
         let toolChoice = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
@@ -177,7 +178,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         if let responseFormat {
             body["response_format"] = responseFormat
         }
-        if let thinking = cohereThinking(reasoning: request.reasoning, options: &options) {
+        if let thinking = cohereThinking(reasoning: request.reasoning, options: &options, warnings: &warnings) {
             body["thinking"] = thinking
         }
         let preparedTools = cohereTools(from: request.tools, only: cohereForcedToolName(from: toolChoice))
@@ -190,7 +191,9 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
         for (key, value) in options where !["thinking", "responseFormat", "toolChoice"].contains(key) {
             body[key] = value
         }
-        return CoherePreparedCall(body: body, warnings: preparedTools.warnings + prompt.warnings)
+        warnings.append(contentsOf: preparedTools.warnings)
+        warnings.append(contentsOf: prompt.warnings)
+        return CoherePreparedCall(body: body, warnings: warnings)
     }
 }
 
@@ -267,21 +270,26 @@ func cohereResponseFormat(from value: JSONValue?) -> JSONValue? {
     return value
 }
 
-func cohereThinking(reasoning: String?, options: inout [String: JSONValue]) -> JSONValue? {
+func cohereThinking(reasoning: String?, options: inout [String: JSONValue], warnings: inout [AIWarning]) -> JSONValue? {
     if let thinking = options.removeValue(forKey: "thinking") {
         return cohereThinking(from: thinking)
     }
-    guard let reasoning else { return nil }
+    guard let reasoning, isCustomReasoning(reasoning) else { return nil }
     if reasoning == "none" {
         return .object(["type": .string("disabled")])
     }
-    if let tokenBudget = Int(reasoning) {
-        return .object([
-            "type": .string("enabled"),
-            "token_budget": .number(Double(tokenBudget))
-        ])
+    guard let tokenBudget = mapReasoningToProviderBudget(
+        reasoning: reasoning,
+        maxOutputTokens: 32768,
+        maxReasoningBudget: 32768,
+        warnings: &warnings
+    ) else {
+        return nil
     }
-    return .object(["type": .string(reasoning)])
+    return .object([
+        "type": .string("enabled"),
+        "token_budget": .number(Double(tokenBudget))
+    ])
 }
 
 func cohereThinking(from value: JSONValue) -> JSONValue {

@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/4.0.120"
+private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.12"
 
 public struct AmazonBedrockCredentials: Sendable {
     public var accessKeyID: String

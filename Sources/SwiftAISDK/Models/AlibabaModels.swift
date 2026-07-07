@@ -132,17 +132,20 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                                 activeText = false
                             }
                             for toolCallDelta in toolCallDeltas {
-                                let index = toolCallDelta["index"]?.intValue ?? 0
-                                if !startedToolCallIndices.contains(index) {
-                                    guard toolCallDelta["id"]?.stringValue != nil else {
-                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'id' to be a string.")
-                                    }
-                                    guard toolCallDelta["function"]?["name"]?.stringValue != nil else {
-                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
-                                    }
-                                    startedToolCallIndices.insert(index)
+                                let index = toolCallDelta["index"]?.intValue ?? startedToolCallIndices.count
+                                var effectiveDelta = toolCallDelta
+                                if !startedToolCallIndices.contains(index),
+                                   toolCallDelta["id"]?.stringValue == nil,
+                                   toolCallDelta["function"]?["name"]?.stringValue != nil,
+                                   var object = toolCallDelta.objectValue {
+                                    object["id"] = .string(generateId())
+                                    effectiveDelta = .object(object)
                                 }
-                                for part in toolCalls.apply(delta: toolCallDelta) {
+                                if !startedToolCallIndices.contains(index), toolCallDelta["function"]?["name"]?.stringValue == nil {
+                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
+                                }
+                                startedToolCallIndices.insert(index)
+                                for part in toolCalls.apply(delta: effectiveDelta) {
                                     continuation.yield(part)
                                 }
                             }
@@ -169,4 +172,3 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 }
-

@@ -60,7 +60,7 @@ import Testing
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://api.bfl.ai/v1/flux-pro-1.1")
     #expect(requests[0].headers["x-key"] == "bfl-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/black-forest-labs/1.0.38")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.5")
     #expect(requests[0].headers["x-request-id"] == "req-1")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["prompt"]?.stringValue == "cat")
@@ -81,7 +81,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.bfl.ai/v1/get_result?id=bfl-1")
     #expect(requests[1].headers["x-key"] == "bfl-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/black-forest-labs/1.0.38")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.5")
     #expect(requests[1].headers["x-request-id"] == "req-1")
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://bfl.example.com/image.png")
@@ -110,11 +110,36 @@ import Testing
 
     let requests = await transport.requests()
     #expect(requests[0].headers["x-key"] == "bfl-key")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.38")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/2.0.5")
     #expect(requests[1].headers["x-key"] == "bfl-key")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/1.0.38")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/black-forest-labs/2.0.5")
     #expect(requests[2].headers["x-key"] == nil)
     #expect(requests[2].headers["user-agent"] == nil)
+}
+
+@Test func blackForestLabsProviderExposesV4ImageAliasAndRejectsUnsupportedFamilies() throws {
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(
+        apiKey: "bfl-key",
+        transport: RecordingTransport(response: jsonResponse("{}"))
+    ))
+
+    let imageModel = try provider.image("flux-pro-1.1")
+    #expect(imageModel.providerID == "black-forest-labs.image")
+    #expect(imageModel.modelID == "flux-pro-1.1")
+
+    let imageModelAlias = try provider.imageModel("flux-pro-1.1-ultra")
+    #expect(imageModelAlias.providerID == "black-forest-labs.image")
+    #expect(imageModelAlias.modelID == "flux-pro-1.1-ultra")
+
+    #expect(throws: AIError.unsupportedModel(provider: "black-forest-labs", capability: .language, modelID: "chat")) {
+        _ = try provider.languageModel("chat")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "black-forest-labs", capability: .embedding, modelID: "embed")) {
+        _ = try provider.embeddingModel("embed")
+    }
+    #expect(throws: AIError.unsupportedModel(provider: "black-forest-labs", capability: .embedding, modelID: "embed")) {
+        _ = try provider.textEmbeddingModel("embed")
+    }
 }
 
 @Test func blackForestLabsUsesUpstreamErrorMessageSchema() async throws {
@@ -156,6 +181,27 @@ import Testing
             providerOptions: ["blackForestLabs": .object(["pollIntervalMillis": 1, "pollTimeoutMillis": 1000])]
         ))
     }
+}
+
+@Test func blackForestLabsOmitsNullCostAndMegapixelProviderMetadataLikeUpstream() async throws {
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(
+        apiKey: "bfl-key",
+        transport: RecordingTransport(responses: [
+            jsonResponse(#"{"id":"bfl-null-metadata","polling_url":"https://api.bfl.ai/v1/get_result","cost":null,"input_mp":null,"output_mp":null}"#),
+            jsonResponse(#"{"status":"Ready","result":{"sample":"https://bfl.example.com/image.png"}}"#),
+            AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+        ])
+    ))
+
+    let result = try await provider.imageModel("flux-pro-1.1").generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["blackForestLabs": .object(["pollIntervalMillis": 1, "pollTimeoutMillis": 1000])]
+    ))
+
+    let metadata = try #require(result.providerMetadata["blackForestLabs"]?["images"]?[0]?.objectValue)
+    #expect(metadata["cost"] == nil)
+    #expect(metadata["inputMegapixels"] == nil)
+    #expect(metadata["outputMegapixels"] == nil)
 }
 
 @Test func blackForestLabsProviderOptionsValidateAndMapUpstreamSchemaFields() async throws {
@@ -296,6 +342,28 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["prompt_upsampling"]?.boolValue == true)
     #expect(body["output_format"]?.stringValue == "png")
+}
+
+@Test func blackForestLabsSendsCredentialsToTrustedBFLClusterURLs() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"bfl-cluster","polling_url":"https://api.us1.bfl.ai/v1/get_result"}"#),
+        jsonResponse(#"{"status":"Ready","result":{"sample":"https://delivery-us1.bfl.ai/image.png"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+    ])
+    let provider = try AIProviders.blackForestLabs(settings: ProviderSettings(apiKey: "bfl-key", transport: transport))
+
+    _ = try await provider.imageModel("flux-pro-1.1").generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["blackForestLabs": .object(["pollIntervalMillis": 1, "pollTimeoutMillis": 1000])]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[1].url.absoluteString == "https://api.us1.bfl.ai/v1/get_result?id=bfl-cluster")
+    #expect(requests[1].headers["x-key"] == "bfl-key")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.5")
+    #expect(requests[2].url.absoluteString == "https://delivery-us1.bfl.ai/image.png")
+    #expect(requests[2].headers["x-key"] == "bfl-key")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.5")
 }
 
 @Test func blackForestLabsImageMapsFilesMaskAndLegacyNestedOptions() async throws {

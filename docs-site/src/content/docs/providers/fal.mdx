@@ -18,6 +18,10 @@ description: "fal provider capabilities and factories."
 - Speech
 - Video
 
+## Notes
+
+Fal image, transcription, speech, and video models mirror upstream Fal 3.0.6: `FAL_API_KEY`/`FAL_KEY`, `Key` auth, custom base URL and headers, versioned user-agent suffix, image/transcription/speech/video aliases, image `/fal.run/{model}` requests with file and mask data URI mapping, native speech generation plus unauthenticated audio download, queue-based transcription and video polling, same-origin credential forwarding for video response URLs, foreign response URL credential stripping, providerOptions.fal schemas and camelCase-to-snake_case mapping, deprecated image snake_case warnings, video `video/mp4` media type fallback, response/provider metadata, Fal error schema, and unsupported language/embedding families. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export splits, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

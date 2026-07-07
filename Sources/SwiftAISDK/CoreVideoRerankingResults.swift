@@ -24,6 +24,7 @@ public struct VideoGenerationRequest: Sendable {
     public var inputReferences: [ImageInputFile]
     public var resolution: String?
     public var fps: Double?
+    public var generateAudio: Bool?
     public var seed: Int?
     public var count: Int?
     public var providerOptions: [String: JSONValue]
@@ -40,6 +41,7 @@ public struct VideoGenerationRequest: Sendable {
         inputReferences: [ImageInputFile] = [],
         resolution: String? = nil,
         fps: Double? = nil,
+        generateAudio: Bool? = nil,
         seed: Int? = nil,
         count: Int? = nil,
         providerOptions: [String: JSONValue] = [:],
@@ -55,6 +57,7 @@ public struct VideoGenerationRequest: Sendable {
         self.inputReferences = inputReferences
         self.resolution = resolution
         self.fps = fps
+        self.generateAudio = generateAudio
         self.seed = seed
         self.count = count
         self.providerOptions = providerOptions
@@ -68,6 +71,7 @@ public struct VideoGenerationResult: Sendable {
     public var urls: [String]
     public var base64Videos: [String]
     public var operationID: String?
+    public var mediaType: String?
     public var rawValue: JSONValue
     public var warnings: [AIWarning]
     public var providerMetadata: [String: JSONValue]
@@ -78,6 +82,7 @@ public struct VideoGenerationResult: Sendable {
         urls: [String],
         base64Videos: [String] = [],
         operationID: String? = nil,
+        mediaType: String? = nil,
         rawValue: JSONValue,
         warnings: [AIWarning] = [],
         providerMetadata: [String: JSONValue] = [:],
@@ -87,6 +92,7 @@ public struct VideoGenerationResult: Sendable {
         self.urls = urls
         self.base64Videos = base64Videos
         self.operationID = operationID
+        self.mediaType = mediaType
         self.rawValue = rawValue
         self.warnings = warnings
         self.providerMetadata = providerMetadata

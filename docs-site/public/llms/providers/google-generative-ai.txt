@@ -15,12 +15,13 @@ Source URL: /providers/google-generative-ai/
 - Language
 - Embedding
 - Image
+- Speech
 - Video
 - Files
 
 ## Notes
 
-Also exposes Gemini interactions models and agents.
+Google Generative AI mirrors upstream Google 4.0.8 across Gemini language, embeddings, Imagen/Gemini image generation, Gemini TTS speech, Veo video, files, interactions models, and agents. Speech maps Gemini TTS generateContent requests with WAV-wrapped PCM by default, raw PCM opt-in, multi-speaker provider options, response sample-rate metadata, and upstream warnings. Realtime/WebSocket and JS ProviderV4 runtime helpers remain JS-only gaps.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

@@ -15,6 +15,10 @@ description: "revai provider capabilities and factories."
 
 - Transcription
 
+## Notes
+
+Rev.ai transcription mirrors upstream 3.0.5: `REVAI_API_KEY`, bearer auth, custom headers, versioned user-agent suffix, `transcription`/`transcriptionModel` aliases, `revai.transcription` provider IDs, `/speechtotext/v1/jobs` submit/poll/transcript flow, multipart `media` plus JSON `config`, providerOptions.revai schema/defaults, job/transcript response validation, Rev.ai error schema, text/segment/duration extraction, response metadata, and unsupported language/embedding/image families. ProviderV4, ESM-only packaging, Node 22 engines, experimental streaming transcription types, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

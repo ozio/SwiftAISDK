@@ -16,6 +16,10 @@ description: "replicate provider capabilities and factories."
 - Image
 - Video
 
+## Notes
+
+Replicate image and video models mirror upstream Replicate 3.0.6: `REPLICATE_API_TOKEN`, custom base URL and headers, versioned user-agent suffix, `image`/`imageModel` and `video`/`videoModel` aliases, versioned and unversioned prediction endpoints, `prefer: wait` headers, image output downloads without credential forwarding, image editing inputs and masks, Flux-2 multi-image input mapping and warnings, loose providerOptions.replicate schemas, video polling with same-origin credential forwarding, provider metadata, `video/mp4` media type, Replicate error schema, and unsupported language/embedding families. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export renames, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).

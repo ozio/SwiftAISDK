@@ -52,7 +52,7 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.gladia.io/v2/upload")
     #expect(requests[0].headers["x-gladia-key"] == "gladia-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/gladia/2.0.36")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/gladia/3.0.5")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let uploadBody = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(uploadBody.contains("name=\"audio\"; filename=\"audio.wav\""))
@@ -84,7 +84,33 @@ import Testing
     #expect(requests[2].method == "GET")
     #expect(requests[2].url.absoluteString == "https://api.gladia.io/v2/pre-recorded/result/job-123")
     #expect(requests[2].headers["x-gladia-key"] == "gladia-key")
-    #expect(requests[2].headers["user-agent"] == "ai-sdk/gladia/2.0.36")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/gladia/3.0.5")
+}
+
+@Test func gladiaTranscriptionPassesProviderAndRequestHeadersLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"audio_url":"https://audio.example.com/file.wav"}"#),
+        jsonResponse(#"{"result_url":"https://api.gladia.io/v2/pre-recorded/result/job-123"}"#),
+        jsonResponse(#"{"status":"done","result":{"metadata":{"audio_duration":1.0},"transcription":{"full_transcript":"headers","languages":["en"],"utterances":[{"start":0,"end":1.0,"text":"headers"}]}}}"#)
+    ])
+    let provider = try AIProviders.gladia(settings: ProviderSettings(
+        apiKey: "gladia-key",
+        headers: ["Custom-Provider-Header": "provider-header-value"],
+        transport: transport
+    ))
+
+    _ = try await provider.transcription().transcribe(AudioTranscriptionRequest(
+        audio: Data("audio".utf8),
+        mimeType: "audio/wav",
+        headers: ["Custom-Request-Header": "request-header-value"]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[1].headers["x-gladia-key"] == "gladia-key")
+    #expect(requests[1].headers["content-type"] == "application/json")
+    #expect(requests[1].headers["custom-provider-header"] == "provider-header-value")
+    #expect(requests[1].headers["Custom-Request-Header"] == "request-header-value")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/gladia/3.0.5")
 }
 
 @Test func gladiaTranscriptionDoesNotSendCredentialsToForeignResultURL() async throws {
@@ -105,9 +131,9 @@ import Testing
     let requests = await transport.requests()
     #expect(requests.count == 3)
     #expect(requests[0].headers["x-gladia-key"] == "gladia-key")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.36")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/3.0.5")
     #expect(requests[1].headers["x-gladia-key"] == "gladia-key")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.36")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/3.0.5")
     #expect(requests[2].url.absoluteString == "https://status.example.com/gladia/job-123")
     #expect(requests[2].headers["x-gladia-key"] == nil)
     #expect(requests[2].headers["user-agent"] == nil)
@@ -130,9 +156,9 @@ import Testing
     #expect(model.modelID == "default")
     #expect(result.responseMetadata.modelID == "default")
     let requests = await transport.requests()
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.36")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.36")
-    #expect(requests[2].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/2.0.36")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/3.0.5")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/3.0.5")
+    #expect(requests[2].headers["user-agent"] == "CustomApp/1.0 ai-sdk/gladia/3.0.5")
 }
 @Test func gladiaTranscriptionIgnoresStandardLanguageLikeUpstream() async throws {
     let transport = RecordingTransport(responses: [

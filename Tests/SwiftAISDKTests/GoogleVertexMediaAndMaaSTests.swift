@@ -66,7 +66,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/text-embedding-005:predict")
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/4.0.148")
+    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/5.0.11")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["instances"]?[0]?["content"]?.stringValue == "hello")
     #expect(body["instances"]?[0]?["task_type"]?.stringValue == "RETRIEVAL_DOCUMENT")
@@ -108,6 +108,128 @@ import Testing
 
     await #expect(throws: AITooManyEmbeddingValuesForCallError.self) {
         _ = try await model.embed(EmbeddingRequest(values: ["one", "two"]))
+    }
+}
+
+@Test func googleVertexTunedEndpointModelUsesLocationScopedBaseURLLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"tuned"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "us-central1",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("endpoints/1234567890")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "tuned")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/models/endpoints/1234567890:generateContent")
+    #expect(request.headers["Authorization"] == "Bearer token")
+
+    let expressProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", transport: RecordingTransport(response: jsonResponse("{}"))))
+    #expect(throws: AIError.invalidArgument(argument: "modelID", message: "Google Vertex tuned models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")) {
+        _ = try expressProvider.languageModel("endpoints/1234567890")
+    }
+}
+
+@Test func googleVertexSpeechUsesGeminiTTSGenerateContentAndWAVWrapping() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/L16;rate=16000","data":"AQIDBAUGBwg="}}]}}]}"#))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.speechModel("gemini-2.5-flash-tts")
+
+    #expect(model.providerID == "google.vertex.speech")
+    let result = try await model.speak(SpeechRequest(text: "Hello there", voice: "Puck", instructions: "Say cheerfully"))
+
+    #expect(result.contentType == "audio/wav")
+    #expect(result.audio.count == 52)
+    #expect(Array(result.audio.prefix(4)) == [0x52, 0x49, 0x46, 0x46])
+    #expect(googleVertexSpeechTestUInt32LE(result.audio, offset: 24) == 16_000)
+    #expect(Array(result.audio.dropFirst(44)) == [1, 2, 3, 4, 5, 6, 7, 8])
+    #expect(result.providerMetadata["googleVertex"]?["sampleRate"]?.intValue == 16_000)
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1beta1/projects/test-project/locations/global/publishers/google/models/gemini-2.5-flash-tts:generateContent")
+    #expect(request.headers["Authorization"] == "Bearer token")
+    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/5.0.11")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Say cheerfully: Hello there")
+    #expect(body["generationConfig"]?["responseModalities"]?[0]?.stringValue == "AUDIO")
+    #expect(body["generationConfig"]?["speechConfig"]?["voiceConfig"]?["prebuiltVoiceConfig"]?["voiceName"]?.stringValue == "Puck")
+}
+
+@Test func googleVertexSpeechMapsMultiSpeakerAndPCMProviderOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/L16;rate=24000","data":"AQIDBAUGBwg="}}]}}]}"#))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.speechModel("gemini-2.5-pro-tts")
+    let multiSpeakerVoiceConfig: JSONValue = [
+        "speakerVoiceConfigs": [
+            ["speaker": "Joe", "voiceConfig": ["prebuiltVoiceConfig": ["voiceName": "Kore"]]],
+            ["speaker": "Jane", "voiceConfig": ["prebuiltVoiceConfig": ["voiceName": "Puck"]]]
+        ]
+    ]
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Joe: Hi. Jane: Hello.",
+        format: "pcm",
+        speed: 1.2,
+        language: "en",
+        instructions: "Say cheerfully",
+        providerOptions: ["googleVertex": ["multiSpeakerVoiceConfig": multiSpeakerVoiceConfig]]
+    ))
+
+    #expect(result.audio == Data([1, 2, 3, 4, 5, 6, 7, 8]))
+    #expect(result.contentType == "audio/L16;rate=24000")
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "instructions" })
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "outputFormat" })
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "speed" })
+    #expect(result.warnings.contains { $0.type == "unsupported" && $0.feature == "language" })
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Joe: Hi. Jane: Hello.")
+    #expect(body["generationConfig"]?["speechConfig"]?["multiSpeakerVoiceConfig"]?["speakerVoiceConfigs"]?[1]?["speaker"]?.stringValue == "Jane")
+    #expect(body["generationConfig"]?["speechConfig"]?["voiceConfig"] == nil)
+}
+
+@Test func googleVertexInteractionsUsesLocationScopedEndpointAndRejectsExpressMode() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"interaction-1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"vertex interaction"}]}],"usage":{"total_tokens":3,"total_input_tokens":1,"total_output_tokens":2}}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "us-central1",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.interactionsModel("gemini-omni-flash-preview")
+
+    #expect(model.providerID == "google.vertex.interactions")
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.text == "vertex interaction")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/interactions")
+    #expect(request.headers["Authorization"] == "Bearer token")
+    #expect(request.headers["Api-Revision"] == "2026-05-20")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"]?.stringValue == "gemini-omni-flash-preview")
+    #expect(body["input"]?[0]?["type"]?.stringValue == "user_input")
+
+    let expressProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", transport: RecordingTransport(response: jsonResponse("{}"))))
+    #expect(throws: AIError.invalidArgument(argument: "modelID", message: "Google Vertex Interactions models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")) {
+        _ = try expressProvider.interactionsModel("gemini-omni-flash-preview")
     }
 }
 
@@ -169,7 +291,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/4.0.148")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/5.0.11")
 }
 @Test func googleVertexImageAndVideoUsePredictEndpoints() async throws {
     let imageTransport = RecordingTransport(response: jsonResponse("""
@@ -220,7 +342,9 @@ import Testing
     #expect(video.operationID == "operations/123")
     #expect(video.urls == ["gs://bucket/video.mp4"])
     #expect(video.base64Videos == ["base64-video"])
+    #expect(video.providerMetadata["googleVertex"]?["videos"]?[0]?["gcsUri"]?.stringValue == "gs://bucket/video.mp4")
     #expect(video.providerMetadata["google-vertex"]?["videos"]?[0]?["gcsUri"]?.stringValue == "gs://bucket/video.mp4")
+    #expect(video.providerMetadata["vertex"]?["videos"]?[0]?["gcsUri"]?.stringValue == "gs://bucket/video.mp4")
     #expect(video.responseMetadata.headers["poll-header"] == "value")
     let videoRequests = await videoTransport.requests()
     #expect(videoRequests.count == 2)
@@ -242,6 +366,29 @@ import Testing
     #expect(pollRequest.url.absoluteString == "https://api.example.com/models/veo-2.0-generate-001:fetchPredictOperation")
     let pollBody = try decodeJSONBody(try #require(pollRequest.body))
     #expect(pollBody["operationName"]?.stringValue == "operations/123")
+}
+
+@Test func googleVertexVideoTopLevelGenerateAudioOverridesProviderOptionLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"name":"operations/video-audio","done":false}"#),
+        jsonResponse(#"{"name":"operations/video-audio","done":true,"response":{"videos":[{"bytesBase64Encoded":"base64-video","mimeType":"video/mp4"}]}}"#)
+    ])
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(apiKey: "vertex-key", baseURL: "https://api.example.com", transport: transport))
+    let model = try provider.videoModel("veo-2.0-generate-001")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        generateAudio: false,
+        providerOptions: [
+            "googleVertex": [
+                "generateAudio": true,
+                "pollIntervalMs": 0
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["parameters"]?["generateAudio"]?.boolValue == false)
 }
 
 @Test func googleVertexVideoMapsFrameImagesLikeUpstream() async throws {
@@ -431,4 +578,9 @@ import Testing
     #expect(body["anthropic_version"]?.stringValue == "vertex-2023-10-16")
     #expect(body["system"] == [["type": "text", "text": "Brief"]])
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
+}
+
+private func googleVertexSpeechTestUInt32LE(_ data: Data, offset: Int) -> UInt32 {
+    let bytes = Array(data.dropFirst(offset).prefix(4))
+    return UInt32(bytes[0]) | (UInt32(bytes[1]) << 8) | (UInt32(bytes[2]) << 16) | (UInt32(bytes[3]) << 24)
 }

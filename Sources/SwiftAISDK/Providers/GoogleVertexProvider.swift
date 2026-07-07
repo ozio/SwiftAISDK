@@ -49,7 +49,7 @@ public struct GoogleVertexProviderSettings: Sendable {
 
 public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
     public let providerID = "google.vertex"
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .video]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .speech, .transcription, .video]
     private let config: GoogleVertexConfig
 
     public init(settings: GoogleVertexProviderSettings = GoogleVertexProviderSettings()) throws {
@@ -80,12 +80,43 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
             baseURL = "https://\(host)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         }
 
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/4.0.148")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.11")
         config = GoogleVertexConfig(providerID: providerID, baseURL: baseURL, project: project, location: location, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
-        GoogleVertexLanguageModel(modelID: modelID, config: config.withProviderID("google.vertex.chat"))
+        if googleVertexIsEndpointModelID(modelID) {
+            guard !config.usesAPIKey else {
+                throw AIError.invalidArgument(argument: "modelID", message: "Google Vertex tuned models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+            }
+            return GoogleVertexLanguageModel(
+                modelID: modelID,
+                config: config.withProviderID("google.vertex.chat").withBaseURL(googleVertexEndpointBaseURL(from: config.baseURL))
+            )
+        }
+        return GoogleVertexLanguageModel(modelID: modelID, config: config.withProviderID("google.vertex.chat"))
+    }
+
+    public func interactionsModel(_ modelID: String) throws -> any LanguageModel {
+        guard !config.usesAPIKey else {
+            throw AIError.invalidArgument(argument: "modelID", message: "Google Vertex Interactions models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+        }
+        return GoogleVertexInteractionsLanguageModel(
+            modelID: modelID,
+            agent: nil,
+            config: config.withProviderID("google.vertex.interactions").withBaseURL(googleVertexEndpointBaseURL(from: config.baseURL))
+        )
+    }
+
+    public func interactionsAgent(_ agentName: String) throws -> any LanguageModel {
+        guard !config.usesAPIKey else {
+            throw AIError.invalidArgument(argument: "agentName", message: "Google Vertex Interactions models do not support Express Mode API keys. Use standard Google Cloud credentials instead.")
+        }
+        return GoogleVertexInteractionsLanguageModel(
+            modelID: agentName,
+            agent: agentName,
+            config: config.withProviderID("google.vertex.interactions").withBaseURL(googleVertexEndpointBaseURL(from: config.baseURL))
+        )
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
@@ -105,7 +136,7 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {
-        throw AIError.unsupportedModel(provider: providerID, capability: .speech, modelID: modelID)
+        GoogleVertexSpeechModel(modelID: modelID, config: config.withProviderID("google.vertex.speech"))
     }
 
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
@@ -137,6 +168,13 @@ struct GoogleVertexConfig: @unchecked Sendable {
     var transport: any AITransport
     var date: @Sendable () -> Date
 
+    var usesAPIKey: Bool {
+        if case .apiKey = auth {
+            return true
+        }
+        return false
+    }
+
     func sendJSON(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> JSONValue {
         try await sendJSONResponse(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal).json
     }
@@ -162,6 +200,11 @@ struct GoogleVertexConfig: @unchecked Sendable {
     }
 
     func request(url: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> AIHTTPRequest {
+        let mergedHeaders = try await authenticatedHeaders(requestHeaders)
+        return AIHTTPRequest(method: "POST", url: try requireURL(url), headers: mergedHeaders, body: try encodeJSONBody(body), abortSignal: abortSignal)
+    }
+
+    func authenticatedHeaders(_ requestHeaders: [String: String] = [:]) async throws -> [String: String] {
         var mergedHeaders = headers.mergingHeaders(requestHeaders)
         mergedHeaders["content-type"] = mergedHeaders["content-type"] ?? "application/json"
         switch auth {
@@ -173,7 +216,7 @@ struct GoogleVertexConfig: @unchecked Sendable {
             let token = try await GoogleServiceAccountTokenGenerator.generateAccessToken(credentials: credentials, now: date())
             mergedHeaders["Authorization"] = mergedHeaders["Authorization"] ?? "Bearer \(token)"
         }
-        return AIHTTPRequest(method: "POST", url: try requireURL(url), headers: mergedHeaders, body: try encodeJSONBody(body), abortSignal: abortSignal)
+        return mergedHeaders
     }
 
     func withProviderID(_ providerID: String) -> GoogleVertexConfig {
@@ -188,6 +231,29 @@ struct GoogleVertexConfig: @unchecked Sendable {
             date: date
         )
     }
+
+    func withBaseURL(_ baseURL: String) -> GoogleVertexConfig {
+        GoogleVertexConfig(
+            providerID: providerID,
+            baseURL: baseURL,
+            project: project,
+            location: location,
+            headers: headers,
+            auth: auth,
+            transport: transport,
+            date: date
+        )
+    }
+}
+
+private func googleVertexIsEndpointModelID(_ modelID: String) -> Bool {
+    modelID.hasPrefix("endpoints/")
+}
+
+private func googleVertexEndpointBaseURL(from baseURL: String) -> String {
+    let suffix = "/publishers/google"
+    guard baseURL.hasSuffix(suffix) else { return baseURL }
+    return String(baseURL.dropLast(suffix.count))
 }
 
 private func googleVertexRegionalHost(location: String) -> String {

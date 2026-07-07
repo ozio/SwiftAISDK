@@ -352,10 +352,10 @@ import Testing
 }
 @Test func moonshotLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
-    {"id":"moonshot-1","model":"kimi-k2","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+    {"id":"moonshot-1","model":"kimi-k2.5","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
     """))
     let generateProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: generateTransport))
-    let generateModel = try generateProvider.languageModel("kimi-k2")
+    let generateModel = try generateProvider.languageModel("kimi-k2.5")
     let generateController = AIAbortController()
 
     _ = try await generateModel.generate(LanguageModelRequest(messages: [.user("Hi")], abortSignal: generateController.signal))
@@ -364,11 +364,11 @@ import Testing
     #expect(generateRequest.abortSignal === generateController.signal)
 
     let streamTransport = RecordingTransport(response: sseResponse("""
-    data: {"id":"moonshot-1","model":"kimi-k2","choices":[{"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+    data: {"id":"moonshot-1","model":"kimi-k2.5","choices":[{"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
 
     """))
     let streamProvider = try AIProviders.moonshotAI(settings: ProviderSettings(apiKey: "moonshot-key", transport: streamTransport))
-    let streamModel = try streamProvider.languageModel("kimi-k2")
+    let streamModel = try streamProvider.languageModel("kimi-k2.5")
     let streamController = AIAbortController()
 
     for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")], abortSignal: streamController.signal)) {}

@@ -214,6 +214,263 @@ public final class GoogleVertexTranscriptionModel: TranscriptionModel, @unchecke
     }
 }
 
+public final class GoogleVertexSpeechModel: SpeechModel, @unchecked Sendable {
+    public let providerID: String
+    public let modelID: String
+    private let config: GoogleVertexConfig
+
+    init(modelID: String, config: GoogleVertexConfig) {
+        self.providerID = config.providerID
+        self.modelID = modelID
+        self.config = config
+    }
+
+    public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
+        let options = googleVertexSpeechProviderOptions(from: request)
+        let multiSpeakerVoiceConfig = options["multiSpeakerVoiceConfig"]
+        var warnings: [AIWarning] = []
+        if request.speed != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "speed", message: "Google Vertex speech models do not support the `speed` option."))
+        }
+        if request.language != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "language", message: "Google Vertex speech models do not support the `language` option."))
+        }
+
+        let text: String
+        if let instructions = request.instructions, !instructions.isEmpty {
+            if multiSpeakerVoiceConfig != nil {
+                warnings.append(AIWarning(type: "unsupported", feature: "instructions", message: "Google Vertex speech models ignore `instructions` when `multiSpeakerVoiceConfig` is set."))
+                text = request.text
+            } else {
+                text = "\(instructions): \(request.text)"
+            }
+        } else {
+            text = request.text
+        }
+
+        let outputFormat: GoogleVertexSpeechOutputFormat
+        switch request.format?.lowercased() {
+        case nil, "wav":
+            outputFormat = .wav
+        case "pcm":
+            outputFormat = .pcm
+            warnings.append(AIWarning(type: "unsupported", feature: "outputFormat", message: "Google Vertex speech returns raw PCM only when `format` is `pcm`; WAV is the default wrapped output."))
+        case let format?:
+            outputFormat = .wav
+            warnings.append(AIWarning(type: "unsupported", feature: "outputFormat", message: "Google Vertex speech does not support `\(format)`. Falling back to WAV."))
+        }
+
+        var speechConfig: [String: JSONValue] = [:]
+        if let multiSpeakerVoiceConfig {
+            speechConfig["multiSpeakerVoiceConfig"] = multiSpeakerVoiceConfig
+        } else {
+            speechConfig["voiceConfig"] = .object([
+                "prebuiltVoiceConfig": .object([
+                    "voiceName": .string(request.voice ?? "Kore")
+                ])
+            ])
+        }
+
+        let body = JSONValue.object([
+            "contents": .array([
+                .object([
+                    "role": .string("user"),
+                    "parts": .array([.object(["text": .string(text)])])
+                ])
+            ]),
+            "generationConfig": .object([
+                "responseModalities": .array([.string("AUDIO")]),
+                "speechConfig": .object(speechConfig)
+            ])
+        ])
+        let response = try await config.sendJSONResponse(
+            path: "/models/\(modelID):generateContent",
+            body: body,
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        )
+        let raw = response.json
+        let inlineData = googleVertexSpeechInlineData(from: raw)
+        let mimeType = inlineData.mimeType
+        let sampleRate = googleVertexSpeechSampleRate(from: mimeType) ?? 24_000
+        let pcm = inlineData.data.flatMap { Data(base64Encoded: $0) } ?? Data()
+        let audio: Data
+        let contentType: String
+        switch outputFormat {
+        case .wav:
+            audio = pcm.isEmpty ? pcm : googleVertexSpeechWAVData(fromPCM: pcm, sampleRate: sampleRate)
+            contentType = "audio/wav"
+        case .pcm:
+            audio = pcm
+            contentType = mimeType ?? "audio/L16;rate=\(sampleRate)"
+        }
+
+        return SpeechResult(
+            audio: audio,
+            contentType: contentType,
+            warnings: warnings,
+            providerMetadata: ["googleVertex": .object([
+                "sampleRate": .number(Double(sampleRate)),
+                "mimeType": mimeType.map(JSONValue.string) ?? .null
+            ])],
+            requestMetadata: AIRequestMetadata(body: body, headers: request.headers),
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
+    }
+}
+
+public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchecked Sendable {
+    public let providerID: String
+    public let modelID: String
+    private let agent: String?
+    private let config: GoogleVertexConfig
+
+    init(modelID: String, agent: String?, config: GoogleVertexConfig) {
+        self.providerID = config.providerID
+        self.modelID = modelID
+        self.agent = agent
+        self.config = config
+    }
+
+    public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        let prepared = try googleInteractionsPreparedCall(for: request, modelID: modelID, agent: agent, stream: false)
+        let raw = try await sendInteractions(body: .object(prepared.body), headers: request.headers, abortSignal: request.abortSignal)
+        let final = try await resolvedInteraction(raw, requestHeaders: request.headers, abortSignal: request.abortSignal)
+        let text = googleInteractionsText(from: final)
+        let toolCalls = googleInteractionsToolCalls(from: final)
+        guard !text.isEmpty || !toolCalls.isEmpty else {
+            throw AIError.invalidResponse(provider: providerID, message: "No model_output text found in Google Vertex Interactions response.")
+        }
+        return TextGenerationResult(
+            text: text,
+            finishReason: googleInteractionsFinishReason(status: final["status"]?.stringValue, hasFunctionCall: googleInteractionsHasFunctionCall(final)),
+            usage: googleInteractionsUsage(from: final),
+            toolCalls: toolCalls,
+            sources: googleInteractionsSources(from: final),
+            providerMetadata: googleInteractionsProviderMetadata(from: final),
+            rawValue: final,
+            warnings: prepared.warnings
+        )
+    }
+
+    public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let prepared = try googleInteractionsPreparedCall(for: request, modelID: modelID, agent: agent, stream: true)
+                    let httpRequest = try await config.request(
+                        path: "/interactions",
+                        body: .object(prepared.body),
+                        headers: googleInteractionsHeaders(request.headers),
+                        abortSignal: request.abortSignal
+                    )
+                    let response = try await config.transport.send(httpRequest)
+                    guard (200..<300).contains(response.statusCode) else {
+                        throw apiCallError(provider: providerID, response: response)
+                    }
+                    if !prepared.warnings.isEmpty {
+                        continuation.yield(.streamStart(warnings: prepared.warnings))
+                    }
+                    var toolCalls = GoogleInteractionsStreamingToolCalls()
+                    var hasFunctionCall = false
+                    var sourceCounter = 0
+                    var emittedSourceKeys: Set<String> = []
+                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
+                        }
+                        for source in googleInteractionsSources(from: raw, sourceCounter: &sourceCounter, emittedKeys: &emittedSourceKeys) {
+                            continuation.yield(.source(source))
+                        }
+                        if let interaction = raw["interaction"] {
+                            let metadata = googleInteractionsProviderMetadata(from: interaction)
+                            if !metadata.isEmpty {
+                                continuation.yield(.metadata(metadata))
+                            }
+                        }
+                        let eventType = raw["event_type"]?.stringValue
+                        if eventType == "step.start", raw["step"]?["type"]?.stringValue == "function_call" {
+                            hasFunctionCall = true
+                            for part in toolCalls.start(step: raw["step"], index: raw["index"]?.intValue) {
+                                continuation.yield(part)
+                            }
+                        }
+                        if eventType == "step.delta", let delta = raw["delta"] {
+                            if let text = delta["text"]?.stringValue, !text.isEmpty {
+                                continuation.yield(.textDelta(text))
+                            }
+                            if let summary = delta["summary"]?.stringValue, !summary.isEmpty {
+                                continuation.yield(.reasoningDelta(summary))
+                            }
+                            if delta["type"]?.stringValue == "arguments_delta" {
+                                hasFunctionCall = true
+                                for part in toolCalls.delta(delta, index: raw["index"]?.intValue) {
+                                    continuation.yield(part)
+                                }
+                            }
+                        }
+                        if eventType == "step.stop" {
+                            for part in toolCalls.stop(index: raw["index"]?.intValue) {
+                                continuation.yield(part)
+                            }
+                        }
+                        if eventType == "interaction.completed" || eventType == "interaction.failed" || eventType == "interaction.incomplete" || eventType == "interaction.cancelled" {
+                            let interaction = raw["interaction"] ?? raw
+                            continuation.yield(.finish(
+                                reason: googleInteractionsFinishReason(status: interaction["status"]?.stringValue, hasFunctionCall: hasFunctionCall),
+                                usage: googleInteractionsUsage(from: interaction)
+                            ))
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func sendInteractions(body: JSONValue, headers: [String: String], abortSignal: AIAbortSignal?) async throws -> JSONValue {
+        let response = try await config.transport.send(try await config.request(path: "/interactions", body: body, headers: googleInteractionsHeaders(headers), abortSignal: abortSignal))
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: providerID, response: response)
+        }
+        return try response.jsonValue()
+    }
+
+    private func resolvedInteraction(_ raw: JSONValue, requestHeaders: [String: String], abortSignal: AIAbortSignal?) async throws -> JSONValue {
+        guard agent != nil,
+              !googleInteractionsIsTerminal(raw["status"]?.stringValue),
+              let id = raw["id"]?.stringValue else {
+            return raw
+        }
+        return try await pollInteraction(id: id, requestHeaders: requestHeaders, timeoutNanoseconds: googleInteractionsPollTimeout(raw: raw), abortSignal: abortSignal)
+    }
+
+    private func pollInteraction(id: String, requestHeaders: [String: String], timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
+        let started = DispatchTime.now().uptimeNanoseconds
+        repeat {
+            let response = try await config.transport.send(AIHTTPRequest(
+                method: "GET",
+                url: try requireURL("\(config.baseURL)/interactions/\(id)"),
+                headers: try await config.authenticatedHeaders(googleInteractionsHeaders(requestHeaders)),
+                abortSignal: abortSignal
+            ))
+            guard (200..<300).contains(response.statusCode) else {
+                throw apiCallError(provider: providerID, response: response)
+            }
+            let raw = try response.jsonValue()
+            if googleInteractionsIsTerminal(raw["status"]?.stringValue) {
+                return raw
+            }
+            try await sleepWithAbortSignal(nanoseconds: 10_000_000, abortSignal: abortSignal)
+        } while DispatchTime.now().uptimeNanoseconds - started < timeoutNanoseconds
+
+        throw AIError.invalidResponse(provider: providerID, message: "Google Vertex Interactions polling timed out.")
+    }
+}
+
 public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
@@ -313,6 +570,9 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
         if let resolution = request.resolution { parameters["resolution"] = .string(googleVertexVideoResolution(resolution)) }
         if let duration = request.durationSeconds { parameters["durationSeconds"] = .number(duration) }
         if let seed = request.seed { parameters["seed"] = .number(Double(seed)) }
+        if let generateAudio = request.generateAudio ?? options["generateAudio"]?.boolValue {
+            parameters["generateAudio"] = .bool(generateAudio)
+        }
         parameters.merge(options.filter { key, value in
             !googleVertexVideoInternalOptionKeys.contains(key) && value != .null
         }) { _, new in new }
@@ -341,20 +601,25 @@ public final class GoogleVertexVideoModel: VideoModel, @unchecked Sendable {
         guard !urls.isEmpty || !base64Videos.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No valid videos in Vertex video response.")
         }
+        let videoMetadata = JSONValue.object([
+            "videos": .array(videos.map { video in
+                .object([
+                    "gcsUri": video["gcsUri"] ?? .null,
+                    "mimeType": video["mimeType"] ?? .null
+                ])
+            })
+        ])
         return VideoGenerationResult(
             urls: urls,
             base64Videos: base64Videos,
             operationID: operationName,
             rawValue: raw,
             warnings: warnings,
-            providerMetadata: ["google-vertex": .object([
-                "videos": .array(videos.map { video in
-                    .object([
-                        "gcsUri": video["gcsUri"] ?? .null,
-                        "mimeType": video["mimeType"] ?? .null
-                    ])
-                })
-            ])],
+            providerMetadata: [
+                "googleVertex": videoMetadata,
+                "google-vertex": videoMetadata,
+                "vertex": videoMetadata
+            ],
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
@@ -569,10 +834,88 @@ private func googleVertexVideoProviderOptions(from request: VideoGenerationReque
 }
 
 private let googleVertexVideoInternalOptionKeys: Set<String> = [
+    "generateAudio",
     "pollIntervalMs",
     "pollTimeoutMs",
     "referenceImages"
 ]
+
+private enum GoogleVertexSpeechOutputFormat {
+    case wav
+    case pcm
+}
+
+private func googleVertexSpeechProviderOptions(from request: SpeechRequest) -> [String: JSONValue] {
+    var options = request.extraBody
+    if let googleVertex = request.extraBody["googleVertex"]?.objectValue {
+        options = googleVertex
+    } else if let vertex = request.extraBody["vertex"]?.objectValue {
+        options = vertex
+    }
+    if let googleVertex = request.providerOptions["googleVertex"]?.objectValue {
+        options.merge(googleVertex) { _, new in new }
+    } else if let vertex = request.providerOptions["vertex"]?.objectValue {
+        options.merge(vertex) { _, new in new }
+    } else if let google = request.providerOptions["google"]?.objectValue {
+        options.merge(google) { _, new in new }
+    }
+    return options.filter { $0.key != "google" && $0.key != "googleVertex" && $0.key != "vertex" }
+}
+
+private func googleVertexSpeechInlineData(from raw: JSONValue) -> (mimeType: String?, data: String?) {
+    let parts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
+    for part in parts {
+        if let inlineData = part["inlineData"]?.objectValue {
+            return (inlineData["mimeType"]?.stringValue, inlineData["data"]?.stringValue)
+        }
+    }
+    return (nil, nil)
+}
+
+private func googleVertexSpeechSampleRate(from mimeType: String?) -> Int? {
+    guard let mimeType else { return nil }
+    for component in mimeType.split(separator: ";") {
+        let trimmed = component.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("rate=") else { continue }
+        return Int(trimmed.dropFirst("rate=".count))
+    }
+    return nil
+}
+
+private func googleVertexSpeechWAVData(fromPCM pcm: Data, sampleRate: Int) -> Data {
+    let channelCount = 1
+    let bitsPerSample = 16
+    let byteRate = sampleRate * channelCount * bitsPerSample / 8
+    let blockAlign = channelCount * bitsPerSample / 8
+    var data = Data()
+    data.append(Data("RIFF".utf8))
+    googleVertexSpeechAppendUInt32LE(UInt32(36 + pcm.count), to: &data)
+    data.append(Data("WAVE".utf8))
+    data.append(Data("fmt ".utf8))
+    googleVertexSpeechAppendUInt32LE(16, to: &data)
+    googleVertexSpeechAppendUInt16LE(1, to: &data)
+    googleVertexSpeechAppendUInt16LE(UInt16(channelCount), to: &data)
+    googleVertexSpeechAppendUInt32LE(UInt32(sampleRate), to: &data)
+    googleVertexSpeechAppendUInt32LE(UInt32(byteRate), to: &data)
+    googleVertexSpeechAppendUInt16LE(UInt16(blockAlign), to: &data)
+    googleVertexSpeechAppendUInt16LE(UInt16(bitsPerSample), to: &data)
+    data.append(Data("data".utf8))
+    googleVertexSpeechAppendUInt32LE(UInt32(pcm.count), to: &data)
+    data.append(pcm)
+    return data
+}
+
+private func googleVertexSpeechAppendUInt16LE(_ value: UInt16, to data: inout Data) {
+    data.append(UInt8(value & 0xff))
+    data.append(UInt8((value >> 8) & 0xff))
+}
+
+private func googleVertexSpeechAppendUInt32LE(_ value: UInt32, to data: inout Data) {
+    data.append(UInt8(value & 0xff))
+    data.append(UInt8((value >> 8) & 0xff))
+    data.append(UInt8((value >> 16) & 0xff))
+    data.append(UInt8((value >> 24) & 0xff))
+}
 
 private func googleVertexVideoImage(_ image: ImageInputFile) -> JSONValue? {
     if let data = image.data {

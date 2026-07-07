@@ -6,7 +6,11 @@ import Testing
     let transport = RecordingTransport(response: jsonResponse("""
     {"results":{"channels":[{"alternatives":[{"transcript":"hello world","words":[]}],"detected_language":"en"}]},"metadata":{"duration":1.2}}
     """))
-    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(
+        apiKey: "deepgram-key",
+        headers: ["Custom-Provider-Header": "provider-header-value"],
+        transport: transport
+    ))
     let model = try provider.transcriptionModel("nova-3")
 
     let result = try await model.transcribe(AudioTranscriptionRequest(
@@ -25,14 +29,17 @@ import Testing
             "uttSplit": .number(0.8),
             "redact": .array([.string("ssn"), .string("pci")]),
             "search": .string("Codex")
-        ]
+        ],
+        headers: ["Custom-Request-Header": "request-header-value"]
     ))
 
     #expect(result.text == "hello world")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_entities=true&detect_language=false&diarize=true&filler_words=true&model=nova-3&redact=ssn%2Cpci&search=Codex&smart_format=true&summarize=v2&topics=true&utt_split=0.8&utterances=true")
     #expect(request.headers["authorization"] == "Token deepgram-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/2.0.36")
+    #expect(request.headers["custom-provider-header"] == "provider-header-value")
+    #expect(request.headers["Custom-Request-Header"] == "request-header-value")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.0.5")
     #expect(request.headers["content-type"] == "audio/wav")
     #expect(request.body == Data("wav".utf8))
 }
@@ -263,9 +270,31 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?callback=https%3A%2F%2Fexample.com%2Fhook&callback_method=PUT&container=wav&encoding=linear16&mip_opt_out=true&model=aura-2-helena-en&sample_rate=24000&tag=test%2Cswift")
     #expect(request.headers["authorization"] == "Token deepgram-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/2.0.36")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.0.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
+}
+
+@Test func deepgramSpeechPassesProviderAndRequestHeadersLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("audio".utf8)))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(
+        apiKey: "deepgram-key",
+        headers: ["Custom-Provider-Header": "provider-header-value"],
+        transport: transport
+    ))
+    let model = try provider.speechModel("aura-2-helena-en")
+
+    _ = try await model.speak(SpeechRequest(
+        text: "Hello",
+        headers: ["Custom-Request-Header": "request-header-value"]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["authorization"] == "Token deepgram-key")
+    #expect(request.headers["content-type"] == "application/json")
+    #expect(request.headers["custom-provider-header"] == "provider-header-value")
+    #expect(request.headers["Custom-Request-Header"] == "request-header-value")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.0.5")
 }
 
 @Test func deepgramSpeechParsesOutputFormatSampleRatesLikeUpstream() async throws {

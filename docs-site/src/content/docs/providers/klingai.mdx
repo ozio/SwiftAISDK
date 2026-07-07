@@ -15,6 +15,10 @@ description: "klingai provider capabilities and factories."
 
 - Video
 
+## Notes
+
+KlingAI video models mirror upstream KlingAI 4.0.6: `KLINGAI_API_KEY`, custom base URL and headers, versioned user-agent suffix, `video`/`videoModel` aliases, JWT bearer auth, text-to-video, image-to-video, reference-to-video multi-image, and motion-control endpoints, first/last `frameImages`, `inputReferences`, top-level `generateAudio` to `sound` mapping with provider-option override behavior, providerOptions.klingai schema and snake_case passthrough, polling, `video/mp4` media type, provider metadata, KlingAI error schema, and warnings for unsupported standard video options. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export split, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
 Return to the [provider matrix](./).
