@@ -36,7 +36,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.prodia.com/v2/job?price=true")
     #expect(request.headers["authorization"] == "Bearer prodia-token")
-    #expect(request.headers["user-agent"] == "ai-sdk/prodia/2.0.6")
+    #expect(request.headers["user-agent"] == "ai-sdk/prodia/2.0.8")
     #expect(request.headers["Accept"] == "multipart/form-data")
     #expect(request.headers["Content-Type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(decoding: try #require(request.body), as: UTF8.self)
@@ -63,7 +63,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer prodia-token")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/prodia/2.0.6")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/prodia/2.0.8")
 }
 
 @Test func prodiaModelsUseUpstreamErrorMessageSchema() async throws {
@@ -245,7 +245,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.prodia.com/v2/job?price=true")
     #expect(request.headers["authorization"] == "Bearer prodia-token")
-    #expect(request.headers["user-agent"] == "ai-sdk/prodia/2.0.6")
+    #expect(request.headers["user-agent"] == "ai-sdk/prodia/2.0.8")
     #expect(request.headers["Accept"] == "multipart/form-data; image/png")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["values"]?["type"]?.stringValue == "sdxl")
@@ -404,7 +404,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.prodia.com/v2/job?price=true")
     #expect(request.headers["authorization"] == "Bearer prodia-token")
-    #expect(request.headers["user-agent"] == "ai-sdk/prodia/2.0.6")
+    #expect(request.headers["user-agent"] == "ai-sdk/prodia/2.0.8")
     #expect(request.headers["Accept"] == "multipart/form-data; video/mp4")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["values"]?["type"]?.stringValue == "veo")

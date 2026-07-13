@@ -44,7 +44,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer cohere-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/4.0.5")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/4.0.7")
 }
 
 @Test func cohereLanguageMapsTopLevelReasoningLikeUpstreamV4() async throws {
@@ -463,8 +463,6 @@ import Testing
     #expect(result.usage?.totalTokens == 5)
     #expect(result.warnings == [
         AIWarning(type: "unsupported", feature: "topK"),
-        AIWarning(type: "unsupported", feature: "frequencyPenalty"),
-        AIWarning(type: "unsupported", feature: "presencePenalty"),
         AIWarning(
             type: "unsupported",
             feature: "reasoning",
@@ -488,8 +486,8 @@ import Testing
     #expect(body["random_seed"]?.intValue == 7)
     #expect(body["document_page_limit"]?.intValue == 2)
     #expect(body["top_k"] == nil)
-    #expect(body["presence_penalty"] == nil)
-    #expect(body["frequency_penalty"] == nil)
+    #expect(body["presence_penalty"]?.doubleValue == 0.1)
+    #expect(body["frequency_penalty"]?.doubleValue == 0.2)
     #expect(body["reasoning_effort"] == nil)
     #expect(body["tools"]?.arrayValue?.count == 1)
     #expect(body["tools"]?[0]?["type"]?.stringValue == "function")
@@ -533,7 +531,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer mistral-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/4.0.5")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/4.0.8")
 }
 @Test func mistralMissingFinishReasonMapsToOtherAndUsageCountsCache() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

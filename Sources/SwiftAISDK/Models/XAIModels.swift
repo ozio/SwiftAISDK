@@ -306,15 +306,22 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             body["reference_images"] = nil
         }
         if !request.inputReferences.isEmpty, request.frameImages.isEmpty, mode != "edit-video" {
-            body["reference_images"] = .array(request.inputReferences.map { .object(["url": .string(xaiImageFileURL($0))]) })
+            let references = request.inputReferences.compactMap { xaiReferenceImageURL($0, warnings: &warnings) }
+            if !references.isEmpty {
+                body["reference_images"] = .array(references.map { .object(["url": .string($0)]) })
+            }
         }
         if let firstFrame = request.frameImages.first(where: { $0.frameType == .firstFrame }) {
-            body["image"] = .object(["url": .string(xaiImageFileURL(firstFrame.image))])
+            if let url = xaiStartImageURL(firstFrame.image, feature: "frameImages", warnings: &warnings) {
+                body["image"] = .object(["url": .string(url)])
+            }
         } else if let image = xaiVideoImageInput(from: options), body["image"] == nil {
             body["image"] = .object(["url": image])
         }
         if let image = request.image, body["image"] == nil {
-            body["image"] = .object(["url": .string(xaiImageFileURL(image))])
+            if let url = xaiStartImageURL(image, feature: "image", warnings: &warnings) {
+                body["image"] = .object(["url": .string(url)])
+            }
         }
 
         let created = try await config.sendJSON(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
@@ -813,6 +820,30 @@ private func xaiImageEditInputs(from files: [ImageInputFile]) -> [String: JSONVa
 
 private func xaiImageFileURL(_ file: ImageInputFile) -> String {
     (try? convertImageModelFileToDataURI(file)) ?? ""
+}
+
+private func xaiReferenceImageURL(_ file: ImageInputFile, warnings: inout [AIWarning]) -> String? {
+    guard !isVideoInputFile(file) else {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "inputReferences",
+            message: "xAI reference-to-video accepts image references only. The video reference was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video."
+        ))
+        return nil
+    }
+    return xaiImageFileURL(file)
+}
+
+private func xaiStartImageURL(_ file: ImageInputFile, feature: String, warnings: inout [AIWarning]) -> String? {
+    guard !isVideoInputFile(file) else {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: feature,
+            message: "xAI does not accept a video as a start/frame image. The video was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video instead."
+        ))
+        return nil
+    }
+    return xaiImageFileURL(file)
 }
 
 private func xaiVideoImageInput(from options: [String: JSONValue]) -> JSONValue? {

@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.8")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.11")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-mini")
     #expect(body["messages"]?[1]?["content"]?.stringValue == "Hi")
@@ -122,6 +122,9 @@ import Testing
                 "serviceTier": "priority",
                 "promptCacheKey": "cache-key",
                 "promptCacheRetention": "24h",
+                "promptCacheOptions": [
+                    "type": "ephemeral"
+                ],
                 "safetyIdentifier": "safe-user",
                 "reasoningEffort": "none",
                 "textVerbosity": "high",
@@ -136,6 +139,7 @@ import Testing
     #expect(body["service_tier"]?.stringValue == "priority")
     #expect(body["prompt_cache_key"]?.stringValue == "cache-key")
     #expect(body["prompt_cache_retention"]?.stringValue == "24h")
+    #expect(body["prompt_cache_options"]?["type"]?.stringValue == "ephemeral")
     #expect(body["safety_identifier"]?.stringValue == "safe-user")
     #expect(body["reasoning_effort"]?.stringValue == "none")
     #expect(body["verbosity"]?.stringValue == "high")
@@ -146,6 +150,7 @@ import Testing
     #expect(body["serviceTier"] == nil)
     #expect(body["promptCacheKey"] == nil)
     #expect(body["promptCacheRetention"] == nil)
+    #expect(body["promptCacheOptions"] == nil)
     #expect(body["safetyIdentifier"] == nil)
     #expect(body["textVerbosity"] == nil)
     #expect(body["openai"] == nil)

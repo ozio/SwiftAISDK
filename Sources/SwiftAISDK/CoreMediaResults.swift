@@ -125,6 +125,16 @@ public func convertImageModelFileToDataURI(_ file: ImageInputFile) throws -> Str
     return "data:\(mediaType);base64,\(data.base64EncodedString())"
 }
 
+func isVideoInputFile(_ file: ImageInputFile) -> Bool {
+    if let mediaType = file.mediaType, topLevelMediaType(mediaType.lowercased()) == "video" {
+        return true
+    }
+    if let data = file.data, detectMediaType(data: data, topLevelType: "video") != nil {
+        return true
+    }
+    return false
+}
+
 public struct ImageGenerationResult: Sendable {
     public var urls: [String]
     public var base64Images: [String]

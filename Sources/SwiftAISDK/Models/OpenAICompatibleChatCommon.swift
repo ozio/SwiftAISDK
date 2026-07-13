@@ -98,6 +98,7 @@ func openAICompatibleChatOptions(from extraBody: [String: JSONValue], supportsSt
     openAIResponsesMoveKey("maxCompletionTokens", to: "max_completion_tokens", in: &output)
     openAIResponsesMoveKey("serviceTier", to: "service_tier", in: &output)
     openAIResponsesMoveKey("promptCacheKey", to: "prompt_cache_key", in: &output)
+    openAIResponsesMoveKey("promptCacheOptions", to: "prompt_cache_options", in: &output)
     openAIResponsesMoveKey("promptCacheRetention", to: "prompt_cache_retention", in: &output)
     openAIResponsesMoveKey("safetyIdentifier", to: "safety_identifier", in: &output)
     if let logprobs = output["logprobs"] {

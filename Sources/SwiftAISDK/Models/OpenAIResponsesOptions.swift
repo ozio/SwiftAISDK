@@ -729,6 +729,7 @@ func openAIResponsesOptions(from extraBody: [String: JSONValue]) -> [String: JSO
     openAIResponsesMoveKey("maxToolCalls", to: "max_tool_calls", in: &output)
     openAIResponsesMoveKey("maxCompletionTokens", to: "max_output_tokens", in: &output)
     openAIResponsesMoveKey("promptCacheKey", to: "prompt_cache_key", in: &output)
+    openAIResponsesMoveKey("promptCacheOptions", to: "prompt_cache_options", in: &output)
     openAIResponsesMoveKey("promptCacheRetention", to: "prompt_cache_retention", in: &output)
     openAIResponsesMoveKey("safetyIdentifier", to: "safety_identifier", in: &output)
     openAIResponsesMoveKey("textVerbosity", to: "textVerbosity", in: &output)
@@ -743,6 +744,12 @@ func openAIResponsesOptions(from extraBody: [String: JSONValue]) -> [String: JSO
     }
     if let summary = output.removeValue(forKey: "reasoningSummary") {
         reasoning["summary"] = summary
+    }
+    if let mode = output.removeValue(forKey: "reasoningMode") {
+        reasoning["mode"] = mode
+    }
+    if let context = output.removeValue(forKey: "reasoningContext") {
+        reasoning["context"] = context
     }
     if !reasoning.isEmpty {
         output["reasoning"] = .object(reasoning)
@@ -797,6 +804,20 @@ func openAIResponsesFinalizeReasoningOptions(isReasoningModel: Bool, options: in
             type: "unsupported",
             feature: "reasoningSummary",
             message: "reasoningSummary is not supported for non-reasoning models"
+        ))
+    }
+    if reasoning["mode"] != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "reasoningMode",
+            message: "reasoningMode is not supported for non-reasoning models"
+        ))
+    }
+    if reasoning["context"] != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "reasoningContext",
+            message: "reasoningContext is not supported for non-reasoning models"
         ))
     }
     options.removeValue(forKey: "reasoning")

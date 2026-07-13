@@ -427,7 +427,13 @@ func bedrockToolCalls(from value: JSONValue?) -> [AIToolCall] {
 
 func bedrockToolArguments(_ value: JSONValue?) -> String {
     guard let value else { return "{}" }
-    guard let data = try? encodeJSONBody(value),
+    let input: JSONValue
+    if case .object = value {
+        input = value
+    } else {
+        input = .object(["rawInvalidInput": value])
+    }
+    guard let data = try? encodeJSONBody(input),
           let text = String(data: data, encoding: .utf8) else {
         return "{}"
     }

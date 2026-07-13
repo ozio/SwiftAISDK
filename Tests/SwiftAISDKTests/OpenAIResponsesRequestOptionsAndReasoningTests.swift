@@ -40,7 +40,15 @@ private let openAIResponsesReasoningModelIDsLikeUpstream = [
     "gpt-5.4-pro",
     "gpt-5.4-pro-2026-03-05",
     "gpt-5.5",
-    "gpt-5.5-2026-04-23"
+    "gpt-5.5-2026-04-23",
+    "gpt-5.6",
+    "gpt-5.6-2026-06-18",
+    "gpt-5.6-mini",
+    "gpt-5.6-mini-2026-06-18",
+    "gpt-5.6-nano",
+    "gpt-5.6-nano-2026-06-18",
+    "gpt-5.6-pro",
+    "gpt-5.6-pro-2026-06-18"
 ]
 
 private let openAIResponsesNonReasoningModelIDsLikeUpstream = [
@@ -94,6 +102,9 @@ private let openAIResponsesNonReasoningModelIDsLikeUpstream = [
                 "allowedTools": ["toolNames": ["lookup"], "mode": "required"],
                 "promptCacheKey": "cache-key",
                 "promptCacheRetention": "24h",
+                "promptCacheOptions": [
+                    "type": "ephemeral"
+                ],
                 "safetyIdentifier": "safe-user",
                 "conversation": "conv-1",
                 "previousResponseId": "resp-old",
@@ -116,6 +127,7 @@ private let openAIResponsesNonReasoningModelIDsLikeUpstream = [
     #expect(body["previous_response_id"]?.stringValue == "resp-old")
     #expect(body["prompt_cache_key"]?.stringValue == "cache-key")
     #expect(body["prompt_cache_retention"]?.stringValue == "24h")
+    #expect(body["prompt_cache_options"]?["type"]?.stringValue == "ephemeral")
     #expect(body["safety_identifier"]?.stringValue == "safe-user")
     #expect(body["truncation"]?.stringValue == "disabled")
     #expect(body["top_logprobs"]?.intValue == 3)
@@ -490,19 +502,23 @@ private let openAIResponsesNonReasoningModelIDsLikeUpstream = [
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-non-reasoning","status":"completed","output_text":"done"}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
     let expectedWarnings = [
-        AIWarning(type: "unsupported", feature: "reasoningEffort", message: "reasoningEffort is not supported for non-reasoning models")
+        AIWarning(type: "unsupported", feature: "reasoningEffort", message: "reasoningEffort is not supported for non-reasoning models"),
+        AIWarning(type: "unsupported", feature: "reasoningMode", message: "reasoningMode is not supported for non-reasoning models"),
+        AIWarning(type: "unsupported", feature: "reasoningContext", message: "reasoningContext is not supported for non-reasoning models")
     ]
 
     for (index, modelID) in openAIResponsesNonReasoningModelIDsLikeUpstream.enumerated() {
         let result = try await provider.languageModel(modelID).generate(LanguageModelRequest(
             messages: [.user("Hello")],
-            providerOptions: ["openai": ["reasoningEffort": "low"]]
+            providerOptions: ["openai": ["reasoningEffort": "low", "reasoningMode": "serial", "reasoningContext": ["encrypted": "ctx"]]]
         ))
 
         let body = try decodeJSONBody(try #require((await transport.requests())[index].body))
         #expect(body["model"]?.stringValue == modelID)
         #expect(body["reasoning"] == nil)
         #expect(body["reasoningEffort"] == nil)
+        #expect(body["reasoningMode"] == nil)
+        #expect(body["reasoningContext"] == nil)
         #expect(result.warnings == expectedWarnings)
     }
 }

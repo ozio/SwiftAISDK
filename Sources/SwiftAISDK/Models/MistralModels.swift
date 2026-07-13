@@ -138,6 +138,8 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
         if let topP = request.topP { body["top_p"] = .number(topP) }
         if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
         if let seed = request.seed { body["random_seed"] = .number(Double(seed)) }
+        if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
+        if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
         if let responseFormat = responseFormat {
             body["response_format"] = mistralResponseFormat(from: responseFormat, options: options)
         }

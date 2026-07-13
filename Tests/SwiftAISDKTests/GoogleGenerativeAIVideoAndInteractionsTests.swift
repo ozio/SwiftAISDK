@@ -31,8 +31,9 @@ import Testing
     #expect(result.urls == ["https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media&key=gemini-key"])
     #expect(result.providerMetadata["google"]?["videos"]?[0]?["uri"]?.stringValue == "https://generativelanguage.googleapis.com/files/video-456.mp4?alt=media")
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["instances"]?[0]?["image"]?["inlineData"]?["data"]?.stringValue == Data("frame".utf8).base64EncodedString())
-    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["inlineData"]?["data"]?.stringValue == "reference-image")
+    #expect(body["instances"]?[0]?["image"]?["bytesBase64Encoded"]?.stringValue == Data("frame".utf8).base64EncodedString())
+    #expect(body["instances"]?[0]?["image"]?["mimeType"]?.stringValue == "image/png")
+    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["bytesBase64Encoded"]?.stringValue == "reference-image")
     #expect(body["instances"]?[0]?["referenceImages"]?[1]?["gcsUri"]?.stringValue == "gs://bucket/reference.png")
     #expect(body["parameters"]?["resolution"]?.stringValue == "720p")
     #expect(body["parameters"]?["seed"]?.intValue == 7)
@@ -76,10 +77,10 @@ import Testing
     ))
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["instances"]?[0]?["image"]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
-    #expect(body["instances"]?[0]?["image"]?["inlineData"]?["data"]?.stringValue == Data("first-frame-data".utf8).base64EncodedString())
-    #expect(body["instances"]?[0]?["lastFrame"]?["inlineData"]?["mimeType"]?.stringValue == "image/jpeg")
-    #expect(body["instances"]?[0]?["lastFrame"]?["inlineData"]?["data"]?.stringValue == Data("last-frame-data".utf8).base64EncodedString())
+    #expect(body["instances"]?[0]?["image"]?["mimeType"]?.stringValue == "image/png")
+    #expect(body["instances"]?[0]?["image"]?["bytesBase64Encoded"]?.stringValue == Data("first-frame-data".utf8).base64EncodedString())
+    #expect(body["instances"]?[0]?["lastFrame"]?["mimeType"]?.stringValue == "image/jpeg")
+    #expect(body["instances"]?[0]?["lastFrame"]?["bytesBase64Encoded"]?.stringValue == Data("last-frame-data".utf8).base64EncodedString())
 }
 
 @Test func googleVideoMapsInputReferencesLikeUpstream() async throws {
@@ -108,8 +109,8 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["instances"]?[0]?["referenceImages"]?.arrayValue?.count == 1)
     #expect(body["instances"]?[0]?["referenceImages"]?[0]?["referenceType"]?.stringValue == "asset")
-    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["image"]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
-    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["image"]?["inlineData"]?["data"]?.stringValue == Data("reference-from-input".utf8).base64EncodedString())
+    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["image"]?["mimeType"]?.stringValue == "image/png")
+    #expect(body["instances"]?[0]?["referenceImages"]?[0]?["image"]?["bytesBase64Encoded"]?.stringValue == Data("reference-from-input".utf8).base64EncodedString())
 }
 @Test func googleInteractionsUsesInteractionsEndpointAndInputShape() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

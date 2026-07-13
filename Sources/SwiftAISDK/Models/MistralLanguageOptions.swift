@@ -27,12 +27,6 @@ func mistralWarnings(for request: LanguageModelRequest, modelID: String) -> [AIW
     if request.topK != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "topK"))
     }
-    if request.frequencyPenalty != nil {
-        warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
-    }
-    if request.presencePenalty != nil {
-        warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty"))
-    }
     if isCustomReasoning(request.reasoning), !mistralSupportsReasoningEffort(modelID) {
         warnings.append(AIWarning(
             type: "unsupported",
@@ -138,6 +132,12 @@ let mistralLanguageProviderOptionKeys: Set<String> = [
     "strictJsonSchema",
     "parallelToolCalls",
     "reasoningEffort"
+]
+
+let mistralEmbeddingProviderOptionKeys: Set<String> = [
+    "metadata",
+    "outputDimension",
+    "outputDtype"
 ]
 
 func mistralValidateLanguageProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {

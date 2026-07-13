@@ -110,10 +110,20 @@ func googleApplyProviderGenerationOptions(_ options: [String: JSONValue], to gen
 
 func googleTopLevelGenerateContentOptions(_ options: [String: JSONValue]) -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
-    for key in ["safetySettings", "cachedContent", "labels", "serviceTier"] {
+    for key in ["cachedContent", "labels", "serviceTier"] {
         if let value = options[key] {
             output[key] = value
         }
+    }
+    if let safetySettings = options["safetySettings"] {
+        output["safetySettings"] = safetySettings
+    } else if let threshold = options["threshold"] {
+        output["safetySettings"] = .array(googleConfigurableSafetySettingCategories.map { category in
+            .object([
+                "category": .string(category),
+                "threshold": threshold
+            ])
+        })
     }
     return output
 }
@@ -222,6 +232,7 @@ let googleKnownLanguageProviderOptionKeys: Set<String> = [
     "cachedContent",
     "structuredOutputs",
     "safetySettings",
+    "threshold",
     "audioTimestamp",
     "labels",
     "mediaResolution",
@@ -231,4 +242,11 @@ let googleKnownLanguageProviderOptionKeys: Set<String> = [
     "serviceTier",
     "sharedRequestType",
     "requestType"
+]
+
+private let googleConfigurableSafetySettingCategories = [
+    "HARM_CATEGORY_HATE_SPEECH",
+    "HARM_CATEGORY_DANGEROUS_CONTENT",
+    "HARM_CATEGORY_HARASSMENT",
+    "HARM_CATEGORY_SEXUALLY_EXPLICIT"
 ]

@@ -166,7 +166,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepseek-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.5")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.7")
 }
 
 @Test func deepSeekLanguageGeneratesMissingToolCallIDLikeUpstreamV4() async throws {

@@ -73,8 +73,8 @@ import Testing
     #expect(textLifecycle == ["start:txt-0", "delta:txt-0:answer", "end:txt-0"])
     #expect(usage?.totalTokens == 5)
     #expect(usage?.inputTokens == 2)
-    #expect(usage?.inputTokensNoCache == 2)
-    #expect(usage?.inputTokensCacheRead == nil)
+    #expect(usage?.inputTokensNoCache == 1)
+    #expect(usage?.inputTokensCacheRead == 1)
     #expect(usage?.outputTokens == 3)
     #expect(usage?.outputTextTokens == 2)
     #expect(usage?.outputReasoningTokens == 1)
@@ -102,7 +102,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer groq-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/4.0.5")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/4.0.8")
 }
 @Test func groqLanguageMapsMissingFinishReasonToOther() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"index":0,"message":{"content":"ok"},"finish_reason":null}]}"#))
@@ -451,8 +451,8 @@ import Testing
     #expect(result.reasoning == "Need weather.")
     #expect(result.finishReason == "tool-calls")
     #expect(result.usage?.totalTokens == 225)
-    #expect(result.usage?.inputTokensNoCache == 210)
-    #expect(result.usage?.inputTokensCacheRead == nil)
+    #expect(result.usage?.inputTokensNoCache == 198)
+    #expect(result.usage?.inputTokensCacheRead == 12)
     #expect(result.usage?.outputTextTokens == 10)
     #expect(result.usage?.outputReasoningTokens == 5)
     #expect(result.usage?.rawValue?["prompt_tokens_details"]?["cached_tokens"]?.intValue == 12)

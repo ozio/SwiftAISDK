@@ -72,12 +72,14 @@ func groqUsage(from usage: JSONValue?) -> TokenUsage? {
     guard let usage, usage != .null else { return nil }
     let promptTokens = usage["prompt_tokens"]?.intValue ?? 0
     let completionTokens = usage["completion_tokens"]?.intValue ?? 0
+    let cacheReadTokens = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
     let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue
     return TokenUsage(
         inputTokens: promptTokens,
         outputTokens: completionTokens,
         totalTokens: usage["total_tokens"]?.intValue ?? promptTokens + completionTokens,
-        inputTokensNoCache: promptTokens,
+        inputTokensNoCache: promptTokens - (cacheReadTokens ?? 0),
+        inputTokensCacheRead: cacheReadTokens,
         outputTextTokens: reasoningTokens.map { completionTokens - $0 } ?? completionTokens,
         outputReasoningTokens: reasoningTokens,
         rawValue: usage

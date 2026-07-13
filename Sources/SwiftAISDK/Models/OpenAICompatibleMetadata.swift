@@ -84,6 +84,9 @@ func openAIResponsesProviderMetadata(from raw: JSONValue, providerID: String) ->
     if let serviceTier = raw["service_tier"] {
         metadata["serviceTier"] = serviceTier
     }
+    if let reasoningContext = raw["reasoning"]?["context"] {
+        metadata["reasoningContext"] = reasoningContext
+    }
     let logprobs = openAIResponsesOutputLogprobs(from: raw)
     if !logprobs.isEmpty {
         metadata["logprobs"] = .array(logprobs)

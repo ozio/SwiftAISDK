@@ -45,7 +45,7 @@ import Testing
     #expect(requests.count == 4)
     #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
     #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.5" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.7" })
 }
 
 @Test func openAICompatibleStreamsIncludeUsageWhenEnabled() async throws {

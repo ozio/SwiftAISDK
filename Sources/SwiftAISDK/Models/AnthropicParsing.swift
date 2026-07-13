@@ -475,7 +475,11 @@ func anthropicCitationDocuments(from messages: [AIMessage]) -> [AnthropicCitatio
 }
 
 func anthropicToolArguments(_ arguments: String) -> JSONValue {
-    (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
+    let decoded = (try? decodeJSONBody(Data(arguments.utf8))) ?? .object([:])
+    guard case .object = decoded else {
+        return .object(["rawInvalidInput": decoded])
+    }
+    return decoded
 }
 
 func anthropicSources(from content: JSONValue?, citationDocuments: [AnthropicCitationDocument]) -> [AISource] {

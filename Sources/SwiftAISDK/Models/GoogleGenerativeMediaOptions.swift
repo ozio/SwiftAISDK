@@ -108,10 +108,8 @@ func googleVideoInstance(for request: VideoGenerationRequest, options: [String: 
     } else if let image = options["image"]?.objectValue {
         if let data = image["data"]?.stringValue {
             instance["image"] = .object([
-                "inlineData": .object([
-                    "mimeType": image["mimeType"] ?? .string("image/png"),
-                    "data": .string(data)
-                ])
+                "bytesBase64Encoded": .string(data),
+                "mimeType": image["mimeType"] ?? .string("image/png")
             ])
         }
     }
@@ -128,10 +126,8 @@ func googleVideoInstance(for request: VideoGenerationRequest, options: [String: 
             guard let object = reference.objectValue else { return reference }
             if let bytesBase64Encoded = object["bytesBase64Encoded"]?.stringValue {
                 return .object([
-                    "inlineData": .object([
-                        "mimeType": .string("image/png"),
-                        "data": .string(bytesBase64Encoded)
-                    ])
+                    "bytesBase64Encoded": .string(bytesBase64Encoded),
+                    "mimeType": object["mimeType"] ?? .string("image/png")
                 ])
             }
             if let gcsUri = object["gcsUri"] {
@@ -146,10 +142,8 @@ func googleVideoInstance(for request: VideoGenerationRequest, options: [String: 
 func googleVideoInlineImage(_ image: ImageInputFile) -> JSONValue? {
     guard let data = image.data else { return nil }
     return .object([
-        "inlineData": .object([
-            "mimeType": .string(image.mediaType ?? "image/png"),
-            "data": .string(data.base64EncodedString())
-        ])
+        "bytesBase64Encoded": .string(data.base64EncodedString()),
+        "mimeType": .string(image.mediaType ?? "image/png")
     ])
 }
 

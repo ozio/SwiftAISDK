@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-07-07
+Snapshot date: 2026-07-13
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.16`, `@ai-sdk/provider@4.0.2`,
-`@ai-sdk/provider-utils@5.0.5`, and `@ai-sdk/react@4.0.17`.
+snapshots, currently `ai@7.0.22`, `@ai-sdk/provider@4.0.3`,
+`@ai-sdk/provider-utils@5.0.7`, and `@ai-sdk/react@4.0.23`.
 
 References:
 
@@ -20,10 +20,10 @@ References:
 
 Checked npm package diffs:
 
-- `ai@6.0.208 -> 7.0.16`
-- `@ai-sdk/provider@3.0.10 -> 4.0.2`
-- `@ai-sdk/provider-utils@4.0.30 -> 5.0.5`
-- `@ai-sdk/react@3.0.210 -> 4.0.17`
+- `ai@6.0.208 -> 7.0.22`
+- `@ai-sdk/provider@3.0.10 -> 4.0.3`
+- `@ai-sdk/provider-utils@4.0.30 -> 5.0.7`
+- `@ai-sdk/react@3.0.210 -> 4.0.23`
 - `ai@6.0.200 -> 6.0.208`
 - `@ai-sdk/provider@3.0.10`
 - `@ai-sdk/react@3.0.206 -> 3.0.210`
@@ -32,7 +32,7 @@ Checked npm package diffs:
 
 Port decisions:
 
-- `ai@7.0.16` approval metadata/signature preservation is represented by
+- `ai@7.0.22` approval metadata/signature preservation is represented by
   Swift's `AIToolApprovalRequest.isAutomatic` and provider metadata fields.
   The HMAC signing API remains JS-runtime-specific; Swift does not expose a
   client replay signature surface.
@@ -46,22 +46,22 @@ Port decisions:
 - `ai@7.0.7` `convertToModelMessages` empty-assistant fix and `ai@7.0.5`
   orphaned approval-response pruning are already covered by upstream-style
   Swift regression tests.
-- `@ai-sdk/provider@4.0.2` ProviderV4 additions are represented by Swift's
+- `@ai-sdk/provider@4.0.3` ProviderV4 additions are represented by Swift's
   existing stable protocols: provider references, file uploads, custom content,
   reasoning files, top-level reasoning, tool-result file content, video
   `frameImages`/`inputReferences`, and `generateAudio` request fields. The
   ProviderV4 type names, ESM packaging, and Node 22 engine requirement are
   JavaScript-only concerns.
-- `@ai-sdk/provider-utils@5.0.5` security/runtime changes were audited against
+- `@ai-sdk/provider-utils@5.0.7` security/runtime changes were audited against
   Swift transports and parsers. Response-size limits, same-origin credential
   hardening, SSRF download validation, typed JSON parsing, and body cancellation
   semantics are covered or Swift-native; JavaScript prototype-pollution fixes
   are not applicable to Swift value dictionaries.
-- `@ai-sdk/provider-utils@5.0.5` and `ai@7.0.14` experimental realtime and
+- `@ai-sdk/provider-utils@5.0.7` and `ai@7.0.14` experimental realtime and
   streaming-transcription surfaces are not represented by current SwiftAISDK
   protocols. Existing provider rows call out WebSocket/realtime STT as
   JS-runtime gaps where applicable.
-- `@ai-sdk/react@4.0.17` changes are dependency bumps and React hook/runtime
+- `@ai-sdk/react@4.0.23` changes are dependency bumps and React hook/runtime
   behavior, including MCP App UI defaults. SwiftAISDK's UI analog remains
   `AIChatSession`, `AIObjectGenerationSession`, `DirectAIChatTransport`, and
   `AIUIMessageStreamReducer`; there is no React iframe renderer to port.

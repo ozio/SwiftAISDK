@@ -157,6 +157,24 @@ import Testing
     #expect(secondBody["tools"] == nil)
     #expect(secondBody["tool_choice"] == nil)
 }
+@Test func anthropicRequestWrapsInvalidAssistantToolInputLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .assistant(toolCalls: [
+            AIToolCall(id: "toolu_invalid", name: "lookup", arguments: #""raw-string""#)
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["content"]?[0]?["type"]?.stringValue == "tool_use")
+    #expect(body["messages"]?[0]?["content"]?[0]?["id"]?.stringValue == "toolu_invalid")
+    #expect(body["messages"]?[0]?["content"]?[0]?["input"]?["rawInvalidInput"]?.stringValue == "raw-string")
+}
 @Test func anthropicRequestConvertsProviderReferenceFilesLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}

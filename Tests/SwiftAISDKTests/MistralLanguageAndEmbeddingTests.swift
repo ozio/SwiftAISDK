@@ -460,7 +460,14 @@ import Testing
     let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
     let model = try provider.embeddingModel("mistral-embed")
 
-    let result = try await model.embed(EmbeddingRequest(values: ["hello", "world"]))
+    let result = try await model.embed(EmbeddingRequest(
+        values: ["hello", "world"],
+        providerOptions: ["mistral": [
+            "metadata": ["tenant": "swift"],
+            "outputDimension": 512,
+            "outputDtype": "int8"
+        ]]
+    ))
 
     #expect(result.embeddings == [[0.1, 0.2], [0.3, 0.4]])
     #expect(result.usage?.inputTokens == 6)
@@ -469,6 +476,9 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["input"]?[0]?.stringValue == "hello")
     #expect(body["encoding_format"]?.stringValue == "float")
+    #expect(body["metadata"]?["tenant"]?.stringValue == "swift")
+    #expect(body["output_dimension"]?.intValue == 512)
+    #expect(body["output_dtype"]?.stringValue == "int8")
 
     let tooManyValues = Array(repeating: "x", count: 33)
     await #expect(throws: AITooManyEmbeddingValuesForCallError(
