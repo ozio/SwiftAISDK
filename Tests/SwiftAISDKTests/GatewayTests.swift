@@ -16,7 +16,7 @@ import Testing
     #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/language-model")
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
-    #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.16")
+    #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.23")
     #expect(request.headers["ai-language-model-id"] == "openai/gpt-4.1-mini")
     #expect(request.headers["ai-language-model-streaming"] == "false")
     let body = try decodeJSONBody(try #require(request.body))
@@ -39,7 +39,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-client"] == "swift")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/4.0.16")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/4.0.23")
 }
 
 @Test func gatewayUsesVercelOIDCTokenWhenGatewayAPIKeyMissing() async throws {
@@ -59,7 +59,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer oidc-token")
         #expect(request.headers["ai-gateway-auth-method"] == "oidc")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.16")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.23")
     }
 }
 
@@ -471,7 +471,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer gateway-key")
         #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.16")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.23")
     }
 }
 

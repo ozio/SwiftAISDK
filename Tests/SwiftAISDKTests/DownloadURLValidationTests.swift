@@ -6,16 +6,12 @@ import Testing
     let allowed = [
         "https://example.com/image.png",
         "http://example.com/image.png",
-        "https://203.0.113.1/file",
         "https://example.com:8080/file",
         "data:text/plain;base64,aGVsbG8=",
         "http://172.15.0.1/file",
         "http://172.32.0.1/file",
         "http://100.63.0.1/file",
         "http://100.128.0.1/file",
-        "http://[::ffff:203.0.113.1]/file",
-        "http://[64:ff9b::203.0.113.1]/file",
-        "http://[2001:db8::1]/file",
         "http://198.20.0.1/file"
     ]
 
@@ -69,8 +65,12 @@ import Testing
         "http://100.127.255.255/file",
         "http://192.0.0.1/file",
         "http://192.0.0.8/file",
+        "http://192.0.2.1/file",
         "http://198.18.0.1/file",
         "http://198.19.255.255/file",
+        "http://198.51.100.1/file",
+        "http://203.0.113.1/file",
+        "http://224.0.0.1/file",
         "http://240.0.0.1/file",
         "http://255.255.255.255/file",
         "http://169.254.169.254/latest/meta-data/",
@@ -94,14 +94,18 @@ import Testing
         "http://[fe80::1]/file",
         "http://[fec0::1]/file",
         "http://[ff02::1]/file",
+        "http://[2001:db8::1]/file",
+        "http://[3fff::1]/file",
         "http://[::127.0.0.1]/file",
         "http://[::ffff:127.0.0.1]/file",
         "http://[::ffff:0:127.0.0.1]/file",
         "http://[::ffff:10.0.0.1]/file",
         "http://[::ffff:169.254.169.254]/file",
+        "http://[::ffff:203.0.113.1]/file",
         "http://[::ffff:7f00:1]/file",
         "http://[64:ff9b::127.0.0.1]/file",
         "http://[64:ff9b::169.254.169.254]/file",
+        "http://[64:ff9b::203.0.113.1]/file",
         "http://[64:ff9b:1::169.254.169.254]/file"
     ]
 

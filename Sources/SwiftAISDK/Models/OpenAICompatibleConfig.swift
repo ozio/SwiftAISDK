@@ -460,6 +460,26 @@ struct ModelHTTPConfig: @unchecked Sendable {
         )
     }
 
+    func withSupportsStructuredOutputs(_ supportsStructuredOutputs: Bool) -> ModelHTTPConfig {
+        ModelHTTPConfig(
+            providerID: providerID,
+            baseURL: baseURL,
+            modelURL: modelURL,
+            headers: headers,
+            transport: transport,
+            includeUsage: includeUsage,
+            queryParams: queryParams,
+            supportsStructuredOutputs: supportsStructuredOutputs,
+            maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            transformRequestBody: transformRequestBody,
+            responsesRequestMode: responsesRequestMode,
+            openAIBackedProviderRoot: openAIBackedProviderRoot,
+            usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
+            deepSeekSupportsThinking: deepSeekSupportsThinking,
+            url: url
+        )
+    }
+
     func withBaseURL(_ baseURL: String) -> ModelHTTPConfig {
         ModelHTTPConfig(
             providerID: providerID,

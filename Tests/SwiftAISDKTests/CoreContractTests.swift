@@ -345,14 +345,17 @@ import Testing
     }
 }
 
-@Test func uiMessageValidationRejectsEmptyMessagesAndPartsLikeUpstream() {
+@Test func uiMessageValidationRejectsEmptyMessagesAndNonAssistantPartsLikeUpstream() {
     let emptyMessages = safeValidateUIMessages([])
     #expect(emptyMessages.isValid == false)
     #expect(emptyMessages.issues.contains { $0.path == "messages" })
 
-    let emptyParts = safeValidateUIMessages([AIUIMessage(id: "empty", role: .assistant)])
-    #expect(emptyParts.isValid == false)
-    #expect(emptyParts.issues.contains { $0.path == "messages[0].parts" })
+    let emptyAssistantParts = safeValidateUIMessages([AIUIMessage(id: "empty-assistant", role: .assistant)])
+    #expect(emptyAssistantParts.isValid)
+
+    let emptyUserParts = safeValidateUIMessages([AIUIMessage(id: "empty-user", role: .user)])
+    #expect(emptyUserParts.isValid == false)
+    #expect(emptyUserParts.issues.contains { $0.path == "messages[0].parts" })
 }
 
 @Test func uiMessageSnapshotStreamEmitsIncrementalMessages() async throws {

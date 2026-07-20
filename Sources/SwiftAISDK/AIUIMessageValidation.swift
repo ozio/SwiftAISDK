@@ -59,7 +59,7 @@ public func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageVali
         if !message.id.isEmpty && !messageIDs.insert(message.id).inserted {
             issues.append(AIUIMessageValidationIssue(path: "\(messagePath).id", message: "message id must be unique."))
         }
-        if message.parts.isEmpty {
+        if message.role != .assistant && message.parts.isEmpty {
             issues.append(AIUIMessageValidationIssue(path: "\(messagePath).parts", message: "message must contain at least one part."))
         }
 

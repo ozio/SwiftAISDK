@@ -124,7 +124,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
         if normalizedHeaders["ai-gateway-auth-method"] == nil {
             settings.headers["ai-gateway-auth-method"] = auth.method
         }
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.16")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.23")
         config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v4/ai",

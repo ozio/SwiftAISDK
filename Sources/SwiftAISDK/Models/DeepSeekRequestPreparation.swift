@@ -1,11 +1,23 @@
 import Foundation
 
-func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool, supportsThinking: Bool = true) throws -> DeepSeekPreparedCall {
+func deepSeekPreparedCall(
+    for request: LanguageModelRequest,
+    modelID: String,
+    stream: Bool,
+    supportsThinking: Bool = true,
+    supportsStructuredOutputs: Bool = false
+) throws -> DeepSeekPreparedCall {
     var options = try deepSeekOptions(from: request)
     let responseFormat = deepSeekResolvedResponseFormat(request: request, options: &options)
     let optionToolChoice = options.removeValue(forKey: "toolChoice")
+    let strictJsonSchema = options.removeValue(forKey: "strictJsonSchema")
     let toolChoice = request.toolChoice ?? optionToolChoice
-    let preparedMessages = deepSeekMessages(request.messages, responseFormat: responseFormat, modelID: modelID)
+    let preparedMessages = deepSeekMessages(
+        request.messages,
+        responseFormat: responseFormat,
+        modelID: modelID,
+        supportsStructuredOutputs: supportsStructuredOutputs
+    )
     var body: [String: JSONValue] = [
         "model": .string(modelID),
         "messages": .array(preparedMessages.messages)
@@ -33,7 +45,22 @@ func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, st
         body.removeValue(forKey: "thinking")
     }
     if let responseFormat, responseFormat["type"]?.stringValue == "json" {
-        body["response_format"] = .object(["type": .string("json_object")])
+        if supportsStructuredOutputs, let schema = responseFormat["schema"] {
+            var jsonSchema: [String: JSONValue] = [
+                "schema": schema,
+                "strict": strictJsonSchema ?? .bool(true),
+                "name": responseFormat["name"] ?? .string("response")
+            ]
+            if let description = responseFormat["description"] {
+                jsonSchema["description"] = description
+            }
+            body["response_format"] = .object([
+                "type": .string("json_schema"),
+                "json_schema": .object(jsonSchema)
+            ])
+        } else {
+            body["response_format"] = .object(["type": .string("json_object")])
+        }
     }
 
     if body["thinking"]?["type"]?.stringValue == "disabled" {
@@ -42,27 +69,32 @@ func deepSeekPreparedCall(for request: LanguageModelRequest, modelID: String, st
     return DeepSeekPreparedCall(
         body: body,
         warnings: preparedMessages.warnings
-            + deepSeekWarnings(request: request, responseFormat: responseFormat)
+            + deepSeekWarnings(request: request, responseFormat: responseFormat, supportsStructuredOutputs: supportsStructuredOutputs)
             + reasoningWarnings
             + preparedTools.warnings
             + (request.tools.isEmpty ? [] : deepSeekToolChoiceWarnings(from: toolChoice))
     )
 }
 
-func deepSeekMessages(_ messages: [AIMessage], responseFormat: JSONValue?, modelID: String) -> DeepSeekPreparedMessages {
+func deepSeekMessages(
+    _ messages: [AIMessage],
+    responseFormat: JSONValue?,
+    modelID: String,
+    supportsStructuredOutputs: Bool = false
+) -> DeepSeekPreparedMessages {
     var output: [JSONValue] = []
     var warnings: [AIWarning] = []
     let isDeepSeekV4 = modelID.contains("deepseek-v4")
     let lastUserMessageIndex = messages.lastIndex { $0.role == .user } ?? -1
 
     if responseFormat?["type"]?.stringValue == "json" {
-        if let schema = responseFormat?["schema"] {
+        if let schema = responseFormat?["schema"], !supportsStructuredOutputs {
             let schemaText = deepSeekJSONString(schema) ?? schema.stringValue ?? ""
             output.append(.object([
                 "role": .string("system"),
                 "content": .string("Return JSON that conforms to the following schema: \(schemaText)")
             ]))
-        } else {
+        } else if responseFormat?["schema"] == nil {
             output.append(.object([
                 "role": .string("system"),
                 "content": .string("Return JSON.")

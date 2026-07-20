@@ -29,7 +29,7 @@ import Testing
     let request = try #require(requests.first)
     #expect(request.url.absoluteString == "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions")
     #expect(request.headers["authorization"] == "Bearer replicate-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.8")
+    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.12")
     #expect(request.headers["prefer"] == "wait=30")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["input"]?["prompt"]?.stringValue == "cat")
@@ -61,7 +61,7 @@ import Testing
 
     let requests = await transport.requests()
     #expect(requests[0].headers["authorization"] == "Bearer replicate-key")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/replicate/3.0.8")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/replicate/3.0.12")
     #expect(requests[1].headers["authorization"] == nil)
     #expect(requests[1].headers["user-agent"] == nil)
 }
@@ -285,7 +285,7 @@ import Testing
     let request = try #require(requests.first)
     #expect(request.url.absoluteString == "https://api.replicate.com/v1/models/owner/video-model/predictions")
     #expect(request.headers["authorization"] == "Bearer replicate-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.8")
+    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.12")
     #expect(request.headers["prefer"] == "wait=30")
     #expect(request.headers["X-Request-Header"] == "submit-only")
     let body = try decodeJSONBody(try #require(request.body))
@@ -299,7 +299,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.replicate.com/v1/predictions/pred-video")
     #expect(requests[1].headers["authorization"] == "Bearer replicate-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/replicate/3.0.8")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/replicate/3.0.12")
     #expect(requests[1].headers["prefer"] == nil)
     #expect(requests[1].headers["X-Request-Header"] == nil)
 }

@@ -12,7 +12,13 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = try deepSeekPreparedCall(for: request, modelID: modelID, stream: false, supportsThinking: config.deepSeekSupportsThinking)
+        let prepared = try deepSeekPreparedCall(
+            for: request,
+            modelID: modelID,
+            stream: false,
+            supportsThinking: config.deepSeekSupportsThinking,
+            supportsStructuredOutputs: config.supportsStructuredOutputs
+        )
         let response = try await config.sendJSONResponse(
             path: "/chat/completions",
             modelID: modelID,
@@ -44,7 +50,13 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let prepared = try deepSeekPreparedCall(for: request, modelID: modelID, stream: true, supportsThinking: config.deepSeekSupportsThinking)
+                    let prepared = try deepSeekPreparedCall(
+                        for: request,
+                        modelID: modelID,
+                        stream: true,
+                        supportsThinking: config.deepSeekSupportsThinking,
+                        supportsStructuredOutputs: config.supportsStructuredOutputs
+                    )
                     let response = try await config.transport.send(config.request(
                         path: "/chat/completions",
                         modelID: modelID,

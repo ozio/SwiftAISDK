@@ -31,7 +31,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.11")
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.17")
         let baseURL = withoutTrailingSlash(basePrefix)
         let useAzureOpenAIEndpoint = settings.baseURL.map(isAzureOpenAIBaseURL) ?? true
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
@@ -59,7 +59,13 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
     public func chatModel(_ modelID: String) throws -> any LanguageModel { try provider.chatModel(modelID) }
     public func chat(_ modelID: String) throws -> any LanguageModel { try chatModel(modelID) }
     public func deepseek(_ modelID: String) throws -> any LanguageModel {
-        DeepSeekLanguageModel(modelID: modelID, config: config.withProviderID("azure.deepseek").withDeepSeekSupportsThinking(false))
+        DeepSeekLanguageModel(
+            modelID: modelID,
+            config: config
+                .withProviderID("azure.deepseek")
+                .withDeepSeekSupportsThinking(false)
+                .withSupportsStructuredOutputs(true)
+        )
     }
     public func completionModel(_ modelID: String) throws -> any LanguageModel { try provider.completionModel(modelID) }
     public func completion(_ modelID: String) throws -> any LanguageModel { try completionModel(modelID) }

@@ -584,9 +584,12 @@ private func isPrivateIPv4(_ bytes: [UInt8]) -> Bool {
     if first == 169 && second == 254 { return true }
     if first == 172 && (16...31).contains(second) { return true }
     if first == 192 && second == 0 && third == 0 { return true }
+    if first == 192 && second == 0 && third == 2 { return true }
     if first == 192 && second == 168 { return true }
     if first == 198 && (second == 18 || second == 19) { return true }
-    if first >= 240 { return true }
+    if first == 198 && second == 51 && third == 100 { return true }
+    if first == 203 && second == 0 && third == 113 { return true }
+    if first >= 224 { return true }
     return false
 }
 
@@ -647,6 +650,8 @@ private func isPrivateIPv6(_ bytes: [UInt8]) -> Bool {
     if bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80 { return true }
     if bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0 { return true }
     if bytes[0] == 0xff { return true }
+    if bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8 { return true }
+    if bytes[0] == 0x3f && bytes[1] == 0xff && (bytes[2] & 0xf0) == 0x00 { return true }
 
     let embedsIPv4 = bytes.prefix(12).allSatisfy { $0 == 0 }
         || (bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff)

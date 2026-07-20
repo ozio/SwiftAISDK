@@ -22,7 +22,7 @@ func deepSeekOptions(from request: LanguageModelRequest) throws -> [String: JSON
     return output
 }
 
-let deepSeekProviderOptionKeys: Set<String> = ["thinking", "reasoningEffort"]
+let deepSeekProviderOptionKeys: Set<String> = ["thinking", "reasoningEffort", "strictJsonSchema"]
 
 func deepSeekValidateProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
@@ -49,6 +49,11 @@ func deepSeekValidateProviderOptions(_ options: [String: JSONValue]) throws -> [
         case "reasoningEffort":
             guard let effort = value.stringValue, ["low", "medium", "high", "xhigh", "max"].contains(effort) else {
                 throw AIError.invalidArgument(argument: "providerOptions.deepseek.reasoningEffort", message: "DeepSeek reasoningEffort must be low, medium, high, xhigh, or max.")
+            }
+            output[key] = value
+        case "strictJsonSchema":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepseek.strictJsonSchema", message: "DeepSeek strictJsonSchema must be a boolean.")
             }
             output[key] = value
         default:
@@ -80,7 +85,7 @@ func deepSeekResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue
     }
 }
 
-func deepSeekWarnings(request: LanguageModelRequest, responseFormat: JSONValue?) -> [AIWarning] {
+func deepSeekWarnings(request: LanguageModelRequest, responseFormat: JSONValue?, supportsStructuredOutputs: Bool = false) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if request.topK != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "topK"))
@@ -88,7 +93,8 @@ func deepSeekWarnings(request: LanguageModelRequest, responseFormat: JSONValue?)
     if request.seed != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "seed"))
     }
-    if responseFormat?["type"]?.stringValue == "json",
+    if !supportsStructuredOutputs,
+       responseFormat?["type"]?.stringValue == "json",
        responseFormat?["schema"] != nil {
         warnings.append(AIWarning(
             type: "compatibility",

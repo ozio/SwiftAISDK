@@ -102,7 +102,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer groq-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/4.0.8")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/4.0.12")
 }
 @Test func groqLanguageMapsMissingFinishReasonToOther() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"index":0,"message":{"content":"ok"},"finish_reason":null}]}"#))

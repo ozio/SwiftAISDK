@@ -166,3 +166,18 @@ import Testing
     #expect(result == [message])
     #expect(safeValidateUIMessages([message]).isValid)
 }
+
+@Test func aiValidateUIMessagesAcceptsEmptyAssistantMessagesLikeUpstream() throws {
+    let assistant = AIUIMessage(id: "assistant-empty", role: .assistant, parts: [])
+    let result = try validateUIMessages([assistant])
+
+    #expect(result == [assistant])
+    #expect(safeValidateUIMessages([assistant]).isValid)
+
+    let user = AIUIMessage(id: "user-empty", role: .user, parts: [])
+    let safeUser = safeValidateUIMessages([user])
+    #expect(!safeUser.isValid)
+    #expect(safeUser.issues.contains { issue in
+        issue.path == "messages[0].parts" && issue.message.contains("at least one part")
+    })
+}

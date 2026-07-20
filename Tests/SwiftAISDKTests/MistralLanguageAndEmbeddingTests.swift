@@ -491,3 +491,64 @@ import Testing
     }
     #expect(await transport.requests().count == 1)
 }
+
+@Test func mistralSpeechPostsAudioSpeechRequestAndDecodesBase64() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"audio_data":"AQIDBA=="}"#, headers: ["x-mistral": "speech"]))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.speechModel("voxtral-mini-tts-2603")
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Hello",
+        voice: "en_paul_neutral",
+        format: "wav",
+        providerOptions: ["mistral": ["refAudio": "BASE64_REFERENCE_AUDIO"]],
+        headers: ["x-client": "swift"]
+    ))
+
+    #expect(result.audio == Data([1, 2, 3, 4]))
+    #expect(result.contentType == "audio/wav")
+    #expect(result.warnings.isEmpty)
+    #expect(result.responseMetadata.modelID == "voxtral-mini-tts-2603")
+    #expect(result.responseMetadata.headers["x-mistral"] == "speech")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.mistral.ai/v1/audio/speech")
+    #expect(request.headers["authorization"] == "Bearer mistral-key")
+    #expect(request.headers["user-agent"] == "ai-sdk/mistral/4.0.13")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["model"]?.stringValue == "voxtral-mini-tts-2603")
+    #expect(body["input"]?.stringValue == "Hello")
+    #expect(body["ref_audio"]?.stringValue == "BASE64_REFERENCE_AUDIO")
+    #expect(body["voice_id"] == nil)
+    #expect(body["response_format"]?.stringValue == "wav")
+    #expect(body["stream"]?.boolValue == false)
+    #expect(result.requestMetadata.body?["ref_audio"]?.stringValue == "[redacted]")
+    #expect(result.requestMetadata.headers["x-client"] == "swift")
+}
+
+@Test func mistralSpeechFallsBackFormatAndWarnsForUnsupportedOptions() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"audio_data":"audio-text"}"#))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.speechModel("voxtral-mini-tts-2603")
+
+    let result = try await model.speak(SpeechRequest(
+        text: "Bonjour",
+        voice: "en_paul_neutral",
+        format: "aac",
+        speed: 1.2,
+        language: "fr",
+        instructions: "Warm tone"
+    ))
+
+    #expect(result.audio == Data("audio-text".utf8))
+    #expect(result.contentType == "audio/mp3")
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "outputFormat", message: "Unsupported output format: aac. Using mp3 instead."),
+        AIWarning(type: "unsupported", feature: "instructions", message: "Mistral speech models do not support the `instructions` option. Use a reference audio clip to guide delivery."),
+        AIWarning(type: "unsupported", feature: "speed", message: "Mistral speech models do not support the `speed` option. It was ignored."),
+        AIWarning(type: "unsupported", feature: "language", message: "Mistral speech models do not support the `language` option. Language is inferred from the input text and voice.")
+    ])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["voice_id"]?.stringValue == "en_paul_neutral")
+    #expect(body["ref_audio"] == nil)
+    #expect(body["response_format"]?.stringValue == "mp3")
+}
