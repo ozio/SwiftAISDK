@@ -31,7 +31,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
             providerMetadata: googleGenerateContentProviderMetadata(from: raw),
             rawValue: raw,
             warnings: prepared.warnings,
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: googleGenerateContentResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -648,7 +648,12 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     var warnings = preparedOptions.warnings
     let systemText = request.messages.filter { $0.role == .system }.map(\.combinedText).joined(separator: "\n")
     let rawContents = try request.messages.filter { $0.role != .system }.map { message in
-        try googleGenerateContentMessageJSON(message, modelID: modelID, warnings: &warnings)
+        try googleGenerateContentMessageJSON(
+            message,
+            modelID: modelID,
+            includeFunctionCallIDs: false,
+            warnings: &warnings
+        )
     }
     let preparedMessages = googleContentsWithSystemInstruction(systemText: systemText, contents: rawContents, modelID: modelID)
     var body: [String: JSONValue] = ["contents": .array(preparedMessages.contents)]

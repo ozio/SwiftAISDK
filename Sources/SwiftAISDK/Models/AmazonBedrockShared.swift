@@ -41,6 +41,25 @@ func bedrockImageFormat(for mimeType: String) -> String? {
     bedrockImageMimeTypes[mimeType]
 }
 
+func bedrockIsS3URL(_ value: String) -> Bool {
+    value.hasPrefix("s3://")
+}
+
+func bedrockImageFormat(forURL value: String) -> String? {
+    switch URL(string: value)?.pathExtension.lowercased() {
+    case "jpg", "jpeg":
+        return "jpeg"
+    case "png":
+        return "png"
+    case "gif":
+        return "gif"
+    case "webp":
+        return "webp"
+    default:
+        return nil
+    }
+}
+
 struct BedrockPreparedTools {
     var toolConfig: JSONValue?
     var warnings: [AIWarning]
@@ -205,7 +224,30 @@ func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?
 }
 
 func bedrockSupportsStrictToolSpec(modelID: String) -> Bool {
-    !modelID.contains("claude-opus-4-7") && !modelID.contains("claude-opus-4-8")
+    !bedrockAnthropicRejectsNewerSchemaFields(modelID: modelID)
+}
+
+func bedrockSupportsNativeStructuredOutput(modelID: String) -> Bool {
+    !bedrockAnthropicRejectsNewerSchemaFields(modelID: modelID)
+}
+
+private func bedrockAnthropicRejectsNewerSchemaFields(modelID: String) -> Bool {
+    [
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5"
+    ].contains { modelID.contains($0) }
+}
+
+func bedrockSanitizeToolName(_ name: String) -> String {
+    let sanitized = name.replacingOccurrences(
+        of: #"[^A-Za-z0-9_-]"#,
+        with: "",
+        options: .regularExpression
+    )
+    return sanitized.isEmpty ? "_" : sanitized
 }
 
 func bedrockUsesAnthropicProviderTools(tools: [String: JSONValue], modelID: String) -> Bool {
@@ -475,7 +517,28 @@ func bedrockToolResultContentPart(_ item: JSONValue, documentCounter: inout Int)
         return .object(["text": item["text"] ?? item["value"] ?? .string("")])
     case "image-data", "file-data", "file":
         let mediaType = item["mediaType"]?.stringValue ?? item["mimeType"]?.stringValue ?? "application/octet-stream"
-        let data = item["data"]?.stringValue ?? ""
+        if item["type"]?.stringValue == "file",
+           item["data"]?["type"]?.stringValue == "url" {
+            guard let imageFormat = bedrockImageFormat(for: mediaType),
+                  let url = item["data"]?["url"]?.stringValue,
+                  bedrockIsS3URL(url) else {
+                throw AIError.invalidArgument(
+                    argument: "toolResult.content.data",
+                    message: "Amazon Bedrock tool result URL content supports only s3:// image URLs with a supported image MIME type."
+                )
+            }
+            return .object([
+                "image": .object([
+                    "format": .string(imageFormat),
+                    "source": .object([
+                        "s3Location": .object(["uri": .string(url)])
+                    ])
+                ])
+            ])
+        }
+        let data = item["data"]?["type"]?.stringValue == "data"
+            ? item["data"]?["data"]?.stringValue ?? ""
+            : item["data"]?.stringValue ?? ""
         if let imageFormat = bedrockImageFormat(for: mediaType) {
             return .object([
                 "image": .object([

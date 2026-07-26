@@ -6,54 +6,59 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Baseline upstream ref: `vercel/ai@184dc39c2b2cf8cb9302d81f87edcf2f665cfd8c`
-- Current upstream ref: `vercel/ai@11ee77873a5f2e783249579d41619ae2db2f026e`
+- Date: `2026-07-27`
+- Baseline upstream ref: `vercel/ai@6cd7c74acf0d7ec84dd58a841fc0e20970d6f2e8`
+- Current upstream ref: `vercel/ai@c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56`
 - Diff command:
 
   ```sh
-  git -C /tmp/vercel-ai-tests diff --name-status \
-    184dc39c2b2cf8cb9302d81f87edcf2f665cfd8c..11ee77873a5f2e783249579d41619ae2db2f026e \
-    -- 'packages/**/**.test.ts' 'packages/**/**.test.tsx'
+  git -C /tmp/vercel-ai-upstream-20260727.bjQKnU diff --name-status \
+    6cd7c74acf0d7ec84dd58a841fc0e20970d6f2e8..c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56 \
+    -- 'packages/**/**.test.ts' 'packages/**/**.test.tsx' \
+       'packages/**/**.test-d.ts'
   ```
 
 Status meanings:
 
 - `ported`: new upstream behavior is covered by Swift tests/runtime.
 - `covered`: existing Swift coverage already proves the changed behavior.
+- `deferred`: portable behavior was audited, but needs a broader public/runtime
+  design than this weekly batch.
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
 
-## 2026-06-30 Diff
+## 2026-07-27 Diff
 
-| Upstream test file | Status | Swift evidence / rationale |
+| Upstream test file(s) | Status | Swift evidence / rationale |
 | --- | --- | --- |
-| `packages/ai/src/generate-text/prune-messages.test.ts` | `ported` | `AiPruneMessagesUpstreamTests.swift` covers the selective approval-pruning regression: approval responses are pruned with their request/tool call, and unresolved approval responses do not survive as authority context. |
-| `packages/ai/src/generate-video/generate-video.test.ts` | `ported` | `AiGenerateVideoUpstreamTests.swift` covers `frameImages` / `inputReferences` facade semantics, normalization, precedence, and warnings. |
-| `packages/ai/src/model/as-video-model-v4.test.ts` | `out-of-scope` | JS V3-to-V4 adapter helper. Swift exposes one current `VideoModel` protocol and has no versioned adapter layer. |
-| `packages/ai/src/ui/convert-to-model-messages.test.ts` | `ported` | `AiConvertToModelMessagesUpstreamTests.swift` covers the persistent data-before-model-stream regression: data parts do not emit an empty assistant model message. |
-| `packages/alibaba/src/alibaba-video-model.test.ts` | `ported` | `AlibabaProviderLanguageAndVideoTests.swift` covers first/last frame and input-reference serialization/warnings for Alibaba video models. |
-| `packages/anthropic/src/anthropic-language-model.test.ts` | `ported` | `AnthropicProviderExecutedCodeExecutionUpstreamParityTests.anthropicStreamedSkillToolCallPreservesTextEditorDiscriminatorLikeUpstream` covers streamed `pptx` skill reads preserving `text_editor_code_execution` after an empty first input delta. |
-| `packages/bytedance/src/bytedance-video-model.test.ts` | `ported` | `ByteDanceProviderTests.swift` covers first/last frame and input-reference serialization. |
-| `packages/fal/src/fal-video-model.test.ts` | `no-swift-action` | Upstream only adds default option baselines with `frameImages: undefined` / `inputReferences: undefined`; no new serializer behavior exists to port. Existing Fal video tests cover current Swift request behavior. |
-| `packages/gateway/src/gateway-video-model.test.ts` | `ported` | `GatewayTests.swift` covers `frameImages` and `inputReferences` request serialization. |
-| `packages/google-vertex/src/google-vertex-video-model.test.ts` | `ported` | `GoogleVertexMediaAndMaaSTests.swift` covers first/last frame and reference-image serialization. |
-| `packages/google/src/google-video-model.test.ts` | `ported` | `GoogleGenerativeAIVideoAndInteractionsTests.swift` covers first/last frame and reference-image serialization. |
-| `packages/harness-codex/src/codex-instructions.test.ts` | `out-of-scope` | Codex harness start-frame/instructions timing is an upstream harness product surface. SwiftAISDK does not expose `@ai-sdk/harness-codex` or its bridge/session protocol. |
-| `packages/harness-deepagents/src/deepagents-harness.test.ts` | `out-of-scope` | DeepAgents harness built-in tool/default context-window tests were removed upstream. SwiftAISDK does not expose `@ai-sdk/harness-deepagents`. |
-| `packages/klingai/src/klingai-video-model.test.ts` | `ported` | `KlingAIProviderTests.swift` covers first/last frame, multi-image, reference-to-video input references, and unsupported-combination warnings. |
-| `packages/moonshotai/src/moonshotai-provider.test.ts` | `ported` | `MoonshotAIProviderUpstreamTests.swift` covers `kimi-k*` structured outputs and top-level `$schema` stripping; legacy Moonshot models still use JSON object mode. |
-| `packages/openai/src/chat/openai-chat-language-model.test.ts` | `ported` | `OpenAIChatLanguageModelUpstreamTests.swift` covers Azure content-filter stream chunks with empty `choices` and trailing filter metadata while preserving text deltas. |
-| `packages/openai/src/openai-provider.test.ts` | `covered` | `OpenAIResponsesProviderIdentityTests.swift` already covers default language model routing to `/v1/responses` and chat model routing to `/v1/chat/completions`. |
-| `packages/openai/src/responses/openai-responses-language-model.test.ts` | `covered` | `OpenAIResponsesStreamingMiscAndErrorsTests.swift` covers Chat Completions stream mismatch errors; existing OpenAI Responses streaming tests cover the fresh citation/phase slices. |
-| `packages/prodia/src/prodia-video-model.test.ts` | `no-swift-action` | Upstream only adds default option baselines with `frameImages: undefined` / `inputReferences: undefined`; no new serializer behavior exists to port. Existing Prodia video tests cover current Swift request behavior. |
-| `packages/react/src/use-chat.ui.test.tsx` | `out-of-scope` | React hook identity/rerender behavior for `useChat({ id: undefined })` is a framework adapter surface. SwiftAISDK has typed `AIChatSession`, not React hooks. |
-| `packages/replicate/src/replicate-video-model.test.ts` | `no-swift-action` | Upstream only adds default option baselines with `frameImages: undefined` / `inputReferences: undefined`; no new serializer behavior exists to port. Existing Replicate video tests cover current Swift request behavior. |
-| `packages/workflow/src/workflow-agent-compat.test.ts` | `out-of-scope` | WorkflowAgent reasoning propagation is an upstream `@ai-sdk/workflow` product surface. SwiftAISDK does not expose WorkflowAgent or WorkflowChatTransport. |
-| `packages/workflow/src/workflow-agent.test.ts` | `out-of-scope` | Same `@ai-sdk/workflow` product-surface exclusion; generation-setting propagation belongs to WorkflowAgent, not SwiftAISDK's current public API. |
-| `packages/workflow/src/workflow-chat-transport.stream-repair.test.ts` | `out-of-scope` | New JS `WorkflowChatTransport` UIMessageChunk repair tests target workflow transport replay/interleaving behavior. SwiftAISDK has no WorkflowChatTransport chunk stream surface. |
-| `packages/xai/src/xai-video-model.test.ts` | `ported` | `XAIProviderTests.swift` covers video first-frame editing, input references, unsupported last-frame/reference combinations, and warnings. |
+| `packages/ai/src/generate-text/tool-approval-signature.test.ts` | `ported` | `ToolPreparation.swift` now uses the versioned injective JSON-array HMAC payload, ECMAScript number/string serialization and UTF-16 key ordering, verifies safe legacy signatures, and closes newline/control-character retupling. `AiToolApprovalSignatureUpstreamTests.swift` carries Node-fixed interoperability vectors plus the upstream collision and compatibility regressions. |
+| `packages/ai/src/prompt/convert-to-language-model-prompt.test.ts` | `ported` | `PromptConversion.swift` deep-merges message-level provider metadata into the preceding tool content part at each combined-message boundary. `AiConvertToLanguageModelPromptUpstreamTests.swift` proves part values override message values and later message metadata remains top-level. |
+| `packages/ai/src/transcribe/transcribe.test.ts`; `packages/provider-utils/src/detect-media-type.test.ts` | `ported` | `MediaType.swift` recognizes ISO-BMFF `ftyp` audio in an audio context, keeps generic MP4 detection as video, and bounds raw/base64 ID3 scanning through the upstream 128 KiB edge. `MediaTypeTests.swift` covers both representations and the exact limit. |
+| `packages/ai/src/generate-text/stream-text-timeout.test.ts`; `packages/ai/src/generate-text/stream-text.test-d.ts`; `packages/ai/src/prompt/prepare-language-model-call-options.test.ts`; `packages/ai/src/util/create-stitchable-stream.test.ts` | `deferred` | The new `firstChunkMs` timeout, semantic-content-only `chunkMs` reset, per-step re-arming, and error/cancellation timer cleanup need one structured Swift timeout API. Current Swift only exposes total `timeoutNanoseconds`; a narrow internal timer patch would not provide faithful public parity. |
+| `packages/ai/src/ui-message-stream/read-ui-message-stream.test.ts` | `deferred` | The regression scopes repeated tool-call ids to the current model step and searches older steps only for late outputs. Swift's reducer has a global id index and `LanguageStreamPart` has no explicit step markers, so this needs a coordinated stream-enum/reducer change. |
+| `packages/ai/src/text-stream/pipe-text-stream-to-response.test.ts`; `packages/ai/src/util/write-to-server-response.test.ts` | `out-of-scope` | These tests require Node `ServerResponse` helpers to return promises and reject on stream read/write errors. SwiftAISDK has no Node response-piping surface; `AsyncThrowingStream` errors already reach Swift consumers through iteration. |
+| `packages/amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts`; `packages/amazon-bedrock/src/amazon-bedrock-prepare-tools.test.ts`; `packages/amazon-bedrock/src/anthropic/amazon-bedrock-anthropic-provider.test.ts`; `packages/amazon-bedrock/src/convert-to-amazon-bedrock-chat-messages.test.ts` | `ported` | `AmazonBedrockLanguageModel.swift`, `AmazonBedrockShared.swift`, and the shared Anthropic adapter now encode slash-containing ARN model ids, preserve supported exact case-sensitive `s3://` image sources in messages and tool results, sanitize replayed tool names, sanitize native-output schemas, and omit strict/native structured-output fields for Claude families Bedrock rejects. `AmazonBedrockTests.swift` carries focused ARN, S3, malformed-S3, tool-name, schema, and capability regressions. |
+| `packages/anthropic/src/anthropic-language-model.test.ts`; `packages/anthropic/src/anthropic-unknown-model-max-output-tokens.test.ts`; `packages/anthropic/src/convert-to-anthropic-prompt.test.ts` | `ported` | The provider changes are covered by `AnthropicModels.swift`, `AnthropicOptions.swift`, and `AnthropicParsing.swift`: Claude Opus 5 and unknown-Claude capability defaults, conservative legacy/non-Claude handling, default-token warnings, `fallbacks: default`, disabled-thinking effort limits, JSON-tool parallel warnings, and thinking-token usage. Mid-conversation `toolChanges` in `AIMessage.providerMetadata` produce mapped tool-addition/removal blocks and both required beta headers; toolChanges-only messages omit empty text without consuming a cache breakpoint, while initial-system changes warn and are ignored. Focused Anthropic parity tests cover these paths. |
+| `packages/gateway/src/gateway-language-model.test.ts` | `covered` | The only test change deletes the retired `hipaaCompliant` option cases. Swift has no typed HIPAA option to remove, remaining Gateway provider options continue through the existing JSON pass-through tests, and the stale compliance wording was removed from generated provider docs. |
+| `packages/google/src/convert-to-google-messages.test.ts`; `packages/google/src/google-language-model.test.ts`; `packages/google/src/google-model-capabilities.test.ts`; `packages/google/src/google-prepare-tools.test.ts` | `ported` | `GoogleModelCapabilities.swift` and the GenerateContent request/parsing paths now default unknown future Gemini ids to newest supported behavior while retaining known legacy boundaries, preserve valid unsigned parallel calls after a signed standard call, surface `responseId` once, associate repeated code-execution results with their call, and apply provider-specific standard function-id handling. The focused Google and Vertex tests mirror these changed fixtures. |
+| `packages/google/src/realtime/google-realtime-event-mapper.test.ts` | `out-of-scope` | The new `goAway`, `sessionResumptionUpdate`, and distinct `generationComplete` lifecycle events belong to the Google Live WebSocket protocol. SwiftAISDK currently has no realtime/WebSocket model surface, so mapping these JS realtime events would create an orphan API. |
+| `packages/openai/src/image/openai-image-model.test.ts`; `packages/openai/src/openai-forward-compatible-defaults.test.ts`; `packages/openai/src/openai-language-model-capabilities.test.ts`; `packages/openai/src/responses/convert-to-openai-responses-input-tool-search.test.ts`; `packages/openai/src/responses/convert-to-openai-responses-input.test.ts`; `packages/openai/src/responses/openai-responses-language-model.test.ts`; `packages/openai/src/responses/openai-responses-prepare-tools.test.ts`; `packages/openai/src/tool/programmatic-tool-calling.test-d.ts` | `ported` | The OpenAI-compatible Chat/Responses/image changes add forward-compatible GPT reasoning and image-family defaults, preserve stored tool-search ids, and support programmatic tool definitions, caller linkage, output schemas, generated/streamed program items, forced tool choice, and multi-step continuation. Chat reasoning requests now omit every unsupported sampling/penalty field, surface matching generate/stream warnings, and always remove `topLogprobs`, including GPT-5.1+ effort `none`. `OpenAIProgrammaticAndForwardCompatibilityTests.swift`, `OpenAIChatTests.swift`, and updated OpenAI-compatible tests cover the changed request, parse, warning, and stream shapes. |
+| `packages/devtools/src/viewer/client/theme.test.ts`; `packages/devtools/tests/e2e/theme.e2e.test.ts` | `out-of-scope` | These are browser viewer theme persistence and end-to-end DOM tests for the untracked `@ai-sdk/devtools` web application. They do not exercise a provider-facing Swift runtime contract. |
+| `packages/harness/src/agent/harness-agent-settings.test-d.ts`; `packages/harness/src/agent/harness-agent-tool-result-continuation.test.ts`; `packages/harness/src/agent/harness-agent.test.ts`; `packages/harness/src/agent/internal/run-prompt.test.ts`; `packages/harness/src/agent/internal/turn-telemetry.test.ts`; `packages/harness/src/agent/internal/validate-tool-call.test.ts`; `packages/harness/src/agent/telemetry-integration.test.ts`; `packages/harness/src/bridge/index.test.ts`; `packages/harness/src/utils/sandbox-channel.test.ts` | `out-of-scope` | `@ai-sdk/harness` is an untracked JavaScript coding-agent runtime with its own bridge, sandbox channel, telemetry, and continuation protocol. SwiftAISDK's `AIAgent` surface does not expose this harness product contract. |
+| `packages/harness-claude-code/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-claude-code/src/bridge/json-schema-to-zod.test.ts`; `packages/harness-claude-code/src/claude-code-bridge-protocol.test.ts`; `packages/harness-claude-code/src/claude-code-harness.test.ts` | `out-of-scope` | Claude Code bridge framing, Zod conversion, process protocol, and harness lifecycle belong to the untracked JavaScript harness adapter rather than the Anthropic provider implementation. |
+| `packages/harness-codex/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-codex/src/bridge/index.test.ts`; `packages/harness-codex/src/codex-bridge-protocol.test.ts`; `packages/harness-codex/src/codex-harness.test.ts`; `packages/harness-codex/src/codex-instructions.test.ts` | `out-of-scope` | These tests cover the untracked Codex CLI harness bridge, child-process protocol, event translation, and instruction discovery; none maps to SwiftAISDK's provider-facing APIs. |
+| `packages/harness-deepagents/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-deepagents/src/bridge/tool-filtering.test.ts`; `packages/harness-deepagents/src/deepagents-bridge-protocol.test.ts` | `out-of-scope` | DeepAgents bridge events and tool filtering are adapter-specific JavaScript harness behavior, not a tracked Swift provider or core surface. |
+| `packages/harness-opencode/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-opencode/src/bridge/opencode-events.test.ts`; `packages/harness-opencode/src/opencode-bridge-protocol.test.ts` | `out-of-scope` | OpenCode event translation and bridge framing are untracked coding-harness process behavior with no SwiftAISDK protocol counterpart. |
+| `packages/harness-pi/src/pi-auth.test.ts`; `packages/harness-pi/src/pi-model-resolver.test.ts`; `packages/harness-pi/src/pi-session.test.ts` | `out-of-scope` | Pi credential loading, model resolution, and session integration belong to the untracked JavaScript harness adapter and do not alter provider-facing Swift behavior. |
+| `packages/langchain/src/adapter.test.ts`; `packages/langchain/src/utils.test.ts` | `no-swift-action` | The changes exercise the untracked TypeScript LangChain stream adapter and JavaScript utility conversions. SwiftAISDK has no LangChain JS object model or event stream to translate. |
+| `packages/workflow/src/stream-text-iterator.test.ts` | `no-swift-action` | This test covers iterator behavior inside the untracked JavaScript workflow package. Swift async-sequence streaming is independent of the workflow serialization/runtime contract. |
 
-Current result: all changed tracked SwiftAISDK surfaces in this diff are
-`ported` or `covered`; remaining changed files are framework/harness/workflow
-product surfaces or no-op default baselines.
+Coverage check: the upstream command returns 64 paths, and the table references
+64 unique paths with no missing, extra, or duplicate entries.
+
+The baseline ref already contains the `generateText` abort-during-tool regression
+and loose known UI-chunk compatibility tests, so those files do not appear in
+this ref-to-ref list. The abort behavior was nevertheless ported for the npm
+`ai@7.0.31 -> 7.0.37` audit; the Zod wire-schema change has no direct typed
+Swift decoder surface. No `@ai-sdk/react` test file changed in this diff.

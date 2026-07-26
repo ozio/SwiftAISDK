@@ -30,7 +30,7 @@ struct OpenAIResponsesStreamingToolCalls {
                 return handleApplyPatchAdded(item: item, index: index)
             case "tool_search_call":
                 return handleToolSearchAdded(item: item, index: index)
-            case "local_shell_call", "shell_call", "shell_call_output", "tool_search_output", "mcp_call", "mcp_list_tools", "mcp_approval_request":
+            case "program", "program_output", "local_shell_call", "shell_call", "shell_call_output", "tool_search_output", "mcp_call", "mcp_list_tools", "mcp_approval_request":
                 return []
             default:
                 break
@@ -131,6 +131,12 @@ struct OpenAIResponsesStreamingToolCalls {
                 return handleToolSearchDone(item: item, index: index)
             case "tool_search_output":
                 return handleToolSearchOutputDone(item: item, index: index)
+            case "program":
+                buffers[index] = nil
+                return openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases).map { [.toolCall($0)] } ?? []
+            case "program_output":
+                buffers[index] = nil
+                return openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases).map { [.toolResult($0)] } ?? []
             case "shell_call_output":
                 buffers[index] = nil
                 return openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases).map { [.toolResult($0)] } ?? []

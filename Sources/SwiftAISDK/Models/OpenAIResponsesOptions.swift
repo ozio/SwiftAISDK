@@ -128,6 +128,7 @@ func openAIResponsesInputMessageJSON(
     processedApprovalIDs: inout Set<String>,
     toolNamespaces: [String: JSONValue] = [:],
     customToolNames: Set<String> = [],
+    programmaticToolNames: Set<String> = [],
     providerID: String = "openai",
     useDeveloperRoleForSystem: Bool = false,
     warnings: inout [AIWarning]
@@ -166,6 +167,9 @@ func openAIResponsesInputMessageJSON(
                 if result.toolName == "apply_patch" {
                     return [.object(openAIResponsesApplyPatchOutput(result))]
                 }
+                if programmaticToolNames.contains(result.toolName) {
+                    return [.object(openAIResponsesProgrammaticOutput(result, store: store))]
+                }
                 if customToolNames.contains(result.toolName) {
                     var warnings: [AIWarning] = []
                     return [.object([
@@ -175,11 +179,15 @@ func openAIResponsesInputMessageJSON(
                     ])]
                 }
                 var warnings: [AIWarning] = []
-                return [.object([
+                var item: [String: JSONValue] = [
                     "type": .string("function_call_output"),
                     "call_id": .string(result.toolCallID),
                     "output": openResponsesToolResultOutput(result, providerID: providerID, warnings: &warnings)
-                ])]
+                ]
+                if let caller = openAIResponsesCaller(from: result.providerMetadata) {
+                    item["caller"] = caller
+                }
+                return [.object(item)]
             default:
                 return []
             }
@@ -225,6 +233,10 @@ func openAIResponsesInputMessageJSON(
                     output.append(openAIResponsesToolSearchCallItem(call, store: store))
                     break
                 }
+                if programmaticToolNames.contains(call.name) {
+                    output.append(openAIResponsesProgrammaticCallItem(call, store: store))
+                    break
+                }
                 if call.providerExecuted {
                     if store, let itemID = openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue {
                         output.append(.object(["type": .string("item_reference"), "id": .string(itemID)]))
@@ -265,6 +277,10 @@ func openAIResponsesInputMessageJSON(
                 }
                 if result.toolName == "shell" {
                     output.append(.object(openAIResponsesShellOutput(result)))
+                    break
+                }
+                if programmaticToolNames.contains(result.toolName) {
+                    output.append(.object(openAIResponsesProgrammaticOutput(result, store: store)))
                     break
                 }
                 if !store {
@@ -460,7 +476,45 @@ func openAIResponsesFunctionCallItem(_ call: AIToolCall, toolNamespaces: [String
     if let namespace = openAIResponsesNamespace(for: call, toolNamespaces: toolNamespaces) {
         callObject["namespace"] = namespace
     }
+    if let caller = openAIResponsesCaller(from: call.providerMetadata) {
+        callObject["caller"] = caller
+    }
     return callObject
+}
+
+func openAIResponsesProgrammaticCallItem(_ call: AIToolCall, store: Bool) -> JSONValue {
+    let itemID = openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue
+    if store, let itemID {
+        return .object(["type": .string("item_reference"), "id": .string(itemID)])
+    }
+
+    let input = openAIResponsesParsedToolArguments(call.arguments)
+    var item: [String: JSONValue] = [
+        "type": .string("program"),
+        "id": .string(itemID ?? call.id),
+        "call_id": .string(call.id),
+        "code": input["code"] ?? .string(""),
+        "fingerprint": input["fingerprint"] ?? .string("")
+    ]
+    return .object(item)
+}
+
+func openAIResponsesProgrammaticOutput(_ result: AIToolResult, store: Bool) -> [String: JSONValue] {
+    let itemID = openAIResponsesItemID(from: result.providerMetadata)
+    if store, let itemID {
+        return ["type": .string("item_reference"), "id": .string(itemID)]
+    }
+
+    let output = result.modelOutput ?? result.result
+    let value = output["value"] ?? output
+    var item: [String: JSONValue] = [
+        "type": .string("program_output"),
+        "id": .string(itemID ?? result.toolCallID),
+        "call_id": .string(result.toolCallID),
+        "result": value["result"] ?? .string(""),
+        "status": value["status"] ?? .string("completed")
+    ]
+    return item
 }
 
 func openAIResponsesToolSearchCallItem(_ call: AIToolCall, store: Bool) -> JSONValue {
@@ -649,6 +703,15 @@ func openAIResponsesNamespace(for call: AIToolCall, toolNamespaces: [String: JSO
         ?? toolNamespaces[call.name]
 }
 
+func openAIResponsesCaller(from providerMetadata: [String: JSONValue]) -> JSONValue? {
+    let options = openAIResponsesOpenAIOptions(from: providerMetadata)
+    guard var caller = options["caller"]?.objectValue else { return nil }
+    if let callerID = caller.removeValue(forKey: "callerId") {
+        caller["caller_id"] = callerID
+    }
+    return .object(caller)
+}
+
 func openAIResponsesShouldSkipToolResult(_ result: AIToolResult) -> Bool {
     guard result.result["type"]?.stringValue == "execution-denied" else { return false }
     return result.providerMetadata["openai"]?["approvalId"]?.stringValue != nil
@@ -823,9 +886,10 @@ func openAIResponsesFinalizeReasoningOptions(isReasoningModel: Bool, options: in
     options.removeValue(forKey: "reasoning")
 }
 
-func openAIResponsesStripsSamplingSettings(isReasoningModel: Bool, options: [String: JSONValue]) -> Bool {
+func openAIResponsesStripsSamplingSettings(modelID: String, isReasoningModel: Bool, options: [String: JSONValue]) -> Bool {
     guard isReasoningModel else { return false }
     return options["reasoning"]?["effort"]?.stringValue != "none"
+        || !openAILanguageModelCapabilities(modelID).supportsNonReasoningParameters
 }
 
 func openAIResponsesOpenAIBackedWarnings(options: [String: JSONValue]) -> [AIWarning] {
@@ -877,10 +941,52 @@ func openAIResponsesAppendInclude(_ value: String, to options: inout [String: JS
 }
 
 func openAIIsReasoningModel(_ modelID: String) -> Bool {
-    modelID.hasPrefix("o1")
-        || modelID.hasPrefix("o3")
-        || modelID.hasPrefix("o4-mini")
-        || (modelID.hasPrefix("gpt-5") && !modelID.hasPrefix("gpt-5-chat"))
+    let capabilities = openAILanguageModelCapabilities(modelID)
+    return capabilities.isReasoningModel
+}
+
+struct OpenAILanguageModelCapabilities {
+    var isReasoningModel: Bool
+    var supportsNonReasoningParameters: Bool
+}
+
+func openAILanguageModelCapabilities(_ modelID: String) -> OpenAILanguageModelCapabilities {
+    let oSeriesVersion = openAIOSeriesVersion(modelID)
+    let gptVersion = openAIGPTVersion(modelID)
+    let isGPTChatModel = gptVersion?.minor == nil && (gptVersion?.variant?.hasPrefix("chat") ?? false)
+    let isReasoningModel = oSeriesVersion != nil
+        || (gptVersion.map { $0.major >= 5 } == true && !isGPTChatModel)
+    let supportsNonReasoningParameters = gptVersion.map {
+        $0.major > 5 || ($0.major == 5 && ($0.minor ?? 0) >= 1)
+    } ?? false
+    return OpenAILanguageModelCapabilities(
+        isReasoningModel: isReasoningModel,
+        supportsNonReasoningParameters: supportsNonReasoningParameters
+    )
+}
+
+private func openAIOSeriesVersion(_ modelID: String) -> Int? {
+    guard modelID.first == "o" else { return nil }
+    let remainder = modelID.dropFirst()
+    let digits = remainder.prefix(while: \.isNumber)
+    guard !digits.isEmpty,
+          remainder.dropFirst(digits.count).first.map({ $0 == "-" }) ?? true else {
+        return nil
+    }
+    return Int(digits)
+}
+
+private func openAIGPTVersion(_ modelID: String) -> (major: Int, minor: Int?, variant: String?)? {
+    guard modelID.hasPrefix("gpt-") else { return nil }
+    let components = modelID.dropFirst(4).split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+    let versionComponents = components[0].split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+    guard let major = Int(versionComponents[0]),
+          versionComponents.count < 2 || Int(versionComponents[1]) != nil else {
+        return nil
+    }
+    let minor = versionComponents.count == 2 ? Int(versionComponents[1]) : nil
+    let variant = components.count == 2 && !components[1].isEmpty ? String(components[1]) : nil
+    return (major, minor, variant)
 }
 
 func openAIResponsesAllowedToolsChoice(from value: JSONValue) -> JSONValue {

@@ -1,14 +1,25 @@
 import Foundation
 
-func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (tools: [JSONValue], customToolNames: Set<String>) {
+func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
+    tools: [JSONValue],
+    customToolNames: Set<String>,
+    programmaticToolNames: Set<String>
+) {
     var customToolNames: Set<String> = []
+    var programmaticToolNames: Set<String> = []
     var namespaceIndexes: [String: Int] = [:]
     var mapped: [JSONValue] = []
     for (name, schema) in tools {
         let object = schema.objectValue
         let providerToolID = object?["id"]?.stringValue
         if object?["type"]?.stringValue == "provider" || providerToolID?.hasPrefix("openai.") == true {
-            if let tool = try openAIResponsesProviderTool(name: object?["name"]?.stringValue ?? name, id: providerToolID ?? name, args: object?["args"]?.objectValue ?? [:], customToolNames: &customToolNames) {
+            if let tool = try openAIResponsesProviderTool(
+                name: object?["name"]?.stringValue ?? name,
+                id: providerToolID ?? name,
+                args: object?["args"]?.objectValue ?? [:],
+                customToolNames: &customToolNames,
+                programmaticToolNames: &programmaticToolNames
+            ) {
                 mapped.append(tool)
             }
             continue
@@ -39,6 +50,12 @@ func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (tools: [JS
         if let deferLoading = openAIOptions?["deferLoading"] ?? openAIOptions?["defer_loading"] {
             function["defer_loading"] = deferLoading
         }
+        if let allowedCallers = openAIOptions?["allowedCallers"] ?? openAIOptions?["allowed_callers"] {
+            function["allowed_callers"] = allowedCallers
+        }
+        if let outputSchema = openAIOptions?["outputSchema"] ?? openAIOptions?["output_schema"] {
+            function["output_schema"] = outputSchema
+        }
         if let namespace = openAIOptions?["namespace"]?.objectValue,
            let namespaceName = namespace["name"]?.stringValue,
            let namespaceDescription = namespace["description"]?.stringValue {
@@ -67,7 +84,7 @@ func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (tools: [JS
             mapped.append(.object(function))
         }
     }
-    return (mapped, customToolNames)
+    return (mapped, customToolNames, programmaticToolNames)
 }
 
 func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> [String: String] {
@@ -96,6 +113,8 @@ func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> 
             aliases["apply_patch"] = toolName
         case "openai.tool_search":
             aliases["tool_search"] = toolName
+        case "openai.programmatic_tool_calling":
+            aliases["programmatic_tool_calling"] = toolName
         default:
             break
         }
@@ -103,7 +122,13 @@ func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> 
     return aliases
 }
 
-func openAIResponsesProviderTool(name: String, id: String, args: [String: JSONValue], customToolNames: inout Set<String>) throws -> JSONValue? {
+func openAIResponsesProviderTool(
+    name: String,
+    id: String,
+    args: [String: JSONValue],
+    customToolNames: inout Set<String>,
+    programmaticToolNames: inout Set<String>
+) throws -> JSONValue? {
     switch id {
     case "openai.file_search":
         var tool: [String: JSONValue] = ["type": .string("file_search")]
@@ -197,6 +222,9 @@ func openAIResponsesProviderTool(name: String, id: String, args: [String: JSONVa
         if let description = args["description"] { tool["description"] = description }
         if let format = args["format"] { tool["format"] = format }
         return .object(tool)
+    case "openai.programmatic_tool_calling":
+        programmaticToolNames.insert(name)
+        return .object(["type": .string("programmatic_tool_calling")])
     case "openai.tool_search":
         var tool: [String: JSONValue] = ["type": .string("tool_search")]
         if let execution = args["execution"] { tool["execution"] = execution }
@@ -244,7 +272,11 @@ func openAIResponsesProviderTool(name: String, id: String, args: [String: JSONVa
     }
 }
 
-func openAIResponsesToolChoice(from value: JSONValue?, customToolNames: Set<String>) -> JSONValue? {
+func openAIResponsesToolChoice(
+    from value: JSONValue?,
+    customToolNames: Set<String>,
+    programmaticToolNames: Set<String> = []
+) -> JSONValue? {
     if let string = value?.stringValue {
         switch string {
         case "auto", "none", "required":
@@ -260,6 +292,9 @@ func openAIResponsesToolChoice(from value: JSONValue?, customToolNames: Set<Stri
     case "tool":
         guard let name = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue else { return nil }
         let providerToolTypes: Set<String> = ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"]
+        if programmaticToolNames.contains(name) || name == "programmatic_tool_calling" {
+            return .object(["type": .string("programmatic_tool_calling")])
+        }
         if providerToolTypes.contains(name) {
             return .object(["type": .string(name)])
         }

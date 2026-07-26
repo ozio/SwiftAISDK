@@ -187,6 +187,13 @@ func openAIResponsesToolCall(
     switch type {
     case "function_call":
         guard let name = item["name"]?.stringValue else { return nil }
+        var extra = item["namespace"].map { ["namespace": $0] } ?? [:]
+        if var caller = item["caller"]?.objectValue {
+            if let callerID = caller.removeValue(forKey: "caller_id") {
+                caller["callerId"] = callerID
+            }
+            extra["caller"] = .object(caller)
+        }
         return AIToolCall(
             id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "function-call",
             name: name,
@@ -194,8 +201,20 @@ func openAIResponsesToolCall(
             providerMetadata: openAIResponsesItemProviderMetadata(
                 itemID: item["id"]?.stringValue,
                 providerID: providerID,
-                extra: item["namespace"].map { ["namespace": $0] } ?? [:]
+                extra: extra
             ),
+            rawValue: item
+        )
+    case "program":
+        return AIToolCall(
+            id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "program-call",
+            name: toolNameAliases["programmatic_tool_calling"] ?? "programmatic_tool_calling",
+            arguments: openAIResponsesJSONString(.object([
+                "code": item["code"] ?? .string(""),
+                "fingerprint": item["fingerprint"] ?? .string("")
+            ])) ?? "{}",
+            providerExecuted: true,
+            providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID),
             rawValue: item
         )
     case "custom_tool_call":
@@ -352,6 +371,17 @@ func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCal
             toolCallID: toolCallIDOverride ?? item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "tool-search-output",
             toolName: toolNameAliases["tool_search"] ?? "tool_search",
             result: .object(["tools": item["tools"] ?? .array([JSONValue]())]),
+            providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID)
+        )
+    case "program_output":
+        return AIToolResult(
+            toolCallID: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "program-output",
+            toolName: toolNameAliases["programmatic_tool_calling"] ?? "programmatic_tool_calling",
+            result: .object([
+                "result": item["result"] ?? .string(""),
+                "status": item["status"] ?? .string("completed")
+            ]),
+            providerExecuted: true,
             providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID)
         )
     case "shell_call_output":

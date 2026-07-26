@@ -8,6 +8,7 @@ func googlePrepareTools(
 ) -> GooglePreparedTools? {
     guard !tools.isEmpty else { return nil }
 
+    let capabilities = googleModelCapabilities(for: modelID)
     var warnings: [AIWarning] = []
     let providerResults = tools.compactMap { name, schema -> GooglePreparedProviderTool? in
         let object = schema.objectValue
@@ -25,7 +26,7 @@ func googlePrepareTools(
         return object["type"]?.stringValue == "provider" || object["id"]?.stringValue?.hasPrefix("google.") == true
     }
 
-    if hasFunctionTools, hasProviderTools, !googleIsGemini3OrNewer(modelID) {
+    if hasFunctionTools, hasProviderTools, !capabilities.usesGemini3Features {
         warnings.append(AIWarning(type: "unsupported", feature: "combination of function and provider-defined tools"))
     }
     if !isVertexProvider, tools.values.contains(where: { schema in
@@ -39,7 +40,7 @@ func googlePrepareTools(
     }
 
     if hasProviderTools {
-        if hasFunctionTools, googleIsGemini3OrNewer(modelID), !providerTools.isEmpty {
+        if hasFunctionTools, capabilities.usesGemini3Features, !providerTools.isEmpty {
             var prepared = providerTools
             prepared.append(.object(["functionDeclarations": .array(functionDeclarations)]))
             var config = googleToolConfig(from: toolChoice, hasStrictTools: googleHasStrictTools(tools), defaultMode: "VALIDATED")
@@ -148,7 +149,7 @@ func googleProviderTool(name: String, schema: JSONValue, modelID: String) -> Goo
         }
         return GooglePreparedProviderTool(tool: .object(["codeExecution": .object([:])]))
     case "google.file_search":
-        guard modelID.contains("gemini-2.5") || modelID.contains("gemini-3") else {
+        guard googleModelCapabilities(for: modelID).supportsFileSearch else {
             return googleUnsupportedProviderTool(id, details: "The file search tool is only supported with Gemini 2.5 models and Gemini 3 models.")
         }
         return GooglePreparedProviderTool(tool: .object(["fileSearch": .object(args)]))
@@ -229,12 +230,9 @@ func googleHasStrictTools(_ tools: [String: JSONValue]) -> Bool {
 }
 
 func googleIsGemini2OrNewer(_ modelID: String) -> Bool {
-    modelID.contains("gemini-2")
-        || modelID.contains("gemini-3")
-        || modelID.contains("nano-banana")
-        || ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"].contains(modelID)
+    googleModelCapabilities(for: modelID).supportsGemini2Tools
 }
 
 func googleIsGemini3OrNewer(_ modelID: String) -> Bool {
-    modelID.contains("gemini-3")
+    googleModelCapabilities(for: modelID).usesGemini3Features
 }

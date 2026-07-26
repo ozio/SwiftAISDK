@@ -45,7 +45,7 @@ import Testing
     #expect(requests.count == 4)
     #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
     #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.12" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.14" })
 }
 
 @Test func openAICompatibleStreamsIncludeUsageWhenEnabled() async throws {
@@ -385,7 +385,7 @@ import Testing
     ))
 
     let imageBody = try decodeJSONBody(try #require((await imageTransport.requests()).first?.body))
-    #expect(imageBody["response_format"]?.stringValue == "b64_json")
+    #expect(imageBody["response_format"]?.stringValue == "url")
     #expect(imageBody["style"]?.stringValue == "camel")
     #expect(imageBody["test-provider"] == nil)
     #expect(imageBody["testProvider"] == nil)
@@ -506,13 +506,26 @@ import Testing
         prompt: "cat",
         providerOptions: [
             "test-provider": ["style": "raw"],
-            "testProvider": ["style": "camel", "response_format": "url"]
+            "testProvider": [
+                "style": "camel",
+                "response_format": "url",
+                "quality": "high",
+                "output_format": "jpeg",
+                "output_compression": 80,
+                "background": "opaque",
+                "provider_extension": "preserved"
+            ]
         ]
     ))
 
     let imageBody = try decodeJSONBody(try #require((await imageTransport.requests()).first?.body))
     #expect(imageBody["style"]?.stringValue == "camel")
-    #expect(imageBody["response_format"]?.stringValue == "b64_json")
+    #expect(imageBody["response_format"]?.stringValue == "url")
+    #expect(imageBody["quality"]?.stringValue == "high")
+    #expect(imageBody["output_format"]?.stringValue == "jpeg")
+    #expect(imageBody["output_compression"]?.intValue == 80)
+    #expect(imageBody["background"]?.stringValue == "opaque")
+    #expect(imageBody["provider_extension"]?.stringValue == "preserved")
     #expect(imageBody["test-provider"] == nil)
     #expect(imageBody["testProvider"] == nil)
 }

@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.16")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.20")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-mini")
     #expect(body["messages"]?[1]?["content"]?.stringValue == "Hi")
@@ -113,7 +113,7 @@ import Testing
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
     let model = try provider.chatModel("gpt-5.1")
 
-    _ = try await model.generate(LanguageModelRequest(
+    let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Hi")],
         providerOptions: [
             "openai": [
@@ -144,7 +144,10 @@ import Testing
     #expect(body["reasoning_effort"]?.stringValue == "none")
     #expect(body["verbosity"]?.stringValue == "high")
     #expect(body["logprobs"]?.boolValue == true)
-    #expect(body["top_logprobs"]?.intValue == 4)
+    #expect(body["top_logprobs"] == nil)
+    #expect(result.warnings == [
+        AIWarning(type: "other", message: "topLogprobs is not supported for reasoning models")
+    ])
     #expect(body["parallelToolCalls"] == nil)
     #expect(body["maxCompletionTokens"] == nil)
     #expect(body["serviceTier"] == nil)
@@ -154,6 +157,65 @@ import Testing
     #expect(body["safetyIdentifier"] == nil)
     #expect(body["textVerbosity"] == nil)
     #expect(body["openai"] == nil)
+}
+
+@Test func openAIChatReasoningWarningsMatchUpstreamForGenerateAndStream() async throws {
+    let request = LanguageModelRequest(
+        messages: [.user("Hi")],
+        temperature: 0.5,
+        topP: 0.7,
+        topK: 3,
+        presencePenalty: 0.3,
+        frequencyPenalty: 0.2,
+        providerOptions: [
+            "openai": [
+                "logprobs": 4,
+                "logitBias": ["50256": -100]
+            ]
+        ]
+    )
+    let expectedWarnings = [
+        AIWarning(type: "unsupported", feature: "topK"),
+        AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported for reasoning models"),
+        AIWarning(type: "unsupported", feature: "topP", message: "topP is not supported for reasoning models"),
+        AIWarning(type: "other", message: "logprobs is not supported for reasoning models"),
+        AIWarning(type: "unsupported", feature: "frequencyPenalty", message: "frequencyPenalty is not supported for reasoning models"),
+        AIWarning(type: "unsupported", feature: "presencePenalty", message: "presencePenalty is not supported for reasoning models"),
+        AIWarning(type: "other", message: "logitBias is not supported for reasoning models"),
+        AIWarning(type: "other", message: "topLogprobs is not supported for reasoning models")
+    ]
+
+    let generateTransport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}
+    """))
+    let generateProvider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: generateTransport))
+    let generateModel = try generateProvider.chatModel("o4-mini")
+    let generateResult = try await generateModel.generate(request)
+
+    #expect(generateResult.warnings == expectedWarnings)
+    let generateBody = try decodeJSONBody(try #require((await generateTransport.requests()).first?.body))
+    for key in ["temperature", "top_p", "logprobs", "top_logprobs", "frequency_penalty", "presence_penalty", "logit_bias"] {
+        #expect(generateBody[key] == nil)
+    }
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: [DONE]
+
+    """))
+    let streamProvider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: streamTransport))
+    let streamModel = try streamProvider.chatModel("o4-mini")
+    var streamWarnings: [AIWarning] = []
+    for try await part in streamModel.stream(request) {
+        if case let .streamStart(warnings) = part {
+            streamWarnings = warnings
+        }
+    }
+
+    #expect(streamWarnings == expectedWarnings)
+    let streamBody = try decodeJSONBody(try #require((await streamTransport.requests()).first?.body))
+    for key in ["temperature", "top_p", "logprobs", "top_logprobs", "frequency_penalty", "presence_penalty", "logit_bias"] {
+        #expect(streamBody[key] == nil)
+    }
 }
 
 @Test func openAICompletionAndEmbeddingMapNestedProviderOptions() async throws {

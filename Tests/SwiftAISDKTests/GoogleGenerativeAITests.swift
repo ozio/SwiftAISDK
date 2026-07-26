@@ -17,9 +17,20 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.18")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.24")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
+}
+@Test func googleGenerateContentSurfacesProviderResponseID() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"responseId":"google-response-123","candidates":[{"content":{"parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3.6-flash")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Ping")]))
+
+    #expect(result.responseMetadata.id == "google-response-123")
 }
 @Test func googleAppendsVersionedUserAgentToCustomHeader() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -36,7 +47,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.18")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.24")
 }
 @Test func googleCustomXGoogAPIKeyOverridesConfiguredAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -209,6 +220,97 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["generationConfig"]?["thinkingConfig"]?["thinkingBudget"]?.intValue == 32768)
+}
+@Test func googleModelCapabilitiesKeepLegacyModelsAndDefaultFutureModelsToNewestBehavior() {
+    #expect(googleModelCapabilities(for: "gemini-pro") == GoogleModelCapabilities(
+        supportsGemini2Tools: false,
+        supportsFileSearch: false,
+        usesGemini3Features: false
+    ))
+    #expect(googleModelCapabilities(for: "gemini-1.5-flash") == GoogleModelCapabilities(
+        supportsGemini2Tools: false,
+        supportsFileSearch: false,
+        usesGemini3Features: false
+    ))
+    #expect(googleModelCapabilities(for: "gemini-2.5-flash") == GoogleModelCapabilities(
+        supportsGemini2Tools: true,
+        supportsFileSearch: true,
+        usesGemini3Features: false
+    ))
+    for modelID in [
+        "gemini-3.5-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-99-pro-preview",
+        "publishers/google/models/gemini-ultra-latest"
+    ] {
+        #expect(googleModelCapabilities(for: modelID) == GoogleModelCapabilities(
+            supportsGemini2Tools: true,
+            supportsFileSearch: true,
+            usesGemini3Features: true
+        ))
+    }
+    #expect(googleModelCapabilities(for: "nano-banana-pro-preview") == GoogleModelCapabilities(
+        supportsGemini2Tools: true,
+        supportsFileSearch: false,
+        usesGemini3Features: false
+    ))
+}
+@Test func googleUnknownFutureGeminiUsesNewestRequestBehavior() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-99-pro-preview")
+    let call = AIToolCall(
+        id: "chart-call",
+        name: "createWeatherChart",
+        arguments: #"{"location":"San Francisco"}"#
+    )
+    let result = AIToolResult(
+        toolCallID: "chart-call",
+        toolName: "createWeatherChart",
+        result: [:],
+        modelOutput: [
+            "type": "content",
+            "value": [
+                ["type": "text", "text": "Weather chart"],
+                [
+                    "type": "file",
+                    "mediaType": "image/png",
+                    "data": ["data": "aW1hZ2U="]
+                ]
+            ]
+        ]
+    )
+
+    let generation = try await model.generate(LanguageModelRequest(
+        messages: [
+            .user("Create a weather chart."),
+            .assistant(toolCalls: [call]),
+            .toolResult(result)
+        ],
+        reasoning: "high",
+        tools: [
+            "createWeatherChart": [
+                "type": "object",
+                "properties": ["location": ["type": "string"]]
+            ],
+            "google.file_search": GoogleTools.fileSearch(
+                fileSearchStoreNames: ["fileSearchStores/example-store"]
+            )
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generationConfig"]?["thinkingConfig"]?["thinkingLevel"]?.stringValue == "high")
+    #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "skip_thought_signature_validator")
+    #expect(body["contents"]?[2]?["parts"]?[0]?["functionResponse"]?["parts"]?[0]?["inlineData"]?["mimeType"]?.stringValue == "image/png")
+    let tools = try #require(body["tools"]?.arrayValue)
+    #expect(tools.contains { $0["fileSearch"] != nil })
+    #expect(tools.contains { $0["functionDeclarations"]?[0]?["name"]?.stringValue == "createWeatherChart" })
+    #expect(!generation.warnings.contains {
+        $0.type == "unsupported" && $0.feature == "combination of function and provider-defined tools"
+    })
 }
 @Test func googleLanguageWarnsAndDropsVertexOnlyStreamFunctionCallArguments() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

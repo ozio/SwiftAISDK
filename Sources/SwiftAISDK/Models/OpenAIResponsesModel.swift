@@ -403,7 +403,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if isOpenAIBacked {
             openAIResponsesApplyAutomaticOptions(to: &options, tools: request.tools, isReasoningModel: isEffectiveReasoningModel)
         }
-        let stripsReasoningModelSampling = openAIResponsesStripsSamplingSettings(isReasoningModel: isEffectiveReasoningModel, options: options)
+        let stripsReasoningModelSampling = openAIResponsesStripsSamplingSettings(
+            modelID: modelID,
+            isReasoningModel: isEffectiveReasoningModel,
+            options: options
+        )
         if stripsReasoningModelSampling {
             if request.temperature != nil {
                 warnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported for reasoning models"))
@@ -430,6 +434,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     processedApprovalIDs: &processedApprovalIDs,
                     toolNamespaces: toolNamespaces,
                     customToolNames: preparedTools.customToolNames,
+                    programmaticToolNames: preparedTools.programmaticToolNames,
                     providerID: providerID,
                     useDeveloperRoleForSystem: useDeveloperRoleForSystem,
                     warnings: &warnings
@@ -456,7 +461,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             body["tools"] = .array(preparedTools.tools)
             if let allowedTools = options["allowedTools"] ?? options["allowed_tools"] {
                 body["tool_choice"] = openAIResponsesAllowedToolsChoice(from: allowedTools)
-            } else if let toolChoice = openAIResponsesToolChoice(from: request.toolChoice ?? request.extraBody["toolChoice"], customToolNames: preparedTools.customToolNames) {
+            } else if let toolChoice = openAIResponsesToolChoice(
+                from: request.toolChoice ?? request.extraBody["toolChoice"],
+                customToolNames: preparedTools.customToolNames,
+                programmaticToolNames: preparedTools.programmaticToolNames
+            ) {
                 body["tool_choice"] = toolChoice
             }
         }

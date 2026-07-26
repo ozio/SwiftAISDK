@@ -350,6 +350,62 @@ import Testing
     #expect(snapshot.context?.abortSignal === controller.signal)
     #expect(snapshot.context?.messages == [.user("Weather?")])
 }
+
+@Test func aiGenerateTextPropagatesAbortObservedDuringToolExecutionLikeUpstream() async {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object([:])),
+        TextGenerationResult(text: "should not be requested", finishReason: "stop", rawValue: .object([:]))
+    ])
+    let controller = AIAbortController()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object"]
+    ) { _ in
+        controller.abort(reason: "tool execution aborted", reasonName: "AbortError")
+        try controller.signal.throwIfAborted()
+        return [:]
+    }
+
+    await #expect(throws: AIAbortError(reason: "tool execution aborted", reasonName: "AbortError")) {
+        try await AI.generateText(
+            model: model,
+            prompt: "Weather?",
+            executableTools: [lookup],
+            maxSteps: 10,
+            abortSignal: controller.signal
+        )
+    }
+    #expect(model.requests.count == 1)
+}
+
+@Test func aiGenerateTextRejectsBeforeNextModelCallWhenToolReturnsAfterAbortLikeUpstream() async {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
+    let model = MockLanguageModel(results: [
+        TextGenerationResult(text: "", finishReason: "tool-calls", toolCalls: [toolCall], rawValue: .object([:])),
+        TextGenerationResult(text: "should not be requested", finishReason: "stop", rawValue: .object([:]))
+    ])
+    let controller = AIAbortController()
+    let lookup = AITool(
+        name: "lookup",
+        parameters: ["type": "object"]
+    ) { _ in
+        controller.abort(reason: "tool execution aborted", reasonName: "AbortError")
+        return ["forecast": "sunny"]
+    }
+
+    await #expect(throws: AIAbortError(reason: "tool execution aborted", reasonName: "AbortError")) {
+        try await AI.generateText(
+            model: model,
+            prompt: "Weather?",
+            executableTools: [lookup],
+            maxSteps: 10,
+            abortSignal: controller.signal
+        )
+    }
+    #expect(model.requests.count == 1)
+}
+
 @Test func aiGenerateTextMarksDynamicToolCallsResultsAndMessages() async throws {
     let toolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#)
     let dynamicToolCall = AIToolCall(id: "call-1", name: "runtimeSearch", arguments: #"{"query":"docs"}"#, dynamic: true)

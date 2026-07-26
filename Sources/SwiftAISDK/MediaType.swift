@@ -21,7 +21,7 @@ private let documentMediaTypeSignatures: [MediaTypeSignature] = [
     MediaTypeSignature(mediaType: "application/pdf", bytesPrefix: [0x25, 0x50, 0x44, 0x46])
 ]
 
-private let audioMediaTypeSignatures: [MediaTypeSignature] = [
+private let audioMediaTypeSignaturesWithoutMP4: [MediaTypeSignature] = [
     MediaTypeSignature(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xFB]),
     MediaTypeSignature(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xFA]),
     MediaTypeSignature(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xF3]),
@@ -32,8 +32,14 @@ private let audioMediaTypeSignatures: [MediaTypeSignature] = [
     MediaTypeSignature(mediaType: "audio/ogg", bytesPrefix: [0x4F, 0x67, 0x67, 0x53]),
     MediaTypeSignature(mediaType: "audio/flac", bytesPrefix: [0x66, 0x4C, 0x61, 0x43]),
     MediaTypeSignature(mediaType: "audio/aac", bytesPrefix: [0x40, 0x15, 0x00, 0x00]),
-    MediaTypeSignature(mediaType: "audio/mp4", bytesPrefix: [0x66, 0x74, 0x79, 0x70]),
     MediaTypeSignature(mediaType: "audio/webm", bytesPrefix: [0x1A, 0x45, 0xDF, 0xA3])
+]
+
+private let audioMediaTypeSignatures = audioMediaTypeSignaturesWithoutMP4 + [
+    MediaTypeSignature(
+        mediaType: "audio/mp4",
+        bytesPrefix: [0x00, 0x00, 0x00, nil, 0x66, 0x74, 0x79, 0x70]
+    )
 ]
 
 private let videoMediaTypeSignatures: [MediaTypeSignature] = [
@@ -43,16 +49,17 @@ private let videoMediaTypeSignatures: [MediaTypeSignature] = [
     MediaTypeSignature(mediaType: "video/x-msvideo", bytesPrefix: [0x52, 0x49, 0x46, 0x46])
 ]
 
+private let defaultMediaTypeSniffBytes = 18
+private let maximumMediaTypeSignatureBytes = 12
+private let maximumID3TagBytes = 128 * 1024
+private let id3MediaTypeScanBytes = maximumID3TagBytes + maximumMediaTypeSignatureBytes
+
 public func detectMediaType(data: Data, topLevelType: String? = nil) -> String? {
-    detectMediaType(bytes: Array(stripID3TagsIfPresent(data)), topLevelType: topLevelType)
+    detectMediaType(bytes: mediaTypeSniffingBytes(data), topLevelType: topLevelType)
 }
 
 public func detectMediaType(base64: String, topLevelType: String? = nil) -> String? {
-    let prefix = String(stripID3TagsIfPresent(base64).prefix(24))
-    guard let data = Data(base64Encoded: prefix) else {
-        return nil
-    }
-    return detectMediaType(bytes: Array(data), topLevelType: topLevelType)
+    detectMediaType(bytes: mediaTypeSniffingBytes(base64), topLevelType: topLevelType)
 }
 
 public func topLevelMediaType(_ mediaType: String) -> String {
@@ -98,7 +105,10 @@ private func detectMediaType(bytes: [UInt8], topLevelType: String?) -> String? {
     let signatures: [MediaTypeSignature]
     switch topLevelType {
     case nil:
-        signatures = imageMediaTypeSignatures + documentMediaTypeSignatures + audioMediaTypeSignatures + videoMediaTypeSignatures
+        signatures = imageMediaTypeSignatures
+            + documentMediaTypeSignatures
+            + audioMediaTypeSignaturesWithoutMP4
+            + videoMediaTypeSignatures
     case "image":
         signatures = imageMediaTypeSignatures
     case "audio":
@@ -119,25 +129,53 @@ private func detectMediaType(bytes: [UInt8], topLevelType: String?) -> String? {
     }?.mediaType
 }
 
-private func stripID3TagsIfPresent(_ data: Data) -> Data {
-    guard data.count > 10,
-          data[data.startIndex] == 0x49,
-          data[data.index(after: data.startIndex)] == 0x44,
-          data[data.index(data.startIndex, offsetBy: 2)] == 0x33 else {
-        return data
+private func mediaTypeSniffingBytes(_ data: Data) -> [UInt8] {
+    let prefix = Array(data.prefix(defaultMediaTypeSniffBytes))
+    guard hasID3Tag(prefix) else {
+        return prefix
     }
-    let bytes = Array(data)
+    return bytesAfterID3Tag(Array(data.prefix(id3MediaTypeScanBytes)))
+}
+
+private func mediaTypeSniffingBytes(_ base64: String) -> [UInt8] {
+    guard let prefix = decodeBase64Prefix(base64, maximumBytes: defaultMediaTypeSniffBytes) else {
+        return []
+    }
+    guard hasID3Tag(prefix) else {
+        return prefix
+    }
+    guard let id3Prefix = decodeBase64Prefix(base64, maximumBytes: id3MediaTypeScanBytes) else {
+        return []
+    }
+    return bytesAfterID3Tag(id3Prefix)
+}
+
+private func decodeBase64Prefix(_ base64: String, maximumBytes: Int) -> [UInt8]? {
+    let maximumCharacters = ((maximumBytes + 2) / 3) * 4
+    // Upstream accepts both standard base64 and the URL-safe, optionally
+    // unpadded representation used by provider references and signatures.
+    var encodedPrefix = String(base64.prefix(maximumCharacters))
+        .replacingOccurrences(of: "-", with: "+")
+        .replacingOccurrences(of: "_", with: "/")
+    let padding = (4 - encodedPrefix.count % 4) % 4
+    encodedPrefix.append(String(repeating: "=", count: padding))
+    guard let data = Data(base64Encoded: encodedPrefix) else {
+        return nil
+    }
+    return Array(data.prefix(maximumBytes))
+}
+
+private func hasID3Tag(_ bytes: [UInt8]) -> Bool {
+    bytes.count > 10
+        && bytes[0] == 0x49
+        && bytes[1] == 0x44
+        && bytes[2] == 0x33
+}
+
+private func bytesAfterID3Tag(_ bytes: [UInt8]) -> [UInt8] {
     let id3Size = (Int(bytes[6] & 0x7F) << 21)
         | (Int(bytes[7] & 0x7F) << 14)
         | (Int(bytes[8] & 0x7F) << 7)
         | Int(bytes[9] & 0x7F)
-    return data.dropFirst(min(data.count, id3Size + 10))
-}
-
-private func stripID3TagsIfPresent(_ base64: String) -> String {
-    guard base64.hasPrefix("SUQz"),
-          let data = Data(base64Encoded: base64) else {
-        return base64
-    }
-    return stripID3TagsIfPresent(data).base64EncodedString()
+    return Array(bytes.dropFirst(id3Size + 10).prefix(maximumMediaTypeSignatureBytes))
 }

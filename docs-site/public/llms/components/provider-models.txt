@@ -11,9 +11,9 @@ Source URL: /components/provider-models/
 | Enumeration | 10 |
 | Initializer | 1 |
 | Instance Method | 119 |
-| Instance Property | 204 |
+| Instance Property | 205 |
 | Structure | 1 |
-| Type Method | 81 |
+| Type Method | 82 |
 
 ## Public symbols
 
@@ -450,6 +450,7 @@ Source URL: /components/provider-models/
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Instance Property | `queryParams` | `var queryParams: [String : String]` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
+| Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Instance Property | `supportsStructuredOutputs` | `var supportsStructuredOutputs: Bool` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `transformRequestBody` | `var transformRequestBody: (@Sendable ([String : JSONValue]) -> [String : JSONValue])?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
@@ -495,6 +496,7 @@ Source URL: /components/provider-models/
 | Type Method | `memory_20250818()` | `static func memory_20250818() -> JSONValue` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Type Method | `parallelSearch(mode:maxResults:includeDomains:excludeDomains:afterDate:maxCharsPerResult:maxCharsTotal:maxAgeSeconds:)` | `static func parallelSearch(mode: String? = nil, maxResults: Int? = nil, includeDomains: [String] = [], excludeDomains: [String] = [], afterDate: String? = nil, maxCharsPerResult: Int? = nil, maxCharsTotal: Int? = nil, maxAgeSeconds: Int? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Type Method | `perplexitySearch(maxResults:maxTokensPerPage:maxTokens:country:searchDomainFilter:searchLanguageFilter:searchRecencyFilter:)` | `static func perplexitySearch(maxResults: Int? = nil, maxTokensPerPage: Int? = nil, maxTokens: Int? = nil, country: String? = nil, searchDomainFilter: [String] = [], searchLanguageFilter: [String] = [], searchRecencyFilter: String? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
+| Type Method | `programmaticToolCalling(name:)` | `static func programmaticToolCalling(name: String = "programmatic_tool_calling") -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Type Method | `shell(environment:)` | `static func shell(environment: JSONValue? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Type Method | `shellAllowlistNetworkPolicy(allowedDomains:domainSecrets:)` | `static func shellAllowlistNetworkPolicy(allowedDomains: [String], domainSecrets: [JSONValue] = []) -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Type Method | `shellContainerAutoEnvironment(fileIDs:memoryLimit:networkPolicy:skills:)` | `static func shellContainerAutoEnvironment(fileIDs: [String] = [], memoryLimit: String? = nil, networkPolicy: JSONValue? = nil, skills: [JSONValue] = []) -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |

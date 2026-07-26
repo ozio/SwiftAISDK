@@ -94,6 +94,7 @@ func openAICompatibleChatToolChoice(from value: JSONValue?) -> JSONValue? {
 func openAICompatibleChatOptions(from extraBody: [String: JSONValue], supportsStructuredOutputs: Bool) -> [String: JSONValue] {
     var output = extraBody
     output.removeValue(forKey: "toolChoice")
+    openAIResponsesMoveKey("logitBias", to: "logit_bias", in: &output)
     openAIResponsesMoveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
     openAIResponsesMoveKey("maxCompletionTokens", to: "max_completion_tokens", in: &output)
     openAIResponsesMoveKey("serviceTier", to: "service_tier", in: &output)
@@ -103,10 +104,13 @@ func openAICompatibleChatOptions(from extraBody: [String: JSONValue], supportsSt
     openAIResponsesMoveKey("safetyIdentifier", to: "safety_identifier", in: &output)
     if let logprobs = output["logprobs"] {
         if let count = logprobs.intValue, logprobs.doubleValue == Double(count) {
-            output["logprobs"] = count > 0 ? .bool(true) : .bool(false)
-            if count > 0 { output["top_logprobs"] = .number(Double(count)) }
+            output["logprobs"] = .bool(true)
+            output["top_logprobs"] = .number(Double(count))
         } else if logprobs.boolValue == true {
             output["top_logprobs"] = output["top_logprobs"] ?? .number(0)
+        } else if logprobs.boolValue == false {
+            output.removeValue(forKey: "logprobs")
+            output.removeValue(forKey: "top_logprobs")
         }
     }
     if let reasoningEffort = output.removeValue(forKey: "reasoningEffort") {
@@ -126,14 +130,18 @@ func openAICompatibleChatOptions(from extraBody: [String: JSONValue], supportsSt
 }
 
 func openAICompatibleChatWarnings(for request: LanguageModelRequest, providerID: String, openAIBackedProviderRoot: String? = nil, usesGenericProviderOptions: Bool = false) -> [AIWarning] {
-    guard openAIBackedProviderRoot == nil, !isOpenAIBackedProvider(providerID) else { return [] }
-    let providerOptionWarnings: [AIWarning]
-    if usesGenericProviderOptions {
-        providerOptionWarnings = openAICompatibleProviderOptionWarnings(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
-    } else {
-        providerOptionWarnings = openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true)
+    let isOpenAIBacked = openAIBackedProviderRoot != nil || isOpenAIBackedProvider(providerID)
+    var warnings: [AIWarning] = []
+    if !isOpenAIBacked {
+        if usesGenericProviderOptions {
+            warnings.append(contentsOf: openAICompatibleProviderOptionWarnings(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true))
+        } else {
+            warnings.append(contentsOf: openAICompatibleProviderOptionWarnings(from: request.extraBody, providerID: providerID, includeCompatibilityNamespace: true))
+        }
     }
-    var warnings = providerOptionWarnings
+    if isOpenAIBacked, request.topK != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "topK"))
+    }
     warnings.append(contentsOf: openAICompatibleChatToolWarnings(for: request))
     if providerID.hasPrefix("xai.") {
         warnings.append(contentsOf: xaiChatWarnings(for: request))

@@ -107,8 +107,6 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         body.merge(imageOptions) { _, new in new }
         if isOpenAIBackedProvider(providerID, config: config), body["response_format"] == nil, !openAIImageHasDefaultResponseFormat(modelID) {
             body["response_format"] = .string("b64_json")
-        } else if !isOpenAIBackedProvider(providerID, config: config) {
-            body["response_format"] = .string("b64_json")
         }
 
         let response = try await config.sendJSONResponse(path: "/images/generations", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)

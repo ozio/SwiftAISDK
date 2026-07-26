@@ -155,6 +155,27 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         "application/pdf": [AISupportedURLPattern(anthropicSupportedHTTPURL)]
     ]
     private let config: ModelHTTPConfig
+    private static let providerToolNames: [String: String] = [
+        "anthropic.code_execution_20250522": "code_execution",
+        "anthropic.code_execution_20250825": "code_execution",
+        "anthropic.code_execution_20260120": "code_execution",
+        "anthropic.computer_20241022": "computer",
+        "anthropic.computer_20250124": "computer",
+        "anthropic.text_editor_20241022": "str_replace_editor",
+        "anthropic.text_editor_20250124": "str_replace_editor",
+        "anthropic.text_editor_20250429": "str_replace_based_edit_tool",
+        "anthropic.text_editor_20250728": "str_replace_based_edit_tool",
+        "anthropic.bash_20241022": "bash",
+        "anthropic.bash_20250124": "bash",
+        "anthropic.memory_20250818": "memory",
+        "anthropic.web_search_20250305": "web_search",
+        "anthropic.web_search_20260209": "web_search",
+        "anthropic.web_fetch_20250910": "web_fetch",
+        "anthropic.web_fetch_20260209": "web_fetch",
+        "anthropic.tool_search_regex_20251119": "tool_search_tool_regex",
+        "anthropic.tool_search_bm25_20251119": "tool_search_tool_bm25",
+        "anthropic.advisor_20260301": "advisor"
+    ]
 
     init(modelID: String, config: ModelHTTPConfig) {
         self.providerID = config.providerID
@@ -335,19 +356,38 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    fileprivate static func body(for request: LanguageModelRequest, modelID: String, providerID: String, stream: Bool = false) throws -> AnthropicPreparedCall {
+    fileprivate static func body(
+        for request: LanguageModelRequest,
+        modelID: String,
+        providerID: String,
+        stream: Bool = false,
+        supportsNativeStructuredOutput: Bool? = nil,
+        supportsStrictTools: Bool? = nil
+    ) throws -> AnthropicPreparedCall {
         var betas: [String] = []
         var warnings = anthropicStandardWarnings(for: request)
         let providerOptions = try anthropicOptions(from: request, providerID: providerID)
+        let toolNameMapping = createToolNameMapping(
+            tools: request.tools,
+            providerToolNames: Self.providerToolNames
+        )
         let prompt = try Self.promptMessages(
             from: request.messages,
             providerID: providerID,
             sendReasoning: providerOptions.sendReasoning ?? true,
+            toolNameMapping: toolNameMapping,
             betas: &betas,
             warnings: &warnings
         )
 
         let capabilities = anthropicModelCapabilities(modelID)
+        if request.maxOutputTokens == nil, !capabilities.isKnownModel {
+            warnings.append(AIWarning(
+                type: "compatibility",
+                feature: "maxOutputTokens",
+                message: "The model \"\(modelID)\" is unknown. The max output tokens have been limited to \(capabilities.maxOutputTokens). Set maxOutputTokens explicitly to override this limit."
+            ))
+        }
         let sampling = anthropicSamplingParameters(
             for: request,
             modelID: modelID,
@@ -366,13 +406,16 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         if let topP = sampling.topP { body["top_p"] = .number(topP) }
         if !request.stopSequences.isEmpty { body["stop_sequences"] = .array(request.stopSequences) }
         let supportsStructuredOutput = capabilities.supportsStructuredOutput
+            && (supportsNativeStructuredOutput ?? true)
+        let supportsStrictToolDefinitions = capabilities.supportsStructuredOutput
+            && (supportsStrictTools ?? true)
         let eagerInputStreaming = stream && (providerOptions.toolStreaming ?? true)
         let preparedTools = anthropicPrepareTools(
             from: request.tools,
             toolChoice: request.toolChoice ?? providerOptions.toolChoice,
             disableParallelToolUse: providerOptions.disableParallelToolUse,
             supportsStructuredOutput: supportsStructuredOutput,
-            supportsStrictTools: supportsStructuredOutput,
+            supportsStrictTools: supportsStrictToolDefinitions,
             defaultEagerInputStreaming: eagerInputStreaming
         )
         if !preparedTools.tools.isEmpty {
@@ -388,12 +431,19 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             capabilities: capabilities,
             warnings: &warnings
         )
+        anthropicApplyDisabledThinkingEffortLimit(
+            to: &body,
+            modelID: modelID,
+            capabilities: capabilities,
+            warnings: &warnings
+        )
         warnings.append(contentsOf: preparedTools.warnings)
         let usesJSONToolResponseFormat = anthropicApplyResponseFormat(
             request.responseFormat,
             to: &body,
             supportsStructuredOutput: supportsStructuredOutput,
             structuredOutputMode: providerOptions.structuredOutputMode,
+            disableParallelToolUse: providerOptions.disableParallelToolUse,
             eagerInputStreaming: eagerInputStreaming,
             warnings: &warnings
         )
@@ -402,7 +452,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             requestedMaxTokens: request.maxOutputTokens,
             requestTemperature: sampling.temperature,
             requestTopP: sampling.topP,
-            isAnthropicModel: capabilities.isKnownModel || modelID.hasPrefix("claude-"),
+            isAnthropicModel: capabilities.isKnownModel || modelID.contains("claude-"),
             warnings: &warnings
         )
         anthropicApplyMaxTokenLimit(
@@ -436,6 +486,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         from messages: [AIMessage],
         providerID: String,
         sendReasoning: Bool,
+        toolNameMapping: AIToolNameMapping,
         betas: inout [String],
         warnings: inout [AIWarning]
     ) throws -> (system: [JSONValue], messages: [JSONValue]) {
@@ -443,36 +494,104 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         var cacheBreakpointCount = 0
         var system: [JSONValue] = []
         var conversation: [JSONValue] = []
+        var warnedAboutInitialToolChanges = false
         for message in messages {
+            let toolChanges = message.role == .system
+                ? anthropicToolChanges(from: message.providerMetadata)
+                : []
             if message.role == .system, !sawConversationMessage {
-                var block: [String: JSONValue] = ["type": .string("text"), "text": .string(message.combinedText)]
-                anthropicApplyCacheControl(
-                    anthropicCacheControl(from: message.providerMetadata),
-                    to: &block,
-                    cacheBreakpointCount: &cacheBreakpointCount,
-                    warnings: &warnings
-                )
-                system.append(.object(block))
+                if !toolChanges.isEmpty, !warnedAboutInitialToolChanges {
+                    warnings.append(AIWarning(
+                        type: "other",
+                        message: "tool changes on the initial system message are not supported by Anthropic. Configure the initial tool set via the tools option instead. The tool changes have been ignored."
+                    ))
+                    warnedAboutInitialToolChanges = true
+                }
+                let text = message.combinedText
+                if !text.isEmpty || toolChanges.isEmpty {
+                    var block: [String: JSONValue] = ["type": .string("text"), "text": .string(text)]
+                    anthropicApplyCacheControl(
+                        anthropicCacheControl(from: message.providerMetadata),
+                        to: &block,
+                        cacheBreakpointCount: &cacheBreakpointCount,
+                        warnings: &warnings
+                    )
+                    system.append(.object(block))
+                }
                 continue
             }
             sawConversationMessage = true
-            if message.role == .system, !betas.contains("mid-conversation-system-2026-04-07") {
-                betas.append("mid-conversation-system-2026-04-07")
+            if message.role == .system {
+                if !betas.contains("mid-conversation-system-2026-04-07") {
+                    betas.append("mid-conversation-system-2026-04-07")
+                }
+                if !toolChanges.isEmpty, !betas.contains("mid-conversation-tool-changes-2026-07-01") {
+                    betas.append("mid-conversation-tool-changes-2026-07-01")
+                }
+            }
+            var converted = try messageJSON(
+                message,
+                providerID: providerID,
+                sendReasoning: sendReasoning,
+                betas: &betas,
+                warnings: &warnings,
+                cacheBreakpointCount: &cacheBreakpointCount,
+                applyMessageCacheControl: message.role != .system
+                    || toolChanges.isEmpty
+                    || !message.combinedText.isEmpty
+            )
+            if message.role == .system, !toolChanges.isEmpty {
+                converted = anthropicAppendingToolChanges(
+                    toolChanges,
+                    to: converted,
+                    toolNameMapping: toolNameMapping
+                )
             }
             appendAnthropicMessage(
-                try messageJSON(
-                    message,
-                    providerID: providerID,
-                    sendReasoning: sendReasoning,
-                    betas: &betas,
-                    warnings: &warnings,
-                    cacheBreakpointCount: &cacheBreakpointCount
-                ),
+                converted,
                 to: &conversation
             )
         }
         trimTrailingAssistantWhitespace(in: &conversation)
         return (system, conversation)
+    }
+
+    private static func anthropicToolChanges(
+        from providerMetadata: [String: JSONValue]
+    ) -> [(type: String, toolName: String)] {
+        (providerMetadata["anthropic"]?["toolChanges"]?.arrayValue ?? []).compactMap { change in
+            guard let type = change["type"]?.stringValue,
+                  type == "tool_addition" || type == "tool_removal",
+                  let toolName = change["toolName"]?.stringValue else {
+                return nil
+            }
+            return (type: type, toolName: toolName)
+        }
+    }
+
+    private static func anthropicAppendingToolChanges(
+        _ toolChanges: [(type: String, toolName: String)],
+        to message: JSONValue,
+        toolNameMapping: AIToolNameMapping
+    ) -> JSONValue {
+        guard var object = message.objectValue else {
+            return message
+        }
+        var content = object["content"]?.arrayValue ?? []
+        content.removeAll {
+            $0["type"]?.stringValue == "text" && $0["text"]?.stringValue == ""
+        }
+        content.append(contentsOf: toolChanges.map { change in
+            .object([
+                "type": .string(change.type),
+                "tool": .object([
+                    "type": .string("tool_reference"),
+                    "name": .string(toolNameMapping.toProviderToolName(change.toolName))
+                ])
+            ])
+        })
+        object["content"] = .array(content)
+        return .object(object)
     }
 
     private static func appendAnthropicMessage(_ message: JSONValue, to conversation: inout [JSONValue]) {
@@ -511,7 +630,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         sendReasoning: Bool,
         betas: inout [String],
         warnings: inout [AIWarning],
-        cacheBreakpointCount: inout Int
+        cacheBreakpointCount: inout Int,
+        applyMessageCacheControl: Bool = true
     ) throws -> JSONValue {
         let role: String
         switch message.role {
@@ -719,12 +839,14 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         if message.role == .assistant {
             parts = moveAnthropicToolUseBlocksToEnd(parts)
         }
-        anthropicApplyCacheControlToLastPart(
-            anthropicCacheControl(from: message.providerMetadata),
-            parts: &parts,
-            cacheBreakpointCount: &cacheBreakpointCount,
-            warnings: &warnings
-        )
+        if applyMessageCacheControl {
+            anthropicApplyCacheControlToLastPart(
+                anthropicCacheControl(from: message.providerMetadata),
+                parts: &parts,
+                cacheBreakpointCount: &cacheBreakpointCount,
+                warnings: &warnings
+            )
+        }
         return .object(["role": .string(role), "content": .array(parts)])
     }
 
@@ -1493,8 +1615,13 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
             abortSignal: request.abortSignal,
             providerID: providerID
         )
-        var prepared = try AnthropicLanguageModel.body(for: resolvedRequest, modelID: modelID, providerID: providerID, stream: stream)
-        amazonBedrockAnthropicApplyStructuredOutputSupport(modelID: modelID, prepared: &prepared)
-        return prepared
+        return try AnthropicLanguageModel.body(
+            for: resolvedRequest,
+            modelID: modelID,
+            providerID: providerID,
+            stream: stream,
+            supportsNativeStructuredOutput: bedrockSupportsNativeStructuredOutput(modelID: modelID),
+            supportsStrictTools: bedrockSupportsStrictToolSpec(modelID: modelID)
+        )
     }
 }

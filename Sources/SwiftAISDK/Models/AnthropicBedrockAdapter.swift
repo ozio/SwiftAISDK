@@ -115,26 +115,6 @@ func amazonBedrockAnthropicMediaType(contentType: String?, data: Data, url: Stri
     return "application/octet-stream"
 }
 
-func amazonBedrockAnthropicApplyStructuredOutputSupport(modelID: String, prepared: inout AnthropicPreparedCall) {
-    guard modelID.contains("claude-opus-4-7") || modelID.contains("claude-opus-4-8") || modelID.contains("claude-fable-5") else {
-        return
-    }
-    guard var outputConfig = prepared.body["output_config"]?.objectValue,
-          outputConfig.removeValue(forKey: "format") != nil else {
-        return
-    }
-    if outputConfig.isEmpty {
-        prepared.body.removeValue(forKey: "output_config")
-    } else {
-        prepared.body["output_config"] = .object(outputConfig)
-    }
-    prepared.warnings.append(AIWarning(
-        type: "unsupported",
-        feature: "responseFormat",
-        message: "Bedrock Anthropic does not support native structured output for \(modelID). The response format is ignored."
-    ))
-}
-
 func amazonBedrockAnthropicTool(_ tool: JSONValue, betas: inout [String]) -> JSONValue {
     guard var object = tool.objectValue, let originalType = object["type"]?.stringValue else {
         return tool

@@ -12,12 +12,12 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions)
+        let prepared = try preparedBody(for: request, stream: false)
         let metadataNamespace = metadataNamespace(for: request)
         let httpResponse = try await config.transport.send(config.request(
             path: "/chat/completions",
             modelID: modelID,
-            body: .object(try body(for: request, stream: false)),
+            body: .object(prepared.body),
             headers: request.headers,
             abortSignal: request.abortSignal
         ))
@@ -42,7 +42,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             toolCalls: toolCalls,
             providerMetadata: openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID, namespace: metadataNamespace),
             rawValue: raw,
-            warnings: warnings,
+            warnings: prepared.warnings,
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -51,15 +51,15 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let warnings = openAICompatibleChatWarnings(for: request, providerID: providerID, openAIBackedProviderRoot: config.openAIBackedProviderRoot, usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions)
+                    let prepared = try preparedBody(for: request, stream: true)
                     let metadataNamespace = metadataNamespace(for: request)
-                    let body = JSONValue.object(try body(for: request, stream: true))
+                    let body = JSONValue.object(prepared.body)
                     let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
                     }
-                    continuation.yield(.streamStart(warnings: warnings))
+                    continuation.yield(.streamStart(warnings: prepared.warnings))
                     var toolCalls = OpenAICompatibleStreamingToolCalls()
                     var providerMetadata: [String: JSONValue] = [:]
                     var didEmitResponseMetadata = false
@@ -165,7 +165,16 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         }
     }
 
-    private func body(for request: LanguageModelRequest, stream: Bool) throws -> [String: JSONValue] {
+    private func preparedBody(
+        for request: LanguageModelRequest,
+        stream: Bool
+    ) throws -> (body: [String: JSONValue], warnings: [AIWarning]) {
+        var warnings = openAICompatibleChatWarnings(
+            for: request,
+            providerID: providerID,
+            openAIBackedProviderRoot: config.openAIBackedProviderRoot,
+            usesGenericProviderOptions: config.usesGenericOpenAICompatibleProviderOptions
+        )
         var body = try Self.body(
             for: request,
             modelID: modelID,
@@ -176,7 +185,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             supportsStructuredOutputs: config.supportsStructuredOutputs ||
                 (openAICompatibleProviderRoot(providerID) == "moonshotai" &&
                     moonshotSupportsStructuredOutputs(modelID: modelID)),
-            usesGenericOpenAICompatibleProviderOptions: config.usesGenericOpenAICompatibleProviderOptions
+            usesGenericOpenAICompatibleProviderOptions: config.usesGenericOpenAICompatibleProviderOptions,
+            warnings: &warnings
         )
         if stream, config.includeUsage {
             body["stream_options"] = .object(["include_usage": .bool(true)])
@@ -193,7 +203,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         if providerID.hasPrefix("xai.") {
             body = try xaiChatBody(from: body, request: request)
         }
-        return config.transformRequestBody?(body) ?? body
+        return (config.transformRequestBody?(body) ?? body, warnings)
     }
 
     private func metadataNamespace(for request: LanguageModelRequest) -> String? {
@@ -222,25 +232,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         unwrapOpenAIProviderOptions: Bool,
         openAIProviderOptionsRoot: String?,
         supportsStructuredOutputs: Bool,
-        usesGenericOpenAICompatibleProviderOptions: Bool
+        usesGenericOpenAICompatibleProviderOptions: Bool,
+        warnings: inout [AIWarning]
     ) throws -> [String: JSONValue] {
-        var body: [String: JSONValue] = [
-            "model": .string(modelID),
-            "messages": .array(try request.messages.map { try Self.messageJSON($0, providerID: providerID) })
-        ]
-        if stream { body["stream"] = true }
-        if let temperature = request.temperature { body["temperature"] = .number(temperature) }
-        if let topP = request.topP { body["top_p"] = .number(topP) }
-        if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
-        if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
-        let toolChoiceInput = request.toolChoice ?? request.extraBody["toolChoice"]
-        let tools = openAICompatibleChatTools(from: request.tools)
-        if !tools.isEmpty {
-            body["tools"] = .array(tools)
-            if let toolChoice = openAICompatibleChatToolChoice(from: toolChoiceInput) {
-                body["tool_choice"] = toolChoice
-            }
-        }
         var extraBody: [String: JSONValue]
         if unwrapOpenAIProviderOptions {
             extraBody = openAIProviderOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: openAIProviderOptionsRoot)
@@ -253,11 +247,113 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
            let responseFormat = openAICompatibleResponseFormatJSON(request.responseFormat) {
             extraBody["responseFormat"] = responseFormat
         }
-        body.merge(openAICompatibleChatOptions(from: extraBody, supportsStructuredOutputs: supportsStructuredOutputs)) { _, new in new }
+
+        var options = openAICompatibleChatOptions(from: extraBody, supportsStructuredOutputs: supportsStructuredOutputs)
+        let capabilities = openAILanguageModelCapabilities(modelID)
+        let isReasoningModel = unwrapOpenAIProviderOptions
+            && (options.removeValue(forKey: "forceReasoning")?.boolValue ?? capabilities.isReasoningModel)
+        let systemMessageMode = options.removeValue(forKey: "systemMessageMode")?.stringValue
+            ?? options.removeValue(forKey: "system_message_mode")?.stringValue
+            ?? (isReasoningModel ? "developer" : "system")
+        if openAICompatibleProviderRoot(providerID) == "openai",
+           options["reasoning_effort"] == nil,
+           let reasoning = request.reasoning,
+           reasoning != "provider-default" {
+            options["reasoning_effort"] = .string(reasoning)
+        }
+
+        var messages: [JSONValue] = []
+        for message in request.messages {
+            if message.role == .system, systemMessageMode == "remove" {
+                continue
+            }
+            messages.append(try Self.messageJSON(
+                message,
+                providerID: providerID,
+                systemRole: message.role == .system ? systemMessageMode : nil
+            ))
+        }
+        var body: [String: JSONValue] = [
+            "model": .string(modelID),
+            "messages": .array(messages)
+        ]
+        if stream { body["stream"] = true }
+        if let temperature = request.temperature { body["temperature"] = .number(temperature) }
+        if let topP = request.topP { body["top_p"] = .number(topP) }
+        if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
+        if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+        if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
+        if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
+        let toolChoiceInput = request.toolChoice ?? request.extraBody["toolChoice"]
+        let tools = openAICompatibleChatTools(from: request.tools)
+        if !tools.isEmpty {
+            body["tools"] = .array(tools)
+            if let toolChoice = openAICompatibleChatToolChoice(from: toolChoiceInput) {
+                body["tool_choice"] = toolChoice
+            }
+        }
+        body.merge(options) { _, new in new }
+        if isReasoningModel {
+            let permitsSampling = body["reasoning_effort"]?.stringValue == "none"
+                && capabilities.supportsNonReasoningParameters
+            if !permitsSampling {
+                if body.removeValue(forKey: "temperature") != nil {
+                    warnings.append(AIWarning(
+                        type: "unsupported",
+                        feature: "temperature",
+                        message: "temperature is not supported for reasoning models"
+                    ))
+                }
+                if body.removeValue(forKey: "top_p") != nil {
+                    warnings.append(AIWarning(
+                        type: "unsupported",
+                        feature: "topP",
+                        message: "topP is not supported for reasoning models"
+                    ))
+                }
+                if body.removeValue(forKey: "logprobs") != nil {
+                    warnings.append(AIWarning(
+                        type: "other",
+                        message: "logprobs is not supported for reasoning models"
+                    ))
+                }
+            }
+            if body.removeValue(forKey: "frequency_penalty") != nil {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "frequencyPenalty",
+                    message: "frequencyPenalty is not supported for reasoning models"
+                ))
+            }
+            if body.removeValue(forKey: "presence_penalty") != nil {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "presencePenalty",
+                    message: "presencePenalty is not supported for reasoning models"
+                ))
+            }
+            if body.removeValue(forKey: "logit_bias") != nil {
+                warnings.append(AIWarning(
+                    type: "other",
+                    message: "logitBias is not supported for reasoning models"
+                ))
+            }
+            if body.removeValue(forKey: "top_logprobs") != nil {
+                warnings.append(AIWarning(
+                    type: "other",
+                    message: "topLogprobs is not supported for reasoning models"
+                ))
+            }
+            if let maxTokens = body.removeValue(forKey: "max_tokens"),
+               body["max_completion_tokens"] == nil {
+                body["max_completion_tokens"] = maxTokens
+            }
+        }
         return body
     }
 
-    static func messageJSON(_ message: AIMessage, providerID: String) throws -> JSONValue {
+    static func messageJSON(_ message: AIMessage, providerID: String, systemRole: String? = nil) throws -> JSONValue {
         if message.role == .tool,
            let result = message.content.compactMap({ part -> AIToolResult? in
                if case let .toolResult(result) = part { result } else { nil }
@@ -296,7 +392,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
 
         if textOnly {
             return .object([
-                "role": .string(message.role.rawValue),
+                "role": .string(systemRole ?? message.role.rawValue),
                 "content": .string(message.combinedText)
             ])
         }
@@ -344,7 +440,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         }
 
         return .object([
-            "role": .string(message.role.rawValue),
+            "role": .string(systemRole ?? message.role.rawValue),
             "content": .array(parts)
         ])
     }

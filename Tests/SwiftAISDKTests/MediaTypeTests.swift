@@ -17,6 +17,7 @@ import Testing
     let ogg = Data([0x4F, 0x67, 0x67, 0x53])
     let flac = Data([0x66, 0x4C, 0x61, 0x43])
     let aac = Data([0x40, 0x15, 0x00, 0x00])
+    let audioMp4 = Data([0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70, 0x4D, 0x34, 0x41, 0x20])
     let audioWebm = Data([0x1A, 0x45, 0xDF, 0xA3])
     let videoMp4 = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
     let quicktime = Data([0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70, 0x71, 0x74])
@@ -27,6 +28,8 @@ import Testing
     #expect(detectMediaType(data: png, topLevelType: "image") == "image/png")
     #expect(detectMediaType(base64: png.base64EncodedString(), topLevelType: "image") == "image/png")
     #expect(detectMediaType(data: jpeg, topLevelType: "image") == "image/jpeg")
+    #expect(detectMediaType(base64: "_9g=", topLevelType: "image") == "image/jpeg")
+    #expect(detectMediaType(base64: "_9g", topLevelType: "image") == "image/jpeg")
     #expect(detectMediaType(data: webp, topLevelType: "image") == "image/webp")
     #expect(detectMediaType(data: bmp, topLevelType: "image") == "image/bmp")
     #expect(detectMediaType(data: tiffLittleEndian, topLevelType: "image") == "image/tiff")
@@ -41,6 +44,10 @@ import Testing
     #expect(detectMediaType(data: ogg, topLevelType: "audio") == "audio/ogg")
     #expect(detectMediaType(data: flac, topLevelType: "audio") == "audio/flac")
     #expect(detectMediaType(data: aac, topLevelType: "audio") == "audio/aac")
+    #expect(detectMediaType(data: audioMp4, topLevelType: "audio") == "audio/mp4")
+    #expect(detectMediaType(base64: audioMp4.base64EncodedString(), topLevelType: "audio") == "audio/mp4")
+    #expect(detectMediaType(data: audioMp4) == "video/mp4")
+    #expect(detectMediaType(data: Data([0x66, 0x74, 0x79, 0x70]), topLevelType: "audio") == nil)
     #expect(detectMediaType(data: audioWebm, topLevelType: "audio") == "audio/webm")
     #expect(detectMediaType(data: videoMp4, topLevelType: "video") == "video/mp4")
     #expect(detectMediaType(data: audioWebm, topLevelType: "video") == "video/webm")
@@ -65,6 +72,16 @@ import Testing
 
     #expect(detectMediaType(data: mp3WithID3, topLevelType: "audio") == "audio/mpeg")
     #expect(detectMediaType(base64: mp3WithID3.base64EncodedString(), topLevelType: "audio") == "audio/mpeg")
+}
+
+@Test func detectMediaTypeBoundsID3ScanningLikeUpstream() {
+    let maximumTag = id3TaggedMP3(tagBodySize: 128 * 1024)
+    let oversizedTag = id3TaggedMP3(tagBodySize: 128 * 1024 + 1)
+
+    #expect(detectMediaType(data: maximumTag, topLevelType: "audio") == "audio/mpeg")
+    #expect(detectMediaType(base64: maximumTag.base64EncodedString(), topLevelType: "audio") == "audio/mpeg")
+    #expect(detectMediaType(data: oversizedTag, topLevelType: "audio") == nil)
+    #expect(detectMediaType(base64: oversizedTag.base64EncodedString(), topLevelType: "audio") == nil)
 }
 
 @Test func mediaTypeHelpersMatchProviderUtilsRules() throws {
@@ -98,10 +115,12 @@ import Testing
 
 @Test func resolveFullMediaTypeDetectsSubtypeForInlineBytes() throws {
     let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])
+    let m4a = Data([0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70, 0x4D, 0x34, 0x41, 0x20])
 
     #expect(try resolveFullMediaType(mediaType: "image/jpeg", data: png) == "image/jpeg")
     #expect(try resolveFullMediaType(mediaType: "image", data: png) == "image/png")
     #expect(try resolveFullMediaType(mediaType: "image/*", data: png) == "image/png")
+    #expect(try resolveFullMediaType(mediaType: "audio/*", data: m4a) == "audio/mp4")
     #expect(try resolveFullMediaType(mediaType: "application", data: Data([0x25, 0x50, 0x44, 0x46])) == "application/pdf")
     #expect(throws: AIError.self) {
         _ = try resolveFullMediaType(mediaType: "image", data: Data([0x00, 0x01, 0x02]))
@@ -109,4 +128,21 @@ import Testing
     #expect(throws: AIError.self) {
         _ = try resolveFullMediaType(mediaType: "text", data: Data("hello".utf8))
     }
+}
+
+private func id3TaggedMP3(tagBodySize: Int) -> Data {
+    let sizeBytes: [UInt8] = [
+        UInt8((tagBodySize >> 21) & 0x7F),
+        UInt8((tagBodySize >> 14) & 0x7F),
+        UInt8((tagBodySize >> 7) & 0x7F),
+        UInt8(tagBodySize & 0x7F)
+    ]
+    var data = Data([
+        0x49, 0x44, 0x33,
+        0x03, 0x00,
+        0x00
+    ] + sizeBytes)
+    data.append(Data(repeating: 0, count: tagBodySize))
+    data.append(contentsOf: [0xFF, 0xFB])
+    return data
 }

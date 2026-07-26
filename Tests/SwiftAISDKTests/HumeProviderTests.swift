@@ -31,7 +31,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.hume.ai/v0/tts/file")
     #expect(request.headers["x-hume-api-key"] == "hume-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/hume/3.0.11")
+    #expect(request.headers["user-agent"] == "ai-sdk/hume/3.0.12")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["utterances"]?[0]?["text"]?.stringValue == "Hello")
     #expect(body["utterances"]?[0]?["voice"]?["id"]?.stringValue == "voice-id")
@@ -56,7 +56,7 @@ import Testing
     #expect(model.modelID == "")
     #expect(result.responseMetadata.modelID == "")
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/hume/3.0.11")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/hume/3.0.12")
 }
 
 @Test func humeProviderExposesNoArgSpeechAliasesAndUnsupportedFamiliesLikeUpstreamV4() async throws {

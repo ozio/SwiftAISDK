@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-07-01
+Snapshot date: 2026-07-27
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -36,16 +36,26 @@ for exact evidence.
 | Upstream test inventory | `Docs/UpstreamTestInventory.md` |
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
-Provider version baselines were checked with `npm view` on 2026-06-29. The
-latest generated upstream test inventory points at Vercel AI SDK commit
-`a7c23e5f9562644b39a0c6b1c8fa71c4fd9dfd95`.
+Provider and core package version baselines were checked against npm registry
+metadata on 2026-07-27. The current upstream source and test audit points at
+Vercel AI SDK commit `c8baafc4864b`.
 
 ## Provider State
 
-The active provider deep-pass queue is empty at this snapshot. The tracked
-provider packages in `Docs/ProviderVersionLedger.md` have Swift evidence in
+The 42 tracked provider packages in `Docs/ProviderVersionLedger.md` use the
+latest npm versions observed on 2026-07-27. They have Swift evidence in
 implementation files and focused tests, and their public capability coverage is
-represented in `Docs/ProviderCapabilityMatrix.md`.
+represented in `Docs/ProviderCapabilityMatrix.md`. The current pass audited the
+published package deltas and ported the applicable provider/core behavior; the
+remaining architectural differences are recorded below.
+
+Registry discovery also found one provider package that is not yet represented
+by SwiftAISDK: `@ai-sdk/cartesia@3.0.6`. It was not implemented automatically in
+this weekly pass. A dedicated Cartesia port should add a provider factory,
+speech and batch-transcription request/response/options/error coverage, focused
+fixtures, capability/docs entries, and live-smoke wiring. Cartesia realtime
+audio additionally depends on a WebSocket/lifecycle model surface that the
+current Swift protocols do not expose.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -64,6 +74,9 @@ one of these is true:
 | --- | --- | --- |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
+| P1 | `@ai-sdk/cartesia@3.0.6` is a newly discovered provider package and is not ported. | Make Cartesia the next provider implementation: start with speech and batch transcription, then decide the realtime/WebSocket protocol surface separately. |
+| P1 | Current `ai@7.0.37` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
+| P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |
 | P1 | Structured output works, but schema ecosystem parity is intentionally Swift-native. | Keep improving schema adapter ergonomics, repair telemetry, provider-specific structured-output examples, and docs. |
@@ -97,4 +110,3 @@ Before calling a porting round release-ready:
 - Public docs in README/docs-site match the behavior users now see.
 - Focused Swift tests and full `swift test` pass, or skipped verification is
   explicitly recorded.
-

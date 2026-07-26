@@ -52,6 +52,23 @@ import Testing
     #expect(result.outputTokens == 50)
 }
 
+@Test func anthropicUsageReportsThinkingTokensAsReasoningLikeUpstream() throws {
+    let usage: JSONValue = [
+        "input_tokens": 10,
+        "output_tokens": 1_699,
+        "output_tokens_details": [
+            "thinking_tokens": 139
+        ]
+    ]
+
+    let result = try #require(anthropicTokenUsage(from: usage))
+
+    #expect(result.outputTokens == 1_699)
+    #expect(result.outputTextTokens == 1_560)
+    #expect(result.outputReasoningTokens == 139)
+    #expect(result.rawValue == usage)
+}
+
 @Test func anthropicUsageSumsCompactionIterationsLikeUpstream() throws {
     let usage: JSONValue = [
         "input_tokens": 45_000,
@@ -117,7 +134,7 @@ import Testing
       "model": "test-model",
       "stop_reason": "stop_sequence",
       "stop_sequence": "STOP",
-      "usage": {"input_tokens": 20, "output_tokens": 5}
+      "usage": {"input_tokens": 20, "output_tokens": 5, "output_tokens_details": {"thinking_tokens": 2}}
     }
     """, headers: ["test-header": "test-value"]))
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
@@ -135,6 +152,8 @@ import Testing
     #expect(result.usage?.inputTokensCacheWrite == 0)
     #expect(result.usage?.inputTokens == 20)
     #expect(result.usage?.outputTokens == 5)
+    #expect(result.usage?.outputTextTokens == 3)
+    #expect(result.usage?.outputReasoningTokens == 2)
     #expect(result.responseMetadata.id == "test-id")
     #expect(result.responseMetadata.modelID == "test-model")
     #expect(result.responseMetadata.headers["test-header"] == "test-value")

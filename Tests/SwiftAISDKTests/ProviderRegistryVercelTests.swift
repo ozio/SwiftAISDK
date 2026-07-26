@@ -113,7 +113,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.v0.dev/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer vercel-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/vercel/3.0.12")
+    #expect(request.headers["user-agent"] == "ai-sdk/vercel/3.0.14")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "v0-1.5-md")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Build UI")
@@ -134,7 +134,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.v0.dev/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer vercel-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/vercel/3.0.12")
+    #expect(request.headers["user-agent"] == "ai-sdk/vercel/3.0.14")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "v0-1.5-lg")
 }
@@ -161,7 +161,7 @@ import Testing
     #expect(request.url.absoluteString == "https://custom.v0.example/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer custom-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/vercel/3.0.12")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/vercel/3.0.14")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "v0-1.0-md")
 }

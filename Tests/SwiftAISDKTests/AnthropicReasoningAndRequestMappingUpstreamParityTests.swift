@@ -556,3 +556,88 @@ import Testing
     #expect(otherTool.body["tools"]?[1]?["name"]?.stringValue == "json")
     #expect(otherTool.body["tool_choice"]?["type"]?.stringValue == "any")
 }
+
+@Test func anthropicUnknownModelDefaultsAndWarningsMirrorUpstream() async throws {
+    let unknown = try await anthropicGeneratedBody(modelID: "future-model")
+    #expect(unknown.body["max_tokens"]?.intValue == 4_096)
+    #expect(unknown.warnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "maxOutputTokens",
+            message: "The model \"future-model\" is unknown. The max output tokens have been limited to 4096. Set maxOutputTokens explicitly to override this limit."
+        )
+    ])
+
+    let futureClaude = try await anthropicGeneratedBody(modelID: "claude-future-9")
+    #expect(futureClaude.body["max_tokens"]?.intValue == 128_000)
+    #expect(futureClaude.body["thinking"] == nil)
+    #expect(futureClaude.warnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "maxOutputTokens",
+            message: "The model \"claude-future-9\" is unknown. The max output tokens have been limited to 128000. Set maxOutputTokens explicitly to override this limit."
+        )
+    ])
+
+    let explicit = try await anthropicGeneratedBody(
+        modelID: "future-model",
+        maxOutputTokens: 123_456
+    )
+    #expect(explicit.body["max_tokens"]?.intValue == 123_456)
+    #expect(explicit.warnings.isEmpty)
+}
+
+@Test func anthropicDefaultFallbackModeAddsJulyBetaLikeUpstream() async throws {
+    let fallback = try await anthropicGeneratedBody(
+        modelID: "claude-fable-5",
+        providerOptions: ["anthropic": ["fallbacks": "default"]]
+    )
+    #expect(fallback.body["fallbacks"]?.stringValue == "default")
+    #expect(fallback.headers["anthropic-beta"]?.contains("server-side-fallback-2026-07-01") == true)
+    #expect(fallback.headers["anthropic-beta"]?.contains("server-side-fallback-2026-06-01") != true)
+
+    let emptyFallbacks = try await anthropicGeneratedBody(
+        modelID: "claude-fable-5",
+        providerOptions: ["anthropic": ["fallbacks": []]]
+    )
+    #expect(emptyFallbacks.body["fallbacks"] == nil)
+    #expect(emptyFallbacks.headers["anthropic-beta"] == nil)
+}
+
+@Test func anthropicJSONToolWarnsWhenParallelUseIsExplicitlyEnabledLikeUpstream() async throws {
+    let result = try await anthropicGeneratedBody(
+        modelID: "claude-3-haiku-20240307",
+        responseFormat: .json(schema: [
+            "type": "object",
+            "properties": ["answer": ["type": "string"]]
+        ]),
+        providerOptions: ["anthropic": ["disableParallelToolUse": false]]
+    )
+
+    #expect(result.body["tool_choice"]?["disable_parallel_tool_use"]?.boolValue == true)
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "providerOptions.anthropic.disableParallelToolUse",
+        message: "`disableParallelToolUse: false` is ignored when using the JSON response tool. Parallel tool use is disabled to ensure a single coherent JSON tool call."
+    )))
+}
+
+@Test func anthropicOpus5LowersDisabledThinkingEffortLikeUpstream() async throws {
+    let result = try await anthropicGeneratedBody(
+        modelID: "claude-opus-5",
+        providerOptions: [
+            "anthropic": [
+                "thinking": ["type": "disabled"],
+                "effort": "xhigh"
+            ]
+        ]
+    )
+
+    #expect(result.body["thinking"]?["type"]?.stringValue == "disabled")
+    #expect(result.body["output_config"]?["effort"]?.stringValue == "high")
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "providerOptions.anthropic.effort",
+        message: "effort 'xhigh' is not supported by claude-opus-5 when thinking is disabled. The effort has been lowered to 'high'."
+    )))
+}

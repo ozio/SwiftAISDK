@@ -111,8 +111,10 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["contents"]?[1]?["parts"]?[0]?["functionCall"]?["id"]?.stringValue == "tool-call-0")
     #expect(body["contents"]?[1]?["parts"]?[0]?["functionCall"]?["name"]?.stringValue == "weather")
     #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "sig-google-tool")
+    #expect(body["contents"]?[2]?["parts"]?[0]?["functionResponse"]?["id"]?.stringValue == "tool-call-0")
 }
 @Test func googleGenerateContentInjectsGemini3ThoughtSignatureSentinel() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -133,9 +135,69 @@ import Testing
     #expect(body["contents"]?[1]?["parts"]?[0]?["thoughtSignature"]?.stringValue == "skip_thought_signature_validator")
     #expect(result.warnings.contains { $0.type == "other" && ($0.message?.contains("skip_thought_signature_validator") ?? false) })
 }
+@Test func googleGenerateContentPreservesUnsignedParallelCallsAfterSignedFunctionCall() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3-pro")
+    let signedCall = AIToolCall(
+        id: "tool-call-paris",
+        name: "weather",
+        arguments: #"{"location":"Paris"}"#,
+        providerMetadata: ["google": .object(["thoughtSignature": .string("parallel-batch-signature")])]
+    )
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        .assistant(toolCalls: [
+            signedCall,
+            AIToolCall(id: "tool-call-tokyo", name: "weather", arguments: #"{"location":"Tokyo"}"#),
+            AIToolCall(id: "tool-call-new-york", name: "weather", arguments: #"{"location":"New York"}"#)
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let parts = try #require(body["contents"]?[0]?["parts"]?.arrayValue)
+    #expect(parts[0]["thoughtSignature"]?.stringValue == "parallel-batch-signature")
+    #expect(parts[1]["thoughtSignature"] == nil)
+    #expect(parts[2]["thoughtSignature"] == nil)
+    #expect(!result.warnings.contains { $0.message?.contains("skip_thought_signature_validator") == true })
+}
+@Test func googleGenerateContentSignedServerCallDoesNotCoverUnsignedFunctionCall() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3-pro")
+    let signedServerCall = AIToolCall(
+        id: "server-call",
+        name: "server:google_search",
+        arguments: #"{"query":"weather"}"#,
+        providerExecuted: true,
+        dynamic: true,
+        providerMetadata: ["google": .object([
+            "serverToolCallId": .string("server-call"),
+            "serverToolType": .string("google_search"),
+            "thoughtSignature": .string("server-signature")
+        ])]
+    )
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        .assistant(toolCalls: [
+            signedServerCall,
+            AIToolCall(id: "function-call", name: "weather", arguments: #"{"location":"Tokyo"}"#)
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let parts = try #require(body["contents"]?[0]?["parts"]?.arrayValue)
+    #expect(parts[0]["thoughtSignature"]?.stringValue == "server-signature")
+    #expect(parts[1]["thoughtSignature"]?.stringValue == "skip_thought_signature_validator")
+    #expect(result.warnings.contains { $0.message?.contains("skip_thought_signature_validator") == true })
+}
 @Test func googleGenerateContentParsesProviderExecutedCodeAndServerTools() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}},"thoughtSignature":"sig-server"},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP"}]}
+    {"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"codeExecutionResult":{"outcome":"OUTCOME_FAILED","output":"later failure\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}},"thoughtSignature":"sig-server"},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP"}]}
     """))
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
     let model = try provider.languageModel("gemini-3-pro")
@@ -155,18 +217,20 @@ import Testing
     #expect(result.toolCalls[1].dynamic == true)
     #expect(result.toolCalls[1].providerMetadata["google"]?["serverToolType"]?.stringValue == "google_search")
     #expect(result.toolCalls[1].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-server")
-    #expect(result.toolResults.count == 2)
+    #expect(result.toolResults.count == 3)
     #expect(result.toolResults[0].toolCallID == "google-code-execution-0")
     #expect(result.toolResults[0].result["outcome"]?.stringValue == "OUTCOME_OK")
     #expect(result.toolResults[0].result["output"]?.stringValue == "hi\n")
-    #expect(result.toolResults[1].toolCallID == "search-1")
-    #expect(result.toolResults[1].toolName == "server:google_search")
-    #expect(result.toolResults[1].dynamic == true)
-    #expect(result.toolResults[1].result["results"]?[0]?["title"]?.stringValue == "Swift")
+    #expect(result.toolResults[1].toolCallID == "google-code-execution-0")
+    #expect(result.toolResults[1].result["outcome"]?.stringValue == "OUTCOME_FAILED")
+    #expect(result.toolResults[2].toolCallID == "search-1")
+    #expect(result.toolResults[2].toolName == "server:google_search")
+    #expect(result.toolResults[2].dynamic == true)
+    #expect(result.toolResults[2].result["results"]?[0]?["title"]?.stringValue == "Swift")
 }
 @Test func googleGenerateContentStreamsProviderExecutedToolsAndInlineData() async throws {
     let transport = RecordingTransport(response: sseResponse("""
-    data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="},"thoughtSignature":"sig-file"},{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}}},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}
+    data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aW1hZ2U="},"thoughtSignature":"sig-file"},{"executableCode":{"language":"PYTHON","code":"print('hi')"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"hi\\n"}},{"codeExecutionResult":{"outcome":"OUTCOME_FAILED","output":"later failure\\n"}},{"toolCall":{"toolType":"google_search","id":"search-1","args":{"query":"swift"}}},{"toolResponse":{"toolType":"google_search","response":{"results":[{"title":"Swift"}]}}}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}
 
     """))
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
@@ -197,8 +261,9 @@ import Testing
     #expect(files[0].providerMetadata["google"]?["thoughtSignature"]?.stringValue == "sig-file")
     #expect(toolCalls.map(\.name) == ["code_execution", "server:google_search"])
     #expect(toolCalls.map(\.providerExecuted) == [true, true])
-    #expect(toolResults.map(\.toolCallID) == ["google-code-execution-1", "search-1"])
-    #expect(toolResults[1].result["results"]?[0]?["title"]?.stringValue == "Swift")
+    #expect(toolResults.map(\.toolCallID) == ["google-code-execution-1", "google-code-execution-1", "search-1"])
+    #expect(toolResults[1].result["outcome"]?.stringValue == "OUTCOME_FAILED")
+    #expect(toolResults[2].result["results"]?[0]?["title"]?.stringValue == "Swift")
     #expect(finishReason == "tool-calls")
 }
 @Test func googleLanguageExtractsGroundingSources() async throws {
@@ -422,7 +487,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.18")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.24")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hello from SwiftAISDK!")

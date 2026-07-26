@@ -280,6 +280,46 @@ import Testing
     #expect(body["toolConfig"]?["functionCallingConfig"]?["mode"]?.stringValue == "ANY")
     #expect(body["toolChoice"] == nil)
 }
+@Test func googleVertexOmitsStandardFunctionIDsAndSurfacesResponseID() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"responseId":"vertex-response-123","candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}
+    """))
+    let provider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "global",
+        accessToken: "token",
+        transport: transport
+    ))
+    let model = try provider.languageModel("gemini-3.6-flash")
+    let call = AIToolCall(
+        id: "call-repro-1",
+        name: "lookup",
+        arguments: #"{"query":"vertex function id repro"}"#,
+        providerMetadata: ["vertex": .object(["thoughtSignature": .string("signed-call")])]
+    )
+    let result = AIToolResult(
+        toolCallID: "call-repro-1",
+        toolName: "lookup",
+        result: ["answer": "known"]
+    )
+
+    let generation = try await model.generate(LanguageModelRequest(messages: [
+        .user("Look up the answer."),
+        .assistant(toolCalls: [call]),
+        .toolResult(result)
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let functionCall = try #require(body["contents"]?[1]?["parts"]?[0]?["functionCall"])
+    #expect(functionCall["id"] == nil)
+    #expect(functionCall["name"]?.stringValue == "lookup")
+    #expect(functionCall["args"]?["query"]?.stringValue == "vertex function id repro")
+    let functionResponse = try #require(body["contents"]?[2]?["parts"]?[0]?["functionResponse"])
+    #expect(functionResponse["id"] == nil)
+    #expect(functionResponse["name"]?.stringValue == "lookup")
+    #expect(functionResponse["response"]?["answer"]?.stringValue == "known")
+    #expect(generation.responseMetadata.id == "vertex-response-123")
+}
 @Test func googleVertexToolsHelpersMirrorProviderExecutedToolFactories() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"vertex grounded"}]},"finishReason":"STOP"}]}

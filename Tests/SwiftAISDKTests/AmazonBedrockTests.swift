@@ -37,11 +37,33 @@ import Testing
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-east-1/bedrock/aws4_request") == true)
     #expect(request.headers["authorization"]?.contains("SignedHeaders=") == true)
     #expect(request.headers["custom-header"] == "value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.24")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.32")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?[0]?["text"]?.stringValue == "Brief.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
     #expect(body["inferenceConfig"]?["temperature"]?.doubleValue == 1)
+}
+
+@Test func amazonBedrockConversePercentEncodesSlashesInARNModelIDsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"arn accepted"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel(
+        "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/profile-id"
+    )
+
+    _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    let request = try #require(await transport.requests().first)
+    #expect(
+        request.url.absoluteString ==
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-1%3A123456789012%3Aapplication-inference-profile%2Fprofile-id/converse"
+    )
 }
 @Test func amazonBedrockAppendsVersionedUserAgentToCustomHeaders() async throws {
     let converseTransport = RecordingTransport(response: jsonResponse("""
@@ -83,9 +105,9 @@ import Testing
     let converseRequest = try #require(await converseTransport.requests().first)
     let anthropicRequest = try #require(await anthropicTransport.requests().first)
     let mantleRequest = try #require(await mantleTransport.requests().first)
-    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.24")
-    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.24")
-    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.24")
+    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.32")
+    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.32")
+    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.32")
 }
 @Test func amazonBedrockCredentialProviderSignsAllProviderSurfaces() async throws {
     let fixedDate = DateComponents(
@@ -284,6 +306,14 @@ import Testing
                                 "filename": "report.pdf",
                                 "data": .string(pdfData),
                                 "providerMetadata": ["amazonBedrock": ["citations": ["enabled": true]]]
+                            ],
+                            [
+                                "type": "file",
+                                "mediaType": "image/png",
+                                "data": [
+                                    "type": "url",
+                                    "url": "s3://my-test-bucket/path/to/generated.png"
+                                ]
                             ]
                         ]
                     ],
@@ -311,10 +341,88 @@ import Testing
     #expect(toolResult["content"]?[2]?["document"]?["name"]?.stringValue == "report")
     #expect(toolResult["content"]?[2]?["document"]?["source"]?["bytes"]?.stringValue == pdfData)
     #expect(toolResult["content"]?[2]?["document"]?["citations"]?["enabled"]?.boolValue == true)
+    #expect(toolResult["content"]?[3]?["image"]?["format"]?.stringValue == "png")
+    #expect(toolResult["content"]?[3]?["image"]?["source"]?["s3Location"]?["uri"]?.stringValue == "s3://my-test-bucket/path/to/generated.png")
     #expect(content[1]["cachePoint"]?["type"]?.stringValue == "default")
 }
 
-@Test func amazonBedrockOmitsStrictToolSpecForClaudeOpus47And48() async throws {
+@Test func amazonBedrockConversePassesThroughS3ImagesAndSanitizesReplayedToolNames() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"history accepted"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+    let s3URL = "s3://my-test-bucket/path/to/image.png"
+
+    #expect(isURLSupported(mediaType: "image/png", url: s3URL, supportedURLs: model.supportedURLs))
+    #expect(!isURLSupported(mediaType: "image/png", url: "https://example.com/image.png", supportedURLs: model.supportedURLs))
+    let unsupportedS3URLs = [
+        "s3:my-test-bucket/path/to/image.png",
+        "s3:/my-test-bucket/path/to/image.png",
+        "S3://my-test-bucket/path/to/image.png"
+    ]
+    for url in unsupportedS3URLs {
+        #expect(!bedrockIsS3URL(url))
+    }
+    for url in unsupportedS3URLs.prefix(2) {
+        #expect(!isURLSupported(mediaType: "image/png", url: url, supportedURLs: model.supportedURLs))
+    }
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            AIMessage(role: .user, content: [
+                .imageURL(
+                    s3URL,
+                    providerMetadata: ["amazonBedrock": ["cachePoint": ["type": "default"]]]
+                )
+            ]),
+            AIMessage(role: .assistant, content: [
+                .toolCall(AIToolCall(id: "tool-1", name: "$READFILE", arguments: "{}")),
+                .toolCall(AIToolCall(id: "tool-2", name: "exchange_delivered_order_items<|channel|>", arguments: "{}")),
+                .toolCall(AIToolCall(id: "tool-3", name: "$", arguments: "{}"))
+            ])
+        ],
+        tools: [
+            "active": [
+                "type": "object",
+                "properties": [:]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["content"]?[0]?["image"]?["format"]?.stringValue == "png")
+    #expect(body["messages"]?[0]?["content"]?[0]?["image"]?["source"]?["s3Location"]?["uri"]?.stringValue == s3URL)
+    #expect(body["messages"]?[0]?["content"]?[1]?["cachePoint"]?["type"]?.stringValue == "default")
+    #expect(body["messages"]?[1]?["content"]?[0]?["toolUse"]?["name"]?.stringValue == "READFILE")
+    #expect(body["messages"]?[1]?["content"]?[1]?["toolUse"]?["name"]?.stringValue == "exchange_delivered_order_itemschannel")
+    #expect(body["messages"]?[1]?["content"]?[2]?["toolUse"]?["name"]?.stringValue == "_")
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "messages.content.imageURL",
+        message: "Amazon Bedrock Converse supports only s3:// image URLs ending in .jpg, .jpeg, .png, .gif, or .webp."
+    )) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [.imageURL("https://example.com/image.png")])
+        ]))
+    }
+    for url in unsupportedS3URLs {
+        await #expect(throws: AIError.invalidArgument(
+            argument: "messages.content.imageURL",
+            message: "Amazon Bedrock Converse supports only s3:// image URLs ending in .jpg, .jpeg, .png, .gif, or .webp."
+        )) {
+            _ = try await model.generate(LanguageModelRequest(messages: [
+                AIMessage(role: .user, content: [.imageURL(url)])
+            ]))
+        }
+    }
+}
+
+@Test func amazonBedrockOmitsStrictToolSpecForAnthropicFamiliesThatRejectNewerSchemaFields() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"output":{"message":{"content":[{"text":"tool ready"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
     """))
@@ -341,6 +449,17 @@ import Testing
     let toolSpec = try #require(body["toolConfig"]?["tools"]?[0]?["toolSpec"])
     #expect(toolSpec["name"]?.stringValue == "weather")
     #expect(toolSpec["strict"] == nil)
+
+    for modelID in [
+        "anthropic.claude-opus-4-7-20260219-v1:0",
+        "anthropic.claude-opus-4-8-20260401-v1:0",
+        "anthropic.claude-opus-5-20260701-v1:0",
+        "anthropic.claude-fable-5-20260601-v1:0",
+        "anthropic.claude-sonnet-5-20260701-v1:0"
+    ] {
+        #expect(!bedrockSupportsStrictToolSpec(modelID: modelID))
+        #expect(!bedrockSupportsNativeStructuredOutput(modelID: modelID))
+    }
 }
 
 @Test func amazonBedrockConverseMapsReasoningConfigLikeUpstream() async throws {
@@ -433,7 +552,14 @@ import Testing
     ))
     let schema: JSONValue = [
         "type": "object",
-        "properties": ["answer": ["type": "string"]]
+        "properties": [
+            "answer": ["type": "string"],
+            "labels": [
+                "type": "array",
+                "maxItems": 3,
+                "items": ["type": "string"]
+            ]
+        ]
     ]
     let model = try provider.languageModel("anthropic.claude-3-7-sonnet-20250219-v1:0")
 
@@ -449,8 +575,43 @@ import Testing
     #expect(body["toolConfig"] == nil)
     let outputConfig = body["additionalModelRequestFields"]?["output_config"]
     #expect(outputConfig?["format"]?["type"]?.stringValue == "json_schema")
-    #expect(outputConfig?["format"]?["schema"] == schema)
+    let sentSchema = try #require(outputConfig?["format"]?["schema"])
+    #expect(sentSchema["properties"]?["labels"]?["maxItems"] == nil)
+    #expect(sentSchema["properties"]?["labels"]?["description"]?.stringValue == "max items: 3.")
+    #expect(sentSchema["properties"]?["labels"]?["items"]?["type"]?.stringValue == "string")
+    #expect(sentSchema["additionalProperties"]?.boolValue == false)
     #expect(body["additionalModelRequestFields"]?["thinking"]?["type"]?.stringValue == "enabled")
+}
+@Test func amazonBedrockConverseUsesJSONToolForAnthropicFamiliesWithoutNativeStructuredOutput() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"toolUse":{"toolUseId":"json-tool","name":"json","input":{"answer":"ok"}}}]}},"stopReason":"tool_use","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-opus-5-20260701-v1:0")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Reply as JSON")],
+        responseFormat: .json(schema: [
+            "type": "object",
+            "properties": ["answer": ["type": "string"]]
+        ]),
+        providerOptions: [
+            "amazonBedrock": [
+                "reasoningConfig": ["type": "enabled", "budgetTokens": 8]
+            ]
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["additionalModelRequestFields"]?["output_config"]?["format"] == nil)
+    #expect(body["toolConfig"]?["tools"]?[0]?["toolSpec"]?["name"]?.stringValue == "json")
+    #expect(body["toolConfig"]?["toolChoice"]?["any"] != nil)
+    #expect(try decodeJSONBody(Data(result.text.utf8))["answer"]?.stringValue == "ok")
 }
 @Test func amazonBedrockConverseMapsReasoningEffortForOpenAIAndNovaModels() async throws {
     let openAITransport = RecordingTransport(response: jsonResponse("""

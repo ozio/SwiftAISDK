@@ -67,7 +67,6 @@ func googleGenerateContentToolResults(from raw: JSONValue) -> [AIToolResult] {
                 toolName: "code_execution",
                 result: googleCodeExecutionResultJSON(codeExecutionResult)
             ))
-            lastCodeExecutionToolCallID = nil
             continue
         }
         if let serverToolCall = part["toolCall"],

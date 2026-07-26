@@ -12,7 +12,7 @@ import Testing
 
     data: {"type":"content_block_stop","index":0}
 
-    data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":61,"output_tokens":2}}
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":61,"output_tokens":2,"output_tokens_details":{"thinking_tokens":1}}}
 
     data: {"type":"message_stop"}
 
@@ -38,8 +38,12 @@ import Testing
     #expect(finishUsage?.inputTokens == 61)
     #expect(finishUsage?.inputTokensNoCache == 61)
     #expect(finishUsage?.outputTokens == 2)
+    #expect(finishUsage?.outputTextTokens == 1)
+    #expect(finishUsage?.outputReasoningTokens == 1)
     #expect(finishMetadataUsage?.inputTokens == 61)
     #expect(finishMetadataUsage?.outputTokens == 2)
+    #expect(finishMetadataUsage?.outputTextTokens == 1)
+    #expect(finishMetadataUsage?.outputReasoningTokens == 1)
     #expect(providerMetadata["anthropic"]?["usage"]?["input_tokens"]?.intValue == 61)
     #expect(providerMetadata["anthropic"]?["usage"]?["output_tokens"]?.intValue == 2)
 }
@@ -255,4 +259,3 @@ import Testing
     #expect(errors.first?.1?["error"]?["type"]?.stringValue == "overloaded_error")
     #expect(finishCount == 0)
 }
-

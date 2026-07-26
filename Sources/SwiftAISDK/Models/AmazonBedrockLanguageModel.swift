@@ -3,6 +3,9 @@ import Foundation
 public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendable {
     public let providerID = "amazon-bedrock"
     public let modelID: String
+    public let supportedURLs: [String: [AISupportedURLPattern]] = [
+        "image/*": [AISupportedURLPattern(bedrockIsS3URL)]
+    ]
     private let config: BedrockRuntimeConfig
 
     init(modelID: String, config: BedrockRuntimeConfig) {
@@ -84,16 +87,18 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         var effectiveTools = request.tools
         var effectiveToolChoice = request.toolChoice ?? providerOptions["toolChoice"] ?? request.extraBody["toolChoice"]
         let responseJSONSchema = bedrockResponseJSONSchema(from: request.responseFormat)
+        let modelSupportsStructuredOutput = anthropicModelCapabilities(modelID).supportsStructuredOutput
         let useNativeStructuredOutput = responseJSONSchema != nil
             && modelID.contains("anthropic")
-            && bedrockReasoningConfigEnabled(providerOptions["reasoningConfig"])
+            && bedrockSupportsNativeStructuredOutput(modelID: modelID)
+            && (modelSupportsStructuredOutput || bedrockReasoningConfigEnabled(providerOptions["reasoningConfig"]))
         let usesJsonResponseTool = responseJSONSchema != nil && !useNativeStructuredOutput
         if let responseJSONSchema, useNativeStructuredOutput {
             bedrockMergeAdditionalModelRequestFields([
                 "output_config": .object([
                     "format": .object([
                         "type": .string("json_schema"),
-                        "schema": responseJSONSchema
+                        "schema": anthropicSanitizeJSONSchema(responseJSONSchema)
                     ])
                 ])
             ], into: &providerOptions)
@@ -138,8 +143,24 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         }
                     case .reasoningFile, .custom:
                         content.append(.object(["text": .string("")]))
-                    case let .imageURL(url, _):
-                        content.append(.object(["image": .object(["source": .object(["s3Location": .object(["uri": .string(url)])])])]))
+                    case let .imageURL(url, providerMetadata):
+                        guard bedrockIsS3URL(url), let imageFormat = bedrockImageFormat(forURL: url) else {
+                            throw AIError.invalidArgument(
+                                argument: "messages.content.imageURL",
+                                message: "Amazon Bedrock Converse supports only s3:// image URLs ending in .jpg, .jpeg, .png, .gif, or .webp."
+                            )
+                        }
+                        content.append(.object([
+                            "image": .object([
+                                "format": .string(imageFormat),
+                                "source": .object([
+                                    "s3Location": .object(["uri": .string(url)])
+                                ])
+                            ])
+                        ]))
+                        if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                            content.append(cachePoint)
+                        }
                     case let .data(mimeType, data, providerMetadata):
                         if let imageFormat = bedrockImageFormat(for: mimeType) {
                             content.append(.object([
@@ -221,7 +242,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         content.append(.object([
                             "toolUse": .object([
                                 "toolUseId": .string(call.id),
-                                "name": .string(call.name),
+                                "name": .string(bedrockSanitizeToolName(call.name)),
                                 "input": bedrockToolArguments(call.arguments)
                             ])
                         ]))

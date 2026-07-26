@@ -35,8 +35,9 @@ func streamFromGoogleGenerateContent(
         throw apiCallError(provider: providerID, response: response)
     }
 
+    var responseMetadata = aiResponseMetadata(response: response, modelID: modelID)
     var parts: [LanguageStreamPart] = [
-        .responseMetadata(aiResponseMetadata(response: response, modelID: modelID)),
+        .responseMetadata(responseMetadata),
         .streamStart(warnings: warnings)
     ]
     var toolCalls = GoogleGenerateContentStreamingToolCalls()
@@ -47,9 +48,15 @@ func streamFromGoogleGenerateContent(
     var latestProviderMetadata: [String: JSONValue] = [:]
     var emittedSourceKeys: Set<String> = []
     var sawToolCalls = false
+    var hasResponseID = false
 
     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
         let raw = try decodeJSONBody(Data(event.data.utf8))
+        if !hasResponseID, let responseID = raw["responseId"]?.stringValue {
+            hasResponseID = true
+            responseMetadata.id = responseID
+            parts[0] = .responseMetadata(responseMetadata)
+        }
         if includeRawChunks {
             parts.append(.raw(raw))
         }
@@ -93,7 +100,6 @@ func streamFromGoogleGenerateContent(
                     toolName: "code_execution",
                     result: googleCodeExecutionResultJSON(codeExecutionResult)
                 )))
-                lastCodeExecutionToolCallID = nil
                 continue
             }
             if let text = contentPart["text"]?.stringValue {
@@ -173,4 +179,3 @@ func streamFromGoogleGenerateContent(
     }
     return parts
 }
-

@@ -200,6 +200,10 @@ public enum OpenAITools {
         ]).objectValue ?? [:])
     }
 
+    public static func programmaticToolCalling(name: String = "programmatic_tool_calling") -> JSONValue {
+        providerTool(id: "openai.programmatic_tool_calling", name: name)
+    }
+
     public static func toolSearch(execution: JSONValue? = nil, description: String? = nil, parameters: JSONValue? = nil) -> JSONValue {
         providerTool(id: "openai.tool_search", name: "tool_search", args: JSONValue.object([
             "execution": execution,

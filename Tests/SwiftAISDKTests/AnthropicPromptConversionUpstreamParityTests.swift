@@ -48,6 +48,171 @@ import Testing
     #expect(request.headers["anthropic-beta"] == "mid-conversation-system-2026-04-07")
 }
 
+@Test func anthropicMidConversationToolChangesMapAndAddBetasLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            .system("initial"),
+            .user("hi"),
+            AIMessage(role: .assistant, content: [.text("hello")]),
+            AIMessage(
+                role: .system,
+                content: [.text("Update the available tools.")],
+                providerMetadata: [
+                    "anthropic": [
+                        "toolChanges": [
+                            ["type": "tool_addition", "toolName": "custom-editor"],
+                            ["type": "tool_removal", "toolName": "search"]
+                        ]
+                    ]
+                ]
+            ),
+            AIMessage(role: .assistant, content: [.text("tools updated")])
+        ],
+        tools: ["custom-editor": AnthropicTools.textEditor_20250728()]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    let systemMessage = try #require(body["messages"]?[2])
+    #expect(systemMessage["role"]?.stringValue == "system")
+    #expect(systemMessage["content"] == [
+        ["type": "text", "text": "Update the available tools."],
+        [
+            "type": "tool_addition",
+            "tool": ["type": "tool_reference", "name": "str_replace_based_edit_tool"]
+        ],
+        [
+            "type": "tool_removal",
+            "tool": ["type": "tool_reference", "name": "search"]
+        ]
+    ])
+    #expect(
+        request.headers["anthropic-beta"] ==
+            "mid-conversation-system-2026-04-07,mid-conversation-tool-changes-2026-07-01"
+    )
+}
+
+@Test func anthropicToolChangesOnlySystemMessageOmitsEmptyTextLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .user("hi"),
+        AIMessage(
+            role: .system,
+            content: [.text("")],
+            providerMetadata: [
+                "anthropic": [
+                    "toolChanges": [
+                        ["type": "tool_addition", "toolName": "weather"]
+                    ]
+                ]
+            ]
+        )
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["messages"]?[1]?["role"]?.stringValue == "system")
+    #expect(body["messages"]?[1]?["content"] == [[
+        "type": "tool_addition",
+        "tool": ["type": "tool_reference", "name": "weather"]
+    ]])
+    #expect(
+        request.headers["anthropic-beta"] ==
+            "mid-conversation-system-2026-04-07,mid-conversation-tool-changes-2026-07-01"
+    )
+}
+
+@Test func anthropicToolChangesOnlySystemMessageDoesNotConsumeCacheBreakpoint() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+    let cacheControl: JSONValue = ["type": "ephemeral"]
+    let cachedUserMessages = (1...4).map { index in
+        AIMessage(
+            role: .user,
+            content: [.text("cached \(index)")],
+            providerMetadata: ["anthropic": ["cacheControl": cacheControl]]
+        )
+    }
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        .user("hi"),
+        AIMessage(
+            role: .system,
+            content: [.text("")],
+            providerMetadata: [
+                "anthropic": [
+                    "toolChanges": [
+                        ["type": "tool_addition", "toolName": "weather"]
+                    ],
+                    "cacheControl": cacheControl
+                ]
+            ]
+        )
+    ] + cachedUserMessages))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    let toolChangeContent = try #require(body["messages"]?[1]?["content"]?.arrayValue)
+    #expect(toolChangeContent == [[
+        "type": "tool_addition",
+        "tool": ["type": "tool_reference", "name": "weather"]
+    ]])
+    let cachedContent = try #require(body["messages"]?[2]?["content"]?.arrayValue)
+    #expect(cachedContent.count == 4)
+    #expect(cachedContent.allSatisfy { $0["cache_control"] == cacheControl })
+    #expect(result.warnings.isEmpty)
+}
+
+@Test func anthropicInitialSystemToolChangesWarnAndAreIgnoredLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+    let toolChanges: JSONValue = [[
+        "type": "tool_addition",
+        "toolName": "weather"
+    ]]
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(
+            role: .system,
+            content: [.text("initial")],
+            providerMetadata: ["anthropic": ["toolChanges": toolChanges]]
+        ),
+        AIMessage(
+            role: .system,
+            content: [.text("")],
+            providerMetadata: ["anthropic": ["toolChanges": toolChanges]]
+        ),
+        .user("hi")
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["system"] == [["type": "text", "text": "initial"]])
+    #expect(body["messages"]?.arrayValue?.contains { $0["role"]?.stringValue == "system" } == false)
+    #expect(request.headers["anthropic-beta"] == nil)
+    #expect(result.warnings == [AIWarning(
+        type: "other",
+        message: "tool changes on the initial system message are not supported by Anthropic. Configure the initial tool set via the tools option instead. The tool changes have been ignored."
+    )])
+}
+
 @Test func anthropicUserMediaDetectsTopLevelInlineMediaTypesLikeUpstream() async throws {
     let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
     let pdf = Data([0x25, 0x50, 0x44, 0x46, 0x2D])
@@ -527,4 +692,3 @@ import Testing
     #expect(content[0]["type"]?.stringValue == "text")
     #expect(result.warnings == [AIWarning(type: "other", message: "sending reasoning content is disabled for this model")])
 }
-

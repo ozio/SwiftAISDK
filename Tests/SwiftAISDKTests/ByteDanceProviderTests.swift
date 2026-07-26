@@ -76,7 +76,7 @@ import Testing
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks")
     #expect(requests[0].headers["authorization"] == "Bearer ark-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/bytedance/2.0.13")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/bytedance/2.0.14")
     #expect(requests[0].headers["x-request-id"] == "req-1")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "seedance-1-0-pro-250528")
@@ -91,7 +91,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks/task-1")
     #expect(requests[1].headers["authorization"] == "Bearer ark-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/bytedance/2.0.13")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/bytedance/2.0.14")
     #expect(requests[1].headers["x-request-id"] == "req-1")
 }
 

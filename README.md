@@ -46,7 +46,7 @@ let provider = try AIProviders.openAI(
 
 ## Core Facade
 
-The `AI` facade mirrors the high-level shape of `@ai-sdk/ai` while using Swift
+The `AI` facade mirrors the high-level shape of `ai` while using Swift
 protocols for each model family:
 
 ```swift
@@ -153,6 +153,9 @@ let answer = try await model.generateText(
 Tools support argument refinement, JSON Schema validation, dynamic MCP-backed
 tools, approval hooks, and provider-defined helpers such as `OpenAITools`,
 `AnthropicTools`, `XAITools`, `GoogleTools`, and `GatewayTools`.
+For OpenAI Responses, `OpenAITools.programmaticToolCalling(...)` enables
+programmatic tool orchestration; function schemas accept OpenAI
+`allowedCallers` and `outputSchema` provider options.
 
 ## Providers
 

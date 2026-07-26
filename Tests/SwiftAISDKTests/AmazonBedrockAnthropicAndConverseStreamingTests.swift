@@ -31,7 +31,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke")
     #expect(request.headers["Authorization"] == "Bearer bedrock-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.24")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.32")
     #expect(request.headers["anthropic-beta"] == nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"] == nil)
@@ -138,13 +138,13 @@ import Testing
     #expect(content[0]["source"]?["media_type"]?.stringValue == "image/png")
     #expect(content[0]["source"]?["data"]?.stringValue == imageData.base64EncodedString())
 }
-@Test func amazonBedrockAnthropicOmitsStructuredOutputForUnsupportedOpusAndFableModels() async throws {
+@Test func amazonBedrockAnthropicUsesJSONToolForModelsWithoutNativeStructuredOutput() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-    {"content":[{"type":"text","text":"json-ish"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    {"content":[{"type":"tool_use","id":"json-1","name":"json","input":{"answer":"opus"}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":2}}
     """),
         jsonResponse("""
-    {"content":[{"type":"text","text":"json-ish"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+    {"content":[{"type":"tool_use","id":"json-2","name":"json","input":{"answer":"fable"}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":2}}
     """)
     ])
     let provider = try AIProviders.amazonBedrockAnthropic(settings: AmazonBedrockProviderSettings(
@@ -160,14 +160,28 @@ import Testing
         responseFormat: .json(schema: .object([
             "type": .string("object"),
             "properties": .object(["answer": .object(["type": .string("string")])])
-        ]))
+        ])),
+        tools: [
+            "weather": [
+                "type": "object",
+                "strict": true,
+                "properties": ["city": ["type": "string"]]
+            ]
+        ]
     ))
     let fableResult = try await fable.generate(LanguageModelRequest(
         messages: [.user("Return JSON")],
         responseFormat: .json(schema: .object([
             "type": .string("object"),
             "properties": .object(["answer": .object(["type": .string("string")])])
-        ]))
+        ])),
+        tools: [
+            "weather": [
+                "type": "object",
+                "strict": true,
+                "properties": ["city": ["type": "string"]]
+            ]
+        ]
     ))
 
     let requests = await transport.requests()
@@ -175,16 +189,20 @@ import Testing
     let fableBody = try decodeJSONBody(try #require(requests.last?.body))
     #expect(opusBody["output_config"]?["format"] == nil)
     #expect(fableBody["output_config"]?["format"] == nil)
-    #expect(opusResult.warnings.contains(AIWarning(
-        type: "unsupported",
-        feature: "responseFormat",
-        message: "Bedrock Anthropic does not support native structured output for anthropic.claude-opus-4-7. The response format is ignored."
-    )))
-    #expect(fableResult.warnings.contains(AIWarning(
-        type: "unsupported",
-        feature: "responseFormat",
-        message: "Bedrock Anthropic does not support native structured output for anthropic.claude-fable-5-20260601-v1:0. The response format is ignored."
-    )))
+    #expect(opusBody["tools"]?.arrayValue?.contains { $0["name"]?.stringValue == "json" } == true)
+    #expect(fableBody["tools"]?.arrayValue?.contains { $0["name"]?.stringValue == "json" } == true)
+    let opusWeatherTool = opusBody["tools"]?.arrayValue?.first { $0["name"]?.stringValue == "weather" }
+    let fableWeatherTool = fableBody["tools"]?.arrayValue?.first { $0["name"]?.stringValue == "weather" }
+    #expect(opusWeatherTool?["strict"] == nil)
+    #expect(fableWeatherTool?["strict"] == nil)
+    #expect(opusBody["tool_choice"]?["type"]?.stringValue == "any")
+    #expect(fableBody["tool_choice"]?["type"]?.stringValue == "any")
+    #expect(try decodeJSONBody(Data(opusResult.text.utf8))["answer"]?.stringValue == "opus")
+    #expect(try decodeJSONBody(Data(fableResult.text.utf8))["answer"]?.stringValue == "fable")
+    #expect(!opusResult.warnings.contains { $0.feature == "responseFormat" })
+    #expect(!fableResult.warnings.contains { $0.feature == "responseFormat" })
+    #expect(opusResult.warnings.contains { $0.feature == "strict" })
+    #expect(fableResult.warnings.contains { $0.feature == "strict" })
 }
 @Test func amazonBedrockAnthropicStreamsEventStreamAsAnthropicEvents() async throws {
     let event1 = #"{"type":"content_block_delta","delta":{"type":"text_delta","text":"bed"}}"#
@@ -237,7 +255,7 @@ import Testing
     #expect(request.url.absoluteString == "https://bedrock-mantle.us-west-2.api.aws/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer mantle-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.24")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.32")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai.gpt-oss-20b")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")

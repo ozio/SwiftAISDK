@@ -119,7 +119,27 @@ func verifyToolApprovalSignature(
     input: JSONValue
 ) -> Bool {
     guard let signatureBytes = toolApprovalBase64URLData(signature) else { return false }
+    let key = SymmetricKey(data: secret)
     let payload = toolApprovalSigningPayload(
+        approvalID: approvalID,
+        toolCallID: toolCallID,
+        toolName: toolName,
+        input: input
+    )
+    if HMAC<SHA256>.isValidAuthenticationCode(
+        signatureBytes,
+        authenticating: Data(payload.utf8),
+        using: key
+    ) {
+        return true
+    }
+
+    guard !approvalID.contains("\n"),
+          !toolCallID.contains("\n"),
+          !toolName.contains("\n") else {
+        return false
+    }
+    let legacyPayload = legacyToolApprovalSigningPayload(
         approvalID: approvalID,
         toolCallID: toolCallID,
         toolName: toolName,
@@ -127,8 +147,8 @@ func verifyToolApprovalSignature(
     )
     return HMAC<SHA256>.isValidAuthenticationCode(
         signatureBytes,
-        authenticating: Data(payload.utf8),
-        using: SymmetricKey(data: secret)
+        authenticating: Data(legacyPayload.utf8),
+        using: key
     )
 }
 
@@ -325,6 +345,25 @@ private func toolApprovalSigningPayload(
     input: JSONValue
 ) -> String {
     let inputDigest = toolApprovalBase64URL(Data(SHA256.hash(data: Data(toolApprovalCanonicalJSON(input).utf8))))
+    let fields = [
+        "ai-sdk-tool-approval-v1",
+        approvalID,
+        toolCallID,
+        toolName,
+        inputDigest
+    ]
+    .map(toolApprovalJSONStringLiteral)
+    .joined(separator: ",")
+    return "[\(fields)]"
+}
+
+private func legacyToolApprovalSigningPayload(
+    approvalID: String,
+    toolCallID: String,
+    toolName: String,
+    input: JSONValue
+) -> String {
+    let inputDigest = toolApprovalBase64URL(Data(SHA256.hash(data: Data(toolApprovalCanonicalJSON(input).utf8))))
     return "\(approvalID)\n\(toolCallID)\n\(toolName)\n\(inputDigest)"
 }
 
@@ -333,19 +372,79 @@ private func toolApprovalCanonicalJSON(_ value: JSONValue) -> String {
     case let .string(string):
         return toolApprovalJSONStringLiteral(string)
     case let .number(number):
-        return number.rounded() == number ? String(Int(number)) : String(number)
+        return toolApprovalJSONNumber(number)
     case let .bool(bool):
         return bool ? "true" : "false"
     case let .array(array):
         return "[\(array.map(toolApprovalCanonicalJSON).joined(separator: ","))]"
     case let .object(object):
-        let entries = object.keys.sorted().map { key in
+        let entries = object.keys.sorted {
+            $0.utf16.lexicographicallyPrecedes($1.utf16)
+        }.map { key in
             "\(toolApprovalJSONStringLiteral(key)):\(toolApprovalCanonicalJSON(object[key] ?? .null))"
         }
         return "{\(entries.joined(separator: ","))}"
     case .null:
         return "null"
     }
+}
+
+private func toolApprovalJSONNumber(_ number: Double) -> String {
+    guard number.isFinite else {
+        return "null"
+    }
+    guard number != 0 else {
+        return "0"
+    }
+
+    let isNegative = number < 0
+    let components = String(abs(number)).split(
+        separator: "e",
+        maxSplits: 1,
+        omittingEmptySubsequences: false
+    )
+    let mantissa = components[0]
+    let exponent = components.count == 2 ? Int(components[1]) ?? 0 : 0
+    let decimalOffset = mantissa.firstIndex(of: ".").map {
+        mantissa.distance(from: mantissa.startIndex, to: $0)
+    } ?? mantissa.count
+
+    var digits = String(mantissa.filter { $0 != "." })
+    let leadingZeroCount = digits.prefix(while: { $0 == "0" }).count
+    digits.removeFirst(leadingZeroCount)
+    let decimalPosition = decimalOffset + exponent - leadingZeroCount
+
+    while digits.last == "0" {
+        digits.removeLast()
+    }
+    guard !digits.isEmpty else {
+        return "0"
+    }
+
+    let unsigned: String
+    // Match ECMAScript Number::toString, which JSON.stringify uses:
+    // fixed notation from 1e-6 through values below 1e21, scientific otherwise.
+    if decimalPosition > 0, decimalPosition <= 21 {
+        if decimalPosition >= digits.count {
+            unsigned = digits + String(repeating: "0", count: decimalPosition - digits.count)
+        } else {
+            let splitIndex = digits.index(digits.startIndex, offsetBy: decimalPosition)
+            unsigned = "\(digits[..<splitIndex]).\(digits[splitIndex...])"
+        }
+    } else if decimalPosition <= 0, decimalPosition > -6 {
+        unsigned = "0." + String(repeating: "0", count: -decimalPosition) + digits
+    } else {
+        let exponent = decimalPosition - 1
+        let significand: String
+        if digits.count == 1 {
+            significand = digits
+        } else {
+            significand = "\(digits.first!).\(digits.dropFirst())"
+        }
+        unsigned = "\(significand)e\(exponent >= 0 ? "+" : "")\(exponent)"
+    }
+
+    return isNegative ? "-\(unsigned)" : unsigned
 }
 
 private func toolApprovalJSONStringLiteral(_ value: String) -> String {

@@ -37,7 +37,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             providerMetadata: googleGenerateContentProviderMetadata(from: raw),
             rawValue: raw,
             warnings: prepared.warnings,
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: googleGenerateContentResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
 
@@ -165,16 +165,51 @@ extension GoogleGenerativeLanguageModel {
 
 let googleSkipThoughtSignatureValidator = "skip_thought_signature_validator"
 
-func googleGenerateContentMessageJSON(_ message: AIMessage, modelID: String, warnings: inout [AIWarning]) throws -> JSONValue {
+func googleGenerateContentMessageJSON(
+    _ message: AIMessage,
+    modelID: String,
+    includeFunctionCallIDs: Bool = true,
+    warnings: inout [AIWarning]
+) throws -> JSONValue {
     let role = message.role == .assistant ? "model" : "user"
     var parts: [JSONValue] = []
+    var modelResponseHasSignedFunctionCall = false
     for part in message.content {
-        parts.append(contentsOf: try googleGenerateContentParts(part, modelID: modelID, warnings: &warnings))
+        if case let .toolCall(call) = part {
+            let thoughtSignature = googleThoughtSignature(from: call.providerMetadata)
+            let isServerToolCall = googleServerToolMetadata(from: call.providerMetadata) != nil
+            let shouldSkipMissingSignatureMitigation = message.role == .assistant
+                && !isServerToolCall
+                && thoughtSignature == nil
+                && modelResponseHasSignedFunctionCall
+            parts.append(googleGenerateContentToolCallPart(
+                call,
+                modelID: modelID,
+                includeFunctionCallIDs: includeFunctionCallIDs,
+                skipMissingSignatureMitigation: shouldSkipMissingSignatureMitigation,
+                warnings: &warnings
+            ))
+            if message.role == .assistant, !isServerToolCall, thoughtSignature != nil {
+                modelResponseHasSignedFunctionCall = true
+            }
+            continue
+        }
+        parts.append(contentsOf: try googleGenerateContentParts(
+            part,
+            modelID: modelID,
+            includeFunctionCallIDs: includeFunctionCallIDs,
+            warnings: &warnings
+        ))
     }
     return .object(["role": .string(role), "parts": .array(parts)])
 }
 
-func googleGenerateContentParts(_ part: AIContentPart, modelID: String, warnings: inout [AIWarning]) throws -> [JSONValue] {
+func googleGenerateContentParts(
+    _ part: AIContentPart,
+    modelID: String,
+    includeFunctionCallIDs: Bool = true,
+    warnings: inout [AIWarning]
+) throws -> [JSONValue] {
     switch part {
     case let .text(text, _):
         return [.object(["text": .string(text)])]
@@ -193,18 +228,35 @@ func googleGenerateContentParts(_ part: AIContentPart, modelID: String, warnings
     case let .providerReference(_, reference, _, _):
         return [.object(["fileData": .object(["fileUri": .string((try? resolveProviderReference(reference, provider: "google")) ?? reference.values.first ?? "")])])]
     case let .toolCall(call):
-        return [googleGenerateContentToolCallPart(call, modelID: modelID, warnings: &warnings)]
+        return [googleGenerateContentToolCallPart(
+            call,
+            modelID: modelID,
+            includeFunctionCallIDs: includeFunctionCallIDs,
+            warnings: &warnings
+        )]
     case let .toolResult(result):
-        return googleGenerateContentToolResultParts(result, modelID: modelID)
+        return googleGenerateContentToolResultParts(
+            result,
+            modelID: modelID,
+            includeFunctionCallIDs: includeFunctionCallIDs
+        )
     case .reasoningFile, .custom, .toolApprovalRequest, .toolApprovalResponse:
         return [.object(["text": .string("")])]
     }
 }
 
-func googleGenerateContentToolCallPart(_ call: AIToolCall, modelID: String, warnings: inout [AIWarning]) -> JSONValue {
+func googleGenerateContentToolCallPart(
+    _ call: AIToolCall,
+    modelID: String,
+    includeFunctionCallIDs: Bool = true,
+    skipMissingSignatureMitigation: Bool = false,
+    warnings: inout [AIWarning]
+) -> JSONValue {
     let thoughtSignature = googleThoughtSignature(from: call.providerMetadata)
     let effectiveThoughtSignature: JSONValue?
-    if thoughtSignature == nil, googleMessageTargetIsGemini3(modelID) {
+    if thoughtSignature == nil,
+       googleMessageTargetIsGemini3(modelID),
+       !skipMissingSignatureMitigation {
         effectiveThoughtSignature = .string(googleSkipThoughtSignatureValidator)
         warnings.append(googleMissingThoughtSignatureWarning(toolName: call.name))
     } else {
@@ -221,12 +273,15 @@ func googleGenerateContentToolCallPart(_ call: AIToolCall, modelID: String, warn
             ])
         ]
     } else {
+        var functionCall: [String: JSONValue] = [
+            "name": .string(call.name),
+            "args": googleToolArguments(call.arguments)
+        ]
+        if includeFunctionCallIDs {
+            functionCall["id"] = .string(call.id)
+        }
         output = [
-            "functionCall": .object([
-                "id": .string(call.id),
-                "name": .string(call.name),
-                "args": googleToolArguments(call.arguments)
-            ])
+            "functionCall": .object(functionCall)
         ]
     }
     if let effectiveThoughtSignature {
@@ -235,7 +290,11 @@ func googleGenerateContentToolCallPart(_ call: AIToolCall, modelID: String, warn
     return .object(output)
 }
 
-func googleGenerateContentToolResultParts(_ result: AIToolResult, modelID: String) -> [JSONValue] {
+func googleGenerateContentToolResultParts(
+    _ result: AIToolResult,
+    modelID: String,
+    includeFunctionCallIDs: Bool = true
+) -> [JSONValue] {
     if let serverTool = googleServerToolMetadata(from: result.providerMetadata) {
         var output: [String: JSONValue] = [
             "toolResponse": .object([
@@ -257,20 +316,30 @@ func googleGenerateContentToolResultParts(_ result: AIToolResult, modelID: Strin
             toolName: result.toolName,
             toolCallID: result.toolCallID,
             content: value,
-            supportsFunctionResponseParts: googleMessageTargetIsGemini3(modelID)
+            supportsFunctionResponseParts: googleMessageTargetIsGemini3(modelID),
+            includeFunctionCallIDs: includeFunctionCallIDs
         )
     }
 
+    var functionResponse: [String: JSONValue] = [
+        "name": .string(result.toolName),
+        "response": output
+    ]
+    if includeFunctionCallIDs {
+        functionResponse["id"] = .string(result.toolCallID)
+    }
     return [.object([
-        "functionResponse": .object([
-            "id": .string(result.toolCallID),
-            "name": .string(result.toolName),
-            "response": output
-        ])
+        "functionResponse": .object(functionResponse)
     ])]
 }
 
-func googleGenerateContentToolResultContentParts(toolName: String, toolCallID: String, content: [JSONValue], supportsFunctionResponseParts: Bool) -> [JSONValue] {
+func googleGenerateContentToolResultContentParts(
+    toolName: String,
+    toolCallID: String,
+    content: [JSONValue],
+    supportsFunctionResponseParts: Bool,
+    includeFunctionCallIDs: Bool = true
+) -> [JSONValue] {
     var textParts: [String] = []
     var inlineParts: [JSONValue] = []
     var legacyParts: [JSONValue] = []
@@ -297,25 +366,30 @@ func googleGenerateContentToolResultContentParts(toolName: String, toolCallID: S
 
     if !supportsFunctionResponseParts, !legacyParts.isEmpty {
         if !textParts.isEmpty {
+            var functionResponse: [String: JSONValue] = [
+                "name": .string(toolName),
+                "response": .object(["name": .string(toolName), "content": .string(textParts.joined(separator: "\n"))])
+            ]
+            if includeFunctionCallIDs {
+                functionResponse["id"] = .string(toolCallID)
+            }
             legacyParts.insert(.object([
-                "functionResponse": .object([
-                    "id": .string(toolCallID),
-                    "name": .string(toolName),
-                    "response": .object(["name": .string(toolName), "content": .string(textParts.joined(separator: "\n"))])
-                ])
+                "functionResponse": .object(functionResponse)
             ]), at: 0)
         }
         return legacyParts
     }
 
     var response: [String: JSONValue] = [
-        "id": .string(toolCallID),
         "name": .string(toolName),
         "response": .object([
             "name": .string(toolName),
             "content": .string(textParts.isEmpty ? "Tool executed successfully." : textParts.joined(separator: "\n"))
         ])
     ]
+    if includeFunctionCallIDs {
+        response["id"] = .string(toolCallID)
+    }
     if !inlineParts.isEmpty {
         response["parts"] = .array(inlineParts)
     }
@@ -331,7 +405,7 @@ func googleInlineDataFromToolContent(_ contentPart: JSONValue) -> JSONValue? {
 }
 
 func googleMessageTargetIsGemini3(_ modelID: String) -> Bool {
-    modelID.lowercased().contains("gemini-3")
+    googleModelCapabilities(for: modelID).usesGemini3Features
 }
 
 func googleMissingThoughtSignatureWarning(toolName: String) -> AIWarning {

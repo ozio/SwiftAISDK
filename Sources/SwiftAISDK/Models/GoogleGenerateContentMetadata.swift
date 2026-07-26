@@ -68,6 +68,16 @@ func googleGenerateContentArguments(_ value: JSONValue?) -> String {
     return text
 }
 
+func googleGenerateContentResponseMetadata(
+    from raw: JSONValue,
+    response: AIHTTPResponse,
+    modelID: String?
+) -> AIResponseMetadata {
+    var metadata = aiResponseMetadata(from: raw, response: response, modelID: modelID)
+    metadata.id = raw["responseId"]?.stringValue ?? metadata.id
+    return metadata
+}
+
 func googlePartialArgValue(_ partialArg: JSONValue) -> JSONValue {
     if let value = partialArg["stringValue"]?.stringValue {
         return .string(value)

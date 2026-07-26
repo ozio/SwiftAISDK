@@ -357,6 +357,23 @@ func anthropicTokenUsage(from usage: JSONValue?) -> TokenUsage? {
     guard let usage else { return nil }
     let cacheReadTokens = usage["cache_read_input_tokens"]?.intValue ?? 0
     let cacheWriteTokens = usage["cache_creation_input_tokens"]?.intValue ?? 0
+    let reasoningTokens = usage["output_tokens_details"]?["thinking_tokens"]?.intValue
+
+    func tokenUsage(inputTokens: Int?, outputTokens: Int?) -> TokenUsage {
+        TokenUsage(
+            inputTokens: inputTokens.map { $0 + cacheReadTokens + cacheWriteTokens },
+            outputTokens: outputTokens,
+            inputTokensNoCache: inputTokens,
+            inputTokensCacheRead: cacheReadTokens,
+            inputTokensCacheWrite: cacheWriteTokens,
+            outputTextTokens: outputTokens.flatMap { outputTokens in
+                reasoningTokens.map { outputTokens - $0 }
+            },
+            outputReasoningTokens: reasoningTokens,
+            rawValue: usage
+        )
+    }
+
     let iterations = usage["iterations"]?.arrayValue ?? []
     let servedByFallback = iterations.contains { $0["type"]?.stringValue == "fallback_message" }
     if !iterations.isEmpty && !servedByFallback {
@@ -366,34 +383,16 @@ func anthropicTokenUsage(from usage: JSONValue?) -> TokenUsage? {
         }
         if executorIterations.isEmpty {
             let inputTokens = usage["input_tokens"]?.intValue
-            return TokenUsage(
-                inputTokens: inputTokens.map { $0 + cacheReadTokens + cacheWriteTokens },
-                outputTokens: usage["output_tokens"]?.intValue,
-                inputTokensNoCache: inputTokens,
-                inputTokensCacheRead: cacheReadTokens,
-                inputTokensCacheWrite: cacheWriteTokens,
-                rawValue: usage
-            )
+            return tokenUsage(inputTokens: inputTokens, outputTokens: usage["output_tokens"]?.intValue)
         }
         let inputTokens = executorIterations.reduce(0) { $0 + ($1["input_tokens"]?.intValue ?? 0) }
-        return TokenUsage(
-            inputTokens: inputTokens + cacheReadTokens + cacheWriteTokens,
-            outputTokens: executorIterations.reduce(0) { $0 + ($1["output_tokens"]?.intValue ?? 0) },
-            inputTokensNoCache: inputTokens,
-            inputTokensCacheRead: cacheReadTokens,
-            inputTokensCacheWrite: cacheWriteTokens,
-            rawValue: usage
+        return tokenUsage(
+            inputTokens: inputTokens,
+            outputTokens: executorIterations.reduce(0) { $0 + ($1["output_tokens"]?.intValue ?? 0) }
         )
     }
     let inputTokens = usage["input_tokens"]?.intValue
-    return TokenUsage(
-        inputTokens: inputTokens.map { $0 + cacheReadTokens + cacheWriteTokens },
-        outputTokens: usage["output_tokens"]?.intValue,
-        inputTokensNoCache: inputTokens,
-        inputTokensCacheRead: cacheReadTokens,
-        inputTokensCacheWrite: cacheWriteTokens,
-        rawValue: usage
-    )
+    return tokenUsage(inputTokens: inputTokens, outputTokens: usage["output_tokens"]?.intValue)
 }
 
 func anthropicHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {

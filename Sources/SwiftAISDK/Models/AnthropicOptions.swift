@@ -16,6 +16,7 @@ struct AnthropicModelCapabilities {
     var supportsAdaptiveThinking: Bool
     var rejectsSamplingParameters: Bool
     var supportsXhighEffort: Bool
+    var rejectsThinkingDisabledAboveHighEffort: Bool
     var isKnownModel: Bool
 }
 
@@ -155,7 +156,9 @@ func anthropicAutomaticBetas(from body: [String: JSONValue]) -> [String] {
     if body["speed"]?.stringValue == "fast" {
         add("fast-mode-2026-02-01")
     }
-    if body["fallbacks"]?.arrayValue?.isEmpty == false {
+    if body["fallbacks"]?.stringValue == "default" {
+        add("server-side-fallback-2026-07-01")
+    } else if body["fallbacks"]?.arrayValue?.isEmpty == false {
         add("server-side-fallback-2026-06-01")
     }
 
@@ -183,6 +186,9 @@ func anthropicOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue
     }
     if let container = output.removeValue(forKey: "container") {
         output["container"] = anthropicContainer(container)
+    }
+    if output["fallbacks"]?.arrayValue?.isEmpty == true {
+        output.removeValue(forKey: "fallbacks")
     }
 
     var outputConfig: [String: JSONValue] = output.removeValue(forKey: "output_config")?.objectValue ?? [:]
@@ -283,6 +289,17 @@ func anthropicStandardWarnings(for request: LanguageModelRequest) -> [AIWarning]
 }
 
 func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities {
+    if modelID.contains("claude-opus-5") {
+        return AnthropicModelCapabilities(
+            maxOutputTokens: 128_000,
+            supportsStructuredOutput: true,
+            supportsAdaptiveThinking: true,
+            rejectsSamplingParameters: true,
+            supportsXhighEffort: true,
+            rejectsThinkingDisabledAboveHighEffort: true,
+            isKnownModel: true
+        )
+    }
     if modelID.contains("claude-opus-4-8") ||
         modelID.contains("claude-opus-4-7") ||
         modelID.contains("claude-fable-5") ||
@@ -293,6 +310,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsAdaptiveThinking: true,
             rejectsSamplingParameters: true,
             supportsXhighEffort: true,
+            rejectsThinkingDisabledAboveHighEffort: false,
             isKnownModel: true
         )
     }
@@ -304,6 +322,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsAdaptiveThinking: true,
             rejectsSamplingParameters: false,
             supportsXhighEffort: false,
+            rejectsThinkingDisabledAboveHighEffort: false,
             isKnownModel: true
         )
     }
@@ -316,6 +335,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsAdaptiveThinking: false,
             rejectsSamplingParameters: false,
             supportsXhighEffort: false,
+            rejectsThinkingDisabledAboveHighEffort: false,
             isKnownModel: true
         )
     }
@@ -326,6 +346,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsAdaptiveThinking: false,
             rejectsSamplingParameters: false,
             supportsXhighEffort: false,
+            rejectsThinkingDisabledAboveHighEffort: false,
             isKnownModel: true
         )
     }
@@ -336,6 +357,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsAdaptiveThinking: false,
             rejectsSamplingParameters: false,
             supportsXhighEffort: false,
+            rejectsThinkingDisabledAboveHighEffort: false,
             isKnownModel: true
         )
     }
@@ -346,6 +368,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsAdaptiveThinking: false,
             rejectsSamplingParameters: false,
             supportsXhighEffort: false,
+            rejectsThinkingDisabledAboveHighEffort: false,
             isKnownModel: true
         )
     }
@@ -356,7 +379,33 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             supportsAdaptiveThinking: false,
             rejectsSamplingParameters: false,
             supportsXhighEffort: false,
+            rejectsThinkingDisabledAboveHighEffort: false,
             isKnownModel: true
+        )
+    }
+    if modelID.range(
+        of: #"claude-(?:instant(?:-|$)|v?2(?=$|[-.:])|3(?=$|[-.]))"#,
+        options: .regularExpression
+    ) != nil {
+        return AnthropicModelCapabilities(
+            maxOutputTokens: 4_096,
+            supportsStructuredOutput: false,
+            supportsAdaptiveThinking: false,
+            rejectsSamplingParameters: false,
+            supportsXhighEffort: false,
+            rejectsThinkingDisabledAboveHighEffort: false,
+            isKnownModel: false
+        )
+    }
+    if modelID.contains("claude-") {
+        return AnthropicModelCapabilities(
+            maxOutputTokens: 128_000,
+            supportsStructuredOutput: true,
+            supportsAdaptiveThinking: true,
+            rejectsSamplingParameters: true,
+            supportsXhighEffort: true,
+            rejectsThinkingDisabledAboveHighEffort: true,
+            isKnownModel: false
         )
     }
     return AnthropicModelCapabilities(
@@ -365,6 +414,7 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
         supportsAdaptiveThinking: false,
         rejectsSamplingParameters: false,
         supportsXhighEffort: false,
+        rejectsThinkingDisabledAboveHighEffort: false,
         isKnownModel: false
     )
 }
@@ -535,11 +585,34 @@ func anthropicApplyMaxTokenLimit(
     body["max_tokens"] = .number(Double(capabilities.maxOutputTokens))
 }
 
+func anthropicApplyDisabledThinkingEffortLimit(
+    to body: inout [String: JSONValue],
+    modelID: String,
+    capabilities: AnthropicModelCapabilities,
+    warnings: inout [AIWarning]
+) {
+    guard capabilities.rejectsThinkingDisabledAboveHighEffort,
+          body["thinking"]?["type"]?.stringValue == "disabled",
+          var outputConfig = body["output_config"]?.objectValue,
+          let effort = outputConfig["effort"]?.stringValue,
+          effort == "xhigh" || effort == "max" else {
+        return
+    }
+    outputConfig["effort"] = .string("high")
+    body["output_config"] = .object(outputConfig)
+    warnings.append(AIWarning(
+        type: "unsupported",
+        feature: "providerOptions.anthropic.effort",
+        message: "effort '\(effort)' is not supported by \(modelID) when thinking is disabled. The effort has been lowered to 'high'."
+    ))
+}
+
 func anthropicApplyResponseFormat(
     _ responseFormat: AIResponseFormat?,
     to body: inout [String: JSONValue],
     supportsStructuredOutput: Bool,
     structuredOutputMode: String?,
+    disableParallelToolUse: Bool?,
     eagerInputStreaming: Bool,
     warnings: inout [AIWarning]
 ) -> Bool {
@@ -559,6 +632,13 @@ func anthropicApplyResponseFormat(
         let useNativeOutputFormat = structuredOutputMode == "outputFormat"
             || (structuredOutputMode != "jsonTool" && supportsStructuredOutput)
         guard useNativeOutputFormat else {
+            if disableParallelToolUse == false {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "providerOptions.anthropic.disableParallelToolUse",
+                    message: "`disableParallelToolUse: false` is ignored when using the JSON response tool. Parallel tool use is disabled to ensure a single coherent JSON tool call."
+                ))
+            }
             var tools = body["tools"]?.arrayValue ?? []
             tools.append(.object([
                 "name": .string("json"),

@@ -64,6 +64,27 @@ import Testing
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
 }
+@Test func googleLanguageStreamSurfacesRepeatedProviderResponseIDOnce() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"responseId":"google-stream-response-123","candidates":[{"content":{"parts":[{"text":"gem"}],"role":"model"},"index":0}]}
+
+    data: {"responseId":"google-stream-response-123","candidates":[{"content":{"parts":[{"text":"ini"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}
+
+    """, headers: ["x-request-id": "http-request-123"]))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-3.6-flash")
+
+    var responseMetadata: [AIResponseMetadata] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Ping")])) {
+        if case let .responseMetadata(metadata) = part {
+            responseMetadata.append(metadata)
+        }
+    }
+
+    #expect(responseMetadata.count == 1)
+    #expect(responseMetadata[0].id == "google-stream-response-123")
+    #expect(responseMetadata[0].headers["x-request-id"] == "http-request-123")
+}
 @Test func googleLanguageStreamPreservesFinishProviderMetadataAcrossChunks() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"index":0,"groundingMetadata":{"webSearchQueries":["super bowl"],"groundingChunks":[{"web":{"uri":"https://example.com/superbowl","title":"Super Bowl"}}]},"urlContextMetadata":{"urlMetadata":[{"retrievedUrl":"https://example.com/page","urlRetrievalStatus":"URL_RETRIEVAL_STATUS_SUCCESS"}]}}]}

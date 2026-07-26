@@ -10,7 +10,16 @@ func convertToLanguageModelPrompt(_ prompt: StandardizedPrompt) throws -> [AIMes
             combinedMessages.append(message)
             continue
         }
-        combinedMessages[combinedMessages.count - 1].content.append(contentsOf: message.content)
+        let previousIndex = combinedMessages.count - 1
+        if let contentIndex = combinedMessages[previousIndex].content.indices.last,
+           !combinedMessages[previousIndex].providerMetadata.isEmpty {
+            combinedMessages[previousIndex].content[contentIndex] = mergingToolPartProviderMetadata(
+                combinedMessages[previousIndex].providerMetadata,
+                into: combinedMessages[previousIndex].content[contentIndex]
+            )
+        }
+        combinedMessages[previousIndex].content.append(contentsOf: message.content)
+        combinedMessages[previousIndex].providerMetadata = message.providerMetadata
     }
 
     let filteredMessages = combinedMessages.filter { message in
@@ -85,4 +94,39 @@ func convertToLanguageModelMessage(_ message: AIMessage) -> AIMessage {
     }
 
     return converted
+}
+
+private func mergingToolPartProviderMetadata(
+    _ messageMetadata: [String: JSONValue],
+    into part: AIContentPart
+) -> AIContentPart {
+    let merged = deepMergeProviderMetadata(messageMetadata, part.providerMetadata)
+    switch part {
+    case let .toolResult(value):
+        var result = value
+        result.providerMetadata = merged
+        return .toolResult(result)
+    case let .toolApprovalResponse(value):
+        var response = value
+        response.providerMetadata = merged
+        return .toolApprovalResponse(response)
+    default:
+        return part
+    }
+}
+
+private func deepMergeProviderMetadata(
+    _ base: [String: JSONValue],
+    _ overrides: [String: JSONValue]
+) -> [String: JSONValue] {
+    var merged = base
+    for (key, override) in overrides {
+        if case let .object(baseObject) = merged[key],
+           case let .object(overrideObject) = override {
+            merged[key] = .object(deepMergeProviderMetadata(baseObject, overrideObject))
+        } else {
+            merged[key] = override
+        }
+    }
+    return merged
 }

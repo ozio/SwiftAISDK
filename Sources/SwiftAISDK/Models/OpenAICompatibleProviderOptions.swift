@@ -296,7 +296,7 @@ func openAIImageOptions(providerOptions: [String: JSONValue], extraBody: [String
 }
 
 func openAIImageHasDefaultResponseFormat(_ modelID: String) -> Bool {
-    ["chatgpt-image-", "gpt-image-1-mini", "gpt-image-1.5", "gpt-image-1", "gpt-image-2"].contains { modelID.hasPrefix($0) }
+    ["chatgpt-image-", "gpt-image-"].contains { modelID.hasPrefix($0) }
 }
 
 func openAIImageMaxImagesPerCall(_ modelID: String) -> Int {
@@ -304,7 +304,7 @@ func openAIImageMaxImagesPerCall(_ modelID: String) -> Int {
     case "dall-e-2", "gpt-image-1", "gpt-image-1-mini", "gpt-image-1.5", "gpt-image-2", "chatgpt-image-latest":
         return 10
     default:
-        return 1
+        return modelID.hasPrefix("gpt-image-") ? 10 : 1
     }
 }
 
@@ -337,4 +337,3 @@ func openAITranscriptionOptions(providerOptions: [String: JSONValue], extraBody:
 func openAITranscriptionUsesJSONResponseFormat(_ modelID: String) -> Bool {
     modelID == "gpt-4o-transcribe" || modelID == "gpt-4o-mini-transcribe"
 }
-

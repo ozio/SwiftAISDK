@@ -103,6 +103,9 @@ extension AI {
         )
 
         for index in 0..<maxSteps {
+            if index > 0 {
+                try initialRequest.abortSignal?.throwIfAborted()
+            }
             let historicalApprovalExecution = try await executeHistoricalToolApprovals(
                 request: currentRequest,
                 toolsByName: try toolsByName(from: executableTools),

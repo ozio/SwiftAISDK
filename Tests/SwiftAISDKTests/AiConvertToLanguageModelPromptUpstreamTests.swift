@@ -302,6 +302,70 @@ import Testing
     ])
 }
 
+@Test func aiConvertPromptPreservesProviderMetadataAtCombinedToolMessageBoundariesLikeUpstream() throws {
+    let firstCall = AIToolCall(id: "toolCallId1", name: "toolName", arguments: #"{}"#)
+    let secondCall = AIToolCall(id: "toolCallId2", name: "toolName", arguments: #"{}"#)
+    let firstResult = AIToolResult(
+        toolCallID: firstCall.id,
+        toolName: firstCall.name,
+        result: ["value": "result1"],
+        providerMetadata: [
+            "test": [
+                "cacheControl": "part",
+                "partOnly": true
+            ]
+        ]
+    )
+    let secondResult = AIToolResult(
+        toolCallID: secondCall.id,
+        toolName: secondCall.name,
+        result: ["value": "result2"]
+    )
+
+    let result = try convertToLanguageModelPrompt(StandardizedPrompt(messages: [
+        AIMessage(role: .assistant, content: [.toolCall(firstCall), .toolCall(secondCall)]),
+        AIMessage(
+            role: .tool,
+            content: [.toolResult(firstResult)],
+            providerMetadata: [
+                "test": [
+                    "cacheControl": "first-message",
+                    "messageOnly": true
+                ]
+            ]
+        ),
+        AIMessage(
+            role: .tool,
+            content: [.toolResult(secondResult)],
+            providerMetadata: [
+                "test": [
+                    "cacheControl": "second-message"
+                ]
+            ]
+        )
+    ]))
+
+    #expect(result.map(\.role) == [.assistant, .tool])
+    #expect(result[1].providerMetadata == [
+        "test": [
+            "cacheControl": "second-message"
+        ]
+    ])
+    guard case let .toolResult(convertedFirstResult) = result[1].content[0],
+          case let .toolResult(convertedSecondResult) = result[1].content[1] else {
+        Issue.record("Expected two combined tool results.")
+        return
+    }
+    #expect(convertedFirstResult.providerMetadata == [
+        "test": [
+            "cacheControl": "part",
+            "messageOnly": true,
+            "partOnly": true
+        ]
+    ])
+    #expect(convertedSecondResult.providerMetadata.isEmpty)
+}
+
 @Test func aiConvertPromptDropsEmptyToolMessagesLikeUpstream() throws {
     let result = try convertToLanguageModelPrompt(StandardizedPrompt(
         messages: [

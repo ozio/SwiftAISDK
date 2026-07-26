@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-07-20
+Snapshot date: 2026-07-27
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.31`, `@ai-sdk/provider@4.0.3`,
-`@ai-sdk/provider-utils@5.0.11`, and `@ai-sdk/react@4.0.34`.
+snapshots, currently `ai@7.0.37`, `@ai-sdk/provider@4.0.3`,
+`@ai-sdk/provider-utils@5.0.12`, and `@ai-sdk/react@4.0.40`.
 
 References:
 
@@ -20,6 +20,9 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.31 -> 7.0.37`
+- `@ai-sdk/provider-utils@5.0.11 -> 5.0.12`
+- `@ai-sdk/react@4.0.34 -> 4.0.40`
 - `ai@6.0.208 -> 7.0.31`
 - `@ai-sdk/provider@3.0.10 -> 4.0.3`
 - `@ai-sdk/provider-utils@4.0.30 -> 5.0.11`
@@ -32,10 +35,42 @@ Checked npm package diffs:
 
 Port decisions:
 
-- `ai@7.0.31` approval metadata/signature preservation is represented by
-  Swift's `AIToolApprovalRequest.isAutomatic` and provider metadata fields.
-  The HMAC signing API remains JS-runtime-specific; Swift does not expose a
-  client replay signature surface.
+- `ai@7.0.36` injective tool-approval signatures are ported through
+  `toolApprovalSecret`: Swift signs the versioned JSON-array payload, accepts
+  safe legacy newline-format signatures only when the signed identity fields
+  contain no newline, and rejects delimiter retupling. Canonical JSON matches
+  ECMAScript `JSON.stringify` and UTF-16 object-key ordering, including numeric
+  exponent thresholds, `-0`, and large integral doubles, so Node and Swift
+  signatures remain interoperable. Focused tests cover published Node vectors,
+  Unicode key ordering, control characters, legacy compatibility, and the
+  original collision.
+- `ai@7.0.33` consecutive tool-message provider options are represented by
+  Swift provider metadata. When tool messages are combined, the earlier
+  message metadata is deep-merged into its boundary content part, with
+  part-level values winning, while the later message metadata remains on the
+  combined message.
+- `ai@7.0.32` multi-step non-streaming generation now rechecks the caller abort
+  signal before every later model step. Cancellation during tool execution
+  preserves the original `AIAbortError` reason and prevents a second model
+  call even when the tool returns normally.
+- `@ai-sdk/provider-utils@5.0.12` media sniffing is ported: ID3-prefixed raw and
+  base64/base64url inputs decode only a bounded prefix, optional base64 padding
+  is restored, the 128 KiB tag boundary matches upstream, and ISO-BMFF `ftyp`
+  bytes resolve to `audio/mp4` in an audio context while generic detection keeps
+  the ambiguous container as `video/mp4`.
+- `ai@7.0.35` `firstChunkMs` and semantic-content-only `chunkMs` behavior are
+  deferred. Swift currently exposes one total `timeoutNanoseconds` stream
+  timeout; faithful parity needs a structured public timeout configuration,
+  per-model-step timer lifecycle, semantic chunk classification, and cleanup
+  on provider failure or stream cancellation.
+- `ai@7.0.33` repeated tool-call ids across explicit UI stream steps are
+  deferred. `AIUIMessageStreamReducer` currently indexes tool parts globally,
+  and `LanguageStreamPart` has no `start-step` / `finish-step` cases from which
+  to define the upstream step boundary without a broader public stream change.
+- `ai@7.0.35` Node `ServerResponse` piping promises and read/write error
+  propagation remain JS-server-only. `ai@7.0.32` loose Zod UI-message chunk
+  schemas likewise have no direct Swift patch because SwiftAISDK exposes typed
+  in-process `LanguageStreamPart` values rather than that Zod wire decoder.
 - `ai@7.0.12` response-message tool-result ordering is ported in
   `toResponseMessages`: non-provider-executed tool results are sorted by the
   original tool-call order while approval responses keep their relative slots.
@@ -61,9 +96,10 @@ Port decisions:
   streaming-transcription surfaces are not represented by current SwiftAISDK
   protocols. Existing provider rows call out WebSocket/realtime STT as
   JS-runtime gaps where applicable.
-- `@ai-sdk/react@4.0.34` changes are dependency bumps and React hook/runtime
-  behavior, including MCP App UI defaults. SwiftAISDK's UI analog remains
-  `AIChatSession`, `AIObjectGenerationSession`, `DirectAIChatTransport`, and
+- `@ai-sdk/react@4.0.34 -> 4.0.40` has no direct source or declaration diff.
+  Its releases only propagate `ai`, provider-utils, gateway, and MCP dependency
+  updates. SwiftAISDK's UI analog remains `AIChatSession`,
+  `AIObjectGenerationSession`, `DirectAIChatTransport`, and
   `AIUIMessageStreamReducer`; there is no React iframe renderer to port.
 - `provider-utils@4.0.30` SSRF hardening is ported in `validateDownloadURL`
   and `downloadURL`: trailing-dot hostnames are normalized before local-host
@@ -81,10 +117,9 @@ Port decisions:
 - `ai@6.0.201` array-output transform fix is already Swift-native: array output
   returns decoded `Element` values from the final validated object array path,
   and Swift has no Zod-style transform pipeline that could return raw elements.
-- `ai@6.0.202` approval replay HMAC fix has no direct Swift replay path to
-  patch. Swift tool execution only runs fresh tool calls from the current model
-  step after JSON/schema validation and `toolApproval` evaluation; approvals
-  converted from UI history are message content, not an execution trigger.
+- `ai@6.0.202` approval replay HMAC is no longer a documented Swift gap. The
+  current signed replay path is covered by the `ai@7.0.36` injective-payload
+  implementation described above.
 - `ai@6.0.203` stream-part prototype-pollution hardening is not directly
   applicable to Swift value dictionaries and typed reducers; related stream
   accumulators are keyed by Swift `String`/`Int` values without JS prototype
@@ -109,19 +144,19 @@ Port decisions:
 
 | Upstream reference item | SwiftAISDK status | Current Swift evidence | Notes / next decision |
 | --- | --- | --- | --- |
-| `generateText` | `covered` | `AI.generateText`, `LanguageModelRequest`, `TextGenerationResult` | Supports prompt/request overloads, tools, multi-step loops, retries, telemetry, provider metadata, response metadata, raw chunks, and abort signals. |
-| `streamText` | `covered` | `AI.streamText`, `LanguageStreamPart` | Async sequence surface with lifecycle parts, tools, approvals, retries-before-first-yield, telemetry, and abort propagation. |
+| `generateText` | `covered` | `AI.generateText`, `LanguageModelRequest`, `TextGenerationResult` | Supports prompt/request overloads, tools, multi-step loops, retries, telemetry, provider metadata, response metadata, raw chunks, and abort signals. Later tool-loop steps recheck cancellation before another model call and preserve the caller's abort reason. |
+| `streamText` | `partial` | `AI.streamText`, `LanguageStreamPart`, `timeoutNanoseconds` | Async sequence surface with lifecycle parts, tools, approvals, retries-before-first-yield, telemetry, total timeout, and abort propagation. Structured `firstChunkMs` plus semantic-content-only inter-chunk timeout behavior remains deferred. |
 | `embed` | `covered` | `AI.embed`, `EmbeddingRequest`, `EmbeddingResult` | Single-value helper delegates through the embedding request shape. |
 | `embedMany` | `covered` | `AI.embedMany` | Supports batching through `chunkSize` and aggregates usage/warnings/metadata. |
 | `rerank` | `covered` | `AI.rerank`, `RerankingRequest`, `RerankingResult` | Native model family exists. |
 | `generateImage` | `covered` | `AI.generateImage`, `ImageGenerationRequest` | Includes files, masks, provider options, metadata, warnings, retries, and aborts. |
-| `transcribe` | `covered` | `AI.transcribe`, `AudioTranscriptionRequest` | Upstream now documents `transcribe`; older experimental naming is intentionally not mirrored. |
+| `transcribe` | `covered` | `AI.transcribe`, `AudioTranscriptionRequest`, `detectMediaType` | Upstream now documents `transcribe`; older experimental naming is intentionally not mirrored. Shared media detection recognizes MP4/M4A from the ISO-BMFF `ftyp` box in an audio context and bounds ID3 scanning. |
 | `generateSpeech` | `covered` | `AI.generateSpeech`, `SpeechRequest` | Native model family exists. |
 | `experimental_generateVideo` | `covered` | `AI.generateVideo`, `VideoGenerationRequest` | Swift uses stable `generateVideo` naming. Decide only if an `experimental_` alias is useful for discoverability. |
 | `Output` | `covered` | `Output.text/object/array/choice/json`, `AI.generateText(... output:)`, `AI.streamText(... output:)`, existing object-generation facades | Swift now mirrors the v6-style `generateText/streamText + Output.*` entry point while still keeping the older Swift-native object/array/enum/json facades. `Output.object` partial streaming uses `JSONValue` because Swift has no automatic `DeepPartial<T>`. |
 | `Agent` interface | `covered` | `AIAgent`, `AIAgentCallOptions` | Swift-native agent protocol mirrors upstream `version: "agent-v1"`, optional `id`, tool exposure, and generate/stream calls over model messages or prompts. |
 | `ToolLoopAgent` | `covered` | `AIToolLoopAgent`, tool-loop overloads on `AI.generateText` and `AI.streamText` | Reusable agent object wraps the existing Swift tool loop. Default `maxSteps` is 20 to match upstream `stepCountIs(20)` behavior. |
-| `createAgentUIStream` | `covered` | `createAgentUIStream`, `AIUIMessageStreamReducer.snapshots(from:)` | Converts validated `AIUIMessage` history to model messages, streams through any `AIAgent`, and returns assistant UI-message snapshots. |
+| `createAgentUIStream` | `partial` | `createAgentUIStream`, `AIUIMessageStreamReducer.snapshots(from:)` | Converts validated `AIUIMessage` history to model messages, streams through any `AIAgent`, and returns assistant UI-message snapshots. Repeated tool-call ids across explicit upstream step boundaries remain deferred until the Swift stream type represents those boundaries. |
 | `createAgentUIStreamResponse` | `out of scope candidate` | none | JS response/server surface; likely not a SwiftPM core priority unless a Swift server use case is chosen. |
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
@@ -131,7 +166,7 @@ Port decisions:
 | `jsonSchema` | `swift-native` | `AIJSONSchema`, `JSONValue`, `parseJSON`, schema validator | Usable JSON Schema adapter exists; exact factory naming does not. |
 | `zodSchema` | `out of scope candidate` | none | Zod is TypeScript-specific. Could document `AIJSONSchema` as the Swift alternative. |
 | `valibotSchema` | `out of scope candidate` | none | Valibot is TypeScript-specific. |
-| `ModelMessage` | `covered` | `AIMessage`, `AIContentPart`, `MessageRole` | Swift naming differs but covers system/user/assistant/tool plus text, file, image URL, provider references, tool calls/results, approvals. |
+| `ModelMessage` | `covered` | `AIMessage`, `AIContentPart`, `MessageRole`, `convertToLanguageModelPrompt` | Swift naming differs but covers system/user/assistant/tool plus text, file, image URL, provider references, tool calls/results, approvals. Consecutive tool messages preserve message-level provider metadata at each combined-content boundary. |
 | `UIMessage` | `covered` | `AIUIMessage`, `AIUIMessagePart`, text/reasoning/data/file/source/tool/approval/custom parts | Swift keeps UI/render messages separate from `AIMessage` model-request messages. |
 | `validateUIMessages` | `covered` | `validateUIMessages` | Validates non-empty message arrays/parts, ids, tool JSON arguments, tool-result links, and approval links. Schema-driven metadata/data/tool validation remains Swift-native rather than a direct Zod/Standard Schema port. |
 | `safeValidateUIMessages` | `covered` | `safeValidateUIMessages`, `AIUIMessageValidationResult` | Non-throwing validation result for UI persistence/import flows. Swift returns accumulated issues instead of the upstream `{ success, data/error }` union. |
@@ -196,17 +231,24 @@ it means JavaScript-style error-class parity is only partial.
 
 ## Recommended Next Passes
 
-1. Continue polishing the new `AIOutput` surface where it proves useful:
+1. Design one structured Swift timeout configuration before porting
+   `firstChunkMs`: define total, per-step, first-semantic-content, and
+   inter-semantic-content timeouts together, including cancellation/error
+   cleanup and multi-step re-arming.
+2. Decide how explicit model-step boundaries should enter
+   `LanguageStreamPart`, then scope `AIUIMessageStreamReducer` tool lookup to
+   the current step while retaining backwards lookup for late tool outputs.
+3. Continue polishing the new `AIOutput` surface where it proves useful:
    document examples and consider array `elementStream` ergonomics. The
    `choice/json` factories already propagate `name` and `description` as
    provider hints.
-2. Decide whether `DefaultGeneratedFile` deserves a named Swift analog or
+4. Decide whether `DefaultGeneratedFile` deserves a named Swift analog or
    whether `AIStreamFile` plus generated media result structs are sufficient.
-3. Keep JS response helpers (`createAgentUIStreamResponse`,
+5. Keep JS response helpers (`createAgentUIStreamResponse`,
    `pipeAgentUIStreamToResponse`, `createUIMessageStreamResponse`,
    `pipeUIMessageStreamToResponse`) out of core unless SwiftAISDK grows a
    server-side Swift target.
-4. Continue typed-error parity only where it improves Swift diagnostics. The
+6. Continue typed-error parity only where it improves Swift diagnostics. The
    middle-path batches now cover API calls, type validation, no-output,
    no-such-tool, invalid tool input, tool-call repair, approval-link failures,
    no-generated media, and too-many embedding values. Remaining candidates are
@@ -223,7 +265,7 @@ they are candidate Swift-native product surfaces for a future SwiftUI layer.
 | `useChat` | `AIChatSession` | done | Combine-backed `ObservableObject` for iOS 15/macOS 12+ that manages `messages`, `status`, `error`, `sendMessage`, submit-existing-transcript, replacement, `regenerate`, `stop`, `resumeStream`, `addToolOutput`, and `addToolApprovalResponse` over `AIChatTransport`. Uses upstream status names and mirrors `onError`, `onFinish`, abort/resume finish semantics, and `sendAutomaticallyWhen`. Swift tool output currently appends tool-role messages instead of mutating stateful upstream tool UI parts. |
 | `UIMessage` and message parts | `AIUIMessage`, `AIUIMessagePart`, metadata/data parts | done | Core render-message model exists without depending on SwiftUI/Observation. |
 | `convertToModelMessages` | `convertToModelMessages` | done | Converts supported `AIUIMessage` parts into `AIMessage` history for model calls; render-only parts are ignored, unsupported URL files fail with `AIUIMessageStreamError`. |
-| `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReducer` | done | Converts `LanguageStreamPart` into stable UI message snapshots, so UI layers do not hand-roll streaming assembly. ID-based text/reasoning/tool-input chunks now reject missing starts like upstream `processUIMessageStream`; Swift keeps id-less language deltas as a compatibility convenience. |
+| `readUIMessageStream` / UI stream reducer | `AIUIMessageStreamReducer` | partial | Converts `LanguageStreamPart` into stable UI message snapshots, so UI layers do not hand-roll streaming assembly. ID-based text/reasoning/tool-input chunks reject missing starts like upstream `processUIMessageStream`; Swift keeps id-less language deltas as a compatibility convenience. Repeated tool-call ids across model steps remain deferred because the stream enum does not yet expose step boundaries. |
 | `useObject` | `AIObjectGenerationSession<Output, Partial>` | done | Combine-backed `ObservableObject` over v6-style `Output` streaming with `partialObject`, final `object`, `result`, status, error, text, warnings, metadata, `submit`, `stop`, and `clear`. Final object validation errors are reported through `onFinish`, matching upstream `useObject` semantics. |
 | `DirectChatTransport` | `AIChatTransport`, `AIChatTransportRequest`, `AIChatRequestOptions`, `DirectAIChatTransport` | done | In-process transport streams `AIUIMessage` snapshots from `AI.streamText`, supports tool-loop options, request defaults, aborts, retry/timeout/telemetry, and reasoning/source/finish filters. Leave room for an `HTTPChatTransport` later when an app talks to its own backend. |
 
