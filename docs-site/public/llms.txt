@@ -48,6 +48,7 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - ["bedrock-mantle"](/llms/providers/bedrock-mantle.txt): "bedrock-mantle provider capabilities and factories."
 - ["black-forest-labs"](/llms/providers/black-forest-labs.txt): "black-forest-labs provider capabilities and factories."
 - ["bytedance"](/llms/providers/bytedance.txt): "bytedance provider capabilities and factories."
+- ["cartesia"](/llms/providers/cartesia.txt): "cartesia provider capabilities and factories."
 - ["cerebras"](/llms/providers/cerebras.txt): "cerebras provider capabilities and factories."
 - ["cohere"](/llms/providers/cohere.txt): "cohere provider capabilities and factories."
 - ["deepgram"](/llms/providers/deepgram.txt): "deepgram provider capabilities and factories."

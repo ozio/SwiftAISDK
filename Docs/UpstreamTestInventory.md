@@ -5,14 +5,14 @@ Use it as a review checklist before porting behavior into SwiftAISDK; do not cop
 
 ## Snapshot
 
-- Generated at: 2026-07-26T17:44:36.006Z
+- Generated at: 2026-07-26T18:41:12.008Z
 - Upstream ref: `main`
 - Upstream commit: [`c8baafc4864b`](https://github.com/vercel/ai/tree/c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56)
 - Commit line: `c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56 2026-07-26T02:46:43Z Version Packages (#17926)`
 - Total upstream test/spec files: 707
 - Package/example groups with tests: 70
-- Groups tracked by SwiftAISDK ledger/core snapshot: 46
-- Groups not tracked locally: 24
+- Groups tracked by SwiftAISDK ledger/core snapshot: 47
+- Groups not tracked locally: 23
 
 ## Maintenance Plan
 
@@ -36,6 +36,7 @@ Use it as a review checklist before porting behavior into SwiftAISDK; do not cop
 | `baseten` | `@ai-sdk/baseten` | `2.0.14` | provider | 1 | AIProviders.baseten, OpenAICompatibleProvider, BasetenProviderTests.swift |
 | `black-forest-labs` | `@ai-sdk/black-forest-labs` | `2.0.12` | provider | 2 | AIProviders.blackForestLabs, BlackForestLabsImageModel, BlackForestLabsProviderTests.swift |
 | `bytedance` | `@ai-sdk/bytedance` | `2.0.14` | provider | 2 | AIProviders.byteDance, ByteDanceVideoModel, ByteDanceProviderTests.swift |
+| `cartesia` | `@ai-sdk/cartesia` | `3.0.6` | provider | 4 | AIProviders.cartesia, CartesiaProvider, CartesiaSpeechModel, CartesiaTranscriptionModel, Cartesia*Tests.swift |
 | `cerebras` | `@ai-sdk/cerebras` | `3.0.14` | provider | 2 | AIProviders.cerebras, CerebrasLanguageModel, CerebrasProviderTests.swift |
 | `cohere` | `@ai-sdk/cohere` | `4.0.12` | provider | 5 | AIProviders.cohere, CohereLanguageModel, CohereEmbeddingModel, CohereRerankingModel, CohereMistralVoyageTests.swift |
 | `deepgram` | `@ai-sdk/deepgram` | `3.0.12` | provider | 3 | AIProviders.deepgram, DeepgramTranscriptionModel, DeepgramSpeechModel, DeepgramProviderTests.swift |
@@ -80,7 +81,6 @@ These are visible in the upstream monorepo but are not currently tracked in the 
 | Group | Tests |
 | --- | ---: |
 | `angular` | 3 |
-| `cartesia` | 4 |
 | `codemod` | 86 |
 | `devtools` | 5 |
 | `examples/ai-functions` | 24 |
@@ -317,7 +317,7 @@ These are visible in the upstream monorepo but are not currently tracked in the 
 - [`packages/bytedance/src/bytedance-image-model.test.ts`](https://github.com/vercel/ai/blob/c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56/packages/bytedance/src/bytedance-image-model.test.ts)
 - [`packages/bytedance/src/bytedance-video-model.test.ts`](https://github.com/vercel/ai/blob/c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56/packages/bytedance/src/bytedance-video-model.test.ts)
 
-### `cartesia`
+### `cartesia (@ai-sdk/cartesia@3.0.6)`
 
 - [`packages/cartesia/src/cartesia-error.test.ts`](https://github.com/vercel/ai/blob/c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56/packages/cartesia/src/cartesia-error.test.ts)
 - [`packages/cartesia/src/cartesia-realtime-model.test.ts`](https://github.com/vercel/ai/blob/c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56/packages/cartesia/src/cartesia-realtime-model.test.ts)

@@ -23,6 +23,7 @@ porting pass.
 | `@ai-sdk/baseten` | `2.0.14` | `AIProviders.baseten`, `OpenAICompatibleProvider`, `BasetenProviderTests.swift` |
 | `@ai-sdk/black-forest-labs` | `2.0.12` | `AIProviders.blackForestLabs`, `BlackForestLabsImageModel`, `BlackForestLabsProviderTests.swift` |
 | `@ai-sdk/bytedance` | `2.0.14` | `AIProviders.byteDance`, `ByteDanceVideoModel`, `ByteDanceProviderTests.swift` |
+| `@ai-sdk/cartesia` | `3.0.6` | `AIProviders.cartesia`, `CartesiaProvider`, `CartesiaSpeechModel`, `CartesiaTranscriptionModel`, `Cartesia*Tests.swift` |
 | `@ai-sdk/cerebras` | `3.0.14` | `AIProviders.cerebras`, `CerebrasLanguageModel`, `CerebrasProviderTests.swift` |
 | `@ai-sdk/cohere` | `4.0.12` | `AIProviders.cohere`, `CohereLanguageModel`, `CohereEmbeddingModel`, `CohereRerankingModel`, `CohereMistralVoyageTests.swift` |
 | `@ai-sdk/deepgram` | `3.0.12` | `AIProviders.deepgram`, `DeepgramTranscriptionModel`, `DeepgramSpeechModel`, `DeepgramProviderTests.swift` |

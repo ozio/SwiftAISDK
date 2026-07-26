@@ -36,6 +36,7 @@ Legend:
 | `@ai-sdk/baseten` | `baseten` | `AIProviders.baseten` | ✅ |  | ✅ |  |  |  |  |  |  |  |  |  |  |
 | `@ai-sdk/black-forest-labs` | `black-forest-labs` | `AIProviders.blackForestLabs` |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |
 | `@ai-sdk/bytedance` | `bytedance` | `AIProviders.byteDance` |  |  |  |  |  |  |  |  |  | ✅ |  |  |  |
+| `@ai-sdk/cartesia` | `cartesia` | `AIProviders.cartesia` |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | `@ai-sdk/cerebras` | `cerebras` | `AIProviders.cerebras` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |
 | `@ai-sdk/cohere` | `cohere` | `AIProviders.cohere` | ✅ |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |
 | `@ai-sdk/deepgram` | `deepgram` | `AIProviders.deepgram` |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |
@@ -87,6 +88,7 @@ Legend:
 | `baseten` | Chat and embedding endpoints mirror upstream Baseten 2.0.14: `BASETEN_API_KEY`, versioned user-agent suffix, custom Model API base URL, `/sync/v1` chat model URLs, `/sync` or `/sync/v1` embedding model URLs, upstream performance-client body plus 128-input batching, unsupported image models, and string `error` envelope parsing. |
 | `black-forest-labs` | Black Forest Labs images mirror upstream 2.0.12: `BFL_API_KEY`, `x-key` auth, custom base URL and headers, versioned user-agent suffix, `image`/`imageModel` aliases, `black-forest-labs.image` provider IDs, current FLUX model IDs, `/v1/{model}` submit URLs, response-supplied polling with trusted `bfl.ai` sibling-host credential forwarding, unauthenticated foreign image download, `providerOptions.blackForestLabs` schema mapping, fill-model `image` input field, warnings for size/aspect-ratio handling, response/provider metadata, and unsupported language/embedding families. |
 | `bytedance` | ByteDance Seedance video models mirror upstream ByteDance 2.0.14: `ARK_API_KEY`, versioned user-agent suffix, current Dreamina/Seedance model IDs, prompt/image/frameImages/inputReferences mapping, standard `generateAudio` with provider-option fallback, provider options for watermark/camera/returnLastFrame/serviceTier/draft/reference media/polling, resolution mapping, warnings, polling/error metadata, and unsupported non-video families. |
+| `cartesia` | Cartesia REST speech and batch transcription mirror upstream 3.0.6: `CARTESIA_API_KEY`, Bearer auth, `Cartesia-Version` default `2026-03-01`, custom headers and Swift base-URL override, versioned user-agent suffix, `speech`/`speechModel` and `transcription`/`transcriptionModel` aliases, `/tts/bytes` JSON requests with required voice IDs, output-format mapping, provider options and warnings, `/stt` multipart requests with language and word timestamps, response segments/metadata, structured Cartesia errors, abort propagation, and unsupported language/embedding/image families. Upstream Ink 2 streaming transcription and experimental realtime use duplex WebSockets and remain outside the current unary Swift transcription and HTTP streaming protocols; `ink-2` batch calls fail locally before network I/O. |
 | `cerebras` | Cerebras chat models mirror upstream Cerebras 3.0.14: `CEREBRAS_API_KEY`, custom base URL and headers, callable provider plus `languageModel`/`chat` aliases, `cerebras.chat` provider IDs, versioned user-agent suffix, current model IDs such as `gpt-oss-120b` and `qwen-3-235b-a22b-thinking-2507`, structured outputs, reasoning transform, structured-output tool-call normalization, flat Cerebras error schema, provider options, and unsupported embedding/image families. |
 | `cohere` | Cohere mirrors upstream 4.0.12: `COHERE_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language aliases, embedding/textEmbedding aliases, reranking aliases, chat `/v2/chat`, embedding `/v2/embed`, reranking `/v2/rerank`, prompt conversion for text/images/documents/tool calls, providerOptions.cohere schemas, top-level reasoning to Cohere `thinking` budget mapping, providerOptions thinking precedence, response format and tool choice mapping, streaming lifecycle/tool-call/reasoning parts, response metadata, embedding/reranking response bodies, object-document reranking warnings, and unsupported non-text document media. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript option export renames, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns. |
 | `deepgram` | Deepgram transcription and speech mirror upstream 3.0.12: `DEEPGRAM_API_KEY`, `Token` auth, custom headers, versioned user-agent suffix, `transcription`/`transcriptionModel` and `speech`/`speechModel` aliases, `/v1/listen` raw-audio transcription with model/diarize defaults and providerOptions.deepgram query mapping, `/v1/speak` JSON TTS with output format to encoding/container/sample-rate mapping, documented TTS provider options, incompatible audio parameter cleanup warnings, unsupported voice/speed/language/instructions warnings, response metadata, Deepgram error schema, and unsupported language/embedding/image families. ProviderV4, ESM-only packaging, Node 22 engines, experimental streaming transcription types, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns. |
@@ -138,6 +140,7 @@ LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
 
 The suite reads `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
 `DEEPSEEK_API_KEY`, `ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`,
+`CARTESIA_API_KEY`,
 and `OPENAI_COMPATIBLE_API_KEY`.
 When running from Xcode, set them as test environment variables in the
 scheme instead of Run/Profile arguments.
@@ -145,10 +148,12 @@ Override model IDs with
 `LIVE_OPENAI_MODEL`, `LIVE_ANTHROPIC_MODEL`, `LIVE_GOOGLE_MODEL`,
 `LIVE_DEEPSEEK_MODEL`, `LIVE_ASSEMBLYAI_MODEL`, `LIVE_OPENAI_COMPATIBLE_MODEL`,
 `LIVE_OPENAI_COMPATIBLE_BASE_URL`, `LIVE_ELEVENLABS_SPEECH_MODEL`,
-`LIVE_ELEVENLABS_TRANSCRIPTION_MODEL`, and `LIVE_ELEVENLABS_VOICE`.
+`LIVE_ELEVENLABS_TRANSCRIPTION_MODEL`, `LIVE_ELEVENLABS_VOICE`,
+`LIVE_CARTESIA_SPEECH_MODEL`, `LIVE_CARTESIA_TRANSCRIPTION_MODEL`,
+and `LIVE_CARTESIA_VOICE`.
 It covers text generation, text streaming, executable generate/stream tool loops,
 OpenAI-compatible generation/streaming/completion/tool loops/object generation,
 AssemblyAI transcription, ElevenLabs speech/transcription/audio generation/audio
-transformation/dubbing, and representative embeddings.
+transformation/dubbing, Cartesia speech/batch transcription, and representative embeddings.
 Embedding checks also read
 `LIVE_OPENAI_EMBEDDING_MODEL` and `LIVE_GOOGLE_EMBEDDING_MODEL`.

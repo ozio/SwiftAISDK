@@ -161,7 +161,7 @@ programmatic tool orchestration; function schemas accept OpenAI
 
 Provider factories live under `AIProviders`, including OpenAI, Azure,
 Anthropic, Google, Google Vertex, Gateway, xAI, Mistral, Groq, Cohere, Voyage,
-Bedrock, Replicate, fal, Deepgram, ElevenLabs, and other official
+Bedrock, Replicate, fal, Deepgram, ElevenLabs, Cartesia, and other official
 `@ai-sdk/*` provider packages.
 
 Use `customProvider(...)` and `createProviderRegistry(...)` for upstream-style
@@ -183,6 +183,41 @@ let result = try await AI.generateText(
 
 Provider-specific options can be passed through request types or facade
 overloads via `providerOptions`, `extraBody`, `headers`, and `ProviderSettings`.
+
+Cartesia has dedicated speech and batch-transcription models:
+
+```swift
+let cartesia = try AIProviders.cartesia()
+
+let speech = try cartesia.speech("sonic-3.5")
+let audio = try await speech.speak(SpeechRequest(
+    text: "Hello from SwiftAISDK.",
+    voice: "694f9389-aac1-45b6-b726-9d9369183238",
+    providerOptions: [
+        "cartesia": [
+            "container": "mp3",
+            "sampleRate": 44_100,
+            "language": "en"
+        ]
+    ]
+))
+
+let transcription = try cartesia.transcription("ink-whisper")
+let transcript = try await transcription.transcribe(AudioTranscriptionRequest(
+    audio: audio.audio,
+    mimeType: audio.contentType ?? "audio/mpeg",
+    providerOptions: [
+        "cartesia": [
+            "language": "en",
+            "timestampGranularities": ["word"]
+        ]
+    ]
+))
+```
+
+Upstream Ink 2 streaming transcription and experimental realtime use duplex
+WebSockets. They are intentionally kept out of this unary REST port until
+SwiftAISDK has a reusable realtime transport and lifecycle surface.
 
 ## Middleware
 
@@ -236,6 +271,10 @@ Optional live smoke tests are available with real keys:
 ```sh
 LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
 ```
+
+Cartesia live checks read `CARTESIA_API_KEY` and optionally
+`LIVE_CARTESIA_SPEECH_MODEL`, `LIVE_CARTESIA_TRANSCRIPTION_MODEL`, and
+`LIVE_CARTESIA_VOICE`.
 
 Useful project docs:
 

@@ -1,0 +1,25 @@
+---
+title: "cartesia"
+description: "cartesia provider capabilities and factories."
+---
+
+## Package
+
+`@ai-sdk/cartesia`
+
+## Factories
+
+`AIProviders.cartesia`
+
+## Capabilities
+
+- Transcription
+- Speech
+
+## Notes
+
+Cartesia REST speech and batch transcription mirror upstream 3.0.6: `CARTESIA_API_KEY`, Bearer auth, `Cartesia-Version` default `2026-03-01`, custom headers and Swift base-URL override, versioned user-agent suffix, `speech`/`speechModel` and `transcription`/`transcriptionModel` aliases, `/tts/bytes` JSON requests with required voice IDs, output-format mapping, provider options and warnings, `/stt` multipart requests with language and word timestamps, response segments/metadata, structured Cartesia errors, abort propagation, and unsupported language/embedding/image families. Upstream Ink 2 streaming transcription and experimental realtime use duplex WebSockets and remain outside the current unary Swift transcription and HTTP streaming protocols; `ink-2` batch calls fail locally before network I/O.
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

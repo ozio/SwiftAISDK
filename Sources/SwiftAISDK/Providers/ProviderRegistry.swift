@@ -170,6 +170,10 @@ public enum AIProviders {
         try OpenAICompatibleProvider(providerID: "cerebras", defaultBaseURL: "https://api.cerebras.ai/v1", authorization: .bearer(environmentVariables: ["CEREBRAS_API_KEY"]), supportedCapabilities: [.language], settings: settings)
     }
 
+    public static func cartesia(settings: CartesiaProviderSettings = CartesiaProviderSettings()) throws -> CartesiaProvider {
+        try CartesiaProvider(settings: settings)
+    }
+
     public static func vercel(settings: ProviderSettings = ProviderSettings()) throws -> VercelProvider {
         try VercelProvider(settings: settings)
     }

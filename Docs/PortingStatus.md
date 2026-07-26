@@ -42,20 +42,20 @@ Vercel AI SDK commit `c8baafc4864b`.
 
 ## Provider State
 
-The 42 tracked provider packages in `Docs/ProviderVersionLedger.md` use the
+The 43 tracked provider packages in `Docs/ProviderVersionLedger.md` use the
 latest npm versions observed on 2026-07-27. They have Swift evidence in
 implementation files and focused tests, and their public capability coverage is
 represented in `Docs/ProviderCapabilityMatrix.md`. The current pass audited the
 published package deltas and ported the applicable provider/core behavior; the
 remaining architectural differences are recorded below.
 
-Registry discovery also found one provider package that is not yet represented
-by SwiftAISDK: `@ai-sdk/cartesia@3.0.6`. It was not implemented automatically in
-this weekly pass. A dedicated Cartesia port should add a provider factory,
-speech and batch-transcription request/response/options/error coverage, focused
-fixtures, capability/docs entries, and live-smoke wiring. Cartesia realtime
-audio additionally depends on a WebSocket/lifecycle model surface that the
-current Swift protocols do not expose.
+Registry discovery found no additional provider package that is not represented
+by SwiftAISDK. The newly discovered `@ai-sdk/cartesia@3.0.6` now has a dedicated
+provider, Sonic speech, Ink-Whisper batch transcription, focused parity tests,
+public docs, and opt-in live-smoke wiring. Cartesia Ink 2 streaming
+transcription and experimental realtime remain a separate product surface:
+they require a duplex WebSocket transport and lifecycle/event protocols that
+the current unary Swift transcription and HTTP streaming APIs do not expose.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -74,7 +74,7 @@ one of these is true:
 | --- | --- | --- |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
-| P1 | `@ai-sdk/cartesia@3.0.6` is a newly discovered provider package and is not ported. | Make Cartesia the next provider implementation: start with speech and batch transcription, then decide the realtime/WebSocket protocol surface separately. |
+| P1 | Cartesia Ink 2 streaming transcription and experimental realtime are not represented by current Swift protocols. | Design a reusable duplex WebSocket transport and realtime/transcription lifecycle surface before porting Cartesia token/session and event flows as a separate vertical. |
 | P1 | Current `ai@7.0.37` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
@@ -93,7 +93,7 @@ LIVE_AI_TESTS=1 swift test --filter LiveProviderSmoke
 
 The live suite reads provider-specific environment variables such as
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`,
-`ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`, and
+`ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`, `CARTESIA_API_KEY`, and
 `OPENAI_COMPATIBLE_API_KEY`. See `Docs/ProviderCapabilityMatrix.md` for the
 current live-smoke notes and model override variables.
 

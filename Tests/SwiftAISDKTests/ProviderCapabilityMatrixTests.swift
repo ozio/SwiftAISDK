@@ -21,6 +21,7 @@ import Testing
         "@ai-sdk/baseten",
         "@ai-sdk/black-forest-labs",
         "@ai-sdk/bytedance",
+        "@ai-sdk/cartesia",
         "@ai-sdk/cerebras",
         "@ai-sdk/cohere",
         "@ai-sdk/deepgram",
@@ -91,4 +92,13 @@ import Testing
     #expect(!gatewayRow.supports(.audioGeneration))
     #expect(!gatewayRow.supports(.audioTransformation))
     #expect(!gatewayRow.supports(.dubbing))
+
+    let cartesia = try AIProviders.cartesia(settings: CartesiaProviderSettings(
+        apiKey: "cartesia-key",
+        environment: [:]
+    ))
+    let cartesiaRow = try #require(AIProviderCapabilities.row(providerID: "cartesia"))
+    #expect(cartesiaRow.supportedCapabilities == cartesia.supportedCapabilities)
+    #expect(cartesiaRow.supports(.speech))
+    #expect(cartesiaRow.supports(.transcription))
 }

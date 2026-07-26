@@ -24,6 +24,7 @@ import Testing
     _ = try AIProviders.deepInfra(settings: settings)
     _ = try AIProviders.baseten(settings: settings)
     _ = try AIProviders.cerebras(settings: settings)
+    _ = try AIProviders.cartesia(settings: CartesiaProviderSettings(apiKey: "key", environment: [:], transport: transport))
     _ = try AIProviders.vercel(settings: settings)
     _ = try AIProviders.alibaba(settings: settings)
     _ = try AIProviders.moonshotAI(settings: settings)
@@ -68,6 +69,7 @@ import Testing
     #expect(try AIProviders.klingAI(settings: settings).providerID == "klingai")
     #expect(try AIProviders.byteDance(settings: settings).providerID == "bytedance")
     #expect(try AIProviders.quiverAI(settings: settings).providerID == "quiverai")
+    #expect(try AIProviders.cartesia(settings: CartesiaProviderSettings(apiKey: "key", environment: [:], transport: transport)).providerID == "cartesia")
     #expect(try AIProviders.azure(resourceName: "resource", settings: settings).providerID == "azure")
 }
 

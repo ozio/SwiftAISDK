@@ -8,8 +8,8 @@ Language: 31
 Completion: 7
 Embedding: 16
 Image: 18
-Transcription: 12
-Speech: 12
+Transcription: 13
+Speech: 13
 Audio generation: 1
 Audio transformation: 1
 Dubbing: 1
@@ -31,6 +31,7 @@ Skills: 3
 | [`baseten`](baseten/) | `@ai-sdk/baseten` | `AIProviders.baseten` | ✅ | ✅ |  |  |  |  |  |  |  |  |  |  |
 | [`black-forest-labs`](black-forest-labs/) | `@ai-sdk/black-forest-labs` | `AIProviders.blackForestLabs` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
 | [`bytedance`](bytedance/) | `@ai-sdk/bytedance` | `AIProviders.byteDance` |  |  |  |  |  |  |  |  | ✅ |  |  |  |
+| [`cartesia`](cartesia/) | `@ai-sdk/cartesia` | `AIProviders.cartesia` |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`cerebras`](cerebras/) | `@ai-sdk/cerebras` | `AIProviders.cerebras` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`cohere`](cohere/) | `@ai-sdk/cohere` | `AIProviders.cohere` | ✅ | ✅ |  |  |  |  |  |  |  | ✅ |  |  |
 | [`deepgram`](deepgram/) | `@ai-sdk/deepgram` | `AIProviders.deepgram` |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |

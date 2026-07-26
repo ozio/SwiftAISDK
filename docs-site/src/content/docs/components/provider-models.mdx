@@ -8,11 +8,11 @@ description: Public SwiftAISDK APIs for provider models.
 | Symbol kind | Count |
 | --- | --- |
 | Case | 4 |
-| Class | 97 |
+| Class | 99 |
 | Enumeration | 10 |
 | Initializer | 1 |
-| Instance Method | 119 |
-| Instance Property | 205 |
+| Instance Method | 121 |
+| Instance Property | 209 |
 | Structure | 1 |
 | Type Method | 82 |
 
@@ -38,6 +38,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `BasetenEmbeddingModel` | `final class BasetenEmbeddingModel` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Class | `BlackForestLabsImageModel` | `final class BlackForestLabsImageModel` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
 | Class | `ByteDanceVideoModel` | `final class ByteDanceVideoModel` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
+| Class | `CartesiaSpeechModel` | `final class CartesiaSpeechModel` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
+| Class | `CartesiaTranscriptionModel` | `final class CartesiaTranscriptionModel` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
 | Class | `CerebrasLanguageModel` | `final class CerebrasLanguageModel` | [Sources/SwiftAISDK/Models/CerebrasModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CerebrasModels.swift) |
 | Class | `CohereEmbeddingModel` | `final class CohereEmbeddingModel` | [Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift) |
 | Class | `CohereLanguageModel` | `final class CohereLanguageModel` | [Sources/SwiftAISDK/Models/CohereLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CohereLanguageModel.swift) |
@@ -200,6 +202,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `rerank(_:)` | `func rerank(_ request: RerankingRequest) async throws -> RerankingResult` | [Sources/SwiftAISDK/Models/GenericMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GenericMediaModels.swift) |
 | Instance Method | `rerank(_:)` | `func rerank(_ request: RerankingRequest) async throws -> RerankingResult` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Instance Method | `rerank(_:)` | `func rerank(_ request: RerankingRequest) async throws -> RerankingResult` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
+| Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
 | Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/DeepgramAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/DeepgramAudioModels.swift) |
 | Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift) |
 | Instance Method | `speak(_:)` | `func speak(_ request: SpeechRequest) async throws -> SpeechResult` | [Sources/SwiftAISDK/Models/FalAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalAudioModels.swift) |
@@ -233,6 +236,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, any Error>` | [Sources/SwiftAISDK/Models/PerplexityModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityModels.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, any Error>` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
+| Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/DeepgramAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/DeepgramAudioModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ElevenLabsAudioModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/FalAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalAudioModels.swift) |
@@ -271,6 +275,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/CerebrasModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CerebrasModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift) |
@@ -366,6 +372,8 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/CerebrasModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CerebrasModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CohereEmbeddingRerankingModels.swift) |

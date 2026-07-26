@@ -248,6 +248,71 @@ private struct LiveSmokeJSONResult: Decodable, Sendable {
     }
 }
 
+@Test func liveProviderSmokeCartesiaSpeech() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.cartesiaProvider()
+    let model = try provider.speechModel(LiveProviderSmoke.modelID(
+        environmentVariable: "LIVE_CARTESIA_SPEECH_MODEL",
+        defaultValue: "sonic-3.5"
+    ))
+    do {
+        let result = try await model.speak(SpeechRequest(
+            text: "Swift AI smoke test one two three.",
+            voice: LiveProviderSmoke.modelID(
+                environmentVariable: "LIVE_CARTESIA_VOICE",
+                defaultValue: "694f9389-aac1-45b6-b726-9d9369183238"
+            ),
+            language: "en"
+        ))
+
+        #expect(!result.audio.isEmpty)
+        #expect(result.contentType?.contains("audio") == true)
+        #expect(result.responseMetadata.modelID == model.modelID)
+    } catch let error as AIError where LiveProviderSmoke.isExpectedLiveAccountLimitation(error) {
+        return
+    }
+}
+
+@Test func liveProviderSmokeCartesiaBatchTranscription() async throws {
+    guard LiveProviderSmoke.isEnabled else { return }
+
+    let provider = try LiveProviderSmoke.cartesiaProvider()
+    do {
+        let speechModel = try provider.speechModel(LiveProviderSmoke.modelID(
+            environmentVariable: "LIVE_CARTESIA_SPEECH_MODEL",
+            defaultValue: "sonic-3.5"
+        ))
+        let audio = try await speechModel.speak(SpeechRequest(
+            text: "Swift AI smoke test one two three.",
+            voice: LiveProviderSmoke.modelID(
+                environmentVariable: "LIVE_CARTESIA_VOICE",
+                defaultValue: "694f9389-aac1-45b6-b726-9d9369183238"
+            ),
+            language: "en"
+        ))
+        let model = try provider.transcriptionModel(LiveProviderSmoke.modelID(
+            environmentVariable: "LIVE_CARTESIA_TRANSCRIPTION_MODEL",
+            defaultValue: "ink-whisper"
+        ))
+        let result = try await model.transcribe(AudioTranscriptionRequest(
+            audio: audio.audio,
+            mimeType: audio.contentType ?? "audio/mpeg",
+            providerOptions: [
+                "cartesia": [
+                    "language": "en",
+                    "timestampGranularities": ["word"]
+                ]
+            ]
+        ))
+
+        #expect(!result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(result.responseMetadata.modelID == model.modelID)
+    } catch let error as AIError where LiveProviderSmoke.isExpectedLiveAccountLimitation(error) {
+        return
+    }
+}
+
 @Test func liveProviderSmokeElevenLabsSpeech() async throws {
     guard LiveProviderSmoke.isEnabled else { return }
 
@@ -569,6 +634,11 @@ private enum LiveProviderSmoke {
     static func assemblyAIProvider() throws -> OpenAICompatibleProvider {
         let apiKey = try apiKey(environmentVariable: "ASSEMBLYAI_API_KEY")
         return try AIProviders.assemblyAI(settings: ProviderSettings(apiKey: apiKey))
+    }
+
+    static func cartesiaProvider() throws -> CartesiaProvider {
+        let apiKey = try apiKey(environmentVariable: "CARTESIA_API_KEY")
+        return try AIProviders.cartesia(settings: CartesiaProviderSettings(apiKey: apiKey))
     }
 
     static func elevenLabsProvider() throws -> OpenAICompatibleProvider {
