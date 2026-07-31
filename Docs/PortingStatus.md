@@ -42,20 +42,20 @@ recorded in `Docs/UpstreamPackageDiffAudit.md`.
 
 ## Provider State
 
-The 43 tracked provider/product packages in `Docs/ProviderVersionLedger.md` use
-the latest npm versions observed on 2026-08-01. They have Swift evidence in
-implementation files and focused tests, and their public capability coverage is
-represented in `Docs/ProviderCapabilityMatrix.md`. The current pass audited the
-published package deltas and ported the applicable provider/core behavior; the
-remaining architectural differences are recorded below.
+The 44 tracked provider/product packages in `Docs/ProviderVersionLedger.md`
+have Swift evidence in implementation files and focused tests. The 43 model
+providers are represented in `Docs/ProviderCapabilityMatrix.md`; MCP is tracked
+separately as a product package without a model-capability row. The current pass
+audited the published package deltas and ported the applicable provider/core
+behavior; the remaining architectural differences are recorded below.
 
-Exact npm registry discovery found one additional model provider that is not
-represented by SwiftAISDK: `@ai-sdk/minimax@3.0.0`. It is intentionally not
-implemented by this discovery task. A focused follow-up can reuse the Anthropic
-Messages request/stream implementation with MiniMax authentication, model IDs,
-thinking options, capability/docs entries, and published fixtures. Registry
-discovery also found the non-provider `@ai-sdk/code-mode@1.0.1`; it is a
-QuickJS-backed JavaScript tool runtime rather than a provider-matrix entry.
+The focused MiniMax follow-up ports the originally requested
+`@ai-sdk/minimax@3.0.0` behavior while recording the current `3.0.1` baseline;
+the two versions have identical provider source and differ only in version and
+dependency propagation. Exact npm registry discovery now finds 43 model-provider
+packages with no untracked provider. Registry discovery still finds the
+non-provider `@ai-sdk/code-mode@1.0.2`; it is a QuickJS-backed JavaScript tool
+runtime rather than a provider-matrix entry.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -78,7 +78,6 @@ one of these is true:
 | P1 | Current `ai@7.0.44` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
 | P1 | `prepareStep` call-setting overrides and generic provider tool-callers have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
 | P1 | Provider-utils now resolves and pins DNS addresses for validated downloads; Swift validates literal/private hosts and every redirect but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
-| P1 | `@ai-sdk/minimax` is the only registry-discovered model provider not represented in SwiftAISDK. | Port MiniMax as the next small language-provider vertical after user approval. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

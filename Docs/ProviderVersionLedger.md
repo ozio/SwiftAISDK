@@ -16,7 +16,7 @@ porting pass.
 | --- | --- | --- |
 | `@ai-sdk/alibaba` | `2.0.20` | `AIProviders.alibaba`, `AlibabaLanguageModel`, `AlibabaEmbeddingModel`, `AlibabaProviderTests.swift` |
 | `@ai-sdk/amazon-bedrock` | `5.0.38` | `AIProviders.amazonBedrock`, `AIProviders.amazonBedrockAnthropic`, `AIProviders.bedrockMantle`, `AmazonBedrockModels.swift`, `AmazonBedrockTests.swift` |
-| `@ai-sdk/anthropic` | `4.0.25` | `AIProviders.anthropic`, `AnthropicLanguageModel`, `AnthropicTools`, `AnthropicTests.swift`, `AnthropicStreamingAndClientsTests.swift` |
+| `@ai-sdk/anthropic` | `4.0.26` | `AIProviders.anthropic`, `AnthropicLanguageModel`, `AnthropicTools`, `AnthropicTests.swift`, `AnthropicStreamingAndClientsTests.swift` |
 | `@ai-sdk/anthropic-aws` | `2.0.17` | `AIProviders.anthropicAWS`, `AnthropicAWSProvider`, `AnthropicTests.swift` |
 | `@ai-sdk/assemblyai` | `3.0.16` | `AIProviders.assemblyAI`, `AssemblyAITranscriptionModel`, `AssemblyAIProviderTests.swift` |
 | `@ai-sdk/azure` | `4.0.26` | `AIProviders.azure`, `AzureOpenAIProvider`, `AzureOpenAITools`, `AlibabaProdiaAzureQuiverTests.swift` |
@@ -43,6 +43,7 @@ porting pass.
 | `@ai-sdk/lmnt` | `3.0.16` | `AIProviders.lmnt`, `LMNTSpeechModel`, `LMNTProviderTests.swift` |
 | `@ai-sdk/luma` | `3.0.17` | `AIProviders.luma`, `LumaImageModel`, `LumaProviderTests.swift` |
 | `@ai-sdk/mcp` | `2.0.20` | `MCPClient`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps`, `MCPClientTests.swift`, `MCPOAuthTests.swift`, `MCPStdioTransportTests.swift` |
+| `@ai-sdk/minimax` | `3.0.1` | `AIProviders.miniMax`, `MiniMaxProvider`, `AnthropicLanguageModel`, `MiniMaxProviderTests.swift` |
 | `@ai-sdk/mistral` | `4.0.18` | `AIProviders.mistral`, `MistralLanguageModel`, `MistralEmbeddingModel`, `MistralTranscriptionModel`, `MistralSpeechModel`, `PerplexityMistralUpstreamTests.swift` |
 | `@ai-sdk/moonshotai` | `3.0.21` | `AIProviders.moonshotAI`, `MoonshotLanguageModel`, `MoonshotAIProviderTests.swift` |
 | `@ai-sdk/open-responses` | `2.0.16` | `AIProviders.openResponses`, `ResponsesRequestMode.openResponses`, `ResponsesEndpointTests.swift` |

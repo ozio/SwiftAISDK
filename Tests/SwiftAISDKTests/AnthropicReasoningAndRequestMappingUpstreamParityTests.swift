@@ -15,13 +15,13 @@ import Testing
 
     for (reasoning, effort) in [("low", "low"), ("medium", "medium"), ("high", "high")] {
         let result = try await anthropicGeneratedBody(modelID: "claude-sonnet-4-6", reasoning: reasoning)
-        #expect(result.body["thinking"] == ["type": "adaptive"])
+        #expect(result.body["thinking"] == ["type": "adaptive", "display": "summarized"])
         #expect(result.body["output_config"]?["effort"]?.stringValue == effort)
         #expect(result.warnings.isEmpty)
     }
 
     let xhigh = try await anthropicGeneratedBody(modelID: "claude-sonnet-4-6", reasoning: "xhigh")
-    #expect(xhigh.body["thinking"] == ["type": "adaptive"])
+    #expect(xhigh.body["thinking"] == ["type": "adaptive", "display": "summarized"])
     #expect(xhigh.body["output_config"]?["effort"]?.stringValue == "max")
     #expect(xhigh.warnings.contains(AIWarning(
         type: "compatibility",
@@ -30,7 +30,7 @@ import Testing
     )))
 
     let minimal = try await anthropicGeneratedBody(modelID: "claude-opus-4-6", reasoning: "minimal")
-    #expect(minimal.body["thinking"] == ["type": "adaptive"])
+    #expect(minimal.body["thinking"] == ["type": "adaptive", "display": "summarized"])
     #expect(minimal.body["output_config"]?["effort"]?.stringValue == "low")
     #expect(minimal.warnings.contains(AIWarning(
         type: "compatibility",
@@ -153,11 +153,11 @@ import Testing
 
 @Test func anthropicOpus47XhighAndAdaptiveDisplayMapLikeUpstream() async throws {
     let xhigh = try await anthropicGeneratedBody(modelID: "claude-opus-4-7", reasoning: "xhigh")
-    #expect(xhigh.body["thinking"] == ["type": "adaptive"])
+    #expect(xhigh.body["thinking"] == ["type": "adaptive", "display": "summarized"])
     #expect(xhigh.body["output_config"]?["effort"]?.stringValue == "xhigh")
 
     let opus46 = try await anthropicGeneratedBody(modelID: "claude-opus-4-6", reasoning: "xhigh")
-    #expect(opus46.body["thinking"] == ["type": "adaptive"])
+    #expect(opus46.body["thinking"] == ["type": "adaptive", "display": "summarized"])
     #expect(opus46.body["output_config"]?["effort"]?.stringValue == "max")
 
     let taskBudget = try await anthropicGeneratedBody(

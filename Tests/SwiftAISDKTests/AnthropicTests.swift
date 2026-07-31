@@ -17,7 +17,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-version"] == "2023-06-01")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.25")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.26")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"] == [["type": "text", "text": "French."]])
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
@@ -37,7 +37,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-api-key"] == "claude-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/4.0.25")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/anthropic/4.0.26")
 }
 
 @Test func anthropicBareAPIBaseURLNormalizesToVersionedMessagesEndpoint() async throws {

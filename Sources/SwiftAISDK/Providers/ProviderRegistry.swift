@@ -18,6 +18,10 @@ public enum AIProviders {
         try AnthropicProvider(settings: settings)
     }
 
+    public static func miniMax(settings: MiniMaxProviderSettings = MiniMaxProviderSettings()) throws -> MiniMaxProvider {
+        try MiniMaxProvider(settings: settings)
+    }
+
     public static func anthropicAWS(settings: AnthropicAWSProviderSettings = AnthropicAWSProviderSettings()) throws -> AnthropicAWSProvider {
         try AnthropicAWSProvider(settings: settings)
     }

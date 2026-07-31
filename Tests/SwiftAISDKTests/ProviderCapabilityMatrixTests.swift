@@ -40,6 +40,7 @@ import Testing
         "@ai-sdk/klingai",
         "@ai-sdk/lmnt",
         "@ai-sdk/luma",
+        "@ai-sdk/minimax",
         "@ai-sdk/mistral",
         "@ai-sdk/moonshotai",
         "@ai-sdk/open-responses",
@@ -79,6 +80,12 @@ import Testing
     #expect(!anthropicRow.supports(.embedding))
     #expect(anthropicRow.supportsFileUpload)
     #expect(anthropicRow.supportsSkillUpload)
+
+    let miniMax = try AIProviders.miniMax(settings: MiniMaxProviderSettings(apiKey: "minimax-key"))
+    let miniMaxRow = try #require(AIProviderCapabilities.row(providerID: "minimax"))
+    #expect(miniMaxRow.supportedCapabilities == miniMax.supportedCapabilities)
+    #expect(miniMaxRow.supports(.language))
+    #expect(!miniMaxRow.supports(.embedding))
 
     let voyage = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key"))
     let voyageRow = try #require(AIProviderCapabilities.row(providerID: "voyage"))

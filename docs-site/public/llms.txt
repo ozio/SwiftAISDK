@@ -70,6 +70,7 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - ["klingai"](/llms/providers/klingai.txt): "klingai provider capabilities and factories."
 - ["lmnt"](/llms/providers/lmnt.txt): "lmnt provider capabilities and factories."
 - ["luma"](/llms/providers/luma.txt): "luma provider capabilities and factories."
+- ["minimax"](/llms/providers/minimax.txt): "minimax provider capabilities and factories."
 - ["mistral"](/llms/providers/mistral.txt): "mistral provider capabilities and factories."
 - ["moonshotai"](/llms/providers/moonshotai.txt): "moonshotai provider capabilities and factories."
 - ["open-responses.responses"](/llms/providers/open-responses-responses.txt): "open-responses.responses provider capabilities and factories."

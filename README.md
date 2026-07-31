@@ -161,8 +161,28 @@ programmatic tool orchestration; function schemas accept OpenAI
 
 Provider factories live under `AIProviders`, including OpenAI, Azure,
 Anthropic, Google, Google Vertex, Gateway, xAI, Mistral, Groq, Cohere, Voyage,
-Bedrock, Replicate, fal, Deepgram, ElevenLabs, Cartesia, and other official
+MiniMax, Bedrock, Replicate, fal, Deepgram, ElevenLabs, Cartesia, and other official
 `@ai-sdk/*` provider packages.
+
+MiniMax uses its Anthropic-compatible Messages endpoint and reads
+`MINIMAX_API_KEY` by default. Adaptive thinking is selected through the
+`minimax` provider-options namespace:
+
+```swift
+let miniMax = try AIProviders.miniMax()
+let model = try miniMax("minimax-m3")
+let result = try await model.generateText(
+    "How many r letters are in strawberry?",
+    options: LanguageGenerationOptions(
+        providerOptions: [
+            "minimax": ["thinking": ["type": "adaptive"]]
+        ]
+    )
+)
+
+print(result.reasoning)
+print(result.text)
+```
 
 Use `customProvider(...)` and `createProviderRegistry(...)` for upstream-style
 provider composition and combined model IDs:

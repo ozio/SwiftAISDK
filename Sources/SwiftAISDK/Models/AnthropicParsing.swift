@@ -1,58 +1,174 @@
 import Foundation
 
-func anthropicToolCalls(from value: JSONValue?) -> [AIToolCall] {
-    value?.arrayValue?.compactMap(anthropicToolCall) ?? []
+struct AnthropicGeneratedContent {
+    var content: [AIResultContentPart]
+    var text: String?
+    var reasoning: String
+    var toolCalls: [AIToolCall]
+    var toolResults: [AIToolResult]
+    var sources: [AISource]
 }
 
-func anthropicTextContent(from value: JSONValue?) -> String? {
-    guard let parts = value?.arrayValue else { return nil }
-    return parts.compactMap { part -> String? in
-        if part["type"]?.stringValue == "tool_use",
-           part["name"]?.stringValue == "json",
-           let input = part["input"] {
-            return anthropicJSONString(input)
-        }
-        return part["text"]?.stringValue
-    }.joined()
-}
+func anthropicGeneratedContent(
+    from value: JSONValue?,
+    providerID: String,
+    citationDocuments: [AnthropicCitationDocument],
+    usesJSONToolResponseFormat: Bool = false
+) -> AnthropicGeneratedContent {
+    guard let parts = value?.arrayValue else {
+        return AnthropicGeneratedContent(
+            content: [],
+            text: nil,
+            reasoning: "",
+            toolCalls: [],
+            toolResults: [],
+            sources: []
+        )
+    }
 
-func anthropicToolResults(from value: JSONValue?, providerID: String) -> [AIToolResult] {
+    var content: [AIResultContentPart] = []
+    var text = ""
+    var reasoning = ""
+    var toolCalls: [AIToolCall] = []
+    var toolResults: [AIToolResult] = []
+    var sources: [AISource] = []
+    var resolvedCitationDocuments = citationDocuments
+    var sourceCounter = 0
     var serverToolNames: [String: String] = [:]
     var mcpToolNames: [String: String] = [:]
     var mcpToolMetadata: [String: [String: JSONValue]] = [:]
-    var results: [AIToolResult] = []
 
-    for part in value?.arrayValue ?? [] {
-        switch part["type"]?.stringValue {
-        case "server_tool_use":
-            if let id = part["id"]?.stringValue, let name = part["name"]?.stringValue {
-                serverToolNames[id] = name
+    for part in parts {
+        guard let type = part["type"]?.stringValue else { continue }
+
+        if type == "server_tool_use",
+           let id = part["id"]?.stringValue,
+           let name = part["name"]?.stringValue {
+            serverToolNames[id] = name
+        } else if type == "mcp_tool_use", let id = part["id"]?.stringValue {
+            if let name = part["name"]?.stringValue {
+                mcpToolNames[id] = name
             }
-        case "mcp_tool_use":
-            if let id = part["id"]?.stringValue {
-                if let name = part["name"]?.stringValue {
-                    mcpToolNames[id] = name
-                }
-                mcpToolMetadata[id] = anthropicContentBlockProviderMetadata([
-                    "type": .string("mcp-tool-use"),
-                    "serverName": part["server_name"] ?? .null
-                ], providerID: providerID)
-            }
-        default:
-            break
+            mcpToolMetadata[id] = anthropicContentBlockProviderMetadata([
+                "type": .string("mcp-tool-use"),
+                "serverName": part["server_name"] ?? .null
+            ], providerID: providerID)
         }
 
-        if let result = anthropicToolResult(
-            from: part,
-            providerID: providerID,
-            serverToolNames: serverToolNames,
-            mcpToolNames: mcpToolNames,
-            mcpToolMetadata: mcpToolMetadata
-        ) {
-            results.append(result)
+        switch type {
+        case "thinking":
+            let thinking = part["thinking"]?.stringValue ?? ""
+            reasoning += thinking
+            content.append(.reasoning(
+                thinking,
+                providerMetadata: anthropicContentBlockProviderMetadata(
+                    ["signature": part["signature"]],
+                    providerID: providerID
+                )
+            ))
+        case "redacted_thinking":
+            content.append(.reasoning(
+                "",
+                providerMetadata: anthropicContentBlockProviderMetadata(
+                    ["redactedData": part["data"] ?? .null],
+                    providerID: providerID
+                )
+            ))
+        case "text":
+            guard !usesJSONToolResponseFormat else { continue }
+            let partText = part["text"]?.stringValue ?? ""
+            text += partText
+            let webSearchCitations = part["citations"]?.arrayValue?.filter {
+                $0["type"]?.stringValue == "web_search_result_location"
+            } ?? []
+            let metadata = webSearchCitations.isEmpty
+                ? [String: JSONValue]()
+                : anthropicContentBlockProviderMetadata([
+                    "citations": .array(webSearchCitations)
+                ], providerID: providerID)
+            content.append(.text(partText, providerMetadata: metadata))
+            let partSources = anthropicSources(
+                from: part,
+                citationDocuments: resolvedCitationDocuments,
+                sourceCounter: &sourceCounter
+            )
+            sources.append(contentsOf: partSources)
+            content.append(contentsOf: partSources.map(AIResultContentPart.source))
+        case "compaction":
+            let partText = part["content"]?.stringValue ?? ""
+            text += partText
+            content.append(.text(
+                partText,
+                providerMetadata: anthropicContentBlockProviderMetadata([
+                    "type": .string("compaction")
+                ], providerID: providerID)
+            ))
+        case "tool_use" where part["name"]?.stringValue == "json" && usesJSONToolResponseFormat:
+            guard let input = part["input"], let partText = anthropicJSONString(input) else { continue }
+            text += partText
+            content.append(.text(partText))
+        case "tool_use", "server_tool_use", "mcp_tool_use":
+            var toolCall: AIToolCall?
+            if type == "tool_use", part["name"]?.stringValue == "json" {
+                guard let id = part["id"]?.stringValue else { continue }
+                toolCall = AIToolCall(
+                    id: id,
+                    name: "json",
+                    arguments: anthropicJSONString(part["input"] ?? .object([:])) ?? "{}",
+                    rawValue: part
+                )
+            } else {
+                toolCall = anthropicToolCall(from: part)
+            }
+            guard var toolCall else { continue }
+            if type == "mcp_tool_use" {
+                toolCall.dynamic = true
+                toolCall.providerMetadata = mcpToolMetadata[toolCall.id] ?? [:]
+            }
+            toolCalls.append(toolCall)
+            content.append(.toolCall(toolCall))
+        default:
+            if type == "web_fetch_tool_result",
+               part["content"]?["type"]?.stringValue == "web_fetch_result",
+               let source = part["content"]?["content"]?["source"],
+               let mediaType = source["media_type"]?.stringValue {
+                let url = part["content"]?["url"]?.stringValue
+                resolvedCitationDocuments.append(AnthropicCitationDocument(
+                    title: part["content"]?["content"]?["title"]?.stringValue ?? url ?? "Document",
+                    filename: nil,
+                    mediaType: mediaType
+                ))
+            }
+
+            if let toolResult = anthropicToolResult(
+                from: part,
+                providerID: providerID,
+                serverToolNames: serverToolNames,
+                mcpToolNames: mcpToolNames,
+                mcpToolMetadata: mcpToolMetadata
+            ) {
+                toolResults.append(toolResult)
+                content.append(.toolResult(toolResult))
+            }
+
+            let partSources = anthropicSources(
+                from: part,
+                citationDocuments: resolvedCitationDocuments,
+                sourceCounter: &sourceCounter
+            )
+            sources.append(contentsOf: partSources)
+            content.append(contentsOf: partSources.map(AIResultContentPart.source))
         }
     }
-    return results
+
+    return AnthropicGeneratedContent(
+        content: content,
+        text: text,
+        reasoning: reasoning,
+        toolCalls: toolCalls,
+        toolResults: toolResults,
+        sources: sources
+    )
 }
 
 func anthropicToolResult(
@@ -479,13 +595,6 @@ func anthropicToolArguments(_ arguments: String) -> JSONValue {
         return .object(["rawInvalidInput": decoded])
     }
     return decoded
-}
-
-func anthropicSources(from content: JSONValue?, citationDocuments: [AnthropicCitationDocument]) -> [AISource] {
-    var sourceCounter = 0
-    return content?.arrayValue?.flatMap { part in
-        anthropicSources(from: part, citationDocuments: citationDocuments, sourceCounter: &sourceCounter)
-    } ?? []
 }
 
 func anthropicSources(from eventOrPart: JSONValue, citationDocuments: [AnthropicCitationDocument], sourceCounter: inout Int) -> [AISource] {

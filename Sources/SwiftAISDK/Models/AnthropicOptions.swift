@@ -537,7 +537,7 @@ func anthropicReasoningConfig(
                 message: "reasoning \"\(reasoning)\" is not directly supported by this model. mapped to effort \"\(effort)\"."
             ))
         }
-        return (["type": "adaptive"], effort)
+        return (["type": "adaptive", "display": "summarized"], effort)
     }
 
     let percentages: [String: Double] = [

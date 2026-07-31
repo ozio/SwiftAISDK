@@ -68,7 +68,12 @@ Status meanings:
 | `@ai-sdk/voyage` | `2.0.12` | `2.0.16` | `version-only`. |
 | `@ai-sdk/xai` | `4.0.18` | `4.0.23` | `ported` — Responses warnings include unsupported sampling penalties, and video polling treats empty or malformed HTTP 202 bodies as pending. |
 
-## Verification
+## Initial Weekly Verification
+
+These results are the snapshot that identified MiniMax before the approved
+follow-up port below. They are retained as the evidence for the original
+47-package weekly audit, rather than a statement about registry state after the
+follow-up.
 
 | Check | Result |
 | --- | --- |
@@ -80,7 +85,7 @@ Status meanings:
 | `npm ci --prefix docs-site` and `npm --prefix docs-site run build` | Passed; the docs build generated 84 pages. |
 | `git diff --check` | Passed. |
 
-## Registry Discovery
+## Initial Weekly Registry Discovery
 
 An exact npm replication-registry prefix query returned 76 live
 `@ai-sdk/*` packages and 43 model-provider packages. The repository's tracked
@@ -105,3 +110,41 @@ New non-provider package:
 The local `npm search` helper returned only 63 prefix packages and missed
 MiniMax, so exact registry prefix metadata remains required for provider
 discovery.
+
+## MiniMax Follow-up
+
+The approved follow-up ports the provider reported above. Although the request
+named `@ai-sdk/minimax@3.0.0`, npm had published `3.0.1` before implementation
+started, so SwiftAISDK records the current version while retaining exact 3.0.0
+behavior.
+
+- MiniMax `3.0.0` and `3.0.1` have byte-identical source, declarations, and
+  README content. The direct delta is package/version propagation, the
+  versioned user-agent, Anthropic `4.0.25` to `4.0.26`, and provider-utils
+  `5.0.16` to `5.0.17`.
+- Anthropic `4.0.26` adds `display: summarized` when generic top-level reasoning
+  maps to adaptive thinking. Swift ports that shared request change and the
+  ordered generate-content parser used by MiniMax, including signed/redacted
+  reasoning, tool/source placement, citation metadata, and compaction.
+- `MiniMaxProvider` adds `MINIMAX_API_KEY`, the Anthropic-compatible base URL
+  and headers, `minimax.messages` identity, callable/language/chat access,
+  empty URL capabilities, unsupported-family errors, and shared Anthropic
+  request, stream, error, usage, response-metadata, and telemetry behavior.
+- Both published MiniMax test files are translated in
+  `MiniMaxProviderTests.swift`, with extra streaming and configuration
+  regressions. The capability matrix, ledger, public README, docs site, and
+  upstream test inventory are registered in the same change.
+- A fresh exact registry-prefix query still returns 76 live `@ai-sdk/*`
+  packages and 43 model providers, now with zero untracked model providers;
+  `@ai-sdk/minimax@3.0.1` is classified as tracked.
+
+### MiniMax Follow-up Verification
+
+| Check | Result |
+| --- | --- |
+| `node Scripts/check-upstream-versions.js --package @ai-sdk/minimax --package @ai-sdk/anthropic --all --json` | Passed: MiniMax `3.0.1` and Anthropic `4.0.26` are current, with zero registry errors. |
+| `node Scripts/check-upstream-versions.js --discover-packages --discover-kind provider --all --json` | Passed: 43 live model providers and zero untracked model providers. |
+| `swift test --filter MiniMax` | Passed: 7 focused MiniMax tests. |
+| `swift test` | Passed: 2,227 tests in 3 suites. |
+| `npm ci --prefix docs-site` and `npm --prefix docs-site run build` | Passed; the docs build generated 85 pages, including `/providers/minimax/`. |
+| `git diff --check` | Passed. |

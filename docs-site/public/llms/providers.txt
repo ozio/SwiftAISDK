@@ -4,7 +4,7 @@ Source URL: /providers/
 
 This page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.
 
-Language: 31
+Language: 32
 Completion: 7
 Embedding: 17
 Image: 18
@@ -53,6 +53,7 @@ Skills: 3
 | [`klingai`](klingai/) | `@ai-sdk/klingai` | `AIProviders.klingAI` |  |  |  |  |  |  |  |  | ✅ |  |  |  |
 | [`lmnt`](lmnt/) | `@ai-sdk/lmnt` | `AIProviders.lmnt` |  |  |  |  | ✅ |  |  |  |  |  |  |  |
 | [`luma`](luma/) | `@ai-sdk/luma` | `AIProviders.luma` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
+| [`minimax`](minimax/) | `@ai-sdk/minimax` | `AIProviders.miniMax` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`mistral`](mistral/) | `@ai-sdk/mistral` | `AIProviders.mistral` | ✅ | ✅ |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`moonshotai`](moonshotai/) | `@ai-sdk/moonshotai` | `AIProviders.moonshotAI` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`open-responses.responses`](open-responses-responses/) | `@ai-sdk/open-responses` | `AIProviders.openResponses` | ✅ |  |  |  |  |  |  |  |  |  |  |  |

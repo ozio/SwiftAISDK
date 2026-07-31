@@ -8,12 +8,12 @@ Snapshot:
 
 - Date: `2026-08-01`
 - Baseline upstream ref: `vercel/ai@c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56`
-- Current upstream ref: `vercel/ai@226a6792e6e4f8276776395ab6a57dbce8910745`
+- Current upstream ref: `vercel/ai@4f2e0645ce79f235c9733868951c4eef0a1c99e3`
 - Diff command:
 
   ```sh
   git -C /tmp/vercel-ai-upstream-20260801 diff --name-status \
-    c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56..226a6792e6e4f8276776395ab6a57dbce8910745 \
+    c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56..4f2e0645ce79f235c9733868951c4eef0a1c99e3 \
     -- 'packages/**/**.test.ts' 'packages/**/**.test.tsx' \
        'packages/**/**.test-d.ts'
   ```
@@ -51,7 +51,7 @@ Status meanings:
 | `packages/harness/src/agent/internal/run-prompt.test.ts`; `packages/workflow-harness/src/run-harness-agent-slice.test.ts`; `packages/langchain/src/utils.test.ts`; `packages/workflow/src/serializable-schema.test.ts`; `packages/workflow/src/stream-text-iterator.test.ts`; `packages/workflow/src/workflow-agent.test-d.ts`; `packages/workflow/src/workflow-agent.test.ts` | `out-of-scope` | These paths exercise untracked JavaScript harness, LangChain, and workflow runtime contracts rather than SwiftAISDK's provider-facing APIs. |
 | `packages/klingai/src/klingai-auth.test.ts`; `packages/klingai/src/klingai-provider.test.ts` | `ported` | Public Kling settings now support API-key and legacy access/secret credentials with deterministic precedence, while an explicit Authorization header still overrides generated auth. |
 | `packages/mcp/src/tool/mcp-client.test.ts`; `packages/mcp/src/tool/mcp-http-transport.test.ts`; `packages/mcp/src/tool/mcp-sse-transport.test.ts` | `ported` | MCP initialization and request calls now support individual and total timeout budgets, use the effective minimum deadline, map cancellation consistently, and clean pending request state. Swift transport construction preserves these settings across HTTP/SSE clients. |
-| `packages/minimax/src/minimax-provider.test.ts`; `packages/minimax/src/minimax-reasoning.test.ts` | `deferred` | `@ai-sdk/minimax@3.0.0` is a newly published provider absent from SwiftAISDK. Per weekly-check policy it is reported, not auto-implemented; the next port needs Anthropic-compatible request/auth/reasoning fixtures and capability/docs registration. |
+| `packages/minimax/src/minimax-provider.test.ts`; `packages/minimax/src/minimax-reasoning.test.ts` | `ported` | `MiniMaxProviderTests.swift` translates the published provider/auth/alias/unsupported-family contract and the exact adaptive-thinking fixture, including ordered reasoning/text output. Additional focused coverage proves custom header precedence, empty URL capabilities, signature metadata, usage/response metadata, and the shared Anthropic stream lifecycle. The Swift baseline is current `@ai-sdk/minimax@3.0.1`; its provider source is byte-identical to the originally audited `3.0.0`. |
 | `packages/mistral/src/convert-to-mistral-chat-messages.test.ts`; `packages/mistral/src/mistral-transcription-model.test-d.ts`; `packages/mistral/src/mistral-transcription-model.test.ts` | `ported` | Mistral message conversion preserves assistant reasoning as typed thinking blocks, and the new Voxtral transcription model covers multipart input, options/validation, segment parsing, and rich response metadata. |
 | `packages/openai/src/files/openai-files.test.ts`; `packages/openai/src/openai-stream-error.test.ts`; `packages/openai/src/tool/web-search.test-d.ts`; `packages/openai/src/translation/openai-translation-model.test.ts` | `deferred` | The file test is a Node upload-shape change; generic stream-error recovery, typed web-search caller linkage, and realtime translation need the shared streaming/tool-caller/translation designs. Existing batch file and web-search behavior remains covered. |
 | `packages/perplexity/src/perplexity-embedding-model.test.ts` | `ported` | Perplexity embeddings now expose typed dimensions/encoding options, enforce the 512-input limit, decode signed/base64 binary vectors, and return token plus cost metadata. |

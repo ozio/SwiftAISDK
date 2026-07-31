@@ -150,10 +150,7 @@ public enum GoogleVertexAnthropicTools {
 public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
-    public let supportedURLs: [String: [AISupportedURLPattern]] = [
-        "image/*": [AISupportedURLPattern(anthropicSupportedHTTPURL)],
-        "application/pdf": [AISupportedURLPattern(anthropicSupportedHTTPURL)]
-    ]
+    public let supportedURLs: [String: [AISupportedURLPattern]]
     private let config: ModelHTTPConfig
     private static let providerToolNames: [String: String] = [
         "anthropic.code_execution_20250522": "code_execution",
@@ -177,10 +174,18 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         "anthropic.advisor_20260301": "advisor"
     ]
 
-    init(modelID: String, config: ModelHTTPConfig) {
+    init(
+        modelID: String,
+        config: ModelHTTPConfig,
+        supportedURLs: [String: [AISupportedURLPattern]] = [
+            "image/*": [AISupportedURLPattern(anthropicSupportedHTTPURL)],
+            "application/pdf": [AISupportedURLPattern(anthropicSupportedHTTPURL)]
+        ]
+    ) {
         self.providerID = config.providerID
         self.modelID = modelID
         self.config = config
+        self.supportedURLs = supportedURLs
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
@@ -207,20 +212,24 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             throw anthropicHTTPStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
-        let toolCalls = anthropicToolCalls(from: raw["content"])
-        let toolResults = anthropicToolResults(from: raw["content"], providerID: providerID)
-        let sources = anthropicSources(from: raw["content"], citationDocuments: anthropicCitationDocuments(from: request.messages))
-        let text = anthropicTextContent(from: raw["content"])
-        guard let text else {
+        let generatedContent = anthropicGeneratedContent(
+            from: raw["content"],
+            providerID: providerID,
+            citationDocuments: anthropicCitationDocuments(from: request.messages),
+            usesJSONToolResponseFormat: preparedRequest.usesJSONToolResponseFormat
+        )
+        guard let text = generatedContent.text else {
             throw AIError.invalidResponse(provider: providerID, message: "No text block found in Anthropic response.")
         }
         return TextGenerationResult(
             text: text,
-            finishReason: anthropicFinishReason(raw["stop_reason"]?.stringValue, toolCalls: toolCalls),
+            content: generatedContent.content,
+            reasoning: generatedContent.reasoning,
+            finishReason: anthropicFinishReason(raw["stop_reason"]?.stringValue, toolCalls: generatedContent.toolCalls),
             usage: anthropicTokenUsage(from: raw["usage"]),
-            toolCalls: toolCalls,
-            toolResults: toolResults,
-            sources: sources,
+            toolCalls: generatedContent.toolCalls,
+            toolResults: generatedContent.toolResults,
+            sources: generatedContent.sources,
             providerMetadata: anthropicProviderMetadata(from: raw, providerID: providerID, requestProviderOptions: request.providerOptions),
             rawValue: raw,
             warnings: preparedRequest.warnings,
@@ -1523,20 +1532,24 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
         let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
         let response = try await config.sendJSONResponse(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
-        let toolCalls = anthropicToolCalls(from: raw["content"])
-        let toolResults = anthropicToolResults(from: raw["content"], providerID: providerID)
-        let sources = anthropicSources(from: raw["content"], citationDocuments: anthropicCitationDocuments(from: request.messages))
-        let text = anthropicTextContent(from: raw["content"])
-        guard let text = text ?? (toolCalls.isEmpty ? nil : "") else {
+        let generatedContent = anthropicGeneratedContent(
+            from: raw["content"],
+            providerID: providerID,
+            citationDocuments: anthropicCitationDocuments(from: request.messages),
+            usesJSONToolResponseFormat: prepared.usesJSONToolResponseFormat
+        )
+        guard let text = generatedContent.text else {
             throw AIError.invalidResponse(provider: providerID, message: "No text block found in Bedrock Anthropic response.")
         }
         return TextGenerationResult(
             text: text,
-            finishReason: anthropicFinishReason(raw["stop_reason"]?.stringValue, toolCalls: toolCalls),
+            content: generatedContent.content,
+            reasoning: generatedContent.reasoning,
+            finishReason: anthropicFinishReason(raw["stop_reason"]?.stringValue, toolCalls: generatedContent.toolCalls),
             usage: anthropicTokenUsage(from: raw["usage"]),
-            toolCalls: toolCalls,
-            toolResults: toolResults,
-            sources: sources,
+            toolCalls: generatedContent.toolCalls,
+            toolResults: generatedContent.toolResults,
+            sources: generatedContent.sources,
             providerMetadata: anthropicProviderMetadata(from: raw, providerID: providerID),
             rawValue: raw,
             warnings: prepared.warnings,
