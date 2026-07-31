@@ -23,7 +23,14 @@ import Testing
     #expect(userContent[1]["type"]?.stringValue == "image_url")
     #expect(userContent[1]["image_url"]?.stringValue == "data:image/jpeg;base64,AAEC")
     #expect(messages[1]["role"]?.stringValue == "assistant")
-    #expect(messages[1]["content"]?.stringValue == "Partial answer prior thinking")
+    #expect(messages[1]["content"] == [
+        ["type": "text", "text": "Partial answer"],
+        [
+            "type": "thinking",
+            "thinking": [["type": "text", "text": " prior thinking"]],
+            "closed": true
+        ]
+    ])
     #expect(messages[1]["prefix"]?.boolValue == true)
 }
 @Test func mistralRejectsUnsupportedUserFilePartsLikeUpstream() async throws {
@@ -513,7 +520,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.mistral.ai/v1/audio/speech")
     #expect(request.headers["authorization"] == "Bearer mistral-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/mistral/4.0.14")
+    #expect(request.headers["user-agent"] == "ai-sdk/mistral/4.0.18")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "voxtral-mini-tts-2603")
     #expect(body["input"]?.stringValue == "Hello")

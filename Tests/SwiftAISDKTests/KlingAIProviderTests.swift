@@ -2,6 +2,114 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func klingAIAuthResolutionMatchesUpstreamPrecedenceAndTrimming() throws {
+    let explicitAPIKey = try resolveKlingAIAuthToken(settings: KlingAIProviderSettings(
+        apiKey: "  explicit-api-key  ",
+        accessKey: "explicit-ak",
+        secretKey: "explicit-sk",
+        environment: ["KLINGAI_API_KEY": "env-api-key"]
+    ))
+    #expect(explicitAPIKey == "explicit-api-key")
+
+    let explicitLegacy = try resolveKlingAIAuthToken(
+        settings: KlingAIProviderSettings(
+            accessKey: "explicit-ak",
+            secretKey: "explicit-sk",
+            environment: ["KLINGAI_API_KEY": "env-api-key"]
+        ),
+        now: Date(timeIntervalSince1970: 1_000)
+    )
+    #expect(try klingAIJWTPayload(explicitLegacy)["iss"]?.stringValue == "explicit-ak")
+
+    let environmentAPIKey = try resolveKlingAIAuthToken(settings: KlingAIProviderSettings(environment: [
+        "KLINGAI_API_KEY": "  env-api-key  ",
+        "KLINGAI_ACCESS_KEY": "env-ak",
+        "KLINGAI_SECRET_KEY": "env-sk"
+    ]))
+    #expect(environmentAPIKey == "env-api-key")
+
+    let blankAPIKeyFallback = try resolveKlingAIAuthToken(
+        settings: KlingAIProviderSettings(environment: [
+            "KLINGAI_API_KEY": "   ",
+            "KLINGAI_ACCESS_KEY": "env-ak",
+            "KLINGAI_SECRET_KEY": "env-sk"
+        ]),
+        now: Date(timeIntervalSince1970: 1_000)
+    )
+    #expect(try klingAIJWTPayload(blankAPIKeyFallback)["iss"]?.stringValue == "env-ak")
+}
+
+@Test func klingAIAuthResolutionReportsMissingLegacyHalf() {
+    #expect(throws: AIError.missingAPIKey(provider: "klingai", environmentVariables: ["KLINGAI_SECRET_KEY"])) {
+        _ = try resolveKlingAIAuthToken(settings: KlingAIProviderSettings(environment: ["KLINGAI_ACCESS_KEY": "env-ak"]))
+    }
+}
+
+@Test func klingAIDedicatedSettingsForwardLegacyCredentialsAndCustomAuthorization() async throws {
+    let legacyTransport = klingAITransport(taskID: "task-legacy", videoURL: "https://kling.example.com/legacy.mp4")
+    let legacyProvider = try AIProviders.klingAI(settings: KlingAIProviderSettings(
+        accessKey: "explicit-ak",
+        secretKey: "explicit-sk",
+        environment: ["KLINGAI_API_KEY": "env-api-key"],
+        transport: legacyTransport
+    ))
+    _ = try await legacyProvider.videoModel("kling-v2.1-t2v").generateVideo(VideoGenerationRequest(
+        prompt: "scene",
+        providerOptions: ["klingai": ["pollIntervalMs": 1]]
+    ))
+    let legacyAuthorization = try #require((await legacyTransport.requests()).first?.headers["authorization"])
+    #expect(legacyAuthorization.hasPrefix("Bearer "))
+    #expect(try klingAIJWTPayload(String(legacyAuthorization.dropFirst("Bearer ".count)))["iss"]?.stringValue == "explicit-ak")
+
+    let customTransport = klingAITransport(taskID: "task-auth", videoURL: "https://kling.example.com/auth.mp4")
+    let customProvider = try AIProviders.klingAI(settings: KlingAIProviderSettings(
+        headers: ["authorization": "Bearer custom-token"],
+        environment: [:],
+        transport: customTransport
+    ))
+    _ = try await customProvider.videoModel("kling-v2.1-t2v").generateVideo(VideoGenerationRequest(
+        prompt: "scene",
+        providerOptions: ["klingai": ["pollIntervalMs": 1]]
+    ))
+    #expect((await customTransport.requests()).first?.headers["authorization"] == "Bearer custom-token")
+}
+
+@Test func klingAILegacyJWTRefreshesForEveryRequest() async throws {
+    let transport = klingAITransport(taskID: "task-refresh", videoURL: "https://kling.example.com/refresh.mp4")
+    let clock = KlingAITestClock([
+        Date(timeIntervalSince1970: 1_000),
+        Date(timeIntervalSince1970: 5_000)
+    ])
+    var settings = KlingAIProviderSettings(
+        accessKey: "refresh-ak",
+        secretKey: "refresh-sk",
+        environment: [:],
+        transport: transport
+    )
+    settings.currentDate = { clock.now() }
+    let provider = try AIProviders.klingAI(settings: settings)
+
+    _ = try await provider.videoModel("kling-v2.1-t2v").generateVideo(VideoGenerationRequest(
+        prompt: "scene",
+        providerOptions: ["klingai": ["pollIntervalMs": 1]]
+    ))
+
+    let requests = await transport.requests()
+    try #require(requests.count == 2)
+    let firstAuthorization = try #require(requests[0].headers["authorization"])
+    let secondAuthorization = try #require(requests[1].headers["authorization"])
+    #expect(firstAuthorization != secondAuthorization)
+
+    let firstPayload = try klingAIJWTPayload(String(firstAuthorization.dropFirst("Bearer ".count)))
+    let secondPayload = try klingAIJWTPayload(String(secondAuthorization.dropFirst("Bearer ".count)))
+    #expect(firstPayload["iss"]?.stringValue == "refresh-ak")
+    #expect(firstPayload["exp"]?.intValue == 2_800)
+    #expect(firstPayload["nbf"]?.intValue == 995)
+    #expect(secondPayload["iss"]?.stringValue == "refresh-ak")
+    #expect(secondPayload["exp"]?.intValue == 6_800)
+    #expect(secondPayload["nbf"]?.intValue == 4_995)
+}
+
 @Test func klingAIT2VSubmitsPollsAndPreservesMetadata() async throws {
     let transport = klingAITransport(taskID: "task-1", videoID: "vid-1", videoURL: "https://kling.example.com/video.mp4", headers: ["kling-header": "poll"])
     let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
@@ -37,7 +145,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/text2video")
     #expect(requests[0].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/klingai/4.0.13")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/klingai/4.0.18")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model_name"]?.stringValue == "kling-v2-1")
     #expect(body["prompt"]?.stringValue == "cat running")
@@ -51,7 +159,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api-singapore.klingai.com/v1/videos/text2video/task-1")
     #expect(requests[1].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/klingai/4.0.13")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/klingai/4.0.18")
 }
 
 @Test func klingAIAppendsVersionedUserAgentToCustomHeader() async throws {
@@ -70,9 +178,9 @@ import Testing
 
     let requests = await transport.requests()
     #expect(requests[0].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/4.0.13")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/4.0.18")
     #expect(requests[1].headers["authorization"] == "Bearer kling-token")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/4.0.13")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/klingai/4.0.18")
 }
 
 @Test func klingAIT2VMapsProviderOptionsAndWarnings() async throws {
@@ -630,4 +738,34 @@ private func klingAITransport(taskID: String = "task-1", videoID: String = "vid-
             headers: headers
         )
     ])
+}
+
+private func klingAIJWTPayload(_ token: String) throws -> JSONValue {
+    let parts = token.split(separator: ".")
+    guard parts.count == 3 else {
+        throw AIError.invalidArgument(argument: "token", message: "Expected a three-part KlingAI JWT.")
+    }
+    var encoded = String(parts[1])
+        .replacingOccurrences(of: "-", with: "+")
+        .replacingOccurrences(of: "_", with: "/")
+    encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+    guard let data = Data(base64Encoded: encoded) else {
+        throw AIError.invalidArgument(argument: "token", message: "Expected a base64url KlingAI JWT payload.")
+    }
+    return try decodeJSONBody(data)
+}
+
+private final class KlingAITestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var dates: [Date]
+
+    init(_ dates: [Date]) {
+        self.dates = dates
+    }
+
+    func now() -> Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return dates.isEmpty ? Date(timeIntervalSince1970: 0) : dates.removeFirst()
+    }
 }

@@ -8,11 +8,11 @@ description: Public SwiftAISDK APIs for provider models.
 | Symbol kind | Count |
 | --- | --- |
 | Case | 4 |
-| Class | 99 |
+| Class | 101 |
 | Enumeration | 10 |
 | Initializer | 1 |
-| Instance Method | 121 |
-| Instance Property | 209 |
+| Instance Method | 123 |
+| Instance Property | 213 |
 | Structure | 1 |
 | Type Method | 82 |
 
@@ -97,6 +97,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `MistralEmbeddingModel` | `final class MistralEmbeddingModel` | [Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift) |
 | Class | `MistralLanguageModel` | `final class MistralLanguageModel` | [Sources/SwiftAISDK/Models/MistralModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralModels.swift) |
 | Class | `MistralSpeechModel` | `final class MistralSpeechModel` | [Sources/SwiftAISDK/Models/MistralSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralSpeechModel.swift) |
+| Class | `MistralTranscriptionModel` | `final class MistralTranscriptionModel` | [Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift) |
 | Class | `MultipartFileClient` | `final class MultipartFileClient` | [Sources/SwiftAISDK/Models/FileClients.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FileClients.swift) |
 | Class | `OpenAICompatibleChatModel` | `final class OpenAICompatibleChatModel` | [Sources/SwiftAISDK/Models/OpenAICompatibleChatModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleChatModel.swift) |
 | Class | `OpenAICompatibleCompletionModel` | `final class OpenAICompatibleCompletionModel` | [Sources/SwiftAISDK/Models/OpenAICompatibleCompletionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleCompletionModel.swift) |
@@ -106,6 +107,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `OpenAICompatibleSpeechModel` | `final class OpenAICompatibleSpeechModel` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
 | Class | `OpenAICompatibleTranscriptionModel` | `final class OpenAICompatibleTranscriptionModel` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
 | Class | `OpenAISkillsClient` | `final class OpenAISkillsClient` | [Sources/SwiftAISDK/Models/OpenAISkills.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAISkills.swift) |
+| Class | `PerplexityEmbeddingModel` | `final class PerplexityEmbeddingModel` | [Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift) |
 | Class | `PerplexityLanguageModel` | `final class PerplexityLanguageModel` | [Sources/SwiftAISDK/Models/PerplexityModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityModels.swift) |
 | Class | `ProdiaImageModel` | `final class ProdiaImageModel` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
 | Class | `ProdiaLanguageModel` | `final class ProdiaLanguageModel` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
@@ -145,6 +147,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `embed(_:)` | `func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/Models/GoogleVertexModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GoogleVertexModels.swift) |
 | Instance Method | `embed(_:)` | `func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift) |
 | Instance Method | `embed(_:)` | `func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
+| Instance Method | `embed(_:)` | `func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift) |
 | Instance Method | `embed(_:)` | `func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Method | `generate(_:)` | `func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult` | [Sources/SwiftAISDK/Models/AlibabaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AlibabaModels.swift) |
 | Instance Method | `generate(_:)` | `func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult` | [Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift) |
@@ -245,6 +248,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/GladiaAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GladiaAudioModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/GoogleVertexModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GoogleVertexModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/GroqTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GroqTranscriptionModel.swift) |
+| Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/RevAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/RevAIAudioModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
@@ -332,6 +336,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MistralModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MistralSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralSpeechModel.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleChatModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleChatModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleCompletionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleCompletionModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
@@ -339,6 +344,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/OpenAIResponsesModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAIResponsesModel.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/PerplexityModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
@@ -433,6 +439,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MistralModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MistralSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralSpeechModel.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralTranscriptionModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleChatModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleChatModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleCompletionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleCompletionModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleMediaModels.swift) |
@@ -442,6 +449,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/OpenAIResponsesModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAIResponsesModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/OpenAISkills.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAISkills.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/OpenAISkills.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAISkills.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityEmbeddingModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/PerplexityModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |

@@ -164,6 +164,9 @@ func openAIResponsesProviderTool(
             if let allowedDomains = mappedFilters.removeValue(forKey: "allowedDomains") {
                 mappedFilters["allowed_domains"] = allowedDomains
             }
+            if let blockedDomains = mappedFilters.removeValue(forKey: "blockedDomains") {
+                mappedFilters["blocked_domains"] = blockedDomains
+            }
             tool["filters"] = .object(mappedFilters)
         }
         if let externalWebAccess = args["externalWebAccess"] ?? args["external_web_access"] { tool["external_web_access"] = externalWebAccess }

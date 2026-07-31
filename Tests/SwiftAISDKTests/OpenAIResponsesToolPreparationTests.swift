@@ -18,7 +18,10 @@ import Testing
                 "deferLoading": true
             ],
             "web_search": OpenAITools.webSearch(
-                filters: ["allowedDomains": ["example.com"]],
+                filters: [
+                    "allowedDomains": ["example.com"],
+                    "blockedDomains": ["blocked.example.com"]
+                ],
                 externalWebAccess: true,
                 searchContextSize: "high",
                 userLocation: ["type": "approximate", "country": "US"]
@@ -87,6 +90,9 @@ import Testing
     #expect(webSearch["external_web_access"]?.boolValue == true)
     #expect(webSearch["search_context_size"]?.stringValue == "high")
     #expect(webSearch["filters"]?["allowed_domains"]?[0]?.stringValue == "example.com")
+    #expect(webSearch["filters"]?["blocked_domains"]?[0]?.stringValue == "blocked.example.com")
+    #expect(webSearch["filters"]?["allowedDomains"] == nil)
+    #expect(webSearch["filters"]?["blockedDomains"] == nil)
     #expect(webSearch["user_location"]?["country"]?.stringValue == "US")
 
     let fileSearch = try #require(tools.first { $0["type"]?.stringValue == "file_search" })
@@ -135,6 +141,20 @@ import Testing
     #expect(toolSearch["execution"]?.stringValue == "client")
     #expect(body["tool_choice"]?["type"]?.stringValue == "web_search")
     #expect(body["toolChoice"] == nil)
+}
+
+@Test func openAIResponsesMapsBlockedOnlyWebSearchFiltersLikeUpstream() async throws {
+    let body = try await recordedOpenAIResponsesBody(tools: [
+        "web_search": OpenAITools.webSearch(
+            filters: ["blockedDomains": ["example.com", "example.org"]]
+        )
+    ])
+
+    let tool = try #require(body["tools"]?.arrayValue?.first)
+    #expect(tool["type"]?.stringValue == "web_search")
+    #expect(tool["filters"]?["allowed_domains"] == nil)
+    #expect(tool["filters"]?["blocked_domains"]?[0]?.stringValue == "example.com")
+    #expect(tool["filters"]?["blocked_domains"]?[1]?.stringValue == "example.org")
 }
 
 @Test func openAIResponsesPreparesCustomToolsLikeUpstream() async throws {
@@ -488,4 +508,3 @@ import Testing
     #expect(defaultTool["strict"] == nil)
     #expect(defaultTool["parameters"]?["strict"] == nil)
 }
-

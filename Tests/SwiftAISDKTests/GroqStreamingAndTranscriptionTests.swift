@@ -271,6 +271,43 @@ import Testing
         _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("mp3".utf8), mimeType: "audio/mpeg"))
     }
 }
+
+@Test func groqTranscriptionFallsBackToWordTimestampsWhenSegmentsAreNull() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"hello world","x_groq":{"id":"req-words"},"segments":null,"words":[{"word":"hello","start":0,"end":0.4},{"word":"world","start":0.5,"end":0.9}]}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.transcriptionModel("whisper-large-v3-turbo")
+
+    let result = try await model.transcribe(AudioTranscriptionRequest(audio: Data("mp3".utf8), mimeType: "audio/mpeg"))
+
+    #expect(result.segments == [
+        TranscriptionSegment(text: "hello", startSecond: 0, endSecond: 0.4),
+        TranscriptionSegment(text: "world", startSecond: 0.5, endSecond: 0.9)
+    ])
+}
+
+@Test func groqTranscriptionTextResponseFormatDecodesPlainText() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "text/plain"],
+        body: Data("plain transcript".utf8)
+    ))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+    let model = try provider.transcriptionModel("whisper-large-v3-turbo")
+
+    let result = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("mp3".utf8),
+        mimeType: "audio/mpeg",
+        providerOptions: ["groq": ["responseFormat": "text"]]
+    ))
+
+    #expect(result.text == "plain transcript")
+    #expect(result.rawValue == .string("plain transcript"))
+    #expect(result.segments.isEmpty)
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(decoding: try #require(request.body), as: UTF8.self)
+    #expect(bodyText.contains("name=\"response_format\""))
+    #expect(bodyText.contains("\r\ntext\r\n"))
+}
 @Test func groqTranscriptionProviderOptionsRejectInvalidSchemaFields() async throws {
     let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: RecordingTransport(responses: [])))
     let model = try provider.transcriptionModel("whisper-large-v3")

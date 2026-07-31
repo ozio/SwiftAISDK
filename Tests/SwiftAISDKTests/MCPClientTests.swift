@@ -2,6 +2,179 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func mcpInitializationOptionsEnforceEffectiveTimeoutAndCloseTransport() async throws {
+    let transport = MCPTimeoutTestTransport(hangInitialize: true)
+    do {
+        _ = try await MCPClient.connect(
+            transport: transport,
+            initializationOptions: MCPRequestOptions(
+                timeoutMilliseconds: 100,
+                maxTotalTimeoutMilliseconds: 5
+            )
+        )
+        Issue.record("Expected MCP initialization timeout")
+    } catch let error as MCPClientError {
+        #expect(error.message == "MCP client initialization timed out after 5ms")
+    }
+    #expect(await transport.wasClosed())
+}
+
+@Test func mcpInitializationTimeoutBoundsHangingTransportStartAndClosesTransport() async throws {
+    let transport = MCPTimeoutTestTransport(hangStart: true)
+    do {
+        _ = try await MCPClient.connect(
+            transport: transport,
+            initializationOptions: MCPRequestOptions(timeoutMilliseconds: 5)
+        )
+        Issue.record("Expected MCP initialization timeout")
+    } catch let error as MCPClientError {
+        #expect(error.message == "MCP client initialization timed out after 5ms")
+    }
+    #expect(await transport.wasClosed())
+}
+
+@Test func mcpInitializationClosesTransportWhenStartFails() async throws {
+    let transport = MCPTimeoutTestTransport(failStart: true)
+    do {
+        _ = try await MCPClient.connect(transport: transport)
+        Issue.record("Expected MCP transport start failure")
+    } catch let error as MCPClientError {
+        #expect(error.message == "MCP transport start failed")
+    }
+    #expect(await transport.wasClosed())
+}
+
+@Test func mcpInitializationTimeoutBoundsHangingInitializedNotificationAndClosesTransport() async throws {
+    let transport = MCPTimeoutTestTransport(hangNotification: true)
+    do {
+        _ = try await MCPClient.connect(
+            transport: transport,
+            initializationOptions: MCPRequestOptions(timeoutMilliseconds: 5)
+        )
+        Issue.record("Expected MCP initialization timeout")
+    } catch let error as MCPClientError {
+        #expect(error.message == "MCP client initialization timed out after 5ms")
+    }
+    #expect(await transport.wasClosed())
+}
+
+@Test func mcpInitializationAbortBoundsHangingInitializedNotificationAndClosesTransport() async throws {
+    let transport = MCPTimeoutTestTransport(hangNotification: true)
+    let controller = AIAbortController()
+    let abortTask = Task {
+        while !Task.isCancelled, !(await transport.notificationWasStarted()) {
+            await Task.yield()
+        }
+        guard !Task.isCancelled else { return }
+        controller.abort(reason: "stop")
+    }
+    defer { abortTask.cancel() }
+
+    do {
+        _ = try await MCPClient.connect(
+            transport: transport,
+            initializationOptions: MCPRequestOptions(abortSignal: controller.signal)
+        )
+        Issue.record("Expected MCP initialization abort")
+    } catch let error as MCPClientError {
+        #expect(error.message == "MCP client initialization was aborted")
+    }
+    #expect(await transport.wasClosed())
+}
+
+@Test func mcpRequestOptionsEnforceTimeoutAndAbort() async throws {
+    let transport = MCPTimeoutTestTransport(hangInitialize: false)
+    let client = try await MCPClient.connect(transport: transport)
+
+    do {
+        _ = try await client.listResources(options: MCPRequestOptions(
+            timeoutMilliseconds: 50,
+            maxTotalTimeoutMilliseconds: 5
+        ))
+        Issue.record("Expected MCP request timeout")
+    } catch let error as MCPClientError {
+        #expect(error.message == "Request timed out after 5ms")
+    }
+
+    let controller = AIAbortController()
+    controller.abort(reason: "stop")
+    do {
+        _ = try await client.listResources(options: MCPRequestOptions(abortSignal: controller.signal))
+        Issue.record("Expected MCP request abort")
+    } catch let error as MCPClientError {
+        #expect(error.message == "Request was aborted")
+    }
+    try await client.close()
+}
+
+private actor MCPTimeoutTestTransport: MCPTransport {
+    private let hangStart: Bool
+    private let failStart: Bool
+    private let hangInitialize: Bool
+    private let hangNotification: Bool
+    private var notificationStarted = false
+    private var closed = false
+
+    init(
+        hangStart: Bool = false,
+        failStart: Bool = false,
+        hangInitialize: Bool = false,
+        hangNotification: Bool = false
+    ) {
+        self.hangStart = hangStart
+        self.failStart = failStart
+        self.hangInitialize = hangInitialize
+        self.hangNotification = hangNotification
+    }
+
+    func start() async throws {
+        if failStart {
+            throw MCPClientError(message: "MCP transport start failed")
+        }
+        if hangStart {
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+        }
+    }
+
+    func request(_ message: JSONValue) async throws -> JSONValue {
+        let id = message["id"] ?? 0
+        switch message["method"]?.stringValue {
+        case "initialize" where hangInitialize:
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+            return .null
+        case "initialize":
+            return [
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [
+                    "protocolVersion": .string(MCPClient.latestProtocolVersion),
+                    "capabilities": ["resources": [:]],
+                    "serverInfo": ["name": "timeout-test", "version": "1"]
+                ]
+            ]
+        case "resources/list":
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+            return .null
+        default:
+            return ["jsonrpc": "2.0", "id": id, "result": [:]]
+        }
+    }
+
+    func notify(_ message: JSONValue) async throws {
+        notificationStarted = true
+        if hangNotification {
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+        }
+    }
+
+    func close() async throws {
+        closed = true
+    }
+
+    func wasClosed() -> Bool { closed }
+    func notificationWasStarted() -> Bool { notificationStarted }
+}
+
 @Test func mcpClientInitializesAndBuildsDynamicTools() async throws {
     let transport = MockMCPTransport()
     let client = try await MCPClient.connect(

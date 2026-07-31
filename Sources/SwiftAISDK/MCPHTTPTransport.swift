@@ -2,9 +2,26 @@ import Foundation
 
 public struct MCPRequestOptions: Sendable {
     public var abortSignal: AIAbortSignal?
+    public var timeoutMilliseconds: Int?
+    public var maxTotalTimeoutMilliseconds: Int?
 
-    public init(abortSignal: AIAbortSignal? = nil) {
+    public init(
+        abortSignal: AIAbortSignal? = nil,
+        timeoutMilliseconds: Int? = nil,
+        maxTotalTimeoutMilliseconds: Int? = nil
+    ) {
         self.abortSignal = abortSignal
+        self.timeoutMilliseconds = timeoutMilliseconds
+        self.maxTotalTimeoutMilliseconds = maxTotalTimeoutMilliseconds
+    }
+
+    var effectiveTimeoutMilliseconds: Int? {
+        switch (timeoutMilliseconds, maxTotalTimeoutMilliseconds) {
+        case let (timeout?, maximum?): min(timeout, maximum)
+        case let (timeout?, nil): timeout
+        case let (nil, maximum?): maximum
+        case (nil, nil): nil
+        }
     }
 }
 

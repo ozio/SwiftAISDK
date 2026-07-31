@@ -25,6 +25,7 @@ public actor MCPClient {
     private let clientInfo: MCPImplementation
     private let clientCapabilities: JSONValue
     private let initialInitializeResult: JSONValue?
+    private let initializationOptions: MCPRequestOptions?
     private let maxRetries: Int
     private var requestID = 0
     private var isClosed = true
@@ -36,12 +37,14 @@ public actor MCPClient {
         clientVersion: String,
         clientCapabilities: JSONValue,
         initialInitializeResult: JSONValue?,
+        initializationOptions: MCPRequestOptions?,
         maxRetries: Int
     ) {
         self.transport = transport
         self.clientInfo = MCPImplementation(name: clientName, version: clientVersion)
         self.clientCapabilities = clientCapabilities
         self.initialInitializeResult = initialInitializeResult
+        self.initializationOptions = initializationOptions
         self.maxRetries = maxRetries
     }
 
@@ -51,6 +54,7 @@ public actor MCPClient {
         clientVersion: String = "1.0.0",
         clientCapabilities: JSONValue = .object([:]),
         initialInitializeResult: JSONValue? = nil,
+        initializationOptions: MCPRequestOptions? = nil,
         maxRetries: Int = 0
     ) async throws -> MCPClient {
         guard maxRetries >= 0 else {
@@ -62,6 +66,7 @@ public actor MCPClient {
             clientVersion: clientVersion,
             clientCapabilities: clientCapabilities,
             initialInitializeResult: initialInitializeResult,
+            initializationOptions: initializationOptions,
             maxRetries: maxRetries
         )
         try await client.initialize()
@@ -186,7 +191,28 @@ public actor MCPClient {
     }
 
     private func initialize() async throws {
+        let externalSignal = initializationOptions?.abortSignal
+        let timeout = initializationOptions?.effectiveTimeoutMilliseconds
+        let timeoutController = timeout.map { _ in AIAbortController() }
+        let timeoutTask: Task<Void, Never>? = if let timeout, let timeoutController {
+            Task {
+                let milliseconds = UInt64(max(0, timeout))
+                let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+                do {
+                    try await Task.sleep(nanoseconds: overflow ? UInt64.max : nanoseconds)
+                    timeoutController.abort(reason: "MCP client initialization timed out after \(timeout)ms", reasonName: "TimeoutError")
+                } catch {}
+            }
+        } else {
+            nil
+        }
+        defer { timeoutTask?.cancel() }
+        let effectiveOptions = MCPRequestOptions(abortSignal: mergeAbortSignals(externalSignal, timeoutController?.signal))
+
         do {
+            if externalSignal?.isAborted == true {
+                throw MCPClientError(message: "MCP client initialization was aborted")
+            }
             await transport.setRequestHandler { [weak self] request in
                 guard let self else {
                     return mcpJSONRPCErrorResponse(
@@ -197,8 +223,15 @@ public actor MCPClient {
                 }
                 return await self.handleIncomingRequest(request)
             }
-            try await transport.start()
+            try effectiveOptions.abortSignal?.throwIfAborted()
             isClosed = false
+            try await mcpRunWithRequestOptions(
+                effectiveOptions,
+                timeoutMessage: { timeout in "MCP client initialization timed out after \(timeout)ms" },
+                abortMessage: "MCP client initialization was aborted"
+            ) { [transport] _ in
+                try await transport.start()
+            }
 
             if let initialInitializeResult {
                 try await applyInitializeResult(initialInitializeResult)
@@ -212,13 +245,21 @@ public actor MCPClient {
                     "capabilities": clientCapabilities,
                     "clientInfo": clientInfo.jsonValue
                 ]),
-                skipCapabilityCheck: true
+                skipCapabilityCheck: true,
+                options: effectiveOptions
             )
             try await applyInitializeResult(result)
-
-            try await notify(method: "notifications/initialized")
+            try effectiveOptions.abortSignal?.throwIfAborted()
+            try await notify(method: "notifications/initialized", options: effectiveOptions)
+            try effectiveOptions.abortSignal?.throwIfAborted()
         } catch {
             try? await close()
+            if timeoutController?.signal.isAborted == true, let timeout {
+                throw MCPClientError(message: "MCP client initialization timed out after \(timeout)ms")
+            }
+            if externalSignal?.isAborted == true {
+                throw MCPClientError(message: "MCP client initialization was aborted")
+            }
             throw error
         }
     }
@@ -289,7 +330,6 @@ public actor MCPClient {
         skipCapabilityCheck: Bool = false,
         options: MCPRequestOptions? = nil
     ) async throws -> JSONValue {
-        try options?.abortSignal?.throwIfAborted()
         guard !isClosed else {
             throw MCPClientError(message: "Attempted to send a request from a closed client.")
         }
@@ -304,17 +344,34 @@ public actor MCPClient {
             "method": .string(method),
             "params": params
         ])
-        let response = try await transport.request(message, options: options)
+        let response = try await mcpRunWithRequestOptions(
+            options,
+            timeoutMessage: { timeout in "Request timed out after \(timeout)ms" },
+            abortMessage: "Request was aborted"
+        ) { [transport] effectiveOptions in
+            try await transport.request(message, options: effectiveOptions)
+        }
         return try result(from: response, expectedID: id)
     }
 
-    private func notify(method: String, params: JSONValue? = nil) async throws {
+    private func notify(
+        method: String,
+        params: JSONValue? = nil,
+        options: MCPRequestOptions? = nil
+    ) async throws {
         let message = JSONValue.object([
             "jsonrpc": .string("2.0"),
             "method": .string(method),
             "params": params
         ])
-        try await transport.notify(message)
+        try await mcpRunWithRequestOptions(
+            options,
+            timeoutMessage: { timeout in "Request timed out after \(timeout)ms" },
+            abortMessage: "Request was aborted"
+        ) { [transport] effectiveOptions in
+            try effectiveOptions.abortSignal?.throwIfAborted()
+            try await transport.notify(message)
+        }
     }
 
     private func result(from response: JSONValue, expectedID: Int) throws -> JSONValue {
@@ -404,6 +461,7 @@ public actor MCPClient {
             guard let self else {
                 throw MCPClientError(message: "MCP client has been released.")
             }
+            try context.abortSignal?.throwIfAborted()
             return try await self.callTool(
                 name: definition.name,
                 arguments: arguments,
@@ -415,6 +473,128 @@ public actor MCPClient {
             }
             return try await self.callTool(name: definition.name, arguments: arguments).rawValue
         }
+    }
+}
+
+private final class MCPRequestRace<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var timeoutTask: Task<Void, Never>?
+    private var operationTask: Task<Void, Never>?
+    private var abortRegistration: AIAbortHandlerRegistration?
+    private var completed = false
+
+    init(continuation: CheckedContinuation<Value, Error>) {
+        self.continuation = continuation
+    }
+
+    func install(
+        timeoutTask: Task<Void, Never>?,
+        operationTask: Task<Void, Never>,
+        abortRegistration: AIAbortHandlerRegistration?
+    ) {
+        lock.lock()
+        if completed {
+            lock.unlock()
+            timeoutTask?.cancel()
+            operationTask.cancel()
+            abortRegistration?.cancel()
+            return
+        }
+        self.timeoutTask = timeoutTask
+        self.operationTask = operationTask
+        self.abortRegistration = abortRegistration
+        lock.unlock()
+    }
+
+    func resolve(_ result: Result<Value, Error>) {
+        lock.lock()
+        guard !completed, let continuation else {
+            lock.unlock()
+            return
+        }
+        completed = true
+        self.continuation = nil
+        let timeoutTask = self.timeoutTask
+        let operationTask = self.operationTask
+        let abortRegistration = self.abortRegistration
+        self.timeoutTask = nil
+        self.operationTask = nil
+        self.abortRegistration = nil
+        lock.unlock()
+
+        timeoutTask?.cancel()
+        operationTask?.cancel()
+        abortRegistration?.cancel()
+        continuation.resume(with: result)
+    }
+}
+
+private func mcpRunWithRequestOptions<Value: Sendable>(
+    _ options: MCPRequestOptions?,
+    timeoutMessage: @escaping @Sendable (Int) -> String,
+    abortMessage: String,
+    operation: @escaping @Sendable (MCPRequestOptions) async throws -> Value
+) async throws -> Value {
+    let externalSignal = options?.abortSignal
+    if externalSignal?.isAborted == true {
+        throw MCPClientError(message: abortMessage)
+    }
+    let timeout = options?.effectiveTimeoutMilliseconds
+    guard externalSignal != nil || timeout != nil else {
+        return try await operation(MCPRequestOptions())
+    }
+
+    let timeoutController = timeout.map { _ in AIAbortController() }
+    let combinedSignal = mergeAbortSignals(externalSignal, timeoutController?.signal)
+    let effectiveOptions = MCPRequestOptions(abortSignal: combinedSignal)
+
+    return try await withCheckedThrowingContinuation { continuation in
+        let race = MCPRequestRace<Value>(continuation: continuation)
+        let abortRegistration = externalSignal?.addAbortHandler { _ in
+            race.resolve(.failure(MCPClientError(message: abortMessage)))
+        }
+        let timeoutTask: Task<Void, Never>? = if let timeout, let timeoutController {
+            Task {
+                let milliseconds = UInt64(max(0, timeout))
+                let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+                do {
+                    try await Task.sleep(nanoseconds: overflow ? UInt64.max : nanoseconds)
+                    let message = timeoutMessage(timeout)
+                    timeoutController.abort(reason: message, reasonName: "TimeoutError")
+                    race.resolve(.failure(MCPClientError(message: message)))
+                } catch {}
+            }
+        } else {
+            nil
+        }
+
+        let operationTask = Task {
+            do {
+                try effectiveOptions.abortSignal?.throwIfAborted()
+                let value = try await operation(effectiveOptions)
+                if externalSignal?.isAborted == true {
+                    race.resolve(.failure(MCPClientError(message: abortMessage)))
+                } else if timeoutController?.signal.isAborted == true, let timeout {
+                    race.resolve(.failure(MCPClientError(message: timeoutMessage(timeout))))
+                } else {
+                    race.resolve(.success(value))
+                }
+            } catch {
+                if externalSignal?.isAborted == true {
+                    race.resolve(.failure(MCPClientError(message: abortMessage)))
+                } else if timeoutController?.signal.isAborted == true, let timeout {
+                    race.resolve(.failure(MCPClientError(message: timeoutMessage(timeout))))
+                } else {
+                    race.resolve(.failure(error))
+                }
+            }
+        }
+        race.install(
+            timeoutTask: timeoutTask,
+            operationTask: operationTask,
+            abortRegistration: abortRegistration
+        )
     }
 }
 

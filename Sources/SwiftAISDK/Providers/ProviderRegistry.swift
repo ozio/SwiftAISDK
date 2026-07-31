@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 public enum AIProviders {
@@ -12,7 +11,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.20")
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.25")
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -96,13 +95,13 @@ public enum AIProviders {
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
             ),
-            userAgentSuffix: "ai-sdk/openai-compatible/3.0.14",
+            userAgentSuffix: "ai-sdk/openai-compatible/3.0.18",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
 
     public static func mistral(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "mistral", defaultBaseURL: "https://api.mistral.ai/v1", authorization: .bearer(environmentVariables: ["MISTRAL_API_KEY"]), supportedCapabilities: [.language, .embedding, .speech], settings: settings)
+        try OpenAICompatibleProvider(providerID: "mistral", defaultBaseURL: "https://api.mistral.ai/v1", authorization: .bearer(environmentVariables: ["MISTRAL_API_KEY"]), supportedCapabilities: [.language, .embedding, .transcription, .speech], settings: settings)
     }
 
     public static func xAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -114,7 +113,9 @@ public enum AIProviders {
     }
 
     public static func togetherAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "togetherai", defaultBaseURL: "https://api.together.xyz/v1", authorization: .bearer(environmentVariables: ["TOGETHER_API_KEY", "TOGETHER_AI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .reranking], settings: settings)
+        var settings = settings
+        settings.includeUsage = true
+        return try OpenAICompatibleProvider(providerID: "togetherai", defaultBaseURL: "https://api.together.xyz/v1", authorization: .bearer(environmentVariables: ["TOGETHER_API_KEY", "TOGETHER_AI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .reranking], settings: settings)
     }
 
     public static func cohere(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -151,7 +152,7 @@ public enum AIProviders {
             maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
             transformRequestBody: settings.transformRequestBody
         )
-        return OpenAICompatibleProvider(providerID: "perplexity", supportedCapabilities: [.language], config: config)
+        return OpenAICompatibleProvider(providerID: "perplexity", supportedCapabilities: [.language, .embedding], config: config)
     }
 
     public static func fireworks(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -198,7 +199,7 @@ public enum AIProviders {
             headers["Authorization"] = "Bearer \(apiKey)"
         }
         headers.merge(settings.headers) { _, custom in custom }
-        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.12")
+        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.16")
         let endpoint = try requireURL(url)
         let base = "\(endpoint.scheme ?? "https")://\(endpoint.host ?? "")"
         let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
@@ -253,16 +254,20 @@ public enum AIProviders {
         try OpenAICompatibleProvider(providerID: "luma", defaultBaseURL: "https://api.lumalabs.ai", authorization: .bearer(environmentVariables: ["LUMA_API_KEY"]), supportedCapabilities: [.image], settings: settings)
     }
 
-    public static func klingAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+    public static func klingAI(settings: KlingAIProviderSettings = KlingAIProviderSettings()) throws -> OpenAICompatibleProvider {
         var headers = settings.headers
-        if headers["Authorization"] == nil {
-            if let apiKey = settings.apiKey ?? environmentValue(["KLINGAI_API_KEY"]) {
-                headers["Authorization"] = "Bearer \(apiKey)"
-            } else if let accessKey = environmentValue(["KLINGAI_ACCESS_KEY"]),
-                      let secretKey = environmentValue(["KLINGAI_SECRET_KEY"]) {
-                headers["Authorization"] = "Bearer \(try klingAIJWT(accessKey: accessKey, secretKey: secretKey))"
-            } else {
-                throw AIError.missingAPIKey(provider: "klingai", environmentVariables: ["KLINGAI_API_KEY", "KLINGAI_ACCESS_KEY", "KLINGAI_SECRET_KEY"])
+        var transport = settings.transport
+        if !headers.keys.contains(where: { $0.caseInsensitiveCompare("Authorization") == .orderedSame }) {
+            switch try resolveKlingAIAuth(settings: settings) {
+            case let .bearerToken(token):
+                headers["Authorization"] = "Bearer \(token)"
+            case let .legacy(accessKey, secretKey):
+                transport = KlingAILegacyAuthTransport(
+                    transport: transport,
+                    accessKey: accessKey,
+                    secretKey: secretKey,
+                    currentDate: settings.currentDate
+                )
             }
         }
         return try OpenAICompatibleProvider(
@@ -270,8 +275,18 @@ public enum AIProviders {
             defaultBaseURL: "https://api-singapore.klingai.com",
             authorization: .none,
             supportedCapabilities: [.video],
-            settings: ProviderSettings(baseURL: settings.baseURL, headers: headers, transport: settings.transport)
+            settings: ProviderSettings(baseURL: settings.baseURL, headers: headers, transport: transport)
         )
+    }
+
+    public static func klingAI(settings: ProviderSettings) throws -> OpenAICompatibleProvider {
+        try klingAI(settings: KlingAIProviderSettings(
+            apiKey: settings.apiKey,
+            baseURL: settings.baseURL,
+            headers: settings.headers,
+            environment: settings.environment,
+            transport: settings.transport
+        ))
     }
 
     public static func byteDance(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
@@ -325,25 +340,5 @@ private func perplexityHeaders(settings: ProviderSettings) throws -> [String: St
         throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
     }
     headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
-    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.13")
-}
-
-private func klingAIJWT(accessKey: String, secretKey: String, now: Date = Date()) throws -> String {
-    let issuedAt = Int(now.timeIntervalSince1970)
-    let header: JSONValue = .object(["alg": .string("HS256"), "typ": .string("JWT")])
-    let payload: JSONValue = .object([
-        "iss": .string(accessKey),
-        "exp": .number(Double(issuedAt + 1800)),
-        "nbf": .number(Double(issuedAt - 5))
-    ])
-    let signingInput = "\(base64URL(try encodeJSONBody(header))).\(base64URL(try encodeJSONBody(payload)))"
-    let signature = HMAC<SHA256>.authenticationCode(for: Data(signingInput.utf8), using: SymmetricKey(data: Data(secretKey.utf8)))
-    return "\(signingInput).\(base64URL(Data(signature)))"
-}
-
-private func base64URL(_ data: Data) -> String {
-    data.base64EncodedString()
-        .replacingOccurrences(of: "+", with: "-")
-        .replacingOccurrences(of: "/", with: "_")
-        .replacingOccurrences(of: "=", with: "")
+    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.18")
 }

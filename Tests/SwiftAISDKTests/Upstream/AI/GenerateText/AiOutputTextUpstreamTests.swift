@@ -97,6 +97,49 @@ import Testing
     #expect(output?.usage == TokenUsage(totalTokens: 4))
 }
 
+@Test func aiOutputTextStreamPreservesProviderMetadataFromEmptyTextDeltasLikeUpstream() async throws {
+    let providerMetadata: [String: JSONValue] = [
+        "testProvider": ["signature": "test-signature"]
+    ]
+    let metadataOnlyDelta = LanguageStreamPart.textDeltaPart(
+        id: "text-1",
+        delta: "",
+        providerMetadata: providerMetadata
+    )
+    let streamModel = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textStart(id: "text-1"),
+            .textDeltaPart(id: "text-1", delta: "Hello"),
+            metadataOnlyDelta,
+            .textEnd(id: "text-1"),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+        ]
+    )
+    var rawParts: [LanguageStreamPart] = []
+    var output: AIOutputGenerationResult<String>?
+
+    for try await part in AI.streamText(
+        model: streamModel,
+        prompt: "Stream text.",
+        output: Output.text()
+    ) {
+        switch part {
+        case let .raw(rawPart):
+            rawParts.append(rawPart)
+        case let .output(result):
+            output = result
+        default:
+            break
+        }
+    }
+
+    #expect(rawParts.contains(metadataOnlyDelta))
+    #expect(output?.textResult.content == [
+        .text("Hello", providerMetadata: providerMetadata)
+    ])
+}
+
 @Test func aiOutputTextStreamExposesWarningsUsageFinishReasonAndProviderMetadataLikeUpstream() async throws {
     let warning = AIWarning(type: "other", message: "test-warning")
     let usage = TokenUsage(

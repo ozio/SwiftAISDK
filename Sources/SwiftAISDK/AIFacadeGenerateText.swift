@@ -169,15 +169,17 @@ extension AI {
                     forwardedCalls.append(forwarded.call)
                 } catch {
                     guard isToolCallResultError(error) else { throw error }
-                    await toolTelemetry.recordToolError(stepIndex: index, call: call, error: error)
                     let annotatedCall = annotateToolCalls([call], toolsByName: toolsByName)[0]
                     forwardedCalls.append(annotatedCall)
-                    preExecutionToolResults.append(toolCallErrorResult(
-                        error,
-                        toolCall: annotatedCall,
-                        dynamic: annotatedCall.dynamic || (toolsByName[annotatedCall.name]?.dynamic == true)
-                    ))
-                    preExecutionToolResultIDs.insert(annotatedCall.id)
+                    if !annotatedCall.providerExecuted {
+                        await toolTelemetry.recordToolError(stepIndex: index, call: call, error: error)
+                        preExecutionToolResults.append(toolCallErrorResult(
+                            error,
+                            toolCall: annotatedCall,
+                            dynamic: annotatedCall.dynamic || (toolsByName[annotatedCall.name]?.dynamic == true)
+                        ))
+                        preExecutionToolResultIDs.insert(annotatedCall.id)
+                    }
                 }
             }
             result.toolCalls = forwardedCalls

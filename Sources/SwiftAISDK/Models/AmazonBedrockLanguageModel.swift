@@ -16,7 +16,10 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let prepared = try converseBody(for: request)
         let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/converse", body: prepared.body, headers: request.headers, abortSignal: request.abortSignal)
-        let text = raw["output"]?["message"]?["content"]?.arrayValue?.compactMap { $0["text"]?.stringValue }.joined()
+        let rawText = raw["output"]?["message"]?["content"]?.arrayValue?.compactMap { $0["text"]?.stringValue }.joined()
+        let text = rawText.map { text in
+            prepared.usesJsonInstruction ? BedrockJSONObjectTextExtractor().process(text) : text
+        }
         let reasoning = bedrockReasoningText(from: raw["output"]?["message"]?["content"])
         let toolCalls = bedrockToolCalls(from: raw["output"]?["message"]?["content"])
         guard text != nil || !reasoning.isEmpty || !toolCalls.isEmpty else {
@@ -47,7 +50,14 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         abortSignal: request.abortSignal
                     )
                     let response = try await config.sendRequest(httpRequest)
-                    let parts = try streamFromBedrockResponse(providerID: providerID, response: response, includeRawChunks: request.includeRawChunks, warnings: prepared.warnings, jsonResponseToolName: prepared.usesJsonResponseTool ? "json" : nil)
+                    let parts = try streamFromBedrockResponse(
+                        providerID: providerID,
+                        response: response,
+                        includeRawChunks: request.includeRawChunks,
+                        warnings: prepared.warnings,
+                        jsonResponseToolName: prepared.usesJsonResponseTool ? "json" : nil,
+                        extractJSONObjectText: prepared.usesJsonInstruction
+                    )
                     for part in parts {
                         continuation.yield(part)
                     }
@@ -92,7 +102,11 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             && modelID.contains("anthropic")
             && bedrockSupportsNativeStructuredOutput(modelID: modelID)
             && (modelSupportsStructuredOutput || bedrockReasoningConfigEnabled(providerOptions["reasoningConfig"]))
-        let usesJsonResponseTool = responseJSONSchema != nil && !useNativeStructuredOutput
+        let usesJsonInstruction = responseJSONSchema != nil
+            && modelID.contains("anthropic")
+            && !bedrockSupportsStrictToolSpec(modelID: modelID)
+            && !request.tools.isEmpty
+        let usesJsonResponseTool = responseJSONSchema != nil && !useNativeStructuredOutput && !usesJsonInstruction
         if let responseJSONSchema, useNativeStructuredOutput {
             bedrockMergeAdditionalModelRequestFields([
                 "output_config": .object([
@@ -102,7 +116,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                     ])
                 ])
             ], into: &providerOptions)
-        } else if let responseJSONSchema {
+        } else if let responseJSONSchema, usesJsonResponseTool {
             effectiveTools["json"] = responseJSONSchema
             effectiveToolChoice = .object(["type": .string("required")])
         }
@@ -113,7 +127,17 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         )
         warnings.append(contentsOf: preparedTools.warnings)
 
-        let system = request.messages
+        let messagesWithJSONInstruction = usesJsonInstruction
+            ? injectJSONInstruction(
+                into: request.messages,
+                schema: responseJSONSchema,
+                instruction: AIJSONInstruction(
+                    schemaSuffix: "You MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text."
+                )
+            )
+            : request.messages
+
+        let system = messagesWithJSONInstruction
             .filter { $0.role == .system }
             .flatMap { message -> [JSONValue] in
                 var blocks = message.content.compactMap(\.text).map { JSONValue.object(["text": .string($0)]) }
@@ -123,7 +147,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 return blocks
             }
 
-        let messages = try request.messages
+        let messages = try messagesWithJSONInstruction
             .filter { $0.role != .system }
             .map { message -> JSONValue in
                 var content: [JSONValue] = []
@@ -162,7 +186,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             content.append(cachePoint)
                         }
                     case let .data(mimeType, data, providerMetadata):
-                        if let imageFormat = bedrockImageFormat(for: mimeType) {
+                        let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
+                        if let imageFormat = bedrockImageFormat(for: resolvedMimeType) {
                             content.append(.object([
                                 "image": .object([
                                     "format": .string(imageFormat),
@@ -175,10 +200,23 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             continue
                         }
 
-                        guard let documentFormat = bedrockDocumentFormat(for: mimeType) else {
+                        if let videoFormat = bedrockVideoFormat(for: resolvedMimeType) {
+                            content.append(.object([
+                                "video": .object([
+                                    "format": .string(videoFormat),
+                                    "source": .object(["bytes": .string(data.base64EncodedString())])
+                                ])
+                            ]))
+                            if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                                content.append(cachePoint)
+                            }
+                            continue
+                        }
+
+                        guard let documentFormat = bedrockDocumentFormat(for: resolvedMimeType) else {
                             throw AIError.invalidArgument(
                                 argument: "messages.content.data.mimeType",
-                                message: "Amazon Bedrock Converse supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")) or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mimeType)."
+                                message: "Amazon Bedrock Converse supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")), video MIME types \(bedrockSupportedVideoMimeTypes.joined(separator: ", ")), or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mimeType)."
                             )
                         }
 
@@ -196,7 +234,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             content.append(cachePoint)
                         }
                     case let .file(mimeType, data, filename, providerMetadata):
-                        if let imageFormat = bedrockImageFormat(for: mimeType) {
+                        let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
+                        if let imageFormat = bedrockImageFormat(for: resolvedMimeType) {
                             content.append(.object([
                                 "image": .object([
                                     "format": .string(imageFormat),
@@ -209,10 +248,23 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             continue
                         }
 
-                        guard let documentFormat = bedrockDocumentFormat(for: mimeType) else {
+                        if let videoFormat = bedrockVideoFormat(for: resolvedMimeType) {
+                            content.append(.object([
+                                "video": .object([
+                                    "format": .string(videoFormat),
+                                    "source": .object(["bytes": .string(data.base64EncodedString())])
+                                ])
+                            ]))
+                            if let cachePoint = bedrockCachePoint(from: providerMetadata) {
+                                content.append(cachePoint)
+                            }
+                            continue
+                        }
+
+                        guard let documentFormat = bedrockDocumentFormat(for: resolvedMimeType) else {
                             throw AIError.invalidArgument(
                                 argument: "messages.content.file.mimeType",
-                                message: "Amazon Bedrock Converse supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")) or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mimeType)."
+                                message: "Amazon Bedrock Converse supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")), video MIME types \(bedrockSupportedVideoMimeTypes.joined(separator: ", ")), or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mimeType)."
                             )
                         }
 
@@ -302,7 +354,12 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         }
         bedrockApplyRequestProviderOptions(providerOptions, to: &body)
         body.merge(bedrockPassthroughExtraBody(request.extraBody)) { _, new in new }
-        return BedrockPreparedConverseCall(body: .object(body), warnings: bedrockDeduplicatedWarnings(warnings), usesJsonResponseTool: usesJsonResponseTool)
+        return BedrockPreparedConverseCall(
+            body: .object(body),
+            warnings: bedrockDeduplicatedWarnings(warnings),
+            usesJsonResponseTool: usesJsonResponseTool,
+            usesJsonInstruction: usesJsonInstruction
+        )
     }
 }
 
@@ -310,6 +367,7 @@ struct BedrockPreparedConverseCall {
     var body: JSONValue
     var warnings: [AIWarning]
     var usesJsonResponseTool: Bool
+    var usesJsonInstruction: Bool
 }
 
 func bedrockToolArguments(_ arguments: String) -> JSONValue {

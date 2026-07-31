@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-07-27
+Snapshot date: 2026-08-01
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -37,25 +37,25 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package version baselines were checked against npm registry
-metadata on 2026-07-27. The current upstream source and test audit points at
-Vercel AI SDK commit `c8baafc4864b`.
+metadata and published tarballs on 2026-08-01. The per-package decisions are
+recorded in `Docs/UpstreamPackageDiffAudit.md`.
 
 ## Provider State
 
-The 43 tracked provider packages in `Docs/ProviderVersionLedger.md` use the
-latest npm versions observed on 2026-07-27. They have Swift evidence in
+The 43 tracked provider/product packages in `Docs/ProviderVersionLedger.md` use
+the latest npm versions observed on 2026-08-01. They have Swift evidence in
 implementation files and focused tests, and their public capability coverage is
 represented in `Docs/ProviderCapabilityMatrix.md`. The current pass audited the
 published package deltas and ported the applicable provider/core behavior; the
 remaining architectural differences are recorded below.
 
-Registry discovery found no additional provider package that is not represented
-by SwiftAISDK. The newly discovered `@ai-sdk/cartesia@3.0.6` now has a dedicated
-provider, Sonic speech, Ink-Whisper batch transcription, focused parity tests,
-public docs, and opt-in live-smoke wiring. Cartesia Ink 2 streaming
-transcription and experimental realtime remain a separate product surface:
-they require a duplex WebSocket transport and lifecycle/event protocols that
-the current unary Swift transcription and HTTP streaming APIs do not expose.
+Exact npm registry discovery found one additional model provider that is not
+represented by SwiftAISDK: `@ai-sdk/minimax@3.0.0`. It is intentionally not
+implemented by this discovery task. A focused follow-up can reuse the Anthropic
+Messages request/stream implementation with MiniMax authentication, model IDs,
+thinking options, capability/docs entries, and published fixtures. Registry
+discovery also found the non-provider `@ai-sdk/code-mode@1.0.1`; it is a
+QuickJS-backed JavaScript tool runtime rather than a provider-matrix entry.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -74,8 +74,11 @@ one of these is true:
 | --- | --- | --- |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
-| P1 | Cartesia Ink 2 streaming transcription and experimental realtime are not represented by current Swift protocols. | Design a reusable duplex WebSocket transport and realtime/transcription lifecycle surface before porting Cartesia token/session and event flows as a separate vertical. |
-| P1 | Current `ai@7.0.37` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
+| P1 | Streaming transcription, realtime models, and speech translation from Cartesia, ElevenLabs, Google, and OpenAI are not represented by current Swift protocols. | Design one reusable duplex WebSocket/audio transport and lifecycle surface, then port provider adapters as vertical slices. |
+| P1 | Current `ai@7.0.44` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
+| P1 | `prepareStep` call-setting overrides and generic provider tool-callers have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
+| P1 | Provider-utils now resolves and pins DNS addresses for validated downloads; Swift validates literal/private hosts and every redirect but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | `@ai-sdk/minimax` is the only registry-discovered model provider not represented in SwiftAISDK. | Port MiniMax as the next small language-provider vertical after user approval. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

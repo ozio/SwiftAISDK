@@ -123,6 +123,10 @@ import Testing
         messages: [.system("Be helpful."), .user("Hello")],
         temperature: 0.3,
         topP: 0.8,
+        topK: 10,
+        presencePenalty: 0.4,
+        frequencyPenalty: 0.5,
+        seed: 42,
         maxOutputTokens: 64,
         extraBody: [
             "previousInteractionId": "interaction-old",
@@ -154,6 +158,10 @@ import Testing
     #expect(body["input"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hello")
     #expect(body["generation_config"]?["temperature"]?.doubleValue == 0.3)
     #expect(body["generation_config"]?["top_p"]?.doubleValue == 0.8)
+    #expect(body["generation_config"]?["top_k"]?.intValue == 10)
+    #expect(body["generation_config"]?["seed"]?.intValue == 42)
+    #expect(body["generation_config"]?["frequency_penalty"] == nil)
+    #expect(body["generation_config"]?["presence_penalty"] == nil)
     #expect(body["generation_config"]?["max_output_tokens"]?.intValue == 64)
     #expect(body["generation_config"]?["thinking_level"]?.stringValue == "high")
     #expect(body["generation_config"]?["thinking_summaries"]?.boolValue == true)
@@ -164,6 +172,10 @@ import Testing
     #expect(body["response_format"]?[0]?["mime_type"]?.stringValue == "image/png")
     #expect(body["response_format"]?[0]?["aspect_ratio"]?.stringValue == "1:1")
     #expect(body["response_format"]?[0]?["image_size"]?.stringValue == "1K")
+    #expect(result.warnings == [
+        AIWarning(type: "unsupported", feature: "frequencyPenalty"),
+        AIWarning(type: "unsupported", feature: "presencePenalty")
+    ])
 }
 @Test func googleInteractionsMapsStandardStructuredResponseFormat() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -500,4 +512,36 @@ import Testing
     #expect(body["generation_config"] == nil)
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/interactions/agent-interaction")
+}
+
+@Test func googleInteractionsAgentWarnsForEveryDroppedGenerationSetting() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"agent-interaction","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"agent done"}]}]}"#))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = provider.interactionsAgent("deep-research")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Research")],
+        temperature: 0.5,
+        topP: 0.9,
+        topK: 10,
+        presencePenalty: 0.4,
+        frequencyPenalty: 0.3,
+        seed: 42,
+        maxOutputTokens: 100,
+        stopSequences: ["stop"],
+        providerOptions: [
+            "google": [
+                "thinkingLevel": "high",
+                "thinkingSummaries": true,
+                "imageConfig": ["aspectRatio": "1:1"]
+            ]
+        ]
+    ))
+
+    #expect(result.warnings == [AIWarning(
+        type: "other",
+        message: "google.interactions: temperature, topP, topK, frequencyPenalty, presencePenalty, seed, stopSequences, maxOutputTokens, thinkingLevel, thinkingSummaries, imageConfig are not supported when an agent is set; use providerOptions.google.agentConfig instead. Dropped from the request body."
+    )])
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generation_config"] == nil)
 }

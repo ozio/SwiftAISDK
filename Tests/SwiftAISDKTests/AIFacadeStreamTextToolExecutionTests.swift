@@ -807,3 +807,56 @@ import Testing
     #expect(model.streamRequests.count == 1)
 }
 
+@Test func aiStreamTextDoesNotSynthesizeErrorsForInvalidProviderExecutedToolCallsLikeUpstream() async throws {
+    let toolCall = AIToolCall(
+        id: "call-1",
+        name: "web_search",
+        arguments: #"{"cities":"San Francisco"}"#,
+        providerExecuted: true,
+        dynamic: true
+    )
+    let providerError = AIToolResult(
+        toolCallID: "call-1",
+        toolName: "web_search",
+        result: ["type": "error-text", "value": "Provider rejected the request."],
+        isError: true,
+        dynamic: true,
+        providerExecuted: true
+    )
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .toolCall(toolCall),
+            .toolResult(providerError),
+            .finish(reason: "stop", usage: TokenUsage(totalTokens: 4))
+        ]
+    )
+    let providerTool = AITool.dynamic(
+        name: "web_search",
+        parameters: [
+            "type": "object",
+            "properties": ["city": ["type": "string"]],
+            "required": ["city"],
+            "additionalProperties": false
+        ]
+    ) { _ in
+        Issue.record("Provider-executed tool calls must not execute locally.")
+        return "unused"
+    }
+
+    var streamed: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "test-input",
+        executableTools: [providerTool],
+        maxSteps: 1
+    ) {
+        streamed.append(part)
+    }
+
+    #expect(streamed == [
+        .toolCall(toolCall),
+        .toolResult(providerError),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 4))
+    ])
+}

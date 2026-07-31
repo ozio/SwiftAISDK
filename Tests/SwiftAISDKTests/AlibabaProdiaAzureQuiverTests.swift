@@ -52,7 +52,7 @@ private actor TokenStore {
     #expect(request.headers["api-key"] == "azure-key")
     #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
-    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/4.0.21")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/4.0.26")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -255,7 +255,13 @@ private actor TokenStore {
     _ = try await model.generate(LanguageModelRequest(
         messages: [.user("Search docs.")],
         tools: [
-            "web_search": AzureOpenAITools.webSearch(searchContextSize: "low"),
+            "web_search": AzureOpenAITools.webSearch(
+                filters: [
+                    "allowedDomains": ["docs.example.com"],
+                    "blockedDomains": ["archive.example.com"]
+                ],
+                searchContextSize: "low"
+            ),
             "web_search_preview": AzureOpenAITools.webSearchPreview(searchContextSize: "medium"),
             "file_search": AzureOpenAITools.fileSearch(vectorStoreIDs: ["vs_azure"], maxNumResults: 2),
             "code_interpreter": AzureOpenAITools.codeInterpreter(),
@@ -267,6 +273,9 @@ private actor TokenStore {
     let body = try decodeJSONBody(try #require(request.body))
     let tools = try #require(body["tools"]?.arrayValue)
     #expect(tools.contains { $0["type"]?.stringValue == "web_search" && $0["search_context_size"]?.stringValue == "low" })
+    let webSearch = try #require(tools.first { $0["type"]?.stringValue == "web_search" })
+    #expect(webSearch["filters"]?["allowed_domains"]?[0]?.stringValue == "docs.example.com")
+    #expect(webSearch["filters"]?["blocked_domains"]?[0]?.stringValue == "archive.example.com")
     #expect(tools.contains { $0["type"]?.stringValue == "web_search_preview" && $0["search_context_size"]?.stringValue == "medium" })
     #expect(tools.contains { $0["type"]?.stringValue == "file_search" && $0["vector_store_ids"]?[0]?.stringValue == "vs_azure" })
     #expect(tools.contains { $0["type"]?.stringValue == "code_interpreter" && $0["container"]?["type"]?.stringValue == "auto" })

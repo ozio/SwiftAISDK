@@ -11,6 +11,9 @@ struct GoogleInteractionsPreparedCall {
 
 func googleInteractionsPreparedCall(for request: LanguageModelRequest, modelID: String, agent: String?, stream: Bool) throws -> GoogleInteractionsPreparedCall {
     var options = googleGenerateContentOptions(from: request.extraBody)
+    if let providerOptions = request.providerOptions["google"]?.objectValue {
+        options.merge(providerOptions) { _, providerValue in providerValue }
+    }
     let callResponseFormat = googleInteractionsResolvedCallResponseFormat(request: request, options: &options)
     let providerResponseFormat = options.removeValue(forKey: "responseFormat")
     let systemInstruction = request.messages
@@ -35,10 +38,12 @@ func googleInteractionsPreparedCall(for request: LanguageModelRequest, modelID: 
         var generationConfig: [String: JSONValue] = [:]
         if let temperature = request.temperature { generationConfig["temperature"] = .number(temperature) }
         if let topP = request.topP { generationConfig["top_p"] = .number(topP) }
+        if let topK = request.topK { generationConfig["top_k"] = .number(Double(topK)) }
+        if let seed = request.seed { generationConfig["seed"] = .number(Double(seed)) }
         if let maxOutputTokens = request.maxOutputTokens { generationConfig["max_output_tokens"] = .number(Double(maxOutputTokens)) }
         if !request.stopSequences.isEmpty { generationConfig["stop_sequences"] = .array(request.stopSequences) }
-        if let thinkingLevel = request.extraBody["thinkingLevel"] { generationConfig["thinking_level"] = thinkingLevel }
-        if let thinkingSummaries = request.extraBody["thinkingSummaries"] { generationConfig["thinking_summaries"] = thinkingSummaries }
+        if let thinkingLevel = options["thinkingLevel"] { generationConfig["thinking_level"] = thinkingLevel }
+        if let thinkingSummaries = options["thinkingSummaries"] { generationConfig["thinking_summaries"] = thinkingSummaries }
         if !generationConfig.isEmpty {
             body["generation_config"] = .object(generationConfig)
         }
@@ -46,7 +51,7 @@ func googleInteractionsPreparedCall(for request: LanguageModelRequest, modelID: 
     body.merge(googleInteractionsOptions(from: options, callResponseFormat: callResponseFormat, providerResponseFormat: providerResponseFormat, isAgent: agent != nil)) { _, new in new }
     return GoogleInteractionsPreparedCall(
         body: body,
-        warnings: googleInteractionsWarnings(callResponseFormat: callResponseFormat, isAgent: agent != nil)
+        warnings: googleInteractionsWarnings(request: request, options: options, callResponseFormat: callResponseFormat, isAgent: agent != nil)
     )
 }
 
@@ -182,14 +187,45 @@ func googleInteractionsResponseFormat(callResponseFormat: JSONValue?, providerRe
     return entries
 }
 
-func googleInteractionsWarnings(callResponseFormat: JSONValue?, isAgent: Bool) -> [AIWarning] {
-    guard isAgent, callResponseFormat?["type"]?.stringValue == "json" else { return [] }
-    return [
-        AIWarning(
+func googleInteractionsWarnings(request: LanguageModelRequest, options: [String: JSONValue], callResponseFormat: JSONValue?, isAgent: Bool) -> [AIWarning] {
+    var warnings: [AIWarning] = []
+    if !isAgent {
+        if request.frequencyPenalty != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
+        }
+        if request.presencePenalty != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty"))
+        }
+        return warnings
+    }
+
+    if callResponseFormat?["type"]?.stringValue == "json" {
+        warnings.append(AIWarning(
             type: "other",
             message: "google.interactions: structured output (responseFormat) is not supported when an agent is set; responseFormat will be ignored."
-        )
-    ]
+        ))
+    }
+
+    var droppedFields: [String] = []
+    if request.temperature != nil { droppedFields.append("temperature") }
+    if request.topP != nil { droppedFields.append("topP") }
+    if request.topK != nil { droppedFields.append("topK") }
+    if request.frequencyPenalty != nil { droppedFields.append("frequencyPenalty") }
+    if request.presencePenalty != nil { droppedFields.append("presencePenalty") }
+    if request.seed != nil { droppedFields.append("seed") }
+    if !request.stopSequences.isEmpty { droppedFields.append("stopSequences") }
+    if request.maxOutputTokens != nil { droppedFields.append("maxOutputTokens") }
+    if options["thinkingLevel"] != nil { droppedFields.append("thinkingLevel") }
+    if options["thinkingSummaries"] != nil { droppedFields.append("thinkingSummaries") }
+    if options["imageConfig"] != nil { droppedFields.append("imageConfig") }
+    if !droppedFields.isEmpty {
+        let verb = droppedFields.count == 1 ? "is" : "are"
+        warnings.append(AIWarning(
+            type: "other",
+            message: "google.interactions: \(droppedFields.joined(separator: ", ")) \(verb) not supported when an agent is set; use providerOptions.google.agentConfig instead. Dropped from the request body."
+        ))
+    }
+    return warnings
 }
 
 func googleInteractionsSnakeCaseObject(_ value: JSONValue) -> JSONValue {

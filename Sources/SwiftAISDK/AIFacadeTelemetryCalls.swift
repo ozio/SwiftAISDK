@@ -82,7 +82,8 @@ func withTelemetry<Output: Sendable>(
             usage: usage(result),
             warnings: warnings(result),
             providerMetadata: providerMetadata(result),
-            responseMetadata: responseMetadata(result)
+            responseMetadata: responseMetadata(result),
+            useResponseModelID: wrapLanguageModelCall
         ))
         let resultWarnings = warnings(result)
         if logEmptyWarnings || !resultWarnings.isEmpty {

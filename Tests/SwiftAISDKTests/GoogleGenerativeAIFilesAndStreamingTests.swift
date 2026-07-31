@@ -26,6 +26,7 @@ import Testing
     #expect(startBody["file"]?["display_name"]?.stringValue == "Clip")
     #expect(requests[1].url.absoluteString == "https://upload.example.com/session")
     #expect(requests[1].headers["X-Goog-Upload-Command"] == "upload, finalize")
+    #expect(requests[1].headers["Content-Length"] == nil)
     #expect(requests[1].body == Data("video".utf8))
 }
 @Test func googleLanguageStreamsGenerateContentEvents() async throws {

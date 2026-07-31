@@ -566,6 +566,7 @@ private func mapLanguageStreamToOutputStream(
             var sources: [AISource] = []
             var files: [AIStreamFile] = []
             var providerMetadata: [String: JSONValue] = [:]
+            var textProviderMetadata: [String: JSONValue] = [:]
             var responseMetadata = AIResponseMetadata()
             var rawValues: [JSONValue] = []
 
@@ -583,11 +584,21 @@ private func mapLanguageStreamToOutputStream(
                         text += delta
                         continuation.yield(.textDelta(delta))
                         continuation.yield(.partialOutput(text))
-                    case let .textDeltaPart(_, delta, _):
-                        guard !delta.isEmpty else { continue }
+                    case let .textDeltaPart(_, delta, partProviderMetadata):
+                        textProviderMetadata.merge(partProviderMetadata) { _, new in new }
+                        guard !delta.isEmpty else {
+                            if !partProviderMetadata.isEmpty {
+                                continuation.yield(.raw(part))
+                            }
+                            continue
+                        }
                         text += delta
                         continuation.yield(.textDelta(delta))
                         continuation.yield(.partialOutput(text))
+                    case let .textStart(_, partProviderMetadata),
+                         let .textEnd(_, partProviderMetadata):
+                        textProviderMetadata.merge(partProviderMetadata) { _, new in new }
+                        continuation.yield(.raw(part))
                     case let .reasoningDelta(delta):
                         reasoning += delta
                         continuation.yield(.raw(part))
@@ -620,8 +631,26 @@ private func mapLanguageStreamToOutputStream(
                     }
                 }
 
+                let content: [AIResultContentPart] = textProviderMetadata.isEmpty
+                    ? []
+                    : synthesizeResultContent(
+                        text: text,
+                        reasoning: reasoning,
+                        files: files,
+                        toolCalls: [],
+                        toolResults: [],
+                        toolApprovalRequests: [],
+                        toolApprovalResponses: [],
+                        sources: sources
+                    ).map { contentPart in
+                        guard case let .text(text, _) = contentPart else {
+                            return contentPart
+                        }
+                        return .text(text, providerMetadata: textProviderMetadata)
+                    }
                 let textResult = TextGenerationResult(
                     text: text,
+                    content: content,
                     reasoning: reasoning,
                     finishReason: finishReason,
                     usage: usage,

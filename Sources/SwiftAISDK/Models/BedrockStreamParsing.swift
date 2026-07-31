@@ -33,12 +33,16 @@ struct BedrockStreamState {
     var latestFinishReason: String?
     var latestUsage: TokenUsage?
     var jsonResponseToolName: String?
+    var jsonObjectTextExtractor: BedrockJSONObjectTextExtractor?
     var isJsonResponseFromTool = false
 
     mutating func parts(from raw: JSONValue) -> [LanguageStreamPart] {
         var parts: [LanguageStreamPart] = []
         if let text = raw["contentBlockDelta"]?["delta"]?["text"]?.stringValue {
-            parts.append(.textDelta(text))
+            let textDelta = jsonObjectTextExtractor?.process(text) ?? text
+            if !textDelta.isEmpty {
+                parts.append(.textDelta(textDelta))
+            }
         }
         if let reasoning = raw["contentBlockDelta"]?["delta"]?["reasoningContent"]?["text"]?.stringValue {
             parts.append(.reasoningDelta(reasoning))
@@ -111,7 +115,14 @@ struct BedrockStreamState {
     }
 }
 
-func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, warnings: [AIWarning] = [], jsonResponseToolName: String? = nil) throws -> [LanguageStreamPart] {
+func streamFromBedrockResponse(
+    providerID: String,
+    response: AIHTTPResponse,
+    includeRawChunks: Bool = false,
+    warnings: [AIWarning] = [],
+    jsonResponseToolName: String? = nil,
+    extractJSONObjectText: Bool = false
+) throws -> [LanguageStreamPart] {
     guard (200..<300).contains(response.statusCode) else {
         throw apiCallError(provider: providerID, response: response)
     }
@@ -127,7 +138,10 @@ func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, inc
     }
 
     var parts: [LanguageStreamPart] = [.streamStart(warnings: warnings)]
-    var state = BedrockStreamState(jsonResponseToolName: jsonResponseToolName)
+    var state = BedrockStreamState(
+        jsonResponseToolName: jsonResponseToolName,
+        jsonObjectTextExtractor: extractJSONObjectText ? BedrockJSONObjectTextExtractor() : nil
+    )
     for raw in rawChunks {
         if includeRawChunks {
             parts.append(.raw(raw))
@@ -135,6 +149,61 @@ func streamFromBedrockResponse(providerID: String, response: AIHTTPResponse, inc
         parts.append(contentsOf: state.parts(from: raw))
     }
     return parts
+}
+
+final class BedrockJSONObjectTextExtractor {
+    private var started = false
+    private var completed = false
+    private var depth = 0
+    private var isInsideString = false
+    private var isEscaped = false
+
+    func process(_ text: String) -> String {
+        var result = ""
+
+        for character in text {
+            if completed {
+                break
+            }
+
+            if !started {
+                guard character == "{" else { continue }
+                started = true
+                depth = 1
+                result.append(character)
+                continue
+            }
+
+            result.append(character)
+
+            if isEscaped {
+                isEscaped = false
+                continue
+            }
+
+            if character == "\\", isInsideString {
+                isEscaped = true
+                continue
+            }
+
+            if character == "\"" {
+                isInsideString.toggle()
+                continue
+            }
+
+            guard !isInsideString else { continue }
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    completed = true
+                }
+            }
+        }
+
+        return result
+    }
 }
 
 func parseAmazonBedrockEventStream(_ data: Data) throws -> [JSONValue] {

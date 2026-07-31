@@ -79,7 +79,8 @@ func streamTextWithTelemetry(
                                 usage: result.usage,
                                 warnings: result.warnings,
                                 providerMetadata: result.providerMetadata,
-                                responseMetadata: result.responseMetadata
+                                responseMetadata: result.responseMetadata,
+                                useResponseModelID: true
                             ))
                             if logWarnings {
                                 await AIWarningLogging.logWarnings(result.warnings, providerID: providerID, modelID: modelID)

@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-07-27`
-- Baseline upstream ref: `vercel/ai@6cd7c74acf0d7ec84dd58a841fc0e20970d6f2e8`
-- Current upstream ref: `vercel/ai@c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56`
+- Date: `2026-08-01`
+- Baseline upstream ref: `vercel/ai@c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56`
+- Current upstream ref: `vercel/ai@226a6792e6e4f8276776395ab6a57dbce8910745`
 - Diff command:
 
   ```sh
-  git -C /tmp/vercel-ai-upstream-20260727.bjQKnU diff --name-status \
-    6cd7c74acf0d7ec84dd58a841fc0e20970d6f2e8..c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56 \
+  git -C /tmp/vercel-ai-upstream-20260801 diff --name-status \
+    c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56..226a6792e6e4f8276776395ab6a57dbce8910745 \
     -- 'packages/**/**.test.ts' 'packages/**/**.test.tsx' \
        'packages/**/**.test-d.ts'
   ```
@@ -27,6 +27,41 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-08-01 Diff
+
+| Upstream test file(s) | Status | Swift evidence / rationale |
+| --- | --- | --- |
+| `packages/ai/src/generate-text/generate-text.test.ts`; `packages/ai/src/generate-text/stream-language-model-call.test.ts`; `packages/ai/src/generate-text/stream-text.test.ts`; `packages/otel/src/open-telemetry.test.ts` | `ported` | Generate and stream paths now ignore provider-executed tool calls for client execution/results, retain metadata-bearing empty text deltas, and report the response model id in terminal telemetry. Focused Swift tests cover each changed result and event shape. |
+| `packages/ai/src/agent/tool-loop-agent.test-d.ts`; `packages/ai/src/agent/tool-loop-agent.test.ts`; `packages/ai/src/generate-text/generate-text.test-d.ts`; `packages/ai/src/generate-text/stream-text.test-d.ts` | `deferred` | The new local/provider `experimental_toolCallers` graph changes public tool typing, binding, visibility, and provider-option preparation. SwiftAISDK has no equivalent caller abstraction yet, so a faithful port needs a coordinated core API design. |
+| `packages/ai/src/generate-text/stream-text-timeout.test.ts` | `ported` | The changed fixture only adds provider metadata to an empty text delta in the existing first-chunk-timeout case. Swift now forwards that metadata-bearing empty delta and merges its metadata into the completed text content, covered by the focused stream/output regressions above. |
+| `packages/ai/src/generate-object/generate-object.test.ts`; `packages/ai/src/generate-object/stream-object.test.ts` | `covered` | The upstream change promotes `repairText` while retaining the experimental alias. Swift's existing object-repair callback is already stable rather than experimental and preserves the same repair precedence behavior. |
+| `packages/ai/src/generate-text/generated-file.test-d.ts` | `covered` | Swift generated-file output is already a typed `GeneratedFile` value rather than a TypeScript structural type, so the new declaration-only branding regression requires no runtime change. |
+| `packages/ai/src/logger/log-warnings.test.ts` | `no-swift-action` | This changes Node-specific `process.emitWarning` versus `console.warn` routing. SwiftAISDK returns typed warnings to callers and has no Node logger surface. |
+| `packages/ai/src/translate/stream-translate.test.ts` | `deferred` | Streaming speech translation is a new core/provider protocol surface. It should be introduced together with provider translation models rather than as an orphan facade. |
+| `packages/amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts`; `packages/amazon-bedrock/src/amazon-bedrock-prepare-tools.test.ts`; `packages/amazon-bedrock/src/convert-to-amazon-bedrock-chat-messages.test.ts` | `ported` | Bedrock now maps all ten video MIME types to formats, accepts inline/file and tool-result S3 media, emits strict unsupported-input warnings, keeps ordinary tools beside JSON structured output, and extracts balanced JSON in generate and stream parsing. |
+| `packages/anthropic/src/anthropic-language-model.test.ts` | `deferred` | The changed regression is part of the generic tool-caller/provider-caller surface. Existing Anthropic behavior remains covered; caller linkage waits on the shared core design above. |
+| `packages/azure/src/azure-openai-tools.test-d.ts`; `packages/openai/src/responses/openai-responses-language-model.test.ts`; `packages/openai/src/responses/openai-responses-prepare-tools.test.ts` | `ported` | OpenAI and Azure Responses web-search options now encode `blockedDomains` as `blocked_domains`, with focused request-builder coverage. |
+| `packages/code-mode/src/core.test.ts`; `packages/code-mode/src/e2e/code-mode-haiku.e2e.test.ts`; `packages/code-mode/src/exceptions.test.ts`; `packages/code-mode/src/runtime/async-context.test.ts`; `packages/code-mode/src/runtime/bridge-lifecycle.test.ts`; `packages/code-mode/src/runtime/bundled-runtime.test.ts`; `packages/code-mode/src/runtime/console.test.ts`; `packages/code-mode/src/runtime/max-workers.test.ts`; `packages/code-mode/src/runtime/protocol.test.ts`; `packages/code-mode/src/runtime/security.test.ts`; `packages/code-mode/src/runtime/timeouts.test.ts`; `packages/code-mode/src/runtime/tool-concurrency.test.ts`; `packages/code-mode/src/runtime/worker-concurrency.test.ts`; `packages/code-mode/src/tool-invocation.test.ts`; `packages/code-mode/src/tool-prompt.test.ts`; `packages/code-mode/src/utils/options.test.ts`; `packages/code-mode/src/utils/source-cache.test.ts` | `out-of-scope` | `@ai-sdk/code-mode` is a new JavaScript sandbox/worker product package, not a provider-facing model package. It is reported by registry discovery but is not auto-ported in this provider update. |
+| `packages/devtools/src/integration.test.ts`; `packages/devtools/src/middleware.test.ts`; `packages/devtools/src/serialize.test.ts`; `packages/devtools/src/viewer/client/media-components.test.ts`; `packages/devtools/src/viewer/client/media.test.ts`; `packages/devtools/tests/e2e/theme.e2e.test.ts` | `out-of-scope` | Devtools middleware, serialization, media rendering, and browser-theme behavior belong to the untracked web viewer product. |
+| `packages/elevenlabs/src/elevenlabs-transcription-model.test.ts` | `deferred` | The changed behavior is ElevenLabs realtime transcription over WebSocket. SwiftAISDK currently exposes batch transcription only; this belongs with a shared realtime transport API. |
+| `packages/google/src/google-files.test.ts`; `packages/google/src/interactions/google-interactions-language-model.test.ts` | `ported` | Google Files no longer forces a payload `Content-Length`, while Interactions forwards `topK` and `seed` and returns complete unsupported-setting/agent warnings. |
+| `packages/google/src/translation/google-translation-model.test.ts` | `deferred` | Google streaming translation is deferred with the shared translation protocol above. |
+| `packages/groq/src/groq-transcription-model.test.ts` | `ported` | Groq transcription accepts raw `text` responses and falls back to word-level segments when verbose responses omit aggregate segments. |
+| `packages/harness/src/agent/internal/run-prompt.test.ts`; `packages/workflow-harness/src/run-harness-agent-slice.test.ts`; `packages/langchain/src/utils.test.ts`; `packages/workflow/src/serializable-schema.test.ts`; `packages/workflow/src/stream-text-iterator.test.ts`; `packages/workflow/src/workflow-agent.test-d.ts`; `packages/workflow/src/workflow-agent.test.ts` | `out-of-scope` | These paths exercise untracked JavaScript harness, LangChain, and workflow runtime contracts rather than SwiftAISDK's provider-facing APIs. |
+| `packages/klingai/src/klingai-auth.test.ts`; `packages/klingai/src/klingai-provider.test.ts` | `ported` | Public Kling settings now support API-key and legacy access/secret credentials with deterministic precedence, while an explicit Authorization header still overrides generated auth. |
+| `packages/mcp/src/tool/mcp-client.test.ts`; `packages/mcp/src/tool/mcp-http-transport.test.ts`; `packages/mcp/src/tool/mcp-sse-transport.test.ts` | `ported` | MCP initialization and request calls now support individual and total timeout budgets, use the effective minimum deadline, map cancellation consistently, and clean pending request state. Swift transport construction preserves these settings across HTTP/SSE clients. |
+| `packages/minimax/src/minimax-provider.test.ts`; `packages/minimax/src/minimax-reasoning.test.ts` | `deferred` | `@ai-sdk/minimax@3.0.0` is a newly published provider absent from SwiftAISDK. Per weekly-check policy it is reported, not auto-implemented; the next port needs Anthropic-compatible request/auth/reasoning fixtures and capability/docs registration. |
+| `packages/mistral/src/convert-to-mistral-chat-messages.test.ts`; `packages/mistral/src/mistral-transcription-model.test-d.ts`; `packages/mistral/src/mistral-transcription-model.test.ts` | `ported` | Mistral message conversion preserves assistant reasoning as typed thinking blocks, and the new Voxtral transcription model covers multipart input, options/validation, segment parsing, and rich response metadata. |
+| `packages/openai/src/files/openai-files.test.ts`; `packages/openai/src/openai-stream-error.test.ts`; `packages/openai/src/tool/web-search.test-d.ts`; `packages/openai/src/translation/openai-translation-model.test.ts` | `deferred` | The file test is a Node upload-shape change; generic stream-error recovery, typed web-search caller linkage, and realtime translation need the shared streaming/tool-caller/translation designs. Existing batch file and web-search behavior remains covered. |
+| `packages/perplexity/src/perplexity-embedding-model.test.ts` | `ported` | Perplexity embeddings now expose typed dimensions/encoding options, enforce the 512-input limit, decode signed/base64 binary vectors, and return token plus cost metadata. |
+| `packages/provider-utils/src/connect-to-websocket.test.ts`; `packages/provider-utils/src/safe-node-fetch.test.ts` | `deferred` | WebSocket close metadata belongs with the missing realtime transport surface. DNS-result pinning for downloads needs a URLSession-level resolver/connection design; URL allowlisting alone cannot faithfully reproduce the Node connector guarantee. |
+| `packages/provider-utils/src/is-record.test.ts`; `packages/provider-utils/src/serialize-model-options.test.ts` | `no-swift-action` | JavaScript cross-realm record detection and async-option serialization error branding do not map to Swift's static value types. |
+| `packages/togetherai/src/togetherai-provider.test.ts` | `ported` | Together chat and completion request builders now append `includeUsage=true`, with request URL coverage. |
+| `packages/xai/src/responses/xai-responses-language-model.test.ts`; `packages/xai/src/xai-video-model.test.ts` | `ported` | xAI Responses emits the new unsupported-setting warnings; video polling tolerates repeated `202` responses and carries the latest request state until completion. |
+
+Coverage check: the upstream command returns 78 paths, and the table references
+78 unique paths with no missing, extra, or duplicate entries.
 
 ## 2026-07-27 Diff
 

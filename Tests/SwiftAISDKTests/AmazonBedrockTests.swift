@@ -37,7 +37,7 @@ import Testing
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-east-1/bedrock/aws4_request") == true)
     #expect(request.headers["authorization"]?.contains("SignedHeaders=") == true)
     #expect(request.headers["custom-header"] == "value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.32")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.38")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?[0]?["text"]?.stringValue == "Brief.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
@@ -105,9 +105,9 @@ import Testing
     let converseRequest = try #require(await converseTransport.requests().first)
     let anthropicRequest = try #require(await anthropicTransport.requests().first)
     let mantleRequest = try #require(await mantleTransport.requests().first)
-    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.32")
-    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.32")
-    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.32")
+    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.38")
+    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.38")
+    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.38")
 }
 @Test func amazonBedrockCredentialProviderSignsAllProviderSurfaces() async throws {
     let fixedDate = DateComponents(
@@ -286,6 +286,7 @@ import Testing
     ))
     let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
     let imageData = Data([0x89, 0x50, 0x4E, 0x47]).base64EncodedString()
+    let videoData = Data([0, 1, 2, 3]).base64EncodedString()
     let pdfData = Data("pdf bytes".utf8).base64EncodedString()
 
     _ = try await model.generate(LanguageModelRequest(
@@ -300,6 +301,15 @@ import Testing
                         "value": [
                             ["type": "text", "text": "first result"],
                             ["type": "image-data", "mediaType": "image/png", "data": .string(imageData)],
+                            ["type": "file-data", "mediaType": "video/mp4", "data": .string(videoData)],
+                            [
+                                "type": "file",
+                                "mediaType": "video/webm",
+                                "data": [
+                                    "type": "url",
+                                    "url": "s3://my-test-bucket/path/to/generated.webm"
+                                ]
+                            ],
                             [
                                 "type": "file-data",
                                 "mediaType": "application/pdf",
@@ -337,12 +347,16 @@ import Testing
     #expect(toolResult["content"]?[0]?["text"]?.stringValue == "first result")
     #expect(toolResult["content"]?[1]?["image"]?["format"]?.stringValue == "png")
     #expect(toolResult["content"]?[1]?["image"]?["source"]?["bytes"]?.stringValue == imageData)
-    #expect(toolResult["content"]?[2]?["document"]?["format"]?.stringValue == "pdf")
-    #expect(toolResult["content"]?[2]?["document"]?["name"]?.stringValue == "report")
-    #expect(toolResult["content"]?[2]?["document"]?["source"]?["bytes"]?.stringValue == pdfData)
-    #expect(toolResult["content"]?[2]?["document"]?["citations"]?["enabled"]?.boolValue == true)
-    #expect(toolResult["content"]?[3]?["image"]?["format"]?.stringValue == "png")
-    #expect(toolResult["content"]?[3]?["image"]?["source"]?["s3Location"]?["uri"]?.stringValue == "s3://my-test-bucket/path/to/generated.png")
+    #expect(toolResult["content"]?[2]?["video"]?["format"]?.stringValue == "mp4")
+    #expect(toolResult["content"]?[2]?["video"]?["source"]?["bytes"]?.stringValue == videoData)
+    #expect(toolResult["content"]?[3]?["video"]?["format"]?.stringValue == "webm")
+    #expect(toolResult["content"]?[3]?["video"]?["source"]?["s3Location"]?["uri"]?.stringValue == "s3://my-test-bucket/path/to/generated.webm")
+    #expect(toolResult["content"]?[4]?["document"]?["format"]?.stringValue == "pdf")
+    #expect(toolResult["content"]?[4]?["document"]?["name"]?.stringValue == "report")
+    #expect(toolResult["content"]?[4]?["document"]?["source"]?["bytes"]?.stringValue == pdfData)
+    #expect(toolResult["content"]?[4]?["document"]?["citations"]?["enabled"]?.boolValue == true)
+    #expect(toolResult["content"]?[5]?["image"]?["format"]?.stringValue == "png")
+    #expect(toolResult["content"]?[5]?["image"]?["source"]?["s3Location"]?["uri"]?.stringValue == "s3://my-test-bucket/path/to/generated.png")
     #expect(content[1]["cachePoint"]?["type"]?.stringValue == "default")
 }
 
@@ -422,6 +436,51 @@ import Testing
     }
 }
 
+@Test func amazonBedrockConverseMapsInlineVideoPartsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"video accepted"}]}},"stopReason":"end_turn"}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
+    let inlineVideo = Data([0, 1, 2, 3])
+    let detectedMP4 = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .data(mimeType: "video/mp4", data: inlineVideo),
+            .file(mimeType: "video", data: detectedMP4, filename: "clip")
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let content = try #require(body["messages"]?[0]?["content"]?.arrayValue)
+    #expect(content[0]["video"]?["format"]?.stringValue == "mp4")
+    #expect(content[0]["video"]?["source"]?["bytes"]?.stringValue == "AAECAw==")
+    #expect(content[1]["video"]?["format"]?.stringValue == "mp4")
+    #expect(content[1]["video"]?["source"]?["bytes"]?.stringValue == "AAAAGGZ0eXA=")
+
+    let expectedFormats = [
+        "video/x-matroska": "mkv",
+        "video/quicktime": "mov",
+        "video/mp4": "mp4",
+        "video/webm": "webm",
+        "video/x-flv": "flv",
+        "video/mpeg": "mpeg",
+        "video/mpg": "mpg",
+        "video/wmv": "wmv",
+        "video/x-ms-wmv": "wmv",
+        "video/3gpp": "three_gp"
+    ]
+    for (mimeType, format) in expectedFormats {
+        #expect(bedrockVideoFormat(for: mimeType) == format)
+    }
+    #expect(bedrockVideoFormat(for: "video/unsupported") == nil)
+}
+
 @Test func amazonBedrockOmitsStrictToolSpecForAnthropicFamiliesThatRejectNewerSchemaFields() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"output":{"message":{"content":[{"text":"tool ready"}]}},"stopReason":"end_turn","usage":{"inputTokens":2,"outputTokens":1,"totalTokens":3}}
@@ -432,24 +491,6 @@ import Testing
         secretAccessKey: "secret",
         transport: transport
     ))
-    let model = try provider.languageModel("anthropic.claude-opus-4-7-20260219-v1:0")
-
-    _ = try await model.generate(LanguageModelRequest(
-        messages: [.user("Use weather.")],
-        tools: [
-            "weather": [
-                "type": "object",
-                "strict": true,
-                "properties": ["city": ["type": "string"]]
-            ]
-        ]
-    ))
-
-    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    let toolSpec = try #require(body["toolConfig"]?["tools"]?[0]?["toolSpec"])
-    #expect(toolSpec["name"]?.stringValue == "weather")
-    #expect(toolSpec["strict"] == nil)
-
     for modelID in [
         "anthropic.claude-opus-4-7-20260219-v1:0",
         "anthropic.claude-opus-4-8-20260401-v1:0",
@@ -459,6 +500,29 @@ import Testing
     ] {
         #expect(!bedrockSupportsStrictToolSpec(modelID: modelID))
         #expect(!bedrockSupportsNativeStructuredOutput(modelID: modelID))
+        let model = try provider.languageModel(modelID)
+        let result = try await model.generate(LanguageModelRequest(
+            messages: [.user("Use weather.")],
+            tools: [
+                "weather": [
+                    "type": "object",
+                    "strict": true,
+                    "properties": ["city": ["type": "string"]]
+                ]
+            ]
+        ))
+        #expect(result.warnings.contains(AIWarning(
+            type: "unsupported",
+            feature: "strict",
+            message: "Tool 'weather' has strict: true, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored."
+        )))
+    }
+
+    for request in await transport.requests() {
+        let body = try decodeJSONBody(try #require(request.body))
+        let toolSpec = try #require(body["toolConfig"]?["tools"]?[0]?["toolSpec"])
+        #expect(toolSpec["name"]?.stringValue == "weather")
+        #expect(toolSpec["strict"] == nil)
     }
 }
 
@@ -612,6 +676,73 @@ import Testing
     #expect(body["toolConfig"]?["tools"]?[0]?["toolSpec"]?["name"]?.stringValue == "json")
     #expect(body["toolConfig"]?["toolChoice"]?["any"] != nil)
     #expect(try decodeJSONBody(Data(result.text.utf8))["answer"]?.stringValue == "ok")
+}
+
+@Test func amazonBedrockConverseUsesJSONInstructionWhenStructuredOutputKeepsTools() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"""
+    {"output":{"message":{"content":[{"text":"```json\n{\"name\":\"Test\"}\n```."}]}},"stopReason":"end_turn","usage":{"inputTokens":4,"outputTokens":10,"totalTokens":14}}
+    """#))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-sonnet-5-20260701-v1:0")
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": ["name": ["type": "string"]],
+        "required": ["name"]
+    ]
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Look up and generate a name")],
+        responseFormat: .json(schema: schema),
+        tools: ["lookupName": ["type": "object", "properties": [:]]]
+    ))
+
+    #expect(result.text == #"{"name":"Test"}"#)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let tools = try #require(body["toolConfig"]?["tools"]?.arrayValue)
+    #expect(tools.count == 1)
+    #expect(tools[0]["toolSpec"]?["name"]?.stringValue == "lookupName")
+    #expect(body["toolConfig"]?["toolChoice"] == nil)
+    #expect(body["additionalModelRequestFields"]?["output_config"]?["format"] == nil)
+    let systemText = try #require(body["system"]?[0]?["text"]?.stringValue)
+    #expect(systemText.contains("JSON schema:"))
+    #expect(systemText.contains(#""required":["name"]"#))
+    #expect(systemText.hasSuffix("You MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text."))
+}
+
+@Test func amazonBedrockConverseStreamsOnlyJSONObjectWhenStructuredOutputKeepsTools() async throws {
+    let transport = RecordingTransport(response: amazonEventStreamResponse([
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"text":"```json\nleading "}}"#),
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"text":"{\"name\":\"Te"}}"#),
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"text":"st\",\"nested\":{\"ok\":true}}"}}"#),
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"text":"\n``` trailing"}}"#),
+        ("messageStop", #"{"stopReason":"end_turn"}"#)
+    ]))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bearer-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-opus-4-8-20260401-v1:0")
+    var text = ""
+
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Generate a name")],
+        responseFormat: .json(schema: ["type": "object", "properties": ["name": ["type": "string"]]]),
+        tools: ["lookupName": ["type": "object", "properties": [:]]]
+    )) {
+        if case let .textDelta(delta) = part {
+            text += delta
+        }
+    }
+
+    #expect(text == #"{"name":"Test","nested":{"ok":true}}"#)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["toolConfig"]?["tools"]?[0]?["toolSpec"]?["name"]?.stringValue == "lookupName")
+    #expect(body["toolConfig"]?["tools"]?.arrayValue?.count == 1)
 }
 @Test func amazonBedrockConverseMapsReasoningEffortForOpenAIAndNovaModels() async throws {
     let openAITransport = RecordingTransport(response: jsonResponse("""

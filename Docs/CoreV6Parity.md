@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-07-27
+Snapshot date: 2026-08-01
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.37`, `@ai-sdk/provider@4.0.3`,
-`@ai-sdk/provider-utils@5.0.12`, and `@ai-sdk/react@4.0.40`.
+snapshots, currently `ai@7.0.44`, `@ai-sdk/provider@4.0.4`,
+`@ai-sdk/provider-utils@5.0.16`, and `@ai-sdk/react@4.0.47`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.37 -> 7.0.44`
+- `@ai-sdk/provider@4.0.3 -> 4.0.4`
+- `@ai-sdk/provider-utils@5.0.12 -> 5.0.16`
+- `@ai-sdk/react@4.0.40 -> 4.0.47`
 - `ai@7.0.31 -> 7.0.37`
 - `@ai-sdk/provider-utils@5.0.11 -> 5.0.12`
 - `@ai-sdk/react@4.0.34 -> 4.0.40`
@@ -35,6 +39,33 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.44` telemetry end events attribute the resolved response model rather
+  than only the requested model ID. Swift now uses response metadata for the
+  same attribution and carries focused generate/stream telemetry regressions.
+- `ai@7.0.42` metadata on empty text deltas is preserved by the Swift stream
+  accumulator and output mapper instead of being discarded with an empty text
+  payload. `ai@7.0.38` provider-executed invalid tool calls no longer cause a
+  duplicate client-side error result or execution attempt.
+- `ai@7.0.42` per-`prepareStep` call-setting overlays remain deferred. Swift can
+  return a replacement request, but currently persists that request into later
+  steps; faithful parity needs an isolated validated overlay and matching
+  telemetry for each model call.
+- `ai@7.0.43` generic provider tool-callers remain deferred. OpenAI and
+  Anthropic wire formats already accept manual allowed-caller provider options,
+  but automatic tool-owned caller registration needs one late-binding core
+  contract rather than provider-specific shortcuts.
+- `@ai-sdk/provider@4.0.4` and `ai@7.0.38` add experimental streaming speech
+  translation. Google and OpenAI implementations use duplex WebSocket audio,
+  so the shared model/result/error surface is deferred until SwiftAISDK has a
+  reusable realtime audio transport.
+- `@ai-sdk/provider-utils@5.0.16` adds resolver-backed DNS address validation
+  and connection pinning. Swift still validates literal/private hosts and every
+  redirect, but URLSession does not expose the same connector hook; DNS
+  rebinding protection is therefore recorded as a transport-level gap rather
+  than claimed as covered. Workflow serialization and JavaScript WebSocket
+  helper changes have no direct Swift runtime surface.
+- `@ai-sdk/react@4.0.40 -> 4.0.47` is dependency/version propagation only; no
+  portable React source contract changed.
 - `ai@7.0.36` injective tool-approval signatures are ported through
   `toolApprovalSecret`: Swift signs the versioned JSON-array payload, accepts
   safe legacy newline-format signatures only when the signed identity fields

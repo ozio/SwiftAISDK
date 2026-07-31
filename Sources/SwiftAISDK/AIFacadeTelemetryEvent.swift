@@ -17,16 +17,20 @@ func telemetryEvent(
     warnings: [AIWarning] = [],
     providerMetadata: [String: JSONValue] = [:],
     responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+    useResponseModelID: Bool = false,
     errorDescription: String? = nil
 ) -> Telemetry.Event {
     let includesInput = options?.includesInput ?? true
     let includesOutput = options?.includesOutput ?? true
+    let attributedModelID = kind == .end && useResponseModelID
+        ? responseMetadata.modelID ?? modelID
+        : modelID
     return Telemetry.Event(
         kind: kind,
         callID: callID,
         operationID: operationID,
         providerID: providerID,
-        modelID: modelID,
+        modelID: attributedModelID,
         functionID: options?.functionID,
         attempt: attempt,
         maxRetries: maxRetries,

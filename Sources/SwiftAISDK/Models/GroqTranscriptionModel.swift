@@ -65,18 +65,33 @@ public final class GroqTranscriptionModel: TranscriptionModel, @unchecked Sendab
         guard (200..<300).contains(response.statusCode) else {
             throw apiCallError(provider: providerID, response: response)
         }
+        if providerOptions["response_format"]?.stringValue == "text" {
+            let text = String(decoding: response.body, as: UTF8.self)
+            let raw: JSONValue = .string(text)
+            return TranscriptionResult(
+                text: text,
+                rawValue: raw,
+                requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
+                responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+            )
+        }
         let raw = try response.jsonValue()
         guard let text = raw["text"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No transcription text found.")
         }
         try validateGroqTranscriptionResponse(raw)
-        let segments = standardTranscriptionSegments(from: raw)
+        let segments: [TranscriptionSegment]
+        if let rawSegments = raw["segments"], rawSegments != .null {
+            segments = standardTranscriptionSegments(from: raw)
+        } else {
+            segments = transcriptionSegments(from: raw["words"], textKey: "word")
+        }
         return TranscriptionResult(
             text: text,
             rawValue: raw,
             segments: segments,
             language: raw["language"]?.stringValue,
-            durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            durationInSeconds: raw["duration"]?.doubleValue,
             requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
@@ -96,28 +111,42 @@ func validateGroqTranscriptionResponse(_ raw: JSONValue) throws {
     if let duration = raw["duration"], duration != .null, duration.doubleValue == nil {
         throw AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")
     }
-    guard let segments = raw["segments"] else { return }
-    guard segments != .null else { return }
-    guard let array = segments.arrayValue else {
-        throw AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")
-    }
-    for segment in array {
-        guard
-            segment["id"]?.doubleValue != nil,
-            segment["seek"]?.doubleValue != nil,
-            segment["start"]?.doubleValue != nil,
-            segment["end"]?.doubleValue != nil,
-            segment["text"]?.stringValue != nil,
-            let tokens = segment["tokens"]?.arrayValue,
-            segment["temperature"]?.doubleValue != nil,
-            segment["avg_logprob"]?.doubleValue != nil,
-            segment["compression_ratio"]?.doubleValue != nil,
-            segment["no_speech_prob"]?.doubleValue != nil
-        else {
+    if let segments = raw["segments"], segments != .null {
+        guard let array = segments.arrayValue else {
             throw AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")
         }
-        guard tokens.allSatisfy({ $0.doubleValue != nil }) else {
+        for segment in array {
+            guard
+                segment["id"]?.doubleValue != nil,
+                segment["seek"]?.doubleValue != nil,
+                segment["start"]?.doubleValue != nil,
+                segment["end"]?.doubleValue != nil,
+                segment["text"]?.stringValue != nil,
+                let tokens = segment["tokens"]?.arrayValue,
+                segment["temperature"]?.doubleValue != nil,
+                segment["avg_logprob"]?.doubleValue != nil,
+                segment["compression_ratio"]?.doubleValue != nil,
+                segment["no_speech_prob"]?.doubleValue != nil
+            else {
+                throw AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")
+            }
+            guard tokens.allSatisfy({ $0.doubleValue != nil }) else {
+                throw AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")
+            }
+        }
+    }
+    if let words = raw["words"], words != .null {
+        guard let array = words.arrayValue else {
             throw AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")
+        }
+        for word in array {
+            guard
+                word["word"]?.stringValue != nil,
+                word["start"]?.doubleValue != nil,
+                word["end"]?.doubleValue != nil
+            else {
+                throw AIError.invalidResponse(provider: "groq.transcription", message: "Groq transcription response is invalid.")
+            }
         }
     }
 }

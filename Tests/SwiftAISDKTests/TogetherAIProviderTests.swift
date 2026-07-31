@@ -2,6 +2,40 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func togetherAIIncludesUsageForChatAndCompletionStreamsByDefault() async throws {
+    let chatTransport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+
+    data: [DONE]
+
+    """))
+    let chatProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: chatTransport))
+    var chatUsage: TokenUsage?
+    let chatModel = try chatProvider.chatModel("chat-model")
+    for try await part in chatModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .finish(_, usage) = part { chatUsage = usage }
+    }
+    #expect(chatUsage?.totalTokens == 2)
+    let chatBody = try decodeJSONBody(try #require((await chatTransport.requests()).first?.body))
+    #expect(chatBody["stream_options"]?["include_usage"]?.boolValue == true)
+
+    let completionTransport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"text":"done","finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+
+    data: [DONE]
+
+    """))
+    let completionProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: completionTransport))
+    var completionUsage: TokenUsage?
+    let completionModel = try completionProvider.completionModel("completion-model")
+    for try await part in completionModel.stream(LanguageModelRequest(messages: [.user("Complete")])) {
+        if case let .finish(_, usage) = part { completionUsage = usage }
+    }
+    #expect(completionUsage?.totalTokens == 2)
+    let completionBody = try decodeJSONBody(try #require((await completionTransport.requests()).first?.body))
+    #expect(completionBody["stream_options"]?["include_usage"]?.boolValue == true)
+}
+
 @Test func togetherAIImageAndRerankingUseNativeEndpoints() async throws {
     let imageTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"base64-image"}]}"#))
     let imageProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: imageTransport))
@@ -24,7 +58,7 @@ import Testing
     let imageRequest = try #require(await imageTransport.requests().first)
     #expect(imageRequest.url.absoluteString == "https://api.together.xyz/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer together-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.15")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.19")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "black-forest-labs/FLUX.1-schnell-Free")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -49,7 +83,7 @@ import Testing
     let rerankRequest = try #require(await rerankTransport.requests().first)
     #expect(rerankRequest.url.absoluteString == "https://api.together.xyz/v1/rerank")
     #expect(rerankRequest.headers["authorization"] == "Bearer together-key")
-    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.15")
+    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.19")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["top_n"]?.intValue == 1)
     #expect(rerankBody["return_documents"]?.boolValue == false)
@@ -69,7 +103,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer together-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/3.0.15")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/3.0.19")
 }
 
 @Test func togetherAIMapsNestedProviderOptions() async throws {

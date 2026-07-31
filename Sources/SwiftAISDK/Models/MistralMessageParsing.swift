@@ -11,9 +11,15 @@ func mistralMessageJSONs(_ message: AIMessage, isLastMessage: Bool) throws -> [J
     case .system:
         return [.object(["role": .string("system"), "content": .string(message.combinedText)])]
     case .assistant:
+        let hasReasoning = message.content.contains { part in
+            if case .reasoning = part { return true }
+            return false
+        } || message.reasoning != nil
         var output: [String: JSONValue] = [
             "role": .string("assistant"),
-            "content": .string(mistralAssistantText(from: message))
+            "content": hasReasoning
+                ? .array(mistralAssistantContent(from: message))
+                : .string(mistralAssistantText(from: message))
         ]
         if isLastMessage {
             output["prefix"] = true
@@ -38,8 +44,32 @@ func mistralMessageJSONs(_ message: AIMessage, isLastMessage: Bool) throws -> [J
 }
 
 func mistralAssistantText(from message: AIMessage) -> String {
-    let text = message.content.compactMap(\.text).joined()
-    return text + (message.reasoning ?? "")
+    message.content.compactMap(\.text).joined()
+}
+
+func mistralAssistantContent(from message: AIMessage) -> [JSONValue] {
+    var content: [JSONValue] = message.content.compactMap { part in
+        switch part {
+        case let .text(text, _):
+            return .object(["type": .string("text"), "text": .string(text)])
+        case let .reasoning(text, _):
+            return .object([
+                "type": .string("thinking"),
+                "thinking": .array([.object(["type": .string("text"), "text": .string(text)])]),
+                "closed": true
+            ])
+        default:
+            return nil
+        }
+    }
+    if let reasoning = message.reasoning, !reasoning.isEmpty {
+        content.append(.object([
+            "type": .string("thinking"),
+            "thinking": .array([.object(["type": .string("text"), "text": .string(reasoning)])]),
+            "closed": true
+        ]))
+    }
+    return content
 }
 
 func mistralAssistantToolCallJSON(_ part: AIContentPart) -> JSONValue? {

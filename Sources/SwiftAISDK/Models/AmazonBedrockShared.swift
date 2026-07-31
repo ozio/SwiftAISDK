@@ -25,6 +25,19 @@ let bedrockImageMimeTypes: [String: String] = [
     "image/webp": "webp"
 ]
 
+let bedrockVideoMimeTypes: [String: String] = [
+    "video/x-matroska": "mkv",
+    "video/quicktime": "mov",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/x-flv": "flv",
+    "video/mpeg": "mpeg",
+    "video/mpg": "mpg",
+    "video/wmv": "wmv",
+    "video/x-ms-wmv": "wmv",
+    "video/3gpp": "three_gp"
+]
+
 var bedrockSupportedDocumentMimeTypes: [String] {
     bedrockDocumentMimeTypes.keys.sorted()
 }
@@ -33,12 +46,29 @@ var bedrockSupportedImageMimeTypes: [String] {
     bedrockImageMimeTypes.keys.sorted()
 }
 
+let bedrockSupportedVideoMimeTypes = [
+    "video/x-matroska",
+    "video/quicktime",
+    "video/mp4",
+    "video/webm",
+    "video/x-flv",
+    "video/mpeg",
+    "video/mpg",
+    "video/wmv",
+    "video/x-ms-wmv",
+    "video/3gpp"
+]
+
 func bedrockDocumentFormat(for mimeType: String) -> String? {
     bedrockDocumentMimeTypes[mimeType]
 }
 
 func bedrockImageFormat(for mimeType: String) -> String? {
     bedrockImageMimeTypes[mimeType]
+}
+
+func bedrockVideoFormat(for mimeType: String) -> String? {
+    bedrockVideoMimeTypes[mimeType]
 }
 
 func bedrockIsS3URL(_ value: String) -> Bool {
@@ -203,8 +233,16 @@ func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?
            !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             toolSpec["description"] = .string(description)
         }
-        if let strict = schema["strict"], bedrockSupportsStrictToolSpec(modelID: modelID) {
-            toolSpec["strict"] = strict
+        if let strict = schema["strict"], strict != .null {
+            if bedrockSupportsStrictToolSpec(modelID: modelID) {
+                toolSpec["strict"] = strict
+            } else {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "strict",
+                    message: "Tool '\(name)' has strict: \(bedrockJSONString(strict) ?? "false"), but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored."
+                ))
+            }
         }
         bedrockTools.append(.object(["toolSpec": .object(toolSpec)]))
     }
@@ -519,27 +557,48 @@ func bedrockToolResultContentPart(_ item: JSONValue, documentCounter: inout Int)
         let mediaType = item["mediaType"]?.stringValue ?? item["mimeType"]?.stringValue ?? "application/octet-stream"
         if item["type"]?.stringValue == "file",
            item["data"]?["type"]?.stringValue == "url" {
-            guard let imageFormat = bedrockImageFormat(for: mediaType),
-                  let url = item["data"]?["url"]?.stringValue,
+            guard let url = item["data"]?["url"]?.stringValue,
                   bedrockIsS3URL(url) else {
                 throw AIError.invalidArgument(
                     argument: "toolResult.content.data",
-                    message: "Amazon Bedrock tool result URL content supports only s3:// image URLs with a supported image MIME type."
+                    message: "Amazon Bedrock tool result URL content supports only s3:// image or video URLs with a supported MIME type."
                 )
             }
-            return .object([
-                "image": .object([
-                    "format": .string(imageFormat),
-                    "source": .object([
-                        "s3Location": .object(["uri": .string(url)])
+            if let imageFormat = bedrockImageFormat(for: mediaType) {
+                return .object([
+                    "image": .object([
+                        "format": .string(imageFormat),
+                        "source": .object([
+                            "s3Location": .object(["uri": .string(url)])
+                        ])
                     ])
                 ])
-            ])
+            }
+            if let videoFormat = bedrockVideoFormat(for: mediaType) {
+                return .object([
+                    "video": .object([
+                        "format": .string(videoFormat),
+                        "source": .object([
+                            "s3Location": .object(["uri": .string(url)])
+                        ])
+                    ])
+                ])
+            }
+            throw AIError.invalidArgument(
+                argument: "toolResult.content.mediaType",
+                message: "Amazon Bedrock tool result URL content supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")) or video MIME types \(bedrockSupportedVideoMimeTypes.joined(separator: ", ")); got \(mediaType)."
+            )
         }
         let data = item["data"]?["type"]?.stringValue == "data"
             ? item["data"]?["data"]?.stringValue ?? ""
             : item["data"]?.stringValue ?? ""
-        if let imageFormat = bedrockImageFormat(for: mediaType) {
+        let resolvedMediaType: String
+        if !mediaType.contains("/"), let decoded = Data(base64Encoded: data) {
+            resolvedMediaType = try resolveFullMediaType(mediaType: mediaType, data: decoded)
+        } else {
+            resolvedMediaType = mediaType
+        }
+        if let imageFormat = bedrockImageFormat(for: resolvedMediaType) {
             return .object([
                 "image": .object([
                     "format": .string(imageFormat),
@@ -547,10 +606,18 @@ func bedrockToolResultContentPart(_ item: JSONValue, documentCounter: inout Int)
                 ])
             ])
         }
-        guard let documentFormat = bedrockDocumentFormat(for: mediaType) else {
+        if let videoFormat = bedrockVideoFormat(for: resolvedMediaType) {
+            return .object([
+                "video": .object([
+                    "format": .string(videoFormat),
+                    "source": .object(["bytes": .string(data)])
+                ])
+            ])
+        }
+        guard let documentFormat = bedrockDocumentFormat(for: resolvedMediaType) else {
             throw AIError.invalidArgument(
                 argument: "toolResult.content.mediaType",
-                message: "Amazon Bedrock tool result content supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")) or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mediaType)."
+                message: "Amazon Bedrock tool result content supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")), video MIME types \(bedrockSupportedVideoMimeTypes.joined(separator: ", ")), or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mediaType)."
             )
         }
         documentCounter += 1

@@ -2,6 +2,28 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func aiGenerateTextEndTelemetryUsesProviderResponseModelIDLikeUpstream() async throws {
+    let recorder = TelemetryRecorder()
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "Hello",
+        content: [.text("Hello")],
+        finishReason: "stop",
+        rawValue: .object([:]),
+        responseMetadata: AIResponseMetadata(modelID: "response-model")
+    ))
+
+    _ = try await AI.generateText(
+        model: model,
+        prompt: "test-input",
+        telemetry: Telemetry.Options(integrations: [recorder])
+    )
+
+    let events = await recorder.events()
+    #expect(events.map(\.kind) == [.start, .end])
+    #expect(events[0].modelID == "mock-language")
+    #expect(events[1].modelID == "response-model")
+}
+
 @Test func aiGenerateTextStepStartTelemetryReflectsPrepareStepModelAndMessagesLikeUpstream() async throws {
     let recorder = TelemetryRecorder()
     let toolCall = AIToolCall(id: "call-1", name: "tool1", arguments: #"{"value":"test"}"#)
@@ -339,4 +361,3 @@ import Testing
         AIMessage(role: .tool, content: [.toolResult(secondResult)])
     ])
 }
-

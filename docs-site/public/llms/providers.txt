@@ -6,9 +6,9 @@ This page is generated from the package capability matrix. Update [ProviderCapab
 
 Language: 31
 Completion: 7
-Embedding: 16
+Embedding: 17
 Image: 18
-Transcription: 13
+Transcription: 14
 Speech: 13
 Audio generation: 1
 Audio transformation: 1
@@ -53,12 +53,12 @@ Skills: 3
 | [`klingai`](klingai/) | `@ai-sdk/klingai` | `AIProviders.klingAI` |  |  |  |  |  |  |  |  | ✅ |  |  |  |
 | [`lmnt`](lmnt/) | `@ai-sdk/lmnt` | `AIProviders.lmnt` |  |  |  |  | ✅ |  |  |  |  |  |  |  |
 | [`luma`](luma/) | `@ai-sdk/luma` | `AIProviders.luma` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
-| [`mistral`](mistral/) | `@ai-sdk/mistral` | `AIProviders.mistral` | ✅ | ✅ |  |  | ✅ |  |  |  |  |  |  |  |
+| [`mistral`](mistral/) | `@ai-sdk/mistral` | `AIProviders.mistral` | ✅ | ✅ |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`moonshotai`](moonshotai/) | `@ai-sdk/moonshotai` | `AIProviders.moonshotAI` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`open-responses.responses`](open-responses-responses/) | `@ai-sdk/open-responses` | `AIProviders.openResponses` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`openai`](openai/) | `@ai-sdk/openai` | `AIProviders.openAI` | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  | ✅ | ✅ |
 | [`openai-compatible`](openai-compatible/) | `@ai-sdk/openai-compatible` | `AIProviders.openAICompatible` | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
-| [`perplexity`](perplexity/) | `@ai-sdk/perplexity` | `AIProviders.perplexity` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`perplexity`](perplexity/) | `@ai-sdk/perplexity` | `AIProviders.perplexity` | ✅ | ✅ |  |  |  |  |  |  |  |  |  |  |
 | [`prodia`](prodia/) | `@ai-sdk/prodia` | `AIProviders.prodia` | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |
 | [`quiverai`](quiverai/) | `@ai-sdk/quiverai` | `AIProviders.quiverAI` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
 | [`replicate`](replicate/) | `@ai-sdk/replicate` | `AIProviders.replicate` |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |

@@ -280,7 +280,53 @@ function npmSearchAISDKPackages() {
     if (!pkg.name || !pkg.name.startsWith("@ai-sdk/")) continue;
     byName.set(pkg.name, pkg);
   }
+
+  // npm search is relevance-ranked and can silently omit newly published
+  // scoped packages. Union it with the exact package-name prefix from npm's
+  // replication registry, then fetch metadata only for names search missed.
+  for (const name of npmRegistryAISDKPackageNames()) {
+    if (byName.has(name)) continue;
+    const metadata = npmViewPackageMetadata(name);
+    byName.set(name, {
+      name,
+      version: metadata.version,
+      description: metadata.description,
+    });
+  }
   return Array.from(byName.values());
+}
+
+function npmRegistryAISDKPackageNames() {
+  const url = "https://replicate.npmjs.com/_all_docs?startkey=%22%40ai-sdk%2F%22&endkey=%22%40ai-sdk0%22&limit=1000";
+  const output = execFileSync("curl", ["--fail", "--silent", "--show-error", url], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const parsed = JSON.parse(output);
+  return (parsed.rows || [])
+    .map((row) => row.id)
+    .filter((name) => typeof name === "string" && name.startsWith("@ai-sdk/"));
+}
+
+function npmViewPackageMetadata(packageName) {
+  try {
+    const output = execFileSync("npm", ["view", packageName, "version", "description", "--json"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const parsed = JSON.parse(output);
+    if (typeof parsed === "string") {
+      return { version: parsed, description: "" };
+    }
+    return {
+      version: typeof parsed.version === "string" ? parsed.version : "-",
+      description: typeof parsed.description === "string" ? parsed.description : "",
+    };
+  } catch {
+    return { version: "-", description: "" };
+  }
 }
 
 function classifyDiscoveredPackage(pkg) {
@@ -288,7 +334,7 @@ function classifyDiscoveredPackage(pkg) {
   const shortName = name.replace("@ai-sdk/", "");
   const description = (pkg.description || "").toLowerCase();
   const uiPackages = new Set(["angular", "react", "rsc", "solid", "svelte", "vue", "ui-utils"]);
-  const toolingPackages = new Set(["codemod", "devtools"]);
+  const toolingPackages = new Set(["code-mode", "codemod", "devtools"]);
   const schemaPackages = new Set(["valibot"]);
   const corePackages = new Set(["provider", "provider-utils"]);
   const adapterPackages = new Set(["langchain", "llamaindex", "workflow"]);

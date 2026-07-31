@@ -145,7 +145,8 @@ func objectStreamWithTelemetry<Object: Sendable>(
                                 usage: objectResult?.usage ?? usage,
                                 warnings: warnings,
                                 providerMetadata: providerMetadata,
-                                responseMetadata: responseMetadata
+                                responseMetadata: responseMetadata,
+                                useResponseModelID: true
                             ))
                             await AIWarningLogging.logWarnings(warnings, providerID: providerID, modelID: modelID)
                         }

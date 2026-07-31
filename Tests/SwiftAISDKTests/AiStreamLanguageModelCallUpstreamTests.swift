@@ -133,6 +133,37 @@ import Testing
     ])
 }
 
+@Test func aiStreamLanguageModelCallPreservesProviderMetadataFromEmptyTextDeltasLikeUpstream() async throws {
+    let providerMetadata: [String: JSONValue] = [
+        "testProvider": ["signature": "test-signature"]
+    ]
+    let metadataOnlyDelta = LanguageStreamPart.textDeltaPart(
+        id: "text-1",
+        delta: "",
+        providerMetadata: providerMetadata
+    )
+    let chunks: [LanguageStreamPart] = [
+        .textStart(id: "text-1"),
+        .textDeltaPart(id: "text-1", delta: "Hello"),
+        metadataOnlyDelta,
+        .textEnd(id: "text-1"),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+    ]
+
+    let result = try await collectForwardedLanguageStream(chunks)
+    let completedStep = result.step.toolStep(
+        index: 0,
+        toolResults: [],
+        approvalRequests: [],
+        approvalResponses: []
+    )
+
+    #expect(result.streamed.contains(metadataOnlyDelta))
+    #expect(completedStep.content == [
+        .text("Hello", providerMetadata: providerMetadata)
+    ])
+}
+
 @Test func aiStreamLanguageModelCallForwardsToolInputProviderMetadataLikeUpstream() async throws {
     let providerMetadata: [String: JSONValue] = [
         "testProvider": ["someKey": "someValue"]
@@ -238,7 +269,9 @@ import Testing
     #expect(events.map(\.kind) == [.start, .end])
     #expect(events[0].callID == events[1].callID)
     #expect(events[0].operationID == "ai.streamText")
+    #expect(events[0].modelID == "mock-language")
     #expect(events[0].input?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "test prompt")
+    #expect(events[1].modelID == "response-model")
     #expect(events[1].output?["text"]?.stringValue == "Hello world")
     #expect(events[1].output?["finishReason"]?.stringValue == "tool-calls")
     #expect(events[1].output?["toolCallCount"]?.intValue == 1)

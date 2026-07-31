@@ -139,6 +139,15 @@ private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue],
 
 private func xaiResponsesWarnings(for request: LanguageModelRequest) -> [AIWarning] {
     var warnings: [AIWarning] = []
+    if request.topK != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "topK"))
+    }
+    if request.frequencyPenalty != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
+    }
+    if request.presencePenalty != nil {
+        warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty"))
+    }
     if !request.stopSequences.isEmpty {
         warnings.append(AIWarning(type: "unsupported", feature: "stopSequences"))
     }

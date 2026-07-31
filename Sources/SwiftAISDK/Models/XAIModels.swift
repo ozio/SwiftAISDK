@@ -366,7 +366,19 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             guard (200..<300).contains(response.statusCode) else {
                 throw apiCallError(provider: providerID, response: response)
             }
-            let raw = try response.jsonValue()
+            let raw: JSONValue
+            if response.statusCode == 202 {
+                guard response.body.count <= xaiMaxPendingVideoBodyBytes else {
+                    throw AIError.invalidResponse(provider: providerID, message: "xAI video status response exceeded \(xaiMaxPendingVideoBodyBytes) bytes")
+                }
+                if let parsed = try? response.jsonValue(), parsed.objectValue != nil {
+                    raw = parsed
+                } else {
+                    raw = .object(["status": .string("pending")])
+                }
+            } else {
+                raw = try response.jsonValue()
+            }
             if raw["status"]?.stringValue == "done" || raw["video"]?["url"]?.stringValue != nil {
                 return (raw, response)
             }
@@ -379,6 +391,8 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         }
     }
 }
+
+private let xaiMaxPendingVideoBodyBytes = 1024 * 1024
 
 private let xaiVideoResolutionMap = [
     "1280x720": "720p",

@@ -98,7 +98,6 @@ public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
             method: "POST",
             url: try requireURL(uploadURL),
             headers: [
-                "Content-Length": String(request.data.count),
                 "X-Goog-Upload-Offset": "0",
                 "X-Goog-Upload-Command": "upload, finalize"
             ],

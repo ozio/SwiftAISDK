@@ -63,6 +63,60 @@ import Testing
     #expect(result.finalStep?.content == content)
 }
 
+@Test func aiGenerateTextDoesNotSynthesizeErrorsForInvalidProviderExecutedToolCallsLikeUpstream() async throws {
+    let toolCall = AIToolCall(
+        id: "call-1",
+        name: "web_search",
+        arguments: #"{"cities":"San Francisco"}"#,
+        providerExecuted: true,
+        dynamic: true
+    )
+    let providerError = AIToolResult(
+        toolCallID: "call-1",
+        toolName: "web_search",
+        result: ["type": "error-text", "value": "Provider rejected the request."],
+        isError: true,
+        dynamic: true,
+        providerExecuted: true
+    )
+    let content: [AIResultContentPart] = [.toolCall(toolCall), .toolResult(providerError)]
+    let recorder = TelemetryRecorder()
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "",
+        content: content,
+        finishReason: "stop",
+        rawValue: .object([:])
+    ))
+    let providerTool = AITool.dynamic(
+        name: "web_search",
+        parameters: [
+            "type": "object",
+            "properties": ["city": ["type": "string"]],
+            "required": ["city"],
+            "additionalProperties": false
+        ]
+    ) { _ in
+        Issue.record("Provider-executed tool calls must not execute locally.")
+        return "unused"
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "test-input",
+        executableTools: [providerTool],
+        maxSteps: 1,
+        telemetry: Telemetry.Options(integrations: [recorder])
+    )
+
+    #expect(result.content == content)
+    #expect(result.toolCalls == [toolCall])
+    #expect(result.toolResults == [providerError])
+    #expect(result.responseMessages == [
+        AIMessage(role: .assistant, content: [.toolCall(toolCall), .toolResult(providerError)])
+    ])
+    #expect(await recorder.events().allSatisfy { $0.operationID != "ai.generateText.tool" })
+}
+
 @Test func aiGenerateTextReturnsToolExecutionErrorsAsToolResultsLikeUpstream() async throws {
     struct ToolFailure: Error, CustomStringConvertible {
         var description: String { "test error" }
@@ -158,4 +212,3 @@ import Testing
         AIMessage(role: .tool, content: [.toolResult(errorResult)])
     ])
 }
-
