@@ -13,7 +13,7 @@ description: Public SwiftAISDK APIs for providers.
 | Function | 11 |
 | Initializer | 30 |
 | Instance Method | 176 |
-| Instance Property | 150 |
+| Instance Property | 151 |
 | Structure | 17 |
 | Type Alias | 2 |
 | Type Method | 66 |
@@ -61,7 +61,7 @@ description: Public SwiftAISDK APIs for providers.
 | Initializer | `init(accessKeyID:secretAccessKey:sessionToken:)` | `init(accessKeyID: String, secretAccessKey: String, sessionToken: String? = nil)` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Initializer | `init(accessKeyID:secretAccessKey:sessionToken:)` | `init(accessKeyID: String, secretAccessKey: String, sessionToken: String? = nil)` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
 | Initializer | `init(apiKey:accessKey:secretKey:baseURL:headers:environment:transport:)` | `init(apiKey: String? = nil, accessKey: String? = nil, secretKey: String? = nil, baseURL: String? = nil, headers: [String : String] = [:], environment: [String : String]? = nil, transport: any AITransport = URLSessionTransport.shared)` | [Sources/SwiftAISDK/Providers/KlingAIProviderSettings.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/KlingAIProviderSettings.swift) |
-| Initializer | `init(apiKey:baseURL:headers:environment:transport:)` | `init(apiKey: String? = nil, baseURL: String? = nil, headers: [String : String] = [:], environment: [String : String]? = nil, transport: any AITransport = URLSessionTransport.shared)` | [Sources/SwiftAISDK/Providers/MiniMaxProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/MiniMaxProvider.swift) |
+| Initializer | `init(apiKey:baseURL:videoBaseURL:headers:environment:transport:)` | `init(apiKey: String? = nil, baseURL: String? = nil, videoBaseURL: String? = nil, headers: [String : String] = [:], environment: [String : String]? = nil, transport: any AITransport = URLSessionTransport.shared)` | [Sources/SwiftAISDK/Providers/MiniMaxProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/MiniMaxProvider.swift) |
 | Initializer | `init(apiKey:version:baseURL:headers:environment:transport:)` | `init(apiKey: String? = nil, version: String = CartesiaProvider.defaultAPIVersion, baseURL: String? = nil, headers: [String : String] = [:], environment: [String : String]? = nil, transport: any AITransport = URLSessionTransport.shared)` | [Sources/SwiftAISDK/Providers/CartesiaProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CartesiaProvider.swift) |
 | Initializer | `init(balance:totalUsed:)` | `init(balance: String, totalUsed: String)` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Initializer | `init(clientEmail:privateKey:privateKeyID:)` | `init(clientEmail: String, privateKey: String, privateKeyID: String? = nil)` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
@@ -413,6 +413,7 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Property | `user` | `var user: String?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `userID` | `var userID: String?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `version` | `var version: String` | [Sources/SwiftAISDK/Providers/CartesiaProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CartesiaProvider.swift) |
+| Instance Property | `videoBaseURL` | `var videoBaseURL: String?` | [Sources/SwiftAISDK/Providers/MiniMaxProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/MiniMaxProvider.swift) |
 | Instance Property | `workspaceID` | `var workspaceID: String?` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
 | Structure | `AINoSuchProviderReferenceError` | `struct AINoSuchProviderReferenceError` | [Sources/SwiftAISDK/ProviderReference.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/ProviderReference.swift) |
 | Structure | `AIProviderCapabilityRow` | `struct AIProviderCapabilityRow` | [Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) |

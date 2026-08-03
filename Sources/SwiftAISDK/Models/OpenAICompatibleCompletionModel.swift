@@ -42,7 +42,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                     let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.transport.send(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw config.httpStatusError(response)
                     }
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))

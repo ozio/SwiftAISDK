@@ -17,7 +17,7 @@ Source URL: /providers/baseten/
 
 ## Notes
 
-Chat and embedding endpoints mirror upstream Baseten 2.0.18: `BASETEN_API_KEY`, versioned user-agent suffix, custom Model API base URL, `/sync/v1` chat model URLs, `/sync` or `/sync/v1` embedding model URLs, upstream performance-client body plus 128-input batching, unsupported image models, and string `error` envelope parsing.
+Chat and embedding endpoints mirror upstream Baseten 2.0.20: `BASETEN_API_KEY`, versioned user-agent suffix, custom Model API base URL, `/sync/v1` chat model URLs, `/sync` or `/sync/v1` embedding model URLs, upstream performance-client body plus 128-input batching, unsupported image models, and string `error` envelope parsing.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

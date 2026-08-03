@@ -5,14 +5,27 @@ enum ResponsesRequestMode: Equatable, Sendable {
     case openResponses(providerOptionsName: String)
 }
 
-func openAICompatibleResponseMetadata(from raw: JSONValue? = nil, response: AIHTTPResponse, modelID: String? = nil) -> AIResponseMetadata {
-    AIResponseMetadata(
+func openAICompatibleResponseMetadata(from raw: JSONValue? = nil, response: AIHTTPResponse, modelID: String? = nil, suppressZeroCreatedTimestamp: Bool = false) -> AIResponseMetadata {
+    let created = raw?["created"]?.doubleValue
+    return AIResponseMetadata(
         id: raw?["id"]?.stringValue,
-        timestamp: raw?["created"]?.doubleValue.map { Date(timeIntervalSince1970: $0) },
+        timestamp: suppressZeroCreatedTimestamp && created == 0
+            ? nil
+            : created.map { Date(timeIntervalSince1970: $0) },
         modelID: raw?["model"]?.stringValue ?? modelID,
         headers: response.headers,
         body: raw
     )
+}
+
+func openAICompatibleChatResponseHasMetadata(_ raw: JSONValue, suppressZeroCreatedTimestamp: Bool) -> Bool {
+    if suppressZeroCreatedTimestamp,
+       raw["created"]?.doubleValue == 0,
+       raw["id"]?.stringValue?.isEmpty != false,
+       raw["model"]?.stringValue?.isEmpty != false {
+        return false
+    }
+    return true
 }
 
 func openAIResponsesStreamResponseMetadata(from raw: JSONValue, response: AIHTTPResponse, modelID: String? = nil) -> AIResponseMetadata {

@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-08-01
+Snapshot date: 2026-08-03
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every tracked package was packed at both the prior
@@ -16,7 +16,80 @@ Status meanings:
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
 
-## Tracked Package Results
+## 2026-08-03 Tracked Package Results
+
+Published tarballs for every changed row were downloaded into
+`/tmp/ai-sdk-port-upstream-diffs-20260803.4ZCm5R` and compared separately.
+The common `5fc7da5`/`93b2acd` release train centralizes empty usage and
+response-metadata helpers without changing observable result shapes. Runtime
+and focused-test expectations now use each package's current versioned
+user-agent suffix.
+
+| Package | Previous | Current | Result |
+| --- | ---: | ---: | --- |
+| `ai` | `7.0.44` | `7.0.48` | `deferred/covered` — `experimental_toolCallers` now reaches `streamText` and `ToolLoopAgent`, but still needs the shared Swift caller graph already recorded for `generateText`. Streaming-only timeout warnings cannot occur until Swift exposes structured timeout fields; the clarified no-output contract is already covered by `AINoOutputError`. |
+| `@ai-sdk/provider` | `4.0.4` | `4.0.4` | `covered` — npm latest is unchanged. |
+| `@ai-sdk/provider-utils` | `5.0.16` | `5.0.18` | `covered/deferred` — shared empty-usage and response-metadata factories preserve existing Swift result shapes; the JavaScript tool-caller marker change belongs to the deferred caller abstraction. |
+| `@ai-sdk/react` | `4.0.47` | `4.0.51` | `version-only` — dependency propagation; no React source contract changed. |
+| `@ai-sdk/alibaba` | `2.0.20` | `2.0.22` | `version-only`. |
+| `@ai-sdk/amazon-bedrock` | `5.0.38` | `5.0.40` | `covered` — empty language-usage creation moved to the shared helper with the same fields and nullability. |
+| `@ai-sdk/anthropic` | `4.0.26` | `4.0.27` | `version-only`. |
+| `@ai-sdk/anthropic-aws` | `2.0.17` | `2.0.19` | `version-only`. |
+| `@ai-sdk/assemblyai` | `3.0.16` | `3.0.18` | `version-only`. |
+| `@ai-sdk/azure` | `4.0.26` | `4.0.28` | `version-only`; the shared OpenAI dependency changes are audited in their own rows. |
+| `@ai-sdk/baseten` | `2.0.18` | `2.0.20` | `version-only`. |
+| `@ai-sdk/black-forest-labs` | `2.0.16` | `2.0.18` | `version-only`. |
+| `@ai-sdk/bytedance` | `2.0.18` | `2.0.20` | `version-only`. |
+| `@ai-sdk/cartesia` | `3.0.10` | `3.0.12` | `version-only`. |
+| `@ai-sdk/cerebras` | `3.0.18` | `3.0.20` | `version-only`. |
+| `@ai-sdk/cohere` | `4.0.16` | `4.0.18` | `covered` — empty usage construction was centralized without a wire/result change. |
+| `@ai-sdk/deepgram` | `3.0.16` | `3.0.18` | `version-only`. |
+| `@ai-sdk/deepinfra` | `3.0.18` | `3.0.20` | `version-only`. |
+| `@ai-sdk/deepseek` | `3.0.17` | `3.0.19` | `covered` — empty usage and response metadata now call shared helpers with equivalent output. |
+| `@ai-sdk/elevenlabs` | `3.0.17` | `3.0.19` | `version-only`; realtime transcription remains the existing shared WebSocket gap. |
+| `@ai-sdk/fal` | `3.0.17` | `3.0.19` | `version-only`. |
+| `@ai-sdk/fireworks` | `3.0.19` | `3.0.22` | `ported` — chat, completion, and embedding structured `{ error: { message, ... } }` envelopes now preserve the provider message while retaining legacy string errors. The image model keeps its unchanged generic HTTP-error body handling. |
+| `@ai-sdk/gateway` | `4.0.33` | `4.0.37` | `ported/covered` — provider routing accepts `has: ["vision"]`; generated model-ID/settings changes remain covered by forward-compatible Swift string IDs. |
+| `@ai-sdk/gladia` | `3.0.16` | `3.0.18` | `version-only`. |
+| `@ai-sdk/google` | `4.0.29` | `4.0.31` | `covered` — empty usage construction moved to the shared helper with no observable change. |
+| `@ai-sdk/google-vertex` | `5.0.36` | `5.0.38` | `version-only`; shared Google behavior is covered by the `@ai-sdk/google` row. |
+| `@ai-sdk/groq` | `4.0.17` | `4.0.19` | `covered` — empty usage and response metadata helper refactors preserve existing output. |
+| `@ai-sdk/huggingface` | `2.0.18` | `2.0.20` | `covered` — empty usage helper refactor is behavior-equivalent. |
+| `@ai-sdk/hume` | `3.0.16` | `3.0.18` | `version-only`. |
+| `@ai-sdk/klingai` | `4.0.18` | `4.0.20` | `version-only`. |
+| `@ai-sdk/lmnt` | `3.0.16` | `3.0.18` | `version-only`. |
+| `@ai-sdk/luma` | `3.0.17` | `3.0.19` | `version-only`. |
+| `@ai-sdk/mcp` | `2.0.20` | `2.0.22` | `version-only`. |
+| `@ai-sdk/minimax` | `3.0.1` | `3.0.2` | `ported` — MiniMax-H3 video adds text-to-video, first/last-frame, and reference-to-video request/poll/result behavior while retaining the Anthropic-compatible language surface. |
+| `@ai-sdk/mistral` | `4.0.18` | `4.0.20` | `covered` — empty usage and response metadata helper refactors preserve the current Swift behavior. |
+| `@ai-sdk/moonshotai` | `3.0.21` | `3.0.23` | `covered` — empty usage helper refactor is behavior-equivalent. |
+| `@ai-sdk/open-responses` | `2.0.16` | `2.0.18` | `version-only`. |
+| `@ai-sdk/openai` | `4.0.25` | `4.0.27` | `ported/covered` — file upload expiry is serialized as `expires_after[anchor]=created_at` plus `expires_after[seconds]`; chat metadata keeps zero-valued Azure content-filter timestamps absent while generic OpenAI-compatible providers continue preserving explicit epoch timestamps; remaining usage/metadata changes are behavior-preserving shared-helper refactors. |
+| `@ai-sdk/openai-compatible` | `3.0.18` | `3.0.20` | `covered` — empty usage and response metadata helper refactors retain prior result shapes. |
+| `@ai-sdk/perplexity` | `4.0.18` | `4.0.20` | `covered` — shared usage/metadata helpers preserve existing quantized embedding and language behavior. |
+| `@ai-sdk/prodia` | `2.0.17` | `2.0.19` | `version-only`. |
+| `@ai-sdk/quiverai` | `2.0.16` | `2.0.18` | `version-only`. |
+| `@ai-sdk/replicate` | `3.0.17` | `3.0.19` | `version-only`. |
+| `@ai-sdk/revai` | `3.0.16` | `3.0.18` | `version-only`. |
+| `@ai-sdk/togetherai` | `3.0.19` | `3.0.21` | `version-only`. |
+| `@ai-sdk/vercel` | `3.0.18` | `3.0.20` | `version-only`. |
+| `@ai-sdk/voyage` | `2.0.16` | `2.0.18` | `version-only`. |
+| `@ai-sdk/xai` | `4.0.23` | `4.0.25` | `covered` — response metadata conversion moved to the shared helper with the same timestamp and identifiers. |
+
+### 2026-08-03 Verification
+
+| Check | Result |
+| --- | --- |
+| `node Scripts/check-upstream-versions.js --all --json` | Passed after the ledger update: 48 tracked packages, zero outdated rows, and zero registry errors. |
+| `node Scripts/check-upstream-versions.js --discover-packages --all --json` | Passed against exact registry-prefix metadata: 76 live `@ai-sdk/*` packages, 43 model providers, and zero untracked model providers. |
+| `node Scripts/check-upstream-versions.js --all --prepare-diffs --work-dir /tmp/ai-sdk-port-upstream-diffs-20260803.4ZCm5R` | Audited 47 changed packages from 94 published npm tarballs in separate diffs; `@ai-sdk/provider@4.0.4` was the only unchanged tracked package. |
+| Focused Swift tests | Passed: 59 combined MiniMax, Fireworks, Gateway, OpenAI files/metadata, and capability-matrix tests, followed by 4 stream-metadata regressions after the full-suite review. |
+| `swift test` | Passed: 2,243 tests in 3 suites. |
+| `npm ci --prefix docs-site` and `npm --prefix docs-site run check` | Passed: Astro reported zero errors, warnings, or hints. |
+| `npm --prefix docs-site run build` | Passed: 85 static pages built. |
+| `git diff --check` | Passed. |
+
+## 2026-08-01 Tracked Package Results
 
 | Package | Previous | Current | Result |
 | --- | ---: | ---: | --- |

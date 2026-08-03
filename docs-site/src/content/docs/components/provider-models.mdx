@@ -8,11 +8,11 @@ description: Public SwiftAISDK APIs for provider models.
 | Symbol kind | Count |
 | --- | --- |
 | Case | 4 |
-| Class | 101 |
+| Class | 102 |
 | Enumeration | 10 |
 | Initializer | 1 |
-| Instance Method | 123 |
-| Instance Property | 213 |
+| Instance Method | 124 |
+| Instance Property | 215 |
 | Structure | 1 |
 | Type Method | 82 |
 
@@ -94,6 +94,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `KlingAIVideoModel` | `final class KlingAIVideoModel` | [Sources/SwiftAISDK/Models/KlingAIMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/KlingAIMediaModels.swift) |
 | Class | `LMNTSpeechModel` | `final class LMNTSpeechModel` | [Sources/SwiftAISDK/Models/LMNTAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/LMNTAudioModels.swift) |
 | Class | `LumaImageModel` | `final class LumaImageModel` | [Sources/SwiftAISDK/Models/LumaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/LumaMediaModels.swift) |
+| Class | `MiniMaxVideoModel` | `final class MiniMaxVideoModel` | [Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift) |
 | Class | `MistralEmbeddingModel` | `final class MistralEmbeddingModel` | [Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift) |
 | Class | `MistralLanguageModel` | `final class MistralLanguageModel` | [Sources/SwiftAISDK/Models/MistralModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralModels.swift) |
 | Class | `MistralSpeechModel` | `final class MistralSpeechModel` | [Sources/SwiftAISDK/Models/MistralSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralSpeechModel.swift) |
@@ -195,6 +196,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/GoogleGenerativeMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GoogleGenerativeMediaModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/GoogleVertexModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GoogleVertexModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/KlingAIMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/KlingAIMediaModels.swift) |
+| Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/ReplicateMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ReplicateMediaModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
@@ -333,6 +335,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/KlingAIMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/KlingAIMediaModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/LMNTAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/LMNTAudioModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/LumaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/LumaMediaModels.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MistralModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/MistralSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralSpeechModel.swift) |
@@ -436,6 +439,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/KlingAIMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/KlingAIMediaModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/LMNTAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/LMNTAudioModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/LumaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/LumaMediaModels.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MiniMaxVideoModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralEmbeddingModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MistralModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/MistralSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/MistralSpeechModel.swift) |

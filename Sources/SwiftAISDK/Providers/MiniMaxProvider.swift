@@ -3,6 +3,7 @@ import Foundation
 public struct MiniMaxProviderSettings: Sendable {
     public var apiKey: String?
     public var baseURL: String?
+    public var videoBaseURL: String?
     public var headers: [String: String]
     public var environment: [String: String]?
     public var transport: any AITransport
@@ -10,12 +11,14 @@ public struct MiniMaxProviderSettings: Sendable {
     public init(
         apiKey: String? = nil,
         baseURL: String? = nil,
+        videoBaseURL: String? = nil,
         headers: [String: String] = [:],
         environment: [String: String]? = nil,
         transport: any AITransport = URLSessionTransport.shared
     ) {
         self.apiKey = apiKey
         self.baseURL = baseURL
+        self.videoBaseURL = videoBaseURL
         self.headers = headers
         self.environment = environment
         self.transport = transport
@@ -29,9 +32,10 @@ public struct MiniMaxProviderSettings: Sendable {
 
 public final class MiniMaxProvider: AIProvider, @unchecked Sendable {
     public let providerID = "minimax"
-    public let supportedCapabilities: Set<ModelCapability> = [.language]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .video]
 
     private let config: ModelHTTPConfig
+    private let videoConfig: ModelHTTPConfig
 
     public init(settings: MiniMaxProviderSettings = MiniMaxProviderSettings()) throws {
         let apiKey = settings.apiKey ?? settings.environmentValue("MINIMAX_API_KEY")
@@ -42,15 +46,25 @@ public final class MiniMaxProvider: AIProvider, @unchecked Sendable {
             )
         }
 
-        var headers = normalizeHeaders(settings.headers)
-        headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
-        headers["x-api-key"] = headers["x-api-key"] ?? apiKey
-        headers = withUserAgentSuffix(headers, "ai-sdk/minimax/3.0.1")
+        var languageHeaders = normalizeHeaders(settings.headers)
+        languageHeaders["anthropic-version"] = languageHeaders["anthropic-version"] ?? "2023-06-01"
+        languageHeaders["x-api-key"] = languageHeaders["x-api-key"] ?? apiKey
+        languageHeaders = withUserAgentSuffix(languageHeaders, "ai-sdk/minimax/3.0.2")
 
         config = ModelHTTPConfig(
             providerID: "minimax.messages",
             baseURL: settings.baseURL ?? "https://api.minimax.io/anthropic/v1",
-            headers: headers,
+            headers: languageHeaders,
+            transport: settings.transport
+        )
+
+        var videoHeaders = normalizeHeaders(settings.headers)
+        videoHeaders["authorization"] = videoHeaders["authorization"] ?? "Bearer \(apiKey)"
+        videoHeaders = withUserAgentSuffix(videoHeaders, "ai-sdk/minimax/3.0.2")
+        videoConfig = ModelHTTPConfig(
+            providerID: "minimax.video",
+            baseURL: settings.videoBaseURL ?? "https://api.minimax.io",
+            headers: videoHeaders,
             transport: settings.transport
         )
     }
@@ -76,7 +90,7 @@ public final class MiniMaxProvider: AIProvider, @unchecked Sendable {
     }
 
     public func videoModel(_ modelID: String) throws -> any VideoModel {
-        throw AIError.unsupportedModel(provider: providerID, capability: .video, modelID: modelID)
+        MiniMaxVideoModel(modelID: modelID, config: videoConfig)
     }
 
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {

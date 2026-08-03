@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SwiftAISDK
 
@@ -20,11 +21,30 @@ import Testing
     let model = try provider.chatModel("gpt-4o")
 
     var textDeltas: [String] = []
+    var responseMetadata: [AIResponseMetadata] = []
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         if case let .textDelta(delta) = part {
             textDeltas.append(delta)
         }
+        if case let .responseMetadata(metadata) = part {
+            responseMetadata.append(metadata)
+        }
     }
 
     #expect(textDeltas == ["", "Hello"])
+    #expect(responseMetadata.count == 1)
+    #expect(responseMetadata.first?.id == "chatcmpl-test")
+    #expect(responseMetadata.first?.modelID == "gpt-4o")
+    #expect(responseMetadata.first?.timestamp == Date(timeIntervalSince1970: 1))
+}
+
+@Test func openAIChatGenerateSuppressesAzurePlaceholderTimestampLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"chatcmpl-filtered","object":"chat.completion","created":0,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let result = try await provider.chatModel("gpt-4o").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.responseMetadata.id == "chatcmpl-filtered")
+    #expect(result.responseMetadata.timestamp == nil)
 }

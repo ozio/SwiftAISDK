@@ -184,6 +184,20 @@ print(result.reasoning)
 print(result.text)
 ```
 
+MiniMax-H3 video generation uses the same API key and a dedicated video API
+root. Text-to-video, first/last frames, and reference inputs are supported:
+
+```swift
+let videoModel = try miniMax.video("MiniMax-H3")
+let video = try await videoModel.generateVideo(VideoGenerationRequest(
+    prompt: "A white kitten chases a butterfly across a sunlit garden.",
+    aspectRatio: "16:9",
+    durationSeconds: 5
+))
+
+print(video.urls)
+```
+
 Use `customProvider(...)` and `createProviderRegistry(...)` for upstream-style
 provider composition and combined model IDs:
 

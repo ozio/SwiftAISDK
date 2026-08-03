@@ -45,6 +45,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             transformRequestBody: settings.transformRequestBody,
             openAIBackedProviderRoot: routesLikeOpenAI ? providerID : nil,
             usesGenericOpenAICompatibleProviderOptions: usesOpenAICompatibleSurfaceIDs,
+            failedResponseHandling: providerID == "fireworks" ? .openAICompatible : .raw,
             url: urlBuilder
         )
     }
@@ -461,7 +462,8 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             providerID: "\(providerID).files",
             providerReferenceKey: providerID == "xai" ? "xai" : providerID,
             config: config,
-            includePurpose: routesLikeOpenAI || providerID == "openai" || providerID == "xai"
+            includePurpose: routesLikeOpenAI || providerID == "openai" || providerID == "xai",
+            providerOptionsName: routesLikeOpenAI || providerID == "openai" ? "openai" : nil
         )
     }
 
@@ -494,94 +496,94 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return withUserAgentSuffix(headers, userAgentSuffix)
         }
         if providerID == "anthropic" {
-            return withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.26")
+            return withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.27")
         }
         if providerID == "google.generative-ai" {
-            return withUserAgentSuffix(headers, "ai-sdk/google/4.0.29")
+            return withUserAgentSuffix(headers, "ai-sdk/google/4.0.31")
         }
         if providerID == "moonshotai" {
-            return withUserAgentSuffix(headers, "ai-sdk/moonshotai/3.0.21")
+            return withUserAgentSuffix(headers, "ai-sdk/moonshotai/3.0.23")
         }
         if providerID == "cerebras" {
-            return withUserAgentSuffix(headers, "ai-sdk/cerebras/3.0.18")
+            return withUserAgentSuffix(headers, "ai-sdk/cerebras/3.0.20")
         }
         if providerID == "deepseek" {
-            return withUserAgentSuffix(headers, "ai-sdk/deepseek/3.0.17")
+            return withUserAgentSuffix(headers, "ai-sdk/deepseek/3.0.19")
         }
         if providerID == "baseten" {
-            return withUserAgentSuffix(headers, "ai-sdk/baseten/2.0.18")
+            return withUserAgentSuffix(headers, "ai-sdk/baseten/2.0.20")
         }
         if providerID == "groq" {
-            return withUserAgentSuffix(headers, "ai-sdk/groq/4.0.17")
+            return withUserAgentSuffix(headers, "ai-sdk/groq/4.0.19")
         }
         if providerID == "mistral" {
-            return withUserAgentSuffix(headers, "ai-sdk/mistral/4.0.18")
+            return withUserAgentSuffix(headers, "ai-sdk/mistral/4.0.20")
         }
         if providerID == "cohere" {
-            return withUserAgentSuffix(headers, "ai-sdk/cohere/4.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/cohere/4.0.18")
         }
         if providerID == "elevenlabs" {
-            return withUserAgentSuffix(headers, "ai-sdk/elevenlabs/3.0.17")
+            return withUserAgentSuffix(headers, "ai-sdk/elevenlabs/3.0.19")
         }
         if providerID == "assemblyai" {
-            return withUserAgentSuffix(headers, "ai-sdk/assemblyai/3.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/assemblyai/3.0.18")
         }
         if providerID == "deepgram" {
-            return withUserAgentSuffix(headers, "ai-sdk/deepgram/3.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/deepgram/3.0.18")
         }
         if providerID == "lmnt" {
-            return withUserAgentSuffix(headers, "ai-sdk/lmnt/3.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/lmnt/3.0.18")
         }
         if providerID == "hume" {
-            return withUserAgentSuffix(headers, "ai-sdk/hume/3.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/hume/3.0.18")
         }
         if providerID == "revai" {
-            return withUserAgentSuffix(headers, "ai-sdk/revai/3.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/revai/3.0.18")
         }
         if providerID == "gladia" {
-            return withUserAgentSuffix(headers, "ai-sdk/gladia/3.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/gladia/3.0.18")
         }
         if providerID == "fal" {
-            return withUserAgentSuffix(headers, "ai-sdk/fal/3.0.17")
+            return withUserAgentSuffix(headers, "ai-sdk/fal/3.0.19")
         }
         if providerID == "bytedance" {
-            return withUserAgentSuffix(headers, "ai-sdk/bytedance/2.0.18")
+            return withUserAgentSuffix(headers, "ai-sdk/bytedance/2.0.20")
         }
         if providerID == "voyage" {
-            return withUserAgentSuffix(headers, "ai-sdk/voyage/2.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/voyage/2.0.18")
         }
         if providerID == "alibaba" {
-            return withUserAgentSuffix(headers, "ai-sdk/alibaba/2.0.20")
+            return withUserAgentSuffix(headers, "ai-sdk/alibaba/2.0.22")
         }
         if providerID == "luma" {
-            return withUserAgentSuffix(headers, "ai-sdk/luma/3.0.17")
+            return withUserAgentSuffix(headers, "ai-sdk/luma/3.0.19")
         }
         if providerID == "klingai" {
-            return withUserAgentSuffix(headers, "ai-sdk/klingai/4.0.18")
+            return withUserAgentSuffix(headers, "ai-sdk/klingai/4.0.20")
         }
         if providerID == "replicate" {
-            return withUserAgentSuffix(headers, "ai-sdk/replicate/3.0.17")
+            return withUserAgentSuffix(headers, "ai-sdk/replicate/3.0.19")
         }
         if providerID == "black-forest-labs" {
-            return withUserAgentSuffix(headers, "ai-sdk/black-forest-labs/2.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/black-forest-labs/2.0.18")
         }
         if providerID == "prodia" {
-            return withUserAgentSuffix(headers, "ai-sdk/prodia/2.0.17")
+            return withUserAgentSuffix(headers, "ai-sdk/prodia/2.0.19")
         }
         if providerID == "quiverai" {
-            return withUserAgentSuffix(headers, "ai-sdk/quiverai/2.0.16")
+            return withUserAgentSuffix(headers, "ai-sdk/quiverai/2.0.18")
         }
         if providerID == "togetherai" {
-            return withUserAgentSuffix(headers, "ai-sdk/togetherai/3.0.19")
+            return withUserAgentSuffix(headers, "ai-sdk/togetherai/3.0.21")
         }
         if providerID == "fireworks" {
-            return withUserAgentSuffix(headers, "ai-sdk/fireworks/3.0.19")
+            return withUserAgentSuffix(headers, "ai-sdk/fireworks/3.0.22")
         }
         if providerID == "deepinfra" {
-            return withUserAgentSuffix(headers, "ai-sdk/deepinfra/3.0.18")
+            return withUserAgentSuffix(headers, "ai-sdk/deepinfra/3.0.20")
         }
         if providerID == "xai" {
-            return withUserAgentSuffix(headers, "ai-sdk/xai/4.0.23")
+            return withUserAgentSuffix(headers, "ai-sdk/xai/4.0.25")
         }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers

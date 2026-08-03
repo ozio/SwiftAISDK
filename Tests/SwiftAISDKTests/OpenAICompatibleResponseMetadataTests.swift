@@ -19,6 +19,21 @@ import Testing
     #expect(result.responseMetadata.body?["id"]?.stringValue == "chatcmpl-1")
 }
 
+@Test func genericOpenAICompatibleGeneratePreservesNonNullZeroTimestamp() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"chatcmpl-zero","created":0,"model":"custom-model","choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "custom-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+    let result = try await provider.chatModel("custom-model").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.responseMetadata.timestamp == Date(timeIntervalSince1970: 0))
+}
+
 @Test func openAICompatibleLanguageResultsCarryProviderMetadata() async throws {
     let chatTransport = RecordingTransport(response: jsonResponse("""
     {"id":"chatcmpl-1","created":1710000000,"model":"gpt-4.1-mini","choices":[{"message":{"content":"hello"},"finish_reason":"stop","logprobs":{"content":[{"token":"hello","logprob":-0.1}]}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"completion_tokens_details":{"accepted_prediction_tokens":5,"rejected_prediction_tokens":1}}}

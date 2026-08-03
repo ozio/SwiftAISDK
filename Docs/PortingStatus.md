@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-08-01
+Snapshot date: 2026-08-03
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -37,7 +37,7 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package version baselines were checked against npm registry
-metadata and published tarballs on 2026-08-01. The per-package decisions are
+metadata and published tarballs on 2026-08-03. The per-package decisions are
 recorded in `Docs/UpstreamPackageDiffAudit.md`.
 
 ## Provider State
@@ -49,13 +49,17 @@ separately as a product package without a model-capability row. The current pass
 audited the published package deltas and ported the applicable provider/core
 behavior; the remaining architectural differences are recorded below.
 
-The focused MiniMax follow-up ports the originally requested
-`@ai-sdk/minimax@3.0.0` behavior while recording the current `3.0.1` baseline;
-the two versions have identical provider source and differ only in version and
-dependency propagation. Exact npm registry discovery now finds 43 model-provider
-packages with no untracked provider. Registry discovery still finds the
-non-provider `@ai-sdk/code-mode@1.0.2`; it is a QuickJS-backed JavaScript tool
-runtime rather than a provider-matrix entry.
+The 2026-08-03 weekly pass advances all 44 provider/product package baselines
+and the core snapshots to current npm releases. Portable deltas add MiniMax-H3
+video generation, structured Fireworks chat/completion/embedding error-envelope messages, Gateway
+`has: ["vision"]` routing, OpenAI file-upload expiry fields, and OpenAI/Azure
+chat metadata handling that ignores zero-valued placeholder timestamps. The
+remaining published changes are dependency/version propagation,
+behavior-preserving usage/response-metadata helper refactors, or
+already-recorded shared core gaps.
+Exact npm registry discovery finds 76 live `@ai-sdk/*` packages and 43 model
+providers, all tracked; there are no new provider packages to propose in this
+pass.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -75,9 +79,9 @@ one of these is true:
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
 | P1 | Streaming transcription, realtime models, and speech translation from Cartesia, ElevenLabs, Google, and OpenAI are not represented by current Swift protocols. | Design one reusable duplex WebSocket/audio transport and lifecycle surface, then port provider adapters as vertical slices. |
-| P1 | Current `ai@7.0.44` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
-| P1 | `prepareStep` call-setting overrides and generic provider tool-callers have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
-| P1 | Provider-utils now resolves and pins DNS addresses for validated downloads; Swift validates literal/private hosts and every redirect but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | Current `ai@7.0.48` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
+| P1 | `prepareStep` call-setting overrides and generic provider tool-callers across generate, stream, and agent orchestration have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
+| P1 | `@ai-sdk/provider-utils@5.0.18` resolves and pins DNS addresses for validated downloads; Swift validates literal/private hosts and every redirect but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

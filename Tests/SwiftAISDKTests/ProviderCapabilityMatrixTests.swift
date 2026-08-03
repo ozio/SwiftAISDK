@@ -85,6 +85,7 @@ import Testing
     let miniMaxRow = try #require(AIProviderCapabilities.row(providerID: "minimax"))
     #expect(miniMaxRow.supportedCapabilities == miniMax.supportedCapabilities)
     #expect(miniMaxRow.supports(.language))
+    #expect(miniMaxRow.supports(.video))
     #expect(!miniMaxRow.supports(.embedding))
 
     let voyage = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key"))

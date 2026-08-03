@@ -845,7 +845,7 @@ func convertToMultipartFormData(
         case let .string(string):
             form.appendField(name: name, value: string)
         case let .number(number):
-            form.appendField(name: name, value: number.rounded() == number ? String(Int(number)) : String(number))
+            form.appendField(name: name, value: multipartNumberString(number))
         case let .bool(bool):
             form.appendField(name: name, value: String(bool))
         case let .file(file):
@@ -874,10 +874,27 @@ func jsonScalarString(_ value: JSONValue) -> String? {
     case let .string(string):
         return string
     case let .number(number):
-        return number.rounded() == number ? String(Int(number)) : String(number)
+        return multipartNumberString(number)
     case let .bool(bool):
         return String(bool)
     case .null, .array, .object:
         return nil
     }
+}
+
+private func multipartNumberString(_ number: Double) -> String {
+    if let integer = Int(exactly: number) {
+        return String(integer)
+    }
+    guard number.isFinite,
+          number.rounded() == number,
+          abs(number) < 1e21 else {
+        return String(number)
+    }
+
+    let locale = Locale(identifier: "en_US_POSIX")
+    guard var decimal = Decimal(string: String(number), locale: locale) else {
+        return String(number)
+    }
+    return NSDecimalString(&decimal, locale)
 }

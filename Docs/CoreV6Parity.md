@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-08-01
+Snapshot date: 2026-08-03
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.44`, `@ai-sdk/provider@4.0.4`,
-`@ai-sdk/provider-utils@5.0.16`, and `@ai-sdk/react@4.0.47`.
+snapshots, currently `ai@7.0.48`, `@ai-sdk/provider@4.0.4`,
+`@ai-sdk/provider-utils@5.0.18`, and `@ai-sdk/react@4.0.51`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.44 -> 7.0.48`
+- `@ai-sdk/provider@4.0.4` (unchanged)
+- `@ai-sdk/provider-utils@5.0.16 -> 5.0.18`
+- `@ai-sdk/react@4.0.47 -> 4.0.51`
 - `ai@7.0.37 -> 7.0.44`
 - `@ai-sdk/provider@4.0.3 -> 4.0.4`
 - `@ai-sdk/provider-utils@5.0.12 -> 5.0.16`
@@ -39,6 +43,25 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.45` extends the experimental tool-caller graph from `generateText`
+  into `streamText` and `ToolLoopAgent`. Swift still has no shared late-bound
+  local/provider caller abstraction, so the existing generic tool-caller gap
+  now explicitly covers all three orchestration surfaces rather than adding a
+  provider-specific shortcut.
+- `ai@7.0.45` warns when non-streaming generation receives streaming-only
+  `firstChunkMs` or `chunkMs` timeout fields. Swift cannot currently receive
+  those fields because it exposes only `timeoutNanoseconds`; the warning joins
+  the existing structured-timeout design gap without a no-op public option.
+  The clarified `GenerateTextResult.output` no-output documentation matches
+  Swift's existing `AINoOutputError` behavior.
+- `@ai-sdk/provider-utils@5.0.18` centralizes empty usage and common response
+  metadata construction without changing result shapes. Swift already uses
+  shared `TokenUsage` and `AIResponseMetadata` conversion paths. Its switch
+  from a JavaScript symbol to an `experimental_toolCaller` object property is
+  part of the deferred caller abstraction above and has no standalone Swift
+  representation.
+- `@ai-sdk/react@4.0.47 -> 4.0.51` contains dependency/version propagation
+  only; no portable React source contract changed.
 - `ai@7.0.44` telemetry end events attribute the resolved response model rather
   than only the requested model ID. Swift now uses response metadata for the
   same attribution and carries focused generate/stream telemetry regressions.

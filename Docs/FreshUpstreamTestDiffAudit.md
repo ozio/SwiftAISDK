@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-08-01`
-- Baseline upstream ref: `vercel/ai@c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56`
-- Current upstream ref: `vercel/ai@4f2e0645ce79f235c9733868951c4eef0a1c99e3`
+- Date: `2026-08-03`
+- Baseline upstream ref: `vercel/ai@4f2e0645ce79f235c9733868951c4eef0a1c99e3`
+- Current upstream ref: `vercel/ai@3bc0d4f40df7a77af4b181bc97dc1c54843545ab`
 - Diff command:
 
   ```sh
-  git -C /tmp/vercel-ai-upstream-20260801 diff --name-status \
-    c8baafc4864bbdc82b90c6c50d8eeb2ef0791d56..4f2e0645ce79f235c9733868951c4eef0a1c99e3 \
+  git -C /tmp/vercel-ai-upstream-20260803 diff --name-status \
+    4f2e0645ce79f235c9733868951c4eef0a1c99e3..3bc0d4f40df7a77af4b181bc97dc1c54843545ab \
     -- 'packages/**/**.test.ts' 'packages/**/**.test.tsx' \
        'packages/**/**.test-d.ts'
   ```
@@ -27,6 +27,18 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-08-03 Diff
+
+| Upstream test file(s) | Status | Swift evidence / rationale |
+| --- | --- | --- |
+| `packages/fireworks/src/fireworks-provider.test.ts` | `ported` | Fireworks chat, completion, and embedding now accept both legacy string errors and the actual nested object envelope, preserving the provider's `error.message` in `AIAPICallError`; focused Swift coverage exercises both shapes while image errors retain generic body handling. |
+| `packages/minimax/src/minimax-provider.test.ts`; `packages/minimax/src/minimax-video-model.test.ts` | `ported` | The provider now exposes MiniMax-H3 video generation alongside the existing Anthropic-compatible language factory. Focused Swift tests cover provider aliases/capabilities, text-to-video, first/last-frame and reference inputs, request options, polling, result download metadata, warnings, errors, and abort behavior. |
+| `packages/provider-utils/src/create-null-language-model-usage.test.ts` | `covered` | Swift represents unavailable usage with optional `TokenUsage` fields rather than a JavaScript object whose every nested token field is `undefined`; existing absent-usage generate and stream fixtures prove the equivalent public result. |
+| `packages/harness-claude-code/src/claude-code-harness.test.ts`; `packages/harness-codex/src/codex-harness.test.ts`; `packages/harness-deepagents/src/deepagents-harness.test.ts`; `packages/harness-opencode/src/bridge/create-emit-stream-event.test.ts`; `packages/harness-opencode/src/bridge/opencode-events.test.ts`; `packages/harness-opencode/src/bridge/opencode-usage.test.ts`; `packages/harness-opencode/src/opencode-harness.test.ts`; `packages/harness/src/agent/harness-agent.test.ts`; `packages/harness/src/agent/internal/bootstrap-recipe.test.ts`; `packages/harness/src/agent/internal/sandbox-bootstrap.test.ts`; `packages/harness/src/agent/prepare-sandbox-for-harness.test.ts` | `out-of-scope` | These changes cover untracked JavaScript coding-harness adapters, bridge events, bootstrap recipes, sandbox setup, and usage accounting rather than provider-facing Swift model behavior. |
+
+Coverage check: the upstream command returns 15 paths, and the table references
+15 unique paths with no missing, extra, or duplicate entries.
 
 ## 2026-08-01 Diff
 
@@ -53,7 +65,8 @@ Status meanings:
 | `packages/mcp/src/tool/mcp-client.test.ts`; `packages/mcp/src/tool/mcp-http-transport.test.ts`; `packages/mcp/src/tool/mcp-sse-transport.test.ts` | `ported` | MCP initialization and request calls now support individual and total timeout budgets, use the effective minimum deadline, map cancellation consistently, and clean pending request state. Swift transport construction preserves these settings across HTTP/SSE clients. |
 | `packages/minimax/src/minimax-provider.test.ts`; `packages/minimax/src/minimax-reasoning.test.ts` | `ported` | `MiniMaxProviderTests.swift` translates the published provider/auth/alias/unsupported-family contract and the exact adaptive-thinking fixture, including ordered reasoning/text output. Additional focused coverage proves custom header precedence, empty URL capabilities, signature metadata, usage/response metadata, and the shared Anthropic stream lifecycle. The Swift baseline is current `@ai-sdk/minimax@3.0.1`; its provider source is byte-identical to the originally audited `3.0.0`. |
 | `packages/mistral/src/convert-to-mistral-chat-messages.test.ts`; `packages/mistral/src/mistral-transcription-model.test-d.ts`; `packages/mistral/src/mistral-transcription-model.test.ts` | `ported` | Mistral message conversion preserves assistant reasoning as typed thinking blocks, and the new Voxtral transcription model covers multipart input, options/validation, segment parsing, and rich response metadata. |
-| `packages/openai/src/files/openai-files.test.ts`; `packages/openai/src/openai-stream-error.test.ts`; `packages/openai/src/tool/web-search.test-d.ts`; `packages/openai/src/translation/openai-translation-model.test.ts` | `deferred` | The file test is a Node upload-shape change; generic stream-error recovery, typed web-search caller linkage, and realtime translation need the shared streaming/tool-caller/translation designs. Existing batch file and web-search behavior remains covered. |
+| `packages/openai/src/files/openai-files.test.ts` | `ported` | OpenAI file upload expiry now uses the accepted nested multipart fields `expires_after[anchor]` and `expires_after[seconds]`, with provider-option validation and request-metadata coverage in `FileAndSkillClientTests.swift`. |
+| `packages/openai/src/openai-stream-error.test.ts`; `packages/openai/src/tool/web-search.test-d.ts`; `packages/openai/src/translation/openai-translation-model.test.ts` | `deferred` | Generic stream-error recovery, typed web-search caller linkage, and realtime translation need the shared streaming/tool-caller/translation designs. Existing web-search behavior remains covered. |
 | `packages/perplexity/src/perplexity-embedding-model.test.ts` | `ported` | Perplexity embeddings now expose typed dimensions/encoding options, enforce the 512-input limit, decode signed/base64 binary vectors, and return token plus cost metadata. |
 | `packages/provider-utils/src/connect-to-websocket.test.ts`; `packages/provider-utils/src/safe-node-fetch.test.ts` | `deferred` | WebSocket close metadata belongs with the missing realtime transport surface. DNS-result pinning for downloads needs a URLSession-level resolver/connection design; URL allowlisting alone cannot faithfully reproduce the Node connector guarantee. |
 | `packages/provider-utils/src/is-record.test.ts`; `packages/provider-utils/src/serialize-model-options.test.ts` | `no-swift-action` | JavaScript cross-realm record detection and async-option serialization error branding do not map to Swift's static value types. |

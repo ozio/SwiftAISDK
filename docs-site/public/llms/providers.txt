@@ -13,7 +13,7 @@ Speech: 13
 Audio generation: 1
 Audio transformation: 1
 Dubbing: 1
-Video: 10
+Video: 11
 Reranking: 5
 Files: 5
 Skills: 3
@@ -53,7 +53,7 @@ Skills: 3
 | [`klingai`](klingai/) | `@ai-sdk/klingai` | `AIProviders.klingAI` |  |  |  |  |  |  |  |  | ✅ |  |  |  |
 | [`lmnt`](lmnt/) | `@ai-sdk/lmnt` | `AIProviders.lmnt` |  |  |  |  | ✅ |  |  |  |  |  |  |  |
 | [`luma`](luma/) | `@ai-sdk/luma` | `AIProviders.luma` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
-| [`minimax`](minimax/) | `@ai-sdk/minimax` | `AIProviders.miniMax` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| [`minimax`](minimax/) | `@ai-sdk/minimax` | `AIProviders.miniMax` | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |
 | [`mistral`](mistral/) | `@ai-sdk/mistral` | `AIProviders.mistral` | ✅ | ✅ |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`moonshotai`](moonshotai/) | `@ai-sdk/moonshotai` | `AIProviders.moonshotAI` | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`open-responses.responses`](open-responses-responses/) | `@ai-sdk/open-responses` | `AIProviders.openResponses` | ✅ |  |  |  |  |  |  |  |  |  |  |  |

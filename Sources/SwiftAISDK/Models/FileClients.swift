@@ -7,21 +7,28 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
     private let betaHeader: (String, String)?
     private let includePurpose: Bool
     private let defaultFilename: String
+    private let providerOptionsName: String?
 
-    init(providerID: String, providerReferenceKey: String, config: ModelHTTPConfig, betaHeader: (String, String)? = nil, includePurpose: Bool = false, defaultFilename: String = "file") {
+    init(providerID: String, providerReferenceKey: String, config: ModelHTTPConfig, betaHeader: (String, String)? = nil, includePurpose: Bool = false, defaultFilename: String = "file", providerOptionsName: String? = nil) {
         self.providerID = providerID
         self.providerReferenceKey = providerReferenceKey
         self.config = config
         self.betaHeader = betaHeader
         self.includePurpose = includePurpose
         self.defaultFilename = defaultFilename
+        self.providerOptionsName = providerOptionsName
     }
 
     public func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
+        let options = try multipartFileProviderOptions(request.providerOptions, providerOptionsName: providerOptionsName)
         var form = MultipartFormData()
         form.appendFile(name: "file", fileName: request.filename ?? defaultFilename, mimeType: request.mediaType, data: request.data)
         if includePurpose {
-            form.appendField(name: "purpose", value: request.purpose ?? "assistants")
+            form.appendField(name: "purpose", value: options.purpose ?? request.purpose ?? "assistants")
+        }
+        if let expiresAfter = options.expiresAfter {
+            form.appendField(name: "expires_after[anchor]", value: "created_at")
+            form.appendField(name: "expires_after[seconds]", value: jsonScalarString(.number(expiresAfter)) ?? String(expiresAfter))
         }
         for (key, value) in request.extraBody {
             if let scalar = jsonScalarString(value) {
@@ -53,7 +60,7 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
             rawValue: raw,
             warnings: multipartFileUploadWarnings(request, includePurpose: includePurpose),
             providerMetadata: [providerReferenceKey: fileProviderMetadata(from: raw)],
-            requestMetadata: multipartFileUploadRequestMetadata(request, includePurpose: includePurpose, defaultFilename: defaultFilename),
+            requestMetadata: multipartFileUploadRequestMetadata(request, includePurpose: includePurpose, defaultFilename: defaultFilename, options: options),
             responseMetadata: aiResponseMetadata(from: raw, response: response)
         )
     }
@@ -234,13 +241,54 @@ private func fileProviderMetadata(from raw: JSONValue) -> JSONValue {
     return .object(metadata.compactMapValues { $0 })
 }
 
-private func multipartFileUploadRequestMetadata(_ request: FileUploadRequest, includePurpose: Bool, defaultFilename: String) -> AIRequestMetadata {
+private struct MultipartFileProviderOptions {
+    var purpose: String?
+    var expiresAfter: Double?
+}
+
+private func multipartFileProviderOptions(_ providerOptions: [String: JSONValue], providerOptionsName: String?) throws -> MultipartFileProviderOptions {
+    guard let providerOptionsName,
+          let value = providerOptions[providerOptionsName],
+          value != .null else {
+        return MultipartFileProviderOptions()
+    }
+    guard let options = value.objectValue else {
+        throw AIError.invalidArgument(argument: "providerOptions", message: "invalid \(providerOptionsName) provider options")
+    }
+
+    let purpose: String?
+    if let value = options["purpose"] {
+        guard let parsed = value.stringValue else {
+            throw AIError.invalidArgument(argument: "providerOptions", message: "invalid \(providerOptionsName) provider options")
+        }
+        purpose = parsed
+    } else {
+        purpose = nil
+    }
+
+    let expiresAfter: Double?
+    if let value = options["expiresAfter"] {
+        guard let parsed = value.doubleValue, parsed.isFinite else {
+            throw AIError.invalidArgument(argument: "providerOptions", message: "invalid \(providerOptionsName) provider options")
+        }
+        expiresAfter = parsed
+    } else {
+        expiresAfter = nil
+    }
+
+    return MultipartFileProviderOptions(purpose: purpose, expiresAfter: expiresAfter)
+}
+
+private func multipartFileUploadRequestMetadata(_ request: FileUploadRequest, includePurpose: Bool, defaultFilename: String, options: MultipartFileProviderOptions) -> AIRequestMetadata {
     var body: [String: JSONValue] = [
         "file": .object(fileUploadMetadata(request, defaultFilename: defaultFilename)),
         "mediaType": .string(request.mediaType)
     ]
     if includePurpose {
-        body["purpose"] = .string(request.purpose ?? "assistants")
+        body["purpose"] = .string(options.purpose ?? request.purpose ?? "assistants")
+    }
+    if let expiresAfter = options.expiresAfter {
+        body["expiresAfter"] = .number(expiresAfter)
     }
     if let displayName = request.displayName {
         body["displayName"] = .string(displayName)

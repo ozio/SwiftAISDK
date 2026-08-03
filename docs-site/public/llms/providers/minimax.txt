@@ -13,10 +13,11 @@ Source URL: /providers/minimax/
 ## Capabilities
 
 - Language
+- Video
 
 ## Notes
 
-MiniMax language models mirror upstream 3.0.1: `MINIMAX_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable provider plus `languageModel`/`chat` aliases, `minimax.messages` provider IDs, no URL attachment support, and explicit unsupported embedding/image families. The provider reuses the Anthropic Messages request builder, error handling, streaming lifecycle, telemetry metadata, and ordered generate-content parser, including signed/redacted reasoning, citation metadata, and compaction, while reading provider options from `minimax`; public MiniMax thinking options use adaptive or disabled mode. The requested 3.0.0 source is byte-identical to 3.0.1 apart from version/dependency propagation.
+MiniMax language and video models mirror upstream 3.0.2: `MINIMAX_API_KEY`, separate language/video base URLs, custom headers, versioned user-agent suffix, callable provider plus `languageModel`/`chat` and `video`/`videoModel` aliases, and `minimax.messages`/`minimax.video` provider IDs. Language reuses the Anthropic Messages request builder, error handling, streaming lifecycle, telemetry metadata, and ordered generate-content parser, including signed/redacted reasoning, citation metadata, compaction, and adaptive/disabled thinking options. MiniMax-H3 video covers text-to-video, first/last-frame and reference-to-video inputs, 2K resolution and ratio mapping, reference audio, duration/cap warnings, submit/poll lifecycle, aborts, structured errors, response/provider metadata, and custom polling controls. Embedding and image families remain unsupported.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

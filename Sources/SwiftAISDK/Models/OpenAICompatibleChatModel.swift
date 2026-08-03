@@ -43,7 +43,12 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             providerMetadata: openAICompatibleChatProviderMetadata(from: raw, choice: choice, providerID: providerID, namespace: metadataNamespace),
             rawValue: raw,
             warnings: prepared.warnings,
-            responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: openAICompatibleResponseMetadata(
+                from: raw,
+                response: response.response,
+                modelID: modelID,
+                suppressZeroCreatedTimestamp: isOpenAIBackedProvider(providerID, config: config)
+            )
         )
     }
 
@@ -85,9 +90,16 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                             continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
                             continue
                         }
-                        if !didEmitResponseMetadata {
+                        let suppressZeroCreatedTimestamp = isOpenAIBackedProvider(providerID, config: config)
+                        if !didEmitResponseMetadata,
+                           openAICompatibleChatResponseHasMetadata(raw, suppressZeroCreatedTimestamp: suppressZeroCreatedTimestamp) {
                             didEmitResponseMetadata = true
-                            continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)))
+                            continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(
+                                from: raw,
+                                response: response,
+                                modelID: modelID,
+                                suppressZeroCreatedTimestamp: suppressZeroCreatedTimestamp
+                            )))
                         }
                         let choice = raw["choices"]?[0]
                         openAICompatibleMergeProviderMetadata(

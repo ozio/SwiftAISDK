@@ -16,7 +16,7 @@ import Testing
     #expect(request.url.absoluteString == "https://ai-gateway.vercel.sh/v4/ai/language-model")
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
-    #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.33")
+    #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.37")
     #expect(request.headers["ai-language-model-id"] == "openai/gpt-4.1-mini")
     #expect(request.headers["ai-language-model-streaming"] == "false")
     let body = try decodeJSONBody(try #require(request.body))
@@ -39,7 +39,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer gateway-key")
     #expect(request.headers["x-client"] == "swift")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/4.0.33")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/gateway/4.0.37")
 }
 
 @Test func gatewayUsesVercelOIDCTokenWhenGatewayAPIKeyMissing() async throws {
@@ -59,7 +59,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer oidc-token")
         #expect(request.headers["ai-gateway-auth-method"] == "oidc")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.33")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.37")
     }
 }
 
@@ -176,7 +176,7 @@ import Testing
         providerOptions: [
             "gateway": [
                 "order": ["openai", "anthropic"],
-                "has": ["implicit-caching"],
+                "has": ["implicit-caching", "vision"],
                 "sort": "ttft",
                 "disallowPromptTraining": true
             ]
@@ -222,6 +222,7 @@ import Testing
     #expect(body["toolChoice"]?["toolName"]?.stringValue == "lookup")
     #expect(body["providerOptions"]?["gateway"]?["order"]?[0]?.stringValue == "openai")
     #expect(body["providerOptions"]?["gateway"]?["has"]?[0]?.stringValue == "implicit-caching")
+    #expect(body["providerOptions"]?["gateway"]?["has"]?[1]?.stringValue == "vision")
     #expect(body["providerOptions"]?["gateway"]?["sort"]?.stringValue == "ttft")
     #expect(body["providerOptions"]?["gateway"]?["disallowPromptTraining"]?.boolValue == true)
 }
@@ -471,7 +472,7 @@ import Testing
         #expect(request.headers["authorization"] == "Bearer gateway-key")
         #expect(request.headers["x-vercel-ai-gateway-team"] == "team_123")
         #expect(request.headers["ai-gateway-protocol-version"] == "0.0.1")
-        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.33")
+        #expect(request.headers["user-agent"] == "ai-sdk/gateway/4.0.37")
     }
 }
 

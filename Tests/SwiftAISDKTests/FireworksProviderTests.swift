@@ -27,7 +27,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.19")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.22")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["thinking"]?["type"]?.stringValue == "enabled")
     #expect(body["thinking"]?["budget_tokens"]?.intValue == 2048)
@@ -91,7 +91,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image")
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.19")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.22")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["samples"]?.intValue == 1)
@@ -121,7 +121,7 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro")
     #expect(requests[0].headers["authorization"] == "Bearer fireworks-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/fireworks/3.0.19")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/fireworks/3.0.22")
     let submitBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(submitBody["prompt"]?.stringValue == "cat")
     #expect(submitBody["samples"]?.intValue == 2)
@@ -129,7 +129,7 @@ import Testing
     #expect(submitBody["height"]?.stringValue == "768")
     #expect(requests[1].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro/get_result")
     #expect(requests[1].headers["authorization"] == "Bearer fireworks-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/fireworks/3.0.19")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/fireworks/3.0.22")
     let pollBody = try decodeJSONBody(try #require(requests[1].body))
     #expect(pollBody["id"]?.stringValue == "fw-1")
     #expect(requests[2].method == "GET")
@@ -151,7 +151,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/fireworks/3.0.19")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/fireworks/3.0.22")
 }
 
 @Test func fireworksImageMapsProviderOptionsAndInputImage() async throws {
@@ -256,5 +256,103 @@ import Testing
 
     await #expect(throws: AIError.invalidResponse(provider: "fireworks.image", message: "Fireworks poll response is Ready but missing result.sample.")) {
         _ = try await missingSampleModel.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
+@Test func fireworksParsesStringAndObjectErrorEnvelopes() async throws {
+    let objectTransport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 404,
+        body: Data(#"{"error":{"object":"error","type":"not_found_error","param":null,"code":"model_not_found","message":"Model not found, inaccessible, and/or not deployed"}}"#.utf8)
+    ))
+    let objectProvider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: objectTransport))
+
+    await #expect(throws: AIError.apiCall(
+        provider: "fireworks.chat",
+        statusCode: 404,
+        body: "Model not found, inaccessible, and/or not deployed"
+    )) {
+        _ = try await objectProvider.languageModel("accounts/fireworks/models/missing").generate(
+            LanguageModelRequest(messages: [.user("Hi")])
+        )
+    }
+
+    let stringTransport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 400,
+        body: Data(#"{"error":"Invalid Fireworks request"}"#.utf8)
+    ))
+    let stringProvider = try AIProviders.fireworks(settings: ProviderSettings(apiKey: "fireworks-key", transport: stringTransport))
+
+    await #expect(throws: AIError.apiCall(
+        provider: "fireworks.chat",
+        statusCode: 400,
+        body: "Invalid Fireworks request"
+    )) {
+        _ = try await stringProvider.languageModel("accounts/fireworks/models/kimi-k2p6").generate(
+            LanguageModelRequest(messages: [.user("Hi")])
+        )
+    }
+}
+
+@Test func fireworksCompletionAndEmbeddingParseStringAndObjectErrorEnvelopes() async throws {
+    let objectBody = Data(#"{"error":{"object":"error","type":"not_found_error","param":null,"code":"model_not_found","message":"Model not found, inaccessible, and/or not deployed"}}"#.utf8)
+    let objectCompletionProvider = try AIProviders.fireworks(settings: ProviderSettings(
+        apiKey: "fireworks-key",
+        transport: RecordingTransport(response: AIHTTPResponse(statusCode: 404, body: objectBody))
+    ))
+
+    await #expect(throws: AIError.apiCall(
+        provider: "fireworks.completion",
+        statusCode: 404,
+        body: "Model not found, inaccessible, and/or not deployed"
+    )) {
+        _ = try await objectCompletionProvider.completionModel("accounts/fireworks/models/missing").generate(
+            LanguageModelRequest(messages: [.user("Hi")])
+        )
+    }
+
+    let objectEmbeddingProvider = try AIProviders.fireworks(settings: ProviderSettings(
+        apiKey: "fireworks-key",
+        transport: RecordingTransport(response: AIHTTPResponse(statusCode: 404, body: objectBody))
+    ))
+
+    await #expect(throws: AIError.apiCall(
+        provider: "fireworks.embedding",
+        statusCode: 404,
+        body: "Model not found, inaccessible, and/or not deployed"
+    )) {
+        _ = try await objectEmbeddingProvider.embeddingModel("nomic-ai/nomic-embed-text-v1.5").embed(
+            EmbeddingRequest(values: ["Hi"])
+        )
+    }
+
+    let stringBody = Data(#"{"error":"Invalid Fireworks request"}"#.utf8)
+    let stringCompletionProvider = try AIProviders.fireworks(settings: ProviderSettings(
+        apiKey: "fireworks-key",
+        transport: RecordingTransport(response: AIHTTPResponse(statusCode: 400, body: stringBody))
+    ))
+
+    await #expect(throws: AIError.apiCall(
+        provider: "fireworks.completion",
+        statusCode: 400,
+        body: "Invalid Fireworks request"
+    )) {
+        _ = try await stringCompletionProvider.completionModel("accounts/fireworks/models/missing").generate(
+            LanguageModelRequest(messages: [.user("Hi")])
+        )
+    }
+
+    let stringEmbeddingProvider = try AIProviders.fireworks(settings: ProviderSettings(
+        apiKey: "fireworks-key",
+        transport: RecordingTransport(response: AIHTTPResponse(statusCode: 400, body: stringBody))
+    ))
+
+    await #expect(throws: AIError.apiCall(
+        provider: "fireworks.embedding",
+        statusCode: 400,
+        body: "Invalid Fireworks request"
+    )) {
+        _ = try await stringEmbeddingProvider.embeddingModel("nomic-ai/nomic-embed-text-v1.5").embed(
+            EmbeddingRequest(values: ["Hi"])
+        )
     }
 }

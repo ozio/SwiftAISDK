@@ -29,7 +29,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/files")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.25")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.27")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"file\"; filename=\"notes.txt\""))
@@ -37,6 +37,60 @@ import Testing
     #expect(bodyText.contains("assistants"))
     #expect(!bodyText.contains("name=\"display_name\""))
     #expect(!bodyText.contains("Notes"))
+}
+
+@Test func openAIFilesUploadSerializesProviderExpiryAsNestedMultipartFields() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"file_expiring","filename":"notes.txt","purpose":"batch","bytes":3,"created_at":1710000000,"expires_at":1710003600,"status":"processed"}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport, name: "custom-openai"))
+
+    let result = try await provider.files().uploadFile(FileUploadRequest(
+        data: Data("hey".utf8),
+        mediaType: "text/plain",
+        filename: "notes.txt",
+        purpose: "assistants",
+        providerOptions: ["openai": ["purpose": "batch", "expiresAfter": 3_600]]
+    ))
+
+    #expect(result.requestMetadata.body?["purpose"]?.stringValue == "batch")
+    #expect(result.requestMetadata.body?["expiresAfter"]?.intValue == 3_600)
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"purpose\"\r\n\r\nbatch"))
+    #expect(bodyText.contains("name=\"expires_after[anchor]\"\r\n\r\ncreated_at"))
+    #expect(bodyText.contains("name=\"expires_after[seconds]\"\r\n\r\n3600"))
+    #expect(!bodyText.contains("name=\"expires_after\"\r\n"))
+}
+
+@Test func openAIFilesUploadValidatesProviderOptions() async throws {
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: RecordingTransport(responses: [])))
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions", message: "invalid openai provider options")) {
+        _ = try await provider.files().uploadFile(FileUploadRequest(
+            data: Data("hey".utf8),
+            mediaType: "text/plain",
+            providerOptions: ["openai": ["expiresAfter": "soon"]]
+        ))
+    }
+}
+
+@Test func openAIFilesUploadSerializesLargeFiniteExpiryWithoutTrapping() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"file_large_expiry","filename":"notes.txt","purpose":"assistants","bytes":3,"created_at":1710000000,"status":"processed"}
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+
+    _ = try await provider.files().uploadFile(FileUploadRequest(
+        data: Data("hey".utf8),
+        mediaType: "text/plain",
+        filename: "notes.txt",
+        providerOptions: ["openai": ["expiresAfter": 1e20]]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"expires_after[seconds]\"\r\n\r\n100000000000000000000"))
 }
 
 @Test func xAIFilesUploadUsesFilesEndpointTeamIDAndMetadata() async throws {
@@ -72,7 +126,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/files")
     #expect(request.headers["authorization"] == "Bearer xai-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/xai/4.0.23")
+    #expect(request.headers["user-agent"] == "ai-sdk/xai/4.0.25")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"file\"; filename=\"blob\""))
     #expect(bodyText.contains("name=\"team_id\""))
@@ -182,7 +236,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/skills")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.25")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.27")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"files[]\"; filename=\"index.ts\""))

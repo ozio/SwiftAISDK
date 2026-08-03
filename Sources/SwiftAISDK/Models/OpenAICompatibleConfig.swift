@@ -332,6 +332,11 @@ public struct ProviderSettings: Sendable {
     }
 }
 
+enum ModelHTTPFailedResponseHandling: Sendable {
+    case raw
+    case openAICompatible
+}
+
 struct ModelHTTPConfig: @unchecked Sendable {
     var providerID: String
     var baseURL: String
@@ -347,6 +352,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var openAIBackedProviderRoot: String?
     var usesGenericOpenAICompatibleProviderOptions: Bool
     var deepSeekSupportsThinking: Bool
+    var failedResponseHandling: ModelHTTPFailedResponseHandling
     var url: @Sendable (String, String) throws -> URL
 
     init(
@@ -364,6 +370,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         openAIBackedProviderRoot: String? = nil,
         usesGenericOpenAICompatibleProviderOptions: Bool = false,
         deepSeekSupportsThinking: Bool = true,
+        failedResponseHandling: ModelHTTPFailedResponseHandling = .raw,
         url: (@Sendable (String, String) throws -> URL)? = nil
     ) {
         self.providerID = providerID
@@ -381,6 +388,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.openAIBackedProviderRoot = openAIBackedProviderRoot
         self.usesGenericOpenAICompatibleProviderOptions = usesGenericOpenAICompatibleProviderOptions
         self.deepSeekSupportsThinking = deepSeekSupportsThinking
+        self.failedResponseHandling = failedResponseHandling
         self.url = url ?? { _, path in
             try openAICompatibleURL("\(normalizedBaseURL)\(path)", queryParams: queryParams)
         }
@@ -419,9 +427,18 @@ struct ModelHTTPConfig: @unchecked Sendable {
     func sendJSONResponse(path: String, modelID: String, body: JSONValue, headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let response = try await transport.send(request(path: path, modelID: modelID, body: body, headers: headers, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
-            throw apiCallError(provider: providerID, response: response)
+            throw httpStatusError(response)
         }
         return (try response.jsonValue(), response)
+    }
+
+    func httpStatusError(_ response: AIHTTPResponse) -> AIError {
+        switch failedResponseHandling {
+        case .raw:
+            return apiCallError(provider: providerID, response: response)
+        case .openAICompatible:
+            return openAICompatibleHTTPStatusError(provider: providerID, response: response)
+        }
     }
 
     func withProviderID(_ providerID: String) -> ModelHTTPConfig {
@@ -440,6 +457,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: deepSeekSupportsThinking,
+            failedResponseHandling: failedResponseHandling,
             url: url
         )
     }
@@ -460,6 +478,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: supportsThinking,
+            failedResponseHandling: failedResponseHandling,
             url: url
         )
     }
@@ -480,6 +499,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: deepSeekSupportsThinking,
+            failedResponseHandling: failedResponseHandling,
             url: url
         )
     }
@@ -498,7 +518,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
-            usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions
+            usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
+            failedResponseHandling: failedResponseHandling
         )
     }
 }

@@ -15,7 +15,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.baseten.co/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.18")
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.20")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "deepseek-ai/DeepSeek-V3-0324")
 }
@@ -39,7 +39,7 @@ import Testing
     #expect(request.url.absoluteString == "https://custom.baseten.co/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/baseten/2.0.18")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/baseten/2.0.20")
 }
 
 @Test func basetenReadsEnvironmentAPIKeyAndReportsMissingKeyLikeUpstream() async throws {
@@ -52,7 +52,7 @@ import Testing
 
         let request = try #require(await transport.requests().first)
         #expect(request.headers["authorization"] == "Bearer env-baseten-key")
-        #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.18")
+        #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.20")
     }
 
     _ = await withTemporaryBasetenEnvironment(["BASETEN_API_KEY": nil]) {
@@ -154,7 +154,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://model-123.api.baseten.co/environments/production/sync/v1/embeddings")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.18")
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.20")
     #expect(request.headers["x-baseten-customer-request-id"] != nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "embeddings")

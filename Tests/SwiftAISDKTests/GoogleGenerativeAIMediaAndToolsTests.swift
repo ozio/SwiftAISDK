@@ -487,7 +487,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.29")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.31")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hello from SwiftAISDK!")
