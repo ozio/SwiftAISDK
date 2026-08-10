@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-08-03`
-- Baseline upstream ref: `vercel/ai@4f2e0645ce79f235c9733868951c4eef0a1c99e3`
-- Current upstream ref: `vercel/ai@3bc0d4f40df7a77af4b181bc97dc1c54843545ab`
+- Date: `2026-08-10`
+- Baseline upstream ref: `vercel/ai@3bc0d4f40df7a77af4b181bc97dc1c54843545ab`
+- Current upstream ref: `vercel/ai@74abcdfb6a41666b9910974510d6c9afd960ea1b`
 - Diff command:
 
   ```sh
-  git -C /tmp/vercel-ai-upstream-20260803 diff --name-status \
-    4f2e0645ce79f235c9733868951c4eef0a1c99e3..3bc0d4f40df7a77af4b181bc97dc1c54843545ab \
+  git -C /tmp/vercel-ai-upstream-20260810 diff --name-status \
+    3bc0d4f40df7a77af4b181bc97dc1c54843545ab..74abcdfb6a41666b9910974510d6c9afd960ea1b \
     -- 'packages/**/**.test.ts' 'packages/**/**.test.tsx' \
        'packages/**/**.test-d.ts'
   ```
@@ -27,6 +27,53 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-08-10 Diff
+
+The exact command above returns 110 changed test paths. They are grouped by
+package below; the path count in each row sums back to 110 so newly added
+untracked-product fixtures remain visible rather than disappearing behind a
+provider-only filter.
+
+| Upstream test group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `packages/ai/**` | 16 | `ported/deferred/no-swift-action` | Default-instructions middleware, ToolLoopAgent default timeout, reconnect abort propagation, stale-run behavior and provider metadata are ported or already covered. Batch V4, generic async Video V4 and remaining typed tool-caller changes need shared public contracts; JavaScript async-iterable lock mechanics have no direct Swift analogue. |
+| `packages/alibaba/**` | 4 | `ported/covered/deferred` | Streamed tool-call identity is ported and loose usage/tool mapping is covered. The video start/status split waits on async Video V4 while the unary wire flow remains covered. |
+| `packages/amazon-bedrock/**` | 1 | `ported` | Converse conversion drops assistant turns left empty after unsigned reasoning is filtered. |
+| `packages/anthropic/**` | 7 | `ported/deferred` | Advisor token caps/stop reasons, message lifecycle protection and code-execution replay have focused Swift coverage. Messages Batch waits on the shared batch model. |
+| `packages/baseten/**` | 2 | `ported` | OpenAI-compatible HTTP embeddings/options/errors and default streamed usage are covered by Baseten tests. |
+| `packages/black-forest-labs/**` | 2 | `ported` | Provider capability and FLUX 3 video request/poll/result fixtures are translated into the unary Swift model. |
+| `packages/bytedance/**` | 1 | `covered/deferred` | Existing request/poll behavior is covered; async operation ownership remains deferred. |
+| `packages/cartesia/**` | 1 | `deferred` | The changed Ink2 encodings belong to duplex WebSocket transcription. |
+| `packages/fal/**` | 1 | `covered/deferred` | Unary queue polling is covered; webhook operations wait on async Video V4. |
+| `packages/fish-audio/**` | 4 | `deferred` | New provider discovered and scoped for follow-up; this task intentionally does not auto-port it. |
+| `packages/gateway/**` | 1 | `covered/deferred` | Unary video is covered; callback/start/status and stable logical-start idempotency wait on async Video V4. |
+| `packages/google/**` | 2 | `covered/deferred` | Unary Veo behavior is covered; the speech-translation rename still targets the missing duplex protocol. |
+| `packages/google-vertex/**` | 1 | `covered/deferred` | Existing Vertex request/poll mapping is covered; start/status APIs wait on async Video V4. |
+| `packages/klingai/**` | 1 | `covered/deferred` | Unary submit/poll parsing remains covered; public async operations are deferred. |
+| `packages/minimax/**` | 1 | `ported` | H3 text-to-video defaults/fallbacks use `16:9` while frame/reference behavior remains intact. |
+| `packages/openai-compatible/**` | 2 | `ported` | Text token usage never becomes negative and stream tool calls inherit the shared identity fix. |
+| `packages/openai/**` | 6 | `ported/deferred` | Output-schema tool results and rotating response item IDs are ported; Batch and duplex speech translation remain shared gaps, while `serviceTier: fast` already passes through. |
+| `packages/otel/**` | 2 | `covered` | Swift telemetry already carries provider metadata and resolved response model attribution in terminal model-call events. |
+| `packages/provider-utils/**` | 3 | `ported/no-swift-action` | Tracker identity/finalization is ported. Stateful JavaScript URL regex and Zod tree-shaking/schema tests do not map to Swift value types. |
+| `packages/react/**` | 1 | `no-swift-action` | The changed `useChat` cadence fixture is React subscription/render behavior. |
+| `packages/replicate/**` | 1 | `covered/deferred` | Unary polling is covered; webhook/status operations wait on async Video V4. |
+| `packages/xai/**` | 1 | `covered/deferred` | Existing create/poll behavior is covered; the operation split waits on async Video V4. |
+| `packages/code-mode/**` | 4 | `out-of-scope` | JavaScript sandbox approvals, exceptions, protocol and invocation behavior are not provider-facing Swift models. |
+| `packages/harness-acp/**` | 23 | `out-of-scope` | New ACP harness lifecycle, bridge, host-tool, permission and session behavior belongs to an untracked JavaScript agent adapter. |
+| `packages/harness-claude-code/**` | 2 | `out-of-scope` | Claude Code harness/bridge protocol behavior is not the Anthropic provider API. |
+| `packages/harness-codex/**` | 3 | `out-of-scope` | Codex harness event and bridge protocol behavior is outside the provider port. |
+| `packages/harness-deepagents/**` | 1 | `out-of-scope` | DeepAgents bridge protocol is an untracked harness adapter. |
+| `packages/harness-grok-build/**` | 2 | `out-of-scope` | The newly published Grok Build harness is not a model provider. |
+| `packages/harness-opencode/**` | 2 | `out-of-scope` | OpenCode relay authentication and bridge protocol remain harness-specific. |
+| `packages/harness/**` | 6 | `out-of-scope` | Harness errors, bootstrap, telemetry and bridge capability behavior belong to the untracked product runtime. |
+| `packages/langchain/**` | 2 | `out-of-scope` | TypeScript LangChain adapter conversions are not part of SwiftAISDK. |
+| `packages/sandbox-vercel/**` | 1 | `out-of-scope` | Vercel sandbox behavior is an untracked JavaScript sandbox package. |
+| `packages/workflow-harness/**` | 1 | `out-of-scope` | Workflow harness agent slicing is outside provider-facing scope. |
+| `packages/workflow/**` | 2 | `out-of-scope` | JavaScript workflow iterator/agent behavior has no SwiftAISDK product surface. |
+
+Coverage check: package-group path counts total 110, matching the exact upstream
+diff command with no unclassified package group.
 
 ## 2026-08-03 Diff
 

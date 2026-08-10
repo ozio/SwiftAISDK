@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/responses")
     #expect(request.headers["authorization"] == "Bearer xai-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/xai/4.0.25")
+    #expect(request.headers["user-agent"] == "ai-sdk/xai/4.0.33")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "grok-4")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -36,7 +36,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer xai-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/xai/4.0.25")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/xai/4.0.33")
 }
 
 @Test func xAIResponsesWarnsForUnsupportedSamplingSettingsInGenerateAndStream() async throws {
@@ -394,7 +394,7 @@ import Testing
     #expect(request.url.absoluteString == "https://open.example.test/custom/responses")
     #expect(request.headers["authorization"] == "Bearer open-key")
     #expect(request.headers["x-custom"] == "yes")
-    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.18")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.25")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "local-model")
     #expect(body["instructions"]?.stringValue == "Be terse.")
@@ -439,7 +439,7 @@ import Testing
     #expect(model.providerID == "open-responses.responses")
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer custom-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.18")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.25")
 
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.open-responses", message: "Open Responses provider options must be an object.")) {
         _ = try await model.generate(LanguageModelRequest(

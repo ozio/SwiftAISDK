@@ -182,17 +182,125 @@ import Testing
         "bash_code_execution_tool_result"
     ])
     #expect(content[0]["name"]?.stringValue == "text_editor_code_execution")
+    #expect(content[0]["input"]?["type"] == nil)
     #expect(content[0]["input"]?["file_text"]?.stringValue == "def..")
     #expect(content[1]["tool_use_id"]?.stringValue == "srvtoolu_01Hq9rR6fZwwDGHkTYRafn7k")
     #expect(content[1]["content"]?["type"]?.stringValue == "text_editor_code_execution_create_result")
     #expect(content[1]["content"]?["is_file_update"]?.boolValue == false)
     #expect(content[2]["name"]?.stringValue == "bash_code_execution")
+    #expect(content[2]["input"]?["type"] == nil)
     #expect(content[2]["input"]?["command"]?.stringValue == "python /tmp/fibonacci.py")
     #expect(content[3]["tool_use_id"]?.stringValue == "srvtoolu_0193G3ttnkiTfZASwHQSKc2V")
     #expect(content[3]["content"]?["type"]?.stringValue == "bash_code_execution_result")
     #expect(content[3]["content"]?["stdout"]?.stringValue == "The 10th Fibonacci number is: 34\n")
     #expect(content[3]["content"]?["return_code"]?.intValue == 0)
     #expect(result.warnings.isEmpty)
+}
+
+@Test func anthropicCompleteStreamedCodeExecutionTranscriptReplaysLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        sseResponse("""
+        data: {"type":"message_start","message":{"id":"msg_code_cache","type":"message","role":"assistant","content":[],"model":"claude-sonnet-5","stop_reason":null,"usage":{"input_tokens":17,"output_tokens":1}}}
+
+        data: {"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_square","name":"bash_code_execution","input":{}}}
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\\"command\\\":\\\"echo 144\\\"}"}}
+
+        data: {"type":"content_block_stop","index":0}
+
+        data: {"type":"content_block_start","index":1,"content_block":{"type":"bash_code_execution_tool_result","tool_use_id":"srvtoolu_square","content":{"type":"bash_code_execution_result","stdout":"144\\n","stderr":"","return_code":0,"content":[],"unstable_extra":"drop-me"}}}
+
+        data: {"type":"content_block_stop","index":1}
+
+        data: {"type":"content_block_start","index":2,"content_block":{"type":"server_tool_use","id":"srvtoolu_sum","name":"bash_code_execution","input":{}}}
+
+        data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\\\"command\\\":\\\"echo 650\\\"}"}}
+
+        data: {"type":"content_block_stop","index":2}
+
+        data: {"type":"content_block_start","index":3,"content_block":{"type":"bash_code_execution_tool_result","tool_use_id":"srvtoolu_sum","content":{"type":"bash_code_execution_result","stdout":"650\\n","stderr":"","return_code":0,"content":[]}}}
+
+        data: {"type":"content_block_stop","index":3}
+
+        data: {"type":"content_block_start","index":4,"content_block":{"type":"text","text":""}}
+
+        data: {"type":"content_block_delta","index":4,"delta":{"type":"text_delta","text":"The sum is 650."}}
+
+        data: {"type":"content_block_stop","index":4}
+
+        data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}
+
+        data: {"type":"message_stop"}
+
+        """),
+        jsonResponse(#"{"content":[{"type":"text","text":"replayed"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}"#)
+    ])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-5")
+
+    var toolCalls: [AIToolCall] = []
+    var toolResults: [AIToolResult] = []
+    var text = ""
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Calculate the sum.")],
+        tools: ["code": AnthropicTools.codeExecution_20260120()]
+    )) {
+        switch part {
+        case let .toolCall(call) where call.name == "code_execution":
+            toolCalls.append(call)
+        case let .toolResult(result) where result.toolName == "code_execution":
+            toolResults.append(result)
+        case let .textDelta(delta):
+            text += delta
+        default:
+            break
+        }
+    }
+
+    #expect(toolCalls.count == 2)
+    #expect(toolResults.count == 2)
+    #expect(toolCalls.allSatisfy { $0.arguments.contains("\"type\":\"bash_code_execution\"") })
+    let replayContent: [AIContentPart] = [
+        .toolCall(try #require(toolCalls.first)),
+        .toolResult(try #require(toolResults.first)),
+        .toolCall(try #require(toolCalls.last)),
+        .toolResult(try #require(toolResults.last)),
+        .text(text)
+    ]
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            .user("Calculate the sum."),
+            AIMessage(role: .assistant, content: replayContent)
+        ],
+        tools: ["code": AnthropicTools.codeExecution_20260120()]
+    ))
+
+    let requests = await transport.requests()
+    let replayRequestBody = try #require(requests[1].body)
+    let replayBodyText = String(decoding: replayRequestBody, as: UTF8.self)
+    #expect(replayBodyText.contains(
+        #""content":{"content":[],"return_code":0,"stderr":"","stdout":"144\n","type":"bash_code_execution_result"}"#
+    ))
+    let replayBody = try decodeJSONBody(replayRequestBody)
+    let replayed = try #require(replayBody["messages"]?[1]?["content"]?.arrayValue)
+    #expect(replayed.map { $0["type"]?.stringValue } == [
+        "server_tool_use",
+        "bash_code_execution_tool_result",
+        "server_tool_use",
+        "bash_code_execution_tool_result",
+        "text"
+    ])
+    #expect(replayed[0]["name"]?.stringValue == "bash_code_execution")
+    #expect(replayed[0]["input"]?["type"] == nil)
+    #expect(replayed[0]["input"]?["command"]?.stringValue == "echo 144")
+    #expect(replayed[2]["name"]?.stringValue == "bash_code_execution")
+    #expect(replayed[2]["input"]?["type"] == nil)
+    #expect(replayed[2]["input"]?["command"]?.stringValue == "echo 650")
+    let firstResult = try #require(replayed[1]["content"]?.objectValue)
+    #expect(Set(firstResult.keys) == Set(["type", "stdout", "stderr", "return_code", "content"]))
+    #expect(firstResult["stdout"]?.stringValue == "144\n")
+    #expect(replayed[3]["content"]?["stdout"]?.stringValue == "650\n")
+    #expect(replayed[4]["text"]?.stringValue == "The sum is 650.")
 }
 
 @Test func anthropicStreamedSkillToolCallPreservesTextEditorDiscriminatorLikeUpstream() async throws {

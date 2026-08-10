@@ -129,6 +129,7 @@ func openAIResponsesInputMessageJSON(
     toolNamespaces: [String: JSONValue] = [:],
     customToolNames: Set<String> = [],
     programmaticToolNames: Set<String> = [],
+    outputSchemaToolNames: Set<String> = [],
     providerID: String = "openai",
     useDeveloperRoleForSystem: Bool = false,
     warnings: inout [AIWarning]
@@ -182,7 +183,12 @@ func openAIResponsesInputMessageJSON(
                 var item: [String: JSONValue] = [
                     "type": .string("function_call_output"),
                     "call_id": .string(result.toolCallID),
-                    "output": openResponsesToolResultOutput(result, providerID: providerID, warnings: &warnings)
+                    "output": openResponsesToolResultOutput(
+                        result,
+                        providerID: providerID,
+                        jsonEncodeText: outputSchemaToolNames.contains(result.toolName),
+                        warnings: &warnings
+                    )
                 ]
                 if let caller = openAIResponsesCaller(from: result.providerMetadata) {
                     item["caller"] = caller
@@ -489,7 +495,7 @@ func openAIResponsesProgrammaticCallItem(_ call: AIToolCall, store: Bool) -> JSO
     }
 
     let input = openAIResponsesParsedToolArguments(call.arguments)
-    var item: [String: JSONValue] = [
+    let item: [String: JSONValue] = [
         "type": .string("program"),
         "id": .string(itemID ?? call.id),
         "call_id": .string(call.id),
@@ -507,7 +513,7 @@ func openAIResponsesProgrammaticOutput(_ result: AIToolResult, store: Bool) -> [
 
     let output = result.modelOutput ?? result.result
     let value = output["value"] ?? output
-    var item: [String: JSONValue] = [
+    let item: [String: JSONValue] = [
         "type": .string("program_output"),
         "id": .string(itemID ?? result.toolCallID),
         "call_id": .string(result.toolCallID),

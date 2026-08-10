@@ -58,7 +58,7 @@ import Testing
     let imageRequest = try #require(await imageTransport.requests().first)
     #expect(imageRequest.url.absoluteString == "https://api.together.xyz/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer together-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.21")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.29")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "black-forest-labs/FLUX.1-schnell-Free")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -83,7 +83,7 @@ import Testing
     let rerankRequest = try #require(await rerankTransport.requests().first)
     #expect(rerankRequest.url.absoluteString == "https://api.together.xyz/v1/rerank")
     #expect(rerankRequest.headers["authorization"] == "Bearer together-key")
-    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.21")
+    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.29")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["top_n"]?.intValue == 1)
     #expect(rerankBody["return_documents"]?.boolValue == false)
@@ -103,7 +103,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer together-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/3.0.21")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/3.0.29")
 }
 
 @Test func togetherAIMapsNestedProviderOptions() async throws {

@@ -119,6 +119,74 @@ import Testing
     #expect(input[3]["output"]?.stringValue == "4")
 }
 
+@Test func openAIResponsesJSONEncodesTextLikeToolResultsOnlyForOutputSchemaToolsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4o")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [
+            AIMessage(role: .tool, content: [
+                .toolResult(AIToolResult(
+                    toolCallID: "call_text",
+                    toolName: "search",
+                    result: ["type": "text", "value": "The weather is sunny"]
+                )),
+                .toolResult(AIToolResult(
+                    toolCallID: "call_error",
+                    toolName: "search",
+                    result: ["type": "error-text", "value": "Error: boom"]
+                )),
+                .toolResult(AIToolResult(
+                    toolCallID: "call_denied",
+                    toolName: "search",
+                    result: ["type": "execution-denied", "reason": "User denied the tool execution"]
+                )),
+                .toolResult(AIToolResult(
+                    toolCallID: "call_without_schema",
+                    toolName: "lookup",
+                    result: ["type": "error-text", "value": "Error: unchanged"]
+                ))
+            ])
+        ],
+        tools: [
+            "search": [
+                "type": "object",
+                "properties": ["query": ["type": "string"]],
+                "providerOptions": [
+                    "openai": [
+                        "outputSchema": [
+                            "type": "object",
+                            "properties": ["temperature": ["type": "number"]],
+                            "required": ["temperature"],
+                            "additionalProperties": false
+                        ]
+                    ]
+                ]
+            ],
+            "lookup": [
+                "type": "object",
+                "properties": ["query": ["type": "string"]]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let input = try #require(body["input"]?.arrayValue)
+    #expect(input.map { $0["call_id"]?.stringValue } == [
+        "call_text",
+        "call_error",
+        "call_denied",
+        "call_without_schema"
+    ])
+    #expect(input.map { $0["output"]?.stringValue } == [
+        #""The weather is sunny""#,
+        #""Error: boom""#,
+        #""User denied the tool execution""#,
+        "Error: unchanged"
+    ])
+}
+
 @Test func openAIResponsesConvertsMultipartToolResultContentLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))

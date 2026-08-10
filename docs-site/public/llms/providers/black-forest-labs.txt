@@ -13,10 +13,11 @@ Source URL: /providers/black-forest-labs/
 ## Capabilities
 
 - Image
+- Video
 
 ## Notes
 
-Black Forest Labs images mirror upstream 2.0.18: `BFL_API_KEY`, `x-key` auth, custom base URL and headers, versioned user-agent suffix, `image`/`imageModel` aliases, `black-forest-labs.image` provider IDs, current FLUX model IDs, `/v1/{model}` submit URLs, response-supplied polling with trusted `bfl.ai` sibling-host credential forwarding, unauthenticated foreign image download, `providerOptions.blackForestLabs` schema mapping, fill-model `image` input field, warnings for size/aspect-ratio handling, response/provider metadata, and unsupported language/embedding families.
+Black Forest Labs image and FLUX 3 video generation mirror upstream 2.0.26: `BFL_API_KEY`, `x-key` auth, custom base URL and headers, versioned user-agent suffix, `image`/`imageModel` and `video`/`videoModel` aliases, `black-forest-labs.image` and `black-forest-labs.video` provider IDs, `/v1/{model}` submit URLs, response-supplied polling with trusted `bfl.ai` sibling-host credential forwarding, signed result URLs, provider options and warnings, response/provider metadata, and structured errors. Video supports text-to-video, first/last/timed keyframes, video continuation, draft generation and draft enhancement, settled cost metadata, and per-request polling controls through the existing unary Swift video surface. Language and embedding families remain unsupported.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

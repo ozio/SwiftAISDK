@@ -520,7 +520,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.mistral.ai/v1/audio/speech")
     #expect(request.headers["authorization"] == "Bearer mistral-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/mistral/4.0.20")
+    #expect(request.headers["user-agent"] == "ai-sdk/mistral/4.0.27")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "voxtral-mini-tts-2603")
     #expect(body["input"]?.stringValue == "Hello")

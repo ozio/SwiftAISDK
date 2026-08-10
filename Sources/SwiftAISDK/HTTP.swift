@@ -339,7 +339,9 @@ private func headersWithUserAgentSuffix(_ headers: [String: String], _ userAgent
 }
 
 func encodeJSONBody(_ value: JSONValue) throws -> Data {
-    try JSONEncoder().encode(value)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return try encoder.encode(value)
 }
 
 func decodeJSONBody(_ data: Data) throws -> JSONValue {
@@ -737,7 +739,7 @@ func tokenUsage(from raw: JSONValue) -> TokenUsage? {
         inputTokensNoCache: inputTokens.map { $0 - (cachedInputTokens ?? 0) - (cacheWriteTokens ?? 0) },
         inputTokensCacheRead: cachedInputTokens,
         inputTokensCacheWrite: cacheWriteTokens,
-        outputTextTokens: outputTokens.map { $0 - (reasoningTokens ?? 0) },
+        outputTextTokens: outputTokens.map { max(0, $0 - (reasoningTokens ?? 0)) },
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )

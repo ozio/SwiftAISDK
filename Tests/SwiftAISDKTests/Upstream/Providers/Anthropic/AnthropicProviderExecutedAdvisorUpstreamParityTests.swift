@@ -177,6 +177,106 @@ import Testing
     #expect(result.warnings.isEmpty)
 }
 
+@Test func anthropicAdvisorStopReasonsParseAndReplayLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {
+          "model":"claude-sonnet-4-6",
+          "id":"msg_advisor_stop_reasons",
+          "type":"message",
+          "role":"assistant",
+          "content":[
+            {"type":"server_tool_use","id":"srvtoolu_advisor_plaintext","name":"advisor","input":{}},
+            {"type":"advisor_tool_result","tool_use_id":"srvtoolu_advisor_plaintext","content":{"type":"advisor_result","text":"Partial plaintext advice.","stop_reason":"max_tokens"}},
+            {"type":"server_tool_use","id":"srvtoolu_advisor_redacted","name":"advisor","input":{}},
+            {"type":"advisor_tool_result","tool_use_id":"srvtoolu_advisor_redacted","content":{"type":"advisor_redacted_result","encrypted_content":"opaque-encrypted-advice","stop_reason":"end_turn"}}
+          ],
+          "stop_reason":"end_turn",
+          "usage":{"input_tokens":10,"output_tokens":20}
+        }
+        """),
+        jsonResponse(#"{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}"#)
+    ])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    let parsed = try await model.generate(LanguageModelRequest(
+        messages: [.user("Consult the advisor.")],
+        tools: ["advisor": AnthropicTools.advisor_20260301(model: "claude-opus-4-7", maxTokens: 2_048)]
+    ))
+    let plaintext = try #require(parsed.toolResults.first { $0.toolCallID == "srvtoolu_advisor_plaintext" })
+    let redacted = try #require(parsed.toolResults.first { $0.toolCallID == "srvtoolu_advisor_redacted" })
+    #expect(plaintext.result["stopReason"]?.stringValue == "max_tokens")
+    #expect(redacted.result["stopReason"]?.stringValue == "end_turn")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .assistant, content: [
+            .toolCall(AIToolCall(
+                id: plaintext.toolCallID,
+                name: "advisor",
+                arguments: "{}",
+                providerExecuted: true
+            )),
+            .toolResult(plaintext),
+            .toolCall(AIToolCall(
+                id: redacted.toolCallID,
+                name: "advisor",
+                arguments: "{}",
+                providerExecuted: true
+            )),
+            .toolResult(redacted)
+        ])
+    ]))
+
+    let requests = await transport.requests()
+    let replayBody = try decodeJSONBody(try #require(requests[1].body))
+    let replayContent = try #require(replayBody["messages"]?[0]?["content"]?.arrayValue)
+    #expect(replayContent[1]["content"]?["stop_reason"]?.stringValue == "max_tokens")
+    #expect(replayContent[3]["content"]?["stop_reason"]?.stringValue == "end_turn")
+    #expect(replayContent[3]["content"]?["encrypted_content"]?.stringValue == "opaque-encrypted-advice")
+}
+
+@Test func anthropicStreamsAdvisorStopReasonsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"message_start","message":{"id":"msg_advisor_stop_reasons","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-6","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":1}}}
+
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_advisor_plaintext","name":"advisor","input":{}}}
+
+    data: {"type":"content_block_stop","index":0}
+
+    data: {"type":"content_block_start","index":1,"content_block":{"type":"advisor_tool_result","tool_use_id":"srvtoolu_advisor_plaintext","content":{"type":"advisor_result","text":"Partial plaintext advice.","stop_reason":"max_tokens"}}}
+
+    data: {"type":"content_block_stop","index":1}
+
+    data: {"type":"content_block_start","index":2,"content_block":{"type":"server_tool_use","id":"srvtoolu_advisor_redacted","name":"advisor","input":{}}}
+
+    data: {"type":"content_block_stop","index":2}
+
+    data: {"type":"content_block_start","index":3,"content_block":{"type":"advisor_tool_result","tool_use_id":"srvtoolu_advisor_redacted","content":{"type":"advisor_redacted_result","encrypted_content":"opaque-encrypted-advice","stop_reason":"end_turn"}}}
+
+    data: {"type":"content_block_stop","index":3}
+
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":10,"output_tokens":20}}
+
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var toolResults: [AIToolResult] = []
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Consult the advisor.")],
+        tools: ["advisor": AnthropicTools.advisor_20260301(model: "claude-opus-4-7", maxTokens: 2_048)]
+    )) {
+        if case let .toolResult(result) = part {
+            toolResults.append(result)
+        }
+    }
+
+    #expect(toolResults.map { $0.result["stopReason"]?.stringValue } == ["max_tokens", "end_turn"])
+}
+
 @Test func anthropicProviderExecutedAdvisorUnsupportedOutputWarnsAndOmitsResultLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}

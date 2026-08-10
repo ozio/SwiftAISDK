@@ -109,23 +109,44 @@ func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContent
 }
 
 
-func openResponsesToolResultOutput(_ result: AIToolResult, providerID: String, warnings: inout [AIWarning]) -> JSONValue {
+func openResponsesToolResultOutput(
+    _ result: AIToolResult,
+    providerID: String,
+    jsonEncodeText: Bool = false,
+    warnings: inout [AIWarning]
+) -> JSONValue {
     if let text = result.modelOutput?.stringValue ?? result.result.stringValue {
-        return .string(text)
+        return openResponsesTextToolResultOutput(text, jsonEncodeText: jsonEncodeText)
     }
     if let object = (result.modelOutput ?? result.result).objectValue,
        let type = object["type"]?.stringValue {
-        if type == "execution-denied" {
-            return .string(object["reason"]?.stringValue ?? "Tool call execution denied.")
-        }
-        if type == "content" {
+        switch type {
+        case "text", "error-text":
+            return openResponsesTextToolResultOutput(
+                object["value"]?.stringValue ?? "",
+                jsonEncodeText: jsonEncodeText
+            )
+        case "execution-denied":
+            return openResponsesTextToolResultOutput(
+                object["reason"]?.stringValue ?? "Tool call execution denied.",
+                jsonEncodeText: jsonEncodeText
+            )
+        case "json", "error-json":
+            return .string(openAIResponsesJSONString(object["value"] ?? .object([:])) ?? "")
+        case "content":
             let content = object["value"]?.arrayValue ?? []
             return .array(content.compactMap { item in
                 openResponsesToolResultContentPart(item, providerID: providerID, warnings: &warnings)
             })
+        default:
+            break
         }
     }
     return .string(openAIResponsesJSONString(result.modelOutput ?? result.result) ?? "")
+}
+
+private func openResponsesTextToolResultOutput(_ text: String, jsonEncodeText: Bool) -> JSONValue {
+    .string(jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text)
 }
 
 func openResponsesToolResultContentPart(_ item: JSONValue, providerID: String, warnings: inout [AIWarning]) -> JSONValue? {

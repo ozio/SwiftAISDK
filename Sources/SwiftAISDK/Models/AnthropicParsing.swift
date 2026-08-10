@@ -327,22 +327,30 @@ func anthropicToolResult(
               let contentType = content["type"]?.stringValue else { return nil }
         switch contentType {
         case "advisor_result":
+            var result: [String: JSONValue] = [
+                "type": .string("advisor_result"),
+                "text": content["text"] ?? .null
+            ]
+            if let stopReason = content["stop_reason"], stopReason != .null {
+                result["stopReason"] = stopReason
+            }
             return AIToolResult(
                 toolCallID: toolCallID,
                 toolName: "advisor",
-                result: .object([
-                    "type": .string("advisor_result"),
-                    "text": content["text"]
-                ])
+                result: .object(result)
             )
         case "advisor_redacted_result":
+            var result: [String: JSONValue] = [
+                "type": .string("advisor_redacted_result"),
+                "encryptedContent": content["encrypted_content"] ?? .null
+            ]
+            if let stopReason = content["stop_reason"], stopReason != .null {
+                result["stopReason"] = stopReason
+            }
             return AIToolResult(
                 toolCallID: toolCallID,
                 toolName: "advisor",
-                result: .object([
-                    "type": .string("advisor_redacted_result"),
-                    "encryptedContent": content["encrypted_content"]
-                ])
+                result: .object(result)
             )
         default:
             return AIToolResult(

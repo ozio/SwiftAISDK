@@ -74,7 +74,6 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                     var emittedResponseMetadata = false
                     var activeText = false
                     var activeReasoningID: String?
-                    var startedToolCallIndices: Set<Int> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw: JSONValue
                         do {
@@ -132,19 +131,18 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                                 activeText = false
                             }
                             for toolCallDelta in toolCallDeltas {
-                                let index = toolCallDelta["index"]?.intValue ?? startedToolCallIndices.count
+                                let startsNewToolCall = !toolCalls.hasMatchingBuffer(for: toolCallDelta)
                                 var effectiveDelta = toolCallDelta
-                                if !startedToolCallIndices.contains(index),
+                                if startsNewToolCall,
                                    toolCallDelta["id"]?.stringValue == nil,
                                    toolCallDelta["function"]?["name"]?.stringValue != nil,
                                    var object = toolCallDelta.objectValue {
                                     object["id"] = .string(generateId())
                                     effectiveDelta = .object(object)
                                 }
-                                if !startedToolCallIndices.contains(index), toolCallDelta["function"]?["name"]?.stringValue == nil {
-                                        throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
+                                if startsNewToolCall, toolCallDelta["function"]?["name"]?.stringValue == nil {
+                                    throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
                                 }
-                                startedToolCallIndices.insert(index)
                                 for part in toolCalls.apply(delta: effectiveDelta) {
                                     continuation.yield(part)
                                 }

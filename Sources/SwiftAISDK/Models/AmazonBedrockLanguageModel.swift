@@ -149,7 +149,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
 
         let messages = try messagesWithJSONInstruction
             .filter { $0.role != .system }
-            .map { message -> JSONValue in
+            .compactMap { message -> JSONValue? in
                 var content: [JSONValue] = []
                 for part in message.content {
                     switch part {
@@ -324,6 +324,13 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 }
                 if let cachePoint = bedrockCachePoint(from: message.providerMetadata) {
                     content.append(cachePoint)
+                }
+
+                // Bedrock rejects empty Converse messages. Unsigned reasoning is
+                // intentionally filtered above, so drop an assistant turn when
+                // it has no replayable content left.
+                if message.role == .assistant, content.isEmpty {
+                    return nil
                 }
 
                 return JSONValue.object([

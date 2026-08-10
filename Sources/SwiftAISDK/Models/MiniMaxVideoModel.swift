@@ -171,6 +171,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             }
         }
 
+        let isTextToVideo = content.count == 1
         var ratio = options.ratio
         if ratio == nil, let aspectRatio = request.aspectRatio {
             if miniMaxVideoRatios.contains(aspectRatio) {
@@ -178,9 +179,21 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             } else {
                 warnings.append(miniMaxUnsupported(
                     "aspectRatio",
-                    "MiniMax-H3 does not support the aspect ratio \"\(aspectRatio)\". Using the provider default (adaptive)."
+                    isTextToVideo
+                        ? "MiniMax-H3 does not support the aspect ratio \"\(aspectRatio)\". Using the default (16:9)."
+                        : "MiniMax-H3 does not support the aspect ratio \"\(aspectRatio)\". Using the provider default (adaptive)."
                 ))
+                if isTextToVideo {
+                    ratio = "16:9"
+                }
             }
+        }
+        if ratio == "adaptive", isTextToVideo {
+            warnings.append(miniMaxUnsupported(
+                "aspectRatio",
+                "MiniMax-H3 text-to-video does not support the adaptive aspect ratio. Using the default (16:9)."
+            ))
+            ratio = "16:9"
         }
         if usesFrameImages, ratio != nil {
             warnings.append(miniMaxUnsupported(
@@ -188,6 +201,9 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                 "MiniMax-H3 derives the aspect ratio from the frame image; the requested ratio was ignored."
             ))
             ratio = nil
+        }
+        if ratio == nil, isTextToVideo {
+            ratio = "16:9"
         }
 
         var duration = request.durationSeconds ?? 5

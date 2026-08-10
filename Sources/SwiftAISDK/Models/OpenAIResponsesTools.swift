@@ -3,10 +3,12 @@ import Foundation
 func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
     tools: [JSONValue],
     customToolNames: Set<String>,
-    programmaticToolNames: Set<String>
+    programmaticToolNames: Set<String>,
+    outputSchemaToolNames: Set<String>
 ) {
     var customToolNames: Set<String> = []
     var programmaticToolNames: Set<String> = []
+    var outputSchemaToolNames: Set<String> = []
     var namespaceIndexes: [String: Int] = [:]
     var mapped: [JSONValue] = []
     for (name, schema) in tools {
@@ -53,8 +55,10 @@ func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
         if let allowedCallers = openAIOptions?["allowedCallers"] ?? openAIOptions?["allowed_callers"] {
             function["allowed_callers"] = allowedCallers
         }
-        if let outputSchema = openAIOptions?["outputSchema"] ?? openAIOptions?["output_schema"] {
+        if let outputSchema = openAIOptions?["outputSchema"] ?? openAIOptions?["output_schema"],
+           outputSchema != .null {
             function["output_schema"] = outputSchema
+            outputSchemaToolNames.insert(name)
         }
         if let namespace = openAIOptions?["namespace"]?.objectValue,
            let namespaceName = namespace["name"]?.stringValue,
@@ -84,7 +88,7 @@ func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
             mapped.append(.object(function))
         }
     }
-    return (mapped, customToolNames, programmaticToolNames)
+    return (mapped, customToolNames, programmaticToolNames, outputSchemaToolNames)
 }
 
 func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> [String: String] {

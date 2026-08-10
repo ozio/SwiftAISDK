@@ -92,7 +92,7 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
-private func blackForestLabsTrustedHeaders(for url: String, baseURL: String, headers: [String: String]) -> [String: String] {
+func blackForestLabsTrustedHeaders(for url: String, baseURL: String, headers: [String: String]) -> [String: String] {
     blackForestLabsIsTrustedURL(url, baseURL: baseURL) ? headers : [:]
 }
 
@@ -142,7 +142,7 @@ private func blackForestLabsProviderOptions(from request: ImageGenerationRequest
     return output
 }
 
-private func blackForestLabsHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+func blackForestLabsHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
     let body = blackForestLabsErrorMessage(from: response.body) ?? response.bodyText
     guard !response.headers.isEmpty else {
         return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
@@ -305,7 +305,7 @@ private func blackForestLabsProviderMetadata(submit: JSONValue, poll: JSONValue)
     ]
 }
 
-private func blackForestLabsNonNull(_ value: JSONValue?) -> JSONValue? {
+func blackForestLabsNonNull(_ value: JSONValue?) -> JSONValue? {
     guard value != .null else { return nil }
     return value
 }

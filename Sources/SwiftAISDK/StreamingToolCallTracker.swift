@@ -37,7 +37,10 @@ public struct AIStreamingToolCallTracker: Sendable {
     public var extractMetadata: (@Sendable (AIStreamingToolCallDelta) -> [String: JSONValue]?)?
     public var buildToolCallProviderMetadata: (@Sendable ([String: JSONValue]?) -> [String: JSONValue]?)?
 
-    private var toolCalls: [Int: TrackedStreamingToolCall] = [:]
+    private var toolCalls: [TrackedStreamingToolCall] = []
+    private var toolCallPositionsByID: [String: Int] = [:]
+    private var toolCallPositionsByIndex: [Int: Int] = [:]
+    private var latestToolCallPosition: Int?
 
     public init(
         generateID: @escaping @Sendable () -> String = { UUID().uuidString },
@@ -52,23 +55,42 @@ public struct AIStreamingToolCallTracker: Sendable {
     }
 
     public mutating func processDelta(_ delta: AIStreamingToolCallDelta) throws -> [LanguageStreamPart] {
-        let index = delta.index ?? toolCalls.count
-        if toolCalls[index] == nil {
-            return try processNewToolCall(index: index, delta: delta)
+        let position: Int?
+        if let id = delta.id, !id.isEmpty {
+            position = toolCallPositionsByID[id]
+        } else if let index = delta.index {
+            position = toolCallPositionsByIndex[index]
+        } else {
+            position = latestToolCallPosition
         }
-        return processExistingToolCall(index: index, delta: delta)
+
+        let resolvedPosition: Int
+        let parts: [LanguageStreamPart]
+        if let position {
+            resolvedPosition = position
+            parts = processExistingToolCall(position: position, delta: delta)
+        } else {
+            let created = try processNewToolCall(delta: delta)
+            resolvedPosition = created.position
+            parts = created.parts
+        }
+
+        if let index = delta.index {
+            toolCallPositionsByIndex[index] = resolvedPosition
+        }
+        latestToolCallPosition = resolvedPosition
+        return parts
     }
 
     public mutating func flush() -> [LanguageStreamPart] {
         var parts: [LanguageStreamPart] = []
-        for index in toolCalls.keys.sorted() {
-            guard let toolCall = toolCalls[index], !toolCall.hasFinished else { continue }
-            parts.append(contentsOf: finishToolCall(index: index, toolCall: toolCall))
+        for position in toolCalls.indices where !toolCalls[position].hasFinished {
+            parts.append(contentsOf: finishToolCall(position: position))
         }
         return parts
     }
 
-    private mutating func processNewToolCall(index: Int, delta: AIStreamingToolCallDelta) throws -> [LanguageStreamPart] {
+    private mutating func processNewToolCall(delta: AIStreamingToolCallDelta) throws -> (position: Int, parts: [LanguageStreamPart]) {
         switch typeValidation {
         case .required:
             guard delta.type == "function" else {
@@ -99,7 +121,11 @@ public struct AIStreamingToolCallTracker: Sendable {
             metadata: metadata,
             rawValue: delta.rawValue
         )
-        toolCalls[index] = toolCall
+        let position = toolCalls.endIndex
+        toolCalls.append(toolCall)
+        if !id.isEmpty {
+            toolCallPositionsByID[id] = position
+        }
 
         var parts: [LanguageStreamPart] = [
             .toolInputStart(id: id, name: name)
@@ -107,35 +133,25 @@ public struct AIStreamingToolCallTracker: Sendable {
         if !arguments.isEmpty {
             parts.append(.toolInputDelta(id: id, delta: arguments))
         }
-        if isParsableJSON(arguments) {
-            parts.append(contentsOf: finishToolCall(index: index, toolCall: toolCall))
-        }
-        return parts
+        return (position, parts)
     }
 
-    private mutating func processExistingToolCall(index: Int, delta: AIStreamingToolCallDelta) -> [LanguageStreamPart] {
-        guard var toolCall = toolCalls[index], !toolCall.hasFinished else {
+    private mutating func processExistingToolCall(position: Int, delta: AIStreamingToolCallDelta) -> [LanguageStreamPart] {
+        guard toolCalls.indices.contains(position), !toolCalls[position].hasFinished else {
             return []
         }
 
-        var parts: [LanguageStreamPart] = []
-        if let arguments = delta.arguments {
-            toolCall.arguments += arguments
-            toolCall.rawValue = delta.rawValue ?? toolCall.rawValue
-            toolCalls[index] = toolCall
-            parts.append(.toolInputDelta(id: toolCall.id, delta: arguments))
+        guard let arguments = delta.arguments else {
+            return []
         }
-
-        if isParsableJSON(toolCall.arguments) {
-            parts.append(contentsOf: finishToolCall(index: index, toolCall: toolCall))
-        }
-        return parts
+        toolCalls[position].arguments += arguments
+        toolCalls[position].rawValue = delta.rawValue ?? toolCalls[position].rawValue
+        return [.toolInputDelta(id: toolCalls[position].id, delta: arguments)]
     }
 
-    private mutating func finishToolCall(index: Int, toolCall: TrackedStreamingToolCall) -> [LanguageStreamPart] {
-        var finished = toolCall
-        finished.hasFinished = true
-        toolCalls[index] = finished
+    private mutating func finishToolCall(position: Int) -> [LanguageStreamPart] {
+        let toolCall = toolCalls[position]
+        toolCalls[position].hasFinished = true
 
         let providerMetadata = buildToolCallProviderMetadata?(toolCall.metadata) ?? [:]
         return [

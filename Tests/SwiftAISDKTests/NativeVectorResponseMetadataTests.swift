@@ -91,7 +91,7 @@ import Testing
 
     #expect(basetenEmbedding.requestMetadata.body?["input"]?[0]?.stringValue == "hello")
     #expect(basetenEmbedding.requestMetadata.body?["model"]?.stringValue == "embed")
-    #expect(basetenEmbedding.requestMetadata.body?["dimensions"] == nil)
+    #expect(basetenEmbedding.requestMetadata.body?["dimensions"]?.intValue == 128)
     #expect(basetenEmbedding.responseMetadata.id == "baseten-embed")
     #expect(basetenEmbedding.responseMetadata.modelID == "embed")
     #expect(basetenEmbedding.responseMetadata.headers["baseten-header"] == "embedding")

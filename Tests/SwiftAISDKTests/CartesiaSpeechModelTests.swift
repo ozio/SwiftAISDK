@@ -52,7 +52,7 @@ import Testing
     #expect(request.headers["cartesia-version"] == "2026-04-01")
     #expect(request.headers["custom-provider-header"] == "provider-value")
     #expect(request.headers["Custom-Request-Header"] == "request-value")
-    #expect(request.headers["user-agent"] == "ai-sdk/cartesia/3.0.12")
+    #expect(request.headers["user-agent"] == "ai-sdk/cartesia/3.0.20")
     #expect(request.abortSignal === controller.signal)
     #expect(try decodeJSONBody(try #require(request.body)) == result.requestMetadata.body)
 }

@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-08-03
+Snapshot date: 2026-08-10
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every tracked package was packed at both the prior
@@ -15,6 +15,96 @@ Status meanings:
   Swift design before provider-specific code is useful.
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
+
+## 2026-08-10 Tracked Package Results
+
+All 48 tracked packages changed. Their 96 published npm tarballs were unpacked
+and compared separately under
+`/tmp/ai-sdk-port-upstream-diffs-20260810.M2anYQ`; published packages omit test
+sources, so changed upstream tests were also reviewed between repository commit
+`3bc0d4f40df7` and `74abcdfb6a41`.
+
+| Package | Previous | Current | Result |
+| --- | ---: | ---: | --- |
+| `ai` | `7.0.48` | `7.0.58` | `ported/deferred` — default instructions, agent default timeout, reconnect abort propagation, and shared stream/tool tracking are ported. Batch V4 and the generic async-video start/status/webhook surface remain a shared public-API gap. |
+| `@ai-sdk/provider` | `4.0.4` | `4.0.7` | `covered/deferred` — adaptive aspect ratios already pass through as strings; Batch V4 and async Video V4 need the shared protocols above. |
+| `@ai-sdk/provider-utils` | `5.0.18` | `5.0.25` | `ported/covered` — streamed calls now correlate by ID, then index, then latest and finalize only on flush; `Data`, non-stateful Swift regexes, and typed schemas already cover or avoid the remaining JS-only changes. |
+| `@ai-sdk/react` | `4.0.51` | `4.0.61` | `covered` — the source change is React/useSyncExternalStore-specific throttling with no Swift render-subscription analogue. |
+| `@ai-sdk/alibaba` | `2.0.22` | `2.0.29` | `ported/covered` — the shared streamed tool-call identity fix is ported; loose usage/raw-field behavior is already covered. Async video operations remain behind the shared surface while unary submit/poll remains available. |
+| `@ai-sdk/amazon-bedrock` | `5.0.40` | `5.0.50` | `ported` — assistant turns left empty after unsigned-reasoning filtering are now omitted from Converse requests. |
+| `@ai-sdk/anthropic` | `4.0.27` | `4.0.36` | `ported/deferred` — advisor token caps/stop reasons, message-start splice protection, and complete code-execution replay are ported; Messages Batch waits on the shared batch contract. |
+| `@ai-sdk/anthropic-aws` | `2.0.19` | `2.0.28` | `covered` — package-local source is unchanged and the provider inherits the shared Anthropic behavior. |
+| `@ai-sdk/assemblyai` | `3.0.18` | `3.0.25` | `version-only`. |
+| `@ai-sdk/azure` | `4.0.28` | `4.0.37` | `version-only`; OpenAI dependency behavior is audited separately. |
+| `@ai-sdk/baseten` | `2.0.20` | `2.1.6` | `ported` — embeddings now use OpenAI-compatible HTTP options without synthesized performance-client headers, chat streams request usage, and both Baseten error envelopes are preserved. |
+| `@ai-sdk/black-forest-labs` | `2.0.18` | `2.0.26` | `ported` — FLUX 3 video request modes, polling, credential trust, warnings, results, settled cost, and provider metadata are exposed through the existing unary Swift video contract. |
+| `@ai-sdk/bytedance` | `2.0.20` | `2.0.27` | `covered/deferred` — unary request/poll/error behavior remains covered; splitting it into start/status operations and moving polling controls to core waits on async Video V4. |
+| `@ai-sdk/cartesia` | `3.0.12` | `3.0.20` | `deferred` — new Ink2 encodings are for the already-recorded duplex WebSocket transcription surface; batch REST behavior is unchanged. |
+| `@ai-sdk/cerebras` | `3.0.20` | `3.0.28` | `ported` — inherits the shared non-contiguous/reused/missing streamed tool index fix. |
+| `@ai-sdk/cohere` | `4.0.18` | `4.0.25` | `version-only`. |
+| `@ai-sdk/deepgram` | `3.0.18` | `3.0.25` | `version-only`. |
+| `@ai-sdk/deepinfra` | `3.0.20` | `3.0.28` | `version-only`. |
+| `@ai-sdk/deepseek` | `3.0.19` | `3.0.26` | `ported` — inherits the shared streamed tool-call identity fix without collapsing reused or absent indexes. |
+| `@ai-sdk/elevenlabs` | `3.0.19` | `3.0.26` | `version-only`. |
+| `@ai-sdk/fal` | `3.0.19` | `3.0.26` | `covered/deferred` — unary queue polling remains covered; webhook operation state and core-owned polling wait on async Video V4. |
+| `@ai-sdk/fireworks` | `3.0.22` | `3.0.30` | `version-only`. |
+| `@ai-sdk/gateway` | `4.0.37` | `4.0.46` | `covered/deferred` — current unary video and media routing remain covered; callback/start/status and stable start idempotency wait on async Video V4. |
+| `@ai-sdk/gladia` | `3.0.18` | `3.0.25` | `version-only`. |
+| `@ai-sdk/google` | `4.0.31` | `4.0.39` | `covered/deferred` — unary Veo polling remains covered; async operations and renamed duplex speech translation need their shared protocol surfaces. |
+| `@ai-sdk/google-vertex` | `5.0.38` | `5.0.48` | `covered/deferred` — existing Vertex submit/poll mapping is unchanged; the new start/status split waits on async Video V4. |
+| `@ai-sdk/groq` | `4.0.19` | `4.0.26` | `ported` — inherits the shared streamed tool-call tracker correction. |
+| `@ai-sdk/huggingface` | `2.0.20` | `2.0.28` | `version-only`. |
+| `@ai-sdk/hume` | `3.0.18` | `3.0.25` | `version-only`. |
+| `@ai-sdk/klingai` | `4.0.20` | `4.0.27` | `covered/deferred` — request, status and terminal parsing stay covered by unary polling; public start/status operations wait on async Video V4. |
+| `@ai-sdk/lmnt` | `3.0.18` | `3.0.25` | `version-only`. |
+| `@ai-sdk/luma` | `3.0.19` | `3.0.26` | `version-only`. |
+| `@ai-sdk/mcp` | `2.0.22` | `2.0.29` | `version-only`. |
+| `@ai-sdk/minimax` | `3.0.2` | `3.0.12` | `ported` — H3 text-to-video now defaults and falls back to `16:9` while frame/reference ratio behavior is preserved. |
+| `@ai-sdk/mistral` | `4.0.20` | `4.0.27` | `version-only`. |
+| `@ai-sdk/moonshotai` | `3.0.23` | `3.0.31` | `version-only`. |
+| `@ai-sdk/open-responses` | `2.0.18` | `2.0.25` | `version-only`. |
+| `@ai-sdk/openai` | `4.0.27` | `4.0.36` | `ported/deferred` — output-schema tool results are JSON strings and streaming output indexes retain stable item IDs. Text Batch and duplex speech translation wait on shared protocols; `serviceTier: fast` already passes through. |
+| `@ai-sdk/openai-compatible` | `3.0.20` | `3.0.28` | `ported` — output text-token usage is clamped at zero when reasoning exceeds completion totals; streamed tool identity uses the shared fix. |
+| `@ai-sdk/perplexity` | `4.0.20` | `4.0.27` | `version-only`. |
+| `@ai-sdk/prodia` | `2.0.19` | `2.0.26` | `covered` — the only source change is a TypeScript alias/non-nullability refinement. |
+| `@ai-sdk/quiverai` | `2.0.18` | `2.0.25` | `version-only`. |
+| `@ai-sdk/replicate` | `3.0.19` | `3.0.26` | `covered/deferred` — unary submit/poll remains available; webhook/status operations and trusted result-URL state wait on async Video V4. |
+| `@ai-sdk/revai` | `3.0.18` | `3.0.25` | `version-only`. |
+| `@ai-sdk/togetherai` | `3.0.21` | `3.0.29` | `version-only`. |
+| `@ai-sdk/vercel` | `3.0.20` | `3.0.28` | `version-only`. |
+| `@ai-sdk/voyage` | `2.0.18` | `2.0.25` | `version-only`. |
+| `@ai-sdk/xai` | `4.0.25` | `4.0.33` | `covered/deferred` — unary create/poll remains covered; operation APIs and richer async failure state wait on async Video V4. |
+
+### 2026-08-10 Registry Discovery
+
+The exact npm registry prefix contains 79 live `@ai-sdk/*` packages, while
+`npm search` returns only 65. There are 44 model-provider packages: the 43
+already tracked providers plus new `@ai-sdk/fish-audio@3.0.3`. Fish Audio was
+first published after the prior run and is intentionally not implemented by
+this automation. A port needs provider/auth setup, S1/S2 binary speech over
+`POST /v1/tts`, multipart batch transcription over `POST /v1/asr`, voice and
+prosody options, warnings, `{status,message}` errors, metadata, registry and
+capability rows, public docs, and translated tests. Its upstream WebSocket TTS
+and MessagePack zero-shot cloning are themselves outside the published unary
+model surface.
+
+Two other packages created since the prior run, `@ai-sdk/harness-acp` and
+`@ai-sdk/harness-grok-build`, are harness adapters rather than model providers.
+The complete unfiltered discovery was reviewed so registry entries with absent
+or unusual descriptions were not silently missed by provider-only heuristics.
+
+### 2026-08-10 Verification
+
+| Check | Result |
+| --- | --- |
+| `node Scripts/check-upstream-versions.js --all --json --fail-on-outdated` | Passed after the ledger update: 48 tracked packages, zero outdated rows, and zero registry errors. |
+| `node Scripts/check-upstream-versions.js --discover-packages --all --json` plus exact registry-prefix metadata review | Passed: 79 live `@ai-sdk/*` packages, 44 model providers, and new `@ai-sdk/fish-audio@3.0.3` as the only untracked model provider. |
+| Published old/new package diff preparation under `/tmp/ai-sdk-port-upstream-diffs-20260810.M2anYQ` | Audited all 48 changed packages from 96 published npm tarballs in separate diffs. |
+| Focused Swift tests | Passed: 507 combined Anthropic, OpenAI Responses, Black Forest Labs, MiniMax, agent/chat/middleware, and streamed-tool tests; 19 Baseten/Bedrock/shared-stream tests; capability-matrix parity; and the final BFL elapsed-time and Anthropic stable-wire regressions. |
+| `swift test` | Passed: 2,275 tests in 3 suites. |
+| `npm ci --prefix docs-site` and `npm --prefix docs-site run check` | Passed: Astro reported zero errors, warnings, or hints. `npm ci` reported 8 dependency advisories (1 low, 7 high). |
+| `npm --prefix docs-site run build` | Passed: 85 static pages built. |
+| `git diff --check` | Passed. |
 
 ## 2026-08-03 Tracked Package Results
 

@@ -76,7 +76,6 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                     var providerMetadata: [String: JSONValue] = [:]
                     var activeText = false
                     var activeReasoningID: String?
-                    var startedToolCallIndices: Set<Int> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw: JSONValue
                         do {
@@ -128,17 +127,15 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                            !cerebrasShouldDropStructuredToolCalls(
                                hasText: hasText,
                                normalizeStructuredToolCalls: prepared.normalizesStructuredToolCalls
-                           ) {
+                            ) {
                             for toolCallDelta in toolCallDeltas {
-                                let index = toolCallDelta["index"]?.intValue ?? 0
-                                if !startedToolCallIndices.contains(index) {
+                                if !toolCalls.hasMatchingBuffer(for: toolCallDelta) {
                                     guard toolCallDelta["id"]?.stringValue != nil else {
                                         throw AIError.invalidResponse(provider: providerID, message: "Expected 'id' to be a string.")
                                     }
                                     guard toolCallDelta["function"]?["name"]?.stringValue != nil else {
                                         throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
                                     }
-                                    startedToolCallIndices.insert(index)
                                 }
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)
@@ -188,4 +185,3 @@ struct CerebrasPreparedTools {
     var tools: [JSONValue]
     var warnings: [AIWarning]
 }
-

@@ -171,6 +171,7 @@ import Testing
     #expect(session.status == .ready)
     #expect(session.messages.isEmpty)
     #expect(transport.reconnectRequests.first?.headers == ["x-resume": "1"])
+    #expect(transport.reconnectRequests.first?.abortSignal != nil)
     #expect(events.finishEvents.isEmpty)
 
     await session.resumeStream().value

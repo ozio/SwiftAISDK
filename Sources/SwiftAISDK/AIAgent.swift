@@ -64,6 +64,7 @@ public struct AIToolLoopAgent: AIAgent {
     public var prepareStep: AIPrepareStep?
     public var toolApproval: AIToolApproval?
     public var requestOptions: AIChatRequestOptions
+    public var timeoutNanoseconds: UInt64?
     public var retryPolicy: AIRetryPolicy
     public var telemetry: Telemetry.Options?
 
@@ -78,6 +79,7 @@ public struct AIToolLoopAgent: AIAgent {
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
         requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
+        timeoutNanoseconds: UInt64? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) {
@@ -91,6 +93,7 @@ public struct AIToolLoopAgent: AIAgent {
         self.prepareStep = prepareStep
         self.toolApproval = toolApproval
         self.requestOptions = requestOptions
+        self.timeoutNanoseconds = timeoutNanoseconds
         self.retryPolicy = retryPolicy
         self.telemetry = telemetry
     }
@@ -132,7 +135,7 @@ public struct AIToolLoopAgent: AIAgent {
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
-            timeoutNanoseconds: options.timeoutNanoseconds,
+            timeoutNanoseconds: options.timeoutNanoseconds ?? timeoutNanoseconds,
             retryPolicy: retryPolicy(for: options),
             telemetry: options.telemetry ?? telemetry
         )
@@ -181,7 +184,7 @@ public struct AIToolLoopAgent: AIAgent {
 
     private func retryPolicy(for options: AIAgentCallOptions) -> AIRetryPolicy {
         var policy = options.retryPolicy ?? retryPolicy
-        if let timeoutNanoseconds = options.timeoutNanoseconds {
+        if let timeoutNanoseconds = options.timeoutNanoseconds ?? timeoutNanoseconds {
             policy.timeoutNanoseconds = timeoutNanoseconds
         }
         return policy

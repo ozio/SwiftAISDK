@@ -2,6 +2,36 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func aiDefaultInstructionsMiddlewarePrependsDefaultsAndPreservesProviderMetadataLikeUpstream() {
+    let defaults = [
+        AIMessage(
+            role: .system,
+            content: [.text("You are helpful.")],
+            providerMetadata: ["anthropic": ["cacheControl": ["type": "ephemeral"]]]
+        ),
+        .system("Answer concisely.")
+    ]
+
+    let result = applyingDefaultInstructions(
+        defaults,
+        to: LanguageModelRequest(messages: [.user("Hello")], temperature: 0.5)
+    )
+
+    #expect(result.messages == defaults + [.user("Hello")])
+    #expect(result.messages[0].providerMetadata["anthropic"]?["cacheControl"]?["type"]?.stringValue == "ephemeral")
+    #expect(result.temperature == 0.5)
+}
+
+@Test func aiDefaultInstructionsMiddlewareLetsAnyCallLevelSystemMessageWinLikeUpstream() {
+    let request = LanguageModelRequest(messages: [
+        .user("Hello"),
+        .system("Conversation instructions")
+    ])
+
+    #expect(applyingDefaultInstructions([.system("Default")], to: request).messages == request.messages)
+    #expect(applyingDefaultInstructions([], to: request).messages == request.messages)
+}
+
 @Test func aiDefaultSettingsMiddlewareAppliesDefaultLanguageSettingsLikeUpstream() {
     let settings = AIDefaultLanguageModelSettings(
         temperature: 0.7,

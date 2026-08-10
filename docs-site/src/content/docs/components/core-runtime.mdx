@@ -14,7 +14,7 @@ description: Public SwiftAISDK APIs for core runtime.
 | Global Variable | 1 |
 | Initializer | 68 |
 | Instance Method | 94 |
-| Instance Property | 225 |
+| Instance Property | 226 |
 | Instance Subscript | 2 |
 | Protocol | 18 |
 | Structure | 33 |
@@ -196,7 +196,7 @@ description: Public SwiftAISDK APIs for core runtime.
 | Initializer | `init(floatLiteral:)` | `init(floatLiteral value: Double)` | [Sources/SwiftAISDK/JSONValue.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/JSONValue.swift) |
 | Initializer | `init(from:)` | `init(from decoder: any Decoder) throws` |  |
 | Initializer | `init(from:)` | `init(from decoder: any Decoder) throws` | [Sources/SwiftAISDK/JSONValue.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/JSONValue.swift) |
-| Initializer | `init(id:model:instructions:executableTools:maxSteps:stopWhen:allowSystemInMessages:prepareStep:toolApproval:requestOptions:retryPolicy:telemetry:)` | `init(id: String? = nil, model: any LanguageModel, instructions: String? = nil, executableTools: [AITool] = [], maxSteps: Int = 20, stopWhen: [AIStopCondition] = [], allowSystemInMessages: Bool = false, prepareStep: AIPrepareStep? = nil, toolApproval: AIToolApproval? = nil, requestOptions: AIChatRequestOptions = AIChatRequestOptions(), retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil)` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |
+| Initializer | `init(id:model:instructions:executableTools:maxSteps:stopWhen:allowSystemInMessages:prepareStep:toolApproval:requestOptions:timeoutNanoseconds:retryPolicy:telemetry:)` | `init(id: String? = nil, model: any LanguageModel, instructions: String? = nil, executableTools: [AITool] = [], maxSteps: Int = 20, stopWhen: [AIStopCondition] = [], allowSystemInMessages: Bool = false, prepareStep: AIPrepareStep? = nil, toolApproval: AIToolApproval? = nil, requestOptions: AIChatRequestOptions = AIChatRequestOptions(), timeoutNanoseconds: UInt64? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil)` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |
 | Initializer | `init(id:role:parts:metadata:)` | `init(id: String = UUID().uuidString, role: MessageRole, parts: [AIUIMessagePart] = [], metadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreUIMessages.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUIMessages.swift) |
 | Initializer | `init(id:text:state:providerMetadata:)` | `init(id: String? = nil, text: String, state: AIUIStreamingPartState? = nil, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreUIMessages.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUIMessages.swift) |
 | Initializer | `init(id:text:state:providerMetadata:)` | `init(id: String? = nil, text: String, state: AIUIStreamingPartState? = nil, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreUIMessages.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUIMessages.swift) |
@@ -542,6 +542,7 @@ description: Public SwiftAISDK APIs for core runtime.
 | Instance Property | `text` | `var text: String` | [Sources/SwiftAISDK/CoreUIMessages.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUIMessages.swift) |
 | Instance Property | `text` | `var text: String { get }` | [Sources/SwiftAISDK/CoreUIMessages.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreUIMessages.swift) |
 | Instance Property | `text` | `var text: String` | [Sources/SwiftAISDK/JSONParsing.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/JSONParsing.swift) |
+| Instance Property | `timeoutNanoseconds` | `var timeoutNanoseconds: UInt64?` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |
 | Instance Property | `timeoutNanoseconds` | `var timeoutNanoseconds: UInt64?` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |
 | Instance Property | `timeoutNanoseconds` | `var timeoutNanoseconds: UInt64?` | [Sources/SwiftAISDK/Core.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Core.swift) |
 | Instance Property | `toolApproval` | `var toolApproval: AIToolApproval?` | [Sources/SwiftAISDK/AIAgent.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIAgent.swift) |

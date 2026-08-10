@@ -17,7 +17,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.rev.ai/speechtotext/v1/jobs")
     #expect(requests[0].headers["authorization"] == "Bearer rev-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/revai/3.0.18")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/revai/3.0.25")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let form = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(form.contains("name=\"media\"; filename=\"audio.wav\""))
@@ -54,8 +54,8 @@ import Testing
     #expect(requests[0].headers["authorization"] == "Bearer rev-key")
     #expect(requests[0].headers["custom-provider-header"] == "provider-header-value")
     #expect(requests[0].headers["Custom-Request-Header"] == "request-header-value")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/revai/3.0.18")
-    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/revai/3.0.18")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/revai/3.0.25")
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/revai/3.0.25")
     #expect(requests[1].headers["custom-provider-header"] == "provider-header-value")
 }
 

@@ -30,7 +30,11 @@ import Testing
         arguments: #" Francisco"}"#
     ))
     #expect(parts == [
-        .toolInputDelta(id: "call_1", delta: #" Francisco"}"#),
+        .toolInputDelta(id: "call_1", delta: #" Francisco"}"#)
+    ])
+
+    parts = tracker.flush()
+    #expect(parts == [
         .toolInputEnd(id: "call_1"),
         .toolCall(AIToolCall(
             id: "call_1",
@@ -40,10 +44,10 @@ import Testing
     ])
 }
 
-@Test func streamingToolCallTrackerFinalizesFullToolCallInSingleChunkLikeUpstream() throws {
+@Test func streamingToolCallTrackerFinalizesFullToolCallOnFlushLikeUpstream() throws {
     var tracker = AIStreamingToolCallTracker()
 
-    let parts = try tracker.processDelta(AIStreamingToolCallDelta(
+    var parts = try tracker.processDelta(AIStreamingToolCallDelta(
         index: 0,
         id: "call_1",
         type: "function",
@@ -53,7 +57,11 @@ import Testing
 
     #expect(parts == [
         .toolInputStart(id: "call_1", name: "get_weather"),
-        .toolInputDelta(id: "call_1", delta: #"{"city": "London"}"#),
+        .toolInputDelta(id: "call_1", delta: #"{"city": "London"}"#)
+    ])
+
+    parts = tracker.flush()
+    #expect(parts == [
         .toolInputEnd(id: "call_1"),
         .toolCall(AIToolCall(
             id: "call_1",
@@ -61,6 +69,35 @@ import Testing
             arguments: #"{"city": "London"}"#
         ))
     ])
+}
+
+@Test func streamingToolCallTrackerDoesNotFinalizeParsableArgumentPrefixBeforeFlushLikeUpstream() throws {
+    var tracker = AIStreamingToolCallTracker()
+
+    var parts = try tracker.processDelta(AIStreamingToolCallDelta(
+        index: 0,
+        id: "call_1",
+        type: "function",
+        functionName: "search",
+        arguments: #"{"query":"test"}"#
+    ))
+    #expect(parts == [
+        .toolInputStart(id: "call_1", name: "search"),
+        .toolInputDelta(id: "call_1", delta: #"{"query":"test"}"#)
+    ])
+
+    parts = try tracker.processDelta(AIStreamingToolCallDelta(
+        index: 0,
+        arguments: #", "limit":10}"#
+    ))
+    #expect(parts == [.toolInputDelta(id: "call_1", delta: #", "limit":10}"#)])
+
+    let final = tracker.flush()
+    #expect(final.last == .toolCall(AIToolCall(
+        id: "call_1",
+        name: "search",
+        arguments: #"{"query":"test"}, "limit":10}"#
+    )))
 }
 
 @Test func streamingToolCallTrackerHandlesMultipleConcurrentToolCallsLikeUpstream() throws {
@@ -97,6 +134,7 @@ import Testing
         functionName: "fn",
         arguments: "{}"
     ))
+    _ = tracker.flush()
 
     let parts = try tracker.processDelta(AIStreamingToolCallDelta(
         index: 0,
@@ -104,6 +142,58 @@ import Testing
     ))
 
     #expect(parts == [])
+}
+
+@Test func streamingToolCallTrackerHandlesNonContiguousAndReusedIndexesLikeUpstream() throws {
+    var tracker = AIStreamingToolCallTracker()
+
+    _ = try tracker.processDelta(AIStreamingToolCallDelta(
+        index: 1,
+        id: "call_1",
+        type: "function",
+        functionName: "fn1",
+        arguments: #"{"value":1}"#
+    ))
+    _ = try tracker.processDelta(AIStreamingToolCallDelta(
+        index: 3,
+        id: "call_2",
+        type: "function",
+        functionName: "fn2",
+        arguments: #"{"value":2}"#
+    ))
+    _ = try tracker.processDelta(AIStreamingToolCallDelta(
+        index: 1,
+        id: "call_3",
+        type: "function",
+        functionName: "fn3",
+        arguments: #"{"value":3}"#
+    ))
+
+    let calls = tracker.flush().compactMap { part -> AIToolCall? in
+        if case let .toolCall(call) = part { return call }
+        return nil
+    }
+    #expect(calls.map(\.id) == ["call_1", "call_2", "call_3"])
+}
+
+@Test func streamingToolCallTrackerContinuesLatestWhenIndexIsMissingAndUsesIndexForEmptyIDLikeUpstream() throws {
+    var tracker = AIStreamingToolCallTracker()
+
+    _ = try tracker.processDelta(AIStreamingToolCallDelta(
+        index: 7,
+        id: "call_1",
+        type: "function",
+        functionName: "fn",
+        arguments: #"{"val"#
+    ))
+    _ = try tracker.processDelta(AIStreamingToolCallDelta(arguments: #"ue":1"#))
+    _ = try tracker.processDelta(AIStreamingToolCallDelta(index: 7, id: "", arguments: "}"))
+
+    let call = try #require(tracker.flush().compactMap { part -> AIToolCall? in
+        if case let .toolCall(call) = part { return call }
+        return nil
+    }.first)
+    #expect(call.arguments == #"{"value":1}"#)
 }
 
 @Test func streamingToolCallTrackerSkipsDeltaEmissionWhenArgumentsAreNilLikeUpstream() throws {
@@ -253,6 +343,7 @@ import Testing
         arguments: "{}"
     ))
 
+    #expect(!tracker.flush().isEmpty)
     #expect(tracker.flush() == [])
 }
 
@@ -267,7 +358,7 @@ import Testing
         }
     )
 
-    let parts = try tracker.processDelta(AIStreamingToolCallDelta(
+    _ = try tracker.processDelta(AIStreamingToolCallDelta(
         index: 0,
         id: "call_1",
         type: "function",
@@ -280,7 +371,7 @@ import Testing
         ])
     ))
 
-    #expect(parts.last == .toolCall(AIToolCall(
+    #expect(tracker.flush().last == .toolCall(AIToolCall(
         id: "call_1",
         name: "fn",
         arguments: "{}",

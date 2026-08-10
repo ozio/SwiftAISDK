@@ -58,6 +58,24 @@ public func defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings) 
     })
 }
 
+public func defaultInstructionsMiddleware(instructions: String) -> AILanguageModelMiddleware {
+    defaultInstructionsMiddleware(instructions: [.system(instructions)])
+}
+
+public func defaultInstructionsMiddleware(instructions: [AIMessage]) -> AILanguageModelMiddleware {
+    let systemMessages = instructions.map { message in
+        AIMessage(
+            role: .system,
+            content: message.content,
+            reasoning: message.reasoning,
+            providerMetadata: message.providerMetadata
+        )
+    }
+    return AILanguageModelMiddleware(transformRequest: { context in
+        applyingDefaultInstructions(systemMessages, to: context.request)
+    })
+}
+
 public struct AIDefaultEmbeddingModelSettings: Sendable {
     public var providerOptions: [String: JSONValue]
     public var headers: [String: String]
@@ -96,6 +114,16 @@ func applyingDefaultSettings(_ settings: AIDefaultLanguageModelSettings, to requ
     output.providerOptions = mergeJSONDictionaries(settings.providerOptions, output.providerOptions)
     output.extraBody = mergeJSONDictionaries(settings.extraBody, output.extraBody)
     output.headers = settings.headers.merging(output.headers) { _, request in request }
+    return output
+}
+
+func applyingDefaultInstructions(_ instructions: [AIMessage], to request: LanguageModelRequest) -> LanguageModelRequest {
+    guard !instructions.isEmpty,
+          !request.messages.contains(where: { $0.role == .system }) else {
+        return request
+    }
+    var output = request
+    output.messages.insert(contentsOf: instructions, at: 0)
     return output
 }
 

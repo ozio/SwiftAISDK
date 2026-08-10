@@ -17,7 +17,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.31")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.39")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
 }
@@ -47,7 +47,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.31")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.39")
 }
 @Test func googleCustomXGoogAPIKeyOverridesConfiguredAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

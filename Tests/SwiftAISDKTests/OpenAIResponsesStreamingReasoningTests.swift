@@ -2,6 +2,49 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func openAIResponsesCorrelatesRotatingItemIDsByOutputIndexAndFallsBackForNullIndexLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"reasoning-added","type":"reasoning","summary":[]}}
+
+    data: {"type":"response.reasoning_summary_part.added","item_id":"reasoning-part-rotated","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""}}
+
+    data: {"type":"response.reasoning_summary_text.delta","item_id":"reasoning-delta-rotated","output_index":0,"summary_index":0,"delta":"thinking"}
+
+    data: {"type":"response.reasoning_summary_part.done","item_id":"reasoning-done-rotated","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":"thinking"}}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"reasoning-item-done-rotated","type":"reasoning","summary":[{"type":"summary_text","text":"thinking"}]}}
+
+    data: {"type":"response.output_item.added","output_index":1,"item":{"id":"message-added","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+    data: {"type":"response.output_text.delta","item_id":"message-delta-rotated","output_index":1,"content_index":0,"delta":"answer"}
+
+    data: {"type":"response.output_item.done","output_index":1,"item":{"id":"message-done-rotated","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"answer","annotations":[]}]}}
+
+    data: {"type":"response.output_text.delta","item_id":"null-index-item","output_index":null,"content_index":0,"delta":"fallback"}
+
+    data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.3-codex")
+
+    var reasoningIDs: [String] = []
+    var textIDs: [String] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .reasoningStart(id, _), let .reasoningDeltaPart(id, _, _), let .reasoningEnd(id, _):
+            reasoningIDs.append(id)
+        case let .textStart(id, _), let .textDeltaPart(id, _, _), let .textEnd(id, _):
+            textIDs.append(id)
+        default:
+            break
+        }
+    }
+
+    #expect(reasoningIDs == ["reasoning-added:0", "reasoning-added:0", "reasoning-added:0"])
+    #expect(textIDs == ["message-added", "message-added", "message-added", "null-index-item"])
+}
+
 @Test func openAIResponsesStreamsReasoningDeltaPartsFromEncryptedFixtureLikeUpstream() async throws {
     let fixtureName = "openai-reasoning-encrypted-content.1.chunks.txt"
     let events = try openAIResponsesChunksFixtureEvents(fixtureName)

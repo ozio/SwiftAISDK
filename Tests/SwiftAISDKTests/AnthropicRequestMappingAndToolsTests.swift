@@ -254,6 +254,7 @@ import Testing
             "advisor": AnthropicTools.advisor_20260301(
                 model: "claude-opus-4-8",
                 maxUses: 2,
+                maxTokens: 2_048,
                 caching: ["type": "ephemeral", "ttl": "5m"]
             ),
             "bash": AnthropicTools.bash_20250124(),
@@ -297,6 +298,7 @@ import Testing
     #expect(advisor["name"]?.stringValue == "advisor")
     #expect(advisor["model"]?.stringValue == "claude-opus-4-8")
     #expect(advisor["max_uses"]?.intValue == 2)
+    #expect(advisor["max_tokens"]?.intValue == 2_048)
     #expect(advisor["caching"]?["ttl"]?.stringValue == "5m")
     #expect(tools.contains { $0["type"]?.stringValue == "bash_20250124" && $0["name"]?.stringValue == "bash" })
     #expect(tools.contains { $0["type"]?.stringValue == "code_execution_20250825" && $0["name"]?.stringValue == "code_execution" })

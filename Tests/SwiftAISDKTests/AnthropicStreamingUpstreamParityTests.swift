@@ -259,3 +259,104 @@ import Testing
     #expect(errors.first?.1?["error"]?["type"]?.stringValue == "overloaded_error")
     #expect(finishCount == 0)
 }
+
+@Test func anthropicStreamIgnoresDuplicateStartForActiveMessageLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"message_start","message":{"id":"msg_dup","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"usage":{"input_tokens":17,"output_tokens":1}}}
+
+    data: {"type":"message_start","message":{"id":"msg_dup","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"usage":{"input_tokens":999,"output_tokens":999}}}
+
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello, World!"}}
+
+    data: {"type":"content_block_stop","index":0}
+
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":227}}
+
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-3-haiku-20240307")
+
+    var textDeltas: [String] = []
+    var errors: [String] = []
+    var finishUsage: TokenUsage?
+    var rawTypes: [String] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")], includeRawChunks: true)) {
+        switch part {
+        case let .textDelta(delta):
+            textDeltas.append(delta)
+        case let .error(message, _):
+            errors.append(message)
+        case let .finish(_, usage):
+            finishUsage = usage
+        case let .raw(raw):
+            rawTypes.append(raw["type"]?.stringValue ?? "")
+        default:
+            break
+        }
+    }
+
+    #expect(textDeltas == ["Hello, World!"])
+    #expect(errors.isEmpty)
+    #expect(finishUsage?.inputTokens == 17)
+    #expect(finishUsage?.outputTokens == 227)
+    #expect(rawTypes.filter { $0 == "message_start" }.count == 2)
+}
+
+@Test func anthropicStreamRejectsSplicedMessageStartAndSuppressesRemainderLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"message_start","message":{"id":"msg_first","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"usage":{"input_tokens":17,"output_tokens":1}}}
+
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_first","name":"test-tool","input":{}}}
+
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\\"value\\\":\\\"Spark"}}
+
+    data: {"type":"message_start","message":{"id":"msg_second","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"usage":{"input_tokens":17,"output_tokens":1}}}
+
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_second","name":"test-tool","input":{}}}
+
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\\"value\\\":\\\"Sparkle Day\\\"}"}}
+
+    data: {"type":"content_block_stop","index":0}
+
+    data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":65}}
+
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+    let model = try provider.languageModel("claude-3-haiku-20240307")
+
+    var errors: [(String, JSONValue?)] = []
+    var toolCallIDs: [String] = []
+    var finishCount = 0
+    var rawTypes: [String] = []
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hello")],
+        tools: ["test-tool": ["type": "object", "properties": ["value": ["type": "string"]]]],
+        includeRawChunks: true
+    )) {
+        switch part {
+        case let .error(message, rawValue):
+            errors.append((message, rawValue))
+        case let .toolCall(call):
+            toolCallIDs.append(call.id)
+        case .finish, .finishMetadata:
+            finishCount += 1
+        case let .raw(raw):
+            rawTypes.append(raw["type"]?.stringValue ?? "")
+        default:
+            break
+        }
+    }
+
+    #expect(errors.count == 1)
+    #expect(errors[0].0 == "Received message_start for message \"msg_second\" while message \"msg_first\" is still open.")
+    #expect(errors[0].1?["message"]?["id"]?.stringValue == "msg_second")
+    #expect(toolCallIDs.contains("toolu_second") == false)
+    #expect(finishCount == 0)
+    #expect(rawTypes == ["message_start", "content_block_start", "content_block_delta", "message_start"])
+}

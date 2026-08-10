@@ -72,7 +72,6 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     var activeTextID: String?
                     var finishReason: String? = "other"
                     var finishUsage: TokenUsage?
-                    var startedToolCallIndices: Set<Int> = []
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw: JSONValue
                         do {
@@ -136,15 +135,13 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                                 activeReasoningID = nil
                             }
                             for toolCallDelta in toolCallDeltas {
-                                let index = toolCallDelta["index"]?.intValue ?? 0
-                                if !startedToolCallIndices.contains(index) {
+                                if !toolCalls.hasMatchingBuffer(for: toolCallDelta) {
                                     guard toolCallDelta["id"]?.stringValue != nil else {
                                         throw AIError.invalidResponse(provider: providerID, message: "Expected 'id' to be a string.")
                                     }
                                     guard toolCallDelta["function"]?["name"]?.stringValue != nil else {
                                         throw AIError.invalidResponse(provider: providerID, message: "Expected 'function.name' to be a string.")
                                     }
-                                    startedToolCallIndices.insert(index)
                                 }
                                 for part in toolCalls.apply(delta: toolCallDelta) {
                                     continuation.yield(part)

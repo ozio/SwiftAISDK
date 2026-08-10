@@ -166,7 +166,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepseek-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.19")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.26")
 }
 
 @Test func deepSeekLanguageGeneratesMissingToolCallIDLikeUpstreamV4() async throws {
@@ -551,7 +551,7 @@ import Testing
     ))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.28")
+    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.37")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "user")
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")

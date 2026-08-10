@@ -216,7 +216,9 @@ public final class AIChatSession: ObservableObject {
     ) -> Task<Void, Never> {
         stop()
         let runID = UUID()
+        let controller = AIAbortController()
         activeRunID = runID
+        currentAbortController = controller
         error = nil
         activeRequestOptions = options
 
@@ -225,6 +227,7 @@ public final class AIChatSession: ObservableObject {
             do {
                 guard let stream = try await transport.reconnectToStream(AIChatReconnectRequest(
                     chatID: chatID,
+                    abortSignal: controller.signal,
                     headers: options.headers,
                     body: options.body,
                     metadata: options.metadata

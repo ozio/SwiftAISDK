@@ -83,6 +83,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     var textItemAnnotations: [String: [JSONValue]] = [:]
                     var streamOutputLogprobs: [JSONValue] = []
                     var activeReasoning: [String: OpenAIResponsesActiveReasoning] = [:]
+                    var activeOutputItemIDs: [Int: String] = [:]
+                    func resolvedOutputItemID(_ itemID: String, outputIndex: Int?) -> String {
+                        guard let outputIndex else { return itemID }
+                        return activeOutputItemIDs[outputIndex] ?? itemID
+                    }
                     var openResponsesHasToolCalls = false
                     var hasOutputStarted = false
                     let shouldThrowPreOutputStreamErrors = isOpenAIBackedProvider(providerID, config: config)
@@ -126,6 +131,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                            let item = raw["item"],
                            item["type"]?.stringValue == "message",
                            let itemID = item["id"]?.stringValue {
+                            if let outputIndex = raw["output_index"]?.intValue {
+                                activeOutputItemIDs[outputIndex] = itemID
+                            }
                             if let phase = item["phase"] {
                                 textItemPhases[itemID] = phase
                             }
@@ -139,6 +147,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                            let item = raw["item"],
                            item["type"]?.stringValue == "reasoning",
                            let itemID = item["id"]?.stringValue {
+                            if let outputIndex = raw["output_index"]?.intValue {
+                                activeOutputItemIDs[outputIndex] = itemID
+                            }
                             activeReasoning[itemID] = OpenAIResponsesActiveReasoning(
                                 encryptedContent: item["encrypted_content"],
                                 summaryParts: [0: .active]
@@ -155,7 +166,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         }
                         if let delta = raw["delta"]?.stringValue ?? raw["output_text_delta"]?.stringValue, openAIResponsesIsTextDelta(raw) {
                             continuation.yield(.textDelta(delta))
-                            if let itemID = raw["item_id"]?.stringValue {
+                            if let eventItemID = raw["item_id"]?.stringValue {
+                                let itemID = resolvedOutputItemID(
+                                    eventItemID,
+                                    outputIndex: raw["output_index"]?.intValue
+                                )
                                 continuation.yield(.textDeltaPart(
                                     id: itemID,
                                     delta: delta,
@@ -169,8 +184,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         }
                         if let delta = raw["delta"]?.stringValue, raw["type"]?.stringValue == "response.reasoning_summary_text.delta" {
                             continuation.yield(.reasoningDelta(delta))
-                            if let itemID = raw["item_id"]?.stringValue,
+                            if let eventItemID = raw["item_id"]?.stringValue,
                                let summaryIndex = raw["summary_index"]?.intValue {
+                                let itemID = resolvedOutputItemID(
+                                    eventItemID,
+                                    outputIndex: raw["output_index"]?.intValue
+                                )
                                 continuation.yield(.reasoningDeltaPart(
                                     id: "\(itemID):\(summaryIndex)",
                                     delta: delta,
@@ -180,36 +199,45 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         }
                         if raw["type"]?.stringValue == "response.output_text.annotation.added",
                            let annotation = raw["annotation"],
-                           let itemID = raw["item_id"]?.stringValue {
+                           let eventItemID = raw["item_id"]?.stringValue {
+                            let itemID = resolvedOutputItemID(
+                                eventItemID,
+                                outputIndex: raw["output_index"]?.intValue
+                            )
                             textItemAnnotations[itemID, default: []].append(annotation)
                             for source in openAIResponsesSources(fromAnnotations: [annotation], providerID: providerID, sourceCounter: &sourceCounter) {
                                 continuation.yield(.source(source))
                             }
                         }
                         if raw["type"]?.stringValue == "response.reasoning_summary_part.added",
-                           let itemID = raw["item_id"]?.stringValue,
+                           let eventItemID = raw["item_id"]?.stringValue,
                            let summaryIndex = raw["summary_index"]?.intValue,
-                           summaryIndex > 0,
-                           var reasoning = activeReasoning[itemID] {
-                            reasoning.summaryParts[summaryIndex] = .active
-                            for canConcludeIndex in reasoning.summaryParts.keys.sorted()
-                                where reasoning.summaryParts[canConcludeIndex] == .canConclude {
-                                continuation.yield(.reasoningEnd(
-                                    id: "\(itemID):\(canConcludeIndex)",
-                                    providerMetadata: openAIResponsesReasoningProviderMetadata(itemID: itemID, providerID: providerID)
+                           summaryIndex > 0 {
+                            let itemID = resolvedOutputItemID(
+                                eventItemID,
+                                outputIndex: raw["output_index"]?.intValue
+                            )
+                            if var reasoning = activeReasoning[itemID] {
+                                reasoning.summaryParts[summaryIndex] = .active
+                                for canConcludeIndex in reasoning.summaryParts.keys.sorted()
+                                    where reasoning.summaryParts[canConcludeIndex] == .canConclude {
+                                    continuation.yield(.reasoningEnd(
+                                        id: "\(itemID):\(canConcludeIndex)",
+                                        providerMetadata: openAIResponsesReasoningProviderMetadata(itemID: itemID, providerID: providerID)
+                                    ))
+                                    reasoning.summaryParts[canConcludeIndex] = .concluded
+                                }
+                                activeReasoning[itemID] = reasoning
+                                continuation.yield(.reasoningStart(
+                                    id: "\(itemID):\(summaryIndex)",
+                                    providerMetadata: openAIResponsesReasoningProviderMetadata(
+                                        itemID: itemID,
+                                        encryptedContent: reasoning.encryptedContent,
+                                        includeEncryptedContent: true,
+                                        providerID: providerID
+                                    )
                                 ))
-                                reasoning.summaryParts[canConcludeIndex] = .concluded
                             }
-                            activeReasoning[itemID] = reasoning
-                            continuation.yield(.reasoningStart(
-                                id: "\(itemID):\(summaryIndex)",
-                                providerMetadata: openAIResponsesReasoningProviderMetadata(
-                                    itemID: itemID,
-                                    encryptedContent: reasoning.encryptedContent,
-                                    includeEncryptedContent: true,
-                                    providerID: providerID
-                                )
-                            ))
                         }
                         for eventPart in toolCallBuffers.apply(event: raw) {
                             if case let .toolCall(toolCall) = eventPart,
@@ -223,7 +251,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         if raw["type"]?.stringValue == "response.output_item.done",
                            let item = raw["item"],
                            item["type"]?.stringValue == "message",
-                           let itemID = item["id"]?.stringValue {
+                           let eventItemID = item["id"]?.stringValue {
+                            let outputIndex = raw["output_index"]?.intValue
+                            let itemID = resolvedOutputItemID(eventItemID, outputIndex: outputIndex)
                             let phase = item["phase"] ?? textItemPhases[itemID]
                             let annotations = textItemAnnotations[itemID] ?? []
                             continuation.yield(.textEnd(
@@ -231,32 +261,45 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: phase, annotations: annotations, providerID: providerID)
                             ))
                             textItemAnnotations[itemID] = nil
+                            if let outputIndex {
+                                activeOutputItemIDs[outputIndex] = nil
+                            }
                         }
                         if raw["type"]?.stringValue == "response.reasoning_summary_part.done",
-                           let itemID = raw["item_id"]?.stringValue,
+                           let eventItemID = raw["item_id"]?.stringValue,
                            let summaryIndex = raw["summary_index"]?.intValue {
+                            let itemID = resolvedOutputItemID(
+                                eventItemID,
+                                outputIndex: raw["output_index"]?.intValue
+                            )
                             activeReasoning[itemID]?.summaryParts[summaryIndex] = .canConclude
                         }
                         if raw["type"]?.stringValue == "response.output_item.done",
                            let item = raw["item"],
                            item["type"]?.stringValue == "reasoning",
-                           let itemID = item["id"]?.stringValue,
-                           let reasoning = activeReasoning[itemID] {
-                            let summaryPartIndices = reasoning.summaryParts.keys.sorted().filter {
-                                reasoning.summaryParts[$0] == .active || reasoning.summaryParts[$0] == .canConclude
+                           let eventItemID = item["id"]?.stringValue {
+                            let outputIndex = raw["output_index"]?.intValue
+                            let itemID = resolvedOutputItemID(eventItemID, outputIndex: outputIndex)
+                            if let reasoning = activeReasoning[itemID] {
+                                let summaryPartIndices = reasoning.summaryParts.keys.sorted().filter {
+                                    reasoning.summaryParts[$0] == .active || reasoning.summaryParts[$0] == .canConclude
+                                }
+                                for summaryIndex in summaryPartIndices {
+                                    continuation.yield(.reasoningEnd(
+                                        id: "\(itemID):\(summaryIndex)",
+                                        providerMetadata: openAIResponsesReasoningProviderMetadata(
+                                            itemID: itemID,
+                                            encryptedContent: item["encrypted_content"],
+                                            includeEncryptedContent: true,
+                                            providerID: providerID
+                                        )
+                                    ))
+                                }
+                                activeReasoning[itemID] = nil
                             }
-                            for summaryIndex in summaryPartIndices {
-                                continuation.yield(.reasoningEnd(
-                                    id: "\(itemID):\(summaryIndex)",
-                                    providerMetadata: openAIResponsesReasoningProviderMetadata(
-                                        itemID: itemID,
-                                        encryptedContent: item["encrypted_content"],
-                                        includeEncryptedContent: true,
-                                        providerID: providerID
-                                    )
-                                ))
+                            if let outputIndex {
+                                activeOutputItemIDs[outputIndex] = nil
                             }
-                            activeReasoning[itemID] = nil
                         }
                         if raw["type"]?.stringValue == "response.output_item.done",
                            let item = raw["item"],
@@ -435,6 +478,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     toolNamespaces: toolNamespaces,
                     customToolNames: preparedTools.customToolNames,
                     programmaticToolNames: preparedTools.programmaticToolNames,
+                    outputSchemaToolNames: preparedTools.outputSchemaToolNames,
                     providerID: providerID,
                     useDeveloperRoleForSystem: useDeveloperRoleForSystem,
                     warnings: &warnings

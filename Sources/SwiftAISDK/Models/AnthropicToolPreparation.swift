@@ -15,7 +15,7 @@ func anthropicPrepareTools(
     supportsStructuredOutput: Bool = true,
     supportsStrictTools: Bool = true,
     defaultEagerInputStreaming: Bool = false
-) -> AnthropicPreparedTools {
+) throws -> AnthropicPreparedTools {
     var prepared = AnthropicPreparedTools()
 
     func addBeta(_ beta: String) {
@@ -153,6 +153,18 @@ func anthropicPrepareTools(
             var tool: [String: JSONValue] = ["type": "advisor_20260301", "name": "advisor"]
             tool["model"] = args["model"]
             tool["max_uses"] = args["maxUses"]
+            if let maxTokens = args["maxTokens"] {
+                guard let value = maxTokens.doubleValue,
+                      value.isFinite,
+                      value.rounded(.towardZero) == value,
+                      value >= 1_024 else {
+                    throw AIError.invalidArgument(
+                        argument: "tools.\(name).args.maxTokens",
+                        message: "Anthropic advisor maxTokens must be an integer greater than or equal to 1024."
+                    )
+                }
+                tool["max_tokens"] = .number(value)
+            }
             tool["caching"] = args["caching"]
             prepared.tools.append(.object(tool.compactMapValues { $0 }))
         default:

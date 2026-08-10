@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-08-03
+Snapshot date: 2026-08-10
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.48`, `@ai-sdk/provider@4.0.4`,
-`@ai-sdk/provider-utils@5.0.18`, and `@ai-sdk/react@4.0.51`.
+snapshots, currently `ai@7.0.58`, `@ai-sdk/provider@4.0.7`,
+`@ai-sdk/provider-utils@5.0.25`, and `@ai-sdk/react@4.0.61`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.48 -> 7.0.58`
+- `@ai-sdk/provider@4.0.4 -> 4.0.7`
+- `@ai-sdk/provider-utils@5.0.18 -> 5.0.25`
+- `@ai-sdk/react@4.0.51 -> 4.0.61`
 - `ai@7.0.44 -> 7.0.48`
 - `@ai-sdk/provider@4.0.4` (unchanged)
 - `@ai-sdk/provider-utils@5.0.16 -> 5.0.18`
@@ -43,6 +47,29 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.58` default instructions, agent-level default timeouts, and
+  reconnect cancellation are ported through `defaultInstructionsMiddleware`,
+  `AIToolLoopAgent.timeoutNanoseconds`, and `AIChatReconnectRequest.abortSignal`.
+  Focused tests cover call-level system-message precedence, timeout override
+  precedence, and resume-stream abort propagation.
+- `@ai-sdk/provider-utils@5.0.25` streamed tool-call correlation is ported for
+  both the generic tracker and OpenAI-style provider streams: non-empty IDs
+  take precedence over explicit indexes, missing indexes continue the latest
+  call, reused indexes can start distinct calls, and finalization happens only
+  on stream flush. Generic OpenAI-compatible text-token usage is also clamped
+  at zero when a provider reports more reasoning than completion tokens.
+- `ai@7.0.58` and `@ai-sdk/provider@4.0.7` add the new Batch V4 model family
+  and async Video V4 start/status/webhook contracts. Swift providers continue
+  to expose terminal unary video generation with internal polling, so these
+  shared public protocols, batch JSONL result streaming, cancellation, and the
+  stable per-logical-start idempotency key remain an explicit core design gap.
+  Provider wire behavior that fits the unary contract is still ported where
+  possible; callers should note that retrying a lost unary video response may
+  repeat a paid start until the async operation surface is introduced.
+- `@ai-sdk/react@4.0.61` changes React `useChat` subscription throttling so an
+  unrelated render cannot bypass the configured cadence. SwiftAISDK has no
+  `useSyncExternalStore`/React render subscription, so there is no direct
+  portable runtime change.
 - `ai@7.0.45` extends the experimental tool-caller graph from `generateText`
   into `streamText` and `ToolLoopAgent`. Swift still has no shared late-bound
   local/provider caller abstraction, so the existing generic tool-caller gap

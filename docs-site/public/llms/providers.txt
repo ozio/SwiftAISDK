@@ -13,7 +13,7 @@ Speech: 13
 Audio generation: 1
 Audio transformation: 1
 Dubbing: 1
-Video: 11
+Video: 12
 Reranking: 5
 Files: 5
 Skills: 3
@@ -29,7 +29,7 @@ Skills: 3
 | [`assemblyai`](assemblyai/) | `@ai-sdk/assemblyai` | `AIProviders.assemblyAI` |  |  |  | ✅ |  |  |  |  |  |  |  |  |
 | [`azure`](azure/) | `@ai-sdk/azure` | `AIProviders.azure` | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`baseten`](baseten/) | `@ai-sdk/baseten` | `AIProviders.baseten` | ✅ | ✅ |  |  |  |  |  |  |  |  |  |  |
-| [`black-forest-labs`](black-forest-labs/) | `@ai-sdk/black-forest-labs` | `AIProviders.blackForestLabs` |  |  | ✅ |  |  |  |  |  |  |  |  |  |
+| [`black-forest-labs`](black-forest-labs/) | `@ai-sdk/black-forest-labs` | `AIProviders.blackForestLabs` |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |
 | [`bytedance`](bytedance/) | `@ai-sdk/bytedance` | `AIProviders.byteDance` |  |  |  |  |  |  |  |  | ✅ |  |  |  |
 | [`cartesia`](cartesia/) | `@ai-sdk/cartesia` | `AIProviders.cartesia` |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`cerebras`](cerebras/) | `@ai-sdk/cerebras` | `AIProviders.cerebras` | ✅ |  |  |  |  |  |  |  |  |  |  |  |

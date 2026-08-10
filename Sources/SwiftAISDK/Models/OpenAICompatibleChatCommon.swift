@@ -239,63 +239,7 @@ struct OpenAICompatibleToolCallBuffer {
     var rawValue: JSONValue?
 }
 
-struct OpenAICompatibleStreamingToolCalls {
-    private var buffers: [Int: OpenAICompatibleToolCallBuffer] = [:]
-
-    mutating func apply(delta: JSONValue) -> [LanguageStreamPart] {
-        let index = delta["index"]?.intValue ?? 0
-        var buffer = buffers[index] ?? OpenAICompatibleToolCallBuffer()
-        if let id = delta["id"]?.stringValue {
-            buffer.id = id
-        }
-        if let name = delta["function"]?["name"]?.stringValue {
-            buffer.name = name
-        }
-        let argumentsDelta = delta["function"]?["arguments"]?.stringValue ?? ""
-        if !argumentsDelta.isEmpty {
-            buffer.arguments += argumentsDelta
-        }
-        buffer.rawValue = delta
-        let id = buffer.id ?? "tool-call-\(index)"
-        var parts: [LanguageStreamPart] = []
-        if !buffer.inputStarted, let name = buffer.name {
-            parts.append(.toolInputStart(id: id, name: name))
-            buffer.inputStarted = true
-        }
-        parts.append(.toolCallDelta(
-            id: buffer.id,
-            name: buffer.name,
-            argumentsDelta: argumentsDelta,
-            index: index
-        ))
-        if !argumentsDelta.isEmpty, buffer.inputStarted {
-            parts.append(.toolInputDelta(id: id, delta: argumentsDelta))
-        }
-        buffers[index] = buffer
-        return parts
-    }
-
-    mutating func finishedParts() -> [LanguageStreamPart] {
-        buffers.keys.sorted().flatMap { index -> [LanguageStreamPart] in
-            guard var buffer = buffers[index], let name = buffer.name else { return [] }
-            let id = buffer.id ?? "tool-call-\(index)"
-            var parts: [LanguageStreamPart] = []
-            if !buffer.inputStarted {
-                parts.append(.toolInputStart(id: id, name: name))
-                buffer.inputStarted = true
-                buffers[index] = buffer
-            }
-            parts.append(.toolInputEnd(id: id))
-            parts.append(.toolCall(AIToolCall(
-                id: buffer.id ?? "tool-call-\(index)",
-                name: name,
-                arguments: buffer.arguments,
-                rawValue: buffer.rawValue
-            )))
-            return parts
-        }
-    }
-}
+typealias OpenAICompatibleStreamingToolCalls = OpenAIStyleStreamingToolCalls
 
 func openAICompatibleChatToolCalls(from value: JSONValue?) -> [AIToolCall] {
     value?.arrayValue?.enumerated().compactMap { index, item in

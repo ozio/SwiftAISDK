@@ -45,7 +45,35 @@ import Testing
     #expect(requests.count == 4)
     #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
     #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.20" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.28" })
+}
+
+@Test func openAICompatibleClampsOutputTextTokensWhenReasoningExceedsCompletionLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {
+      "choices":[{"message":{"content":"reasoned"},"finish_reason":"stop"}],
+      "usage":{
+        "prompt_tokens":3,
+        "completion_tokens":5,
+        "total_tokens":8,
+        "completion_tokens_details":{"reasoning_tokens":9}
+      }
+    }
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    let result = try await provider.chatModel("chat-model").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.usage?.inputTokens == 3)
+    #expect(result.usage?.outputTokens == 5)
+    #expect(result.usage?.outputTextTokens == 0)
+    #expect(result.usage?.outputReasoningTokens == 9)
+    #expect(result.usage?.totalTokens == 8)
 }
 
 @Test func openAICompatibleStreamsIncludeUsageWhenEnabled() async throws {

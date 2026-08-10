@@ -8,7 +8,7 @@ Source URL: /components/middleware/
 | --- | --- |
 | Case | 2 |
 | Enumeration | 1 |
-| Function | 17 |
+| Function | 19 |
 | Initializer | 13 |
 | Instance Property | 53 |
 | Structure | 13 |
@@ -22,6 +22,8 @@ Source URL: /components/middleware/
 | Enumeration | `AILanguageModelCallType` | `enum AILanguageModelCallType` | [Sources/SwiftAISDK/MiddlewareTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MiddlewareTypes.swift) |
 | Function | `addToolInputExamplesMiddleware(prefix:remove:format:)` | `func addToolInputExamplesMiddleware(prefix: String = "Input Examples:", remove: Bool = true, format: (@Sendable (AIToolInputExampleFormatContext) -> String)? = nil) -> AILanguageModelMiddleware` | [Sources/SwiftAISDK/ToolInputExamplesMiddleware.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/ToolInputExamplesMiddleware.swift) |
 | Function | `defaultEmbeddingSettingsMiddleware(settings:)` | `func defaultEmbeddingSettingsMiddleware(settings: AIDefaultEmbeddingModelSettings) -> AIEmbeddingModelMiddleware` | [Sources/SwiftAISDK/DefaultSettingsMiddleware.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/DefaultSettingsMiddleware.swift) |
+| Function | `defaultInstructionsMiddleware(instructions:)` | `func defaultInstructionsMiddleware(instructions: String) -> AILanguageModelMiddleware` | [Sources/SwiftAISDK/DefaultSettingsMiddleware.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/DefaultSettingsMiddleware.swift) |
+| Function | `defaultInstructionsMiddleware(instructions:)` | `func defaultInstructionsMiddleware(instructions: [AIMessage]) -> AILanguageModelMiddleware` | [Sources/SwiftAISDK/DefaultSettingsMiddleware.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/DefaultSettingsMiddleware.swift) |
 | Function | `defaultSettingsMiddleware(settings:)` | `func defaultSettingsMiddleware(settings: AIDefaultLanguageModelSettings) -> AILanguageModelMiddleware` | [Sources/SwiftAISDK/DefaultSettingsMiddleware.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/DefaultSettingsMiddleware.swift) |
 | Function | `extractJsonMiddleware(transform:)` | `func extractJsonMiddleware(transform: (@Sendable (String) -> String)? = nil) -> AILanguageModelMiddleware` | [Sources/SwiftAISDK/ExtractionMiddleware.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/ExtractionMiddleware.swift) |
 | Function | `extractJSONMiddleware(transform:)` | `func extractJSONMiddleware(transform: (@Sendable (String) -> String)? = nil) -> AILanguageModelMiddleware` | [Sources/SwiftAISDK/ExtractionMiddleware.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/ExtractionMiddleware.swift) |

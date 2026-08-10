@@ -76,6 +76,24 @@ import Testing
     #expect(model.requests.count == 1)
 }
 
+@Test func toolLoopAgentAppliesSettingsTimeoutWhenCallDoesNotOverrideItLikeUpstream() async throws {
+    let model = SlowLanguageModel(delayNanoseconds: 80_000_000)
+    let agent = AIToolLoopAgent(
+        model: model,
+        timeoutNanoseconds: 1_000_000,
+        retryPolicy: .none
+    )
+
+    do {
+        _ = try await agent.generate(prompt: "Too slow")
+        Issue.record("Expected agent settings timeout.")
+    } catch let error as AIError {
+        #expect(error == .timeout(durationNanoseconds: 1_000_000))
+    }
+
+    #expect(model.requests.count == 1)
+}
+
 @Test func toolLoopAgentRejectsSystemMessagesByDefaultLikeUpstream() async throws {
     let model = AgentRecordingLanguageModel(result: TextGenerationResult(text: "done", rawValue: .object([:])))
     let agent = AIToolLoopAgent(model: model, retryPolicy: .none)

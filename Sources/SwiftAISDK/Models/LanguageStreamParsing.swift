@@ -21,16 +21,30 @@ struct OpenAIStyleToolCallBuffer {
     var arguments: String = ""
     var inputStarted = false
     var rawValue: JSONValue?
+    var fallbackIndex: Int
 }
 
 struct OpenAIStyleStreamingToolCalls {
-    private var buffers: [Int: OpenAIStyleToolCallBuffer] = [:]
+    private var buffers: [OpenAIStyleToolCallBuffer] = []
+    private var positionsByID: [String: Int] = [:]
+    private var positionsByIndex: [Int: Int] = [:]
+    private var latestPosition: Int?
+
+    func hasMatchingBuffer(for delta: JSONValue) -> Bool {
+        resolvedPosition(for: delta) != nil
+    }
 
     mutating func apply(delta: JSONValue) -> [LanguageStreamPart] {
-        let index = delta["index"]?.intValue ?? 0
-        var buffer = buffers[index] ?? OpenAIStyleToolCallBuffer()
-        if let id = delta["id"]?.stringValue {
+        let incomingIndex = delta["index"]?.intValue
+        let position = resolvedPosition(for: delta) ?? buffers.endIndex
+        if position == buffers.endIndex {
+            buffers.append(OpenAIStyleToolCallBuffer(fallbackIndex: incomingIndex ?? position))
+        }
+
+        var buffer = buffers[position]
+        if let id = delta["id"]?.stringValue, !id.isEmpty {
             buffer.id = id
+            positionsByID[id] = position
         }
         if let name = delta["function"]?["name"]?.stringValue {
             buffer.name = name
@@ -41,7 +55,7 @@ struct OpenAIStyleStreamingToolCalls {
         }
         buffer.rawValue = delta
 
-        let id = buffer.id ?? "tool-call-\(index)"
+        let id = buffer.id ?? "tool-call-\(buffer.fallbackIndex)"
         var parts: [LanguageStreamPart] = []
         if !buffer.inputStarted, let name = buffer.name {
             parts.append(.toolInputStart(id: id, name: name))
@@ -51,24 +65,29 @@ struct OpenAIStyleStreamingToolCalls {
             id: buffer.id,
             name: buffer.name,
             argumentsDelta: argumentsDelta,
-            index: index
+            index: incomingIndex
         ))
         if !argumentsDelta.isEmpty, buffer.inputStarted {
             parts.append(.toolInputDelta(id: id, delta: argumentsDelta))
         }
-        buffers[index] = buffer
+        buffers[position] = buffer
+        if let incomingIndex {
+            positionsByIndex[incomingIndex] = position
+        }
+        latestPosition = position
         return parts
     }
 
     mutating func finishedParts() -> [LanguageStreamPart] {
         var parts: [LanguageStreamPart] = []
-        for index in buffers.keys.sorted() {
-            guard var buffer = buffers[index], let name = buffer.name else { continue }
-            let id = buffer.id ?? "tool-call-\(index)"
+        for position in buffers.indices {
+            var buffer = buffers[position]
+            guard let name = buffer.name else { continue }
+            let id = buffer.id ?? "tool-call-\(buffer.fallbackIndex)"
             if !buffer.inputStarted {
                 parts.append(.toolInputStart(id: id, name: name))
                 buffer.inputStarted = true
-                buffers[index] = buffer
+                buffers[position] = buffer
             }
             parts.append(.toolInputEnd(id: id))
             parts.append(.toolCall(AIToolCall(
@@ -80,5 +99,14 @@ struct OpenAIStyleStreamingToolCalls {
         }
         return parts
     }
-}
 
+    private func resolvedPosition(for delta: JSONValue) -> Int? {
+        if let id = delta["id"]?.stringValue, !id.isEmpty {
+            return positionsByID[id]
+        }
+        if let index = delta["index"]?.intValue {
+            return positionsByIndex[index]
+        }
+        return latestPosition
+    }
+}

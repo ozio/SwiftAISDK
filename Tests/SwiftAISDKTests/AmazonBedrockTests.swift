@@ -37,7 +37,7 @@ import Testing
     #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-east-1/bedrock/aws4_request") == true)
     #expect(request.headers["authorization"]?.contains("SignedHeaders=") == true)
     #expect(request.headers["custom-header"] == "value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.40")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.50")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["system"]?[0]?["text"]?.stringValue == "Brief.")
     #expect(body["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Hi")
@@ -105,9 +105,9 @@ import Testing
     let converseRequest = try #require(await converseTransport.requests().first)
     let anthropicRequest = try #require(await anthropicTransport.requests().first)
     let mantleRequest = try #require(await mantleTransport.requests().first)
-    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.40")
-    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.40")
-    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.40")
+    #expect(converseRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.50")
+    #expect(anthropicRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.50")
+    #expect(mantleRequest.headers["user-agent"] == "CustomApp/1.0 ai-sdk/amazon-bedrock/5.0.50")
 }
 @Test func amazonBedrockCredentialProviderSignsAllProviderSurfaces() async throws {
     let fixedDate = DateComponents(
@@ -810,4 +810,28 @@ import Testing
     #expect(body["additionalModelRequestFields"]?["thinking"]?["type"]?.stringValue == "adaptive")
     #expect(body["additionalModelRequestFields"]?["thinking"]?["display"]?.stringValue == "summarized")
     #expect(startWarnings.contains(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported when thinking is enabled")))
+}
+
+@Test func amazonBedrockOmitsAssistantMessagesWhoseUnsignedReasoningIsFilteredLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"ok"}]}},"stopReason":"end_turn"}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "secret",
+        transport: transport
+    ))
+    let model = try provider.languageModel("anthropic.claude-3-7-sonnet-20250219-v1:0")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .user("First"),
+        AIMessage(role: .assistant, content: [.reasoning("unsigned")]),
+        .user("Second")
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let messages = try #require(body["messages"]?.arrayValue)
+    #expect(messages.count == 2)
+    #expect(messages.allSatisfy { $0["role"]?.stringValue == "user" })
 }

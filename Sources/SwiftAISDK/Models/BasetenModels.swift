@@ -20,18 +20,20 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
         var totalTokens = 0
         var rawResponses: [JSONValue] = []
         var responseMetadata = AIResponseMetadata()
-        let batches = request.values.chunked(into: basetenPerformanceClientBatchSize)
+        let batches = request.values.chunked(into: basetenHTTPBatchSize)
 
         var batchStartIndex = 0
         for (batchIndex, batch) in batches.enumerated() {
-            let body = basetenPerformanceEmbeddingBody(values: batch, modelID: modelID)
-            var headers = request.headers
-            headers["x-baseten-customer-request-id"] = headers["x-baseten-customer-request-id"] ?? "swift-ai-sdk-\(UUID().uuidString)-\(batchIndex)"
+            let body = basetenHTTPEmbeddingBody(
+                values: batch,
+                modelID: modelID,
+                request: request
+            )
             let response = try await config.sendJSONResponse(
                 path: "/embeddings",
                 modelID: modelID,
                 body: body,
-                headers: headers,
+                headers: request.headers,
                 abortSignal: request.abortSignal
             )
             let raw = response.json
@@ -65,8 +67,14 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             embeddings: embeddings,
             usage: tokenUsage(from: raw),
             rawValue: raw,
+            warnings: openAICompatibleProviderOptionWarnings(
+                providerOptions: request.providerOptions,
+                extraBody: request.extraBody,
+                providerID: providerID,
+                includeCompatibilityNamespace: true
+            ),
             requestMetadata: AIRequestMetadata(
-                body: basetenPerformanceEmbeddingBody(values: request.values, modelID: modelID),
+                body: basetenHTTPEmbeddingBody(values: request.values, modelID: modelID, request: request),
                 headers: request.headers
             ),
             responseMetadata: responseMetadata
@@ -74,13 +82,28 @@ public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 }
 
-private let basetenPerformanceClientBatchSize = 128
+private let basetenHTTPBatchSize = 128
 
-private func basetenPerformanceEmbeddingBody(values: [String], modelID: String) -> JSONValue {
-    .object([
+private func basetenHTTPEmbeddingBody(
+    values: [String],
+    modelID: String,
+    request: EmbeddingRequest
+) -> JSONValue {
+    var body: [String: JSONValue] = [
         "input": .array(values.map(JSONValue.string)),
-        "model": .string(modelID)
-    ])
+        "model": .string(modelID),
+        "encoding_format": .string("float")
+    ]
+    if let dimensions = request.dimensions {
+        body["dimensions"] = .number(Double(dimensions))
+    }
+    body.merge(openAICompatibleProviderOptions(
+        providerOptions: request.providerOptions,
+        extraBody: request.extraBody,
+        providerID: "baseten.embedding",
+        includeCompatibilityNamespace: true
+    )) { _, providerValue in providerValue }
+    return .object(body)
 }
 
 private func basetenCombinedEmbeddingRawValue(
@@ -127,7 +150,7 @@ extension ModelHTTPConfig {
         guard let modelURL, modelURL.contains("/sync"), !modelURL.contains("/predict") else { return nil }
         let embeddingBaseURL = modelURL.contains("/sync/v1") ? modelURL : "\(modelURL)/v1"
         return ModelHTTPConfig(
-            providerID: providerID,
+            providerID: "baseten.embedding",
             baseURL: embeddingBaseURL,
             modelURL: modelURL,
             headers: headers,
@@ -136,7 +159,8 @@ extension ModelHTTPConfig {
             queryParams: queryParams,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
-            transformRequestBody: transformRequestBody
+            transformRequestBody: transformRequestBody,
+            failedResponseHandling: .openAICompatible
         )
     }
 }

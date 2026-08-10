@@ -268,6 +268,13 @@ let tunedModel = wrapLanguageModel(
     ))
 )
 
+let instructedModel = wrapLanguageModel(
+    model,
+    middleware: defaultInstructionsMiddleware(
+        instructions: "Answer concisely and cite uncertainty."
+    )
+)
+
 let jsonReady = wrapLanguageModel(model, middleware: extractJsonMiddleware())
 let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMiddleware())
 ```

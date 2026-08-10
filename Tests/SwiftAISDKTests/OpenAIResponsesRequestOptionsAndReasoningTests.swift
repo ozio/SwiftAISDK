@@ -219,6 +219,20 @@ private let openAIResponsesNonReasoningModelIDsLikeUpstream = [
     }
 }
 
+@Test func openAIResponsesForwardsFastServiceTierLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-fast-tier","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+
+    let result = try await provider.languageModel("gpt-5").generate(LanguageModelRequest(
+        messages: [.user("Hello")],
+        providerOptions: ["openai": ["serviceTier": "fast"]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["service_tier"]?.stringValue == "fast")
+    #expect(result.warnings.isEmpty)
+}
+
 @Test func openAIResponsesMapsResponseFormatLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-response-format","status":"completed","output_text":"done"}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))

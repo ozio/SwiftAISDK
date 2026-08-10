@@ -32,7 +32,7 @@ import Testing
     #expect(requests.allSatisfy { $0.url.absoluteString == "https://api.minimax.io/anthropic/v1/messages" })
     #expect(requests.allSatisfy { $0.headers["x-api-key"] == "env-key" })
     #expect(requests.allSatisfy { $0.headers["anthropic-version"] == "2023-06-01" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "ai-sdk/minimax/3.0.2" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "ai-sdk/minimax/3.0.12" })
 }
 
 @Test func miniMaxCustomConfigurationMatchesUpstreamHeaderPrecedence() async throws {
@@ -61,7 +61,7 @@ import Testing
     #expect(request.headers["x-api-key"] == "header-key")
     #expect(request.headers["anthropic-version"] == "custom-version")
     #expect(request.headers["x-custom"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/minimax/3.0.2")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/minimax/3.0.12")
 }
 
 @Test func miniMaxRequiresAPIKeyLikeUpstream() throws {
@@ -375,7 +375,7 @@ import Testing
     #expect(requests[0].headers["authorization"] == "Bearer video-key")
     #expect(requests[0].headers["x-api-key"] == nil)
     #expect(requests[0].headers["anthropic-version"] == nil)
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/minimax/3.0.2")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/minimax/3.0.12")
     #expect(requests[0].headers["x-request"] == "video")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "MiniMax-H3")
@@ -389,6 +389,62 @@ import Testing
     #expect(requests[1].url.absoluteString == "https://video.minimax.example.com/v2/query/video_generation/task_minimax_1")
     #expect(requests[1].headers["authorization"] == "Bearer video-key")
     #expect(requests[2].url == requests[1].url)
+}
+
+@Test func miniMaxVideoDefaultsTextToVideoAspectRatioToSixteenByNineLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"task_id":"task_default_ratio"}"#),
+        jsonResponse(#"{"task":{"status":"succeeded","content":{"url":"https://cdn.example.com/default-ratio.mp4"}}}"#)
+    ])
+    let provider = try AIProviders.miniMax(settings: MiniMaxProviderSettings(apiKey: "video-key", transport: transport))
+
+    let result = try await provider.video("MiniMax-H3").generateVideo(VideoGenerationRequest(
+        prompt: "Default ratio.",
+        providerOptions: ["minimax": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+
+    #expect(result.warnings.isEmpty)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["ratio"]?.stringValue == "16:9")
+}
+
+@Test func miniMaxVideoFallsBackFromUnsupportedTextToVideoRatiosLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"task_id":"task_invalid_ratio"}"#),
+        jsonResponse(#"{"task":{"status":"succeeded","content":{"url":"https://cdn.example.com/invalid-ratio.mp4"}}}"#),
+        jsonResponse(#"{"task_id":"task_adaptive_ratio"}"#),
+        jsonResponse(#"{"task":{"status":"succeeded","content":{"url":"https://cdn.example.com/adaptive-ratio.mp4"}}}"#)
+    ])
+    let provider = try AIProviders.miniMax(settings: MiniMaxProviderSettings(apiKey: "video-key", transport: transport))
+    let model = try provider.video("MiniMax-H3")
+
+    let invalidResult = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "Invalid ratio.",
+        aspectRatio: "2:1",
+        providerOptions: ["minimax": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+    let adaptiveResult = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "Adaptive ratio.",
+        providerOptions: [
+            "minimax": [
+                "ratio": "adaptive",
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ]
+        ]
+    ))
+
+    #expect(invalidResult.warnings.map(\.message) == [
+        "MiniMax-H3 does not support the aspect ratio \"2:1\". Using the default (16:9)."
+    ])
+    #expect(adaptiveResult.warnings.map(\.message) == [
+        "MiniMax-H3 text-to-video does not support the adaptive aspect ratio. Using the default (16:9)."
+    ])
+    let requests = await transport.requests()
+    let invalidBody = try decodeJSONBody(try #require(requests[0].body))
+    let adaptiveBody = try decodeJSONBody(try #require(requests[2].body))
+    #expect(invalidBody["ratio"]?.stringValue == "16:9")
+    #expect(adaptiveBody["ratio"]?.stringValue == "16:9")
 }
 
 @Test func miniMaxVideoMapsFrameInputsAndUpstreamWarnings() async throws {
@@ -487,6 +543,7 @@ import Testing
     ])
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     let content = try #require(body["content"]?.arrayValue)
+    #expect(body["ratio"] == nil)
     #expect(content.count == 16)
     #expect(content.filter { $0["role"]?.stringValue == "reference_image" }.count == 9)
     #expect(content.filter { $0["role"]?.stringValue == "reference_video" }.count == 3)

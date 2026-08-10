@@ -8,11 +8,11 @@ description: Public SwiftAISDK APIs for provider models.
 | Symbol kind | Count |
 | --- | --- |
 | Case | 4 |
-| Class | 102 |
+| Class | 103 |
 | Enumeration | 10 |
 | Initializer | 1 |
-| Instance Method | 124 |
-| Instance Property | 215 |
+| Instance Method | 125 |
+| Instance Property | 217 |
 | Structure | 1 |
 | Type Method | 82 |
 
@@ -37,6 +37,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `AssemblyAITranscriptionModel` | `final class AssemblyAITranscriptionModel` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
 | Class | `BasetenEmbeddingModel` | `final class BasetenEmbeddingModel` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Class | `BlackForestLabsImageModel` | `final class BlackForestLabsImageModel` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
+| Class | `BlackForestLabsVideoModel` | `final class BlackForestLabsVideoModel` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
 | Class | `ByteDanceVideoModel` | `final class ByteDanceVideoModel` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
 | Class | `CartesiaSpeechModel` | `final class CartesiaSpeechModel` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
 | Class | `CartesiaTranscriptionModel` | `final class CartesiaTranscriptionModel` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
@@ -189,6 +190,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/AlibabaVideoModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AlibabaVideoModels.swift) |
+| Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/FalMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalMediaModels.swift) |
 | Instance Method | `generateVideo(_:)` | `func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/Models/GatewayMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayMediaModels.swift) |
@@ -280,6 +282,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
@@ -380,6 +383,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BasetenModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BasetenModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsMediaModels.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/BlackForestLabsVideoModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ByteDanceMediaModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaSpeechModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
@@ -477,7 +481,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `transformRequestBody` | `var transformRequestBody: (@Sendable ([String : JSONValue]) -> [String : JSONValue])?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `transport` | `var transport: any AITransport` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Structure | `ProviderSettings` | `struct ProviderSettings` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
-| Type Method | `advisor_20260301(model:maxUses:caching:)` | `static func advisor_20260301(model: String, maxUses: Int? = nil, caching: JSONValue? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
+| Type Method | `advisor_20260301(model:maxUses:maxTokens:caching:)` | `static func advisor_20260301(model: String, maxUses: Int? = nil, maxTokens: Int? = nil, caching: JSONValue? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Type Method | `applyPatch()` | `static func applyPatch() -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Type Method | `bash_20241022()` | `static func bash_20241022() -> JSONValue` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
 | Type Method | `bash_20241022()` | `static func bash_20241022() -> JSONValue` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |

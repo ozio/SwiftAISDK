@@ -15,7 +15,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.baseten.co/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.20")
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.6")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "deepseek-ai/DeepSeek-V3-0324")
 }
@@ -39,7 +39,7 @@ import Testing
     #expect(request.url.absoluteString == "https://custom.baseten.co/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/baseten/2.0.20")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/baseten/2.1.6")
 }
 
 @Test func basetenReadsEnvironmentAPIKeyAndReportsMissingKeyLikeUpstream() async throws {
@@ -52,7 +52,7 @@ import Testing
 
         let request = try #require(await transport.requests().first)
         #expect(request.headers["authorization"] == "Bearer env-baseten-key")
-        #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.20")
+        #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.6")
     }
 
     _ = await withTemporaryBasetenEnvironment(["BASETEN_API_KEY": nil]) {
@@ -127,7 +127,7 @@ import Testing
     }
 }
 
-@Test func basetenEmbeddingUsesPerformanceClientRequestShape() async throws {
+@Test func basetenEmbeddingUsesOpenAICompatibleHTTPShapeLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"embeddings","usage":{"prompt_tokens":3,"total_tokens":3}}"#))
     let provider = try AIProviders.baseten(settings: ProviderSettings(
         apiKey: "baseten-key",
@@ -141,28 +141,73 @@ import Testing
         dimensions: 128,
         extraBody: [
             "encoding_format": .string("float"),
+            "user": .string("swift-user"),
             "baseten": .object(["input_type": .string("query")])
         ]
     ))
 
     #expect(result.embeddings == [[0.1, 0.2]])
     #expect(result.usage?.totalTokens == 3)
-    #expect(result.requestMetadata.body?["dimensions"] == nil)
-    #expect(result.requestMetadata.body?["encoding_format"] == nil)
+    #expect(result.requestMetadata.body?["dimensions"]?.intValue == 128)
+    #expect(result.requestMetadata.body?["encoding_format"]?.stringValue == "float")
+    #expect(result.requestMetadata.body?["user"]?.stringValue == "swift-user")
     #expect(result.requestMetadata.body?["baseten"] == nil)
+    #expect(result.requestMetadata.body?["input_type"]?.stringValue == "query")
     #expect(model.modelID == "embeddings")
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://model-123.api.baseten.co/environments/production/sync/v1/embeddings")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.0.20")
-    #expect(request.headers["x-baseten-customer-request-id"] != nil)
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.6")
+    #expect(request.headers["x-baseten-customer-request-id"] == nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "embeddings")
     #expect(body["input"]?[0]?.stringValue == "hello")
-    #expect(body["dimensions"] == nil)
-    #expect(body["encoding_format"] == nil)
-    #expect(body["input_type"] == nil)
+    #expect(body["dimensions"]?.intValue == 128)
+    #expect(body["encoding_format"]?.stringValue == "float")
+    #expect(body["user"]?.stringValue == "swift-user")
+    #expect(body["input_type"]?.stringValue == "query")
     #expect(body["baseten"] == nil)
+}
+
+@Test func basetenEmbeddingUsesNestedOpenAIErrorEnvelopeLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 404,
+        headers: ["content-type": "application/json"],
+        body: Data(#"{"error":{"message":"deployment not found","type":"not_found","code":404}}"#.utf8)
+    ))
+    let provider = try AIProviders.baseten(settings: ProviderSettings(
+        apiKey: "baseten-key",
+        modelURL: "https://model-123.api.baseten.co/environments/production/sync/v1",
+        transport: transport
+    ))
+
+    do {
+        _ = try await provider.embeddingModel().embed(EmbeddingRequest(values: ["hello"]))
+        Issue.record("Expected Baseten embedding API error.")
+    } catch let error as AIError {
+        let apiError = try #require(error.apiCallError)
+        #expect(apiError.provider == "baseten.embedding")
+        #expect(apiError.statusCode == 404)
+        #expect(apiError.responseBody == "deployment not found")
+    }
+}
+
+@Test func basetenChatStreamsUsageByDefaultLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"choices":[{"delta":{"content":"ok"}}]}
+
+    data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}
+
+    data: [DONE]
+
+    """#))
+    let provider = try AIProviders.baseten(settings: ProviderSettings(apiKey: "baseten-key", transport: transport))
+
+    for try await _ in try provider.chatModel("chat").stream(LanguageModelRequest(messages: [.user("Hi")])) {}
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["stream_options"]?["include_usage"]?.boolValue == true)
 }
 
 @Test func basetenEmbeddingSupportsSyncV1ModelURLAndRejectsPredict() async throws {
@@ -189,7 +234,7 @@ import Testing
     }
 }
 
-@Test func basetenEmbeddingBatchesLikePerformanceClientAndAdjustsIndexes() async throws {
+@Test func basetenEmbeddingBatchesHTTPRequestsAndAdjustsIndexesLikeUpstream() async throws {
     let values = (0..<129).map { "value-\($0)" }
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"object":"list","data":[{"object":"embedding","embedding":[1],"index":0}],"model":"embed","usage":{"prompt_tokens":2,"total_tokens":2}}"#),

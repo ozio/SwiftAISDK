@@ -304,3 +304,32 @@ import Testing
     ])
 }
 
+@Test func anthropicAdvisorRejectsInvalidMaxTokensLikeUpstream() async throws {
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        transport: RecordingTransport(response: jsonResponse("{}"))
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    for maxTokens: JSONValue in [1_023, 2_048.5] {
+        await #expect(throws: AIError.invalidArgument(
+            argument: "tools.advisor.args.maxTokens",
+            message: "Anthropic advisor maxTokens must be an integer greater than or equal to 1024."
+        )) {
+            _ = try await model.generate(LanguageModelRequest(
+                messages: [.user("Use the advisor.")],
+                tools: [
+                    "advisor": [
+                        "type": "provider",
+                        "id": "anthropic.advisor_20260301",
+                        "name": "advisor",
+                        "args": [
+                            "model": "claude-opus-4-7",
+                            "maxTokens": maxTokens
+                        ]
+                    ]
+                ]
+            ))
+        }
+    }
+}

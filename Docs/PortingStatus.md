@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-08-03
+Snapshot date: 2026-08-10
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -37,7 +37,7 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package version baselines were checked against npm registry
-metadata and published tarballs on 2026-08-03. The per-package decisions are
+metadata and published tarballs on 2026-08-10. The per-package decisions are
 recorded in `Docs/UpstreamPackageDiffAudit.md`.
 
 ## Provider State
@@ -49,17 +49,23 @@ separately as a product package without a model-capability row. The current pass
 audited the published package deltas and ported the applicable provider/core
 behavior; the remaining architectural differences are recorded below.
 
-The 2026-08-03 weekly pass advances all 44 provider/product package baselines
-and the core snapshots to current npm releases. Portable deltas add MiniMax-H3
-video generation, structured Fireworks chat/completion/embedding error-envelope messages, Gateway
-`has: ["vision"]` routing, OpenAI file-upload expiry fields, and OpenAI/Azure
-chat metadata handling that ignores zero-valued placeholder timestamps. The
-remaining published changes are dependency/version propagation,
-behavior-preserving usage/response-metadata helper refactors, or
-already-recorded shared core gaps.
-Exact npm registry discovery finds 76 live `@ai-sdk/*` packages and 43 model
-providers, all tracked; there are no new provider packages to propose in this
-pass.
+The 2026-08-10 weekly pass advances all 44 provider/product package baselines
+and all four core snapshots to current npm releases. Portable deltas cover
+streamed tool-call identity/finalization, default instructions, agent and chat
+cancellation settings, Baseten HTTP embeddings and usage, Bedrock empty-message
+filtering, Anthropic advisor/stream/replay behavior, MiniMax H3 aspect ratios,
+OpenAI-compatible usage, OpenAI Responses correlation/serialization, and FLUX
+3 video through the existing unary model contract. Exact per-package decisions
+are recorded in `Docs/UpstreamPackageDiffAudit.md`.
+
+Exact registry-prefix discovery finds 79 live `@ai-sdk/*` packages and 44 model
+providers. The 43 previously tracked providers remain represented; new
+`@ai-sdk/fish-audio@3.0.3` is intentionally proposed rather than implemented in
+this pass. A follow-up port should add Fish Audio S1/S2 speech, multipart batch
+transcription, provider options/errors/metadata, registry/capability entries,
+docs, and focused tests. `@ai-sdk/harness-acp` and
+`@ai-sdk/harness-grok-build` are the other newly published packages and are
+harness adapters, not model providers.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -79,9 +85,10 @@ one of these is true:
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
 | P1 | Streaming transcription, realtime models, and speech translation from Cartesia, ElevenLabs, Google, and OpenAI are not represented by current Swift protocols. | Design one reusable duplex WebSocket/audio transport and lifecycle surface, then port provider adapters as vertical slices. |
-| P1 | Current `ai@7.0.48` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
+| P1 | `ai@7.0.58` and `@ai-sdk/provider@4.0.7` add Batch V4 and async Video V4 start/status/webhook operations; Swift has neither shared public contract. Unary providers still poll internally, and retrying a lost start response can duplicate paid work without a stable logical-start idempotency key. | Design the shared batch model/result stream first, then async video operation state, polling/webhook controls, cancellation, metadata merging, and stable start idempotency before migrating providers. |
+| P1 | Current `ai@7.0.58` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
 | P1 | `prepareStep` call-setting overrides and generic provider tool-callers across generate, stream, and agent orchestration have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
-| P1 | `@ai-sdk/provider-utils@5.0.18` resolves and pins DNS addresses for validated downloads; Swift validates literal/private hosts and every redirect but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | `@ai-sdk/provider-utils@5.0.25` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

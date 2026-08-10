@@ -13,7 +13,7 @@ description: Public SwiftAISDK APIs for chat and ui messages.
 | Function | 4 |
 | Initializer | 10 |
 | Instance Method | 19 |
-| Instance Property | 70 |
+| Instance Property | 71 |
 | Protocol | 1 |
 | Structure | 9 |
 | Type Method | 1 |
@@ -35,7 +35,7 @@ description: Public SwiftAISDK APIs for chat and ui messages.
 | Function | `convertToModelMessages(_:)` | `func convertToModelMessages(_ messages: [AIUIMessage]) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `safeValidateUIMessages(_:)` | `func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageValidationResult` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Function | `validateUIMessages(_:)` | `@discardableResult func validateUIMessages(_ messages: [AIUIMessage]) throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
-| Initializer | `init(chatID:headers:body:metadata:)` | `init(chatID: String, headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
+| Initializer | `init(chatID:abortSignal:headers:body:metadata:)` | `init(chatID: String, abortSignal: AIAbortSignal? = nil, headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Initializer | `init(chatID:transport:messages:generateMessageID:onError:onFinish:sendAutomaticallyWhen:)` | `@MainActor init(chatID: String = UUID().uuidString, transport: any AIChatTransport, messages: [AIUIMessage] = [], generateMessageID: @escaping @Sendable () -> String = { UUID().uuidString }, onError: (@MainActor @Sendable (any Error) -> Void)? = nil, onFinish: (@MainActor @Sendable (AIChatSessionFinishEvent) -> Void)? = nil, sendAutomaticallyWhen: (@MainActor @Sendable ([AIUIMessage]) -> Bool)? = nil)` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Initializer | `init(chatID:trigger:messageID:responseMessageID:messages:abortSignal:headers:body:metadata:)` | `init(chatID: String, trigger: AIChatTransportTrigger = .submitMessage, messageID: String? = nil, responseMessageID: String? = nil, messages: [AIUIMessage], abortSignal: AIAbortSignal? = nil, headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Initializer | `init(headers:body:metadata:)` | `init(headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
@@ -64,6 +64,7 @@ description: Public SwiftAISDK APIs for chat and ui messages.
 | Instance Method | `sendMessages(_:)` | `func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, any Error>` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Method | `setMessages(_:)` | `@MainActor func setMessages(_ messages: [AIUIMessage])` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Instance Method | `stop(reason:)` | `@MainActor func stop(reason: String? = "stopped")` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
+| Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Instance Property | `body` | `var body: [String : JSONValue]` | [Sources/SwiftAISDK/AIChatSession.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatSession.swift) |
 | Instance Property | `body` | `var body: [String : JSONValue]` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |

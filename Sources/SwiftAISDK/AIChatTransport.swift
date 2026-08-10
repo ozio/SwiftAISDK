@@ -41,17 +41,20 @@ public struct AIChatTransportRequest: Sendable {
 
 public struct AIChatReconnectRequest: Sendable {
     public var chatID: String
+    public var abortSignal: AIAbortSignal?
     public var headers: [String: String]
     public var body: [String: JSONValue]
     public var metadata: JSONValue?
 
     public init(
         chatID: String,
+        abortSignal: AIAbortSignal? = nil,
         headers: [String: String] = [:],
         body: [String: JSONValue] = [:],
         metadata: JSONValue? = nil
     ) {
         self.chatID = chatID
+        self.abortSignal = abortSignal
         self.headers = headers
         self.body = body
         self.metadata = metadata

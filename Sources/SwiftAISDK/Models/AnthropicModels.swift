@@ -1,10 +1,11 @@
 import Foundation
 
 public enum AnthropicTools {
-    public static func advisor_20260301(model: String, maxUses: Int? = nil, caching: JSONValue? = nil) -> JSONValue {
+    public static func advisor_20260301(model: String, maxUses: Int? = nil, maxTokens: Int? = nil, caching: JSONValue? = nil) -> JSONValue {
         providerTool(id: "anthropic.advisor_20260301", name: "advisor", args: JSONValue.object([
             "model": .string(model),
             "maxUses": maxUses.map { .number(Double($0)) },
+            "maxTokens": maxTokens.map { .number(Double($0)) },
             "caching": caching
         ]).objectValue ?? [:])
     }
@@ -282,8 +283,14 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var container: JSONValue = .null
                     var contextManagement: JSONValue = .null
                     var didReceiveMessageStart = false
+                    var isMessageOpen = false
+                    var activeMessageID: String?
+                    var hasInvalidMessageSequence = false
                     for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
                         let raw = try decodeJSONBody(Data(event.data.utf8))
+                        if hasInvalidMessageSequence {
+                            continue
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
@@ -296,6 +303,22 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         }
                         switch raw["type"]?.stringValue {
                         case "message_start":
+                            let messageID = raw["message"]?["id"]?.stringValue
+                            if isMessageOpen {
+                                if activeMessageID == messageID {
+                                    continue
+                                }
+                                hasInvalidMessageSequence = true
+                                let incomingID = messageID.map { anthropicJSONString(.string($0)) ?? "\"\($0)\"" } ?? "null"
+                                let activeID = activeMessageID.map { anthropicJSONString(.string($0)) ?? "\"\($0)\"" } ?? "null"
+                                continuation.yield(.error(
+                                    message: "Received message_start for message \(incomingID) while message \(activeID) is still open.",
+                                    rawValue: raw
+                                ))
+                                continue
+                            }
+                            isMessageOpen = true
+                            activeMessageID = messageID
                             didReceiveMessageStart = true
                             if let usage = raw["message"]?["usage"] {
                                 rawUsage = usage
@@ -320,6 +343,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                             if let value = anthropicContextManagementMetadata(from: raw["context_management"]) {
                                 contextManagement = value
                             }
+                        case "message_stop":
+                            isMessageOpen = false
+                            activeMessageID = nil
                         default:
                             break
                         }
@@ -419,7 +445,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         let supportsStrictToolDefinitions = capabilities.supportsStructuredOutput
             && (supportsStrictTools ?? true)
         let eagerInputStreaming = stream && (providerOptions.toolStreaming ?? true)
-        let preparedTools = anthropicPrepareTools(
+        let preparedTools = try anthropicPrepareTools(
             from: request.tools,
             toolChoice: request.toolChoice ?? providerOptions.toolChoice,
             disableParallelToolUse: providerOptions.disableParallelToolUse,
@@ -791,7 +817,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         "type": .string("server_tool_use"),
                         "id": .string(call.id),
                         "name": .string(anthropicProviderExecutedToolName(call.name, input: input)),
-                        "input": input
+                        "input": anthropicProviderExecutedToolInput(call.name, input: input)
                     ]
                     anthropicApplyCacheControl(
                         anthropicCacheControl(from: call.providerMetadata),
@@ -1115,6 +1141,17 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         return inputType
     }
 
+    private static func anthropicProviderExecutedToolInput(_ name: String, input: JSONValue) -> JSONValue {
+        guard name == "code_execution",
+              var object = input.objectValue,
+              let inputType = object["type"]?.stringValue,
+              inputType == "bash_code_execution" || inputType == "text_editor_code_execution" else {
+            return input
+        }
+        object.removeValue(forKey: "type")
+        return .object(object)
+    }
+
     private static func anthropicProviderExecutedToolResultBlock(_ result: AIToolResult, warnings: inout [AIWarning]) -> JSONValue? {
         switch result.toolName {
         case "code_execution":
@@ -1215,6 +1252,15 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         if content["type"]?.stringValue == "code_execution_tool_result_error" {
             return anthropicProviderExecutedErrorBlock(content, defaultType: "code_execution_tool_result_error")
         }
+        if content["type"]?.stringValue == "bash_code_execution_result" {
+            return JSONValue.object([
+                "type": content["type"],
+                "stdout": content["stdout"],
+                "stderr": content["stderr"],
+                "return_code": content["return_code"],
+                "content": content["content"]
+            ])
+        }
         var object = content.objectValue ?? [:]
         if content["type"]?.stringValue == "code_execution_result" || content["type"]?.stringValue == "encrypted_code_execution_result" {
             object["content"] = object["content"] ?? .array([JSONValue]())
@@ -1286,17 +1332,25 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
     private static func anthropicAdvisorResultBlock(_ result: JSONValue) -> JSONValue {
         switch result["type"]?.stringValue {
         case "advisor_redacted_result":
-            return .object([
+            var content: [String: JSONValue] = [
                 "type": .string("advisor_redacted_result"),
                 "encrypted_content": result["encryptedContent"] ?? result["encrypted_content"] ?? .null
-            ])
+            ]
+            if let stopReason = result["stopReason"] ?? result["stop_reason"], stopReason != .null {
+                content["stop_reason"] = stopReason
+            }
+            return .object(content)
         case "advisor_tool_result_error":
             return anthropicProviderExecutedErrorBlock(result, defaultType: "advisor_tool_result_error")
         default:
-            return .object([
+            var content: [String: JSONValue] = [
                 "type": result["type"] ?? .string("advisor_result"),
                 "text": result["text"] ?? .null
-            ])
+            ]
+            if let stopReason = result["stopReason"] ?? result["stop_reason"], stopReason != .null {
+                content["stop_reason"] = stopReason
+            }
+            return .object(content)
         }
     }
 
