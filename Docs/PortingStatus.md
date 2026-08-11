@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-08-10
+Snapshot date: 2026-08-12
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -17,6 +17,11 @@ for exact evidence.
   images, video, speech, transcription, reranking, file uploads, skill uploads,
   middleware, telemetry, warnings, retries, aborts, tools, approvals, MCP tools,
   UI messages, chat sessions, and agent helpers.
+- HTTP language-model streaming consumes SSE and Amazon EventStream bodies
+  incrementally through `AIStreamingTransport`; first parts can arrive before
+  response EOF, and abort or early consumer termination cancels the body read.
+  Send-only custom transports remain supported for unary generation and fail
+  streaming explicitly instead of falling back to buffered `send`.
 - Provider coverage spans the official provider-facing `@ai-sdk/*` packages
   tracked in `Docs/ProviderVersionLedger.md`.
 - `Docs/ProviderCapabilityMatrix.md` is generated from
@@ -57,6 +62,13 @@ filtering, Anthropic advisor/stream/replay behavior, MiniMax H3 aspect ratios,
 OpenAI-compatible usage, OpenAI Responses correlation/serialization, and FLUX
 3 video through the existing unary model contract. Exact per-package decisions
 are recorded in `Docs/UpstreamPackageDiffAudit.md`.
+
+The 2026-08-12 transport correction replaces buffered replay in every
+streaming-capable built-in language provider with incremental SSE or Amazon
+EventStream parsing. It also unifies MCP SSE parsing, validates Bedrock frame
+lengths and CRCs, preserves typed non-success HTTP errors before the first
+part, and wires consumer termination and aborts through to URLSession. Prodia
+and the protocol-default stream remain explicitly unary/simulated.
 
 Exact registry-prefix discovery finds 79 live `@ai-sdk/*` packages and 44 model
 providers. The 43 previously tracked providers remain represented; new
@@ -109,6 +121,10 @@ The live suite reads provider-specific environment variables such as
 `ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`, `CARTESIA_API_KEY`, and
 `OPENAI_COMPATIBLE_API_KEY`. See `Docs/ProviderCapabilityMatrix.md` for the
 current live-smoke notes and model override variables.
+
+Deterministic loopback transport tests gate response EOF and verify that a
+semantic delta arrives first, so incremental delivery and network cancellation
+do not depend on paid live credentials.
 
 ## Release Readiness Checklist
 

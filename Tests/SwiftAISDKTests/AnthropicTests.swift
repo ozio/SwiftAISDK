@@ -331,6 +331,55 @@ import Testing
     #expect(request.headers["anthropic-workspace-id"] == "wrkspc_test")
     #expect(request.headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.28")
 }
+
+@Test func anthropicAWSSigV4WrapperPreservesStreamingTransportCapability() async throws {
+    let fixedDate = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        timeZone: TimeZone(secondsFromGMT: 0),
+        year: 2024,
+        month: 3,
+        day: 15,
+        hour: 0,
+        minute: 0,
+        second: 0
+    ).date!
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"message_start","message":{"id":"msg-stream","usage":{"input_tokens":1,"output_tokens":0}}}
+
+    data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"signed stream"}}
+
+    data: {"type":"content_block_stop","index":0}
+
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}
+
+    data: {"type":"message_stop"}
+
+    """))
+    let provider = try AIProviders.anthropicAWS(settings: AnthropicAWSProviderSettings(
+        region: "us-west-2",
+        workspaceID: "wrkspc_test",
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+        transport: transport,
+        date: { fixedDate }
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var text = ""
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")])) {
+        if case let .textDelta(delta) = part {
+            text += delta
+        }
+    }
+
+    #expect(text == "signed stream")
+    #expect(await transport.sendRequests().isEmpty)
+    let request = try #require(await transport.streamRequests().first)
+    #expect(request.headers["x-amz-date"] == "20240315T000000Z")
+    #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20240315/us-west-2/aws-external-anthropic/aws4_request") == true)
+}
 @Test func anthropicAWSSupportsDynamicCredentialProviderLikeUpstream() async throws {
     let fixedDate = DateComponents(
         calendar: Calendar(identifier: .gregorian),

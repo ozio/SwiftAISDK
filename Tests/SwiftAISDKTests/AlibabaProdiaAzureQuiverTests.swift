@@ -92,6 +92,35 @@ private actor TokenStore {
     #expect(await tokenStore.count == 1)
 }
 
+@Test func azureTokenProviderPreservesStreamingTransportCapability() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"content":"azure stream"},"finish_reason":"stop"}]}
+
+    data: [DONE]
+
+    """))
+    let tokenStore = TokenStore(tokens: ["stream-token"])
+    let provider = try AIProviders.azure(
+        resourceName: "test-resource",
+        tokenProvider: { await tokenStore.next() },
+        settings: ProviderSettings(transport: transport)
+    )
+    let model = try provider.chatModel("chat-deployment")
+
+    var text = ""
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Stream")])) {
+        if case let .textDelta(delta) = part {
+            text += delta
+        }
+    }
+
+    #expect(text == "azure stream")
+    #expect(await transport.sendRequests().isEmpty)
+    let request = try #require(await transport.streamRequests().first)
+    #expect(request.headers["authorization"] == "Bearer stream-token")
+    #expect(await tokenStore.count == 1)
+}
+
 @Test func azureRejectsAPIKeyAndTokenProviderTogetherLikeUpstream() async throws {
     #expect(throws: AIError.invalidArgument(argument: "apiKey/tokenProvider", message: "Both apiKey and tokenProvider were provided. Please use only one authentication method.")) {
         _ = try AIProviders.azure(

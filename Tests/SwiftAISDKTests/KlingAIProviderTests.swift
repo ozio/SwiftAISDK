@@ -110,6 +110,27 @@ import Testing
     #expect(secondPayload["nbf"]?.intValue == 4_995)
 }
 
+@Test func klingAILegacyAuthWrapperPreservesStreamingTransportCapability() async throws {
+    let transport = RecordingTransport(response: sseResponse("data: [DONE]\n\n"))
+    let wrapper = KlingAILegacyAuthTransport(
+        transport: transport,
+        accessKey: "stream-ak",
+        secretKey: "stream-sk",
+        currentDate: { Date(timeIntervalSince1970: 1_000) }
+    )
+
+    let response = try await wrapper.stream(AIHTTPRequest(
+        url: URL(string: "https://api-singapore.klingai.com/v1/stream")!
+    ))
+    for try await _ in response.body {}
+
+    #expect(await transport.sendRequests().isEmpty)
+    let request = try #require(await transport.streamRequests().first)
+    let authorization = try #require(request.headers["authorization"])
+    #expect(authorization.hasPrefix("Bearer "))
+    #expect(try klingAIJWTPayload(String(authorization.dropFirst("Bearer ".count)))["iss"]?.stringValue == "stream-ak")
+}
+
 @Test func klingAIT2VSubmitsPollsAndPreservesMetadata() async throws {
     let transport = klingAITransport(taskID: "task-1", videoID: "vid-1", videoURL: "https://kling.example.com/video.mp4", headers: ["kling-header": "poll"])
     let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))

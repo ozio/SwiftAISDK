@@ -34,20 +34,22 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try body(for: request, stream: true)
                     let metadataNamespace = metadataNamespace(for: request)
                     let body = JSONValue.object(prepared.body)
                     let httpRequest = try config.request(path: "/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
-                    let response = try await config.transport.send(httpRequest)
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw config.httpStatusError(response)
+                        throw config.httpStatusError(try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
-                    continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: response, modelID: modelID)))
+                    continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: responseHead, modelID: modelID)))
                     var providerMetadata: [String: JSONValue] = [:]
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
@@ -75,6 +77,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 

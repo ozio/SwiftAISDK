@@ -24,38 +24,37 @@ func googleStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
     return parts
 }
 
-func streamFromGoogleGenerateContent(
-    providerID: String,
-    response: AIHTTPResponse,
-    includeRawChunks: Bool = false,
-    modelID: String? = nil,
-    warnings: [AIWarning] = []
-) throws -> [LanguageStreamPart] {
-    guard (200..<300).contains(response.statusCode) else {
-        throw apiCallError(provider: providerID, response: response)
+struct GoogleGenerateContentStreamState {
+    private var responseMetadata: AIResponseMetadata
+    private let includeRawChunks: Bool
+    private let warnings: [AIWarning]
+    private var toolCalls = GoogleGenerateContentStreamingToolCalls()
+    private var lastCodeExecutionToolCallID: String?
+    private var lastServerToolCallID: String?
+    private var latestFinishReason: String?
+    private var latestUsage: TokenUsage?
+    private var latestProviderMetadata: [String: JSONValue] = [:]
+    private var emittedSourceKeys: Set<String> = []
+    private var sawToolCalls = false
+    private var hasResponseID = false
+    private var emittedInitialParts = false
+
+    init(response: AIHTTPResponse, includeRawChunks: Bool, modelID: String?, warnings: [AIWarning]) {
+        self.responseMetadata = aiResponseMetadata(response: response, modelID: modelID)
+        self.includeRawChunks = includeRawChunks
+        self.warnings = warnings
     }
 
-    var responseMetadata = aiResponseMetadata(response: response, modelID: modelID)
-    var parts: [LanguageStreamPart] = [
-        .responseMetadata(responseMetadata),
-        .streamStart(warnings: warnings)
-    ]
-    var toolCalls = GoogleGenerateContentStreamingToolCalls()
-    var lastCodeExecutionToolCallID: String?
-    var lastServerToolCallID: String?
-    var latestFinishReason: String?
-    var latestUsage: TokenUsage?
-    var latestProviderMetadata: [String: JSONValue] = [:]
-    var emittedSourceKeys: Set<String> = []
-    var sawToolCalls = false
-    var hasResponseID = false
-
-    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
-        let raw = try decodeJSONBody(Data(event.data.utf8))
+    mutating func apply(_ raw: JSONValue) -> [LanguageStreamPart] {
+        var parts: [LanguageStreamPart] = []
         if !hasResponseID, let responseID = raw["responseId"]?.stringValue {
             hasResponseID = true
             responseMetadata.id = responseID
-            parts[0] = .responseMetadata(responseMetadata)
+        }
+        if !emittedInitialParts {
+            emittedInitialParts = true
+            parts.append(.responseMetadata(responseMetadata))
+            parts.append(.streamStart(warnings: warnings))
         }
         if includeRawChunks {
             parts.append(.raw(raw))
@@ -167,15 +166,23 @@ func streamFromGoogleGenerateContent(
         if let reason = raw["candidates"]?[0]?["finishReason"]?.stringValue {
             latestFinishReason = reason
         }
+        return parts
     }
 
-    let finalToolCalls = toolCalls.finishedParts()
-    parts.append(contentsOf: finalToolCalls)
-    if latestFinishReason != nil || latestUsage != nil {
-        let finishReason = googleGenerateContentFinishReason(latestFinishReason, hasToolCalls: sawToolCalls || !finalToolCalls.isEmpty)
-        let providerMetadata = googleFinalizeGenerateContentProviderMetadata(latestProviderMetadata)
-        parts.append(.finish(reason: finishReason, usage: latestUsage))
-        parts.append(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
+    mutating func finish() -> [LanguageStreamPart] {
+        var parts: [LanguageStreamPart] = []
+        if !emittedInitialParts {
+            emittedInitialParts = true
+            parts.append(.responseMetadata(responseMetadata))
+            parts.append(.streamStart(warnings: warnings))
+        }
+        parts.append(contentsOf: toolCalls.finishedParts())
+        if latestFinishReason != nil || latestUsage != nil {
+            let finishReason = googleGenerateContentFinishReason(latestFinishReason, hasToolCalls: sawToolCalls || !parts.isEmpty)
+            let providerMetadata = googleFinalizeGenerateContentProviderMetadata(latestProviderMetadata)
+            parts.append(.finish(reason: finishReason, usage: latestUsage))
+            parts.append(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
+        }
+        return parts
     }
-    return parts
 }

@@ -420,6 +420,11 @@ struct ModelHTTPConfig: @unchecked Sendable {
         )
     }
 
+    func streamRequest(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let streamingTransport = try requireStreamingTransport(transport, providerID: providerID)
+        return try await streamingTransport.stream(request)
+    }
+
     func sendJSON(path: String, modelID: String, body: JSONValue, headers: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> JSONValue {
         try await sendJSONResponse(path: path, modelID: modelID, body: body, headers: headers, abortSignal: abortSignal).json
     }

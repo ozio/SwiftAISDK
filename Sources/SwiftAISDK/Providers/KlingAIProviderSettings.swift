@@ -83,18 +83,27 @@ func resolveKlingAIAuthToken(settings: KlingAIProviderSettings, now: Date = Date
     }
 }
 
-struct KlingAILegacyAuthTransport: AITransport {
+struct KlingAILegacyAuthTransport: AIStreamingTransport {
     let transport: any AITransport
     let accessKey: String
     let secretKey: String
     let currentDate: @Sendable () -> Date
 
     func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        try await transport.send(authenticatedRequest(request))
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let streamingTransport = try requireStreamingTransport(transport, providerID: "klingai")
+        return try await streamingTransport.stream(authenticatedRequest(request))
+    }
+
+    private func authenticatedRequest(_ request: AIHTTPRequest) throws -> AIHTTPRequest {
         var request = request
         if !request.headers.keys.contains(where: { $0.caseInsensitiveCompare("Authorization") == .orderedSame }) {
             request.headers["authorization"] = "Bearer \(try klingAIJWT(accessKey: accessKey, secretKey: secretKey, now: currentDate()))"
         }
-        return try await transport.send(request)
+        return request
     }
 }
 

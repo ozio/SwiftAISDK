@@ -16,7 +16,7 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let generated = try await prodiaGenerate(request)
                     let result = generated.result
@@ -37,6 +37,7 @@ public final class ProdiaLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 
@@ -240,4 +241,3 @@ public final class ProdiaVideoModel: VideoModel, @unchecked Sendable {
         )
     }
 }
-

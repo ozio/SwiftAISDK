@@ -12,11 +12,19 @@ Use `streamText` when the UI or caller should receive partial output as it is ge
 
 Streaming emits structured lifecycle parts, not just raw strings. That lets you render text, reasoning, tool input deltas, tool calls, tool approval requests and responses, tool results, source citations, files, raw chunks, response metadata, and finish metadata with one loop.
 
+Built-in HTTP language providers parse the response incrementally, so the first complete provider event can become a `LanguageStreamPart` while the HTTP response is still open. A provider end marker such as `[DONE]`, caller abort, or stopping iteration cancels the remaining response-body read instead of waiting for EOF.
+
+## Custom Transports
+
+Provider settings continue to accept `any AITransport`, which keeps unary `generate` calls source-compatible with send-only transports. A custom transport used by `stream` must also conform to `AIStreamingTransport` and return response headers plus an incremental `AsyncThrowingStream<Data, Error>` body. SwiftAISDK reports a non-retryable `AIError.invalidArgument` when streaming is requested with a send-only transport; it never falls back to buffering through `send`.
+
+Prodia language generation and the default protocol implementation remain intentionally simulated streams because their underlying operation is unary. Provider-backed SSE and Amazon EventStream language models use the incremental transport path.
+
 Tool input can arrive before the final tool call. Use `toolInputStart`, `toolInputDelta`, and `toolInputEnd` parts when you want to show streamed arguments in a UI, and handle `toolApprovalRequest` / `toolApprovalResponse` parts when a tool requires human or policy approval.
 
 ## Retry Behavior
 
-Facade calls retry transient failures by default. For streams, retries only happen before the first emitted part so already-delivered chunks are not duplicated.
+Facade calls retry transient failures by default. For streams, retries only happen before the first emitted part so already-delivered chunks are not duplicated. A non-success HTTP response is collected within the configured response-size limit and mapped to the provider's typed error before any lifecycle part is emitted; failures after the first part terminate that stream without replaying it.
 
 ```swift
 for try await part in model.streamText(

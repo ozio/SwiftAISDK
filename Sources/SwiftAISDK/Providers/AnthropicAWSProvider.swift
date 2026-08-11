@@ -175,7 +175,7 @@ public final class AnthropicAWSProvider: AIProvider, @unchecked Sendable {
     }
 }
 
-private final class AnthropicAWSSigV4Transport: AITransport, @unchecked Sendable {
+private final class AnthropicAWSSigV4Transport: AIStreamingTransport, @unchecked Sendable {
     private let region: String
     private let credentialsProvider: @Sendable () async throws -> AWSCredentials
     private let date: @Sendable () -> Date
@@ -189,11 +189,20 @@ private final class AnthropicAWSSigV4Transport: AITransport, @unchecked Sendable
     }
 
     func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        try await underlying.send(signedRequest(request))
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let streamingTransport = try requireStreamingTransport(underlying, providerID: "anthropic-aws")
+        return try await streamingTransport.stream(signedRequest(request))
+    }
+
+    private func signedRequest(_ request: AIHTTPRequest) async throws -> AIHTTPRequest {
         guard request.method.uppercased() == "POST", let body = request.body else {
-            return try await underlying.send(request)
+            return request
         }
         let credentials = try await credentialsProvider()
-        let signed = try AWSSigV4.sign(
+        return try AWSSigV4.sign(
             request: request,
             body: body,
             credentials: credentials,
@@ -201,6 +210,5 @@ private final class AnthropicAWSSigV4Transport: AITransport, @unchecked Sendable
             service: "aws-external-anthropic",
             date: date()
         )
-        return try await underlying.send(signed)
     }
 }

@@ -1,6 +1,6 @@
 # Core V7 Parity
 
-Snapshot date: 2026-08-10
+Snapshot date: 2026-08-12
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
@@ -47,6 +47,14 @@ Checked npm package diffs:
 
 Port decisions:
 
+- Provider-facing language streams now consume `AIStreamingTransport` bodies
+  incrementally rather than awaiting a buffered `AIHTTPResponse`. Shared SSE
+  parsing follows `eventsource-parser` chunk, line-ending, BOM, field-space,
+  and incomplete-EOF behavior; Amazon EventStream parsing validates frame
+  lengths and CRCs. Focused gated and loopback tests prove first-part delivery
+  before EOF plus cancellation of the response body on abort or early stop.
+  Custom send-only transports remain valid for unary generation and fail
+  streaming with a non-retryable argument error.
 - `ai@7.0.58` default instructions, agent-level default timeouts, and
   reconnect cancellation are ported through `defaultInstructionsMiddleware`,
   `AIToolLoopAgent.timeoutNanoseconds`, and `AIChatReconnectRequest.abortSignal`.
@@ -226,7 +234,7 @@ Port decisions:
 | Upstream reference item | SwiftAISDK status | Current Swift evidence | Notes / next decision |
 | --- | --- | --- | --- |
 | `generateText` | `covered` | `AI.generateText`, `LanguageModelRequest`, `TextGenerationResult` | Supports prompt/request overloads, tools, multi-step loops, retries, telemetry, provider metadata, response metadata, raw chunks, and abort signals. Later tool-loop steps recheck cancellation before another model call and preserve the caller's abort reason. |
-| `streamText` | `partial` | `AI.streamText`, `LanguageStreamPart`, `timeoutNanoseconds` | Async sequence surface with lifecycle parts, tools, approvals, retries-before-first-yield, telemetry, total timeout, and abort propagation. Structured `firstChunkMs` plus semantic-content-only inter-chunk timeout behavior remains deferred. |
+| `streamText` | `partial` | `AI.streamText`, `LanguageStreamPart`, `AIStreamingTransport`, incremental SSE/EventStream regressions, `timeoutNanoseconds` | Async sequence surface with provider parts delivered before HTTP EOF, lifecycle parts, tools, approvals, retries-before-first-yield, telemetry, total timeout, response-body cancellation, and abort propagation. Structured `firstChunkMs` plus semantic-content-only inter-chunk timeout behavior remains deferred. |
 | `embed` | `covered` | `AI.embed`, `EmbeddingRequest`, `EmbeddingResult` | Single-value helper delegates through the embedding request shape. |
 | `embedMany` | `covered` | `AI.embedMany` | Supports batching through `chunkSize` and aggregates usage/warnings/metadata. |
 | `rerank` | `covered` | `AI.rerank`, `RerankingRequest`, `RerankingResult` | Native model family exists. |

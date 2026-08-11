@@ -46,7 +46,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try huggingFacePreparedCall(for: request, modelID: modelID, stream: true)
                     let httpRequest = try config.request(
@@ -56,17 +56,19 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                         headers: request.headers,
                         abortSignal: request.abortSignal
                     )
-                    let response = try await config.transport.send(httpRequest)
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
 
-                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: responseHead, modelID: modelID)))
                     if !prepared.warnings.isEmpty {
                         continuation.yield(.streamStart(warnings: prepared.warnings))
                     }
 
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
@@ -75,7 +77,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                         switch raw["type"]?.stringValue {
                         case "response.created":
                             let metadataRaw = raw["response"] ?? raw
-                            continuation.yield(.responseMetadata(huggingFaceResponseMetadata(from: metadataRaw, response: response, modelID: modelID)))
+                            continuation.yield(.responseMetadata(huggingFaceResponseMetadata(from: metadataRaw, response: responseHead, modelID: modelID)))
                         case "response.output_item.added":
                             for part in huggingFaceOutputItemAddedParts(from: raw["item"]) {
                                 continuation.yield(part)
@@ -121,6 +123,7 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 }

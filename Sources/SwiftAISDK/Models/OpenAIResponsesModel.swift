@@ -66,14 +66,16 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try preparedRequest(for: request, stream: true)
                     let body = prepared.body
-                    let response = try await config.transport.send(config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
+                    let httpRequest = try config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     let toolNameAliases = openAIResponsesProviderToolNameAliases(from: request.tools)
                     var toolCallBuffers = OpenAIResponsesStreamingToolCalls(providerID: providerID, toolNameAliases: toolNameAliases)
@@ -92,8 +94,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     var hasOutputStarted = false
                     let shouldThrowPreOutputStreamErrors = isOpenAIBackedProvider(providerID, config: config)
                     var sourceCounter = 0
-                    let streamEvents = parseServerSentEvents(response.body).filter { $0.data != "[DONE]" }
-                    for (eventIndex, event) in streamEvents.enumerated() {
+                    var pendingCompletedResponse: JSONValue?
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
@@ -118,10 +121,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             into: &providerMetadata
                         )
                         if raw["type"]?.stringValue == "response.created" {
+                            pendingCompletedResponse = nil
                             streamResponseID = responsePayload["id"]
                             openResponsesHasToolCalls = false
                             continuation.yield(.responseMetadata(
-                                openAIResponsesStreamResponseMetadata(from: responsePayload, response: response, modelID: modelID)
+                                openAIResponsesStreamResponseMetadata(from: responsePayload, response: responseHead, modelID: modelID)
                             ))
                         }
                         if openAIResponsesStreamEventStartsOutput(raw) {
@@ -315,35 +319,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             ))
                         }
                         if raw["type"]?.stringValue == "response.completed" {
-                            let hasLaterResponse = streamEvents[(eventIndex + 1)...].contains { laterEvent in
-                                guard let laterRaw = try? decodeJSONBody(Data(laterEvent.data.utf8)) else { return false }
-                                return laterRaw["type"]?.stringValue == "response.created"
-                            }
-                            guard !hasLaterResponse else { continue }
-                            let response = raw["response"] ?? raw
-                            let finishReason = openResponsesStreamFinishReason(
-                                response: response,
-                                hasToolCalls: openResponsesHasToolCalls,
-                                mode: config.responsesRequestMode
-                            )
-                            let finishUsage = tokenUsage(from: response)
-                            if providerMetadata.isEmpty {
-                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
-                            } else {
-                                continuation.yield(.finishMetadata(
-                                    reason: finishReason,
-                                    usage: finishUsage,
-                                    providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
-                                        openAIResponsesProviderMetadataByApplyingStreamLogprobs(
-                                            providerMetadata,
-                                            streamOutputLogprobs: streamOutputLogprobs,
-                                            providerID: providerID
-                                        ),
-                                        responseID: streamResponseID,
-                                        providerID: providerID
-                                    )
-                                ))
-                            }
+                            pendingCompletedResponse = raw["response"] ?? raw
                         } else if raw["type"]?.stringValue == "response.incomplete" {
                             let response = raw["response"] ?? raw
                             let finishReason = openResponsesStreamFinishReason(
@@ -401,11 +377,37 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             }
                         }
                     }
+                    if let response = pendingCompletedResponse {
+                        let finishReason = openResponsesStreamFinishReason(
+                            response: response,
+                            hasToolCalls: openResponsesHasToolCalls,
+                            mode: config.responsesRequestMode
+                        )
+                        let finishUsage = tokenUsage(from: response)
+                        if providerMetadata.isEmpty {
+                            continuation.yield(.finish(reason: finishReason, usage: finishUsage))
+                        } else {
+                            continuation.yield(.finishMetadata(
+                                reason: finishReason,
+                                usage: finishUsage,
+                                providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
+                                    openAIResponsesProviderMetadataByApplyingStreamLogprobs(
+                                        providerMetadata,
+                                        streamOutputLogprobs: streamOutputLogprobs,
+                                        providerID: providerID
+                                    ),
+                                    responseID: streamResponseID,
+                                    providerID: providerID
+                                )
+                            ))
+                        }
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 

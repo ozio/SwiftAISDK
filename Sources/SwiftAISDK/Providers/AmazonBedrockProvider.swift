@@ -164,6 +164,7 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
 
         let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
         let transport = BedrockSigningTransport(
+            providerID: providerID,
             region: region,
             service: "bedrock-mantle",
             auth: auth,
@@ -264,14 +265,16 @@ private func bedrockAuth(settings: AmazonBedrockProviderSettings, providerID: St
     }
 }
 
-private final class BedrockSigningTransport: AITransport, @unchecked Sendable {
+private final class BedrockSigningTransport: AIStreamingTransport, @unchecked Sendable {
+    private let providerID: String
     private let region: String
     private let service: String
     private let auth: BedrockAuth
     private let transport: any AITransport
     private let date: @Sendable () -> Date
 
-    init(region: String, service: String, auth: BedrockAuth, transport: any AITransport, date: @escaping @Sendable () -> Date) {
+    init(providerID: String, region: String, service: String, auth: BedrockAuth, transport: any AITransport, date: @escaping @Sendable () -> Date) {
+        self.providerID = providerID
         self.region = region
         self.service = service
         self.auth = auth
@@ -280,14 +283,23 @@ private final class BedrockSigningTransport: AITransport, @unchecked Sendable {
     }
 
     func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        try await transport.send(authenticatedRequest(request))
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let streamingTransport = try requireStreamingTransport(transport, providerID: providerID)
+        return try await streamingTransport.stream(authenticatedRequest(request))
+    }
+
+    private func authenticatedRequest(_ request: AIHTTPRequest) async throws -> AIHTTPRequest {
         switch auth {
         case let .bearer(apiKey):
             var signed = request
             signed.headers["Authorization"] = signed.headers["Authorization"] ?? "Bearer \(apiKey)"
-            return try await transport.send(signed)
+            return signed
         case let .sigV4(credentialsProvider):
             let credentials = try await credentialsProvider()
-            let signed = try AWSSigV4.sign(
+            return try AWSSigV4.sign(
                 request: request,
                 body: request.body ?? Data(),
                 credentials: credentials,
@@ -295,7 +307,6 @@ private final class BedrockSigningTransport: AITransport, @unchecked Sendable {
                 service: service,
                 date: date()
             )
-            return try await transport.send(signed)
         }
     }
 }
@@ -323,13 +334,22 @@ struct BedrockRuntimeConfig: @unchecked Sendable {
     }
 
     func sendRequest(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        try await transport.send(authenticatedRequest(request))
+    }
+
+    func streamRequest(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let streamingTransport = try requireStreamingTransport(transport, providerID: providerID)
+        return try await streamingTransport.stream(authenticatedRequest(request))
+    }
+
+    private func authenticatedRequest(_ request: AIHTTPRequest) async throws -> AIHTTPRequest {
         switch auth {
         case let .bearer(apiKey):
             var signed = request
             signed.headers["Authorization"] = signed.headers["Authorization"] ?? "Bearer \(apiKey)"
-            return try await transport.send(signed)
+            return signed
         case let .sigV4(credentialsProvider):
-            let signed = try AWSSigV4.sign(
+            return try AWSSigV4.sign(
                 request: request,
                 body: request.body ?? Data(),
                 credentials: try await credentialsProvider(),
@@ -337,7 +357,6 @@ struct BedrockRuntimeConfig: @unchecked Sendable {
                 service: service,
                 date: date()
             )
-            return try await transport.send(signed)
         }
     }
 

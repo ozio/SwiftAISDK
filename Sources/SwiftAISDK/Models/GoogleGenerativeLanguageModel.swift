@@ -43,24 +43,34 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try Self.generateContentBody(for: request, modelID: modelID, isStreaming: true)
-                    let response = try await config.transport.send(config.request(
+                    let httpRequest = try config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         modelID: modelID,
                         body: prepared.body,
                         headers: request.headers.mergingHeaders(prepared.headers),
                         abortSignal: request.abortSignal
-                    ))
-                    let parts = try streamFromGoogleGenerateContent(
-                        providerID: providerID,
-                        response: response,
+                    )
+                    let response = try await config.streamRequest(httpRequest)
+                    guard (200..<300).contains(response.statusCode) else {
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
+                    }
+                    var state = GoogleGenerateContentStreamState(
+                        response: httpResponseHead(from: response, request: httpRequest),
                         includeRawChunks: request.includeRawChunks,
                         modelID: modelID,
                         warnings: prepared.warnings
                     )
-                    for part in parts {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
+                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                        for part in state.apply(raw) {
+                            continuation.yield(part)
+                        }
+                    }
+                    for part in state.finish() {
                         continuation.yield(part)
                     }
                     continuation.finish()
@@ -68,6 +78,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 

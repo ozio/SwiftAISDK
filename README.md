@@ -72,9 +72,17 @@ for try await part in model.streamText("Stream this") {
 }
 ```
 
+Built-in HTTP language providers deliver parts incrementally as response bytes
+arrive; they do not wait for the HTTP body to finish. If you inject a custom
+transport, streaming requires the transport to conform to
+`AIStreamingTransport`. A send-only `AITransport` remains valid for unary
+generation, but `stream` fails with a non-retryable transport argument error
+instead of buffering through `send`.
+
 Facade calls retry transient failures by default with `maxRetries: 2`.
 Streaming retries only happen before the first emitted part, so already-delivered
-chunks are not duplicated. Pass `retryPolicy: .none` or a custom
+chunks are not duplicated. Stopping iteration or aborting the request cancels
+the upstream response body. Pass `retryPolicy: .none` or a custom
 `AIRetryPolicy` to tune retries, backoff, and timeout.
 
 ## Structured Output

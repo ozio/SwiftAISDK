@@ -54,6 +54,36 @@ import Testing
     #expect(requests[0].method == "POST")
     #expect(requests[0].headers["accept"] == "application/json, text/event-stream")
 }
+@Test func mcpHTTPTransportUsesSharedSSEGrammarAcrossUTF8ByteChunksAndBareCR() async throws {
+    let payload = Data("\u{FEFF}: ping\rid: cursor-jp\revent: message\rdata: {\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"text\":\"こんにちは 👋\"}}\r\r".utf8)
+    let response = AIHTTPStreamResponse(
+        statusCode: 200,
+        headers: ["content-type": "text/event-stream"],
+        body: AsyncThrowingStream { continuation in
+            let task = Task {
+                for byte in payload {
+                    try Task.checkCancellation()
+                    continuation.yield(Data([byte]))
+                }
+                while !Task.isCancelled {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    )
+    let http = StreamingRecordingTransport(responses: [response])
+    let transport = try MCPHTTPTransport(url: "https://mcp.example.com/rpc", transport: http)
+
+    let result = try await transport.request([
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "initialize",
+        "params": [:]
+    ])
+
+    #expect(result["result"]?["text"]?.stringValue == "こんにちは 👋")
+}
 @Test func mcpHTTPTransportUsesStreamingInboundSSEWithoutBlockingStart() async throws {
     let http = StreamingRecordingTransport(responses: [
         streamResponse(

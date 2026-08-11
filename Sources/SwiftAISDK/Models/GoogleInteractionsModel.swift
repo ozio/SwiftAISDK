@@ -36,18 +36,19 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try googleInteractionsPreparedCall(for: request, modelID: modelID, agent: agent, stream: true)
-                    let response = try await config.transport.send(config.request(
+                    let httpRequest = try config.request(
                         path: "/interactions",
                         modelID: modelID,
                         body: .object(prepared.body),
                         headers: googleInteractionsHeaders(request.headers),
                         abortSignal: request.abortSignal
-                    ))
+                    )
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
 
                     if !prepared.warnings.isEmpty {
@@ -57,7 +58,8 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                     var hasFunctionCall = false
                     var sourceCounter = 0
                     var emittedSourceKeys: Set<String> = []
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
@@ -111,6 +113,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 
@@ -153,4 +156,3 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
         throw AIError.invalidResponse(provider: providerID, message: "Google Interactions polling timed out.")
     }
 }
-

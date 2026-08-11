@@ -240,7 +240,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let preparedRequest = try Self.body(for: request, modelID: modelID, providerID: providerID, stream: true)
                     var body = preparedRequest.body
@@ -253,17 +253,22 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         path = "/messages"
                     }
                     body = config.transformRequestBody?(body) ?? body
-                    let response = try await config.transport.send(config.request(
+                    let httpRequest = try config.request(
                         path: path,
                         modelID: modelID,
                         body: .object(body),
                         headers: anthropicHeaders(request.headers, configHeaders: config.headers, betas: preparedRequest.betas),
                         abortSignal: request.abortSignal
-                    ))
+                    )
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw anthropicHTTPStatusError(provider: providerID, response: response)
+                        throw anthropicHTTPStatusError(
+                            provider: providerID,
+                            response: try await bufferedHTTPResponse(from: response, request: httpRequest)
+                        )
                     }
-                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: responseHead, modelID: modelID)))
                     continuation.yield(.streamStart(warnings: preparedRequest.warnings))
                     var contentBlocks = AnthropicStreamingContentBlocks(
                         providerID: providerID,
@@ -286,7 +291,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var isMessageOpen = false
                     var activeMessageID: String?
                     var hasInvalidMessageSequence = false
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if hasInvalidMessageSequence {
                             continue
@@ -388,6 +394,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 
@@ -1613,20 +1620,36 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try await preparedCall(for: request, stream: true)
                     let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
-                    let response = try await config.transport.send(try config.request(
+                    let httpRequest = try config.request(
                         path: "/model/\(bedrockEncodeModelID(modelID))/invoke-with-response-stream",
                         body: .object(body),
                         headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"]),
                         abortSignal: request.abortSignal
-                    ))
+                    )
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        let responseBody = try await readResponseWithSizeLimit(
+                            response: response,
+                            url: httpRequest.url.absoluteString,
+                            maxBytes: httpRequest.maxResponseBytes ?? AIDefaultMaxDownloadSize
+                        )
+                        throw apiCallError(provider: providerID, response: AIHTTPResponse(
+                            statusCode: response.statusCode,
+                            headers: response.headers,
+                            body: responseBody,
+                            url: httpRequest.url
+                        ))
                     }
-                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    let metadataResponse = AIHTTPResponse(
+                        statusCode: response.statusCode,
+                        headers: response.headers,
+                        url: httpRequest.url
+                    )
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: metadataResponse, modelID: modelID)))
                     continuation.yield(.streamStart(warnings: prepared.warnings))
 
                     var contentBlocks = AnthropicStreamingContentBlocks(
@@ -1639,37 +1662,73 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     var realToolCallCount = 0
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
-                    for raw in try amazonBedrockAnthropicStreamEvents(from: response) {
-                        if raw["type"]?.stringValue == "error" {
-                            let message = raw["error"]?["message"]?.stringValue ?? raw["message"]?.stringValue ?? "Bedrock Anthropic stream returned an error event."
-                            throw AIError.invalidResponse(provider: providerID, message: message)
-                        }
-                        if request.includeRawChunks {
-                            continuation.yield(.raw(raw))
-                        }
-                        for part in contentBlocks.apply(event: raw, toolCallCount: realToolCallCount) {
-                            continuation.yield(part)
-                        }
-                        for part in jsonToolText.apply(event: raw) {
-                            continuation.yield(part)
-                        }
-                        for part in providerToolResults.apply(event: raw) {
-                            continuation.yield(part)
-                        }
-                        for source in anthropicSources(from: raw, citationDocuments: citationDocuments, sourceCounter: &sourceCounter) {
-                            continuation.yield(.source(source))
-                        }
-                        for part in toolCalls.apply(event: raw) {
-                            if case .toolCall = part {
-                                realToolCallCount += 1
+                    var parser = BedrockRawStreamParser(
+                        providerID: providerID,
+                        contentType: response.headerValue("content-type")
+                    )
+
+                    func process(_ items: [BedrockRawStreamItem]) throws -> Bool {
+                        for outerItem in items {
+                            let adaptedItem = try amazonBedrockAnthropicStreamItem(from: outerItem, providerID: providerID)
+                            let item: BedrockRawStreamItem
+                            switch adaptedItem {
+                            case .messageStop:
+                                return true
+                            case let .event(event):
+                                item = event
                             }
-                            continuation.yield(part)
+                            let raw = item.rawValue
+                            if request.includeRawChunks {
+                                continuation.yield(.raw(raw))
+                            }
+                            if let errorMessage = item.errorMessage {
+                                throw AIError.invalidResponse(provider: providerID, message: errorMessage)
+                            }
+                            if raw["type"]?.stringValue == "error" {
+                                let message = raw["error"]?["message"]?.stringValue ?? raw["message"]?.stringValue ?? "Bedrock Anthropic stream returned an error event."
+                                throw AIError.invalidResponse(provider: providerID, message: message)
+                            }
+                            for part in contentBlocks.apply(event: raw, toolCallCount: realToolCallCount) {
+                                continuation.yield(part)
+                            }
+                            for part in jsonToolText.apply(event: raw) {
+                                continuation.yield(part)
+                            }
+                            for part in providerToolResults.apply(event: raw) {
+                                continuation.yield(part)
+                            }
+                            for source in anthropicSources(from: raw, citationDocuments: citationDocuments, sourceCounter: &sourceCounter) {
+                                continuation.yield(.source(source))
+                            }
+                            for part in toolCalls.apply(event: raw) {
+                                if case .toolCall = part {
+                                    realToolCallCount += 1
+                                }
+                                continuation.yield(part)
+                            }
+                        }
+                        return false
+                    }
+
+                    var reachedMessageStop = false
+                    streamLoop: for try await data in response.body {
+                        reachedMessageStop = try process(parser.append(data))
+                        if reachedMessageStop || parser.isDone {
+                            break streamLoop
                         }
                     }
-                    continuation.finish()
+                    if !reachedMessageStop {
+                        _ = try process(parser.finish())
+                    }
+                    if !Task.isCancelled {
+                        continuation.finish()
+                    }
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }

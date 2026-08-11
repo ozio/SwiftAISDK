@@ -115,40 +115,150 @@ struct BedrockStreamState {
     }
 }
 
+struct BedrockRawStreamItem {
+    var rawValue: JSONValue
+    var errorMessage: String?
+    var eventType: String? = nil
+}
+
+struct BedrockRawStreamParser {
+    private enum Format {
+        case amazon(AmazonBedrockEventStreamParser)
+        case serverSentEvents(ServerSentEventParser)
+    }
+
+    private var format: Format
+    private let providerID: String
+    private(set) var isDone = false
+
+    init(providerID: String, contentType: String?) {
+        self.providerID = providerID
+        if contentType?.localizedCaseInsensitiveContains("application/vnd.amazon.eventstream") == true {
+            format = .amazon(AmazonBedrockEventStreamParser(providerID: providerID))
+        } else {
+            format = .serverSentEvents(ServerSentEventParser())
+        }
+    }
+
+    mutating func append(_ data: Data) throws -> [BedrockRawStreamItem] {
+        guard !isDone else { return [] }
+        switch format {
+        case var .amazon(parser):
+            let events = try parser.append(data)
+            format = .amazon(parser)
+            return events.map { event in
+                BedrockRawStreamItem(
+                    rawValue: event.rawValue,
+                    errorMessage: event.errorMessage,
+                    eventType: event.eventType
+                )
+            }
+        case var .serverSentEvents(parser):
+            let events = try parser.append(data)
+            format = .serverSentEvents(parser)
+            return try decodeServerSentEvents(events)
+        }
+    }
+
+    mutating func finish() throws -> [BedrockRawStreamItem] {
+        switch format {
+        case var .amazon(parser):
+            try parser.finish()
+            format = .amazon(parser)
+            return []
+        case var .serverSentEvents(parser):
+            let events = try parser.finish()
+            format = .serverSentEvents(parser)
+            return try decodeServerSentEvents(events)
+        }
+    }
+
+    private mutating func decodeServerSentEvents(_ events: [ServerSentEvent]) throws -> [BedrockRawStreamItem] {
+        var items: [BedrockRawStreamItem] = []
+        for event in events {
+            if event.data == "[DONE]" {
+                isDone = true
+                break
+            }
+            let raw: JSONValue
+            do {
+                raw = try decodeJSONBody(Data(event.data.utf8))
+            } catch {
+                throw AIError.invalidResponse(
+                    provider: providerID,
+                    message: "Invalid server-sent event JSON in Bedrock stream: \(error.localizedDescription)"
+                )
+            }
+            let errorMessage: String?
+            if raw["type"]?.stringValue == "error" {
+                errorMessage = raw["error"]?["message"]?.stringValue
+                    ?? raw["message"]?.stringValue
+                    ?? "Amazon Bedrock stream returned an error event."
+            } else {
+                errorMessage = nil
+            }
+            items.append(BedrockRawStreamItem(rawValue: raw, errorMessage: errorMessage))
+        }
+        return items
+    }
+}
+
 func streamFromBedrockResponse(
     providerID: String,
-    response: AIHTTPResponse,
+    response: AIHTTPStreamResponse,
+    requestURL: URL,
+    maxResponseBytes: Int? = nil,
     includeRawChunks: Bool = false,
     warnings: [AIWarning] = [],
     jsonResponseToolName: String? = nil,
-    extractJSONObjectText: Bool = false
-) throws -> [LanguageStreamPart] {
+    extractJSONObjectText: Bool = false,
+    emit: @Sendable (LanguageStreamPart) -> Void
+) async throws {
     guard (200..<300).contains(response.statusCode) else {
-        throw apiCallError(provider: providerID, response: response)
+        let body = try await readResponseWithSizeLimit(
+            response: response,
+            url: requestURL.absoluteString,
+            maxBytes: maxResponseBytes ?? AIDefaultMaxDownloadSize
+        )
+        throw apiCallError(provider: providerID, response: AIHTTPResponse(
+            statusCode: response.statusCode,
+            headers: response.headers,
+            body: body,
+            url: requestURL
+        ))
     }
 
-    let contentType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value
-    let rawChunks: [JSONValue]
-    if contentType?.localizedCaseInsensitiveContains("application/vnd.amazon.eventstream") == true {
-        rawChunks = try parseAmazonBedrockEventStream(response.body)
-    } else {
-        rawChunks = try parseServerSentEvents(response.body)
-            .filter { $0.data != "[DONE]" }
-            .map { try decodeJSONBody(Data($0.data.utf8)) }
-    }
-
-    var parts: [LanguageStreamPart] = [.streamStart(warnings: warnings)]
+    emit(.streamStart(warnings: warnings))
     var state = BedrockStreamState(
         jsonResponseToolName: jsonResponseToolName,
         jsonObjectTextExtractor: extractJSONObjectText ? BedrockJSONObjectTextExtractor() : nil
     )
-    for raw in rawChunks {
-        if includeRawChunks {
-            parts.append(.raw(raw))
+    var parser = BedrockRawStreamParser(
+        providerID: providerID,
+        contentType: response.headerValue("content-type")
+    )
+
+    func emitItems(_ items: [BedrockRawStreamItem]) throws {
+        for item in items {
+            if includeRawChunks {
+                emit(.raw(item.rawValue))
+            }
+            if let errorMessage = item.errorMessage {
+                throw AIError.invalidResponse(provider: providerID, message: errorMessage)
+            }
+            for part in state.parts(from: item.rawValue) {
+                emit(part)
+            }
         }
-        parts.append(contentsOf: state.parts(from: raw))
     }
-    return parts
+
+    streamLoop: for try await data in response.body {
+        try emitItems(parser.append(data))
+        if parser.isDone {
+            break streamLoop
+        }
+    }
+    try emitItems(parser.finish())
 }
 
 final class BedrockJSONObjectTextExtractor {
@@ -206,79 +316,268 @@ final class BedrockJSONObjectTextExtractor {
     }
 }
 
-func parseAmazonBedrockEventStream(_ data: Data) throws -> [JSONValue] {
-    var offset = 0
-    var chunks: [JSONValue] = []
+enum AmazonEventStreamHeaderValue: Equatable {
+    case boolean(Bool)
+    case byte(Int8)
+    case short(Int16)
+    case integer(Int32)
+    case long(Int64)
+    case byteArray(Data)
+    case string(String)
+    case timestamp(Int64)
+    case uuid(Data)
 
-    while offset + 16 <= data.count {
-        let totalLength = Int(readUInt32(data, at: offset))
-        let headersLength = Int(readUInt32(data, at: offset + 4))
-        guard totalLength >= 16, offset + totalLength <= data.count else { break }
-
-        let headersStart = offset + 12
-        let payloadStart = headersStart + headersLength
-        let payloadEnd = offset + totalLength - 4
-        guard payloadStart <= payloadEnd else { break }
-
-        let headers = parseAmazonEventStreamHeaders(data, start: headersStart, length: headersLength)
-        if headers[":message-type"] == "event",
-           let eventType = headers[":event-type"] {
-            let payload = data.subdata(in: payloadStart..<payloadEnd)
-            let rawPayload = try decodeJSONBody(payload)
-            chunks.append(.object([eventType: rawPayload]))
-        }
-
-        offset += totalLength
+    var stringValue: String? {
+        guard case let .string(value) = self else { return nil }
+        return value
     }
-
-    return chunks
 }
 
-func parseAmazonEventStreamHeaders(_ data: Data, start: Int, length: Int) -> [String: String] {
-    var headers: [String: String] = [:]
-    var offset = start
+struct AmazonBedrockEventStreamEvent: Equatable {
+    var messageType: String
+    var eventType: String
+    var payload: JSONValue
+    var headers: [String: AmazonEventStreamHeaderValue]
+
+    var rawValue: JSONValue {
+        .object([eventType: payload])
+    }
+
+    var errorMessage: String? {
+        let lowercasedEventType = eventType.lowercased()
+        let isError = messageType == "exception"
+            || messageType == "error"
+            || lowercasedEventType.hasSuffix("exception")
+            || lowercasedEventType.hasSuffix("error")
+        guard isError else { return nil }
+        let message = payload["message"]?.stringValue
+            ?? payload["Message"]?.stringValue
+            ?? headers[":error-message"]?.stringValue
+        return message.map { "\(eventType): \($0)" } ?? eventType
+    }
+}
+
+struct AmazonBedrockEventStreamParser {
+    private var buffer = Data()
+    private let providerID: String
+
+    init(providerID: String) {
+        self.providerID = providerID
+    }
+
+    mutating func append(_ data: Data) throws -> [AmazonBedrockEventStreamEvent] {
+        buffer.append(data)
+        var events: [AmazonBedrockEventStreamEvent] = []
+
+        while buffer.count >= 4 {
+            let totalLength = Int(readUInt32(buffer, at: 0))
+            guard totalLength >= 16 else {
+                throw invalidResponse("frame length \(totalLength) is smaller than the 16-byte EventStream overhead.")
+            }
+            guard buffer.count >= 8 else { break }
+
+            let headersLength = Int(readUInt32(buffer, at: 4))
+            guard headersLength <= totalLength - 16 else {
+                throw invalidResponse("headers length \(headersLength) exceeds frame length \(totalLength).")
+            }
+            guard buffer.count >= 12 else { break }
+
+            let expectedPreludeCRC = readUInt32(buffer, at: 8)
+            let actualPreludeCRC = amazonEventStreamCRC32(buffer.subdata(in: 0..<8))
+            guard expectedPreludeCRC == actualPreludeCRC else {
+                throw invalidResponse("prelude CRC32 \(expectedPreludeCRC) does not match \(actualPreludeCRC).")
+            }
+            guard buffer.count >= totalLength else { break }
+
+            let frame = buffer.subdata(in: 0..<totalLength)
+            let expectedMessageCRC = readUInt32(frame, at: totalLength - 4)
+            let actualMessageCRC = amazonEventStreamCRC32(frame.subdata(in: 0..<(totalLength - 4)))
+            guard expectedMessageCRC == actualMessageCRC else {
+                throw invalidResponse("message CRC32 \(expectedMessageCRC) does not match \(actualMessageCRC).")
+            }
+
+            let headers = try parseAmazonEventStreamHeaders(
+                frame,
+                start: 12,
+                length: headersLength,
+                providerID: providerID
+            )
+            let payloadStart = 12 + headersLength
+            let payloadEnd = totalLength - 4
+            let payloadData = frame.subdata(in: payloadStart..<payloadEnd)
+            let payload: JSONValue
+            if payloadData.isEmpty {
+                payload = .object([:])
+            } else {
+                do {
+                    payload = try decodeJSONBody(payloadData)
+                } catch {
+                    throw invalidResponse("event payload is not valid JSON: \(error.localizedDescription)")
+                }
+            }
+
+            guard let messageType = headers[":message-type"]?.stringValue else {
+                throw invalidResponse("frame is missing the string :message-type header.")
+            }
+            let eventType: String?
+            switch messageType {
+            case "event":
+                eventType = headers[":event-type"]?.stringValue
+            case "exception":
+                eventType = headers[":exception-type"]?.stringValue ?? headers[":event-type"]?.stringValue
+            case "error":
+                eventType = headers[":error-code"]?.stringValue ?? headers[":event-type"]?.stringValue
+            default:
+                throw invalidResponse("unsupported :message-type value \(messageType).")
+            }
+            guard let eventType, !eventType.isEmpty else {
+                throw invalidResponse("frame with message type \(messageType) is missing its event type header.")
+            }
+
+            events.append(AmazonBedrockEventStreamEvent(
+                messageType: messageType,
+                eventType: eventType,
+                payload: payload,
+                headers: headers
+            ))
+            buffer.removeSubrange(0..<totalLength)
+        }
+
+        return events
+    }
+
+    mutating func finish() throws {
+        guard !buffer.isEmpty else { return }
+        let expectedLength = buffer.count >= 4 ? Int(readUInt32(buffer, at: 0)) : nil
+        let suffix = expectedLength.map { "; expected \($0) bytes" } ?? ""
+        throw invalidResponse("truncated EventStream frame at EOF (received \(buffer.count) bytes\(suffix)).")
+    }
+
+    private func invalidResponse(_ message: String) -> AIError {
+        .invalidResponse(provider: providerID, message: "Invalid Amazon EventStream frame: \(message)")
+    }
+}
+
+func parseAmazonBedrockEventStream(_ data: Data, providerID: String = "amazon-bedrock") throws -> [JSONValue] {
+    var parser = AmazonBedrockEventStreamParser(providerID: providerID)
+    let events = try parser.append(data)
+    try parser.finish()
+    return events.map(\.rawValue)
+}
+
+private func parseAmazonEventStreamHeaders(
+    _ data: Data,
+    start: Int,
+    length: Int,
+    providerID: String
+) throws -> [String: AmazonEventStreamHeaderValue] {
     let end = start + length
+    guard start >= 0, length >= 0, end <= data.count else {
+        throw AIError.invalidResponse(provider: providerID, message: "Invalid Amazon EventStream frame: header section is out of bounds.")
+    }
+
+    var headers: [String: AmazonEventStreamHeaderValue] = [:]
+    var offset = start
+
+    func invalidHeader(_ message: String) -> AIError {
+        .invalidResponse(provider: providerID, message: "Invalid Amazon EventStream frame: \(message)")
+    }
+
+    func requireBytes(_ count: Int, context: String) throws {
+        guard count >= 0, offset <= end - count else {
+            throw invalidHeader("truncated \(context) in headers.")
+        }
+    }
 
     while offset < end {
-        guard offset < data.count else { break }
+        try requireBytes(1, context: "header name length")
         let nameLength = Int(data[offset])
         offset += 1
-        guard offset + nameLength + 1 <= data.count else { break }
-        let name = String(data: data.subdata(in: offset..<(offset + nameLength)), encoding: .utf8) ?? ""
+        guard nameLength > 0 else {
+            throw invalidHeader("header name must not be empty.")
+        }
+        try requireBytes(nameLength, context: "header name")
+        let nameData = data.subdata(in: offset..<(offset + nameLength))
+        guard let name = String(data: nameData, encoding: .utf8) else {
+            throw invalidHeader("header name is not valid UTF-8.")
+        }
         offset += nameLength
+
+        try requireBytes(1, context: "header type")
         let type = data[offset]
         offset += 1
 
+        let value: AmazonEventStreamHeaderValue
         switch type {
-        case 7:
-            guard offset + 2 <= data.count else { return headers }
-            let valueLength = Int(readUInt16(data, at: offset))
-            offset += 2
-            guard offset + valueLength <= data.count else { return headers }
-            headers[name] = String(data: data.subdata(in: offset..<(offset + valueLength)), encoding: .utf8)
-            offset += valueLength
-        case 0, 1:
-            headers[name] = type == 0 ? "true" : "false"
+        case 0:
+            value = .boolean(true)
+        case 1:
+            value = .boolean(false)
         case 2:
+            try requireBytes(1, context: "byte header")
+            value = .byte(Int8(bitPattern: data[offset]))
             offset += 1
         case 3:
+            try requireBytes(2, context: "short header")
+            value = .short(Int16(bitPattern: readUInt16(data, at: offset)))
             offset += 2
         case 4:
+            try requireBytes(4, context: "integer header")
+            value = .integer(Int32(bitPattern: readUInt32(data, at: offset)))
             offset += 4
-        case 5, 8:
+        case 5:
+            try requireBytes(8, context: "long header")
+            value = .long(Int64(bitPattern: readUInt64(data, at: offset)))
             offset += 8
-        case 6:
-            guard offset + 2 <= data.count else { return headers }
+        case 6, 7:
+            try requireBytes(2, context: "variable-length header size")
             let valueLength = Int(readUInt16(data, at: offset))
-            offset += 2 + valueLength
+            offset += 2
+            try requireBytes(valueLength, context: "variable-length header value")
+            let valueData = data.subdata(in: offset..<(offset + valueLength))
+            offset += valueLength
+            if type == 6 {
+                value = .byteArray(valueData)
+            } else {
+                guard let string = String(data: valueData, encoding: .utf8) else {
+                    throw invalidHeader("string header value is not valid UTF-8.")
+                }
+                value = .string(string)
+            }
+        case 8:
+            try requireBytes(8, context: "timestamp header")
+            value = .timestamp(Int64(bitPattern: readUInt64(data, at: offset)))
+            offset += 8
         case 9:
+            try requireBytes(16, context: "UUID header")
+            value = .uuid(data.subdata(in: offset..<(offset + 16)))
             offset += 16
         default:
-            return headers
+            throw invalidHeader("unrecognized header type tag \(type).")
         }
+        guard headers[name] == nil else {
+            throw invalidHeader("duplicate header \(name).")
+        }
+        headers[name] = value
     }
 
     return headers
+}
+
+func amazonEventStreamCRC32(_ data: Data) -> UInt32 {
+    var crc = UInt32.max
+    for byte in data {
+        crc = (crc >> 8) ^ amazonEventStreamCRC32Table[Int((crc ^ UInt32(byte)) & 0xff)]
+    }
+    return crc ^ UInt32.max
+}
+
+private let amazonEventStreamCRC32Table: [UInt32] = (0..<256).map { index in
+    var value = UInt32(index)
+    for _ in 0..<8 {
+        value = (value & 1) == 1 ? (value >> 1) ^ 0xedb8_8320 : value >> 1
+    }
+    return value
 }
 
 func readUInt16(_ data: Data, at offset: Int) -> UInt16 {
@@ -290,4 +589,8 @@ func readUInt32(_ data: Data, at offset: Int) -> UInt32 {
         | (UInt32(data[offset + 1]) << 16)
         | (UInt32(data[offset + 2]) << 8)
         | UInt32(data[offset + 3])
+}
+
+private func readUInt64(_ data: Data, at offset: Int) -> UInt64 {
+    (UInt64(readUInt32(data, at: offset)) << 32) | UInt64(readUInt32(data, at: offset + 4))
 }

@@ -40,7 +40,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try converseBody(for: request)
                     let httpRequest = try config.request(
@@ -49,22 +49,29 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         headers: request.headers.mergingHeaders(["accept": "application/vnd.amazon.eventstream"]),
                         abortSignal: request.abortSignal
                     )
-                    let response = try await config.sendRequest(httpRequest)
-                    let parts = try streamFromBedrockResponse(
+                    let response = try await config.streamRequest(httpRequest)
+                    try await streamFromBedrockResponse(
                         providerID: providerID,
                         response: response,
+                        requestURL: httpRequest.url,
+                        maxResponseBytes: httpRequest.maxResponseBytes,
                         includeRawChunks: request.includeRawChunks,
                         warnings: prepared.warnings,
                         jsonResponseToolName: prepared.usesJsonResponseTool ? "json" : nil,
-                        extractJSONObjectText: prepared.usesJsonInstruction
+                        extractJSONObjectText: prepared.usesJsonInstruction,
+                        emit: { part in
+                            continuation.yield(part)
+                        }
                     )
-                    for part in parts {
-                        continuation.yield(part)
+                    if !Task.isCancelled {
+                        continuation.finish()
                     }
-                    continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }

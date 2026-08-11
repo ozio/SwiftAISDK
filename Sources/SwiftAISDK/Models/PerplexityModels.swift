@@ -41,14 +41,16 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try perplexityPreparedCall(for: request, modelID: modelID, stream: true)
                     let body = JSONValue.object(config.transformRequestBody?(prepared.body) ?? prepared.body)
-                    let response = try await config.transport.send(config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal))
+                    let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
@@ -57,7 +59,8 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                     var didEmitResponseMetadata = false
                     var didEmitSources = false
                     var activeTextID: String?
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw: JSONValue
                         do {
                             raw = try decodeJSONBody(Data(event.data.utf8))
@@ -70,7 +73,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                         }
                         if !didEmitResponseMetadata {
                             didEmitResponseMetadata = true
-                            continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: response, modelID: modelID)))
+                            continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: responseHead, modelID: modelID)))
                         }
                         latestUsage = perplexityUsage(from: raw) ?? latestUsage
                         perplexityMergeProviderMetadata(from: raw, into: &providerMetadata)
@@ -101,6 +104,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 }

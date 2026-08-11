@@ -500,28 +500,14 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     }
 
     private func processSSEStream(_ stream: AsyncThrowingStream<Data, Error>, expectedID: Int?) async throws -> JSONValue {
-        var buffer = Data()
-        var eventName: String?
-        var eventID: String?
-        var dataLines: [String] = []
-
-        func resetEvent() {
-            eventName = nil
-            eventID = nil
-            dataLines.removeAll()
-        }
-
-        func handleEvent() async throws -> JSONValue? {
-            defer { resetEvent() }
-            guard !dataLines.isEmpty else { return nil }
-            guard eventName == nil || eventName == "message" else { return nil }
-            if let eventID {
+        func handleEvent(_ event: ServerSentEvent) async throws -> JSONValue? {
+            guard event.event == nil || event.event == "message" else { return nil }
+            if let eventID = event.id {
                 lastInboundEventID = eventID
             }
-            let data = dataLines.joined(separator: "\n")
             let message: JSONValue
             do {
-                message = try decodeJSONBody(Data(data.utf8))
+                message = try decodeJSONBody(Data(event.data.utf8))
             } catch {
                 throw MCPClientError(message: "MCP HTTP Transport Error: Failed to parse message")
             }
@@ -538,35 +524,20 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             return nil
         }
 
+        var parser = ServerSentEventParser()
         for try await chunk in stream {
             try Task.checkCancellation()
-            buffer.append(chunk)
-            while let newlineIndex = buffer.firstIndex(of: 10) {
-                var lineData = Data(buffer[..<newlineIndex])
-                buffer.removeSubrange(...newlineIndex)
-                if lineData.last == 13 {
-                    lineData.removeLast()
-                }
-                let line = String(decoding: lineData, as: UTF8.self)
-                if line.isEmpty {
-                    if let message = try await handleEvent() {
-                        return message
-                    }
-                } else if line.hasPrefix("event:") {
-                    eventName = String(line.dropFirst("event:".count)).trimmingCharacters(in: .whitespaces)
-                } else if line.hasPrefix("id:") {
-                    eventID = String(line.dropFirst("id:".count)).trimmingCharacters(in: .whitespaces)
-                } else if line.hasPrefix("data:") {
-                    dataLines.append(String(line.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces))
+            for event in try parser.append(chunk) {
+                if let message = try await handleEvent(event) {
+                    return message
                 }
             }
         }
 
-        if !buffer.isEmpty {
-            dataLines.append(String(decoding: buffer, as: UTF8.self))
-        }
-        if let message = try await handleEvent() {
-            return message
+        for event in try parser.finish() {
+            if let message = try await handleEvent(event) {
+                return message
+            }
         }
         return .array([])
     }

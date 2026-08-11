@@ -45,7 +45,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try body(for: request, stream: true)
                     let httpRequest = try config.request(
@@ -55,17 +55,19 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                         headers: request.headers,
                         abortSignal: request.abortSignal
                     )
-                    let response = try await config.transport.send(httpRequest)
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
-                    continuation.yield(.responseMetadata(cohereResponseMetadata(response: response, modelID: modelID)))
+                    continuation.yield(.responseMetadata(cohereResponseMetadata(response: responseHead, modelID: modelID)))
                     var finishReason: String? = "other"
                     var usage: TokenUsage?
                     var pendingToolCall: CoherePendingToolCall?
                     var activeReasoningID: String?
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw: JSONValue
                         do {
                             raw = try decodeJSONBody(Data(event.data.utf8))
@@ -80,7 +82,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                         switch raw["type"]?.stringValue {
                         case "message-start":
                             let metadataRaw: JSONValue? = raw["id"].map { .object(["id": $0]) }
-                            continuation.yield(.responseMetadata(cohereResponseMetadata(from: metadataRaw, response: response, modelID: modelID)))
+                            continuation.yield(.responseMetadata(cohereResponseMetadata(from: metadataRaw, response: responseHead, modelID: modelID)))
                         case "content-start":
                             let id = String(raw["index"]?.intValue ?? 0)
                             if raw["delta"]?["message"]?["content"]?["type"]?.stringValue == "thinking" {
@@ -152,6 +154,7 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 

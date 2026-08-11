@@ -48,7 +48,7 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try alibabaPreparedCall(
                         for: request,
@@ -56,16 +56,21 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                         stream: true,
                         transformRequestBody: config.transformRequestBody
                     )
-                    let response = try await config.transport.send(config.request(
+                    let httpRequest = try config.request(
                         path: "/chat/completions",
                         modelID: modelID,
                         body: .object(prepared.body),
                         headers: request.headers,
                         abortSignal: request.abortSignal
-                    ))
+                    )
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw alibabaHTTPStatusError(provider: providerID, response: response)
+                        throw alibabaHTTPStatusError(
+                            provider: providerID,
+                            response: try await bufferedHTTPResponse(from: response, request: httpRequest)
+                        )
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
 
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage? = TokenUsage(inputTokensNoCache: 0, inputTokensCacheWrite: 0)
@@ -74,7 +79,8 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                     var emittedResponseMetadata = false
                     var activeText = false
                     var activeReasoningID: String?
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw: JSONValue
                         do {
                             raw = try decodeJSONBody(Data(event.data.utf8))
@@ -93,7 +99,7 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                         }
                         if !emittedResponseMetadata {
                             emittedResponseMetadata = true
-                            continuation.yield(.responseMetadata(alibabaResponseMetadata(from: raw, response: response, modelID: modelID)))
+                            continuation.yield(.responseMetadata(alibabaResponseMetadata(from: raw, response: responseHead, modelID: modelID)))
                         }
                         latestUsage = alibabaUsage(from: raw) ?? latestUsage
                         guard let choice = raw["choices"]?[0] else { continue }
@@ -166,6 +172,9 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }

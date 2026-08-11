@@ -84,15 +84,24 @@ private func isAzureOpenAIBaseURL(_ baseURL: String) -> Bool {
     return host.hasSuffix(".openai.azure.com")
 }
 
-struct AzureOpenAITokenProviderTransport: AITransport {
+struct AzureOpenAITokenProviderTransport: AIStreamingTransport {
     var base: any AITransport
     var tokenProvider: AzureOpenAITokenProvider
 
     func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        try await base.send(authenticatedRequest(request))
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let streamingTransport = try requireStreamingTransport(base, providerID: "azure")
+        return try await streamingTransport.stream(authenticatedRequest(request))
+    }
+
+    private func authenticatedRequest(_ request: AIHTTPRequest) async throws -> AIHTTPRequest {
         var request = request
         if !request.headers.keys.contains(where: { $0.caseInsensitiveCompare("authorization") == .orderedSame }) {
             request.headers["authorization"] = "Bearer \(try await tokenProvider())"
         }
-        return try await base.send(request)
+        return request
     }
 }

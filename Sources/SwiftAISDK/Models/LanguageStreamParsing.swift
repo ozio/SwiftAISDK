@@ -1,18 +1,72 @@
 import Foundation
 
-func streamFromSSE(providerID: String, response: AIHTTPResponse, includeRawChunks: Bool = false, mapChunk: (JSONValue) -> [LanguageStreamPart]) throws -> [LanguageStreamPart] {
-    guard (200..<300).contains(response.statusCode) else {
-        throw apiCallError(provider: providerID, response: response)
+func serverSentEvents(from body: AsyncThrowingStream<Data, Error>) -> IncrementalServerSentEventSequence {
+    IncrementalServerSentEventSequence(body: body)
+}
+
+struct IncrementalServerSentEventSequence: AsyncSequence {
+    typealias Element = ServerSentEvent
+
+    let body: AsyncThrowingStream<Data, Error>
+
+    func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(bodyIterator: body.makeAsyncIterator())
     }
-    var parts: [LanguageStreamPart] = []
-    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
-        let raw = try decodeJSONBody(Data(event.data.utf8))
-        if includeRawChunks {
-            parts.append(.raw(raw))
+
+    struct AsyncIterator: AsyncIteratorProtocol {
+        var bodyIterator: AsyncThrowingStream<Data, Error>.AsyncIterator
+        var parser = ServerSentEventParser()
+        var pendingEvents: [ServerSentEvent] = []
+        var pendingIndex = 0
+        var reachedEnd = false
+
+        mutating func next() async throws -> ServerSentEvent? {
+            while true {
+                if pendingIndex < pendingEvents.count {
+                    defer { pendingIndex += 1 }
+                    return pendingEvents[pendingIndex]
+                }
+                pendingEvents.removeAll(keepingCapacity: true)
+                pendingIndex = 0
+
+                guard !reachedEnd else { return nil }
+                if let chunk = try await bodyIterator.next() {
+                    pendingEvents = try parser.append(chunk)
+                } else {
+                    reachedEnd = true
+                    pendingEvents = try parser.finish()
+                }
+            }
         }
-        parts.append(contentsOf: mapChunk(raw))
     }
-    return parts
+}
+
+func bufferedHTTPResponse(
+    from response: AIHTTPStreamResponse,
+    request: AIHTTPRequest
+) async throws -> AIHTTPResponse {
+    let body = try await readResponseWithSizeLimit(
+        response: response,
+        url: request.url.absoluteString,
+        maxBytes: request.maxResponseBytes ?? AIDefaultMaxDownloadSize
+    )
+    return AIHTTPResponse(
+        statusCode: response.statusCode,
+        headers: response.headers,
+        body: body,
+        url: request.url
+    )
+}
+
+func httpResponseHead(
+    from response: AIHTTPStreamResponse,
+    request: AIHTTPRequest
+) -> AIHTTPResponse {
+    AIHTTPResponse(
+        statusCode: response.statusCode,
+        headers: response.headers,
+        url: request.url
+    )
 }
 
 struct OpenAIStyleToolCallBuffer {

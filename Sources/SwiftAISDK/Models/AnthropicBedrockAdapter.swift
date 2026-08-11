@@ -153,21 +153,41 @@ func amazonBedrockAnthropicBeta(for toolType: String) -> String? {
     }
 }
 
-func amazonBedrockAnthropicStreamEvents(from response: AIHTTPResponse) throws -> [JSONValue] {
-    let contentType = response.headers.first { $0.key.caseInsensitiveCompare("content-type") == .orderedSame }?.value
-    if contentType?.localizedCaseInsensitiveContains("application/vnd.amazon.eventstream") == true {
-        return try parseAmazonBedrockEventStream(response.body).compactMap { raw in
-            if let encoded = raw["chunk"]?["bytes"]?.stringValue,
-               let data = Data(base64Encoded: encoded) {
-                return try decodeJSONBody(data)
-            }
-            if raw["messageStop"] != nil {
-                return nil
-            }
-            return raw
+enum AmazonBedrockAnthropicStreamItem {
+    case event(BedrockRawStreamItem)
+    case messageStop
+}
+
+func amazonBedrockAnthropicStreamItem(
+    from item: BedrockRawStreamItem,
+    providerID: String
+) throws -> AmazonBedrockAnthropicStreamItem {
+    if item.errorMessage != nil {
+        return .event(item)
+    }
+
+    let raw = item.rawValue
+    if let chunk = raw["chunk"] {
+        guard let encoded = chunk["bytes"]?.stringValue,
+              let data = Data(base64Encoded: encoded) else {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "Bedrock Anthropic chunk is missing valid base64 bytes."
+            )
+        }
+        do {
+            return .event(BedrockRawStreamItem(rawValue: try decodeJSONBody(data), errorMessage: nil))
+        } catch let error as AIError {
+            throw error
+        } catch {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "Bedrock Anthropic chunk bytes are not valid JSON: \(error.localizedDescription)"
+            )
         }
     }
-    return try parseServerSentEvents(response.body)
-        .filter { $0.data != "[DONE]" }
-        .map { try decodeJSONBody(Data($0.data.utf8)) }
+    if item.eventType == "messageStop" || raw["messageStop"] != nil {
+        return .messageStop
+    }
+    return .event(item)
 }

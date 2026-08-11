@@ -195,6 +195,11 @@ struct GoogleVertexConfig: @unchecked Sendable {
         return (try response.jsonValue(), response)
     }
 
+    func streamRequest(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let streamingTransport = try requireStreamingTransport(transport, providerID: providerID)
+        return try await streamingTransport.stream(request)
+    }
+
     func request(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> AIHTTPRequest {
         try await request(url: "\(withoutTrailingSlash(baseURL))\(path)", body: body, headers: requestHeaders, abortSignal: abortSignal)
     }

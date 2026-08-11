@@ -102,18 +102,25 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
-                    let response = try await config.transport.send(
-                        config.request(path: "/language-model", modelID: modelID, body: gatewayLanguageBody(for: request), headers: request.headers.mergingHeaders(modelHeaders(streaming: true)))
+                    let httpRequest = try config.request(
+                        path: "/language-model",
+                        modelID: modelID,
+                        body: gatewayLanguageBody(for: request),
+                        headers: request.headers.mergingHeaders(modelHeaders(streaming: true)),
+                        abortSignal: request.abortSignal
                     )
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
-                    continuation.yield(.responseMetadata(aiResponseMetadata(response: response, modelID: modelID)))
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
+                    continuation.yield(.responseMetadata(aiResponseMetadata(response: responseHead, modelID: modelID)))
                     var toolBuffers: [String: GatewayStreamingToolCall] = [:]
                     var sawToolCalls = false
-                    for event in parseServerSentEvents(response.body) {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
@@ -196,6 +203,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 

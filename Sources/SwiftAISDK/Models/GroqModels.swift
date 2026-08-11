@@ -51,19 +51,21 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try groqPreparedCall(for: request, modelID: modelID, stream: true)
-                    let response = try await config.transport.send(config.request(
+                    let httpRequest = try config.request(
                         path: "/chat/completions",
                         modelID: modelID,
                         body: .object(prepared.body),
                         headers: request.headers,
                         abortSignal: request.abortSignal
-                    ))
+                    )
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: response)
+                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var latestUsage: TokenUsage?
                     var finishReason: String? = "other"
@@ -71,14 +73,15 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                     var didEmitResponseMetadata = false
                     var activeReasoningID: String?
                     var activeTextID: String?
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
                         if !didEmitResponseMetadata {
                             didEmitResponseMetadata = true
-                            continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: response, modelID: modelID)))
+                            continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: responseHead, modelID: modelID)))
                         }
                         latestUsage = groqUsage(from: raw["x_groq"]?["usage"]) ?? groqUsage(from: raw["usage"]) ?? latestUsage
                         if let reasoning = raw["choices"]?[0]?["delta"]?["reasoning"]?.stringValue, !reasoning.isEmpty {
@@ -131,6 +134,7 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 }

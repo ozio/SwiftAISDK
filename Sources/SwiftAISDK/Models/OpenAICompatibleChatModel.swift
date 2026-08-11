@@ -54,16 +54,17 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
 
     public func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let prepared = try preparedBody(for: request, stream: true)
                     let metadataNamespace = metadataNamespace(for: request)
                     let body = JSONValue.object(prepared.body)
                     let httpRequest = try config.request(path: "/chat/completions", modelID: modelID, body: body, headers: request.headers, abortSignal: request.abortSignal)
-                    let response = try await config.transport.send(httpRequest)
+                    let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
+                        throw openAICompatibleHTTPStatusError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
                     }
+                    let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     var toolCalls = OpenAICompatibleStreamingToolCalls()
                     var providerMetadata: [String: JSONValue] = [:]
@@ -72,7 +73,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     var activeTextID: String?
                     var finishReason: String? = "other"
                     var finishUsage: TokenUsage?
-                    for event in parseServerSentEvents(response.body) where event.data != "[DONE]" {
+                    for try await event in serverSentEvents(from: response.body) {
+                        if event.data == "[DONE]" { break }
                         let raw: JSONValue
                         do {
                             raw = try decodeJSONBody(Data(event.data.utf8))
@@ -95,7 +97,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                             didEmitResponseMetadata = true
                             continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(
                                 from: raw,
-                                response: response,
+                                response: responseHead,
                                 modelID: modelID,
                                 suppressZeroCreatedTimestamp: suppressZeroCreatedTimestamp
                             )))
@@ -171,6 +173,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 

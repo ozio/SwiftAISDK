@@ -117,6 +117,19 @@ public protocol AIStreamingTransport: AITransport {
     func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse
 }
 
+func requireStreamingTransport(
+    _ transport: any AITransport,
+    providerID: String
+) throws -> any AIStreamingTransport {
+    guard let streamingTransport = transport as? any AIStreamingTransport else {
+        throw AIError.invalidArgument(
+            argument: "transport",
+            message: "\(providerID) streaming requires a transport conforming to AIStreamingTransport."
+        )
+    }
+    return streamingTransport
+}
+
 public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendable {
     public static let shared = URLSessionTransport()
     private let session: URLSession
@@ -135,18 +148,30 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
         }
         let preparedRequest = urlRequest
 
-        let delegate: URLSessionTaskDelegate? = request.followRedirects ? nil : NoRedirectURLSessionDelegate()
+        let delegate = urlSessionTaskDelegate(followRedirects: request.followRedirects)
 
         let maxResponseBytes = request.maxResponseBytes ?? AIDefaultMaxDownloadSize
-        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        if let abortSignal = request.abortSignal {
-            (bytes, response) = try await raceAbortSignal(abortSignal) {
-                try await self.session.bytes(for: preparedRequest, delegate: delegate)
+        let operation: @Sendable () async throws -> AIHTTPResponse = {
+            do {
+                let (bytes, response) = try await self.session.bytes(for: preparedRequest, delegate: delegate)
+                return try await limitedHTTPResponse(
+                    bytes: bytes,
+                    response: response,
+                    request: request,
+                    maxResponseBytes: maxResponseBytes
+                )
+            } catch {
+                if let abortSignal = request.abortSignal, abortSignal.isAborted {
+                    throw AIAbortError(reason: abortSignal.reason, reasonName: abortSignal.reasonName)
+                }
+                throw error
             }
-        } else {
-            (bytes, response) = try await session.bytes(for: preparedRequest, delegate: delegate)
         }
-        return try await limitedHTTPResponse(bytes: bytes, response: response, request: request, maxResponseBytes: maxResponseBytes)
+
+        if let abortSignal = request.abortSignal {
+            return try await raceAbortSignal(abortSignal, operation: operation)
+        }
+        return try await operation()
     }
 
     public func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
@@ -159,38 +184,81 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
         }
         let preparedRequest = urlRequest
 
+        let delegate = urlSessionTaskDelegate(followRedirects: request.followRedirects)
+        let responseOperation: @Sendable () async throws -> (URLSession.AsyncBytes, URLResponse) = {
+            do {
+                return try await self.session.bytes(for: preparedRequest, delegate: delegate)
+            } catch {
+                if let abortSignal = request.abortSignal, abortSignal.isAborted {
+                    throw AIAbortError(reason: abortSignal.reason, reasonName: abortSignal.reasonName)
+                }
+                throw error
+            }
+        }
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
         if let abortSignal = request.abortSignal {
-            (bytes, response) = try await raceAbortSignal(abortSignal) {
-                try await self.session.bytes(for: preparedRequest)
-            }
+            (bytes, response) = try await raceAbortSignal(abortSignal, operation: responseOperation)
         } else {
-            (bytes, response) = try await session.bytes(for: preparedRequest)
+            (bytes, response) = try await responseOperation()
         }
         let httpResponse = response as? HTTPURLResponse
         let headers = httpHeaders(from: httpResponse)
+        let maxResponseBytes = request.maxResponseBytes ?? AIDefaultMaxDownloadSize
+        let urlText = request.url.absoluteString
+        if let contentLength = httpResponse?.value(forHTTPHeaderField: "content-length").flatMap(parseContentLength),
+           contentLength > maxResponseBytes {
+            bytes.task.cancel()
+            throw AIDownloadError(
+                url: urlText,
+                message: downloadSizeLimitExceededMessage(
+                    url: urlText,
+                    maxBytes: maxResponseBytes,
+                    contentLength: contentLength
+                )
+            )
+        }
         return AIHTTPStreamResponse(
             statusCode: httpResponse?.statusCode ?? 0,
             headers: headers,
             body: AsyncThrowingStream { continuation in
                 let task = Task {
                     do {
+                        var totalBytes = 0
                         for try await byte in bytes {
                             try Task.checkCancellation()
+                            totalBytes += 1
+                            if totalBytes > maxResponseBytes {
+                                bytes.task.cancel()
+                                throw AIDownloadError(
+                                    url: urlText,
+                                    message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes)
+                                )
+                            }
                             continuation.yield(Data([byte]))
                         }
                         continuation.finish()
-                    } catch is CancellationError where request.abortSignal?.isAborted == true {
-                        continuation.finish(throwing: AIAbortError(reason: request.abortSignal?.reason))
                     } catch {
-                        continuation.finish(throwing: error)
+                        if let abortSignal = request.abortSignal, abortSignal.isAborted {
+                            continuation.finish(throwing: AIAbortError(
+                                reason: abortSignal.reason,
+                                reasonName: abortSignal.reasonName
+                            ))
+                        } else {
+                            continuation.finish(throwing: error)
+                        }
                     }
                 }
-                let registration = request.abortSignal?.addAbortHandler { _ in
+                let registration = request.abortSignal?.addAbortHandler { reason in
+                    continuation.finish(throwing: AIAbortError(
+                        reason: reason,
+                        reasonName: request.abortSignal?.reasonName
+                    ))
+                    bytes.task.cancel()
                     task.cancel()
                 }
                 continuation.onTermination = { _ in
                     registration?.cancel()
+                    bytes.task.cancel()
                     task.cancel()
                 }
             }
@@ -198,7 +266,11 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
     }
 }
 
-private final class NoRedirectURLSessionDelegate: NSObject, URLSessionTaskDelegate {
+func urlSessionTaskDelegate(followRedirects: Bool) -> URLSessionTaskDelegate? {
+    followRedirects ? nil : NoRedirectURLSessionDelegate()
+}
+
+final class NoRedirectURLSessionDelegate: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
@@ -216,35 +288,41 @@ private func limitedHTTPResponse(
     request: AIHTTPRequest,
     maxResponseBytes: Int
 ) async throws -> AIHTTPResponse {
-    let httpResponse = response as? HTTPURLResponse
-    let headers = httpHeaders(from: httpResponse)
-    let urlText = request.url.absoluteString
-    if let contentLength = httpResponse?.value(forHTTPHeaderField: "content-length"),
-       let length = parseContentLength(contentLength),
-       length > maxResponseBytes {
-        throw AIDownloadError(
-            url: urlText,
-            message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes, contentLength: length)
-        )
-    }
-
-    var data = Data()
-    let expectedLength = response.expectedContentLength > 0 ? Int(response.expectedContentLength) : 0
-    data.reserveCapacity(min(maxResponseBytes, expectedLength))
-    var totalBytes = 0
-    for try await byte in bytes {
-        try Task.checkCancellation()
-        totalBytes += 1
-        if totalBytes > maxResponseBytes {
+    try await withTaskCancellationHandler {
+        let httpResponse = response as? HTTPURLResponse
+        let headers = httpHeaders(from: httpResponse)
+        let urlText = request.url.absoluteString
+        if let contentLength = httpResponse?.value(forHTTPHeaderField: "content-length"),
+           let length = parseContentLength(contentLength),
+           length > maxResponseBytes {
+            bytes.task.cancel()
             throw AIDownloadError(
                 url: urlText,
-                message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes)
+                message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes, contentLength: length)
             )
         }
-        data.append(byte)
-    }
 
-    return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data, url: response.url)
+        var data = Data()
+        let expectedLength = response.expectedContentLength > 0 ? Int(response.expectedContentLength) : 0
+        data.reserveCapacity(min(maxResponseBytes, expectedLength))
+        var totalBytes = 0
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            totalBytes += 1
+            if totalBytes > maxResponseBytes {
+                bytes.task.cancel()
+                throw AIDownloadError(
+                    url: urlText,
+                    message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes)
+                )
+            }
+            data.append(byte)
+        }
+
+        return AIHTTPResponse(statusCode: httpResponse?.statusCode ?? 0, headers: headers, body: data, url: response.url)
+    } onCancel: {
+        bytes.task.cancel()
+    }
 }
 
 private func httpHeaders(from response: HTTPURLResponse?) -> [String: String] {
@@ -259,20 +337,108 @@ private func raceAbortSignal<Output: Sendable>(
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
     try abortSignal.throwIfAborted()
-    return try await withThrowingTaskGroup(of: Output.self) { group in
-        defer { group.cancelAll() }
-        group.addTask {
-            try await operation()
-        }
-        group.addTask {
-            let reason = await abortSignal.waitUntilAborted()
-            throw AIAbortError(reason: reason)
-        }
+    let state = HTTPAbortRaceState<Output>()
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            state.setContinuation(continuation)
 
-        guard let result = try await group.next() else {
-            throw CancellationError()
+            let registration = abortSignal.addAbortHandler { reason in
+                state.complete(
+                    .failure(AIAbortError(reason: reason, reasonName: abortSignal.reasonName)),
+                    cancelOperation: true
+                )
+            }
+            state.setRegistration(registration)
+
+            let operationTask = Task {
+                do {
+                    state.complete(.success(try await operation()), cancelOperation: false)
+                } catch {
+                    if abortSignal.isAborted {
+                        state.complete(
+                            .failure(AIAbortError(
+                                reason: abortSignal.reason,
+                                reasonName: abortSignal.reasonName
+                            )),
+                            cancelOperation: false
+                        )
+                    } else {
+                        state.complete(.failure(error), cancelOperation: false)
+                    }
+                }
+            }
+            state.setOperationTask(operationTask)
         }
-        return result
+    } onCancel: {
+        state.complete(.failure(CancellationError()), cancelOperation: true)
+    }
+}
+
+private final class HTTPAbortRaceState<Output: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Output, Error>?
+    private var pendingResult: Result<Output, Error>?
+    private var operationTask: Task<Void, Never>?
+    private var registration: AIAbortHandlerRegistration?
+    private var completed = false
+
+    func setContinuation(_ continuation: CheckedContinuation<Output, Error>) {
+        lock.lock()
+        if let pendingResult {
+            self.pendingResult = nil
+            lock.unlock()
+            continuation.resume(with: pendingResult)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func setOperationTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        if completed {
+            lock.unlock()
+            task.cancel()
+            return
+        }
+        operationTask = task
+        lock.unlock()
+    }
+
+    func setRegistration(_ registration: AIAbortHandlerRegistration) {
+        lock.lock()
+        if completed {
+            lock.unlock()
+            registration.cancel()
+            return
+        }
+        self.registration = registration
+        lock.unlock()
+    }
+
+    func complete(_ result: Result<Output, Error>, cancelOperation: Bool) {
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
+        }
+        completed = true
+        let continuation = self.continuation
+        self.continuation = nil
+        if continuation == nil {
+            pendingResult = result
+        }
+        let operationTask = self.operationTask
+        self.operationTask = nil
+        let registration = self.registration
+        self.registration = nil
+        lock.unlock()
+
+        registration?.cancel()
+        if cancelOperation {
+            operationTask?.cancel()
+        }
+        continuation?.resume(with: result)
     }
 }
 
@@ -743,47 +909,6 @@ func tokenUsage(from raw: JSONValue) -> TokenUsage? {
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )
-}
-
-struct ServerSentEvent: Equatable {
-    var event: String?
-    var id: String?
-    var data: String
-}
-
-func parseServerSentEvents(_ data: Data) -> [ServerSentEvent] {
-    let text = String(data: data, encoding: .utf8) ?? ""
-    var events: [ServerSentEvent] = []
-    var eventName: String?
-    var eventID: String?
-    var dataLines: [String] = []
-
-    func flush() {
-        guard !dataLines.isEmpty else {
-            eventName = nil
-            eventID = nil
-            return
-        }
-        events.append(ServerSentEvent(event: eventName, id: eventID, data: dataLines.joined(separator: "\n")))
-        eventName = nil
-        eventID = nil
-        dataLines.removeAll()
-    }
-
-    for rawLine in text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false) {
-        let line = String(rawLine)
-        if line.isEmpty {
-            flush()
-        } else if line.hasPrefix("event:") {
-            eventName = String(line.dropFirst("event:".count)).trimmingCharacters(in: .whitespaces)
-        } else if line.hasPrefix("id:") {
-            eventID = String(line.dropFirst("id:".count)).trimmingCharacters(in: .whitespaces)
-        } else if line.hasPrefix("data:") {
-            dataLines.append(String(line.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces))
-        }
-    }
-    flush()
-    return events
 }
 
 struct MultipartFormData {

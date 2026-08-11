@@ -53,9 +53,10 @@ public extension LanguageModel {
 
     func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let result = try await generate(request)
+                    try Task.checkCancellation()
                     if !result.text.isEmpty {
                         continuation.yield(.textDelta(result.text))
                     }
@@ -67,6 +68,9 @@ public extension LanguageModel {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
