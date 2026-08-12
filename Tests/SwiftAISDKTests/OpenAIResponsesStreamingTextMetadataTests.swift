@@ -20,11 +20,11 @@ import Testing
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             text.append(delta)
-        case let .reasoningDelta(delta):
+        case let .reasoningDeltaPart(_, delta, _):
             reasoning.append(delta)
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:
@@ -40,6 +40,66 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
+}
+
+@Test func openAIResponsesEmitsOneCanonicalTerminalPerLogicalResponse() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"response.created","response":{"id":"resp-1","status":"in_progress"}}
+
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg-1","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+    data: {"type":"response.output_text.delta","item_id":"msg-1","output_index":0,"delta":"first"}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[]}}
+
+    data: {"type":"response.completed","response":{"id":"resp-1","status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}
+
+    data: {"type":"response.created","response":{"id":"resp-2","status":"in_progress"}}
+
+    data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg-2","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+    data: {"type":"response.output_text.delta","item_id":"msg-2","output_index":0,"delta":"second"}
+
+    data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg-2","type":"message","status":"completed","role":"assistant","content":[]}}
+
+    data: {"type":"response.completed","response":{"id":"resp-2","status":"completed","usage":{"input_tokens":4,"output_tokens":5,"total_tokens":9}}}
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4.1")
+
+    var semanticSequence: [String] = []
+    var legacyParts = 0
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .textStart(id, _):
+            semanticSequence.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            semanticSequence.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            semanticSequence.append("end:\(id)")
+        case let .finishMetadata(reason, usage, metadata):
+            semanticSequence.append("finish:\(reason ?? "nil"):\(usage?.totalTokens ?? -1):\(metadata["openai"]?["responseId"]?.stringValue ?? "nil")")
+        case .textDelta, .reasoningDelta, .finish:
+            legacyParts += 1
+        default:
+            break
+        }
+    }
+
+    #expect(legacyParts == 0)
+    #expect(semanticSequence == [
+        "start:msg-1",
+        "delta:msg-1:first",
+        "end:msg-1",
+        "finish:stop:3:resp-1",
+        "start:msg-2",
+        "delta:msg-2:second",
+        "end:msg-2",
+        "finish:stop:9:resp-2"
+    ])
 }
 
 @Test func openAIResponsesStreamsTextDeltasLikeUpstream() async throws {
@@ -92,9 +152,6 @@ import Testing
             textDeltas.append((id, delta))
         case let .textEnd(id, metadata):
             textEnds.append((id, metadata))
-        case let .finish(reason, usage):
-            finishReason = reason
-            finishUsage = usage
         case let .finishMetadata(reason, usage, metadata):
             finishReason = reason
             finishUsage = usage
@@ -111,7 +168,7 @@ import Testing
     #expect(textStarts.count == 1)
     #expect(textStarts[0].0 == "msg_67c9a81dea8c8190b79651a2b3adf91e")
     #expect(textStarts[0].1["openai"]?["itemId"]?.stringValue == "msg_67c9a81dea8c8190b79651a2b3adf91e")
-    #expect(legacyTextDeltas == ["Hello,", " World!"])
+    #expect(legacyTextDeltas.isEmpty)
     #expect(textDeltas.map { $0.0 } == [
         "msg_67c9a81dea8c8190b79651a2b3adf91e",
         "msg_67c9a81dea8c8190b79651a2b3adf91e"
@@ -290,7 +347,7 @@ import Testing
         }
     }
 
-    #expect(legacyText == ["checking", "answer"])
+    #expect(legacyText.isEmpty)
     #expect(textStarts.map { $0.0 } == ["msg_commentary", "msg_final"])
     #expect(textDeltas.map { $0.0 } == ["msg_commentary", "msg_final"])
     #expect(textDeltas.map { $0.1 } == ["checking", "answer"])

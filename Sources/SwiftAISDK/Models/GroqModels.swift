@@ -128,7 +128,11 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                     for part in toolCalls.finishedParts() {
                         continuation.yield(part)
                     }
-                    continuation.yield(.finish(reason: finishReason, usage: latestUsage))
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: latestUsage,
+                        providerMetadata: [:]
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

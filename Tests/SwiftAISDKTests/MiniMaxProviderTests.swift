@@ -154,10 +154,7 @@ import Testing
 }
 
 @Test func miniMaxStreamingReasoningUsesSharedAnthropicLifecycle() async throws {
-    let transport = RecordingTransport(response: AIHTTPResponse(
-        statusCode: 200,
-        headers: [:],
-        body: Data("""
+    let transport = RecordingTransport(response: sseResponse("""
         data: {"type":"message_start","message":{"id":"msg_stream","model":"minimax-m3","usage":{"input_tokens":4,"output_tokens":0}}}
 
         data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}
@@ -178,8 +175,7 @@ import Testing
 
         data: {"type":"message_stop"}
 
-        """.utf8)
-    ))
+        """))
     let provider = try AIProviders.miniMax(settings: MiniMaxProviderSettings(
         apiKey: "test-api-key",
         transport: transport
@@ -195,14 +191,22 @@ import Testing
         parts.append(part)
     }
 
-    #expect(parts.contains(.reasoningDelta("Think")))
-    #expect(parts.contains(.textDelta("Done")))
+    #expect(!parts.contains(.reasoningDelta("Think")))
+    #expect(!parts.contains(.textDelta("Done")))
+    #expect(parts.contains { part in
+        guard case let .reasoningDeltaPart(_, delta, _) = part else { return false }
+        return delta == "Think"
+    })
+    #expect(parts.contains { part in
+        guard case let .textDeltaPart(_, delta, _) = part else { return false }
+        return delta == "Done"
+    })
     #expect(parts.contains { part in
         guard case let .reasoningDeltaPart(_, _, metadata) = part else { return false }
         return metadata["anthropic"]?["signature"]?.stringValue == "signed"
     })
     #expect(parts.contains { part in
-        guard case let .finish(reason, usage) = part else { return false }
+        guard case let .finishMetadata(reason, usage, _) = part else { return false }
         return reason == "stop" && usage?.inputTokens == 4 && usage?.outputTokens == 2
     })
 }

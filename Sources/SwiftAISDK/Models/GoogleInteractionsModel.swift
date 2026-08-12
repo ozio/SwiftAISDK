@@ -55,6 +55,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                         continuation.yield(.streamStart(warnings: prepared.warnings))
                     }
                     var toolCalls = GoogleInteractionsStreamingToolCalls()
+                    var content = GoogleInteractionsStreamingContent()
                     var hasFunctionCall = false
                     var sourceCounter = 0
                     var emittedSourceKeys: Set<String> = []
@@ -82,11 +83,8 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                             }
                         }
                         if eventType == "step.delta", let delta = raw["delta"] {
-                            if let text = delta["text"]?.stringValue, !text.isEmpty {
-                                continuation.yield(.textDelta(text))
-                            }
-                            if let summary = delta["summary"]?.stringValue, !summary.isEmpty {
-                                continuation.yield(.reasoningDelta(summary))
+                            for part in content.delta(delta, index: raw["index"]?.intValue) {
+                                continuation.yield(part)
                             }
                             if delta["type"]?.stringValue == "arguments_delta" {
                                 hasFunctionCall = true
@@ -96,16 +94,24 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                             }
                         }
                         if eventType == "step.stop" {
+                            for part in content.stop(index: raw["index"]?.intValue) {
+                                continuation.yield(part)
+                            }
                             for part in toolCalls.stop(index: raw["index"]?.intValue) {
                                 continuation.yield(part)
                             }
                         }
                         if eventType == "interaction.completed" || eventType == "interaction.failed" || eventType == "interaction.incomplete" || eventType == "interaction.cancelled" {
                             let interaction = raw["interaction"] ?? raw
-                            continuation.yield(.finish(
+                            for part in content.finishParts() {
+                                continuation.yield(part)
+                            }
+                            continuation.yield(.finishMetadata(
                                 reason: googleInteractionsFinishReason(status: interaction["status"]?.stringValue, hasFunctionCall: hasFunctionCall),
-                                usage: googleInteractionsUsage(from: interaction)
+                                usage: googleInteractionsUsage(from: interaction),
+                                providerMetadata: googleInteractionsProviderMetadata(from: interaction)
                             ))
+                            break
                         }
                     }
                     continuation.finish()

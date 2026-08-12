@@ -455,7 +455,7 @@ import Testing
             textLifecycle.append("delta:\(id):\(delta)")
         case let .textEnd(id, _):
             textLifecycle.append("end:\(id)")
-        case let .finish(_, usage):
+        case let .finishMetadata(_, usage, _):
             totalTokens = usage?.totalTokens
         default:
             break
@@ -596,7 +596,7 @@ import Testing
         switch part {
         case let .error(message, _):
             errors.append(message)
-        case let .finish(reason, finalUsage):
+        case let .finishMetadata(reason, finalUsage, _):
             finishReason = reason
             usage = finalUsage
         default:

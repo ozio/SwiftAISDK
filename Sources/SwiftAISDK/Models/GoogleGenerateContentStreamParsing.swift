@@ -2,22 +2,56 @@ import Foundation
 
 func googleStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
     var parts: [LanguageStreamPart] = []
+    var currentTextID: String?
+    var currentReasoningID: String?
+    var blockCounter = 0
     let contentParts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
     for contentPart in contentParts {
         guard let text = contentPart["text"]?.stringValue else { continue }
+        let metadata = googleThoughtSignatureProviderMetadata(from: contentPart)
         if contentPart["thought"]?.boolValue == true {
-            parts.append(.reasoningDelta(text))
+            if let id = currentTextID {
+                parts.append(.textEnd(id: id))
+                currentTextID = nil
+            }
+            if currentReasoningID == nil {
+                currentReasoningID = String(blockCounter)
+                blockCounter += 1
+                parts.append(.reasoningStart(id: currentReasoningID!, providerMetadata: metadata))
+            }
+            parts.append(.reasoningDeltaPart(id: currentReasoningID!, delta: text, providerMetadata: metadata))
         } else {
-            parts.append(.textDelta(text))
+            if let id = currentReasoningID {
+                parts.append(.reasoningEnd(id: id))
+                currentReasoningID = nil
+            }
+            if currentTextID == nil {
+                currentTextID = String(blockCounter)
+                blockCounter += 1
+                parts.append(.textStart(id: currentTextID!, providerMetadata: metadata))
+            }
+            parts.append(.textDeltaPart(id: currentTextID!, delta: text, providerMetadata: metadata))
         }
     }
+    if let id = currentReasoningID {
+        parts.append(.reasoningEnd(id: id))
+    }
+    if let id = currentTextID {
+        parts.append(.textEnd(id: id))
+    }
     if raw["candidates"]?[0]?["finishReason"]?.stringValue != nil || raw["usageMetadata"] != nil {
-        parts.append(.finish(
-            reason: raw["candidates"]?[0]?["finishReason"]?.stringValue,
+        parts.append(.finishMetadata(
+            reason: googleGenerateContentFinishReason(
+                raw["candidates"]?[0]?["finishReason"]?.stringValue,
+                hasToolCalls: false
+            ) ?? "other",
             usage: TokenUsage(
                 inputTokens: raw["usageMetadata"]?["promptTokenCount"]?.intValue,
                 outputTokens: raw["usageMetadata"]?["candidatesTokenCount"]?.intValue,
                 totalTokens: raw["usageMetadata"]?["totalTokenCount"]?.intValue
+            ),
+            providerMetadata: googleFinalizeGenerateContentProviderMetadata(
+                googleGenerateContentProviderMetadata(from: raw, includeNullDefaults: false)
             )
         ))
     }
@@ -38,6 +72,9 @@ struct GoogleGenerateContentStreamState {
     private var sawToolCalls = false
     private var hasResponseID = false
     private var emittedInitialParts = false
+    private var currentTextID: String?
+    private var currentReasoningID: String?
+    private var blockCounter = 0
 
     init(response: AIHTTPResponse, includeRawChunks: Bool, modelID: String?, warnings: [AIWarning]) {
         self.responseMetadata = aiResponseMetadata(response: response, modelID: modelID)
@@ -102,15 +139,46 @@ struct GoogleGenerateContentStreamState {
                 continue
             }
             if let text = contentPart["text"]?.stringValue {
+                let metadata = googleThoughtSignatureProviderMetadata(from: contentPart)
                 if contentPart["thought"]?.boolValue == true {
-                    parts.append(.reasoningDelta(text))
+                    if !text.isEmpty {
+                        if let id = currentTextID {
+                            parts.append(.textEnd(id: id))
+                            currentTextID = nil
+                        }
+                        if currentReasoningID == nil {
+                            currentReasoningID = String(blockCounter)
+                            blockCounter += 1
+                            parts.append(.reasoningStart(id: currentReasoningID!, providerMetadata: metadata))
+                        }
+                        parts.append(.reasoningDeltaPart(id: currentReasoningID!, delta: text, providerMetadata: metadata))
+                    }
                 } else if !text.isEmpty {
-                    parts.append(.textDelta(text))
+                    if let id = currentReasoningID {
+                        parts.append(.reasoningEnd(id: id))
+                        currentReasoningID = nil
+                    }
+                    if currentTextID == nil {
+                        currentTextID = String(blockCounter)
+                        blockCounter += 1
+                        parts.append(.textStart(id: currentTextID!, providerMetadata: metadata))
+                    }
+                    parts.append(.textDeltaPart(id: currentTextID!, delta: text, providerMetadata: metadata))
+                } else if !metadata.isEmpty, let id = currentTextID {
+                    parts.append(.textDeltaPart(id: id, delta: "", providerMetadata: metadata))
                 }
             }
             if let inlineData = contentPart["inlineData"],
                let mediaType = inlineData["mimeType"]?.stringValue,
                let base64 = inlineData["data"]?.stringValue {
+                if let id = currentTextID {
+                    parts.append(.textEnd(id: id))
+                    currentTextID = nil
+                }
+                if let id = currentReasoningID {
+                    parts.append(.reasoningEnd(id: id))
+                    currentReasoningID = nil
+                }
                 let file = AIStreamFile(
                     mediaType: mediaType,
                     data: Data(base64Encoded: base64),
@@ -176,13 +244,22 @@ struct GoogleGenerateContentStreamState {
             parts.append(.responseMetadata(responseMetadata))
             parts.append(.streamStart(warnings: warnings))
         }
-        parts.append(contentsOf: toolCalls.finishedParts())
-        if latestFinishReason != nil || latestUsage != nil {
-            let finishReason = googleGenerateContentFinishReason(latestFinishReason, hasToolCalls: sawToolCalls || !parts.isEmpty)
-            let providerMetadata = googleFinalizeGenerateContentProviderMetadata(latestProviderMetadata)
-            parts.append(.finish(reason: finishReason, usage: latestUsage))
-            parts.append(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
+        let finishedToolParts = toolCalls.finishedParts()
+        parts.append(contentsOf: finishedToolParts)
+        if let id = currentReasoningID {
+            parts.append(.reasoningEnd(id: id))
         }
+        currentReasoningID = nil
+        if let id = currentTextID {
+            parts.append(.textEnd(id: id))
+        }
+        currentTextID = nil
+        let finishReason = googleGenerateContentFinishReason(
+            latestFinishReason,
+            hasToolCalls: sawToolCalls || !finishedToolParts.isEmpty
+        ) ?? "other"
+        let providerMetadata = googleFinalizeGenerateContentProviderMetadata(latestProviderMetadata)
+        parts.append(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
         return parts
     }
 }

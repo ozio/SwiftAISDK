@@ -42,7 +42,15 @@ import Testing
     }
     let events = await recorder.events()
 
-    #expect(streamed == parts)
+    #expect(streamed == [
+        .streamStart(warnings: [warning]),
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "hi"),
+        .metadata(["mock": .object(["stream": .bool(true)])]),
+        .responseMetadata(responseMetadata),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 1), providerMetadata: [:])
+    ])
     #expect(events.map(\.kind) == [.start, .end])
     #expect(events.allSatisfy { $0.operationID == "ai.streamText" })
     #expect(events[0].input?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "Stream")
@@ -79,8 +87,10 @@ import Testing
     }
 
     #expect(streamed == [
-        .textDelta("done"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "done"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 1), providerMetadata: [:])
     ])
     #expect(probe.capturedCallID() == probe.integrationCallID())
     #expect(probe.capturedCallID() != nil)
@@ -109,8 +119,10 @@ import Testing
     }
 
     #expect(streamed == [
-        .textDelta("Hello, world!"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "Hello, world!"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 3), providerMetadata: [:])
     ])
     #expect(await log.entries() == ["first", "second"])
 }
@@ -136,10 +148,12 @@ import Testing
     }
 
     #expect(streamed == [
-        .textDelta("Hello"),
-        .textDelta(", "),
-        .textDelta("world!"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "Hello"),
+        .textDeltaPart(id: "legacy-text-0", delta: ", "),
+        .textDeltaPart(id: "legacy-text-0", delta: "world!"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 3), providerMetadata: [:])
     ])
     #expect(model.streamRequests.count == 1)
     #expect(model.streamRequests[0].headers["custom-request-header"] == "request-header-value")
@@ -202,10 +216,10 @@ import Testing
         secondStreamed.append(part)
     }
 
-    #expect(firstStreamed.contains(.textDelta("provider metadata test")))
+    #expect(firstStreamed.contains(.textDeltaPart(id: "legacy-text-0", delta: "provider metadata test")))
     #expect(model.streamRequests.first?.providerOptions == ["aProvider": ["someKey": "someValue"]])
     #expect(model.streamRequests.first?.reasoning == "high")
-    #expect(secondStreamed.contains(.textDelta("provider default reasoning test")))
+    #expect(secondStreamed.contains(.textDeltaPart(id: "legacy-text-0", delta: "provider default reasoning test")))
     #expect(providerDefaultModel.streamRequests.first?.reasoning == "provider-default")
 }
 @Test func aiStreamTextEmitsAbortTelemetryWhenConsumerCancels() async throws {
@@ -219,13 +233,18 @@ import Testing
         telemetry: Telemetry.Options(integrations: [recorder])
     ) {
         streamed.append(part)
-        break
+        if case .textDeltaPart = part {
+            break
+        }
     }
 
     try await Task.sleep(nanoseconds: 20_000_000)
     let events = await recorder.events()
 
-    #expect(streamed == [.textDelta("first")])
+    #expect(streamed == [
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "first")
+    ])
     #expect(events.map(\.kind) == [.start, .abort])
     #expect(events.allSatisfy { $0.operationID == "ai.streamText" })
     #expect(events[1].errorDescription?.contains("cancelled") == true)
@@ -257,8 +276,10 @@ import Testing
     let events = await recorder.events()
 
     #expect(streamed == [
-        .textDelta("recovered"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 2))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "recovered"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 2), providerMetadata: [:])
     ])
     #expect(model.streamRequests.count == 2)
     #expect(events.map(\.kind) == [.start, .retry, .end])
@@ -326,10 +347,12 @@ import Testing
     }
 
     #expect(streamed == [
-        .textDelta("hello"),
-        .textDelta(" "),
-        .textDelta("world"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "hello"),
+        .textDeltaPart(id: "legacy-text-0", delta: " "),
+        .textDeltaPart(id: "legacy-text-0", delta: "world"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 3), providerMetadata: [:])
     ])
     #expect(model.streamRequests.count == 2)
     #expect(model.streamRequests[0].messages == request.messages)
@@ -362,7 +385,11 @@ import Testing
         #expect(error == .apiCall(provider: "mock", statusCode: 503, body: "interrupted"))
     }
 
-    #expect(streamed == [.textDelta("partial")])
+    #expect(streamed == [
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "partial"),
+        .textEnd(id: "legacy-text-0")
+    ])
     #expect(model.streamRequests.count == 1)
 }
 @Test func aiStreamTextTimesOut() async throws {

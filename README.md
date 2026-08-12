@@ -5,13 +5,21 @@ It provides provider factories plus an `AI` facade for text, structured output,
 embeddings, media, audio, reranking, uploads, middleware, MCP tools, and typed
 tool execution.
 
+Licensed under the [Apache License 2.0](LICENSE). SwiftAISDK is an independent
+Swift port; references to Vercel AI SDK describe compatibility and provenance,
+not affiliation or endorsement.
+
 ## Install
 
 Add the package to `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/ozio/SwiftAISDK.git", branch: "main")
+.package(url: "https://github.com/ozio/SwiftAISDK.git", from: "1.1.1")
 ```
+
+Applications that require a reviewed, reproducible SDK build can use SwiftPM's
+`exact:` requirement for the release they have validated. Avoid depending on
+the moving `main` branch in production.
 
 Then depend on the library product:
 
@@ -78,6 +86,23 @@ transport, streaming requires the transport to conform to
 `AIStreamingTransport`. A send-only `AITransport` remains valid for unary
 generation, but `stream` fails with a non-retryable transport argument error
 instead of buffering through `send`.
+
+Built-in model streams use one canonical semantic lifecycle for each content
+block: `textStart` → `textDeltaPart` → `textEnd`, with the corresponding
+reasoning parts for reasoning blocks. The older `textDelta`, `reasoningDelta`,
+and `finish` cases remain source-compatible for custom models; facade calls
+normalize them to the part-aware lifecycle and `finishMetadata`. Built-in
+providers do not emit the legacy cases alongside canonical events. This keeps text,
+reasoning, UI snapshots, structured output, and tool-loop accumulation from
+counting the same provider delta twice.
+
+Each logical built-in model response has one terminal `finishMetadata` part.
+Custom models should follow the same contract; clean custom EOF without a
+terminal is preserved rather than assigned a guessed outcome. Provider
+error events remain visible as repeatable in-band `error` parts on the full
+stream; setup, HTTP, framing, and network failures throw. `toTextStream()`
+intentionally emits only canonical text deltas and ignores in-band error parts,
+while still propagating thrown stream failures.
 
 Facade calls retry transient failures by default with `maxRetries: 2`.
 Streaming retries only happen before the first emitted part, so already-delivered

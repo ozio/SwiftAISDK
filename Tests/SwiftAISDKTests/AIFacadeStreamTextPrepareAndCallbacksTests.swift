@@ -43,7 +43,7 @@ import Testing
         streamed.append(part)
     }
 
-    #expect(streamed.contains(.textDelta("prepared stream")))
+    #expect(streamed.contains(.textDeltaPart(id: "legacy-text-0", delta: "prepared stream")))
     #expect(model.streamRequests.count == 2)
     #expect(model.streamRequests[1].messages.last == .user("prepared follow-up"))
     #expect(model.streamRequests[1].providerOptions["test"]?["step"]?.intValue == 2)
@@ -386,7 +386,7 @@ import Testing
     #expect(streamed == [
         .responseMetadata(AIResponseMetadata(id: "id-0", timestamp: Date(timeIntervalSince1970: 0), modelID: "mock-model-id")),
         .toolCall(toolCall),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 13))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 13), providerMetadata: [:])
     ])
 }
 @Test func aiStreamTextRefinesToolArgumentsBeforeExecution() async throws {
@@ -537,7 +537,7 @@ import Testing
     let toolEvents = await recorder.events().filter { $0.operationID == "ai.streamText.tool" }
     #expect(streamed == [
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3), providerMetadata: [:]),
         .toolResult(errorResult)
     ])
     #expect(toolEvents.map(\.kind) == [.toolStart, .toolError])

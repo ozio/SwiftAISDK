@@ -109,7 +109,7 @@ private actor TokenStore {
 
     var text = ""
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Stream")])) {
-        if case let .textDelta(delta) = part {
+        if case let .textDeltaPart(_, delta, _) = part {
             text += delta
         }
     }

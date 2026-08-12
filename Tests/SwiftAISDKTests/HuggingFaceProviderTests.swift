@@ -382,16 +382,12 @@ import Testing
     var responseMetadata: AIResponseMetadata?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .textDelta(delta):
-            text += delta
         case let .textDeltaPart(_, delta, _):
             text += delta
         case .textStart:
             textStarted = true
         case .textEnd:
             textEnded = true
-        case let .reasoningDelta(delta):
-            reasoning += delta
         case let .reasoningDeltaPart(_, delta, _):
             reasoning += delta
         case .reasoningStart:
@@ -406,8 +402,6 @@ import Testing
             finalToolCall = toolCall
         case let .toolResult(result):
             toolResult = result
-        case let .finish(_, usage):
-            finishUsage = usage
         case let .finishMetadata(_, usage, metadata):
             finishUsage = usage
             finishMetadata = metadata

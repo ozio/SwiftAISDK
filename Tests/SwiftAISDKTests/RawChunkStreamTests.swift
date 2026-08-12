@@ -118,7 +118,7 @@ private func collectStreamParts(_ stream: AsyncThrowingStream<LanguageStreamPart
         switch part {
         case let .raw(value):
             result.rawValues.append(value)
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             result.textDeltas.append(delta)
         default:
             break

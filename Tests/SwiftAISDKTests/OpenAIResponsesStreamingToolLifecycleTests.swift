@@ -28,7 +28,7 @@ import Testing
             toolCall = call
         case let .toolResult(result):
             toolResult = result
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -443,7 +443,7 @@ import Testing
             toolCall = call
         case let .toolResult(result):
             toolResult = result
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -526,7 +526,7 @@ import Testing
             toolCall = call
         case let .toolApprovalRequest(request):
             approvalRequest = request
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break

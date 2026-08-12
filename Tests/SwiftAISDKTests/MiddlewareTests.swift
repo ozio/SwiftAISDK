@@ -47,7 +47,12 @@ import Testing
         streamed.append(part)
     }
 
-    #expect(streamed == [.textDelta("stream"), .finish(reason: "stop", usage: nil)])
+    #expect(streamed == [
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "stream"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: nil, providerMetadata: [:])
+    ])
     #expect(model.generateRequests.count == 1)
     #expect(model.streamRequests.count == 1)
     #expect(model.generateRequests[0].providerOptions["order"]?["first"]?.stringValue == "generate")
@@ -66,17 +71,12 @@ import Testing
             return result
         },
         wrapStream: { context in
-            AsyncThrowingStream { continuation in
-                let task = Task {
-                    continuation.yield(.textDelta("first("))
-                    for try await part in context.doStream() {
-                        continuation.yield(part)
-                    }
-                    continuation.yield(.textDelta(")"))
-                    continuation.finish()
-                }
-                continuation.onTermination = { _ in task.cancel() }
-            }
+            wrapCanonicalTextStream(
+                context.doStream(),
+                providerID: context.model.providerID,
+                prefix: "first(",
+                suffix: ")"
+            )
         }
     )
     let second = AILanguageModelMiddleware(
@@ -86,17 +86,12 @@ import Testing
             return result
         },
         wrapStream: { context in
-            AsyncThrowingStream { continuation in
-                let task = Task {
-                    continuation.yield(.textDelta("second("))
-                    for try await part in context.doStream() {
-                        continuation.yield(part)
-                    }
-                    continuation.yield(.textDelta(")"))
-                    continuation.finish()
-                }
-                continuation.onTermination = { _ in task.cancel() }
-            }
+            wrapCanonicalTextStream(
+                context.doStream(),
+                providerID: context.model.providerID,
+                prefix: "second(",
+                suffix: ")"
+            )
         }
     )
     let wrapped = wrapLanguageModel(model, middleware: [first, second])
@@ -109,13 +104,45 @@ import Testing
 
     #expect(generated.text == "first(second(base))")
     #expect(streamParts == [
-        .textDelta("first("),
-        .textDelta("second("),
-        .textDelta("stream"),
-        .finish(reason: "stop", usage: nil),
-        .textDelta(")"),
-        .textDelta(")")
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "first("),
+        .textDeltaPart(id: "legacy-text-0", delta: "second("),
+        .textDeltaPart(id: "legacy-text-0", delta: "stream"),
+        .textDeltaPart(id: "legacy-text-0", delta: ")"),
+        .textDeltaPart(id: "legacy-text-0", delta: ")"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: nil, providerMetadata: [:])
     ])
+}
+
+private func wrapCanonicalTextStream(
+    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    providerID: String,
+    prefix: String,
+    suffix: String
+) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            do {
+                for try await part in canonicalLanguageStream(stream, providerID: providerID) {
+                    switch part {
+                    case let .textStart(id, _):
+                        continuation.yield(part)
+                        continuation.yield(.textDeltaPart(id: id, delta: prefix))
+                    case let .textEnd(id, _):
+                        continuation.yield(.textDeltaPart(id: id, delta: suffix))
+                        continuation.yield(part)
+                    default:
+                        continuation.yield(part)
+                    }
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { _ in task.cancel() }
+    }
 }
 
 @Test func defaultSettingsMiddlewareAppliesDefaultsAndPreservesUserValues() async throws {

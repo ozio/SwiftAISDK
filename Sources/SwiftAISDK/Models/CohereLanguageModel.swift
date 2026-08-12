@@ -65,8 +65,9 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                     var finishReason: String? = "other"
                     var usage: TokenUsage?
                     var pendingToolCall: CoherePendingToolCall?
-                    var activeReasoningID: String?
-                    for try await event in serverSentEvents(from: response.body) {
+                    var activeTextIDs: Set<String> = []
+                    var activeReasoningIDs: Set<String> = []
+                    eventLoop: for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw: JSONValue
                         do {
@@ -86,25 +87,33 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                         case "content-start":
                             let id = String(raw["index"]?.intValue ?? 0)
                             if raw["delta"]?["message"]?["content"]?["type"]?.stringValue == "thinking" {
-                                activeReasoningID = id
-                                continuation.yield(.reasoningStart(id: id))
+                                if activeReasoningIDs.insert(id).inserted {
+                                    continuation.yield(.reasoningStart(id: id))
+                                }
                             } else {
-                                continuation.yield(.textStart(id: id))
+                                if activeTextIDs.insert(id).inserted {
+                                    continuation.yield(.textStart(id: id))
+                                }
                             }
                         case "content-delta":
                             let id = String(raw["index"]?.intValue ?? 0)
                             if let text = raw["delta"]?["message"]?["content"]?["text"]?.stringValue {
+                                if activeTextIDs.insert(id).inserted {
+                                    continuation.yield(.textStart(id: id))
+                                }
                                 continuation.yield(.textDeltaPart(id: id, delta: text))
                             }
                             if let thinking = raw["delta"]?["message"]?["content"]?["thinking"]?.stringValue {
+                                if activeReasoningIDs.insert(id).inserted {
+                                    continuation.yield(.reasoningStart(id: id))
+                                }
                                 continuation.yield(.reasoningDeltaPart(id: id, delta: thinking))
                             }
                         case "content-end":
                             let id = String(raw["index"]?.intValue ?? 0)
-                            if activeReasoningID == id {
+                            if activeReasoningIDs.remove(id) != nil {
                                 continuation.yield(.reasoningEnd(id: id))
-                                activeReasoningID = nil
-                            } else {
+                            } else if activeTextIDs.remove(id) != nil {
                                 continuation.yield(.textEnd(id: id))
                             }
                         case "tool-call-start":
@@ -144,11 +153,22 @@ public final class CohereLanguageModel: LanguageModel, @unchecked Sendable {
                         case "message-end":
                             finishReason = mapCohereFinishReason(raw["delta"]?["finish_reason"]?.stringValue)
                             usage = cohereTokenUsage(from: raw["delta"] ?? raw)
+                            break eventLoop
                         default:
                             break
                         }
                     }
-                    continuation.yield(.finish(reason: finishReason, usage: usage))
+                    for id in activeTextIDs.sorted() {
+                        continuation.yield(.textEnd(id: id))
+                    }
+                    for id in activeReasoningIDs.sorted() {
+                        continuation.yield(.reasoningEnd(id: id))
+                    }
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: usage,
+                        providerMetadata: [:]
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

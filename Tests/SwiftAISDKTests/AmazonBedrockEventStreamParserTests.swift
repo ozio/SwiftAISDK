@@ -208,7 +208,7 @@ import Testing
         var parts: [LanguageStreamPart] = []
         for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
             parts.append(part)
-            if case let .textDelta(delta) = part, receivedDelta.isPending {
+            if case let .textDeltaPart(_, delta, _) = part, receivedDelta.isPending {
                 receivedDelta.resolve(delta)
             }
         }
@@ -225,8 +225,60 @@ import Testing
     transport.releaseBody.resolve(())
     let parts = try await consumer.value
     #expect(parts.contains { part in
-        if case let .finish(_, usage) = part {
+        if case let .finishMetadata(_, usage, _) = part {
             return usage?.totalTokens == 2
+        }
+        return false
+    })
+}
+
+@Test func amazonBedrockJSONResponseToolYieldsCanonicalDeltaBeforeBlockStop() async throws {
+    let firstFrames = amazonEventStreamResponse([
+        ("contentBlockStart", #"{"contentBlockIndex":0,"start":{"toolUse":{"toolUseId":"json-1","name":"json"}}}"#),
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"name\":"}}}"#)
+    ]).body
+    let finalFrames = amazonEventStreamResponse([
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"toolUse":{"input":"\"Test\"}"}}}"#),
+        ("contentBlockStop", #"{"contentBlockIndex":0}"#),
+        ("messageStop", #"{"stopReason":"tool_use"}"#),
+        ("metadata", #"{"usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2}}"#)
+    ]).body
+    let transport = BedrockGatedStreamingTransport(firstChunk: firstFrames, finalChunk: finalFrames)
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("mistral.large")
+    let receivedDelta = AIDelayedPromise<String>()
+    let consumer = Task {
+        var parts: [LanguageStreamPart] = []
+        for try await part in model.stream(LanguageModelRequest(
+            messages: [.user("Return JSON")],
+            responseFormat: .json(schema: ["type": "object", "properties": ["name": ["type": "string"]]])
+        )) {
+            parts.append(part)
+            if case let .textDeltaPart(_, delta, _) = part, receivedDelta.isPending {
+                receivedDelta.resolve(delta)
+            }
+        }
+        return parts
+    }
+    defer { transport.releaseBody.resolve(()) }
+
+    #expect(try await awaitBedrockTestSignal(receivedDelta) == #"{"name":"#)
+    #expect(transport.releaseBody.isPending)
+    transport.releaseBody.resolve(())
+    let parts = try await consumer.value
+    #expect(parts.contains(.textStart(id: "0")))
+    #expect(parts.contains(.textEnd(id: "0")))
+    #expect(parts.filter {
+        if case .finishMetadata = $0 { return true }
+        return false
+    }.count == 1)
+    #expect(parts.contains {
+        if case let .finishMetadata(reason, usage, _) = $0 {
+            return reason == "stop" && usage?.totalTokens == 2
         }
         return false
     })
@@ -254,7 +306,7 @@ import Testing
         var parts: [LanguageStreamPart] = []
         for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
             parts.append(part)
-            if case let .textDelta(delta) = part, receivedDelta.isPending {
+            if case let .textDeltaPart(_, delta, _) = part, receivedDelta.isPending {
                 receivedDelta.resolve(delta)
             }
         }
@@ -271,7 +323,7 @@ import Testing
     transport.releaseBody.resolve(())
     let parts = try await consumer.value
     #expect(parts.contains { part in
-        if case let .finish(reason, _) = part {
+        if case let .finishMetadata(reason, _, _) = part {
             return reason == "stop"
         }
         return false
@@ -322,9 +374,9 @@ import Testing
     _ = try await awaitBedrockTestSignal(transport.producerCancelled)
 
     #expect(transport.releaseBody.isPending)
-    #expect(parts.contains(.textDelta("done")))
+    #expect(parts.contains(.textDeltaPart(id: "0", delta: "done")))
     #expect(parts.contains { part in
-        if case let .finish(reason, usage) = part {
+        if case let .finishMetadata(reason, usage, _) = part {
             return reason == "stop"
                 && usage?.inputTokens == 1
                 && usage?.outputTokens == 1
@@ -381,7 +433,7 @@ import Testing
     let receivedDelta = AIDelayedPromise<Void>()
     let consumer = Task {
         for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-            if case .textDelta = part {
+            if case .textDeltaPart = part {
                 receivedDelta.resolve(())
                 return
             }

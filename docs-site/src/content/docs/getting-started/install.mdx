@@ -8,7 +8,7 @@ Add SwiftAISDK to your package manifest:
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/ozio/SwiftAISDK.git", branch: "main"),
+    .package(url: "https://github.com/ozio/SwiftAISDK.git", from: "1.1.1"),
 ],
 targets: [
     .target(
@@ -19,6 +19,10 @@ targets: [
     ),
 ]
 ```
+
+For an application that must stay on a reviewed SDK build, replace `from:` with
+SwiftPM's `exact:` requirement for that release. Production applications should
+not depend on the moving `main` branch.
 
 Then import the library:
 

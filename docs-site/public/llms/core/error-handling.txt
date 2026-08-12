@@ -136,6 +136,15 @@ let result = try await model.generateText("Summarize.", options: options)
 
 Streaming retries only happen before the first emitted part. Once the stream has yielded a part, later provider errors are surfaced through the stream instead of replaying already-delivered output.
 
+Language streams distinguish provider-reported error events from failures that stop the transport or parser:
+
+- `.error(message:rawValue:)` is a repeatable in-band `LanguageStreamPart`. The full stream forwards every such part and records `error` as the provisional step outcome; a later explicit provider terminal reason remains authoritative.
+- setup, HTTP, framing, and network failures are thrown by the async sequence;
+- if a provider closes after an in-band error without its own terminal part, the facade supplies one `finishMetadata` with finish reason `error`;
+- `toTextStream()` intentionally skips in-band error parts, matching its text-only role, but still throws stream-stopping failures.
+
+An in-band error counts as an emitted part, so a model call is never retried after the caller could have observed one. Consumers that need provider error payloads should use the full `LanguageStreamPart` sequence rather than `toTextStream()`.
+
 Language-model streaming requires an `AIStreamingTransport`. If provider settings contain a send-only custom `AITransport`, unary generation still works, while streaming throws a non-retryable `AIError.invalidArgument` instead of silently buffering the complete response. Non-success streaming HTTP responses are bounded by the request response-size limit and retain their status, headers, and body when mapped to the provider error.
 
 ```swift

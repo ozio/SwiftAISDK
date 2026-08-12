@@ -21,7 +21,7 @@ import Testing
 
     #expect(streamed == [
         .toolCall(toolCall),
-        .finish(reason: "stop", usage: streamToolUsage()),
+        .finishMetadata(reason: "stop", usage: streamToolUsage(), providerMetadata: [:]),
         .toolResult(AIToolResult(
             toolCallID: "call-1",
             toolName: "syncTool",
@@ -61,7 +61,7 @@ import Testing
     #expect(streamed == [
         .toolCall(toolCall),
         .toolResult(providerResult),
-        .finish(reason: "stop", usage: streamToolUsage())
+        .finishMetadata(reason: "stop", usage: streamToolUsage(), providerMetadata: [:])
     ])
     #expect(await capture.count() == 0)
     #expect(model.streamRequests.count == 1)
@@ -91,7 +91,7 @@ import Testing
 
     #expect(streamed == [
         .toolCall(toolCall),
-        .finish(reason: "stop", usage: streamToolUsage()),
+        .finishMetadata(reason: "stop", usage: streamToolUsage(), providerMetadata: [:]),
         .toolApprovalRequest(AIToolApprovalRequest(
             id: "approval-call-1",
             toolName: "approvedTool",
@@ -136,7 +136,7 @@ import Testing
 
     #expect(streamed == [
         .toolCall(toolCall),
-        .finish(reason: "stop", usage: streamToolUsage()),
+        .finishMetadata(reason: "stop", usage: streamToolUsage(), providerMetadata: [:]),
         .toolApprovalRequest(AIToolApprovalRequest(
             id: "approval-call-1",
             toolName: "deniedTool",
@@ -230,7 +230,7 @@ import Testing
 
     #expect(streamed == [
         .toolCall(toolCall),
-        .finish(reason: "stop", usage: streamToolUsage()),
+        .finishMetadata(reason: "stop", usage: streamToolUsage(), providerMetadata: [:]),
         .toolResult(AIToolResult(
             toolCallID: "call-1",
             toolName: "failingTool",

@@ -221,7 +221,7 @@ func collectRawChunkFacadeParts(
         switch part {
         case let .raw(raw):
             result.rawValues.append(raw)
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             result.textDeltas.append(delta)
         default:
             break

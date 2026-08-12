@@ -85,9 +85,11 @@ import Testing
         smoothed.append(part)
     }
     #expect(smoothed == [
-        .textDelta("Hello "),
-        .textDelta("world"),
-        .finish(reason: "stop", usage: nil)
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "Hello "),
+        .textDeltaPart(id: "legacy-text-0", delta: "world"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: nil, providerMetadata: [:])
     ])
 }
 
@@ -525,11 +527,12 @@ import Testing
     #expect(request.messages.map(\.role) == [.system, .user, .assistant, .tool])
     #expect(request.messages[2].content == [.toolCall(call)])
     #expect(request.messages[3].content == [.toolResult(result)])
-    #expect(snapshots.map(\.text) == ["Hel", "Hello", "Hello", "Hello", "Hello"])
-    #expect(snapshots.last?.id == "response-1")
-    #expect(snapshots.last?.reasoning == "thinking")
-    #expect(snapshots.last?.parts.contains(.source(source)) == true)
-    #expect(snapshots.last?.metadata["finishReason"]?.stringValue == "stop")
+    let finalSnapshot = try #require(snapshots.last)
+    #expect(finalSnapshot.id == "response-1")
+    #expect(finalSnapshot.text == "Hello")
+    #expect(finalSnapshot.reasoning == "thinking")
+    #expect(finalSnapshot.parts.contains(.source(source)))
+    #expect(finalSnapshot.metadata["finishReason"]?.stringValue == "stop")
 }
 
 @Test func directAIChatTransportCanHideReasoningSourcesAndFinishMetadata() async throws {
@@ -555,12 +558,12 @@ import Testing
         snapshots.append(snapshot)
     }
 
-    #expect(snapshots.count == 1)
-    #expect(snapshots.first?.id == "generated-response")
-    #expect(snapshots.first?.text == "Visible")
-    #expect(snapshots.first?.reasoning.isEmpty == true)
-    #expect(snapshots.first?.metadata["finishReason"] == nil)
-    #expect(snapshots.first?.parts.contains { part in
+    let finalSnapshot = try #require(snapshots.last)
+    #expect(finalSnapshot.id == "generated-response")
+    #expect(finalSnapshot.text == "Visible")
+    #expect(finalSnapshot.reasoning.isEmpty)
+    #expect(finalSnapshot.metadata["finishReason"] == nil)
+    #expect(finalSnapshot.parts.contains { part in
         if case .source = part { return true }
         return false
     } == false)

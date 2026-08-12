@@ -38,7 +38,7 @@ import Testing
     #expect(model.streamRequests.count == 1)
     #expect(streamed == [
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["forecast": "sunny", "query": "weather"]))
     ])
 }
@@ -82,11 +82,13 @@ import Testing
     #expect(streamed == [
         .streamStart(warnings: [warning0]),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(AIToolResult(toolCallID: "call-1", toolName: "tool1", result: .string("result1"))),
         .streamStart(warnings: [warning1]),
-        .textDelta("Done."),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "Done."),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
 }
 
@@ -135,12 +137,14 @@ import Testing
         .source(source0),
         .file(file0),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(toolResult),
         .source(source1),
         .file(file1),
-        .textDelta("Done."),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "Done."),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 2)
     #expect(model.streamRequests[1].messages == [
@@ -215,15 +219,15 @@ import Testing
 
     #expect(streamed == [
         .toolCall(call1),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(result1),
         .toolCall(AIToolCall(id: "call-2", name: "dynamicTool", arguments: #"{"value":"value-2"}"#, dynamic: true)),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(result2),
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "done"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 3)
 }
@@ -278,9 +282,11 @@ import Testing
     }
 
     #expect(streamed == [
-        .reasoningDelta("thinking"),
+        .reasoningStart(id: "legacy-reasoning-0"),
+        .reasoningDeltaPart(id: "legacy-reasoning-0", delta: "thinking"),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .reasoningEnd(id: "legacy-reasoning-0"),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(toolResult)
     ])
     #expect(model.streamRequests.count == 1)
@@ -335,13 +341,13 @@ import Testing
     #expect(streamed == [
         .responseMetadata(AIResponseMetadata(id: "id-0", timestamp: Date(timeIntervalSince1970: 0), modelID: "mock-model-id")),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(toolResult),
         .responseMetadata(AIResponseMetadata(id: "id-1", timestamp: Date(timeIntervalSince1970: 1), modelID: "mock-model-id")),
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Done!"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 2)
 }
@@ -621,7 +627,7 @@ import Testing
         .toolResult(firstResult),
         .toolCall(secondCall),
         .toolResult(structuredError),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 13))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 13))
     ])
     #expect(model.streamRequests.count == 1)
 }
@@ -675,7 +681,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Final response"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 3))
     ])
     #expect(model.streamRequests.count == 1)
     #expect(await capture.stepNumbers() == [0])
@@ -732,13 +738,13 @@ import Testing
     #expect(streamed == [
         .responseMetadata(AIResponseMetadata(id: "msg-1", timestamp: Date(timeIntervalSince1970: 0), modelID: "mock-model-id")),
         .toolCall(providerCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .responseMetadata(AIResponseMetadata(id: "msg-2", timestamp: Date(timeIntervalSince1970: 1), modelID: "mock-model-id")),
         .toolResult(providerError),
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Final response"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 2)
     #expect(model.streamRequests[1].messages == [

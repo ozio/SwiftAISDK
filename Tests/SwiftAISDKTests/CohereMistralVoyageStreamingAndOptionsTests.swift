@@ -132,8 +132,6 @@ import Testing
         providerOptions: ["cohere": ["priority": 1]]
     )) {
         switch part {
-        case let .textDelta(delta):
-            deltas.append(delta)
         case let .textDeltaPart(id, delta, _):
             lifecycle.append("delta:\(id):\(delta)")
             deltas.append(delta)
@@ -147,7 +145,7 @@ import Testing
             if metadata.id == "msg-1" {
                 responseMetadata = metadata
             }
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -197,7 +195,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             finalCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:
@@ -236,7 +234,7 @@ import Testing
         switch part {
         case let .error(message, _):
             errors.append(message)
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break

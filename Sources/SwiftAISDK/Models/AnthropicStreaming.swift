@@ -25,7 +25,7 @@ struct AnthropicStreamingContentBlocks {
         self.ignoresTextBlocks = ignoresTextBlocks
     }
 
-    mutating func apply(event raw: JSONValue, toolCallCount: Int? = nil, usage: JSONValue? = nil) -> [LanguageStreamPart] {
+    mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
         switch raw["type"]?.stringValue {
         case "content_block_start":
             guard let index = raw["index"]?.intValue,
@@ -66,14 +66,28 @@ struct AnthropicStreamingContentBlocks {
             switch delta?["type"]?.stringValue {
             case "text_delta":
                 guard !ignoresTextBlocks else { return [] }
+                let needsStart = blocks[index] == nil
                 if let block = blocks[index] {
                     guard case .text = block else { return [] }
+                } else {
+                    blocks[index] = .text()
                 }
                 guard let text = delta?["text"]?.stringValue else { return [] }
-                return [.textDelta(text), .textDeltaPart(id: id, delta: text)]
+                var parts: [LanguageStreamPart] = []
+                if needsStart {
+                    parts.append(.textStart(id: id))
+                }
+                parts.append(.textDeltaPart(id: id, delta: text))
+                return parts
             case "thinking_delta":
                 guard let thinking = delta?["thinking"]?.stringValue else { return [] }
-                return [.reasoningDelta(thinking), .reasoningDeltaPart(id: id, delta: thinking)]
+                let needsStart = blocks[index] == nil
+                if needsStart {
+                    blocks[index] = .reasoning()
+                }
+                return (needsStart ? [.reasoningStart(id: id)] : []) + [
+                    .reasoningDeltaPart(id: id, delta: thinking)
+                ]
             case "signature_delta":
                 guard case .reasoning = blocks[index],
                       let signature = delta?["signature"] else {
@@ -86,7 +100,18 @@ struct AnthropicStreamingContentBlocks {
                 )]
             case "compaction_delta":
                 guard let content = delta?["content"]?.stringValue else { return [] }
-                return [.textDelta(content), .textDeltaPart(id: id, delta: content)]
+                let needsStart = blocks[index] == nil
+                if needsStart {
+                    blocks[index] = .text(providerMetadata: anthropicContentBlockProviderMetadata([
+                        "type": .string("compaction")
+                    ], providerID: providerID))
+                }
+                let metadata = anthropicContentBlockProviderMetadata([
+                    "type": .string("compaction")
+                ], providerID: providerID)
+                return (needsStart ? [.textStart(id: id, providerMetadata: metadata)] : []) + [
+                    .textDeltaPart(id: id, delta: content)
+                ]
             default:
                 return []
             }
@@ -102,17 +127,26 @@ struct AnthropicStreamingContentBlocks {
             case let .reasoning(metadata):
                 return [.reasoningEnd(id: id, providerMetadata: metadata)]
             }
-        case "message_delta":
-            return [.finish(
-                reason: toolCallCount.map {
-                    anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue, toolCallCount: $0)
-                } ?? anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue),
-                usage: anthropicTokenUsage(from: usage ?? raw["usage"])
-            )]
         default:
             return []
         }
     }
+
+    mutating func finishParts() -> [LanguageStreamPart] {
+        let parts = blocks.keys.sorted().compactMap { index -> LanguageStreamPart? in
+            guard let block = blocks[index] else { return nil }
+            let id = String(index)
+            switch block {
+            case let .text(metadata):
+                return .textEnd(id: id, providerMetadata: metadata)
+            case let .reasoning(metadata):
+                return .reasoningEnd(id: id, providerMetadata: metadata)
+            }
+        }
+        blocks.removeAll()
+        return parts
+    }
+
 }
 
 struct AnthropicStreamingJSONToolText {
@@ -138,7 +172,7 @@ struct AnthropicStreamingJSONToolText {
             let delta = raw["delta"]?["partial_json"]?.stringValue ?? ""
             guard !delta.isEmpty else { return [] }
             let id = String(index)
-            return [.textDelta(delta), .textDeltaPart(id: id, delta: delta)]
+            return [.textDeltaPart(id: id, delta: delta)]
         case "content_block_stop":
             guard let index = raw["index"]?.intValue,
                   indexes.remove(index) != nil else {
@@ -148,6 +182,12 @@ struct AnthropicStreamingJSONToolText {
         default:
             return []
         }
+    }
+
+    mutating func finishParts() -> [LanguageStreamPart] {
+        let parts = indexes.sorted().map { LanguageStreamPart.textEnd(id: String($0)) }
+        indexes.removeAll()
+        return parts
     }
 }
 

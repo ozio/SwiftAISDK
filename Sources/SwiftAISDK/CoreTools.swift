@@ -621,10 +621,18 @@ public struct AIRequestMetadata: Equatable, Hashable, Sendable {
 public enum LanguageStreamPart: Equatable, Sendable {
     case streamStart(warnings: [AIWarning])
     case textStart(id: String, providerMetadata: [String: JSONValue] = [:])
+    /// Legacy text delta without an explicit lifecycle or part identifier.
+    ///
+    /// Custom models may continue to return this case for source compatibility;
+    /// SDK facades normalize a legacy-only text channel to `textStart`,
+    /// `textDeltaPart`, and `textEnd`.
     case textDelta(String)
     case textDeltaPart(id: String, delta: String, providerMetadata: [String: JSONValue] = [:])
     case textEnd(id: String, providerMetadata: [String: JSONValue] = [:])
     case reasoningStart(id: String, providerMetadata: [String: JSONValue] = [:])
+    /// Legacy reasoning delta without an explicit lifecycle or part identifier.
+    /// SDK facades normalize a legacy-only reasoning channel to its canonical
+    /// start/delta/end representation.
     case reasoningDelta(String)
     case reasoningDeltaPart(id: String, delta: String, providerMetadata: [String: JSONValue] = [:])
     case reasoningEnd(id: String, providerMetadata: [String: JSONValue] = [:])
@@ -644,6 +652,12 @@ public enum LanguageStreamPart: Equatable, Sendable {
     case responseMetadata(AIResponseMetadata)
     case raw(JSONValue)
     case error(message: String, rawValue: JSONValue? = nil)
+    /// Legacy terminal chunk without provider metadata.
+    /// SDK facades normalize this case to `finishMetadata`.
     case finish(reason: String?, usage: TokenUsage?)
-    case finishMetadata(reason: String?, usage: TokenUsage?, providerMetadata: [String: JSONValue])
+    case finishMetadata(
+        reason: String?,
+        usage: TokenUsage?,
+        providerMetadata: [String: JSONValue] = [:]
+    )
 }

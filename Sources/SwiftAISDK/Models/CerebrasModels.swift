@@ -164,11 +164,11 @@ public final class CerebrasLanguageModel: LanguageModel, @unchecked Sendable {
                     for part in toolCalls.finishedParts() {
                         continuation.yield(part)
                     }
-                    if providerMetadata.isEmpty {
-                        continuation.yield(.finish(reason: finishReason, usage: latestUsage))
-                    } else {
-                        continuation.yield(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
-                    }
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: latestUsage,
+                        providerMetadata: providerMetadata
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

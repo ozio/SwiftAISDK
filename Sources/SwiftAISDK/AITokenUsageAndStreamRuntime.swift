@@ -57,6 +57,7 @@ struct LanguageStreamToolStep {
     var responseMetadata = AIResponseMetadata()
     var orderedContent: [AIResultContentPart] = []
     var contentIndicesByStreamKey: [String: Int] = [:]
+    var hasUnterminatedInBandError = false
 
     mutating func record(_ part: LanguageStreamPart) {
         switch part {
@@ -108,13 +109,18 @@ struct LanguageStreamToolStep {
             providerMetadata.merge(metadata) { _, new in new }
         case let .responseMetadata(metadata):
             responseMetadata = metadata
+        case .error:
+            finishReason = "error"
+            hasUnterminatedInBandError = true
         case let .finish(reason, partUsage):
-            finishReason = reason
+            finishReason = reason ?? (hasUnterminatedInBandError ? "error" : nil)
             usage = partUsage
+            hasUnterminatedInBandError = false
         case let .finishMetadata(reason, partUsage, metadata):
-            finishReason = reason
+            finishReason = reason ?? (hasUnterminatedInBandError ? "error" : nil)
             usage = partUsage
             providerMetadata.merge(metadata) { _, new in new }
+            hasUnterminatedInBandError = false
         default:
             break
         }

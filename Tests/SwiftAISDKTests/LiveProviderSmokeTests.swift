@@ -654,16 +654,21 @@ private enum LiveProviderSmoke {
 
     static func collectText(from stream: AsyncThrowingStream<LanguageStreamPart, Error>) async throws -> String {
         var text = ""
+        var legacyDeltaCount = 0
+        var canonicalDeltaCount = 0
         for try await part in stream {
             switch part {
-            case let .textDelta(delta):
-                text += delta
+            case .textDelta:
+                legacyDeltaCount += 1
             case let .textDeltaPart(_, delta, _):
+                canonicalDeltaCount += 1
                 text += delta
             default:
                 break
             }
         }
+        #expect(legacyDeltaCount == 0)
+        #expect(canonicalDeltaCount > 0)
         return text
     }
 
@@ -693,6 +698,8 @@ private enum LiveProviderSmoke {
         let tool = weatherTool(tracker: tracker)
 
         var text = ""
+        var legacyDeltaCount = 0
+        var canonicalDeltaCount = 0
         var toolResults: [AIToolResult] = []
         var toolInputStarts = 0
         var toolInputEnds = 0
@@ -706,9 +713,10 @@ private enum LiveProviderSmoke {
             retryPolicy: .none
         ) {
             switch part {
-            case let .textDelta(delta):
-                text += delta
+            case .textDelta:
+                legacyDeltaCount += 1
             case let .textDeltaPart(_, delta, _):
+                canonicalDeltaCount += 1
                 text += delta
             case let .toolResult(result):
                 toolResults.append(result)
@@ -726,6 +734,8 @@ private enum LiveProviderSmoke {
         #expect(toolResults.count == 1)
         #expect(toolResults.first?.result["forecast"]?.stringValue == "sunny")
         #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(legacyDeltaCount == 0)
+        #expect(canonicalDeltaCount > 0)
         if expectsToolInputLifecycle {
             #expect(toolInputStarts >= 1)
             #expect(toolInputEnds >= 1)

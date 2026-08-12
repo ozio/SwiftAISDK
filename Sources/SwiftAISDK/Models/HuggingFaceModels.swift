@@ -67,7 +67,12 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                         continuation.yield(.streamStart(warnings: prepared.warnings))
                     }
 
-                    for try await event in serverSentEvents(from: response.body) {
+                    var activeTextIDs: Set<String> = []
+                    var activeReasoningIDs: Set<String> = []
+                    var finishReason: String? = "other"
+                    var finishUsage: TokenUsage?
+                    var finishProviderMetadata: [String: JSONValue] = [:]
+                    eventLoop: for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
@@ -80,44 +85,81 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                             continuation.yield(.responseMetadata(huggingFaceResponseMetadata(from: metadataRaw, response: responseHead, modelID: modelID)))
                         case "response.output_item.added":
                             for part in huggingFaceOutputItemAddedParts(from: raw["item"]) {
+                                if case let .textStart(id, _) = part {
+                                    activeTextIDs.insert(id)
+                                } else if case let .reasoningStart(id, _) = part {
+                                    activeReasoningIDs.insert(id)
+                                }
                                 continuation.yield(part)
                             }
                         case "response.output_text.delta":
                             if let delta = raw["delta"]?.stringValue, !delta.isEmpty {
+                                let id = raw["item_id"]?.stringValue ?? "text"
+                                if activeTextIDs.insert(id).inserted {
+                                    continuation.yield(.textStart(
+                                        id: id,
+                                        providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
+                                    ))
+                                }
                                 continuation.yield(.textDeltaPart(
-                                    id: raw["item_id"]?.stringValue ?? "text",
+                                    id: id,
                                     delta: delta,
                                     providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
                                 ))
                             }
                         case "response.reasoning_text.delta":
                             if let delta = raw["delta"]?.stringValue, !delta.isEmpty {
+                                let id = raw["item_id"]?.stringValue ?? "reasoning"
+                                if activeReasoningIDs.insert(id).inserted {
+                                    continuation.yield(.reasoningStart(
+                                        id: id,
+                                        providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
+                                    ))
+                                }
                                 continuation.yield(.reasoningDeltaPart(
-                                    id: raw["item_id"]?.stringValue ?? "reasoning",
+                                    id: id,
                                     delta: delta,
                                     providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
                                 ))
                             }
                         case "response.reasoning_text.done":
-                            continuation.yield(.reasoningEnd(
-                                id: raw["item_id"]?.stringValue ?? "reasoning",
-                                providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
-                            ))
+                            let id = raw["item_id"]?.stringValue ?? "reasoning"
+                            if activeReasoningIDs.remove(id) != nil {
+                                continuation.yield(.reasoningEnd(
+                                    id: id,
+                                    providerMetadata: huggingFaceItemMetadata(id: raw["item_id"]?.stringValue)
+                                ))
+                            }
                         case "response.output_item.done":
                             for part in huggingFaceOutputItemDoneParts(from: raw["item"]) {
+                                if case let .textEnd(id, _) = part {
+                                    guard activeTextIDs.remove(id) != nil else { continue }
+                                } else if case let .reasoningEnd(id, _) = part {
+                                    guard activeReasoningIDs.remove(id) != nil else { continue }
+                                }
                                 continuation.yield(part)
                             }
                         case "response.completed", "response.incomplete":
-                            let response = raw["response"] ?? raw
-                            continuation.yield(.finishMetadata(
-                                reason: huggingFaceFinishReason(response["incomplete_details"]?["reason"]?.stringValue ?? "stop"),
-                                usage: tokenUsage(from: response),
-                                providerMetadata: ["huggingface": .object(["responseId": response["id"] ?? .null])]
-                            ))
+                            let terminalResponse = raw["response"] ?? raw
+                            finishReason = huggingFaceFinishReason(terminalResponse["incomplete_details"]?["reason"]?.stringValue ?? "stop")
+                            finishUsage = tokenUsage(from: terminalResponse)
+                            finishProviderMetadata = ["huggingface": .object(["responseId": terminalResponse["id"] ?? .null])]
+                            break eventLoop
                         default:
                             break
                         }
                     }
+                    for id in activeTextIDs.sorted() {
+                        continuation.yield(.textEnd(id: id, providerMetadata: huggingFaceItemMetadata(id: id)))
+                    }
+                    for id in activeReasoningIDs.sorted() {
+                        continuation.yield(.reasoningEnd(id: id, providerMetadata: huggingFaceItemMetadata(id: id)))
+                    }
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: finishUsage,
+                        providerMetadata: finishProviderMetadata
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

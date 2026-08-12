@@ -97,7 +97,7 @@ import Testing
 
     #expect(streamed == [
         .toolCall(repairedCall),
-        .finish(reason: "stop", usage: streamLanguageModelCallUsage()),
+        .finishMetadata(reason: "stop", usage: streamLanguageModelCallUsage(), providerMetadata: [:]),
         .toolResult(AIToolResult(
             toolCallID: "call-1",
             toolName: "correctTool",
@@ -129,7 +129,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "text"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: streamLanguageModelCallUsage())
+        .finishMetadata(reason: "stop", usage: streamLanguageModelCallUsage(), providerMetadata: [:])
     ])
 }
 
@@ -184,7 +184,7 @@ import Testing
         .toolInputStart(id: "call-1", name: "test-tool", providerMetadata: providerMetadata),
         .toolInputDelta(id: "call-1", delta: #"{"value":"test"}"#),
         .toolInputEnd(id: "call-1"),
-        .finish(reason: "tool-calls", usage: streamLanguageModelCallUsage())
+        .finishMetadata(reason: "tool-calls", usage: streamLanguageModelCallUsage(), providerMetadata: [:])
     ])
 }
 
@@ -226,7 +226,7 @@ import Testing
         .file(file),
         .reasoningFile(reasoningFile),
         .custom(custom, providerMetadata: customMetadata),
-        .finish(reason: "stop", usage: streamLanguageModelCallUsage())
+        .finishMetadata(reason: "stop", usage: streamLanguageModelCallUsage(), providerMetadata: [:])
     ])
 }
 
@@ -335,7 +335,7 @@ import Testing
             arguments: #"{ "query": "test" }"#,
             toolCallID: "mcp-call-1"
         )),
-        .finish(reason: "tool-calls", usage: streamLanguageModelCallUsage())
+        .finishMetadata(reason: "tool-calls", usage: streamLanguageModelCallUsage(), providerMetadata: [:])
     ])
 }
 
@@ -390,7 +390,7 @@ import Testing
             arguments: #"{ "command": "ls" }"#,
             toolCallID: "mcp-call-2"
         )),
-        .finish(reason: "tool-calls", usage: streamLanguageModelCallUsage())
+        .finishMetadata(reason: "tool-calls", usage: streamLanguageModelCallUsage(), providerMetadata: [:])
     ])
 }
 

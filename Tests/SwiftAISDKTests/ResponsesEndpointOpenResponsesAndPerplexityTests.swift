@@ -189,7 +189,7 @@ import Testing
         switch part {
         case let .toolCall(call):
             toolCall = call
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             toolFinishReason = reason
         default:
             break
@@ -213,7 +213,7 @@ import Testing
     var failedFinishReason: String?
     var failedTotalTokens: Int?
     for try await part in failedModel.stream(LanguageModelRequest(messages: [.user("Fail.")])) {
-        if case let .finish(reason, usage) = part {
+        if case let .finishMetadata(reason, usage, _) = part {
             failedFinishReason = reason
             failedTotalTokens = usage?.totalTokens
         }

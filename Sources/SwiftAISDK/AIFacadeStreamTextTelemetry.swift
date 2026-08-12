@@ -47,9 +47,28 @@ func streamTextWithTelemetry(
                         )
                         for try await part in stream {
                             try Task.checkCancellation()
+                            let outgoingPart: LanguageStreamPart
+                            switch part {
+                            case let .finish(reason, usage) where reason == nil && step.hasUnterminatedInBandError:
+                                outgoingPart = .finish(reason: "error", usage: usage)
+                            case let .finishMetadata(reason, usage, metadata) where reason == nil && step.hasUnterminatedInBandError:
+                                outgoingPart = .finishMetadata(reason: "error", usage: usage, providerMetadata: metadata)
+                            default:
+                                outgoingPart = part
+                            }
+                            step.record(outgoingPart)
+                            continuation.yield(outgoingPart)
                             yieldedPart = true
-                            step.record(part)
-                            continuation.yield(part)
+                        }
+                        if step.hasUnterminatedInBandError {
+                            let terminal = LanguageStreamPart.finishMetadata(
+                                reason: "error",
+                                usage: step.usage,
+                                providerMetadata: [:]
+                            )
+                            step.record(terminal)
+                            continuation.yield(terminal)
+                            yieldedPart = true
                         }
                         let result = TextGenerationResult(
                             text: step.text,

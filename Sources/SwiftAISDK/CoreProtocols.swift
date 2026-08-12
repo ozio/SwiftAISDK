@@ -57,13 +57,53 @@ public extension LanguageModel {
                 do {
                     let result = try await generate(request)
                     try Task.checkCancellation()
-                    if !result.text.isEmpty {
-                        continuation.yield(.textDelta(result.text))
+                    continuation.yield(.streamStart(warnings: result.warnings))
+                    if result.responseMetadata != AIResponseMetadata() {
+                        continuation.yield(.responseMetadata(result.responseMetadata))
                     }
-                    for toolCall in result.toolCalls {
-                        continuation.yield(.toolCall(toolCall))
+
+                    var nextPartID = 0
+                    for contentPart in result.content {
+                        try Task.checkCancellation()
+                        switch contentPart {
+                        case let .text(text, providerMetadata):
+                            guard !text.isEmpty else { continue }
+                            let id = String(nextPartID)
+                            nextPartID += 1
+                            continuation.yield(.textStart(id: id, providerMetadata: providerMetadata))
+                            continuation.yield(.textDeltaPart(id: id, delta: text, providerMetadata: providerMetadata))
+                            continuation.yield(.textEnd(id: id, providerMetadata: providerMetadata))
+                        case let .reasoning(reasoning, providerMetadata):
+                            guard !reasoning.isEmpty else { continue }
+                            let id = String(nextPartID)
+                            nextPartID += 1
+                            continuation.yield(.reasoningStart(id: id, providerMetadata: providerMetadata))
+                            continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning, providerMetadata: providerMetadata))
+                            continuation.yield(.reasoningEnd(id: id, providerMetadata: providerMetadata))
+                        case let .source(source):
+                            continuation.yield(.source(source))
+                        case let .file(file):
+                            continuation.yield(.file(file))
+                        case let .reasoningFile(file):
+                            continuation.yield(.reasoningFile(file))
+                        case let .custom(value, providerMetadata):
+                            continuation.yield(.custom(value, providerMetadata: providerMetadata))
+                        case let .toolCall(toolCall):
+                            continuation.yield(.toolCall(toolCall))
+                        case let .toolResult(toolResult):
+                            continuation.yield(.toolResult(toolResult))
+                        case let .toolApprovalRequest(request):
+                            continuation.yield(.toolApprovalRequest(request))
+                        case let .toolApprovalResponse(response):
+                            continuation.yield(.toolApprovalResponse(response))
+                        }
                     }
-                    continuation.yield(.finish(reason: result.finishReason, usage: result.usage))
+                    try Task.checkCancellation()
+                    continuation.yield(.finishMetadata(
+                        reason: result.finishReason,
+                        usage: result.usage,
+                        providerMetadata: result.providerMetadata
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

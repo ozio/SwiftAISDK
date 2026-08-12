@@ -290,13 +290,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var didReceiveMessageStart = false
                     var isMessageOpen = false
                     var activeMessageID: String?
-                    var hasInvalidMessageSequence = false
-                    for try await event in serverSentEvents(from: response.body) {
+                    streamEvents: for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
-                        if hasInvalidMessageSequence {
-                            continue
-                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
@@ -314,20 +310,20 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                 if activeMessageID == messageID {
                                     continue
                                 }
-                                hasInvalidMessageSequence = true
                                 let incomingID = messageID.map { anthropicJSONString(.string($0)) ?? "\"\($0)\"" } ?? "null"
                                 let activeID = activeMessageID.map { anthropicJSONString(.string($0)) ?? "\"\($0)\"" } ?? "null"
                                 continuation.yield(.error(
                                     message: "Received message_start for message \(incomingID) while message \(activeID) is still open.",
                                     rawValue: raw
                                 ))
-                                continue
+                                break streamEvents
                             }
                             isMessageOpen = true
                             activeMessageID = messageID
                             didReceiveMessageStart = true
                             if let usage = raw["message"]?["usage"] {
                                 rawUsage = usage
+                                finishUsage = anthropicTokenUsage(from: usage)
                             }
                             if let value = anthropicContainerMetadata(from: raw["message"]?["container"]) {
                                 container = value
@@ -355,7 +351,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         default:
                             break
                         }
-                        for part in contentBlocks.apply(event: raw, toolCallCount: realToolCallCount, usage: rawUsage) {
+                        for part in contentBlocks.apply(event: raw) {
                             continuation.yield(part)
                         }
                         for part in jsonToolText.apply(event: raw) {
@@ -374,6 +370,12 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                             continuation.yield(part)
                         }
                         if raw["type"]?.stringValue == "message_stop" {
+                            for part in contentBlocks.finishParts() {
+                                continuation.yield(part)
+                            }
+                            for part in jsonToolText.finishParts() {
+                                continuation.yield(part)
+                            }
                             continuation.yield(.finishMetadata(
                                 reason: finishReason,
                                 usage: finishUsage,
@@ -387,6 +389,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                     requestProviderOptions: request.providerOptions
                                 )
                             ))
+                            break
                         }
                     }
                     continuation.finish()
@@ -1666,6 +1669,38 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                         providerID: providerID,
                         contentType: response.headerValue("content-type")
                     )
+                    var finishReason: String?
+                    var finishUsage: TokenUsage?
+                    var rawUsage: JSONValue?
+                    var stopSequence: JSONValue = .null
+                    var stopDetails: JSONValue = .null
+                    var container: JSONValue = .null
+                    var contextManagement: JSONValue = .null
+                    var didEmitTerminal = false
+
+                    func emitTerminal() {
+                        guard !didEmitTerminal else { return }
+                        for part in contentBlocks.finishParts() {
+                            continuation.yield(part)
+                        }
+                        for part in jsonToolText.finishParts() {
+                            continuation.yield(part)
+                        }
+                        continuation.yield(.finishMetadata(
+                            reason: finishReason,
+                            usage: finishUsage,
+                            providerMetadata: anthropicProviderMetadata(
+                                usage: rawUsage,
+                                stopSequence: stopSequence,
+                                stopDetails: stopDetails,
+                                container: container,
+                                contextManagement: contextManagement,
+                                providerID: providerID,
+                                requestProviderOptions: request.providerOptions
+                            )
+                        ))
+                        didEmitTerminal = true
+                    }
 
                     func process(_ items: [BedrockRawStreamItem]) throws -> Bool {
                         for outerItem in items {
@@ -1673,6 +1708,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                             let item: BedrockRawStreamItem
                             switch adaptedItem {
                             case .messageStop:
+                                emitTerminal()
                                 return true
                             case let .event(event):
                                 item = event
@@ -1688,7 +1724,36 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 let message = raw["error"]?["message"]?.stringValue ?? raw["message"]?.stringValue ?? "Bedrock Anthropic stream returned an error event."
                                 throw AIError.invalidResponse(provider: providerID, message: message)
                             }
-                            for part in contentBlocks.apply(event: raw, toolCallCount: realToolCallCount) {
+                            switch raw["type"]?.stringValue {
+                            case "message_start":
+                                if let usage = raw["message"]?["usage"] {
+                                    rawUsage = usage
+                                    finishUsage = anthropicTokenUsage(from: usage)
+                                }
+                                if let value = anthropicContainerMetadata(from: raw["message"]?["container"]) {
+                                    container = value
+                                }
+                                if let reason = raw["message"]?["stop_reason"]?.stringValue {
+                                    finishReason = anthropicFinishReason(reason, toolCallCount: realToolCallCount)
+                                }
+                            case "message_delta":
+                                finishReason = anthropicFinishReason(raw["delta"]?["stop_reason"]?.stringValue, toolCallCount: realToolCallCount)
+                                stopSequence = raw["delta"]?["stop_sequence"] ?? stopSequence
+                                stopDetails = anthropicStopDetailsMetadata(from: raw["delta"]?["stop_details"]) ?? stopDetails
+                                if let usage = raw["usage"] {
+                                    rawUsage = rawUsage.map { anthropicMergedUsage($0, usage) } ?? usage
+                                    finishUsage = anthropicTokenUsage(from: rawUsage)
+                                }
+                                if let value = anthropicContainerMetadata(from: raw["delta"]?["container"]) {
+                                    container = value
+                                }
+                                if let value = anthropicContextManagementMetadata(from: raw["context_management"]) {
+                                    contextManagement = value
+                                }
+                            default:
+                                break
+                            }
+                            for part in contentBlocks.apply(event: raw) {
                                 continuation.yield(part)
                             }
                             for part in jsonToolText.apply(event: raw) {
@@ -1706,6 +1771,10 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 }
                                 continuation.yield(part)
                             }
+                            if raw["type"]?.stringValue == "message_stop" {
+                                emitTerminal()
+                                return true
+                            }
                         }
                         return false
                     }
@@ -1718,7 +1787,11 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                         }
                     }
                     if !reachedMessageStop {
-                        _ = try process(parser.finish())
+                        reachedMessageStop = try process(parser.finish())
+                    }
+                    if !reachedMessageStop, !didEmitTerminal,
+                       finishReason != nil || finishUsage != nil || rawUsage != nil {
+                        emitTerminal()
                     }
                     if !Task.isCancelled {
                         continuation.finish()

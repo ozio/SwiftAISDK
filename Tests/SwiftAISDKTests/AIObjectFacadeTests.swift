@@ -308,7 +308,7 @@ import Testing
     let model = HangingObjectFacadeLanguageModel()
     var firstPart: ObjectStreamPart<ObjectFacadeAnswer>?
 
-    for try await part in AI.streamObject(
+    objectParts: for try await part in AI.streamObject(
         model: model,
         prompt: "Cancel object stream.",
         as: ObjectFacadeAnswer.self,
@@ -322,8 +322,10 @@ import Testing
             onError: { event in await callbacks.recordError(event) }
         )
     ) {
-        firstPart = part
-        break
+        if case .textDelta = part {
+            firstPart = part
+            break objectParts
+        }
     }
 
     try await Task.sleep(nanoseconds: 20_000_000)

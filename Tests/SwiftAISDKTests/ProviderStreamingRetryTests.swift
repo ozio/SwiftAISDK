@@ -30,7 +30,7 @@ import Testing
         prompt: "Retry the request",
         retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0)
     ) {
-        if case let .textDelta(delta) = part {
+        if case let .textDeltaPart(_, delta, _) = part {
             deltas.append(delta)
         }
     }
@@ -72,7 +72,7 @@ import Testing
             prompt: "Do not duplicate",
             retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0)
         ) {
-            if case let .textDelta(delta) = part {
+            if case let .textDeltaPart(_, delta, _) = part {
                 deltas.append(delta)
                 failureGate.open()
             }

@@ -154,7 +154,7 @@ import Testing
         switch part {
         case let .responseMetadata(metadata):
             responseMetadata = metadata
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             text += delta
         default:
             break

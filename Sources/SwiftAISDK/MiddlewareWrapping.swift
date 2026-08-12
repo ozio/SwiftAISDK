@@ -190,7 +190,7 @@ final class AIWrappedLanguageModel: LanguageModel, @unchecked Sendable {
                         model: model
                     )) ?? doStream()
 
-                    for try await part in stream {
+                    for try await part in canonicalLanguageStream(stream, providerID: providerID) {
                         continuation.yield(part)
                     }
                     continuation.finish()

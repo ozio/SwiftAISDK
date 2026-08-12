@@ -1,11 +1,14 @@
 # Porting Status
 
-Snapshot date: 2026-08-12
+Snapshot date: 2026-08-13
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
 provider implementations, generated provider capability docs, upstream-shaped
 parity tests, and a static documentation site.
+
+The repository is distributed under Apache-2.0; the complete terms are in the
+root `LICENSE` file.
 
 This file is the readable status page. It replaces the older provider-progress
 journals and product-gap checklist. Use the ledgers and generated inventories
@@ -22,6 +25,11 @@ for exact evidence.
   response EOF, and abort or early consumer termination cancels the body read.
   Send-only custom transports remain supported for unary generation and fail
   streaming explicitly instead of falling back to buffered `send`.
+- Built-in language streams expose one canonical part-aware text/reasoning
+  lifecycle and one terminal part per logical response. Legacy-only custom
+  streams are normalized at the facade boundary, while ambiguous mixed-family
+  streams fail explicitly. In-band provider errors remain observable without
+  turning text-only streams into silent successes.
 - Provider coverage spans the official provider-facing `@ai-sdk/*` packages
   tracked in `Docs/ProviderVersionLedger.md`.
 - `Docs/ProviderCapabilityMatrix.md` is generated from
@@ -70,6 +78,13 @@ lengths and CRCs, preserves typed non-success HTTP errors before the first
 part, and wires consumer termination and aborts through to URLSession. Prodia
 and the protocol-default stream remain explicitly unary/simulated.
 
+The 2026-08-13 semantic-stream correction removes paired legacy and part-aware
+deltas from built-in providers, normalizes legacy-only custom model streams at
+the high-level boundary, closes content lifecycles deterministically, and
+defines one built-in terminal outcome per logical response. Cross-surface regressions
+cover text and reasoning collection, structured output, UI reduction, tool
+loops, in-band errors, thrown failures, and provider terminal behavior.
+
 Exact registry-prefix discovery finds 79 live `@ai-sdk/*` packages and 44 model
 providers. The 43 previously tracked providers remain represented; new
 `@ai-sdk/fish-audio@3.0.3` is intentionally proposed rather than implemented in
@@ -96,6 +111,7 @@ one of these is true:
 | --- | --- | --- |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
+| P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
 | P1 | Streaming transcription, realtime models, and speech translation from Cartesia, ElevenLabs, Google, and OpenAI are not represented by current Swift protocols. | Design one reusable duplex WebSocket/audio transport and lifecycle surface, then port provider adapters as vertical slices. |
 | P1 | `ai@7.0.58` and `@ai-sdk/provider@4.0.7` add Batch V4 and async Video V4 start/status/webhook operations; Swift has neither shared public contract. Unary providers still poll internally, and retrying a lost start response can duplicate paid work without a stable logical-start idempotency key. | Design the shared batch model/result stream first, then async video operation state, polling/webhook controls, cancellation, metadata merging, and stable start idempotency before migrating providers. |
 | P1 | Current `ai@7.0.58` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |

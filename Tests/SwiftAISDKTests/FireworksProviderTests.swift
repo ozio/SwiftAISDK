@@ -68,7 +68,7 @@ import Testing
 
     var usage: TokenUsage?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .finish(_, finishUsage) = part {
+        if case let .finishMetadata(_, finishUsage, _) = part {
             usage = finishUsage
         }
     }

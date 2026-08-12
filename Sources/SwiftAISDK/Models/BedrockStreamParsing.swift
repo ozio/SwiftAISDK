@@ -2,20 +2,28 @@ import Foundation
 
 func bedrockStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
     var parts: [LanguageStreamPart] = []
+    let index = raw["contentBlockDelta"]?["contentBlockIndex"]?.intValue ?? 0
     if let text = raw["contentBlockDelta"]?["delta"]?["text"]?.stringValue {
-        parts.append(.textDelta(text))
+        let id = String(index)
+        parts.append(.textStart(id: id))
+        parts.append(.textDeltaPart(id: id, delta: text))
+        parts.append(.textEnd(id: id))
     }
     if let reasoning = raw["contentBlockDelta"]?["delta"]?["reasoningContent"]?["text"]?.stringValue {
-        parts.append(.reasoningDelta(reasoning))
+        let id = String(index)
+        parts.append(.reasoningStart(id: id))
+        parts.append(.reasoningDeltaPart(id: id, delta: reasoning))
+        parts.append(.reasoningEnd(id: id))
     }
     if raw["messageStop"] != nil || raw["metadata"]?["usage"] != nil {
-        parts.append(.finish(
-            reason: raw["messageStop"]?["stopReason"]?.stringValue,
+        parts.append(.finishMetadata(
+            reason: bedrockFinishReason(raw["messageStop"]?["stopReason"]?.stringValue),
             usage: TokenUsage(
                 inputTokens: raw["metadata"]?["usage"]?["inputTokens"]?.intValue,
                 outputTokens: raw["metadata"]?["usage"]?["outputTokens"]?.intValue,
                 totalTokens: raw["metadata"]?["usage"]?["totalTokens"]?.intValue
-            )
+            ),
+            providerMetadata: bedrockProviderMetadata(fromStreamMetadata: raw["metadata"])
         ))
     }
     return parts
@@ -29,40 +37,88 @@ struct BedrockStreamingToolCall {
 }
 
 struct BedrockStreamState {
+    private enum ContentBlock: Equatable {
+        case text
+        case reasoning
+        case tool
+    }
+
     var toolCalls: [Int: BedrockStreamingToolCall] = [:]
     var latestFinishReason: String?
     var latestUsage: TokenUsage?
     var jsonResponseToolName: String?
     var jsonObjectTextExtractor: BedrockJSONObjectTextExtractor?
     var isJsonResponseFromTool = false
+    private var contentBlocks: [Int: ContentBlock] = [:]
+    private var latestProviderMetadata: [String: JSONValue] = [:]
+    private var sawTerminalEvent = false
+
+    init(
+        jsonResponseToolName: String? = nil,
+        jsonObjectTextExtractor: BedrockJSONObjectTextExtractor? = nil
+    ) {
+        self.jsonResponseToolName = jsonResponseToolName
+        self.jsonObjectTextExtractor = jsonObjectTextExtractor
+    }
 
     mutating func parts(from raw: JSONValue) -> [LanguageStreamPart] {
         var parts: [LanguageStreamPart] = []
+        let contentBlockIndex = raw["contentBlockDelta"]?["contentBlockIndex"]?.intValue ?? 0
         if let text = raw["contentBlockDelta"]?["delta"]?["text"]?.stringValue {
             let textDelta = jsonObjectTextExtractor?.process(text) ?? text
             if !textDelta.isEmpty {
-                parts.append(.textDelta(textDelta))
+                let id = String(contentBlockIndex)
+                if contentBlocks[contentBlockIndex] == nil {
+                    contentBlocks[contentBlockIndex] = .text
+                    parts.append(.textStart(id: id))
+                }
+                parts.append(.textDeltaPart(id: id, delta: textDelta))
             }
         }
         if let reasoning = raw["contentBlockDelta"]?["delta"]?["reasoningContent"]?["text"]?.stringValue {
-            parts.append(.reasoningDelta(reasoning))
+            let id = String(contentBlockIndex)
+            if contentBlocks[contentBlockIndex] == nil {
+                contentBlocks[contentBlockIndex] = .reasoning
+                parts.append(.reasoningStart(id: id))
+            }
+            parts.append(.reasoningDeltaPart(id: id, delta: reasoning))
         }
         if let signature = raw["contentBlockDelta"]?["delta"]?["reasoningContent"]?["signature"] {
             let payload: [String: JSONValue] = ["signature": signature]
-            parts.append(.metadata(["amazonBedrock": .object(payload), "bedrock": .object(payload)]))
+            let id = String(contentBlockIndex)
+            if contentBlocks[contentBlockIndex] == nil {
+                contentBlocks[contentBlockIndex] = .reasoning
+                parts.append(.reasoningStart(id: id))
+            }
+            parts.append(.reasoningDeltaPart(
+                id: id,
+                delta: "",
+                providerMetadata: ["amazonBedrock": .object(payload), "bedrock": .object(payload)]
+            ))
         }
         if let redactedData = raw["contentBlockDelta"]?["delta"]?["reasoningContent"]?["data"] {
             let payload: [String: JSONValue] = ["redactedData": redactedData]
-            parts.append(.metadata(["amazonBedrock": .object(payload), "bedrock": .object(payload)]))
+            let id = String(contentBlockIndex)
+            if contentBlocks[contentBlockIndex] == nil {
+                contentBlocks[contentBlockIndex] = .reasoning
+                parts.append(.reasoningStart(id: id))
+            }
+            parts.append(.reasoningDeltaPart(
+                id: id,
+                delta: "",
+                providerMetadata: ["amazonBedrock": .object(payload), "bedrock": .object(payload)]
+            ))
         }
         if let start = raw["contentBlockStart"],
            let toolUse = start["start"]?["toolUse"] {
             let index = start["contentBlockIndex"]?.intValue ?? 0
             let id = toolUse["toolUseId"]?.stringValue ?? "tool-call-\(index)"
             let name = toolUse["name"]?.stringValue ?? "tool-\(index)"
+            contentBlocks[index] = .tool
             toolCalls[index] = BedrockStreamingToolCall(id: id, name: name, rawValue: toolUse)
             if name == jsonResponseToolName {
                 isJsonResponseFromTool = true
+                parts.append(.textStart(id: String(index)))
                 return parts
             }
             parts.append(.toolInputStart(id: id, name: name))
@@ -76,7 +132,9 @@ struct BedrockStreamState {
             toolCall.rawValue = toolUse
             toolCalls[index] = toolCall
             if toolCall.name == jsonResponseToolName {
-                parts.append(.textDelta(argumentsDelta))
+                if !argumentsDelta.isEmpty {
+                    parts.append(.textDeltaPart(id: String(index), delta: argumentsDelta))
+                }
                 return parts
             }
             parts.append(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: argumentsDelta, index: index))
@@ -85,34 +143,85 @@ struct BedrockStreamState {
             }
         }
         if let stop = raw["contentBlockStop"],
-           let index = stop["contentBlockIndex"]?.intValue,
-           let toolCall = toolCalls[index] {
-            if toolCall.name == jsonResponseToolName {
-                return parts
+           let index = stop["contentBlockIndex"]?.intValue {
+            let block = contentBlocks.removeValue(forKey: index)
+            if let toolCall = toolCalls.removeValue(forKey: index) {
+                if toolCall.name == jsonResponseToolName {
+                    isJsonResponseFromTool = true
+                    parts.append(.textEnd(id: String(index)))
+                    return parts
+                }
+                parts.append(.toolInputEnd(id: toolCall.id))
+                parts.append(.toolCall(AIToolCall(
+                    id: toolCall.id,
+                    name: toolCall.name,
+                    arguments: toolCall.arguments.isEmpty ? "{}" : toolCall.arguments,
+                    rawValue: toolCall.rawValue
+                )))
+            } else if block == .reasoning {
+                parts.append(.reasoningEnd(id: String(index)))
+            } else if block == .text {
+                parts.append(.textEnd(id: String(index)))
             }
-            parts.append(.toolInputEnd(id: toolCall.id))
-            parts.append(.toolCall(AIToolCall(
-                id: toolCall.id,
-                name: toolCall.name,
-                arguments: toolCall.arguments.isEmpty ? "{}" : toolCall.arguments,
-                rawValue: toolCall.rawValue
-            )))
         }
         if let stopReason = raw["messageStop"]?["stopReason"]?.stringValue {
             latestFinishReason = bedrockFinishReason(stopReason, isJsonResponseFromTool: isJsonResponseFromTool)
+        }
+        if raw["messageStop"] != nil {
+            sawTerminalEvent = true
         }
         if let usage = bedrockUsage(from: raw["metadata"]?["usage"]) {
             latestUsage = usage
         }
         let metadata = bedrockProviderMetadata(fromStreamMetadata: raw["metadata"])
         if !metadata.isEmpty {
+            latestProviderMetadata = bedrockMergeStreamProviderMetadata(latestProviderMetadata, metadata)
             parts.append(.metadata(metadata))
         }
-        if raw["messageStop"] != nil || raw["metadata"]?["usage"] != nil {
-            parts.append(.finish(reason: latestFinishReason, usage: latestUsage))
+        if raw["metadata"] != nil {
+            sawTerminalEvent = true
         }
         return parts
     }
+
+    mutating func finishParts() -> [LanguageStreamPart] {
+        var parts: [LanguageStreamPart] = []
+        for index in contentBlocks.keys.sorted() {
+            switch contentBlocks[index] {
+            case .reasoning:
+                parts.append(.reasoningEnd(id: String(index)))
+            case .text:
+                parts.append(.textEnd(id: String(index)))
+            case .tool, nil:
+                break
+            }
+        }
+        contentBlocks.removeAll()
+        guard sawTerminalEvent else { return parts }
+        parts.append(.finishMetadata(
+            reason: latestFinishReason,
+            usage: latestUsage,
+            providerMetadata: latestProviderMetadata
+        ))
+        sawTerminalEvent = false
+        return parts
+    }
+}
+
+private func bedrockMergeStreamProviderMetadata(
+    _ base: [String: JSONValue],
+    _ update: [String: JSONValue]
+) -> [String: JSONValue] {
+    var result = base
+    for (key, value) in update {
+        if let baseObject = result[key]?.objectValue,
+           let updateObject = value.objectValue {
+            result[key] = .object(bedrockMergeStreamProviderMetadata(baseObject, updateObject))
+        } else {
+            result[key] = value
+        }
+    }
+    return result
 }
 
 struct BedrockRawStreamItem {
@@ -259,6 +368,9 @@ func streamFromBedrockResponse(
         }
     }
     try emitItems(parser.finish())
+    for part in state.finishParts() {
+        emit(part)
+    }
 }
 
 final class BedrockJSONObjectTextExtractor {

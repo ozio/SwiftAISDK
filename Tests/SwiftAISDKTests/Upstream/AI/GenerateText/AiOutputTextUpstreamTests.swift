@@ -56,12 +56,12 @@ import Testing
     let streamModel = ObjectFacadeMockLanguageModel(
         result: TextGenerationResult(text: "", rawValue: .object([:])),
         streamParts: [
-            .textDelta("Hello"),
-            .textDelta(""),
-            .reasoningDelta("thinking"),
+            .textDeltaPart(id: "text-1", delta: "Hello"),
+            .textDeltaPart(id: "text-1", delta: ""),
+            .reasoningDeltaPart(id: "reasoning-1", delta: "thinking"),
             .textDeltaPart(id: "text-1", delta: ", world!", providerMetadata: ["provider": .string("metadata")]),
             .textDeltaPart(id: "text-1", delta: "", providerMetadata: [:]),
-            .finish(reason: "stop", usage: TokenUsage(totalTokens: 4))
+            .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 4), providerMetadata: [:])
         ]
     )
     var textDeltas: [String] = []
@@ -90,7 +90,7 @@ import Testing
 
     #expect(textDeltas == ["Hello", ", world!"])
     #expect(partials == ["Hello", "Hello, world!"])
-    #expect(rawReasoning == [.reasoningDelta("thinking")])
+    #expect(rawReasoning == [.reasoningDeltaPart(id: "reasoning-1", delta: "thinking")])
     #expect(output?.text == "Hello, world!")
     #expect(output?.output == "Hello, world!")
     #expect(output?.reasoning == "thinking")
@@ -323,7 +323,8 @@ import Testing
 
     #expect(rawParts == [
         .textStart(id: "text-1"),
-        .error(message: "chunk error", rawValue: ["code": "bad-chunk"])
+        .error(message: "chunk error", rawValue: ["code": "bad-chunk"]),
+        .textEnd(id: "text-1")
     ])
     #expect(output?.text == "Hello")
     #expect(output?.finishReason == "error")

@@ -86,12 +86,15 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     var streamOutputLogprobs: [JSONValue] = []
                     var activeReasoning: [String: OpenAIResponsesActiveReasoning] = [:]
                     var activeOutputItemIDs: [Int: String] = [:]
+                    var activeTextPartIDs: Set<String> = []
+                    var activeReasoningPartIDs: Set<String> = []
                     func resolvedOutputItemID(_ itemID: String, outputIndex: Int?) -> String {
                         guard let outputIndex else { return itemID }
                         return activeOutputItemIDs[outputIndex] ?? itemID
                     }
                     var openResponsesHasToolCalls = false
                     var hasOutputStarted = false
+                    var fallbackFinishReason: String? = "other"
                     let shouldThrowPreOutputStreamErrors = isOpenAIBackedProvider(providerID, config: config)
                     var sourceCounter = 0
                     var pendingCompletedResponse: JSONValue?
@@ -102,6 +105,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             continuation.yield(.raw(raw))
                         }
                         if openAIResponsesIsChatCompletionsStreamChunk(raw) {
+                            fallbackFinishReason = "error"
                             continuation.yield(.error(message: openAIResponsesChatCompletionsMismatchMessage, rawValue: raw))
                             continue
                         }
@@ -109,6 +113,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             if shouldThrowPreOutputStreamErrors && !hasOutputStarted {
                                 throw openAIResponsesStreamAPIError(raw, providerID: providerID)
                             }
+                            fallbackFinishReason = "error"
                             continuation.yield(.error(
                                 message: raw["message"]?.stringValue ?? raw["error"]?["message"]?.stringValue ?? "OpenAI Responses stream error.",
                                 rawValue: raw
@@ -116,18 +121,61 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             continue
                         }
                         let responsePayload = raw["response"] ?? raw
-                        openAICompatibleMergeProviderMetadata(
-                            openAIResponsesProviderMetadata(from: responsePayload, providerID: providerID),
-                            into: &providerMetadata
-                        )
                         if raw["type"]?.stringValue == "response.created" {
+                            for textID in activeTextPartIDs.sorted() {
+                                continuation.yield(.textEnd(id: textID))
+                            }
+                            for reasoningID in activeReasoningPartIDs.sorted() {
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                            }
+                            if let completedResponse = pendingCompletedResponse {
+                                let completedFinishReason = completedResponse["status"]?.stringValue == "failed" &&
+                                    completedResponse["incomplete_details"]?["reason"]?.stringValue == nil
+                                    ? "error"
+                                    : openResponsesStreamFinishReason(
+                                        response: completedResponse,
+                                        hasToolCalls: openResponsesHasToolCalls,
+                                        mode: config.responsesRequestMode
+                                    )
+                                continuation.yield(.finishMetadata(
+                                    reason: completedFinishReason,
+                                    usage: tokenUsage(from: completedResponse),
+                                    providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
+                                        openAIResponsesProviderMetadataByApplyingStreamLogprobs(
+                                            providerMetadata,
+                                            streamOutputLogprobs: streamOutputLogprobs,
+                                            providerID: providerID
+                                        ),
+                                        responseID: streamResponseID,
+                                        providerID: providerID
+                                    )
+                                ))
+                            }
                             pendingCompletedResponse = nil
+                            providerMetadata = [:]
+                            streamOutputLogprobs = []
+                            textItemPhases = [:]
+                            textItemAnnotations = [:]
+                            activeReasoning = [:]
+                            activeOutputItemIDs = [:]
+                            activeTextPartIDs = []
+                            activeReasoningPartIDs = []
+                            toolCallBuffers = OpenAIResponsesStreamingToolCalls(
+                                providerID: providerID,
+                                toolNameAliases: toolNameAliases
+                            )
                             streamResponseID = responsePayload["id"]
                             openResponsesHasToolCalls = false
+                            hasOutputStarted = false
+                            fallbackFinishReason = "other"
                             continuation.yield(.responseMetadata(
                                 openAIResponsesStreamResponseMetadata(from: responsePayload, response: responseHead, modelID: modelID)
                             ))
                         }
+                        openAICompatibleMergeProviderMetadata(
+                            openAIResponsesProviderMetadata(from: responsePayload, providerID: providerID),
+                            into: &providerMetadata
+                        )
                         if openAIResponsesStreamEventStartsOutput(raw) {
                             hasOutputStarted = true
                         }
@@ -142,6 +190,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 textItemPhases[itemID] = phase
                             }
                             textItemAnnotations[itemID] = []
+                            activeTextPartIDs.insert(itemID)
                             continuation.yield(.textStart(
                                 id: itemID,
                                 providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: item["phase"], providerID: providerID)
@@ -158,6 +207,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 encryptedContent: item["encrypted_content"],
                                 summaryParts: [0: .active]
                             )
+                            activeReasoningPartIDs.insert("\(itemID):0")
                             continuation.yield(.reasoningStart(
                                 id: "\(itemID):0",
                                 providerMetadata: openAIResponsesReasoningProviderMetadata(
@@ -168,38 +218,56 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 )
                             ))
                         }
-                        if let delta = raw["delta"]?.stringValue ?? raw["output_text_delta"]?.stringValue, openAIResponsesIsTextDelta(raw) {
-                            continuation.yield(.textDelta(delta))
-                            if let eventItemID = raw["item_id"]?.stringValue {
-                                let itemID = resolvedOutputItemID(
-                                    eventItemID,
-                                    outputIndex: raw["output_index"]?.intValue
-                                )
-                                continuation.yield(.textDeltaPart(
+                        if let delta = raw["delta"]?.stringValue ?? raw["output_text_delta"]?.stringValue,
+                           openAIResponsesIsTextDelta(raw) {
+                            let eventItemID = raw["item_id"]?.stringValue ?? "text-0"
+                            let itemID = resolvedOutputItemID(
+                                eventItemID,
+                                outputIndex: raw["output_index"]?.intValue
+                            )
+                            if activeTextPartIDs.insert(itemID).inserted {
+                                continuation.yield(.textStart(
                                     id: itemID,
-                                    delta: delta,
-                                    providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: textItemPhases[itemID], providerID: providerID)
+                                    providerMetadata: openAIResponsesTextProviderMetadata(
+                                        itemID: itemID,
+                                        phase: textItemPhases[itemID],
+                                        providerID: providerID
+                                    )
                                 ))
                             }
+                            continuation.yield(.textDeltaPart(
+                                id: itemID,
+                                delta: delta,
+                                providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: textItemPhases[itemID], providerID: providerID)
+                            ))
                         }
                         if raw["type"]?.stringValue == "response.output_text.done",
                            let logprobs = raw["logprobs"] {
                             streamOutputLogprobs.append(logprobs)
                         }
-                        if let delta = raw["delta"]?.stringValue, raw["type"]?.stringValue == "response.reasoning_summary_text.delta" {
-                            continuation.yield(.reasoningDelta(delta))
-                            if let eventItemID = raw["item_id"]?.stringValue,
-                               let summaryIndex = raw["summary_index"]?.intValue {
-                                let itemID = resolvedOutputItemID(
-                                    eventItemID,
-                                    outputIndex: raw["output_index"]?.intValue
-                                )
-                                continuation.yield(.reasoningDeltaPart(
-                                    id: "\(itemID):\(summaryIndex)",
-                                    delta: delta,
-                                    providerMetadata: openAIResponsesReasoningProviderMetadata(itemID: itemID, providerID: providerID)
+                        if let delta = raw["delta"]?.stringValue,
+                           raw["type"]?.stringValue == "response.reasoning_summary_text.delta" {
+                            let eventItemID = raw["item_id"]?.stringValue ?? "reasoning-0"
+                            let summaryIndex = raw["summary_index"]?.intValue ?? 0
+                            let itemID = resolvedOutputItemID(
+                                eventItemID,
+                                outputIndex: raw["output_index"]?.intValue
+                            )
+                            let reasoningPartID = "\(itemID):\(summaryIndex)"
+                            if activeReasoningPartIDs.insert(reasoningPartID).inserted {
+                                continuation.yield(.reasoningStart(
+                                    id: reasoningPartID,
+                                    providerMetadata: openAIResponsesReasoningProviderMetadata(
+                                        itemID: itemID,
+                                        providerID: providerID
+                                    )
                                 ))
                             }
+                            continuation.yield(.reasoningDeltaPart(
+                                id: reasoningPartID,
+                                delta: delta,
+                                providerMetadata: openAIResponsesReasoningProviderMetadata(itemID: itemID, providerID: providerID)
+                            ))
                         }
                         if raw["type"]?.stringValue == "response.output_text.annotation.added",
                            let annotation = raw["annotation"],
@@ -229,9 +297,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                         id: "\(itemID):\(canConcludeIndex)",
                                         providerMetadata: openAIResponsesReasoningProviderMetadata(itemID: itemID, providerID: providerID)
                                     ))
+                                    activeReasoningPartIDs.remove("\(itemID):\(canConcludeIndex)")
                                     reasoning.summaryParts[canConcludeIndex] = .concluded
                                 }
                                 activeReasoning[itemID] = reasoning
+                                activeReasoningPartIDs.insert("\(itemID):\(summaryIndex)")
                                 continuation.yield(.reasoningStart(
                                     id: "\(itemID):\(summaryIndex)",
                                     providerMetadata: openAIResponsesReasoningProviderMetadata(
@@ -264,6 +334,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 id: itemID,
                                 providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: phase, annotations: annotations, providerID: providerID)
                             ))
+                            activeTextPartIDs.remove(itemID)
                             textItemAnnotations[itemID] = nil
                             if let outputIndex {
                                 activeOutputItemIDs[outputIndex] = nil
@@ -298,6 +369,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                             providerID: providerID
                                         )
                                     ))
+                                    activeReasoningPartIDs.remove("\(itemID):\(summaryIndex)")
                                 }
                                 activeReasoning[itemID] = nil
                             }
@@ -322,85 +394,58 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             pendingCompletedResponse = raw["response"] ?? raw
                         } else if raw["type"]?.stringValue == "response.incomplete" {
                             let response = raw["response"] ?? raw
-                            let finishReason = openResponsesStreamFinishReason(
-                                response: response,
-                                hasToolCalls: openResponsesHasToolCalls,
-                                mode: config.responsesRequestMode
-                            )
-                            let finishUsage = tokenUsage(from: response)
-                            if providerMetadata.isEmpty {
-                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
-                            } else {
-                                continuation.yield(.finishMetadata(
-                                    reason: finishReason,
-                                    usage: finishUsage,
-                                    providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
-                                        openAIResponsesProviderMetadataByApplyingStreamLogprobs(
-                                            providerMetadata,
-                                            streamOutputLogprobs: streamOutputLogprobs,
-                                            providerID: providerID
-                                        ),
-                                        responseID: streamResponseID,
-                                        providerID: providerID
-                                    )
-                                ))
-                            }
+                            pendingCompletedResponse = response
                         } else if raw["type"]?.stringValue == "response.failed" {
                             let response = raw["response"] ?? raw
                             if shouldThrowPreOutputStreamErrors && !hasOutputStarted {
                                 throw openAIResponsesStreamFailedError(response, providerID: providerID)
                             }
-                            let finishReason = response["incomplete_details"]?["reason"]?.stringValue == nil
-                                ? "error"
-                                : openResponsesStreamFinishReason(
-                                    response: response,
-                                    hasToolCalls: openResponsesHasToolCalls,
-                                    mode: config.responsesRequestMode
-                                )
-                            let finishUsage = tokenUsage(from: response)
-                            if providerMetadata.isEmpty {
-                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
-                            } else {
-                                continuation.yield(.finishMetadata(
-                                    reason: finishReason,
-                                    usage: finishUsage,
-                                    providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
-                                        openAIResponsesProviderMetadataByApplyingStreamLogprobs(
-                                            providerMetadata,
-                                            streamOutputLogprobs: streamOutputLogprobs,
-                                            providerID: providerID
-                                        ),
-                                        responseID: streamResponseID,
-                                        providerID: providerID
-                                    )
-                                ))
-                            }
+                            pendingCompletedResponse = response
                         }
                     }
+                    for textID in activeTextPartIDs.sorted() {
+                        continuation.yield(.textEnd(id: textID))
+                    }
+                    for reasoningID in activeReasoningPartIDs.sorted() {
+                        continuation.yield(.reasoningEnd(id: reasoningID))
+                    }
                     if let response = pendingCompletedResponse {
-                        let finishReason = openResponsesStreamFinishReason(
-                            response: response,
-                            hasToolCalls: openResponsesHasToolCalls,
-                            mode: config.responsesRequestMode
-                        )
+                        let finishReason = response["status"]?.stringValue == "failed" &&
+                            response["incomplete_details"]?["reason"]?.stringValue == nil
+                            ? "error"
+                            : openResponsesStreamFinishReason(
+                                response: response,
+                                hasToolCalls: openResponsesHasToolCalls,
+                                mode: config.responsesRequestMode
+                            )
                         let finishUsage = tokenUsage(from: response)
-                        if providerMetadata.isEmpty {
-                            continuation.yield(.finish(reason: finishReason, usage: finishUsage))
-                        } else {
-                            continuation.yield(.finishMetadata(
-                                reason: finishReason,
-                                usage: finishUsage,
-                                providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
-                                    openAIResponsesProviderMetadataByApplyingStreamLogprobs(
-                                        providerMetadata,
-                                        streamOutputLogprobs: streamOutputLogprobs,
-                                        providerID: providerID
-                                    ),
-                                    responseID: streamResponseID,
+                        continuation.yield(.finishMetadata(
+                            reason: finishReason,
+                            usage: finishUsage,
+                            providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
+                                openAIResponsesProviderMetadataByApplyingStreamLogprobs(
+                                    providerMetadata,
+                                    streamOutputLogprobs: streamOutputLogprobs,
                                     providerID: providerID
-                                )
-                            ))
-                        }
+                                ),
+                                responseID: streamResponseID,
+                                providerID: providerID
+                            )
+                        ))
+                    } else {
+                        continuation.yield(.finishMetadata(
+                            reason: fallbackFinishReason,
+                            usage: nil,
+                            providerMetadata: openAIResponsesProviderMetadataByPreservingResponseID(
+                                openAIResponsesProviderMetadataByApplyingStreamLogprobs(
+                                    providerMetadata,
+                                    streamOutputLogprobs: streamOutputLogprobs,
+                                    providerID: providerID
+                                ),
+                                responseID: streamResponseID,
+                                providerID: providerID
+                            )
+                        ))
                     }
                     continuation.finish()
                 } catch {

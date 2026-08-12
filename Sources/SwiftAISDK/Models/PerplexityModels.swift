@@ -65,6 +65,7 @@ public final class PerplexityLanguageModel: LanguageModel, @unchecked Sendable {
                         do {
                             raw = try decodeJSONBody(Data(event.data.utf8))
                         } catch {
+                            finishReason = "error"
                             continuation.yield(.error(message: String(describing: error)))
                             continue
                         }

@@ -335,9 +335,9 @@ import Testing
     var outputTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             deltas.append(delta)
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
             outputTokens = usage?.outputTokens
@@ -381,13 +381,13 @@ import Testing
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             text.append(delta)
         case let .source(source):
             sources.append(source)
         case let .metadata(value):
             metadata.append(value)
-        case let .finish(_, usage):
+        case let .finishMetadata(_, usage, _):
             totalTokens = usage?.totalTokens
         default:
             break
@@ -460,7 +460,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             finalCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:

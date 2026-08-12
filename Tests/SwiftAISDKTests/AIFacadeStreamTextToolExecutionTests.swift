@@ -42,11 +42,13 @@ import Testing
     #expect(streamed == [
         .streamStart(warnings: []),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolResult(AIToolResult(toolCallID: "call-1", toolName: "lookup", result: ["forecast": "sunny"])),
-        .textDelta("It "),
-        .textDelta("is sunny."),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 8))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "It "),
+        .textDeltaPart(id: "legacy-text-0", delta: "is sunny."),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 8))
     ])
     #expect(await capture.value()?["query"]?.stringValue == "weather")
     #expect(model.streamRequests.count == 2)
@@ -108,10 +110,12 @@ import Testing
     #expect(streamed == [
         .responseMetadata(responseMetadata),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 13)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 13)),
         .toolResult(toolResult),
-        .textDelta("done"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "done"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 3))
     ])
     #expect(model.streamRequests.count == 2)
     #expect(model.streamRequests[1].messages == [
@@ -185,7 +189,7 @@ import Testing
     #expect(streamed == [
         .streamStart(warnings: []),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolApprovalRequest(approvalRequest),
         .toolApprovalResponse(approvalResponse),
         .toolResult(deniedResult),
@@ -193,7 +197,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Hello, world!"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 2)
     #expect(model.streamRequests[1].messages == [
@@ -263,7 +267,7 @@ import Testing
     #expect(streamed == [
         .streamStart(warnings: []),
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolApprovalRequest(approvalRequest),
         .toolApprovalResponse(approvalResponse),
         .toolResult(toolResult),
@@ -271,7 +275,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Hello, world!"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 2)
     #expect(model.streamRequests[1].messages == [
@@ -351,7 +355,7 @@ import Testing
         .streamStart(warnings: []),
         .toolCall(approvalCall),
         .toolCall(executableCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolApprovalRequest(approvalRequest),
         .toolResult(executableResult)
     ])
@@ -419,7 +423,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Hello, world!"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 1)
     #expect(model.streamRequests[0].messages == [
@@ -500,7 +504,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Hello, world!"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 1)
     #expect(model.streamRequests[0].messages == [
@@ -576,7 +580,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Hello, world!"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 1)
     #expect(model.streamRequests[0].messages == [
@@ -650,7 +654,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "Here is your shortened URL: https://short.url/abc"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 1)
     #expect(model.streamRequests[0].messages == [
@@ -724,7 +728,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "I understand. The tool execution was not approved."),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 5))
     ])
     #expect(model.streamRequests.count == 1)
     #expect(model.streamRequests[0].messages == [
@@ -792,7 +796,7 @@ import Testing
         .toolInputDelta(id: "call-1", delta: #"{"cities":"San Francisco"}"#),
         .toolInputEnd(id: "call-1"),
         .toolCall(toolCall),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 13))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 13))
     ]))
     #expect(toolResultPart.toolCallID == "call-1")
     #expect(toolResultPart.toolName == "cityAttractions")
@@ -857,6 +861,6 @@ import Testing
     #expect(streamed == [
         .toolCall(toolCall),
         .toolResult(providerError),
-        .finish(reason: "stop", usage: TokenUsage(totalTokens: 4))
+        .finishMetadata(reason: "stop", usage: TokenUsage(totalTokens: 4))
     ])
 }

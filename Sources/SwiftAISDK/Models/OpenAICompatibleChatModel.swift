@@ -115,7 +115,6 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                                 activeReasoningID = id
                                 continuation.yield(.reasoningStart(id: id))
                             }
-                            continuation.yield(.reasoningDelta(reasoning))
                             continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning))
                         }
                         if let delta = delta?["content"]?.stringValue {
@@ -128,7 +127,6 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                                 activeTextID = id
                                 continuation.yield(.textStart(id: id))
                             }
-                            continuation.yield(.textDelta(delta))
                             continuation.yield(.textDeltaPart(id: id, delta: delta))
                         }
                         if let toolCallDeltas = delta?["tool_calls"]?.arrayValue {
@@ -163,11 +161,11 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     for part in toolCalls.finishedParts() {
                         continuation.yield(part)
                     }
-                    if providerMetadata.isEmpty {
-                        continuation.yield(.finish(reason: finishReason, usage: finishUsage))
-                    } else {
-                        continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
-                    }
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: finishUsage,
+                        providerMetadata: providerMetadata
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

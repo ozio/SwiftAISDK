@@ -582,7 +582,7 @@ public func smoothStream(
 
             do {
                 func flushBuffer() {
-                    guard !buffer.isEmpty, let activeKind else { return }
+                    guard !buffer.isEmpty, let activeKind, let activeID else { return }
                     continuation.yield(activeKind.part(
                         text: buffer,
                         id: activeID,
@@ -592,7 +592,7 @@ public func smoothStream(
                     activeProviderMetadata = [:]
                 }
 
-                for try await part in stream {
+                for try await part in canonicalLanguageStream(stream, providerID: "smooth-stream") {
                     try Task.checkCancellation()
                     guard let smoothable = SmoothableStreamPart(part) else {
                         flushBuffer()
@@ -609,6 +609,18 @@ public func smoothStream(
                     buffer += smoothable.text
                     if !smoothable.providerMetadata.isEmpty {
                         activeProviderMetadata.merge(smoothable.providerMetadata) { _, new in new }
+                    }
+
+                    if smoothable.text.isEmpty,
+                       buffer.isEmpty,
+                       !activeProviderMetadata.isEmpty {
+                        continuation.yield(smoothable.kind.part(
+                            text: "",
+                            id: smoothable.id,
+                            providerMetadata: activeProviderMetadata
+                        ))
+                        activeProviderMetadata = [:]
+                        continue
                     }
 
                     while let match = try detectChunk(buffer) {
@@ -629,6 +641,7 @@ public func smoothStream(
                             id: smoothable.id,
                             providerMetadata: activeProviderMetadata
                         ))
+                        activeProviderMetadata = [:]
                         buffer.removeFirst(match.count)
                         if let delayNanoseconds {
                             try await Task.sleep(nanoseconds: delayNanoseconds)
@@ -651,11 +664,9 @@ public func toTextStream(
     AsyncThrowingStream { continuation in
         let task = Task {
             do {
-                for try await part in stream {
+                for try await part in canonicalLanguageStream(stream, providerID: "text-stream") {
                     try Task.checkCancellation()
                     switch part {
-                    case let .textDelta(delta):
-                        continuation.yield(delta)
                     case let .textDeltaPart(_, delta, _):
                         continuation.yield(delta)
                     default:
@@ -678,34 +689,28 @@ private enum SmoothStreamPartKind: Equatable {
 
     init?(_ part: LanguageStreamPart) {
         switch part {
-        case .textDelta, .textDeltaPart:
+        case .textDeltaPart:
             self = .text
-        case .reasoningDelta, .reasoningDeltaPart:
+        case .reasoningDeltaPart:
             self = .reasoning
         default:
             return nil
         }
     }
 
-    func part(text: String, id: String?, providerMetadata: [String: JSONValue]) -> LanguageStreamPart {
+    func part(text: String, id: String, providerMetadata: [String: JSONValue]) -> LanguageStreamPart {
         switch self {
         case .text:
-            if let id {
-                return .textDeltaPart(id: id, delta: text, providerMetadata: providerMetadata)
-            }
-            return .textDelta(text)
+            return .textDeltaPart(id: id, delta: text, providerMetadata: providerMetadata)
         case .reasoning:
-            if let id {
-                return .reasoningDeltaPart(id: id, delta: text, providerMetadata: providerMetadata)
-            }
-            return .reasoningDelta(text)
+            return .reasoningDeltaPart(id: id, delta: text, providerMetadata: providerMetadata)
         }
     }
 }
 
 private struct SmoothableStreamPart {
     var kind: SmoothStreamPartKind
-    var id: String?
+    var id: String
     var text: String
     var providerMetadata: [String: JSONValue]
 }
@@ -713,12 +718,8 @@ private struct SmoothableStreamPart {
 private extension SmoothableStreamPart {
     init?(_ part: LanguageStreamPart) {
         switch part {
-        case let .textDelta(delta):
-            self.init(kind: .text, id: nil, text: delta, providerMetadata: [:])
         case let .textDeltaPart(id, delta, providerMetadata):
             self.init(kind: .text, id: id, text: delta, providerMetadata: providerMetadata)
-        case let .reasoningDelta(delta):
-            self.init(kind: .reasoning, id: nil, text: delta, providerMetadata: [:])
         case let .reasoningDeltaPart(id, delta, providerMetadata):
             self.init(kind: .reasoning, id: id, text: delta, providerMetadata: providerMetadata)
         default:

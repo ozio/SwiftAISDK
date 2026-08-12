@@ -117,7 +117,11 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                     if activeText {
                         continuation.yield(.textEnd(id: "0"))
                     }
-                    continuation.yield(.finish(reason: finishReason, usage: usage))
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: usage,
+                        providerMetadata: [:]
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

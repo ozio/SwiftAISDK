@@ -165,7 +165,7 @@ import Testing
     #expect(model.streamRequests.count == 1)
     #expect(streamed == [
         .toolCall(toolCall),
-        .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
+        .finishMetadata(reason: "tool-calls", usage: TokenUsage(totalTokens: 3)),
         .toolApprovalRequest(approvalRequest)
     ])
 }

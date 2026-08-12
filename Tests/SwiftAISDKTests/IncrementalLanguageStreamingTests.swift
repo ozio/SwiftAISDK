@@ -14,13 +14,17 @@ import Testing
     let model = try provider.chatModel("gpt-4.1-mini")
 
     var text = ""
+    var legacyTextDeltaCount = 0
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .textDelta(delta) = part {
+        if case let .textDeltaPart(_, delta, _) = part {
             text += delta
+        } else if case .textDelta = part {
+            legacyTextDeltaCount += 1
         }
     }
 
     #expect(text == "hello")
+    #expect(legacyTextDeltaCount == 0)
     #expect(await transport.sendRequests().isEmpty)
     #expect(await transport.streamRequests().count == 1)
 }
@@ -63,7 +67,7 @@ func urlSessionLanguageStreamDeliversDeltaAndFinishesOnDoneBeforeHTTPEOF() async
 
     let streamTask = Task {
         for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-            if case let .textDelta(delta) = part {
+            if case let .textDeltaPart(_, delta, _) = part {
                 firstDelta.signal(delta)
             }
         }
@@ -100,7 +104,7 @@ func cancellingLanguageStreamConsumerClosesURLSessionBodyBeforeHTTPEOF() async t
     let firstDelta = OneShot<String>()
     let streamTask = Task {
         for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-            if case let .textDelta(delta) = part {
+            if case let .textDeltaPart(_, delta, _) = part {
                 firstDelta.signal(delta)
             }
         }
@@ -142,7 +146,7 @@ func abortingLanguageStreamAfterHeadersPreservesReasonAndClosesPeer() async thro
             messages: [.user("Hi")],
             abortSignal: controller.signal
         )) {
-            if case let .textDelta(delta) = part {
+            if case let .textDeltaPart(_, delta, _) = part {
                 firstDelta.signal(delta)
             }
         }

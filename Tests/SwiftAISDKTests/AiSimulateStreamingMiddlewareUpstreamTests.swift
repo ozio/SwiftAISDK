@@ -22,7 +22,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "This is a test response"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: testSimulateStreamingUsage)
+        .finishMetadata(reason: "stop", usage: testSimulateStreamingUsage, providerMetadata: [:])
     ])
     #expect(model.generateRequests.count == 1)
     #expect(model.streamRequests.isEmpty)
@@ -59,7 +59,7 @@ import Testing
         .toolApprovalRequest(approvalRequest),
         .toolApprovalResponse(approvalResponse),
         .toolResult(toolResult),
-        .finish(reason: "tool-calls", usage: testSimulateStreamingUsage)
+        .finishMetadata(reason: "tool-calls", usage: testSimulateStreamingUsage, providerMetadata: [:])
     ])
 }
 
@@ -94,7 +94,7 @@ import Testing
 
     #expect(try await collectSimulatedStream(wrapped.stream(LanguageModelRequest(messages: [.user("Test prompt")]))) == [
         .streamStart(warnings: []),
-        .finish(reason: "stop", usage: testSimulateStreamingUsage)
+        .finishMetadata(reason: "stop", usage: testSimulateStreamingUsage, providerMetadata: [:])
     ])
 }
 

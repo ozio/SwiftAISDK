@@ -14,6 +14,21 @@ Streaming emits structured lifecycle parts, not just raw strings. That lets you 
 
 Built-in HTTP language providers parse the response incrementally, so the first complete provider event can become a `LanguageStreamPart` while the HTTP response is still open. A provider end marker such as `[DONE]`, caller abort, or stopping iteration cancels the remaining response-body read instead of waiting for EOF.
 
+## Canonical Stream Contract
+
+Built-in language models emit one semantic family for generated content:
+
+- `textStart`, zero or more `textDeltaPart` values, then `textEnd`;
+- `reasoningStart`, zero or more `reasoningDeltaPart` values, then `reasoningEnd`.
+
+The legacy `textDelta`, `reasoningDelta`, and `finish` enum cases remain available for source compatibility with custom models. Built-in providers never pair a legacy delta with a part-aware delta for the same provider token. The high-level facade normalizes legacy deltas into the canonical lifecycle and legacy `finish` into `finishMetadata`; a custom stream that mixes both delta families in one semantic channel is rejected because equal adjacent strings can be legitimate provider output and cannot be safely deduplicated by value.
+
+Each logical built-in model response emits exactly one terminal `finishMetadata` part after its open content and tool-input blocks have been closed and its final usage and provider metadata are known. A protocol that can carry multiple logical responses on one connection, such as OpenAI Responses, emits one terminal part for each response. A multi-step tool loop likewise has one terminal part per model step. Custom models should emit the same terminal; clean custom EOF without one is preserved rather than assigned a guessed finish reason.
+
+The full stream forwards repeatable provider `error` parts as in-band events. Setup, HTTP, framing, and network failures terminate by throwing. If an in-band error closes a provider stream without a terminal event, the facade completes that step with a single `finishMetadata` whose reason is `error`. Once any part has been exposed, the facade does not retry the model call.
+
+Use `toTextStream()` when only text is needed. It emits canonical text deltas, ignores lifecycle, reasoning, tool, metadata, and in-band error parts, and still propagates thrown failures.
+
 ## Custom Transports
 
 Provider settings continue to accept `any AITransport`, which keeps unary `generate` calls source-compatible with send-only transports. A custom transport used by `stream` must also conform to `AIStreamingTransport` and return response headers plus an incremental `AsyncThrowingStream<Data, Error>` body. SwiftAISDK reports a non-retryable `AIError.invalidArgument` when streaming is requested with a send-only transport; it never falls back to buffering through `send`.

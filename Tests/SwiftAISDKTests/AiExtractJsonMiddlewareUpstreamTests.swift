@@ -39,7 +39,7 @@ import Testing
             .textDeltaPart(id: "1", delta: #"{"value": "test"}"#),
             .textDeltaPart(id: "1", delta: "\n```"),
             .textEnd(id: "1"),
-            .finish(reason: "stop", usage: testExtractJsonUsage)
+            .finishMetadata(reason: "stop", usage: testExtractJsonUsage, providerMetadata: [:])
         ]),
         transform: defaultExtractJSONTransform
     )
@@ -50,7 +50,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: #"{"value": "test"}"#),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: testExtractJsonUsage)
+        .finishMetadata(reason: "stop", usage: testExtractJsonUsage, providerMetadata: [:])
     ])
 }
 
@@ -122,7 +122,7 @@ import Testing
             .textDeltaPart(id: "2", delta: #"{"second": true}"#),
             .textDeltaPart(id: "2", delta: "\n```"),
             .textEnd(id: "2"),
-            .finish(reason: "stop", usage: testExtractJsonUsage)
+            .finishMetadata(reason: "stop", usage: testExtractJsonUsage, providerMetadata: [:])
         ]),
         transform: defaultExtractJSONTransform
     )
@@ -138,7 +138,7 @@ import Testing
     let unknownIDParts = try await collectExtractJsonParts(transformTextStream(
         streamFromParts([
             .textDeltaPart(id: "__proto__", delta: "some text"),
-            .finish(reason: "stop", usage: testExtractJsonUsage)
+            .finishMetadata(reason: "stop", usage: testExtractJsonUsage, providerMetadata: [:])
         ]),
         transform: defaultExtractJSONTransform
     ))
@@ -147,7 +147,7 @@ import Testing
             .textStart(id: "1"),
             .textDeltaPart(id: "1", delta: "``"),
             .textEnd(id: "1"),
-            .finish(reason: "stop", usage: testExtractJsonUsage)
+            .finishMetadata(reason: "stop", usage: testExtractJsonUsage, providerMetadata: [:])
         ]),
         transform: defaultExtractJSONTransform
     ))
@@ -157,7 +157,7 @@ import Testing
         .textStart(id: "1"),
         .textDeltaPart(id: "1", delta: "``"),
         .textEnd(id: "1"),
-        .finish(reason: "stop", usage: testExtractJsonUsage)
+        .finishMetadata(reason: "stop", usage: testExtractJsonUsage, providerMetadata: [:])
     ])
 }
 

@@ -42,7 +42,10 @@ import Testing
     }
 
     #expect(reasoningIDs == ["reasoning-added:0", "reasoning-added:0", "reasoning-added:0"])
-    #expect(textIDs == ["message-added", "message-added", "message-added", "null-index-item"])
+    #expect(textIDs == [
+        "message-added", "message-added", "message-added",
+        "null-index-item", "null-index-item", "null-index-item"
+    ])
 }
 
 @Test func openAIResponsesStreamsReasoningDeltaPartsFromEncryptedFixtureLikeUpstream() async throws {
@@ -809,7 +812,7 @@ import Testing
         }
     }
 
-    #expect(legacyReasoning == ["first thought", "second thought"])
+    #expect(legacyReasoning.isEmpty)
     #expect(reasoningStarts.map { $0.0 } == ["rs_reasoning:0", "rs_reasoning:1"])
     #expect(reasoningDeltas.map { $0.0 } == ["rs_reasoning:0", "rs_reasoning:1"])
     #expect(reasoningDeltas.map { $0.1 } == ["first thought", "second thought"])

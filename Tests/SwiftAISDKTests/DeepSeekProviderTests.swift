@@ -202,7 +202,7 @@ import Testing
         switch part {
         case let .error(message, _):
             errors.append(message)
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             finishUsage = usage
         default:
@@ -597,7 +597,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             finalCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:

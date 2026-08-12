@@ -734,7 +734,7 @@ import Testing
         responseFormat: .json(schema: ["type": "object", "properties": ["name": ["type": "string"]]]),
         tools: ["lookupName": ["type": "object", "properties": [:]]]
     )) {
-        if case let .textDelta(delta) = part {
+        if case let .textDeltaPart(_, delta, _) = part {
             text += delta
         }
     }

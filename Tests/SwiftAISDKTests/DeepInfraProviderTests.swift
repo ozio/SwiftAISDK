@@ -55,9 +55,9 @@ import Testing
     var usage: TokenUsage?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Test prompt")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             text += delta
-        case let .finish(_, finalUsage):
+        case let .finishMetadata(_, finalUsage, _):
             usage = finalUsage
         default:
             break

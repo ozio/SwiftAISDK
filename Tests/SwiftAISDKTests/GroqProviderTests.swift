@@ -52,7 +52,7 @@ import Testing
             textLifecycle.append("delta:\(id):\(delta)")
         case let .textEnd(id, _):
             textLifecycle.append("end:\(id)")
-        case let .finish(_, finishUsage):
+        case let .finishMetadata(_, finishUsage, _):
             usage = finishUsage
         default:
             break

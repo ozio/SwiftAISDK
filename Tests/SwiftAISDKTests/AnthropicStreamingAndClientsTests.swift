@@ -222,9 +222,9 @@ import Testing
     var finishReason: String?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             deltas.append(delta)
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -237,6 +237,71 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func anthropicMessageStopTerminatesAndCancelsOpenBody() async throws {
+    let transport = AnthropicGatedStreamingTransport()
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var parts: [LanguageStreamPart] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        parts.append(part)
+    }
+
+    #expect(transport.releaseBody.isPending)
+    #expect(parts.contains(.textStart(id: "0")))
+    #expect(parts.contains(.textDeltaPart(id: "0", delta: "done")))
+    #expect(parts.contains(.textEnd(id: "0")))
+    #expect(parts.filter {
+        if case .finishMetadata = $0 { return true }
+        return false
+    }.count == 1)
+    #expect(parts.contains {
+        if case let .finishMetadata(reason, usage, _) = $0 {
+            return reason == "stop" && usage?.inputTokens == 1 && usage?.outputTokens == 1
+        }
+        return false
+    })
+    _ = try await transport.bodyTerminated.value()
+    _ = try await transport.producerCancelled.value()
+}
+
+@Test(.timeLimit(.minutes(1)))
+func anthropicInvalidMessageSequenceTerminatesAndCancelsOpenBody() async throws {
+    let transport = AnthropicInvalidSequenceGatedStreamingTransport()
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "claude-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("claude-sonnet-4-6")
+
+    var errors: [String] = []
+    var terminalReasons: [String?] = []
+    for try await part in AI.streamText(
+        model: model,
+        request: LanguageModelRequest(messages: [.user("Hi")]),
+        retryPolicy: .none
+    ) {
+        switch part {
+        case let .error(message, _):
+            errors.append(message)
+        case let .finishMetadata(reason, _, _):
+            terminalReasons.append(reason)
+        default:
+            break
+        }
+    }
+
+    #expect(transport.releaseBody.isPending)
+    #expect(errors == ["Received message_start for message \"msg_second\" while message \"msg_first\" is still open."])
+    #expect(terminalReasons == ["error"])
+    _ = try await transport.bodyTerminated.value()
+    _ = try await transport.producerCancelled.value()
 }
 
 @Test func anthropicLanguageStreamsUseEagerFunctionToolInputByDefaultLikeUpstream() async throws {
@@ -262,6 +327,107 @@ import Testing
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["tools"]?[0]?["eager_input_streaming"]?.boolValue == true)
+}
+
+private final class AnthropicGatedStreamingTransport: AIStreamingTransport, @unchecked Sendable {
+    let releaseBody = AIDelayedPromise<Void>()
+    let bodyTerminated = AIDelayedPromise<Void>()
+    let producerCancelled = AIDelayedPromise<Void>()
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        throw AIError.invalidResponse(provider: "anthropic-test", message: "send() must not be called.")
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let firstChunk = Data(("""
+        data: {"type":"message_start","message":{"id":"msg","usage":{"input_tokens":1,"output_tokens":0}}}
+
+        data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}
+
+        data: {"type":"content_block_stop","index":0}
+
+        data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+        data: {"type":"message_stop"}
+
+        """ + "\n\n").utf8)
+        let releaseBody = self.releaseBody
+        let bodyTerminated = self.bodyTerminated
+        let producerCancelled = self.producerCancelled
+        return AIHTTPStreamResponse(
+            statusCode: 200,
+            headers: ["content-type": "text/event-stream"],
+            body: AsyncThrowingStream { continuation in
+                let task = Task {
+                    await withTaskCancellationHandler {
+                        continuation.yield(firstChunk)
+                        do {
+                            try await releaseBody.value()
+                            try Task.checkCancellation()
+                            continuation.yield(Data("data: {\"type\":\"error\",\"message\":\"must not be observed\"}\\n\\n".utf8))
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    } onCancel: {
+                        producerCancelled.resolve(())
+                    }
+                }
+                continuation.onTermination = { _ in
+                    bodyTerminated.resolve(())
+                    task.cancel()
+                }
+            }
+        )
+    }
+}
+
+private final class AnthropicInvalidSequenceGatedStreamingTransport: AIStreamingTransport, @unchecked Sendable {
+    let releaseBody = AIDelayedPromise<Void>()
+    let bodyTerminated = AIDelayedPromise<Void>()
+    let producerCancelled = AIDelayedPromise<Void>()
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        throw AIError.invalidResponse(provider: "anthropic-test", message: "send() must not be called.")
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        let firstChunk = Data(("""
+        data: {"type":"message_start","message":{"id":"msg_first","usage":{"input_tokens":1,"output_tokens":0}}}
+
+        data: {"type":"message_start","message":{"id":"msg_second","usage":{"input_tokens":1,"output_tokens":0}}}
+
+        """ + "\n\n").utf8)
+        let releaseBody = self.releaseBody
+        let bodyTerminated = self.bodyTerminated
+        let producerCancelled = self.producerCancelled
+        return AIHTTPStreamResponse(
+            statusCode: 200,
+            headers: ["content-type": "text/event-stream"],
+            body: AsyncThrowingStream { continuation in
+                let task = Task {
+                    await withTaskCancellationHandler {
+                        continuation.yield(firstChunk)
+                        do {
+                            try await releaseBody.value()
+                            try Task.checkCancellation()
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    } onCancel: {
+                        producerCancelled.resolve(())
+                    }
+                }
+                continuation.onTermination = { _ in
+                    bodyTerminated.resolve(())
+                    task.cancel()
+                }
+            }
+        )
+    }
 }
 
 @Test func anthropicLanguageRespectsToolStreamingFalseLikeUpstream() async throws {
@@ -344,11 +510,11 @@ import Testing
     var outputTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .reasoningDelta(delta):
+        case let .reasoningDeltaPart(_, delta, _):
             reasoning.append(delta)
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             text.append(delta)
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             outputTokens = usage?.outputTokens
         default:
@@ -384,7 +550,7 @@ import Testing
     var finishMetadata: [String: JSONValue] = [:]
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             text.append(delta)
         case let .finishMetadata(_, _, providerMetadata):
             finishMetadata = providerMetadata
@@ -494,7 +660,7 @@ import Testing
             lifecycle.append("text-delta:\(id):\(delta)")
         case let .textEnd(id, _):
             lifecycle.append("text-end:\(id)")
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -510,8 +676,8 @@ import Testing
         "text-delta:1:answer",
         "text-end:1"
     ])
-    #expect(legacyReasoning == ["think"])
-    #expect(legacyText == ["answer"])
+    #expect(legacyReasoning.isEmpty)
+    #expect(legacyText.isEmpty)
     #expect(signature == "sig_123")
     #expect(finishReason == "stop")
 }
@@ -629,7 +795,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             toolCall = call
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -844,11 +1010,11 @@ import Testing
         ])
     ])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             deltas.append(delta)
         case let .source(source):
             sources.append(source)
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break

@@ -40,7 +40,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             toolCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:

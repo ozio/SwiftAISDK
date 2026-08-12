@@ -221,7 +221,7 @@ import Testing
 
     var deltas: [String] = []
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .textDelta(delta) = part {
+        if case let .textDeltaPart(_, delta, _) = part {
             deltas.append(delta)
         }
     }
@@ -395,9 +395,9 @@ import Testing
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             deltas.append(delta)
-        case let .finish(_, usage):
+        case let .finishMetadata(_, usage, _):
             totalTokens = usage?.totalTokens ?? totalTokens
         default:
             break
@@ -441,27 +441,32 @@ import Testing
 
     var reasoning: [String] = []
     var text: [String] = []
+    var reasoningMetadata: [[String: JSONValue]] = []
     var metadata: [[String: JSONValue]] = []
     var totalTokens: Int?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Think.")])) {
         switch part {
-        case let .reasoningDelta(delta):
+        case let .reasoningDeltaPart(_, delta, providerMetadata):
             reasoning.append(delta)
-        case let .textDelta(delta):
+            if !providerMetadata.isEmpty {
+                reasoningMetadata.append(providerMetadata)
+            }
+        case let .textDeltaPart(_, delta, _):
             text.append(delta)
         case let .metadata(value):
             metadata.append(value)
-        case let .finish(_, usage):
+        case let .finishMetadata(_, usage, _):
             totalTokens = usage?.totalTokens ?? totalTokens
         default:
             break
         }
     }
 
-    #expect(reasoning == ["think"])
+    #expect(reasoning.joined() == "think")
+    #expect(reasoning == ["think", "", ""])
     #expect(text == ["answer"])
-    #expect(metadata.contains { $0["amazonBedrock"]?["signature"]?.stringValue == "sig-1" })
-    #expect(metadata.contains { $0["amazonBedrock"]?["redactedData"]?.stringValue == "redacted-1" })
+    #expect(reasoningMetadata.contains { $0["amazonBedrock"]?["signature"]?.stringValue == "sig-1" })
+    #expect(reasoningMetadata.contains { $0["amazonBedrock"]?["redactedData"]?.stringValue == "redacted-1" })
     let eventMetadata = try #require(metadata.first { $0["amazonBedrock"]?["trace"] != nil })
     #expect(eventMetadata["amazonBedrock"]?["trace"]?["guardrail"]?["action"]?.stringValue == "NONE")
     #expect(eventMetadata["amazonBedrock"]?["performanceConfig"]?["latency"]?.stringValue == "optimized")
@@ -515,7 +520,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             finalCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason ?? finishReason
             totalTokens = usage?.totalTokens ?? totalTokens
         default:

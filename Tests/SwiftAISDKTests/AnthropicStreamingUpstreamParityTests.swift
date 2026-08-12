@@ -20,13 +20,10 @@ import Testing
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
     let model = try provider.languageModel("claude-3-haiku-20240307")
 
-    var finishUsage: TokenUsage?
     var finishMetadataUsage: TokenUsage?
     var providerMetadata: [String: JSONValue] = [:]
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")])) {
         switch part {
-        case let .finish(_, usage):
-            finishUsage = usage
         case let .finishMetadata(_, usage, metadata):
             finishMetadataUsage = usage
             providerMetadata = metadata
@@ -35,11 +32,6 @@ import Testing
         }
     }
 
-    #expect(finishUsage?.inputTokens == 61)
-    #expect(finishUsage?.inputTokensNoCache == 61)
-    #expect(finishUsage?.outputTokens == 2)
-    #expect(finishUsage?.outputTextTokens == 1)
-    #expect(finishUsage?.outputReasoningTokens == 1)
     #expect(finishMetadataUsage?.inputTokens == 61)
     #expect(finishMetadataUsage?.outputTokens == 2)
     #expect(finishMetadataUsage?.outputTextTokens == 1)
@@ -66,13 +58,10 @@ import Testing
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
     let model = try provider.languageModel("claude-3-haiku-20240307")
 
-    var finishUsage: TokenUsage?
     var finishMetadataUsage: TokenUsage?
     var providerMetadata: [String: JSONValue] = [:]
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")])) {
         switch part {
-        case let .finish(_, usage):
-            finishUsage = usage
         case let .finishMetadata(_, usage, metadata):
             finishMetadataUsage = usage
             providerMetadata = metadata
@@ -81,11 +70,6 @@ import Testing
         }
     }
 
-    #expect(finishUsage?.inputTokens == 32)
-    #expect(finishUsage?.inputTokensNoCache == 17)
-    #expect(finishUsage?.inputTokensCacheRead == 5)
-    #expect(finishUsage?.inputTokensCacheWrite == 10)
-    #expect(finishUsage?.outputTokens == 227)
     #expect(finishMetadataUsage?.inputTokens == 32)
     #expect(finishMetadataUsage?.outputTokens == 227)
     #expect(providerMetadata["anthropic"]?["usage"]?["input_tokens"]?.intValue == 17)
@@ -114,7 +98,7 @@ import Testing
 
     var pauseFinishReason: String?
     for try await part in pauseModel.stream(LanguageModelRequest(messages: [.user("Hello")])) {
-        if case let .finish(reason, _) = part {
+        if case let .finishMetadata(reason, _, _) = part {
             pauseFinishReason = reason
         }
     }
@@ -143,9 +127,8 @@ import Testing
         stopSequences: ["STOP"]
     )) {
         switch part {
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, metadata):
             stopFinishReason = reason
-        case let .finishMetadata(_, _, metadata):
             stopMetadata = metadata
         default:
             break
@@ -242,7 +225,7 @@ import Testing
     var finishCount = 0
     for try await part in midStreamModel.stream(LanguageModelRequest(messages: [.user("Hello")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             textDeltas.append(delta)
         case let .error(message, rawValue):
             errors.append((message, rawValue))
@@ -286,11 +269,11 @@ import Testing
     var rawTypes: [String] = []
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hello")], includeRawChunks: true)) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             textDeltas.append(delta)
         case let .error(message, _):
             errors.append(message)
-        case let .finish(_, usage):
+        case let .finishMetadata(_, usage, _):
             finishUsage = usage
         case let .raw(raw):
             rawTypes.append(raw["type"]?.stringValue ?? "")

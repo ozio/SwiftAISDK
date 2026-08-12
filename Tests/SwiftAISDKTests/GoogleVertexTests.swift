@@ -422,9 +422,9 @@ import Testing
     var usage: TokenUsage?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             deltas.append(delta)
-        case let .finish(_, value):
+        case let .finishMetadata(_, value, _):
             usage = value
         default:
             break
@@ -474,7 +474,7 @@ import Testing
         switch part {
         case let .toolCall(call):
             finalCall = call
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break

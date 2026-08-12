@@ -3,23 +3,36 @@ name: Docs
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: swiftai-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  test:
     runs-on: macos-26
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Run Swift tests
+        run: swift test
+
+  build:
+    needs: test
+    runs-on: macos-26
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -48,6 +61,31 @@ jobs:
         env:
           DOCS_BASE: /SwiftAISDK
           DOCS_SITE: https://ozio.github.io
+
+      - name: Upload built documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site-${{ github.run_id }}
+          path: docs-site/dist
+          if-no-files-found: error
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [test, build]
+    runs-on: macos-26
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download built documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-site-${{ github.run_id }}
+          path: docs-site/dist
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

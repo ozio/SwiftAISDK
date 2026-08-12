@@ -167,16 +167,21 @@ import Testing
     #expect(textEnds.map { $0.0 } == ["msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b"])
     #expect(textEnds[0].1["openai"]?["itemId"]?.stringValue == "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b")
 
-    #expect(finishReasons == ["stop"])
-    #expect(finishProviderMetadata.count == 1)
-    #expect(finishProviderMetadata[0]["openai"]?["responseId"]?.stringValue == "resp_0434d6d64b12b08900692f639d784481959af65f985b9c13e2")
-    #expect(finishProviderMetadata[0]["openai"]?["serviceTier"]?.stringValue == "default")
-    let finishUsage = try #require(finishUsages.first ?? nil)
-    #expect(finishUsage.inputTokens == 331)
-    #expect(finishUsage.inputTokensCacheRead == 0)
-    #expect(finishUsage.outputTokens == 166)
-    #expect(finishUsage.outputReasoningTokens == 0)
-    #expect(finishUsage.totalTokens == 497)
+    #expect(finishReasons == ["tool-calls", "stop"])
+    #expect(finishProviderMetadata.count == 2)
+    #expect(finishProviderMetadata.compactMap { $0["openai"]?["responseId"]?.stringValue } == [
+        "resp_0434d6d64b12b08900692f639c40408195a50fd07b77ce08a7",
+        "resp_0434d6d64b12b08900692f639d784481959af65f985b9c13e2"
+    ])
+    #expect(finishProviderMetadata.allSatisfy {
+        $0["openai"]?["serviceTier"]?.stringValue == "default"
+    })
+    let resolvedFinishUsages = try finishUsages.map { try #require($0) }
+    #expect(resolvedFinishUsages.map(\.inputTokens) == [145, 331])
+    #expect(resolvedFinishUsages.map(\.inputTokensCacheRead) == [0, 0])
+    #expect(resolvedFinishUsages.map(\.outputTokens) == [41, 166])
+    #expect(resolvedFinishUsages.map(\.outputReasoningTokens) == [0, 0])
+    #expect(resolvedFinishUsages.map(\.totalTokens) == [186, 497])
 }
 
 @Test func openAIResponsesStreamsShellContainerResultsLikeUpstream() async throws {
@@ -550,4 +555,3 @@ import Testing
     #expect(finishUsage?.outputReasoningTokens == 100)
     #expect(finishUsage?.totalTokens == 1815)
 }
-

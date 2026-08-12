@@ -358,8 +358,6 @@ import Testing
         providerOptions: ["mistral": ["documentImageLimit": 2]]
     )) {
         switch part {
-        case let .textDelta(delta):
-            text.append(delta)
         case let .textDeltaPart(id, delta, _):
             lifecycle.append("text-delta:\(id):\(delta)")
             text.append(delta)
@@ -367,8 +365,6 @@ import Testing
             lifecycle.append("text-start:\(id)")
         case let .textEnd(id, _):
             lifecycle.append("text-end:\(id)")
-        case let .reasoningDelta(delta):
-            reasoning.append(delta)
         case let .reasoningDeltaPart(id, delta, _):
             lifecycle.append("reasoning-delta:\(id):\(delta)")
             reasoning.append(delta)
@@ -380,7 +376,7 @@ import Testing
             streamStartWarnings = warnings
         case let .responseMetadata(metadata):
             responseMetadata = metadata
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:
@@ -441,7 +437,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             toolCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:

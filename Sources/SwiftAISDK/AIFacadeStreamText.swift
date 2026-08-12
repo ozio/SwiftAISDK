@@ -49,8 +49,12 @@ extension AI {
                     model.stream(preparedRequest),
                     abortSignal: preparedRequest.abortSignal
                 )
+                let canonicalStream = canonicalLanguageStream(
+                    stream,
+                    providerID: model.providerID
+                )
                 return streamWithTimeout(
-                    forwardedLanguageStream(stream, request: preparedRequest),
+                    forwardedLanguageStream(canonicalStream, request: preparedRequest),
                     timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
                 )
             },

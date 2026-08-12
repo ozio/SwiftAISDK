@@ -48,7 +48,7 @@ import Testing
             .textDeltaPart(id: "0", delta: "```json\n{\"ok\":"),
             .textDeltaPart(id: "0", delta: "true}\n```"),
             .textEnd(id: "0"),
-            .finish(reason: "stop", usage: nil)
+            .finishMetadata(reason: "stop", usage: nil, providerMetadata: [:])
         ]
     )
     let wrapped = wrapLanguageModel(model, middleware: extractJsonMiddleware())
@@ -64,7 +64,7 @@ import Testing
         .textStart(id: "0"),
         .textDeltaPart(id: "0", delta: "{\"ok\":true}"),
         .textEnd(id: "0"),
-        .finish(reason: "stop", usage: nil)
+        .finishMetadata(reason: "stop", usage: nil, providerMetadata: [:])
     ])
 }
 
@@ -110,10 +110,10 @@ import Testing
         .reasoningStart(id: "reasoning-0"),
         .reasoningDeltaPart(id: "reasoning-0", delta: "hidden"),
         .reasoningEnd(id: "reasoning-0"),
-        .textStart(id: "0"),
-        .textDeltaPart(id: "0", delta: "visible"),
-        .textEnd(id: "0"),
-        .finish(reason: "stop", usage: nil)
+        .textStart(id: "legacy-text-0"),
+        .textDeltaPart(id: "legacy-text-0", delta: "visible"),
+        .textEnd(id: "legacy-text-0"),
+        .finishMetadata(reason: "stop", usage: nil, providerMetadata: [:])
     ])
 }
 
@@ -149,7 +149,11 @@ import Testing
         .textEnd(id: "1"),
         .source(source),
         .toolCall(toolCall),
-        .finish(reason: "stop", usage: TokenUsage(inputTokens: 1, outputTokens: 2, totalTokens: 3))
+        .finishMetadata(
+            reason: "stop",
+            usage: TokenUsage(inputTokens: 1, outputTokens: 2, totalTokens: 3),
+            providerMetadata: [:]
+        )
     ])
 }
 

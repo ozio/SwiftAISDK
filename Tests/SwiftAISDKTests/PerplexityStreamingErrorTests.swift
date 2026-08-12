@@ -26,5 +26,5 @@ import Testing
     }
 
     #expect(errors.count == 1)
-    #expect(finishReason == "other")
+    #expect(finishReason == "error")
 }

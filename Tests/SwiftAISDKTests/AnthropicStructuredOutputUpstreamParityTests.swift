@@ -72,7 +72,7 @@ import Testing
             textIDs.append("end:\(id)")
         case let .toolCall(call):
             toolCalls.append(call)
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -140,7 +140,7 @@ import Testing
             textDeltas.append(delta)
         case let .textEnd(id, _):
             textIDs.append("end:\(id)")
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -152,4 +152,3 @@ import Testing
     #expect(textDeltas.joined() == "{\"elements\": [{\"location\": \"San Francisco\", \"temperature\": 58, \"condition\": \"sunny\"}]}")
     #expect(finishReason == "stop")
 }
-

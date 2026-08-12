@@ -48,6 +48,9 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     continuation.yield(.responseMetadata(openAICompatibleResponseMetadata(response: responseHead, modelID: modelID)))
                     var providerMetadata: [String: JSONValue] = [:]
+                    var activeTextID: String?
+                    var finishReason: String? = "other"
+                    var finishUsage: TokenUsage?
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -60,18 +63,26 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                             into: &providerMetadata
                         )
                         if let delta = choice?["text"]?.stringValue {
-                            continuation.yield(.textDelta(delta))
+                            let id = activeTextID ?? "txt-0"
+                            if activeTextID == nil {
+                                activeTextID = id
+                                continuation.yield(.textStart(id: id))
+                            }
+                            continuation.yield(.textDeltaPart(id: id, delta: delta))
                         }
                         if let reason = choice?["finish_reason"]?.stringValue {
-                            let finishReason = openAICompatibleFinishReason(reason)
-                            let finishUsage = tokenUsage(from: raw)
-                            if providerMetadata.isEmpty {
-                                continuation.yield(.finish(reason: finishReason, usage: finishUsage))
-                            } else {
-                                continuation.yield(.finishMetadata(reason: finishReason, usage: finishUsage, providerMetadata: providerMetadata))
-                            }
+                            finishReason = openAICompatibleFinishReason(reason)
                         }
+                        finishUsage = tokenUsage(from: raw) ?? finishUsage
                     }
+                    if let textID = activeTextID {
+                        continuation.yield(.textEnd(id: textID))
+                    }
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: finishUsage,
+                        providerMetadata: providerMetadata
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

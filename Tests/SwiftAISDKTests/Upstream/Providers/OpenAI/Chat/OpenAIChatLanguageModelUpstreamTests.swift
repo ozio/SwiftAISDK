@@ -23,7 +23,7 @@ import Testing
     var textDeltas: [String] = []
     var responseMetadata: [AIResponseMetadata] = []
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .textDelta(delta) = part {
+        if case let .textDeltaPart(_, delta, _) = part {
             textDeltas.append(delta)
         }
         if case let .responseMetadata(metadata) = part {

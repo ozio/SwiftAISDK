@@ -119,6 +119,11 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                     continuation.yield(.responseMetadata(aiResponseMetadata(response: responseHead, modelID: modelID)))
                     var toolBuffers: [String: GatewayStreamingToolCall] = [:]
                     var sawToolCalls = false
+                    var activeTextID: String?
+                    var activeReasoningID: String?
+                    var finishReason: String? = "other"
+                    var finishUsage: TokenUsage?
+                    var finishProviderMetadata: [String: JSONValue] = [:]
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -133,10 +138,34 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                             ?? raw["textDelta"]?.stringValue
                             ?? raw["text"]?.stringValue,
                            type == nil || type == "text-delta" || type == "delta" {
-                            continuation.yield(.textDelta(delta))
+                            if let reasoningID = activeReasoningID {
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                                activeReasoningID = nil
+                            }
+                            let id = raw["id"]?.stringValue ?? activeTextID ?? "txt-0"
+                            if activeTextID != id {
+                                if let previousTextID = activeTextID {
+                                    continuation.yield(.textEnd(id: previousTextID))
+                                }
+                                activeTextID = id
+                                continuation.yield(.textStart(id: id, providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])))
+                            }
+                            continuation.yield(.textDeltaPart(id: id, delta: delta, providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])))
                         }
                         if type == "reasoning-delta", let delta = raw["delta"]?.stringValue ?? raw["textDelta"]?.stringValue {
-                            continuation.yield(.reasoningDelta(delta))
+                            if let textID = activeTextID {
+                                continuation.yield(.textEnd(id: textID))
+                                activeTextID = nil
+                            }
+                            let id = raw["id"]?.stringValue ?? activeReasoningID ?? "reasoning-0"
+                            if activeReasoningID != id {
+                                if let previousReasoningID = activeReasoningID {
+                                    continuation.yield(.reasoningEnd(id: previousReasoningID))
+                                }
+                                activeReasoningID = id
+                                continuation.yield(.reasoningStart(id: id, providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])))
+                            }
+                            continuation.yield(.reasoningDeltaPart(id: id, delta: delta, providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])))
                         }
                         if type == "source", let source = gatewaySource(from: raw, fallbackIndex: 0) {
                             continuation.yield(.source(source))
@@ -195,9 +224,36 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                                 continuation.yield(.toolCall(buffer.toolCall))
                             }
                             toolBuffers.removeAll()
-                            continuation.yield(.finish(reason: gatewayFinishReason(raw["finishReason"]?.stringValue ?? raw["finish_reason"]?.stringValue, hasToolCalls: hasToolCalls), usage: tokenUsage(from: raw)))
+                            if let textID = activeTextID {
+                                continuation.yield(.textEnd(id: textID))
+                                activeTextID = nil
+                            }
+                            if let reasoningID = activeReasoningID {
+                                continuation.yield(.reasoningEnd(id: reasoningID))
+                                activeReasoningID = nil
+                            }
+                            if type == "finish" {
+                                finishReason = gatewayFinishReason(
+                                    raw["finishReason"]?.stringValue ?? raw["finish_reason"]?.stringValue,
+                                    hasToolCalls: hasToolCalls
+                                )
+                                finishUsage = tokenUsage(from: raw)
+                                finishProviderMetadata = gatewayProviderMetadata(raw["providerMetadata"])
+                                break
+                            }
                         }
                     }
+                    if let textID = activeTextID {
+                        continuation.yield(.textEnd(id: textID))
+                    }
+                    if let reasoningID = activeReasoningID {
+                        continuation.yield(.reasoningEnd(id: reasoningID))
+                    }
+                    continuation.yield(.finishMetadata(
+                        reason: finishReason,
+                        usage: finishUsage,
+                        providerMetadata: finishProviderMetadata
+                    ))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

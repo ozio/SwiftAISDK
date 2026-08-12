@@ -13,7 +13,7 @@ import Testing
     var chatUsage: TokenUsage?
     let chatModel = try chatProvider.chatModel("chat-model")
     for try await part in chatModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .finish(_, usage) = part { chatUsage = usage }
+        if case let .finishMetadata(_, usage, _) = part { chatUsage = usage }
     }
     #expect(chatUsage?.totalTokens == 2)
     let chatBody = try decodeJSONBody(try #require((await chatTransport.requests()).first?.body))
@@ -29,7 +29,7 @@ import Testing
     var completionUsage: TokenUsage?
     let completionModel = try completionProvider.completionModel("completion-model")
     for try await part in completionModel.stream(LanguageModelRequest(messages: [.user("Complete")])) {
-        if case let .finish(_, usage) = part { completionUsage = usage }
+        if case let .finishMetadata(_, usage, _) = part { completionUsage = usage }
     }
     #expect(completionUsage?.totalTokens == 2)
     let completionBody = try decodeJSONBody(try #require((await completionTransport.requests()).first?.body))

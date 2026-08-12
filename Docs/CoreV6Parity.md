@@ -55,6 +55,15 @@ Port decisions:
   before EOF plus cancellation of the response body on abort or early stop.
   Custom send-only transports remain valid for unary generation and fail
   streaming with a non-retryable argument error.
+- Built-in language streams use one part-aware text/reasoning lifecycle instead
+  of emitting both legacy and identified deltas. The facade normalizes
+  legacy-only custom streams, rejects ambiguous mixed-family streams, preserves
+  repeatable in-band provider errors, and validates that a stream does not emit
+  duplicate terminals for one logical response. Built-in providers guarantee
+  one terminal outcome per response; clean custom EOF without a terminal is
+  left unspecified rather than assigned a guessed reason. Cross-surface tests
+  guard exact accumulation in text,
+  reasoning, UI, structured-output, and tool-loop consumers.
 - `ai@7.0.58` default instructions, agent-level default timeouts, and
   reconnect cancellation are ported through `defaultInstructionsMiddleware`,
   `AIToolLoopAgent.timeoutNanoseconds`, and `AIChatReconnectRequest.abortSignal`.
@@ -234,7 +243,7 @@ Port decisions:
 | Upstream reference item | SwiftAISDK status | Current Swift evidence | Notes / next decision |
 | --- | --- | --- | --- |
 | `generateText` | `covered` | `AI.generateText`, `LanguageModelRequest`, `TextGenerationResult` | Supports prompt/request overloads, tools, multi-step loops, retries, telemetry, provider metadata, response metadata, raw chunks, and abort signals. Later tool-loop steps recheck cancellation before another model call and preserve the caller's abort reason. |
-| `streamText` | `partial` | `AI.streamText`, `LanguageStreamPart`, `AIStreamingTransport`, incremental SSE/EventStream regressions, `timeoutNanoseconds` | Async sequence surface with provider parts delivered before HTTP EOF, lifecycle parts, tools, approvals, retries-before-first-yield, telemetry, total timeout, response-body cancellation, and abort propagation. Structured `firstChunkMs` plus semantic-content-only inter-chunk timeout behavior remains deferred. |
+| `streamText` | `partial` | `AI.streamText`, `LanguageStreamPart`, `AIStreamingTransport`, incremental SSE/EventStream and canonical semantic-stream regressions, `timeoutNanoseconds` | Async sequence surface with provider parts delivered before HTTP EOF, one part-aware content lifecycle, one built-in terminal outcome per logical response, in-band errors, tools, approvals, retries-before-first-yield, telemetry, total timeout, response-body cancellation, and abort propagation. Structured `firstChunkMs` plus semantic-content-only inter-chunk timeout behavior remains deferred. |
 | `embed` | `covered` | `AI.embed`, `EmbeddingRequest`, `EmbeddingResult` | Single-value helper delegates through the embedding request shape. |
 | `embedMany` | `covered` | `AI.embedMany` | Supports batching through `chunkSize` and aggregates usage/warnings/metadata. |
 | `rerank` | `covered` | `AI.rerank`, `RerankingRequest`, `RerankingResult` | Native model family exists. |

@@ -248,7 +248,7 @@ import Testing
             toolCalls.append(call)
         case let .toolResult(result):
             toolResults.append(result)
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break

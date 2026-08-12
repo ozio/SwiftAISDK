@@ -94,7 +94,7 @@ import Testing
 
     var chatUsage: TokenUsage?
     for try await part in chatModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .finish(_, usage) = part {
+        if case let .finishMetadata(_, usage, _) = part {
             chatUsage = usage
         }
     }
@@ -122,12 +122,21 @@ import Testing
     let completionModel = try completionProvider.completionModel("completion-model")
 
     var completionDeltas: [String] = []
+    var completionLegacyDeltas: [String] = []
+    var completionLifecycle: [String] = []
     var completionUsage: TokenUsage?
     for try await part in completionModel.stream(LanguageModelRequest(messages: [.user("Finish")])) {
         switch part {
+        case let .textStart(id, _):
+            completionLifecycle.append("start:\(id)")
         case let .textDelta(delta):
+            completionLegacyDeltas.append(delta)
+        case let .textDeltaPart(id, delta, _):
             completionDeltas.append(delta)
-        case let .finish(_, usage):
+            completionLifecycle.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            completionLifecycle.append("end:\(id)")
+        case let .finishMetadata(_, usage, _):
             completionUsage = usage
         default:
             break
@@ -135,6 +144,8 @@ import Testing
     }
 
     #expect(completionDeltas == ["hel", "lo"])
+    #expect(completionLegacyDeltas.isEmpty)
+    #expect(completionLifecycle == ["start:txt-0", "delta:txt-0:hel", "delta:txt-0:lo", "end:txt-0"])
     #expect(completionUsage?.totalTokens == 4)
     let completionBody = try decodeJSONBody(try #require((await completionTransport.requests()).first?.body))
     #expect(completionBody["stream"] == true)

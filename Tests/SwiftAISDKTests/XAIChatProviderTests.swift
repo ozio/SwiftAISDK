@@ -224,7 +224,7 @@ import Testing
 
     var finishUsage: TokenUsage?
     for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .finish(_, usage) = part {
+        if case let .finishMetadata(_, usage, _) = part {
             finishUsage = usage
         }
     }

@@ -478,7 +478,7 @@ import Testing
             reasoningLifecycle.append("delta:\(id):\(delta)")
         case let .reasoningEnd(id, _):
             reasoningLifecycle.append("end:\(id)")
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:

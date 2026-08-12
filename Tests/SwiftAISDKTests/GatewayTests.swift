@@ -310,17 +310,25 @@ import Testing
 
     var textDeltas: [String] = []
     var reasoningDeltas: [String] = []
+    var legacyTextDeltas: [String] = []
+    var legacyReasoningDeltas: [String] = []
     var argumentDeltas: [String] = []
     var inputLifecycle: [String] = []
     var sources: [AISource] = []
     var toolCall: AIToolCall?
     var finishReason: String?
     var totalTokens: Int?
+    var terminalCount = 0
+    var legacyTerminalCount = 0
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Use a tool.")])) {
         switch part {
         case let .textDelta(delta):
+            legacyTextDeltas.append(delta)
+        case let .textDeltaPart(_, delta, _):
             textDeltas.append(delta)
         case let .reasoningDelta(delta):
+            legacyReasoningDeltas.append(delta)
+        case let .reasoningDeltaPart(_, delta, _):
             reasoningDeltas.append(delta)
         case let .source(source):
             sources.append(source)
@@ -334,9 +342,12 @@ import Testing
             argumentDeltas.append(argumentsDelta)
         case let .toolCall(call):
             toolCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
+            terminalCount += 1
             finishReason = reason
             totalTokens = usage?.totalTokens
+        case .finish:
+            legacyTerminalCount += 1
         default:
             break
         }
@@ -344,6 +355,8 @@ import Testing
 
     #expect(textDeltas == ["Hello"])
     #expect(reasoningDeltas == ["think"])
+    #expect(legacyTextDeltas.isEmpty)
+    #expect(legacyReasoningDeltas.isEmpty)
     #expect(sources.count == 1)
     #expect(sources[0].id == "doc_1")
     #expect(sources[0].sourceType == "document")
@@ -363,6 +376,55 @@ import Testing
     #expect(toolCall?.arguments == #"{"query":"weather"}"#)
     #expect(finishReason == "tool-calls")
     #expect(totalTokens == 5)
+    #expect(terminalCount == 1)
+    #expect(legacyTerminalCount == 0)
+}
+
+@Test func gatewayFinishStepClosesPartWithoutPublishingLegacyTerminal() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"type":"text-delta","id":"step-1","delta":"first"}
+
+    data: {"type":"finish-step","finishReason":"stop","usage":{"total_tokens":2}}
+
+    data: {"type":"text-delta","id":"step-2","delta":"second"}
+
+    data: {"type":"finish","finishReason":"stop","usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key", transport: transport))
+    let model = try provider.languageModel("openai/gpt-4.1-mini")
+
+    var sequence: [String] = []
+    var legacyTerminals = 0
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        switch part {
+        case let .textStart(id, _):
+            sequence.append("start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            sequence.append("delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            sequence.append("end:\(id)")
+        case let .finishMetadata(reason, usage, _):
+            sequence.append("finish:\(reason ?? "nil"):\(usage?.totalTokens ?? -1)")
+        case .finish:
+            legacyTerminals += 1
+        default:
+            break
+        }
+    }
+
+    #expect(legacyTerminals == 0)
+    #expect(sequence == [
+        "start:step-1",
+        "delta:step-1:first",
+        "end:step-1",
+        "start:step-2",
+        "delta:step-2:second",
+        "end:step-2",
+        "finish:stop:5"
+    ])
 }
 
 @Test func gatewayEmbeddingAndRerankingUseGatewayEndpoints() async throws {

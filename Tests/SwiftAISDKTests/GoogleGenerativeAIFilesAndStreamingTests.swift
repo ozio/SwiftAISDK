@@ -44,11 +44,11 @@ import Testing
     var usage: TokenUsage?
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Ping")])) {
         switch part {
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             deltas.append(delta)
         case let .source(source):
             sources.append(source)
-        case let .finish(_, value):
+        case let .finishMetadata(_, value, _):
             usage = value
         default:
             break
@@ -64,6 +64,55 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
+}
+
+@Test func googleLanguageCanonicalLifecycleTransitionsBetweenReasoningAndText() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"candidates":[{"content":{"parts":[{"text":"think","thought":true},{"text":"answer"}],"role":"model"},"index":0}]}
+
+    data: {"candidates":[{"content":{"parts":[{"text":" more"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":3,"totalTokenCount":4}}
+
+    """))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
+    let model = try provider.languageModel("gemini-2.5-flash")
+
+    var lifecycle: [String] = []
+    var legacyDeltaCount = 0
+    var terminalCount = 0
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Ping")])) {
+        switch part {
+        case let .reasoningStart(id, _):
+            lifecycle.append("reasoning-start:\(id)")
+        case let .reasoningDeltaPart(id, delta, _):
+            lifecycle.append("reasoning-delta:\(id):\(delta)")
+        case let .reasoningEnd(id, _):
+            lifecycle.append("reasoning-end:\(id)")
+        case let .textStart(id, _):
+            lifecycle.append("text-start:\(id)")
+        case let .textDeltaPart(id, delta, _):
+            lifecycle.append("text-delta:\(id):\(delta)")
+        case let .textEnd(id, _):
+            lifecycle.append("text-end:\(id)")
+        case .textDelta, .reasoningDelta:
+            legacyDeltaCount += 1
+        case .finishMetadata:
+            terminalCount += 1
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == [
+        "reasoning-start:0",
+        "reasoning-delta:0:think",
+        "reasoning-end:0",
+        "text-start:1",
+        "text-delta:1:answer",
+        "text-delta:1: more",
+        "text-end:1"
+    ])
+    #expect(legacyDeltaCount == 0)
+    #expect(terminalCount == 1)
 }
 @Test func googleLanguageStreamSurfacesRepeatedProviderResponseIDOnce() async throws {
     let transport = RecordingTransport(response: sseResponse("""
@@ -137,7 +186,7 @@ import Testing
             inputLifecycle.append("end:\(id)")
         case let .toolCall(call):
             finalCall = call
-        case let .finish(reason, usage):
+        case let .finishMetadata(reason, usage, _):
             finishReason = reason
             totalTokens = usage?.totalTokens
         default:

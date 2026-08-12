@@ -9,6 +9,7 @@ public struct AIUIMessageStreamReducer: Sendable {
     private var activeToolInputIDs: Set<String> = []
     private var fallbackToolCallIDsByIndex: [Int: String] = [:]
     private var fallbackToolCallCounter = 0
+    private var streamNormalizer = LanguageStreamNormalizer(providerID: "ui-message-stream")
 
     public init(message: AIUIMessage = .assistant()) {
         self.message = message
@@ -16,6 +17,13 @@ public struct AIUIMessageStreamReducer: Sendable {
 
     @discardableResult
     public mutating func consume(_ part: LanguageStreamPart) throws -> AIUIMessage {
+        for normalizedPart in try streamNormalizer.normalize(part) {
+            try consumeCanonical(normalizedPart)
+        }
+        return message
+    }
+
+    private mutating func consumeCanonical(_ part: LanguageStreamPart) throws {
         switch part {
         case let .streamStart(warnings):
             if !warnings.isEmpty {
@@ -83,8 +91,6 @@ public struct AIUIMessageStreamReducer: Sendable {
         case let .finishMetadata(reason, usage, providerMetadata):
             recordFinish(reason: reason, usage: usage, providerMetadata: providerMetadata)
         }
-
-        return message
     }
 
     @discardableResult
@@ -92,6 +98,7 @@ public struct AIUIMessageStreamReducer: Sendable {
         for part in parts {
             try consume(part)
         }
+        finishNormalization()
         return message
     }
 
@@ -111,6 +118,9 @@ public struct AIUIMessageStreamReducer: Sendable {
                         }
                         continuation.yield(try reducer.consume(part))
                     }
+                    if reducer.finishNormalization() {
+                        continuation.yield(reducer.message)
+                    }
                     continuation.finish()
                 } catch let error as AIUIMessageStreamError {
                     continuation.finish(throwing: error)
@@ -121,6 +131,15 @@ public struct AIUIMessageStreamReducer: Sendable {
 
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    @discardableResult
+    private mutating func finishNormalization() -> Bool {
+        let finalParts = streamNormalizer.finish()
+        for part in finalParts {
+            try? consumeCanonical(part)
+        }
+        return !finalParts.isEmpty
     }
 
     private mutating func ensureTextPart(

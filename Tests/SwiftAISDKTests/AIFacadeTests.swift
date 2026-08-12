@@ -499,7 +499,7 @@ private struct NativeAPISummary: Decodable, Sendable, Equatable {
     let stepEvents = events.filter { $0.operationID == "ai.streamText.step" }
     let toolEvents = events.filter { $0.operationID == "ai.streamText.tool" }
 
-    #expect(streamed.contains(.textDelta("Sunny")))
+    #expect(streamed.contains(.textDeltaPart(id: "legacy-text-0", delta: "Sunny")))
     #expect(stepEvents.map(\.kind) == [.stepStart, .stepEnd, .stepStart, .stepEnd])
     #expect(stepEvents[1].output?["finishReason"]?.stringValue == "tool-calls")
     #expect(stepEvents[3].output?["text"]?.stringValue == "Sunny")

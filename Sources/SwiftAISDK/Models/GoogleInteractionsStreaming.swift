@@ -88,6 +88,58 @@ struct GoogleInteractionsStreamingToolCalls {
     }
 }
 
+struct GoogleInteractionsStreamingContent {
+    private var openTextIDs: Set<String> = []
+    private var openReasoningIDs: Set<String> = []
+
+    mutating func delta(_ delta: JSONValue, index: Int?) -> [LanguageStreamPart] {
+        let key = index ?? 0
+        var parts: [LanguageStreamPart] = []
+        if let text = delta["text"]?.stringValue, !text.isEmpty {
+            let id = "text-\(key)"
+            if openTextIDs.insert(id).inserted {
+                parts.append(.textStart(id: id))
+            }
+            parts.append(.textDeltaPart(id: id, delta: text))
+        }
+        if let summary = delta["summary"]?.stringValue, !summary.isEmpty {
+            let id = "reasoning-\(key)"
+            if openReasoningIDs.insert(id).inserted {
+                parts.append(.reasoningStart(id: id))
+            }
+            parts.append(.reasoningDeltaPart(id: id, delta: summary))
+        }
+        return parts
+    }
+
+    mutating func stop(index: Int?) -> [LanguageStreamPart] {
+        let key = index ?? 0
+        var parts: [LanguageStreamPart] = []
+        let reasoningID = "reasoning-\(key)"
+        if openReasoningIDs.remove(reasoningID) != nil {
+            parts.append(.reasoningEnd(id: reasoningID))
+        }
+        let textID = "text-\(key)"
+        if openTextIDs.remove(textID) != nil {
+            parts.append(.textEnd(id: textID))
+        }
+        return parts
+    }
+
+    mutating func finishParts() -> [LanguageStreamPart] {
+        var parts: [LanguageStreamPart] = []
+        for id in openReasoningIDs.sorted() {
+            parts.append(.reasoningEnd(id: id))
+        }
+        openReasoningIDs.removeAll()
+        for id in openTextIDs.sorted() {
+            parts.append(.textEnd(id: id))
+        }
+        openTextIDs.removeAll()
+        return parts
+    }
+}
+
 func googleInteractionsArguments(_ value: JSONValue?) -> String {
     guard let value else { return "{}" }
     guard let data = try? encodeJSONBody(value),

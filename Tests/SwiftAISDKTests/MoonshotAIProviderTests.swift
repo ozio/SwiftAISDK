@@ -230,7 +230,7 @@ import Testing
     var finishReason: String?
     var usage: TokenUsage?
     for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .finish(reason, finalUsage) = part {
+        if case let .finishMetadata(reason, finalUsage, _) = part {
             finishReason = reason
             usage = finalUsage
         }
@@ -265,13 +265,12 @@ import Testing
             #expect(warnings == [])
         case let .textStart(id, _):
             lifecycle.append("start:\(id)")
-        case let .textDelta(delta):
-            text.append(delta)
         case let .textDeltaPart(id, delta, _):
+            text.append(delta)
             lifecycle.append("delta:\(id):\(delta)")
         case let .textEnd(id, _):
             lifecycle.append("end:\(id)")
-        case let .finish(reason, finalUsage):
+        case let .finishMetadata(reason, finalUsage, _):
             finishReason = reason
             usage = finalUsage
         default:
@@ -346,7 +345,7 @@ import Testing
     var finishUsage: TokenUsage?
     let streamModel = try streamProvider.languageModel("kimi-k2.5")
     for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .finish(_, usage) = part {
+        if case let .finishMetadata(_, usage, _) = part {
             finishUsage = usage
         }
     }
@@ -372,7 +371,7 @@ import Testing
         switch part {
         case let .error(message, _):
             errors.append(message)
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break

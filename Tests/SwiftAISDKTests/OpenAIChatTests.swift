@@ -526,7 +526,7 @@ import Testing
             deltas.append(argumentsDelta)
         case let .toolCall(call):
             finalCall = call
-        case let .finish(reason, _):
+        case let .finishMetadata(reason, _, _):
             finishReason = reason
         default:
             break
@@ -559,13 +559,25 @@ import Testing
     let model = try provider.chatModel("gpt-4.1-mini")
 
     var deltas: [String] = []
+    var legacyDeltas: [String] = []
+    var terminalCount = 0
+    var legacyTerminalCount = 0
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
-        if case let .textDelta(delta) = part {
+        if case let .textDeltaPart(_, delta, _) = part {
             deltas.append(delta)
+        } else if case let .textDelta(delta) = part {
+            legacyDeltas.append(delta)
+        } else if case .finishMetadata = part {
+            terminalCount += 1
+        } else if case .finish = part {
+            legacyTerminalCount += 1
         }
     }
 
     #expect(deltas == ["hel", "lo"])
+    #expect(legacyDeltas.isEmpty)
+    #expect(terminalCount == 1)
+    #expect(legacyTerminalCount == 0)
     let request = try #require(await transport.requests().first)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)

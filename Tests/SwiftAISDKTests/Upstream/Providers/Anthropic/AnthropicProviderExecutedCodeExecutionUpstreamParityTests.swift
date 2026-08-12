@@ -250,7 +250,7 @@ import Testing
             toolCalls.append(call)
         case let .toolResult(result) where result.toolName == "code_execution":
             toolResults.append(result)
-        case let .textDelta(delta):
+        case let .textDeltaPart(_, delta, _):
             text += delta
         default:
             break
