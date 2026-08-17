@@ -11,7 +11,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Class | 3 |
 | Enumeration | 7 |
 | Initializer | 39 |
-| Instance Method | 65 |
+| Instance Method | 67 |
 | Instance Property | 171 |
 | Protocol | 3 |
 | Structure | 36 |
@@ -92,6 +92,8 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Method | `authorizationServerInformation()` | `func authorizationServerInformation() async throws -> MCPOAuthAuthorizationServerInformation?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Method | `authorizationServerInformation()` | `func authorizationServerInformation() async throws -> MCPOAuthAuthorizationServerInformation?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Method | `authorize(resourceMetadataURL:)` | `func authorize(resourceMetadataURL: URL?) async throws -> Bool` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
+| Instance Method | `authorize(resourceMetadataURL:scope:)` | `func authorize(resourceMetadataURL: URL?, scope: String?) async throws -> Bool` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
+| Instance Method | `authorize(resourceMetadataURL:scope:)` | `func authorize(resourceMetadataURL: URL?, scope: String?) async throws -> Bool` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Method | `callTool(name:arguments:options:)` | `func callTool(name: String, arguments: JSONValue = .object([:]), options: MCPRequestOptions? = nil) async throws -> MCPCallToolResult` | [Sources/SwiftAISDK/MCPClientActor.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPClientActor.swift) |
 | Instance Method | `clientInformation()` | `func clientInformation() async throws -> MCPOAuthClientInformation?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Method | `clientInformation()` | `func clientInformation() async throws -> MCPOAuthClientInformation?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |

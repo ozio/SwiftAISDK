@@ -80,7 +80,7 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
             baseURL = "https://\(host)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         }
 
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.48")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.54")
         config = GoogleVertexConfig(providerID: providerID, baseURL: baseURL, project: project, location: location, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
     }
 
@@ -136,7 +136,19 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {
-        GoogleVertexSpeechModel(modelID: modelID, config: config.withProviderID("google.vertex.speech"))
+        if modelID.hasPrefix("chirp") {
+            guard !config.usesAPIKey else {
+                throw AIError.invalidArgument(
+                    argument: "modelID",
+                    message: "Google Vertex Chirp speech models do not support Express Mode API keys. Use standard Google Cloud credentials instead."
+                )
+            }
+            return GoogleVertexCloudTTSSpeechModel(
+                modelID: modelID,
+                config: config.withProviderID("google.vertex.speech")
+            )
+        }
+        return GoogleVertexSpeechModel(modelID: modelID, config: config.withProviderID("google.vertex.speech"))
     }
 
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {

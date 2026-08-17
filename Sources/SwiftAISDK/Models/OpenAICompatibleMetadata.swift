@@ -78,6 +78,9 @@ func openAICompatibleChatProviderMetadata(from raw: JSONValue, choice: JSONValue
     if let logprobs = choice?["logprobs"]?["content"] {
         metadata["logprobs"] = logprobs
     }
+    if openAICompatibleProviderRoot(providerID) == "xai", let serviceTier = raw["service_tier"] {
+        metadata["serviceTier"] = serviceTier
+    }
     return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID, namespace: namespace)
 }
 

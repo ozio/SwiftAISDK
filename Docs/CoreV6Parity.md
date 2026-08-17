@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-08-12
+Snapshot date: 2026-08-17
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.58`, `@ai-sdk/provider@4.0.7`,
-`@ai-sdk/provider-utils@5.0.25`, and `@ai-sdk/react@4.0.61`.
+snapshots, currently `ai@7.0.66`, `@ai-sdk/provider@4.0.7`,
+`@ai-sdk/provider-utils@5.0.27`, and `@ai-sdk/react@4.0.69`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.58 -> 7.0.66`
+- `@ai-sdk/provider@4.0.7` (unchanged)
+- `@ai-sdk/provider-utils@5.0.25 -> 5.0.27`
+- `@ai-sdk/react@4.0.61 -> 4.0.69`
 - `ai@7.0.48 -> 7.0.58`
 - `@ai-sdk/provider@4.0.4 -> 4.0.7`
 - `@ai-sdk/provider-utils@5.0.18 -> 5.0.25`
@@ -47,6 +51,25 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.66` array output wrappers now hoist both root `definitions` and
+  `$defs`, preserving schemas whose array items reference root definitions.
+  `AIChatSession` also stays `.submitted` for metadata-only response-start
+  snapshots and moves to `.streaming` only when response content arrives.
+- The remaining `ai@7.0.66` changes are covered or do not map to Swift:
+  reasoning UI parts already retain IDs; reconnect snapshots never clone the
+  previous assistant response; Swift chat inputs require no asynchronous
+  browser-file preparation; every provider can be stored behind `AIProvider`
+  even when reranking throws unsupported; and ToolLoop settings are already
+  accepted by the runtime types. TypeScript declaration emit, React message
+  cloning, and promise rejection from a JavaScript `onFinish` callback have no
+  direct Swift runtime surface.
+- `@ai-sdk/provider-utils@5.0.27` keeps the original streamed size-limit error
+  if response cancellation also fails. Swift cancellation is not awaited on
+  that error path, so it already preserves the primary failure. The safe
+  module import without a global JavaScript `fetch` is likewise inapplicable.
+- `@ai-sdk/react@4.0.69` changes `useChat`, `useCompletion`, and `useObject`
+  hook/store behavior. SwiftAISDK exposes a native `AIChatSession` rather than
+  React hooks, so no framework-specific state patch is applied.
 - Provider-facing language streams now consume `AIStreamingTransport` bodies
   incrementally rather than awaiting a buffered `AIHTTPResponse`. Shared SSE
   parsing follows `eventsource-parser` chunk, line-ending, BOM, field-space,

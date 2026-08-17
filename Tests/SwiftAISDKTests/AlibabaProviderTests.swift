@@ -2,6 +2,27 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func alibabaOmitsHistoricalReasoningAndReasoningOnlyAssistantTurnsLikeUpstream() throws {
+    let prepared = alibabaMessages([
+        .user("Think before answering."),
+        AIMessage(role: .assistant, content: [
+            .reasoning("Hidden reasoning."),
+            .text("Visible answer.")
+        ]),
+        AIMessage(role: .assistant, content: [
+            .reasoning("More hidden reasoning.")
+        ]),
+        .user("Continue.")
+    ])
+
+    #expect(prepared.warnings.isEmpty)
+    #expect(prepared.messages.count == 3)
+    #expect(prepared.messages[1]["role"]?.stringValue == "assistant")
+    #expect(prepared.messages[1]["content"]?.stringValue == "Visible answer.")
+    #expect(prepared.messages[2]["role"]?.stringValue == "user")
+    #expect(prepared.messages[2]["content"]?[0]?["text"]?.stringValue == "Continue.")
+}
+
 @Test func alibabaVideoUsesDashScopeAsyncTaskAPI() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-1"},"request_id":"req-1"}"#),
@@ -26,7 +47,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis")
     #expect(requests[0].headers["authorization"] == "Bearer dashscope-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/alibaba/2.0.29")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/alibaba/2.0.32")
     #expect(requests[0].headers["X-DashScope-Async"] == "enable")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "wan2.1-t2v-plus")
@@ -39,7 +60,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://dashscope-intl.aliyuncs.com/api/v1/tasks/task-1")
     #expect(requests[1].headers["authorization"] == "Bearer dashscope-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/alibaba/2.0.29")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/alibaba/2.0.32")
 }
 @Test func alibabaVideoMapsNestedI2VAndR2VOptions() async throws {
     let i2vTransport = RecordingTransport(responses: [
@@ -141,7 +162,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer dashscope-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/alibaba/2.0.29")
+    #expect(request.headers["user-agent"] == "ai-sdk/alibaba/2.0.32")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "qwen3-max")
     #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
@@ -174,7 +195,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer dashscope-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/alibaba/2.0.29")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/alibaba/2.0.32")
 }
 
 @Test func alibabaEmbeddingUsesDashScopeNativeEndpointAndSparseMetadata() async throws {
@@ -215,7 +236,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://dashscope-intl.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding")
     #expect(request.headers["authorization"] == "Bearer dashscope-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/alibaba/2.0.29")
+    #expect(request.headers["user-agent"] == "ai-sdk/alibaba/2.0.32")
     #expect(request.headers["x-request-id"] == "req-emb")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "text-embedding-v4")

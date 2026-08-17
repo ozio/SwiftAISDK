@@ -6,11 +6,15 @@ func openResponsesProviderOptions(providerOptions: [String: JSONValue], provider
     guard let options = value.objectValue else {
         throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName)", message: "Open Responses provider options must be an object.")
     }
-    let allowedKeys: Set<String> = ["reasoningSummary"]
+    let allowedKeys: Set<String> = ["reasoningEffort", "reasoningSummary"]
     var output: [String: JSONValue] = [:]
     for (key, value) in options where allowedKeys.contains(key) {
         guard value != .null else { continue }
         switch key {
+        case "reasoningEffort":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName).reasoningEffort", message: "Open Responses reasoningEffort must be a string.")
+            }
         case "reasoningSummary":
             guard let summary = value.stringValue, ["concise", "detailed", "auto"].contains(summary) else {
                 throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName).reasoningSummary", message: "Open Responses reasoningSummary must be concise, detailed, or auto.")
@@ -130,6 +134,8 @@ func openAIResponsesInputMessageJSON(
     customToolNames: Set<String> = [],
     programmaticToolNames: Set<String> = [],
     outputSchemaToolNames: Set<String> = [],
+    providerDefinedToolNames: Set<String> = [],
+    shellToolNames: Set<String> = [],
     providerID: String = "openai",
     useDeveloperRoleForSystem: Bool = false,
     warnings: inout [AIWarning]
@@ -142,7 +148,7 @@ func openAIResponsesInputMessageJSON(
                     return []
                 }
                 var items: [JSONValue] = []
-                if store {
+                if store && !hasConversation && !hasPreviousResponseID {
                     items.append(.object([
                         "type": .string("item_reference"),
                         "id": .string(response.id)
@@ -232,7 +238,8 @@ func openAIResponsesInputMessageJSON(
                     warnings: &warnings
                 )
             case let .toolCall(call):
-                if hasConversation, (openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue) != nil {
+                let itemID = openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue
+                if hasConversation, itemID != nil {
                     break
                 }
                 if call.name == "tool_search" {
@@ -244,16 +251,28 @@ func openAIResponsesInputMessageJSON(
                     break
                 }
                 if call.providerExecuted {
-                    if store, let itemID = openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue {
+                    if store, let itemID {
                         output.append(.object(["type": .string("item_reference"), "id": .string(itemID)]))
                     }
+
+                    // Without response storage, shell calls must be replayed
+                    // together with their matching shell_call_output.
+                    if store || !shellToolNames.contains(call.name) {
+                        break
+                    }
+                }
+
+                let isProviderDefinedToolCall = providerDefinedToolNames.contains(call.name)
+                    || customToolNames.contains(call.name)
+                if hasPreviousResponseID, store, itemID != nil, isProviderDefinedToolCall {
                     break
                 }
-                if hasPreviousResponseID, store, (openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue) != nil {
-                    break
-                }
-                if call.name == "shell", store, let itemID = openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue {
+                if store, let itemID, isProviderDefinedToolCall {
                     output.append(.object(["type": .string("item_reference"), "id": .string(itemID)]))
+                    break
+                }
+                if shellToolNames.contains(call.name) {
+                    output.append(openAIResponsesShellCallItem(call))
                     break
                 }
                 if call.name == "local_shell" {
@@ -600,6 +619,31 @@ func openAIResponsesLocalShellOutput(_ result: AIToolResult) -> [String: JSONVal
         "call_id": .string(result.toolCallID),
         "output": output["value"]?["output"] ?? output["output"] ?? .string("")
     ]
+}
+
+func openAIResponsesShellCallItem(_ call: AIToolCall) -> JSONValue {
+    let itemID = openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue
+    let input = openAIResponsesParsedToolArguments(call.arguments)
+    let action = input["action"] ?? .object([:])
+    var mappedAction: [String: JSONValue] = [
+        "commands": action["commands"] ?? .array([JSONValue]())
+    ]
+    if let timeout = action["timeoutMs"] ?? action["timeout_ms"] {
+        mappedAction["timeout_ms"] = timeout
+    }
+    if let maxOutputLength = action["maxOutputLength"] ?? action["max_output_length"] {
+        mappedAction["max_output_length"] = maxOutputLength
+    }
+    var item: [String: JSONValue] = [
+        "type": .string("shell_call"),
+        "call_id": .string(call.id),
+        "status": .string("completed"),
+        "action": .object(mappedAction)
+    ]
+    if let itemID {
+        item["id"] = .string(itemID)
+    }
+    return .object(item)
 }
 
 func openAIResponsesShellOutput(_ result: AIToolResult) -> [String: JSONValue] {

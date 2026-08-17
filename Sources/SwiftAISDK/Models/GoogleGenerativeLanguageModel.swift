@@ -103,7 +103,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
 
         var generationConfig: [String: JSONValue] = [:]
         googleApplyStandardGenerationSettings(request, to: &generationConfig)
-        googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
+        try googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
         googleApplyProviderGenerationOptions(options, to: &generationConfig)
 
         var body: [String: JSONValue] = ["contents": .array(preparedMessages.contents)]
@@ -111,7 +111,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
             body["systemInstruction"] = systemInstruction
         }
         if !generationConfig.isEmpty { body["generationConfig"] = .object(generationConfig) }
-        if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: false) {
+        if let preparedTools = try googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: false) {
             warnings.append(contentsOf: preparedTools.warnings)
             if !preparedTools.tools.isEmpty {
                 body["tools"] = .array(preparedTools.tools)

@@ -392,7 +392,11 @@ func authInternal(
         metadata: metadata,
         clientInformation: clientInformation,
         redirectURL: provider.redirectURL,
-        scope: scope ?? provider.clientMetadata.scope,
+        scope: selectedAuthorizationScope(
+            challengeScope: scope,
+            resourceMetadata: resourceMetadata,
+            clientScope: provider.clientMetadata.scope
+        ),
         state: state,
         resource: resource
     )
@@ -400,6 +404,21 @@ func authInternal(
     try await provider.saveCodeVerifier(started.codeVerifier)
     try await provider.redirectToAuthorization(started.authorizationURL)
     return .redirect
+}
+
+private func selectedAuthorizationScope(
+    challengeScope: String?,
+    resourceMetadata: MCPOAuthProtectedResourceMetadata?,
+    clientScope: String?
+) -> String? {
+    if let challengeScope, !challengeScope.isEmpty {
+        return challengeScope
+    }
+    let resourceScope = resourceMetadata?.scopesSupported.joined(separator: " ")
+    if let resourceScope, !resourceScope.isEmpty {
+        return resourceScope
+    }
+    return clientScope
 }
 
 private func mcpOAuthAuthorizationServerInformation(

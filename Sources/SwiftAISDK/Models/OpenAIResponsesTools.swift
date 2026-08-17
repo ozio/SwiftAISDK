@@ -105,7 +105,7 @@ func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> 
             aliases["code_interpreter"] = toolName
         case "openai.file_search", "xai.file_search":
             aliases["file_search"] = toolName
-        case "openai.image_generation":
+        case "openai.image_generation", "xai.image_generation":
             aliases["image_generation"] = toolName
         case "openai.web_search", "openai.web_search_preview", "xai.web_search":
             aliases["web_search"] = toolName

@@ -189,6 +189,9 @@ tools, approval hooks, and provider-defined helpers such as `OpenAITools`,
 For OpenAI Responses, `OpenAITools.programmaticToolCalling(...)` enables
 programmatic tool orchestration; function schemas accept OpenAI
 `allowedCallers` and `outputSchema` provider options.
+For xAI Responses, `XAITools.imageGeneration(action:)` exposes the hosted image
+tool with generated/streamed prompt and failure results. Gateway failures retain
+their normalized `AIAPICallError` through `GatewayError.cause`.
 
 ## Providers
 
@@ -317,6 +320,9 @@ let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMidd
 `MCPClient` mirrors the core of official `@ai-sdk/mcp`: initialize handshake,
 tool discovery, dynamic `AITool` conversion, resources, prompts, elicitation,
 HTTP/SSE transport, stdio transport, and OAuth helpers.
+OAuth providers can implement `authorize(resourceMetadataURL:scope:)` to receive
+the scope advertised by `WWW-Authenticate` or Protected Resource Metadata; the
+existing `authorize(resourceMetadataURL:)` requirement remains source-compatible.
 
 ```swift
 let mcp = try await MCPClient.connect(
@@ -367,5 +373,6 @@ build:
 
 ```sh
 npm ci --prefix docs-site
+npm --prefix docs-site run check
 npm --prefix docs-site run build
 ```

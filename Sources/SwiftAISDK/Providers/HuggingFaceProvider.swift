@@ -10,7 +10,7 @@ public final class HuggingFaceProvider: AIProvider, @unchecked Sendable {
             providerID: providerID,
             authorization: .bearer(environmentVariables: ["HUGGINGFACE_API_KEY"]),
             settings: settings,
-            userAgentSuffix: "ai-sdk/huggingface/2.0.28"
+            userAgentSuffix: "ai-sdk/huggingface/2.0.30"
         )
         config = ModelHTTPConfig(
             providerID: "huggingface.responses",

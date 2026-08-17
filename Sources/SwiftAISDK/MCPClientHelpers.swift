@@ -44,21 +44,38 @@ func mcpJSONString(_ value: JSONValue) -> String? {
     return String(data: data, encoding: .utf8)
 }
 
-func mcpOAuthResourceMetadataURL(from headers: [String: String]) -> URL? {
+func mcpOAuthWWWAuthenticateParameters(
+    from headers: [String: String]
+) -> (resourceMetadataURL: URL?, scope: String?) {
     guard let header = headers.first(where: { $0.key.caseInsensitiveCompare("www-authenticate") == .orderedSame })?.value else {
-        return nil
+        return (nil, nil)
     }
     let parts = header.split(separator: " ", maxSplits: 1).map(String.init)
     guard parts.first?.lowercased() == "bearer", parts.count == 2 else {
-        return nil
+        return (nil, nil)
     }
-    guard let range = parts[1].range(of: #"resource_metadata="([^"]*)""#, options: .regularExpression) else {
-        return nil
+
+    func quotedParameter(_ name: String) -> String? {
+        guard let range = parts[1].range(
+            of: #"(?:^|[,\s])\#(name)="([^"]*)""#,
+            options: [.regularExpression, .caseInsensitive]
+        ) else {
+            return nil
+        }
+        let matched = String(parts[1][range])
+        guard let separator = matched.firstIndex(of: "=") else { return nil }
+        return String(matched[matched.index(after: separator)...]).dropFirst().dropLast().description
     }
-    let value = parts[1][range]
-        .dropFirst("resource_metadata=\"".count)
-        .dropLast()
-    return URL(string: String(value))
+
+    let resourceMetadataURL = quotedParameter("resource_metadata").flatMap { value -> URL? in
+        guard let url = URL(string: value), url.scheme != nil else { return nil }
+        return url
+    }
+    return (resourceMetadataURL, quotedParameter("scope"))
+}
+
+func mcpOAuthResourceMetadataURL(from headers: [String: String]) -> URL? {
+    mcpOAuthWWWAuthenticateParameters(from: headers).resourceMetadataURL
 }
 
 func mcpJSONRPCResultResponse(id: JSONValue?, result: JSONValue) -> JSONValue {

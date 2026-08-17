@@ -79,7 +79,7 @@ private actor DelayedPendingBlackForestLabsVideoTransport: AITransport {
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://api.bfl.ai/v1/flux-3-video")
     #expect(requests[0].headers["x-key"] == "bfl-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.26")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.28")
     #expect(requests[0].headers["x-request-id"] == "video-1")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body == .object([
@@ -89,7 +89,7 @@ private actor DelayedPendingBlackForestLabsVideoTransport: AITransport {
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.us1.bfl.ai/v1/get_result?id=bfl-video-1")
     #expect(requests[1].headers["x-key"] == "bfl-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.26")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/black-forest-labs/2.0.28")
     #expect(requests[1].headers["x-request-id"] == "video-1")
 }
 

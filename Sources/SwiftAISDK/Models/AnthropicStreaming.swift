@@ -5,6 +5,7 @@ struct AnthropicToolCallBuffer {
     var name: String
     var arguments: String
     var providerExecuted: Bool
+    var providerMetadata: [String: JSONValue]
     var rawValue: JSONValue
     var firstDelta: Bool = true
     var providerToolInputType: String?
@@ -246,13 +247,18 @@ struct AnthropicStreamingProviderToolResults {
 
 struct AnthropicStreamingToolCalls {
     private var buffers: [Int: AnthropicToolCallBuffer] = [:]
+    private let providerID: String
+
+    init(providerID: String) {
+        self.providerID = providerID
+    }
 
     mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
         switch raw["type"]?.stringValue {
         case "content_block_start":
             guard let index = raw["index"]?.intValue,
                   let block = raw["content_block"],
-                  let toolCall = anthropicToolCall(from: block) else {
+                  let toolCall = anthropicToolCall(from: block, providerID: providerID) else {
                 return []
             }
             let initialArguments = toolCall.arguments == "{}" ? "" : toolCall.arguments
@@ -261,12 +267,18 @@ struct AnthropicStreamingToolCalls {
                 name: toolCall.name,
                 arguments: initialArguments,
                 providerExecuted: toolCall.providerExecuted,
+                providerMetadata: toolCall.providerMetadata,
                 rawValue: block,
                 firstDelta: initialArguments.isEmpty,
                 providerToolInputType: anthropicProviderToolInputType(from: block)
             )
             var parts: [LanguageStreamPart] = [
-                .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted)
+                .toolInputStart(
+                    id: toolCall.id,
+                    name: toolCall.name,
+                    providerExecuted: toolCall.providerExecuted,
+                    providerMetadata: toolCall.providerMetadata
+                )
             ]
             parts.append(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: initialArguments, index: index))
             if !initialArguments.isEmpty {
@@ -296,12 +308,13 @@ struct AnthropicStreamingToolCalls {
                 return []
             }
             return [
-                .toolInputEnd(id: buffer.id),
+                .toolInputEnd(id: buffer.id, providerMetadata: buffer.providerMetadata),
                 .toolCall(AIToolCall(
                     id: buffer.id,
                     name: buffer.name,
                     arguments: buffer.arguments.isEmpty ? "{}" : buffer.arguments,
                     providerExecuted: buffer.providerExecuted,
+                    providerMetadata: buffer.providerMetadata,
                     rawValue: buffer.rawValue
                 ))
             ]

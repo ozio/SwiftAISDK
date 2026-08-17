@@ -9,7 +9,11 @@ func xaiChatWarnings(for request: LanguageModelRequest) -> [AIWarning] {
     return warnings
 }
 
-func xaiChatBody(from input: [String: JSONValue], request: LanguageModelRequest) throws -> [String: JSONValue] {
+func xaiChatBody(
+    from input: [String: JSONValue],
+    request: LanguageModelRequest,
+    warnings: inout [AIWarning]
+) throws -> [String: JSONValue] {
     var body = input
     if let maxTokens = body.removeValue(forKey: "max_tokens") {
         body["max_completion_tokens"] = maxTokens
@@ -22,22 +26,36 @@ func xaiChatBody(from input: [String: JSONValue], request: LanguageModelRequest)
         body["response_format"] = responseFormat
     }
     if let value = request.providerOptions["xai"] {
-        guard value != .null else { return xaiChatWireOptions(from: body, reasoning: request.reasoning) }
+        guard value != .null else {
+            return xaiChatWireOptions(from: body, reasoning: request.reasoning, warnings: &warnings)
+        }
         guard let nested = value.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.xai", message: "xAI chat provider options must be an object.")
         }
         body.merge(try xaiValidateChatProviderOptions(nested)) { _, nested in nested }
     }
-    return xaiChatWireOptions(from: body, reasoning: request.reasoning)
+    return xaiChatWireOptions(from: body, reasoning: request.reasoning, warnings: &warnings)
 }
 
-func xaiChatWireOptions(from input: [String: JSONValue], reasoning: String?) -> [String: JSONValue] {
+func xaiChatWireOptions(
+    from input: [String: JSONValue],
+    reasoning: String?,
+    warnings: inout [AIWarning]
+) -> [String: JSONValue] {
     var body = input
     if let effort = body.removeValue(forKey: "reasoningEffort") {
         body["reasoning_effort"] = effort
     }
-    if body["reasoning_effort"] == nil, let reasoningEffort = xaiReasoningEffort(reasoning) {
+    if body["reasoning_effort"] == nil,
+       let reasoningEffort = xaiReasoningEffort(
+           reasoning,
+           modelID: body["model"]?.stringValue ?? "",
+           warnings: &warnings
+       ) {
         body["reasoning_effort"] = .string(reasoningEffort)
+    }
+    if let serviceTier = body.removeValue(forKey: "serviceTier") {
+        body["service_tier"] = serviceTier
     }
     if let topLogprobs = body.removeValue(forKey: "topLogprobs") {
         body["top_logprobs"] = topLogprobs
@@ -51,17 +69,41 @@ func xaiChatWireOptions(from input: [String: JSONValue], reasoning: String?) -> 
     return body
 }
 
-func xaiReasoningEffort(_ reasoning: String?) -> String? {
-    switch reasoning {
-    case "minimal", "low":
-        return "low"
-    case "medium":
-        return "medium"
-    case "high", "xhigh":
-        return "high"
-    default:
+func xaiSupportsReasoningEffort(_ modelID: String) -> Bool {
+    modelID.range(
+        of: #"^grok-4\.20(-\d{4})?-(non-)?reasoning$"#,
+        options: .regularExpression
+    ) == nil
+}
+
+func xaiReasoningEffort(
+    _ reasoning: String?,
+    modelID: String,
+    warnings: inout [AIWarning]
+) -> String? {
+    guard isCustomReasoning(reasoning), let reasoning else { return nil }
+    guard xaiSupportsReasoningEffort(modelID) else {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "reasoning",
+            message: #"reasoning "\#(reasoning)" is not supported by this model."#
+        ))
         return nil
     }
+    if reasoning == "none" {
+        return "none"
+    }
+    return mapReasoningToProviderEffort(
+        reasoning: reasoning,
+        effortMap: [
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": modelID == "grok-4.6" ? "xhigh" : "high"
+        ],
+        warnings: &warnings
+    )
 }
 
 func xaiChatResponseFormat(from responseFormat: AIResponseFormat?) -> JSONValue? {
@@ -87,6 +129,7 @@ func xaiChatResponseFormat(from responseFormat: AIResponseFormat?) -> JSONValue?
 func xaiValidateChatProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
     let allowedKeys: Set<String> = [
         "reasoningEffort",
+        "serviceTier",
         "logprobs",
         "topLogprobs",
         "parallel_function_calling",
@@ -96,8 +139,12 @@ func xaiValidateChatProviderOptions(_ options: [String: JSONValue]) throws -> [S
     for (key, value) in options where allowedKeys.contains(key) {
         switch key {
         case "reasoningEffort":
-            guard let effort = value.stringValue, ["none", "low", "medium", "high"].contains(effort) else {
-                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")
+            guard let effort = value.stringValue, ["none", "low", "medium", "high", "xhigh"].contains(effort) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, high, or xhigh.")
+            }
+        case "serviceTier":
+            guard let serviceTier = value.stringValue, ["default", "priority"].contains(serviceTier) else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.serviceTier", message: "xAI serviceTier must be default or priority.")
             }
         case "logprobs", "parallel_function_calling":
             guard value.boolValue != nil else {

@@ -61,6 +61,7 @@ func openAIResponsesResultContent(
     toolApprovalRequests: [AIToolApprovalRequest],
     sources: [AISource],
     providerID: String,
+    mode: ResponsesRequestMode = .openAICompatible,
     toolNameAliases: [String: String] = [:]
 ) -> [AIResultContentPart] {
     var content: [AIResultContentPart] = []
@@ -74,7 +75,11 @@ func openAIResponsesResultContent(
         } else {
             approvalToolCallIDOverride = nil
         }
-        content.append(contentsOf: openAIResponsesOutputContentItem(from: item, providerID: providerID))
+        content.append(contentsOf: openAIResponsesOutputContentItem(
+            from: item,
+            providerID: providerID,
+            mode: mode
+        ))
         if let toolCall = openAIResponsesToolCall(
             from: item,
             providerID: providerID,
@@ -108,13 +113,21 @@ func openAIResponsesResultContent(
     return content
 }
 
-func openAIResponsesOutputContent(from raw: JSONValue, providerID: String) -> [AIResultContentPart] {
+func openAIResponsesOutputContent(
+    from raw: JSONValue,
+    providerID: String,
+    mode: ResponsesRequestMode = .openAICompatible
+) -> [AIResultContentPart] {
     raw["output"]?.arrayValue?.flatMap { item -> [AIResultContentPart] in
-        openAIResponsesOutputContentItem(from: item, providerID: providerID)
+        openAIResponsesOutputContentItem(from: item, providerID: providerID, mode: mode)
     } ?? []
 }
 
-func openAIResponsesOutputContentItem(from item: JSONValue, providerID: String) -> [AIResultContentPart] {
+func openAIResponsesOutputContentItem(
+    from item: JSONValue,
+    providerID: String,
+    mode: ResponsesRequestMode = .openAICompatible
+) -> [AIResultContentPart] {
         guard let type = item["type"]?.stringValue else { return [] }
         switch type {
         case "message":
@@ -122,18 +135,51 @@ func openAIResponsesOutputContentItem(from item: JSONValue, providerID: String) 
             return item["content"]?.arrayValue?.compactMap { part in
                 guard part["type"]?.stringValue == "output_text",
                       let text = part["text"]?.stringValue else { return nil }
+                let annotations: [JSONValue]
+                if case .openResponses = mode {
+                    annotations = openResponsesURLCitationAnnotations(part["annotations"])
+                } else {
+                    annotations = part["annotations"]?.arrayValue ?? []
+                }
                 return .text(
                     text,
                     providerMetadata: openAIResponsesTextProviderMetadata(
                         itemID: itemID,
                         phase: item["phase"],
-                        annotations: part["annotations"]?.arrayValue ?? [],
+                        annotations: annotations,
                         providerID: providerID
                     )
                 )
             } ?? []
         case "reasoning":
             guard let itemID = item["id"]?.stringValue else { return [] }
+            if case let .openResponses(providerOptionsName) = mode {
+                let reasoningContent = item["content"]?.arrayValue
+                let metadata = openResponsesReasoningProviderMetadata(
+                    item: item,
+                    providerOptionsName: providerOptionsName
+                )
+                if let reasoningContent, !reasoningContent.isEmpty {
+                    return reasoningContent.compactMap { contentPart in
+                        guard contentPart["type"]?.stringValue == "reasoning_text",
+                              let text = contentPart["text"]?.stringValue else {
+                            return nil
+                        }
+                        return .reasoning(
+                            text,
+                            providerMetadata: openResponsesReasoningProviderMetadata(
+                                item: item,
+                                providerOptionsName: providerOptionsName,
+                                reasoningContent: [contentPart]
+                            )
+                        )
+                    }
+                }
+                let text = (item["summary"]?.arrayValue ?? [])
+                    .compactMap { $0["text"]?.stringValue }
+                    .joined()
+                return [.reasoning(text, providerMetadata: metadata)]
+            }
             guard let summaries = item["summary"]?.arrayValue else { return [] }
             if summaries.isEmpty {
                 return [
@@ -175,6 +221,51 @@ func openAIResponsesOutputContentItem(from item: JSONValue, providerID: String) 
         default:
             return []
         }
+}
+
+func openResponsesURLCitationAnnotations(_ value: JSONValue?) -> [JSONValue] {
+    guard let annotations = value?.arrayValue,
+          annotations.allSatisfy({ annotation in
+              annotation["type"]?.stringValue == "url_citation"
+                  && annotation["start_index"]?.intValue != nil
+                  && annotation["end_index"]?.intValue != nil
+                  && annotation["url"]?.stringValue != nil
+                  && annotation["title"]?.stringValue != nil
+          }) else {
+        return []
+    }
+    return annotations
+}
+
+func openResponsesReasoningProviderMetadata(
+    item: JSONValue,
+    providerOptionsName: String,
+    reasoningContent: [JSONValue]? = nil
+) -> [String: JSONValue] {
+    let resolvedReasoningContent = reasoningContent ?? item["content"]?.arrayValue
+    var metadata: [String: JSONValue] = [
+        "itemId": item["id"] ?? .null,
+        "reasoningSummary": .array((item["summary"]?.arrayValue ?? []).compactMap { summaryPart in
+            guard let text = summaryPart["text"]?.stringValue else { return nil }
+            return .object([
+                "type": .string("summary_text"),
+                "text": .string(text)
+            ])
+        }),
+        "reasoningContent": resolvedReasoningContent.map { content in
+            .array(content.compactMap { contentPart in
+                guard let text = contentPart["text"]?.stringValue else { return nil }
+                return .object([
+                    "type": .string("reasoning_text"),
+                    "text": .string(text)
+                ])
+            })
+        } ?? .null
+    ]
+    if let encryptedContent = item["encrypted_content"] {
+        metadata["reasoningEncryptedContent"] = encryptedContent
+    }
+    return [providerOptionsName: .object(metadata)]
 }
 
 func openAIResponsesToolCall(
@@ -361,6 +452,27 @@ func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCal
             result: .object(["outputs": item["outputs"] ?? .null])
         )
     case "image_generation_call":
+        if providerID == "xai.responses" {
+            let toolCallID = item["id"]?.stringValue ?? "image-generation-call"
+            let toolName = toolNameAliases["image_generation"] ?? "image_generation"
+            if let result = item["result"], result != .null {
+                var output: [String: JSONValue] = ["result": result]
+                if let prompt = item["prompt"], prompt != .null {
+                    output["prompt"] = prompt
+                }
+                return AIToolResult(
+                    toolCallID: toolCallID,
+                    toolName: toolName,
+                    result: .object(output)
+                )
+            }
+            return AIToolResult(
+                toolCallID: toolCallID,
+                toolName: toolName,
+                result: .string("Image generation failed (status: \(item["status"]?.stringValue ?? "unknown"))."),
+                isError: true
+            )
+        }
         return AIToolResult(
             toolCallID: item["id"]?.stringValue ?? "image-generation-call",
             toolName: toolNameAliases["image_generation"] ?? "image_generation",

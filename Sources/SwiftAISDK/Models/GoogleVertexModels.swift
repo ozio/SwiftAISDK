@@ -680,10 +680,10 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     }
     var generationConfig: [String: JSONValue] = [:]
     googleApplyStandardGenerationSettings(request, to: &generationConfig)
-    googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
+    try googleApplyResponseFormat(responseFormat, options: options, to: &generationConfig)
     googleApplyProviderGenerationOptions(options, to: &generationConfig)
     if !generationConfig.isEmpty { body["generationConfig"] = .object(generationConfig) }
-    if let preparedTools = googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: true) {
+    if let preparedTools = try googlePrepareTools(from: request.tools, toolChoice: options["toolChoice"], modelID: modelID, isVertexProvider: true) {
         warnings.append(contentsOf: preparedTools.warnings)
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)

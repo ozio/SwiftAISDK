@@ -5,6 +5,7 @@ struct OpenAIResponsesStreamingToolCalls {
     let toolNameAliases: [String: String]
     private var buffers: [Int: OpenAICompatibleToolCallBuffer] = [:]
     private var hostedToolSearchCallIDs: [String] = []
+    private var xaiImageGenerationToolCallIDs: Set<String> = []
     private var approvalToolCallIndex = 0
 
     init(providerID: String, toolNameAliases: [String: String] = [:]) {
@@ -20,6 +21,8 @@ struct OpenAIResponsesStreamingToolCalls {
             switch item["type"]?.stringValue {
             case "web_search_call":
                 return handleImmediateHostedToolAdded(item: item, index: index, emitInputLifecycle: true)
+            case "image_generation_call" where providerID == "xai.responses":
+                return handleXAIImageGenerationCall(item: item, index: index)
             case "file_search_call", "image_generation_call":
                 return handleImmediateHostedToolAdded(item: item, index: index, emitInputLifecycle: false)
             case "computer_call":
@@ -84,6 +87,19 @@ struct OpenAIResponsesStreamingToolCalls {
                     rawValue: raw
                 ))
             ]
+        case let eventType where providerID == "xai.responses" && [
+            "response.image_generation_call.in_progress",
+            "response.image_generation_call.generating",
+            "response.image_generation_call.completed"
+        ].contains(eventType):
+            guard let itemID = raw["item_id"]?.stringValue else { return [] }
+            return handleXAIImageGenerationCall(
+                item: .object([
+                    "type": .string("image_generation_call"),
+                    "id": .string(itemID)
+                ]),
+                index: raw["output_index"]?.intValue
+            )
         case "response.image_generation_call.partial_image":
             guard let itemID = raw["item_id"]?.stringValue,
                   let image = raw["partial_image_b64"] else { return [] }
@@ -120,6 +136,17 @@ struct OpenAIResponsesStreamingToolCalls {
         case "response.output_item.done":
             guard let item = raw["item"], let index = raw["output_index"]?.intValue else { return [] }
             switch item["type"]?.stringValue {
+            case "image_generation_call" where providerID == "xai.responses":
+                var parts = handleXAIImageGenerationCall(item: item, index: index)
+                buffers[index] = nil
+                if let result = openAIResponsesToolResult(
+                    from: item,
+                    providerID: providerID,
+                    toolNameAliases: toolNameAliases
+                ) {
+                    parts.append(.toolResult(result))
+                }
+                return parts
             case "web_search_call", "file_search_call", "image_generation_call", "code_interpreter_call":
                 buffers[index] = nil
                 return openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases).map { [.toolResult($0)] } ?? []
@@ -229,6 +256,34 @@ struct OpenAIResponsesStreamingToolCalls {
         }
         parts.append(.toolCall(toolCall))
         return parts
+    }
+
+    private mutating func handleXAIImageGenerationCall(item: JSONValue, index: Int?) -> [LanguageStreamPart] {
+        guard let toolCall = openAIResponsesToolCall(
+            from: item,
+            providerID: providerID,
+            toolNameAliases: toolNameAliases
+        ) else {
+            return []
+        }
+        guard xaiImageGenerationToolCallIDs.insert(toolCall.id).inserted else {
+            return []
+        }
+        if let index {
+            buffers[index] = OpenAICompatibleToolCallBuffer(
+                id: toolCall.id,
+                name: toolCall.name,
+                arguments: toolCall.arguments,
+                inputStarted: true,
+                rawValue: item
+            )
+        }
+        return [
+            .toolInputStart(id: toolCall.id, name: toolCall.name),
+            .toolInputDelta(id: toolCall.id, delta: "{}"),
+            .toolInputEnd(id: toolCall.id),
+            .toolCall(toolCall)
+        ]
     }
 
     private mutating func handleComputerUseAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {

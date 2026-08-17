@@ -273,7 +273,11 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         }
         if response.statusCode == 401, let authProvider, !triedAuth {
             await authProvider.invalidateCredentials(.tokens)
-            let authorized = try await authProvider.authorize(resourceMetadataURL: mcpOAuthResourceMetadataURL(from: response.headers))
+            let parameters = mcpOAuthWWWAuthenticateParameters(from: response.headers)
+            let authorized = try await authProvider.authorize(
+                resourceMetadataURL: parameters.resourceMetadataURL,
+                scope: parameters.scope
+            )
             guard authorized else {
                 throw MCPClientError(
                     message: "MCP HTTP Transport Error: Unauthorized",
@@ -338,7 +342,11 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         }
         if response.statusCode == 401, let authProvider, !triedAuth {
             await authProvider.invalidateCredentials(.tokens)
-            let authorized = try await authProvider.authorize(resourceMetadataURL: mcpOAuthResourceMetadataURL(from: response.headers))
+            let parameters = mcpOAuthWWWAuthenticateParameters(from: response.headers)
+            let authorized = try await authProvider.authorize(
+                resourceMetadataURL: parameters.resourceMetadataURL,
+                scope: parameters.scope
+            )
             guard authorized else {
                 throw MCPClientError(
                     message: "MCP HTTP Transport Error: Unauthorized",

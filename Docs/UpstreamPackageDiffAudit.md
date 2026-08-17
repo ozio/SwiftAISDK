@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-08-10
+Snapshot date: 2026-08-17
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every tracked package was packed at both the prior
@@ -15,6 +15,205 @@ Status meanings:
   Swift design before provider-specific code is useful.
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
+
+## 2026-08-17 Tracked Package Results
+
+Fresh npm metadata reported 47 changed rows among the 48 tracked packages;
+`@ai-sdk/provider@4.0.7` was unchanged. The old and current published tarballs
+for every changed package were unpacked into a temporary workspace and reviewed
+separately. Published packages omit test sources, so the repository test and
+fixture delta from `74abcdfb6a41` through `86892f3f6b4d` was audited separately
+in `Docs/FreshUpstreamTestDiffAudit.md`.
+
+| Package | Previous | Current | Result |
+| --- | ---: | ---: | --- |
+| `ai` | `7.0.58` | `7.0.66` | `ported/covered/no-swift-action` — array output schemas preserve root `definitions` and `$defs`, and chat remains submitted through metadata-only start snapshots, including resumed snapshots that already contain parts. Reasoning part IDs, resume isolation, provider assignment without reranking, and cancellation semantics are already covered; declaration emit, React state cloning, and callback-promise propagation are JavaScript-specific. |
+| `@ai-sdk/provider` | `4.0.7` | `4.0.7` | `covered` — unchanged on npm. |
+| `@ai-sdk/provider-utils` | `5.0.25` | `5.0.27` | `covered/no-swift-action` — Swift's bounded reader preserves its original size-limit error independently of response cancellation, and importing SwiftAISDK does not depend on a JavaScript global `fetch`. |
+| `@ai-sdk/react` | `4.0.61` | `4.0.69` | `no-swift-action` — `useChat`, `useCompletion`, and `useObject` render-store state changes have no SwiftUI/React hook analogue in this package. |
+| `@ai-sdk/alibaba` | `2.0.29` | `2.0.32` | `ported` — replayed assistant messages omit historical reasoning from ordinary content while retaining the provider's dedicated reasoning field; reasoning-only assistant turns are omitted entirely. |
+| `@ai-sdk/amazon-bedrock` | `5.0.50` | `5.0.57` | `version-only`; the published source delta is release/dependency propagation. |
+| `@ai-sdk/anthropic` | `4.0.36` | `4.0.39` | `ported` — caller metadata is retained for client and server tools and web-search results, survives replay in later turns, maps aliased provider-tool names before choosing the wire result shape, and remains attached to streamed tool calls. |
+| `@ai-sdk/anthropic-aws` | `2.0.28` | `2.0.31` | `covered/version-only` — package-local source is unchanged and the Swift provider inherits shared Anthropic replay behavior. |
+| `@ai-sdk/assemblyai` | `3.0.25` | `3.0.27` | `version-only`. |
+| `@ai-sdk/azure` | `4.0.37` | `4.0.43` | `covered/version-only` — package-local behavior is unchanged; shared Responses behavior is audited under `@ai-sdk/openai`. |
+| `@ai-sdk/baseten` | `2.1.6` | `2.1.8` | `version-only`. |
+| `@ai-sdk/black-forest-labs` | `2.0.26` | `2.0.28` | `version-only`. |
+| `@ai-sdk/bytedance` | `2.0.27` | `2.0.29` | `version-only`. |
+| `@ai-sdk/cartesia` | `3.0.20` | `3.0.22` | `version-only`. |
+| `@ai-sdk/cerebras` | `3.0.28` | `3.0.30` | `covered` — current model-name unions and examples changed; Swift model IDs are forward-compatible strings. |
+| `@ai-sdk/cohere` | `4.0.25` | `4.0.27` | `version-only`. |
+| `@ai-sdk/deepgram` | `3.0.25` | `3.0.27` | `version-only`. |
+| `@ai-sdk/deepinfra` | `3.0.28` | `3.0.30` | `version-only`. |
+| `@ai-sdk/deepseek` | `3.0.26` | `3.0.28` | `version-only`. |
+| `@ai-sdk/elevenlabs` | `3.0.26` | `3.0.28` | `version-only`. |
+| `@ai-sdk/fal` | `3.0.26` | `3.0.28` | `version-only`. |
+| `@ai-sdk/fireworks` | `3.0.30` | `3.0.32` | `version-only`. |
+| `@ai-sdk/gateway` | `4.0.46` | `4.0.52` | `ported/covered` — `GatewayError.cause` exposes the normalized `AIAPICallError`, preserving nested structured bodies (including numbers beyond Swift `Int` range), status, headers, and raw failures; new Gemini 3.7 Flash and Grok 4.6/xhigh settings remain covered by string model IDs and provider-option pass-through. |
+| `@ai-sdk/gladia` | `3.0.25` | `3.0.27` | `version-only`. |
+| `@ai-sdk/google` | `4.0.39` | `4.0.44` | `ported/covered` — primitive JSON Schema enum/const values use Gemini's OpenAPI wire form with nullable/type validation, detailed Google error bodies remain available, forced strict/named tools use `ANY`, and strict automatic tools retain `VALIDATED`. Gemini 3.7 Flash is accepted by the existing string model surface. |
+| `@ai-sdk/google-vertex` | `5.0.48` | `5.0.54` | `ported` — Chirp 3 HD Cloud Text-to-Speech is available through the Vertex speech factory, including endpoint, voice, audio, warnings, metadata, and strict successful-response validation; shared Google and Anthropic changes are inherited. |
+| `@ai-sdk/groq` | `4.0.26` | `4.0.28` | `version-only`. |
+| `@ai-sdk/huggingface` | `2.0.28` | `2.0.30` | `version-only`. |
+| `@ai-sdk/hume` | `3.0.25` | `3.0.27` | `version-only`. |
+| `@ai-sdk/klingai` | `4.0.27` | `4.0.29` | `version-only`. |
+| `@ai-sdk/lmnt` | `3.0.25` | `3.0.27` | `version-only`. |
+| `@ai-sdk/luma` | `3.0.26` | `3.0.28` | `version-only`. |
+| `@ai-sdk/mcp` | `2.0.29` | `2.0.32` | `ported` — OAuth reads challenge and Protected Resource Metadata scopes, selects challenge scope first, rejects relative challenge metadata URLs, and forwards the selected value to authorization while preserving source compatibility for existing providers. |
+| `@ai-sdk/minimax` | `3.0.12` | `3.0.15` | `version-only`. |
+| `@ai-sdk/mistral` | `4.0.27` | `4.0.29` | `version-only`. |
+| `@ai-sdk/moonshotai` | `3.0.31` | `3.0.35` | `ported` — the owned chat request converter supports video/data and `ms://` references, rejects unsupported audio/PDF input, maps preserved reasoning to `thinking.keep`, exposes current reasoning/cache/safety options, normalizes tool schemas for MFJS, and serializes text/JSON/content/denied tool outputs by their model-output semantics. |
+| `@ai-sdk/open-responses` | `2.0.25` | `2.0.28` | `ported` — manual history preserves reasoning, item order, annotations, and part IDs; provider-native reasoning effort is mapped and unsupported provider-defined tools warn instead of disappearing. Successful-body provider errors retain their message/status semantics, reasoning-only output is accepted, missing output is descriptive, and summary deltas no longer duplicate reasoning text. |
+| `@ai-sdk/openai` | `4.0.36` | `4.0.42` | `ported` — Responses supports explicit compaction triggers and reconstructs storage-disabled shell calls, keeps function calls paired with outputs across previous-response continuation, and avoids duplicate MCP approval references. |
+| `@ai-sdk/openai-compatible` | `3.0.28` | `3.0.30` | `version-only` in the published package. Swift's unfiltered `JSONValue` usage payload already preserves provider-specific top-level and nested raw fields exercised by the newer repository fixture. |
+| `@ai-sdk/perplexity` | `4.0.27` | `4.0.29` | `version-only`. |
+| `@ai-sdk/prodia` | `2.0.26` | `2.0.28` | `version-only`. |
+| `@ai-sdk/quiverai` | `2.0.25` | `2.0.27` | `version-only`. |
+| `@ai-sdk/replicate` | `3.0.26` | `3.0.28` | `version-only`. |
+| `@ai-sdk/revai` | `3.0.25` | `3.0.27` | `version-only`. |
+| `@ai-sdk/togetherai` | `3.0.29` | `3.0.31` | `version-only`. |
+| `@ai-sdk/vercel` | `3.0.28` | `3.0.30` | `version-only`. |
+| `@ai-sdk/voyage` | `2.0.25` | `2.0.27` | `version-only`. |
+| `@ai-sdk/xai` | `4.0.33` | `4.0.40` | `ported` — xAI adds the Responses image-generation tool with custom aliases, prompt/error results, and deduplicated progress/output-item streaming lifecycle; priority service-tier metadata; Grok 4.6 `xhigh`; model-gated reasoning effort and Responses reasoning summaries; Imagine Video 1.5/1080p and reference voices with terminal errors taking precedence over stale URLs; and nullish-safe timestamped speech/transcription options, pronunciation replacements, trace/usage metadata, and provider error decoding. |
+
+### 2026-08-17 Registry Discovery
+
+The exact npm registry prefix contains 81 live `@ai-sdk/*` packages; `npm
+search --json` returns 65 and misses 16 exact-prefix names. Classification of
+the unfiltered set yields 45 model-provider packages and 36 schema, UI,
+tooling, harness, sandbox, workflow, or adapter packages.
+
+Exact registry-prefix package list, sorted by package name:
+
+```text
+@ai-sdk/alibaba
+@ai-sdk/amazon-bedrock
+@ai-sdk/angular
+@ai-sdk/anthropic
+@ai-sdk/anthropic-aws
+@ai-sdk/assemblyai
+@ai-sdk/azure
+@ai-sdk/baseten
+@ai-sdk/black-forest-labs
+@ai-sdk/bytedance
+@ai-sdk/cartesia
+@ai-sdk/cerebras
+@ai-sdk/code-mode
+@ai-sdk/codemod
+@ai-sdk/cohere
+@ai-sdk/deepgram
+@ai-sdk/deepinfra
+@ai-sdk/deepseek
+@ai-sdk/devtools
+@ai-sdk/durable-agent
+@ai-sdk/elevenlabs
+@ai-sdk/fal
+@ai-sdk/fireworks
+@ai-sdk/fish-audio
+@ai-sdk/gateway
+@ai-sdk/gladia
+@ai-sdk/gmicloud
+@ai-sdk/google
+@ai-sdk/google-vertex
+@ai-sdk/groq
+@ai-sdk/harness
+@ai-sdk/harness-acp
+@ai-sdk/harness-claude-code
+@ai-sdk/harness-cline
+@ai-sdk/harness-codex
+@ai-sdk/harness-deepagents
+@ai-sdk/harness-grok-build
+@ai-sdk/harness-opencode
+@ai-sdk/harness-pi
+@ai-sdk/huggingface
+@ai-sdk/hume
+@ai-sdk/klingai
+@ai-sdk/langchain
+@ai-sdk/llamaindex
+@ai-sdk/lmnt
+@ai-sdk/luma
+@ai-sdk/mcp
+@ai-sdk/minimax
+@ai-sdk/mistral
+@ai-sdk/moonshotai
+@ai-sdk/open-responses
+@ai-sdk/openai
+@ai-sdk/openai-compatible
+@ai-sdk/otel
+@ai-sdk/perplexity
+@ai-sdk/policy-opa
+@ai-sdk/prodia
+@ai-sdk/provider
+@ai-sdk/provider-utils
+@ai-sdk/quiverai
+@ai-sdk/react
+@ai-sdk/replicate
+@ai-sdk/revai
+@ai-sdk/rsc
+@ai-sdk/sandbox-just-bash
+@ai-sdk/sandbox-vercel
+@ai-sdk/solid
+@ai-sdk/specification
+@ai-sdk/svelte
+@ai-sdk/swarm
+@ai-sdk/test-server
+@ai-sdk/togetherai
+@ai-sdk/tui
+@ai-sdk/ui-utils
+@ai-sdk/valibot
+@ai-sdk/vercel
+@ai-sdk/voyage
+@ai-sdk/vue
+@ai-sdk/workflow
+@ai-sdk/workflow-harness
+@ai-sdk/xai
+```
+
+The 16 names omitted by `npm search --json` were
+`@ai-sdk/durable-agent`, `@ai-sdk/gmicloud`, `@ai-sdk/harness`,
+`@ai-sdk/harness-acp`, `@ai-sdk/harness-claude-code`,
+`@ai-sdk/harness-cline`, `@ai-sdk/harness-codex`,
+`@ai-sdk/harness-grok-build`, `@ai-sdk/harness-opencode`,
+`@ai-sdk/harness-pi`, `@ai-sdk/sandbox-just-bash`,
+`@ai-sdk/sandbox-vercel`, `@ai-sdk/specification`, `@ai-sdk/swarm`,
+`@ai-sdk/test-server`, and `@ai-sdk/vercel`.
+
+SwiftAISDK implements 43 model-provider packages. Two are intentionally not
+auto-ported by this automation:
+
+- `@ai-sdk/fish-audio@3.0.5` remains the previously reported gap. Its
+  `3.0.3 -> 3.0.5` delta is dependency-only; the port still needs S1/S2/S2.1
+  binary speech, multipart transcription, authentication, options, warnings,
+  provider metadata/errors, registry/capability rows, docs, and tests.
+- `@ai-sdk/gmicloud@3.0.1` is new since the previous run. A port needs an
+  OpenAI-compatible chat provider with `GMI_CLOUD_APIKEY`, the default
+  `https://api.gmi-serving.com/v1` endpoint, `gmicloud.chat` identity,
+  streaming usage, nested `error.details` decoding, model aliases, registry
+  and capability rows, public docs, and translated tests.
+
+The other new registry name is non-provider
+`@ai-sdk/harness-cline@1.0.0`; it is a coding-agent harness and is outside the
+provider-facing SwiftAISDK product scope.
+
+### 2026-08-17 Verification
+
+- `node Scripts/check-upstream-versions.js --all --json --fail-on-outdated`:
+  48 tracked packages current, zero drift and zero registry errors.
+- Exact npm registry-prefix metadata: 81 live `@ai-sdk/*` packages; the
+  independent `npm search --json` result contained 65.
+- Focused Swift tests: 148 core/MCP/Alibaba/Anthropic/Moonshot/OpenAI/Open
+  Responses tests, 144 Google/Vertex/Gateway tests, 50 xAI tests, 15 final
+  Open Responses tests, 15 Gateway/Vertex/error-formatting regressions, 31 MCP
+  OAuth/HTTP authorization tests, 2 resumed-chat tests, 2 Moonshot/Anthropic
+  alias/output regressions, and 4 provider-capability matrix tests all passed
+  with zero failures.
+- `swift test`: 2,392 tests across 3 suites passed with zero failures.
+- `npm ci --prefix docs-site`: completed successfully.
+- `npm --prefix docs-site run check`: 4 files checked with zero errors,
+  warnings, or hints.
+- `npm --prefix docs-site run build`: 85 pages built successfully and indexed
+  by Pagefind.
+- `git diff --check`: passed.
 
 ## 2026-08-10 Tracked Package Results
 

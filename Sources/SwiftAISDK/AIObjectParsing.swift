@@ -308,13 +308,17 @@ func canonicalJSONText(_ value: JSONValue) -> String? {
 
 func arrayOutputSchema(elementSchema: JSONValue) -> JSONValue {
     let itemSchema: JSONValue
+    var rootDefinitions: JSONValue?
+    var rootDefs: JSONValue?
     if var object = elementSchema.objectValue {
         object.removeValue(forKey: "$schema")
+        rootDefinitions = object.removeValue(forKey: "definitions")
+        rootDefs = object.removeValue(forKey: "$defs")
         itemSchema = .object(object)
     } else {
         itemSchema = elementSchema
     }
-    return .object([
+    var schema: [String: JSONValue] = [
         "$schema": .string("http://json-schema.org/draft-07/schema#"),
         "type": .string("object"),
         "properties": .object([
@@ -325,7 +329,10 @@ func arrayOutputSchema(elementSchema: JSONValue) -> JSONValue {
         ]),
         "required": .array([.string("elements")]),
         "additionalProperties": .bool(false)
-    ])
+    ]
+    schema["definitions"] = rootDefinitions
+    schema["$defs"] = rootDefs
+    return .object(schema)
 }
 
 func enumOutputSchema(values: [String]) -> JSONValue {

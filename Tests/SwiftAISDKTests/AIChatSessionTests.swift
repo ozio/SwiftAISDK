@@ -278,6 +278,74 @@ import Testing
 }
 
 @MainActor
+@Test func aiChatSessionRemainsSubmittedForMetadataOnlySnapshotUntilContentArrives() async throws {
+    let transport = ControlledChatTransport()
+    let session = AIChatSession(
+        transport: transport,
+        generateMessageID: { "response-1" }
+    )
+
+    let task = session.sendMessage("Hello", id: "user-1")
+    await waitUntil { transport.didSend }
+
+    transport.yield(.assistant(id: "response-1", metadata: ["model": "test-model"]))
+    await waitUntil { session.messages.last?.metadata["model"]?.stringValue == "test-model" }
+    #expect(session.status == .submitted)
+
+    transport.yield(.assistant(
+        id: "response-1",
+        parts: [.text(AIUITextPart(id: "text-1", text: "", state: .streaming))],
+        metadata: ["model": "test-model"]
+    ))
+    await waitUntil { session.status == .streaming }
+    #expect(session.status == .streaming)
+
+    transport.finish()
+    await task.value
+    #expect(session.status == .ready)
+}
+
+@MainActor
+@Test func aiChatSessionRemainsSubmittedForMetadataOnlySnapshotWhenResumingExistingParts() async throws {
+    let transport = ControlledChatTransport()
+    let existingAssistant = AIUIMessage.assistant(
+        id: "response-1",
+        parts: [.text(AIUITextPart(id: "text-1", text: "Existing answer", state: .done))]
+    )
+    let session = AIChatSession(
+        transport: transport,
+        messages: [.user("Continue", id: "user-1"), existingAssistant],
+        generateMessageID: {
+            Issue.record("Continuation should reuse the existing assistant message ID.")
+            return "unexpected-response"
+        }
+    )
+
+    let task = session.sendMessage()
+    await waitUntil { transport.didSend }
+
+    transport.yield(.assistant(
+        id: "response-1",
+        parts: existingAssistant.parts,
+        metadata: ["model": "test-model"]
+    ))
+    await waitUntil { session.messages.last?.metadata["model"]?.stringValue == "test-model" }
+    #expect(session.status == .submitted)
+
+    transport.yield(.assistant(
+        id: "response-1",
+        parts: [.text(AIUITextPart(id: "text-1", text: "Existing answer continued", state: .streaming))],
+        metadata: ["model": "test-model"]
+    ))
+    await waitUntil { session.status == .streaming }
+    #expect(session.status == .streaming)
+
+    transport.finish()
+    await task.value
+    #expect(session.status == .ready)
+}
+
+@MainActor
 @Test func aiChatSessionCanSendAutomaticallyAfterToolOutput() async throws {
     let transport = RecordingChatTransport()
     let ids = RecordingIDGenerator(["tool-message", "auto-response"])
@@ -371,6 +439,31 @@ private final class PendingChatTransport: AIChatTransport, @unchecked Sendable {
         return AsyncThrowingStream { continuation in
             continuation.yield(.assistant(id: responseID, parts: [.text(AIUITextPart(text: "Starting"))]))
         }
+    }
+}
+
+private final class ControlledChatTransport: AIChatTransport, @unchecked Sendable {
+    private let stream: AsyncThrowingStream<AIUIMessage, Error>
+    private let continuation: AsyncThrowingStream<AIUIMessage, Error>.Continuation
+    private(set) var didSend = false
+
+    init() {
+        var capturedContinuation: AsyncThrowingStream<AIUIMessage, Error>.Continuation?
+        stream = AsyncThrowingStream { capturedContinuation = $0 }
+        continuation = capturedContinuation!
+    }
+
+    func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error> {
+        didSend = true
+        return stream
+    }
+
+    func yield(_ message: AIUIMessage) {
+        continuation.yield(message)
+    }
+
+    func finish() {
+        continuation.finish()
     }
 }
 

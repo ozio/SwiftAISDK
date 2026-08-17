@@ -12,7 +12,7 @@ func xaiResponsesPreparedRequest(
     let input = try request.messages.flatMap { message in
         try xaiResponsesInputMessageJSON(message, warnings: &warnings)
     }
-    let preparedTools = xaiResponsesTools(from: request.tools, toolChoice: request.toolChoice ?? request.extraBody["toolChoice"])
+    let preparedTools = try xaiResponsesTools(from: request.tools, toolChoice: request.toolChoice ?? request.extraBody["toolChoice"])
     warnings.append(contentsOf: preparedTools.warnings)
 
     var body: [String: JSONValue] = [
@@ -31,8 +31,24 @@ func xaiResponsesPreparedRequest(
         body["logprobs"] = .bool(true)
     }
     if let topLogprobs = options["topLogprobs"] { body["top_logprobs"] = topLogprobs }
+    var reasoning: [String: JSONValue] = [:]
     if let reasoningEffort = options["reasoningEffort"] {
-        body["reasoning"] = .object(["effort": reasoningEffort])
+        reasoning["effort"] = reasoningEffort
+    } else if let reasoningEffort = xaiReasoningEffort(
+        request.reasoning,
+        modelID: modelID,
+        warnings: &warnings
+    ) {
+        reasoning["effort"] = .string(reasoningEffort)
+    }
+    if let reasoningSummary = options["reasoningSummary"] {
+        reasoning["summary"] = reasoningSummary
+    }
+    if !reasoning.isEmpty {
+        body["reasoning"] = .object(reasoning)
+    }
+    if let serviceTier = options["serviceTier"] {
+        body["service_tier"] = serviceTier
     }
     if options["store"]?.boolValue == false {
         body["store"] = .bool(false)
@@ -87,6 +103,8 @@ private func xaiResponsesMergedOptions(providerOptions: [String: JSONValue], ext
         }
     }
     raw.removeValue(forKey: "reasoningEffort")
+    raw.removeValue(forKey: "reasoningSummary")
+    raw.removeValue(forKey: "serviceTier")
     raw.removeValue(forKey: "logprobs")
     raw.removeValue(forKey: "topLogprobs")
     raw.removeValue(forKey: "store")
@@ -96,7 +114,7 @@ private func xaiResponsesMergedOptions(providerOptions: [String: JSONValue], ext
 }
 
 private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue], argumentPrefix: String, allowUnknown: Bool) throws -> XAIResponsesOptions {
-    let allowedKeys: Set<String> = ["reasoningEffort", "logprobs", "topLogprobs", "store", "previousResponseId", "include"]
+    let allowedKeys: Set<String> = ["reasoningEffort", "reasoningSummary", "serviceTier", "logprobs", "topLogprobs", "store", "previousResponseId", "include"]
     var values: [String: JSONValue] = [:]
     var raw: [String: JSONValue] = [:]
     for (key, value) in options {
@@ -106,8 +124,16 @@ private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue],
         }
         switch key {
         case "reasoningEffort":
-            guard let effort = value.stringValue, ["low", "medium", "high"].contains(effort) else {
-                throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")
+            guard let effort = value.stringValue, ["none", "low", "medium", "high", "xhigh"].contains(effort) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, high, or xhigh.")
+            }
+        case "reasoningSummary":
+            guard let summary = value.stringValue, ["auto", "concise", "detailed"].contains(summary) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningSummary", message: "xAI reasoningSummary must be auto, concise, or detailed.")
+            }
+        case "serviceTier":
+            guard let serviceTier = value.stringValue, ["default", "priority"].contains(serviceTier) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).serviceTier", message: "xAI serviceTier must be default or priority.")
             }
         case "logprobs", "store":
             guard value.boolValue != nil else {
@@ -269,7 +295,7 @@ private struct XAIResponsesPreparedTools {
     var warnings: [AIWarning]
 }
 
-private func xaiResponsesTools(from tools: [String: JSONValue], toolChoice: JSONValue?) -> XAIResponsesPreparedTools {
+private func xaiResponsesTools(from tools: [String: JSONValue], toolChoice: JSONValue?) throws -> XAIResponsesPreparedTools {
     guard !tools.isEmpty else { return XAIResponsesPreparedTools(tools: [], toolChoice: nil, warnings: []) }
     var warnings: [AIWarning] = []
     var output: [JSONValue] = []
@@ -298,6 +324,23 @@ private func xaiResponsesTools(from tools: [String: JSONValue], toolChoice: JSON
                 providerToolNames.insert(toolName)
             case "xai.view_x_video":
                 output.append(.object(["type": .string("view_x_video")]))
+                providerToolNames.insert(name)
+                providerToolNames.insert(toolName)
+            case "xai.image_generation":
+                let args = object["args"]?.objectValue ?? [:]
+                if let action = args["action"] {
+                    guard let actionValue = action.stringValue, ["auto", "generate", "edit"].contains(actionValue) else {
+                        throw AIError.invalidArgument(
+                            argument: "tools.\(name).action",
+                            message: "xAI image generation action must be auto, generate, or edit."
+                        )
+                    }
+                }
+                var tool: [String: JSONValue] = ["type": .string("image_generation")]
+                if let action = args["action"] {
+                    tool["action"] = action
+                }
+                output.append(.object(tool))
                 providerToolNames.insert(name)
                 providerToolNames.insert(toolName)
             case "xai.file_search":

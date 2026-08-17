@@ -602,10 +602,15 @@ public enum MCPOAuthCredentialScope: String, Sendable {
 public protocol MCPOAuthProvider: Sendable {
     func accessToken() async throws -> String?
     func authorize(resourceMetadataURL: URL?) async throws -> Bool
+    func authorize(resourceMetadataURL: URL?, scope: String?) async throws -> Bool
     func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async
 }
 
 public extension MCPOAuthProvider {
+    func authorize(resourceMetadataURL: URL?, scope: String?) async throws -> Bool {
+        try await authorize(resourceMetadataURL: resourceMetadataURL)
+    }
+
     func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async {}
 }
 

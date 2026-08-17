@@ -236,7 +236,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
         body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
         body.merge(googleExtraBodyWithoutToolChoice(options).filter { $0.key != "googleSearch" }) { _, new in new }
         if let googleSearch = options["googleSearch"] {
-            let preparedTools = googlePrepareTools(
+            let preparedTools = try googlePrepareTools(
                 from: ["google.google_search": GoogleTools.googleSearch(searchTypes: googleSearch["searchTypes"], timeRangeFilter: googleSearch["timeRangeFilter"])],
                 toolChoice: nil,
                 modelID: modelID,

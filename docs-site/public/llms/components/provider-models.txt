@@ -13,7 +13,7 @@ Source URL: /components/provider-models/
 | Instance Method | 125 |
 | Instance Property | 217 |
 | Structure | 1 |
-| Type Method | 82 |
+| Type Method | 83 |
 
 ## Public symbols
 
@@ -512,6 +512,7 @@ Source URL: /components/provider-models/
 | Type Method | `googleMaps()` | `static func googleMaps() -> JSONValue` | [Sources/SwiftAISDK/Models/GoogleTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GoogleTools.swift) |
 | Type Method | `googleSearch(searchTypes:timeRangeFilter:)` | `static func googleSearch(searchTypes: JSONValue? = nil, timeRangeFilter: JSONValue? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/GoogleTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GoogleTools.swift) |
 | Type Method | `googleSearch(searchTypes:timeRangeFilter:)` | `static func googleSearch(searchTypes: JSONValue? = nil, timeRangeFilter: JSONValue? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/GoogleTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GoogleTools.swift) |
+| Type Method | `imageGeneration(action:)` | `static func imageGeneration(action: String? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Type Method | `imageGeneration(background:inputFidelity:inputImageMask:model:moderation:outputCompression:outputFormat:partialImages:quality:size:)` | `static func imageGeneration(background: String? = nil, inputFidelity: String? = nil, inputImageMask: JSONValue? = nil, model: String? = nil, moderation: String? = nil, outputCompression: Int? = nil, outputFormat: String? = nil, partialImages: Int? = nil, quality: String? = nil, size: String? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Type Method | `imageGeneration(background:inputFidelity:inputImageMask:model:moderation:outputCompression:outputFormat:partialImages:quality:size:)` | `static func imageGeneration(background: String? = nil, inputFidelity: String? = nil, inputImageMask: JSONValue? = nil, model: String? = nil, moderation: String? = nil, outputCompression: Int? = nil, outputFormat: String? = nil, partialImages: Int? = nil, quality: String? = nil, size: String? = nil) -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Type Method | `localShell()` | `static func localShell() -> JSONValue` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |

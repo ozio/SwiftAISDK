@@ -132,6 +132,33 @@ import Testing
         "https://auth.example.com/register"
     ])
 }
+
+@Test func mcpOAuthAuthSelectsProtectedResourceScopesBeforeClientDefaultsLikeUpstream() async throws {
+    let provider = TestOAuthClientProvider(
+        clientInformation: try oauthClientInformation(),
+        state: "state123"
+    )
+    let transport = RecordingTransport(responses: [
+        jsonResponse("""
+        {
+          "resource": "https://resource.example.com/mcp",
+          "authorization_servers": ["https://auth.example.com"],
+          "scopes_supported": ["tools:read", "tools:write"]
+        }
+        """),
+        oauthAuthorizationMetadataResponse()
+    ])
+
+    let result = try await MCPOAuth.auth(
+        provider: provider,
+        serverURL: "https://resource.example.com/mcp/rpc",
+        transport: transport
+    )
+
+    #expect(result == .redirect)
+    let redirect = try await #require(provider.redirectedURL())
+    #expect(try queryItems(redirect)["scope"] == "tools:read tools:write")
+}
 @Test func mcpOAuthAuthValidatesAuthorizationServerURLBeforeMetadataDiscovery() async throws {
     struct BlockedAuthorizationServer: Error {}
 

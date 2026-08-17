@@ -5,7 +5,7 @@ func googlePrepareTools(
     toolChoice: JSONValue?,
     modelID: String,
     isVertexProvider: Bool
-) -> GooglePreparedTools? {
+) throws -> GooglePreparedTools? {
     guard !tools.isEmpty else { return nil }
 
     let capabilities = googleModelCapabilities(for: modelID)
@@ -19,7 +19,7 @@ func googlePrepareTools(
     }
     let providerTools = providerResults.compactMap(\.tool)
     warnings.append(contentsOf: providerResults.flatMap(\.warnings))
-    let functionDeclarations = googleFunctionDeclarations(from: tools)
+    let functionDeclarations = try googleFunctionDeclarations(from: tools)
     let hasFunctionTools = !functionDeclarations.isEmpty
     let hasProviderTools = !providerTools.isEmpty || tools.values.contains { schema in
         guard let object = schema.objectValue else { return false }
@@ -104,8 +104,8 @@ func googleResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? 
     }
 }
 
-func googleFunctionDeclarations(from tools: [String: JSONValue]) -> [JSONValue] {
-    tools.compactMap { name, schema in
+func googleFunctionDeclarations(from tools: [String: JSONValue]) throws -> [JSONValue] {
+    try tools.compactMap { name, schema in
         let object = schema.objectValue
         if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue?.hasPrefix("google.") == true {
             return nil
@@ -115,7 +115,7 @@ func googleFunctionDeclarations(from tools: [String: JSONValue]) -> [JSONValue] 
             "name": .string(name),
             "description": .string(object?["description"]?.stringValue ?? "")
         ]
-        if let parameters = googleOpenAPISchema(from: schema, isRoot: true) {
+        if let parameters = try googleOpenAPISchema(from: schema, isRoot: true) {
             declaration["parameters"] = parameters
         }
         return .object(declaration)
@@ -212,11 +212,11 @@ func googleToolConfig(from value: JSONValue?, hasStrictTools: Bool, defaultMode:
     case "none":
         config = ["mode": .string("NONE")]
     case "required":
-        config = ["mode": .string(hasStrictTools ? "VALIDATED" : "ANY")]
+        config = ["mode": .string("ANY")]
     case "tool":
         guard let toolName else { return nil }
         config = [
-            "mode": .string(hasStrictTools ? "VALIDATED" : "ANY"),
+            "mode": .string("ANY"),
             "allowedFunctionNames": .array([.string(toolName)])
         ]
     default:

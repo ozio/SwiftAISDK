@@ -64,9 +64,9 @@ Verification commands:
 swift build
 swift test
 npm ci --prefix docs-site
+npm --prefix docs-site run check
 npm --prefix docs-site run build
 ```
 
 For docs-only changes, run the docs-site build at minimum. For behavior changes,
 run focused Swift tests first and full `swift test` before finishing.
-

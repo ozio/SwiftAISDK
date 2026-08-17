@@ -164,6 +164,7 @@ For docs-site changes:
 
 ```sh
 npm ci --prefix docs-site
+npm --prefix docs-site run check
 npm --prefix docs-site run build
 ```
 
@@ -183,4 +184,3 @@ When finishing a porting pass, summarize:
 - public docs updated;
 - status/ledger docs updated;
 - exact test commands and results.
-

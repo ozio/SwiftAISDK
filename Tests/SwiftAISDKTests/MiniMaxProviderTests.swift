@@ -32,7 +32,7 @@ import Testing
     #expect(requests.allSatisfy { $0.url.absoluteString == "https://api.minimax.io/anthropic/v1/messages" })
     #expect(requests.allSatisfy { $0.headers["x-api-key"] == "env-key" })
     #expect(requests.allSatisfy { $0.headers["anthropic-version"] == "2023-06-01" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "ai-sdk/minimax/3.0.12" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "ai-sdk/minimax/3.0.15" })
 }
 
 @Test func miniMaxCustomConfigurationMatchesUpstreamHeaderPrecedence() async throws {
@@ -61,7 +61,7 @@ import Testing
     #expect(request.headers["x-api-key"] == "header-key")
     #expect(request.headers["anthropic-version"] == "custom-version")
     #expect(request.headers["x-custom"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/minimax/3.0.12")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/minimax/3.0.15")
 }
 
 @Test func miniMaxRequiresAPIKeyLikeUpstream() throws {
@@ -379,7 +379,7 @@ import Testing
     #expect(requests[0].headers["authorization"] == "Bearer video-key")
     #expect(requests[0].headers["x-api-key"] == nil)
     #expect(requests[0].headers["anthropic-version"] == nil)
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/minimax/3.0.12")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/minimax/3.0.15")
     #expect(requests[0].headers["x-request"] == "video")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "MiniMax-H3")

@@ -276,7 +276,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     )
                     var jsonToolText = AnthropicStreamingJSONToolText()
                     var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
-                    var toolCalls = AnthropicStreamingToolCalls()
+                    var toolCalls = AnthropicStreamingToolCalls(providerID: providerID)
                     var realToolCallCount = 0
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
@@ -578,6 +578,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                 message,
                 providerID: providerID,
                 sendReasoning: sendReasoning,
+                toolNameMapping: toolNameMapping,
                 betas: &betas,
                 warnings: &warnings,
                 cacheBreakpointCount: &cacheBreakpointCount,
@@ -673,6 +674,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         _ message: AIMessage,
         providerID: String,
         sendReasoning: Bool,
+        toolNameMapping: AIToolNameMapping,
         betas: inout [String],
         warnings: inout [AIWarning],
         cacheBreakpointCount: inout Int,
@@ -804,6 +806,10 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     warnings: &warnings
                 )
             case let .toolCall(call):
+                let caller = anthropicCallerWireValue(
+                    from: call.providerMetadata,
+                    providerID: providerID
+                )
                 if call.providerExecuted {
                     let input = anthropicToolArguments(call.arguments)
                     if let serverName = anthropicMCPToolUseServerName(call) {
@@ -823,12 +829,16 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         )
                         return .object(block)
                     }
+                    let providerToolName = toolNameMapping.toProviderToolName(call.name)
                     var block: [String: JSONValue] = [
                         "type": .string("server_tool_use"),
                         "id": .string(call.id),
-                        "name": .string(anthropicProviderExecutedToolName(call.name, input: input)),
-                        "input": anthropicProviderExecutedToolInput(call.name, input: input)
+                        "name": .string(anthropicProviderExecutedToolName(providerToolName, input: input)),
+                        "input": anthropicProviderExecutedToolInput(providerToolName, input: input)
                     ]
+                    if let caller {
+                        block["caller"] = caller
+                    }
                     anthropicApplyCacheControl(
                         anthropicCacheControl(from: call.providerMetadata),
                         to: &block,
@@ -843,6 +853,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     "name": .string(call.name),
                     "input": anthropicToolArguments(call.arguments)
                 ]
+                if let caller {
+                    block["caller"] = caller
+                }
                 anthropicApplyCacheControl(
                     anthropicCacheControl(from: call.providerMetadata),
                     to: &block,
@@ -858,8 +871,22 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     ))
                     return anthropicMCPToolResultBlock(result)
                 }
-                if anthropicProviderExecutedToolResultNames.contains(result.toolName) {
-                    return anthropicProviderExecutedToolResultBlock(result, warnings: &warnings)
+                let providerToolName = toolNameMapping.toProviderToolName(result.toolName)
+                if anthropicProviderExecutedToolResultNames.contains(providerToolName) {
+                    var providerResult = result
+                    providerResult.toolName = providerToolName
+                    guard let value = anthropicProviderExecutedToolResultBlock(providerResult, warnings: &warnings),
+                          var block = value.objectValue else {
+                        return nil
+                    }
+                    if (providerToolName == "web_fetch" || providerToolName == "web_search"),
+                       let caller = anthropicCallerWireValue(
+                           from: result.providerMetadata,
+                           providerID: providerID
+                       ) {
+                        block["caller"] = caller
+                    }
+                    return .object(block)
                 }
                 let converted = try anthropicToolResultContent(result, betas: &betas, warnings: &warnings)
                 var block: [String: JSONValue] = [
@@ -1661,7 +1688,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     )
                     var jsonToolText = AnthropicStreamingJSONToolText()
                     var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
-                    var toolCalls = AnthropicStreamingToolCalls()
+                    var toolCalls = AnthropicStreamingToolCalls(providerID: providerID)
                     var realToolCallCount = 0
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0

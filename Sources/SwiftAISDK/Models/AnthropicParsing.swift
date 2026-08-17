@@ -118,7 +118,7 @@ func anthropicGeneratedContent(
                     rawValue: part
                 )
             } else {
-                toolCall = anthropicToolCall(from: part)
+                toolCall = anthropicToolCall(from: part, providerID: providerID)
             }
             guard var toolCall else { continue }
             if type == "mcp_tool_use" {
@@ -172,6 +172,31 @@ func anthropicGeneratedContent(
 }
 
 func anthropicToolResult(
+    from part: JSONValue,
+    providerID: String,
+    serverToolNames: [String: String],
+    mcpToolNames: [String: String],
+    mcpToolMetadata: [String: [String: JSONValue]]
+) -> AIToolResult? {
+    guard var result = anthropicToolResultWithoutCaller(
+        from: part,
+        providerID: providerID,
+        serverToolNames: serverToolNames,
+        mcpToolNames: mcpToolNames,
+        mcpToolMetadata: mcpToolMetadata
+    ) else {
+        return nil
+    }
+    if part["type"]?.stringValue == "web_fetch_tool_result"
+        || part["type"]?.stringValue == "web_search_tool_result" {
+        result.providerMetadata.merge(
+            anthropicCallerProviderMetadata(from: part["caller"], providerID: providerID)
+        ) { _, new in new }
+    }
+    return result
+}
+
+private func anthropicToolResultWithoutCaller(
     from part: JSONValue,
     providerID: String,
     serverToolNames: [String: String],
@@ -702,7 +727,7 @@ func anthropicCitationSource(from citation: JSONValue, citationDocuments: [Anthr
     }
 }
 
-func anthropicToolCall(from part: JSONValue) -> AIToolCall? {
+func anthropicToolCall(from part: JSONValue, providerID: String = "anthropic") -> AIToolCall? {
     guard let type = part["type"]?.stringValue else { return nil }
     switch type {
     case "tool_use":
@@ -712,6 +737,7 @@ func anthropicToolCall(from part: JSONValue) -> AIToolCall? {
             id: id,
             name: name,
             arguments: anthropicJSONString(part["input"] ?? .object([:])) ?? "{}",
+            providerMetadata: anthropicCallerProviderMetadata(from: part["caller"], providerID: providerID),
             rawValue: part
         )
     case "server_tool_use":
@@ -721,6 +747,7 @@ func anthropicToolCall(from part: JSONValue) -> AIToolCall? {
             name: anthropicCustomToolName(forProviderToolName: name),
             arguments: anthropicJSONString(part["input"] ?? .object([:])) ?? "{}",
             providerExecuted: true,
+            providerMetadata: anthropicCallerProviderMetadata(from: part["caller"], providerID: providerID),
             rawValue: part
         )
     case "mcp_tool_use":
@@ -732,6 +759,49 @@ func anthropicToolCall(from part: JSONValue) -> AIToolCall? {
             providerExecuted: true,
             rawValue: part
         )
+    default:
+        return nil
+    }
+}
+
+func anthropicCallerProviderMetadata(from value: JSONValue?, providerID: String) -> [String: JSONValue] {
+    guard let caller = value?.objectValue,
+          let type = caller["type"]?.stringValue else {
+        return [:]
+    }
+    var metadata: [String: JSONValue] = ["type": .string(type)]
+    switch type {
+    case "direct":
+        break
+    case "code_execution_20250825", "code_execution_20260120":
+        guard let toolID = caller["tool_id"]?.stringValue else { return [:] }
+        metadata["toolId"] = .string(toolID)
+    default:
+        return [:]
+    }
+    return anthropicContentBlockProviderMetadata(
+        ["caller": .object(metadata)],
+        providerID: providerID
+    )
+}
+
+func anthropicCallerWireValue(
+    from providerMetadata: [String: JSONValue],
+    providerID: String
+) -> JSONValue? {
+    let providerKey = anthropicProviderMetadataKey(from: providerID)
+    let caller = (providerMetadata[providerKey]?["caller"]
+        ?? providerMetadata["anthropic"]?["caller"])?.objectValue
+    guard let type = caller?["type"]?.stringValue else { return nil }
+    switch type {
+    case "direct":
+        return .object(["type": .string("direct")])
+    case "code_execution_20250825", "code_execution_20260120":
+        guard let toolID = caller?["toolId"]?.stringValue else { return nil }
+        return .object([
+            "type": .string(type),
+            "tool_id": .string(toolID)
+        ])
     default:
         return nil
     }

@@ -354,8 +354,13 @@ public final class AIChatSession: ObservableObject {
         do {
             for try await snapshot in stream {
                 guard activeRunID == runID else { return }
+                let previousParts = messages.first { $0.id == snapshot.id }?.parts
+                let receivedContentUpdate = previousParts.map { $0 != snapshot.parts }
+                    ?? !snapshot.parts.isEmpty
                 upsertMessage(snapshot)
-                status = .streaming
+                if receivedContentUpdate {
+                    status = .streaming
+                }
             }
             finish(runID: runID, error: nil, isAbort: false)
         } catch is CancellationError {

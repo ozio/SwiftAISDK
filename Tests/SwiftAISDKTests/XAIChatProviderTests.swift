@@ -126,7 +126,7 @@ import Testing
         ))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, or high.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.reasoningEffort", message: "xAI reasoningEffort must be none, low, medium, high, or xhigh.")) {
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
             providerOptions: ["xai": ["reasoningEffort": "minimal"]]
@@ -183,6 +183,105 @@ import Testing
 
     let logprobsFalseBody = try decodeJSONBody(try #require((await logprobsFalseTransport.requests()).first?.body))
     #expect(logprobsFalseBody["logprobs"] == nil)
+}
+
+@Test func xAIChatGrok46XHighAndPriorityTierMatchUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"service_tier":"default","choices":[{"message":{"content":"priority fallback"},"finish_reason":"stop"}]}"#),
+        jsonResponse(#"{"choices":[{"message":{"content":"xhigh"},"finish_reason":"stop"}]}"#),
+        jsonResponse(#"{"choices":[{"message":{"content":"high"},"finish_reason":"stop"}]}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+
+    let priorityResult = try await provider.chat("grok-4.6").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["xai": ["reasoningEffort": "xhigh", "serviceTier": "priority"]]
+    ))
+    _ = try await provider.chat("grok-4.6").generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "xhigh"))
+    _ = try await provider.chat("grok-4.5").generate(LanguageModelRequest(messages: [.user("Hi")], reasoning: "xhigh"))
+
+    #expect(priorityResult.providerMetadata["xai"]?["serviceTier"]?.stringValue == "default")
+    let requests = await transport.requests()
+    let priorityBody = try decodeJSONBody(try #require(requests[0].body))
+    #expect(priorityBody["reasoning_effort"]?.stringValue == "xhigh")
+    #expect(priorityBody["service_tier"]?.stringValue == "priority")
+    #expect(priorityBody["serviceTier"] == nil)
+    let grok46Body = try decodeJSONBody(try #require(requests[1].body))
+    #expect(grok46Body["reasoning_effort"]?.stringValue == "xhigh")
+    let otherModelBody = try decodeJSONBody(try #require(requests[2].body))
+    #expect(otherModelBody["reasoning_effort"]?.stringValue == "high")
+
+    let invalidProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: RecordingTransport(responses: [])))
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.serviceTier", message: "xAI serviceTier must be default or priority.")) {
+        _ = try await invalidProvider.chat("grok-4.6").generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["xai": ["serviceTier": "flex"]]
+        ))
+    }
+}
+
+@Test func xAIChatOmitsStandardReasoningEffortForGrok420ReasoningModelsLikeUpstream() async throws {
+    #expect(xaiSupportsReasoningEffort("grok-4.20-multi-agent"))
+    #expect(xaiSupportsReasoningEffort("grok-4.20-multi-agent-0309"))
+    #expect(!xaiSupportsReasoningEffort("grok-4.20-reasoning"))
+    #expect(!xaiSupportsReasoningEffort("grok-4.20-non-reasoning"))
+    #expect(!xaiSupportsReasoningEffort("grok-4.20-0309-reasoning"))
+    #expect(!xaiSupportsReasoningEffort("grok-4.20-0309-non-reasoning"))
+
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"choices":[{"message":{"content":"unsupported"},"finish_reason":"stop"}]}"#),
+        jsonResponse(#"{"choices":[{"message":{"content":"explicit"},"finish_reason":"stop"}]}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+
+    let unsupportedResult = try await provider.chat("grok-4.20-0309-non-reasoning").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        reasoning: "none"
+    ))
+    let explicitResult = try await provider.chat("grok-4.20-reasoning").generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["xai": ["reasoningEffort": "none"]]
+    ))
+
+    let requests = await transport.requests()
+    let unsupportedBody = try decodeJSONBody(try #require(requests[0].body))
+    #expect(unsupportedBody["reasoning_effort"] == nil)
+    #expect(unsupportedResult.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "reasoning",
+        message: #"reasoning "none" is not supported by this model."#
+    )))
+
+    let explicitBody = try decodeJSONBody(try #require(requests[1].body))
+    #expect(explicitBody["reasoning_effort"]?.stringValue == "none")
+    #expect(!explicitResult.warnings.contains(where: { $0.feature == "reasoning" }))
+}
+
+@Test func xAIChatStreamReportsAppliedPriorityTier() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"service_tier":"default","choices":[{"delta":{"content":"hi"},"finish_reason":null}]}
+
+    data: {"service_tier":"default","choices":[{"delta":{},"finish_reason":"stop"}]}
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.chat("grok-4.6")
+    var metadata: [String: JSONValue] = [:]
+
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["xai": ["serviceTier": "priority"]]
+    )) {
+        if case let .finishMetadata(_, _, providerMetadata) = part {
+            metadata = providerMetadata
+        }
+    }
+
+    #expect(metadata["xai"]?["serviceTier"]?.stringValue == "default")
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["service_tier"]?.stringValue == "priority")
 }
 
 @Test func xAIChatUsageCountsReasoningAndCacheTokensLikeUpstream() async throws {

@@ -14,6 +14,7 @@ struct OpenResponsesPreparedInput {
 func openResponsesInput(
     from messages: [AIMessage],
     providerID: String,
+    providerOptionsName: String? = nil,
     toolNamespaces: [String: JSONValue] = [:]
 ) -> OpenResponsesPreparedInput {
     var input: [JSONValue] = []
@@ -31,30 +32,111 @@ func openResponsesInput(
                 "content": .array(message.content.enumerated().compactMap(openResponsesInputContentPart))
             ]))
         case .assistant:
-            let outputText = message.content.compactMap { part -> JSONValue? in
-                guard case let .text(text, _) = part else { return nil }
-                return .object(["type": .string("output_text"), "text": .string(text)])
-            }
-            if !outputText.isEmpty {
-                input.append(.object([
+            let metadataNamespace = providerOptionsName
+                ?? openAICompatibleProviderMetadataNamespace(providerID)
+            var assistantContent: [JSONValue] = []
+            var assistantMessageID: String?
+
+            func flushAssistantContent() {
+                guard !assistantContent.isEmpty else { return }
+                var item: [String: JSONValue] = [
                     "type": .string("message"),
                     "role": .string("assistant"),
-                    "content": .array(outputText)
-                ]))
-            }
-            for part in message.content {
-                guard case let .toolCall(call) = part else { continue }
-                var callObject: [String: JSONValue] = [
-                    "type": .string("function_call"),
-                    "call_id": .string(call.id),
-                    "name": .string(call.name),
-                    "arguments": .string(openAIResponsesSerializedToolCallArguments(call.arguments))
+                    "content": .array(assistantContent)
                 ]
-                if let namespace = openAIResponsesNamespace(for: call, toolNamespaces: toolNamespaces) {
-                    callObject["namespace"] = namespace
+                if let assistantMessageID {
+                    item["id"] = .string(assistantMessageID)
                 }
-                input.append(.object(callObject))
+                input.append(.object(item))
+                assistantContent = []
+                assistantMessageID = nil
             }
+
+            for part in message.content {
+                switch part {
+                case let .reasoning(text, providerMetadata):
+                    flushAssistantContent()
+                    let providerData = providerMetadata[metadataNamespace]?.objectValue
+                    let itemID = providerData?["itemId"]?.stringValue
+                    let reasoningSummary = openResponsesReasoningArray(
+                        providerData?["reasoningSummary"],
+                        expectedType: "summary_text"
+                    ) ?? []
+                    let reasoningContent = openResponsesReasoningArray(
+                        providerData?["reasoningContent"],
+                        expectedType: "reasoning_text"
+                    )
+                    let hasReasoningContent = providerData?.keys.contains("reasoningContent") == true
+
+                    var reasoningItem: [String: JSONValue] = [
+                        "type": .string("reasoning"),
+                        "summary": .array(reasoningSummary)
+                    ]
+                    if let itemID {
+                        reasoningItem["id"] = .string(itemID)
+                    }
+                    if let reasoningContent {
+                        reasoningItem["content"] = .array(reasoningContent)
+                    } else if !hasReasoningContent, !text.isEmpty {
+                        reasoningItem["content"] = .array([.object([
+                            "type": .string("reasoning_text"),
+                            "text": .string(text)
+                        ])])
+                    }
+                    if let encryptedContent = providerData?["reasoningEncryptedContent"]?.stringValue {
+                        reasoningItem["encrypted_content"] = .string(encryptedContent)
+                    }
+
+                    if let itemID,
+                       var previous = input.last?.objectValue,
+                       previous["type"]?.stringValue == "reasoning",
+                       previous["id"]?.stringValue == itemID,
+                       let reasoningContent = reasoningItem["content"]?.arrayValue {
+                        previous["content"] = .array(
+                            (previous["content"]?.arrayValue ?? []) + reasoningContent
+                        )
+                        input[input.count - 1] = .object(previous)
+                    } else {
+                        input.append(.object(reasoningItem))
+                    }
+                case let .text(text, providerMetadata):
+                    let providerData = providerMetadata[metadataNamespace]?.objectValue
+                    let itemID = providerData?["itemId"]?.stringValue
+                    if !assistantContent.isEmpty, assistantMessageID != itemID {
+                        flushAssistantContent()
+                    }
+                    assistantMessageID = itemID
+                    var outputText: [String: JSONValue] = [
+                        "type": .string("output_text"),
+                        "text": .string(text)
+                    ]
+                    if let annotations = openResponsesOutputTextAnnotations(
+                        providerData?["annotations"]
+                    ) {
+                        outputText["annotations"] = .array(annotations)
+                    }
+                    assistantContent.append(.object(outputText))
+                case let .toolCall(call):
+                    flushAssistantContent()
+                    let providerData = call.providerMetadata[metadataNamespace]?.objectValue
+                    var callObject: [String: JSONValue] = [
+                        "type": .string("function_call"),
+                        "call_id": .string(call.id),
+                        "name": .string(call.name),
+                        "arguments": .string(openAIResponsesSerializedToolCallArguments(call.arguments))
+                    ]
+                    if let itemID = providerData?["itemId"]?.stringValue {
+                        callObject["id"] = .string(itemID)
+                    }
+                    if let namespace = openAIResponsesNamespace(for: call, toolNamespaces: toolNamespaces) {
+                        callObject["namespace"] = namespace
+                    }
+                    input.append(.object(callObject))
+                default:
+                    continue
+                }
+            }
+            flushAssistantContent()
         case .tool:
             for part in message.content {
                 guard case let .toolResult(result) = part else { continue }
@@ -72,6 +154,43 @@ func openResponsesInput(
         instructions: systemMessages.isEmpty ? nil : systemMessages.joined(separator: "\n"),
         warnings: warnings
     )
+}
+
+private func openResponsesReasoningArray(_ value: JSONValue?, expectedType: String) -> [JSONValue]? {
+    guard let values = value?.arrayValue,
+          values.allSatisfy({
+              $0["type"]?.stringValue == expectedType && $0["text"]?.stringValue != nil
+          }) else {
+        return nil
+    }
+    return values.map { value in
+        .object([
+            "type": .string(expectedType),
+            "text": .string(value["text"]?.stringValue ?? "")
+        ])
+    }
+}
+
+private func openResponsesOutputTextAnnotations(_ value: JSONValue?) -> [JSONValue]? {
+    guard let annotations = value?.arrayValue,
+          annotations.allSatisfy({ annotation in
+              annotation["type"]?.stringValue == "url_citation"
+                  && annotation["start_index"]?.intValue != nil
+                  && annotation["end_index"]?.intValue != nil
+                  && annotation["url"]?.stringValue != nil
+                  && annotation["title"]?.stringValue != nil
+          }) else {
+        return nil
+    }
+    return annotations.map { annotation in
+        .object([
+            "type": .string("url_citation"),
+            "start_index": .number(Double(annotation["start_index"]?.intValue ?? 0)),
+            "end_index": .number(Double(annotation["end_index"]?.intValue ?? 0)),
+            "url": .string(annotation["url"]?.stringValue ?? ""),
+            "title": .string(annotation["title"]?.stringValue ?? "")
+        ])
+    }
 }
 
 func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContentPart]>.Element) -> JSONValue? {

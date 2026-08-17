@@ -48,6 +48,7 @@ Every porting pass must update:
 
   ```sh
   npm ci --prefix docs-site
+  npm --prefix docs-site run check
   npm --prefix docs-site run build
   ```
 

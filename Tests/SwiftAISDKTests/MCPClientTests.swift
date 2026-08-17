@@ -631,6 +631,14 @@ private actor MCPTimeoutTestTransport: MCPTransport {
         #expect(error.description.contains("does not support resources"))
     }
 }
+@Test func mcpOAuthChallengeRejectsRelativeResourceMetadataURLLikeUpstream() {
+    let parameters = mcpOAuthWWWAuthenticateParameters(from: [
+        "WWW-Authenticate": #"Bearer resource_metadata="/oauth/protected-resource", scope="tools:read""#
+    ])
+
+    #expect(parameters.resourceMetadataURL == nil)
+    #expect(parameters.scope == "tools:read")
+}
 @Test func mcpHTTPTransportPostsJSONRPCMessages() async throws {
     let http = RecordingTransport(responses: [
         jsonResponse(#"{"jsonrpc":"2.0","id":7,"result":{"ok":true}}"#),
@@ -665,7 +673,7 @@ private actor MCPTimeoutTestTransport: MCPTransport {
     let http = RecordingTransport(responses: [
         AIHTTPResponse(
             statusCode: 401,
-            headers: ["WWW-Authenticate": #"Bearer resource_metadata="https://auth.example.com/.well-known/oauth-protected-resource""#],
+            headers: ["WWW-Authenticate": #"Bearer resource_metadata="https://auth.example.com/.well-known/oauth-protected-resource", scope="tools:read tools:write""#],
             body: Data("Unauthorized".utf8)
         ),
         jsonResponse(#"{"jsonrpc":"2.0","id":12,"result":{"ok":true}}"#)
@@ -689,13 +697,14 @@ private actor MCPTimeoutTestTransport: MCPTransport {
     #expect(requests[1].headers["authorization"] == "Bearer new-token")
     #expect(await auth.invalidatedScopes() == [.tokens])
     #expect(await auth.resourceMetadataURLs().map(\.absoluteString) == ["https://auth.example.com/.well-known/oauth-protected-resource"])
+    #expect(await auth.scopes() == ["tools:read tools:write"])
 }
 @Test func mcpHTTPTransportStreamingAuthorizesAndRetriesAfter401() async throws {
     let auth = MockMCPOAuthProvider(initialToken: "old-stream-token", authorizedToken: "new-stream-token")
     let http = StreamingRecordingTransport(responses: [
         streamResponse(
             statusCode: 401,
-            headers: ["www-authenticate": #"Bearer resource_metadata="https://auth.example.com/resource""#],
+            headers: ["www-authenticate": #"Bearer scope="stream:read", resource_metadata="https://auth.example.com/resource""#],
             chunks: ["Unauthorized"]
         ),
         streamResponse(
@@ -721,6 +730,7 @@ private actor MCPTimeoutTestTransport: MCPTransport {
     #expect(requests[0].headers["authorization"] == "Bearer old-stream-token")
     #expect(requests[1].headers["authorization"] == "Bearer new-stream-token")
     #expect(await auth.resourceMetadataURLs().map(\.absoluteString) == ["https://auth.example.com/resource"])
+    #expect(await auth.scopes() == ["stream:read"])
 }
 @Test func mcpHTTPTransportParsesSSEResponsesAndTerminatesSession() async throws {
     let http = RecordingTransport(responses: [

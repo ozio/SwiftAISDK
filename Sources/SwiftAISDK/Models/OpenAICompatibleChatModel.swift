@@ -37,6 +37,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         }
         return TextGenerationResult(
             text: text,
+            reasoning: choice?["message"]?["reasoning_content"]?.stringValue
+                ?? choice?["message"]?["reasoning"]?.stringValue
+                ?? "",
             finishReason: openAICompatibleFinishReason(choice?["finish_reason"]?.stringValue),
             usage: usage(from: raw),
             toolCalls: toolCalls,
@@ -205,13 +208,18 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             body = fireworksChatBody(from: body)
         }
         if openAICompatibleProviderRoot(providerID) == "moonshotai" {
-            body = try moonshotChatBody(from: body, request: request)
+            body = try moonshotChatBody(
+                from: body,
+                request: request,
+                modelID: modelID,
+                warnings: &warnings
+            )
         }
         if providerID == "googleVertex.xai" {
             body.removeValue(forKey: "reasoning_effort")
         }
         if providerID.hasPrefix("xai.") {
-            body = try xaiChatBody(from: body, request: request)
+            body = try xaiChatBody(from: body, request: request, warnings: &warnings)
         }
         return (config.transformRequestBody?(body) ?? body, warnings)
     }
@@ -272,16 +280,22 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             options["reasoning_effort"] = .string(reasoning)
         }
 
-        var messages: [JSONValue] = []
-        for message in request.messages {
-            if message.role == .system, systemMessageMode == "remove" {
-                continue
+        let messages: [JSONValue]
+        if openAICompatibleProviderRoot(providerID) == "moonshotai" {
+            messages = try moonshotChatMessages(from: request.messages)
+        } else {
+            var converted: [JSONValue] = []
+            for message in request.messages {
+                if message.role == .system, systemMessageMode == "remove" {
+                    continue
+                }
+                converted.append(try Self.messageJSON(
+                    message,
+                    providerID: providerID,
+                    systemRole: message.role == .system ? systemMessageMode : nil
+                ))
             }
-            messages.append(try Self.messageJSON(
-                message,
-                providerID: providerID,
-                systemRole: message.role == .system ? systemMessageMode : nil
-            ))
+            messages = converted
         }
         var body: [String: JSONValue] = [
             "model": .string(modelID),

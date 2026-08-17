@@ -100,11 +100,15 @@ func alibabaMessageJSONs(_ message: AIMessage) -> AlibabaPreparedMessages {
             "content": .array(content.parts)
         ])], warnings: content.warnings)
     case .assistant:
+        let toolCalls = message.content.compactMap(alibabaAssistantToolCallJSON)
+        let text = message.combinedText
+        guard !text.isEmpty || !toolCalls.isEmpty else {
+            return AlibabaPreparedMessages(messages: [], warnings: [])
+        }
         var output: [String: JSONValue] = [
             "role": .string("assistant"),
-            "content": message.combinedText.isEmpty ? .null : .string(message.combinedText)
+            "content": text.isEmpty ? .null : .string(text)
         ]
-        let toolCalls = message.content.compactMap(alibabaAssistantToolCallJSON)
         if !toolCalls.isEmpty {
             output["tool_calls"] = .array(toolCalls)
         }

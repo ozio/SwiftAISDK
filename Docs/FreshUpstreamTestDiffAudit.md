@@ -6,16 +6,16 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-08-10`
-- Baseline upstream ref: `vercel/ai@3bc0d4f40df7a77af4b181bc97dc1c54843545ab`
-- Current upstream ref: `vercel/ai@74abcdfb6a41666b9910974510d6c9afd960ea1b`
+- Date: `2026-08-17`
+- Baseline upstream ref: `vercel/ai@74abcdfb6a41666b9910974510d6c9afd960ea1b`
+- Current upstream ref: `vercel/ai@86892f3f6b4de52ee7f41d73c9c477b839596468`
 - Diff command:
 
   ```sh
-  git -C /tmp/vercel-ai-upstream-20260810 diff --name-status \
-    3bc0d4f40df7a77af4b181bc97dc1c54843545ab..74abcdfb6a41666b9910974510d6c9afd960ea1b \
-    -- 'packages/**/**.test.ts' 'packages/**/**.test.tsx' \
-       'packages/**/**.test-d.ts'
+  git -C /tmp/vercel-ai-upstream-20260817 diff --name-status \
+    74abcdfb6a41666b9910974510d6c9afd960ea1b..86892f3f6b4de52ee7f41d73c9c477b839596468 \
+    -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
+       'packages/**/*.spec.ts' 'packages/**/*.test-d.ts'
   ```
 
 Status meanings:
@@ -27,6 +27,53 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-08-17 Diff
+
+The exact command above returns 140 unique test/declaration paths. Changed
+snapshots and fixtures for Anthropic, Google errors, Moonshot chat/reasoning,
+Open Responses, OpenAI-compatible usage, and xAI image generation were reviewed
+with their owning test groups.
+
+| Upstream test group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `packages/ai/**` | 9 | `ported/covered/no-swift-action` | Array-schema definitions and metadata-only chat status have focused Swift regressions. Reasoning IDs, resume isolation, cancellation, and optional reranking assignment are already covered; declaration-only and JavaScript callback/render behavior has no direct Swift action. |
+| `packages/alibaba/**` | 2 | `ported` | Assistant reasoning replay is translated into Alibaba request-conversion coverage. |
+| `packages/anthropic/**` | 2 | `ported` | Server-tool caller metadata survives multi-turn request replay in focused Anthropic tests. |
+| `packages/gateway/**` | 1 | `ported/covered` | Structured nested errors are translated; model-setting-only additions remain forward-compatible string values. |
+| `packages/google/**` | 3 | `ported` | Enum schema conversion, rich error details, and forced strict tools have focused Swift fixtures, including the changed retry-detail body. |
+| `packages/google-vertex/**` | 2 | `ported` | Vertex provider/factory coverage includes the new Chirp 3 HD Cloud TTS request and response fixtures. |
+| `packages/mcp/**` | 2 | `ported` | HTTP challenge scope and protected-resource scope precedence are translated into transport and OAuth flow tests. |
+| `packages/moonshotai/**` | 4 | `ported` | Owned-chat message conversion, options, video/file handling, reasoning fixtures, and MFJS normalization are translated. |
+| `packages/open-responses/**` | 3 | `ported` | Reasoning replay/order/annotations, native effort, warnings, and matching stream IDs have Swift request and stream coverage. |
+| `packages/openai/**` | 4 | `ported` | Compaction, previous-response continuation pairing, storage-disabled shell replay, and MCP approval reference deduplication are covered. |
+| `packages/openai-compatible/**` | 1 | `covered` | The current repository test is newer than npm `3.0.30`; Swift already preserves the complete unfiltered usage `JSONValue`, including nested provider-specific details. |
+| `packages/provider-utils/**` | 2 | `covered/no-swift-action` | The bounded Swift reader retains the size error without an error-producing JavaScript cancel promise; module import does not rely on global fetch. |
+| `packages/react/**` | 4 | `no-swift-action` | React hook input/reset/value and render-store behavior is outside SwiftAISDK's UI-session abstraction. |
+| `packages/xai/**` | 7 | `ported` | Responses image generation, priority tier, Grok 4.6 reasoning, video 1.5/reference voice/error outcomes, and timestamped speech fixtures are translated. |
+| `packages/gmicloud/**` | 3 | `deferred` | Newly discovered provider; scoped for a separate OpenAI-compatible chat port rather than auto-implemented here. |
+| `packages/vercel/**` | 1 | `no-swift-action` | The only change deletes an upstream package test; published behavior is unchanged. |
+| `packages/otel/**` | 4 | `covered/no-swift-action` | JavaScript telemetry attribute sanitization and legacy OpenTelemetry fixtures do not change SwiftAISDK's typed telemetry contract. |
+| `packages/angular/**` | 1 | `out-of-scope` | Angular Completion declaration coverage is framework-adapter behavior. |
+| `packages/svelte/**` | 1 | `out-of-scope` | Svelte Completion declarations are framework-adapter behavior. |
+| `packages/vue/**` | 1 | `out-of-scope` | Vue Completion declarations are framework-adapter behavior. |
+| `packages/code-mode/**` | 13 | `out-of-scope` | JavaScript sandbox/runtime compatibility and approval-continuation tests do not expose provider-facing Swift models. |
+| `packages/harness/**` | 9 | `out-of-scope` | Harness agent, bridge, telemetry, credential, and network-sandbox behavior belongs to the untracked coding-agent runtime. |
+| `packages/harness-acp/**` | 7 | `out-of-scope` | ACP session, environment, instruction, and stream-bridge behavior is adapter-specific. |
+| `packages/harness-claude-code/**` | 10 | `out-of-scope` | Claude Code process/auth/tool bridge behavior is not the Anthropic model API. |
+| `packages/harness-cline/**` | 9 | `out-of-scope` | Newly published Cline harness auth, session, MCP, remote-operation, and translation behavior is not a model provider. |
+| `packages/harness-codex/**` | 7 | `out-of-scope` | Codex process/auth/tool-relay bridge behavior is outside provider-facing scope. |
+| `packages/harness-deepagents/**` | 5 | `out-of-scope` | DeepAgents bridge and authentication fixtures belong to an untracked harness. |
+| `packages/harness-grok-build/**` | 2 | `out-of-scope` | Grok Build harness runtime/declarations are distinct from the xAI provider. |
+| `packages/harness-opencode/**` | 4 | `out-of-scope` | OpenCode server/auth/event bridge behavior is adapter-specific. |
+| `packages/harness-pi/**` | 7 | `out-of-scope` | Pi model/session/workspace and declaration behavior belongs to its harness adapter. |
+| `packages/sandbox-just-bash/**` | 1 | `out-of-scope` | JavaScript sandbox networking is not a SwiftAISDK provider surface. |
+| `packages/sandbox-vercel/**` | 2 | `out-of-scope` | Vercel Sandbox network policy and runtime tests are not provider models. |
+| `packages/workflow/**` | 6 | `out-of-scope` | Workflow step/iterator/agent response-format behavior belongs to the untracked JavaScript workflow package. |
+| `packages/workflow-harness/**` | 1 | `out-of-scope` | Workflow harness slicing is outside provider-facing scope. |
+
+Coverage check: package-group path counts total 140, matching the exact command
+with no unclassified test/declaration group.
 
 ## 2026-08-10 Diff
 

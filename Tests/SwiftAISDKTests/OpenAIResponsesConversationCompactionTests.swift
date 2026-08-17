@@ -53,7 +53,7 @@ import Testing
     #expect(input[0]["content"]?[0]?["text"]?.stringValue == "Hello")
 }
 
-@Test func openAIResponsesSkipsFunctionCallItemReferencesWhenPreviousResponseIDIsSetLikeUpstream() async throws {
+@Test func openAIResponsesKeepsClientFunctionCallPairedWhenPreviousResponseIDIsSetLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
     let model = try provider.languageModel("gpt-4o")
@@ -81,12 +81,76 @@ import Testing
     #expect(body["previous_response_id"]?.stringValue == "resp_123")
     #expect(body["store"]?.boolValue == true)
     let input = try #require(body["input"]?.arrayValue)
-    #expect(input.count == 2)
+    #expect(input.count == 3)
     #expect(input[0]["role"]?.stringValue == "user")
     #expect(input[0]["content"]?[0]?["text"]?.stringValue == "What is the weather?")
-    #expect(input[1]["type"]?.stringValue == "function_call_output")
+    #expect(input[1]["type"]?.stringValue == "function_call")
+    #expect(input[1]["id"] == nil)
     #expect(input[1]["call_id"]?.stringValue == "call_123")
-    #expect(input[1]["output"]?.stringValue == #"{"temp":72}"#)
+    #expect(input[2]["type"]?.stringValue == "function_call_output")
+    #expect(input[2]["call_id"]?.stringValue == "call_123")
+    #expect(input[2]["output"]?.stringValue == #"{"temp":72}"#)
+}
+
+@Test func openAIResponsesAppendsCompactionTriggerAsTerminalInputItemLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4o")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Compact this conversation.")],
+        providerOptions: ["openai": ["compactionTrigger": true]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let input = try #require(body["input"]?.arrayValue)
+    #expect(input.count == 2)
+    #expect(input[0]["role"]?.stringValue == "user")
+    #expect(input[1] == .object(["type": .string("compaction_trigger")]))
+    #expect(body["compactionTrigger"] == nil)
+    #expect(body["compaction_trigger"] == nil)
+}
+
+@Test func openAIResponsesReplaysUnstoredProviderExecutedShellCallWithItsOutputLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: openAIResponsesStreamingShellContainerMultiturnMessages(),
+        tools: ["shell": OpenAITools.shell()],
+        providerOptions: ["openai": ["store": false]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let input = try #require(body["input"]?.arrayValue)
+    let shellCall = try #require(input.first { $0["type"]?.stringValue == "shell_call" })
+    let shellOutput = try #require(input.first { $0["type"]?.stringValue == "shell_call_output" })
+    #expect(shellCall["call_id"]?.stringValue == "call_abc123def456ghi789jkl012")
+    #expect(shellCall["id"]?.stringValue == "sh_0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e50")
+    #expect(shellCall["action"]?["commands"]?[0]?.stringValue == "uname -a")
+    #expect(shellOutput["call_id"]?.stringValue == shellCall["call_id"]?.stringValue)
+}
+
+@Test func openAIResponsesDoesNotSendMCPApprovalItemReferenceWhenContinuingLikeUpstream() throws {
+    var processedApprovalIDs: Set<String> = []
+    var warnings: [AIWarning] = []
+    let message = AIMessage.toolResponses(approvalResponses: [
+        AIToolApprovalResponse(id: "mcpr_123", approved: true, providerExecuted: true)
+    ])
+
+    let items = try openAIResponsesInputMessageJSON(
+        message,
+        store: true,
+        hasPreviousResponseID: true,
+        processedApprovalIDs: &processedApprovalIDs,
+        warnings: &warnings
+    )
+
+    #expect(items.count == 1)
+    #expect(items[0]["type"]?.stringValue == "mcp_approval_response")
+    #expect(items[0]["approval_request_id"]?.stringValue == "mcpr_123")
+    #expect(warnings.isEmpty)
 }
 
 @Test func openAIResponsesConvertsCompactionToItemReferenceWhenStoredLikeUpstream() async throws {
@@ -239,4 +303,3 @@ import Testing
     #expect(input[1]["type"]?.stringValue == "item_reference")
     #expect(input[1]["id"]?.stringValue == "cmp_002")
 }
-

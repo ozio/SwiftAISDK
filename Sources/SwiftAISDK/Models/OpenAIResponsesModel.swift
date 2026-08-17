@@ -15,6 +15,35 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         let prepared = try preparedRequest(for: request, stream: false)
         let response = try await config.sendJSONResponse(path: "/responses", modelID: modelID, body: .object(prepared.body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
+        if case .openResponses = config.responsesRequestMode {
+            if let errorMessage = raw["error"]?["message"]?.stringValue {
+                throw AIError.apiCall(AIAPICallError(
+                    provider: providerID,
+                    statusCode: 400,
+                    responseHeaders: response.response.headers,
+                    responseBody: errorMessage,
+                    isRetryable: false
+                ))
+            }
+            let hasOutput = raw["output"] != nil && raw["output"] != .null
+            let hasOutputText = raw["output_text"]?.stringValue != nil
+            let hasChatChoices = raw["choices"]?.arrayValue != nil
+            if !hasOutput,
+               !hasOutputText,
+               !hasChatChoices {
+                let detail = raw["incomplete_details"]?["reason"]?.stringValue
+                    ?? raw["status"]?.stringValue
+                let message = detail.map { "Responses API returned no output (\($0))" }
+                    ?? "Responses API returned no output"
+                throw AIError.apiCall(AIAPICallError(
+                    provider: providerID,
+                    statusCode: 500,
+                    responseHeaders: response.response.headers,
+                    responseBody: message,
+                    isRetryable: false
+                ))
+            }
+        }
         let toolNameAliases = openAIResponsesProviderToolNameAliases(from: request.tools)
         let toolCalls = openAIResponsesToolCalls(from: raw, providerID: providerID, toolNameAliases: toolNameAliases)
         let toolResults = openAIResponsesToolResults(from: raw, providerID: providerID, toolNameAliases: toolNameAliases)
@@ -27,11 +56,15 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             toolApprovalRequests: toolApprovalRequests,
             sources: sources,
             providerID: providerID,
+            mode: config.responsesRequestMode,
             toolNameAliases: toolNameAliases
         )
         let text = openAIResponsesOutputText(from: raw)
             ?? raw["choices"]?[0]?["message"]?["content"]?.stringValue
-        guard let text = text ?? (toolCalls.isEmpty ? nil : "") else {
+        let hasReasoning = content.contains { part in
+            if case .reasoning = part { true } else { false }
+        }
+        guard let text = text ?? ((!toolCalls.isEmpty || hasReasoning) ? "" : nil) else {
             throw AIError.invalidResponse(provider: providerID, message: "No output text found in responses API response.")
         }
         let hasClientToolCalls = toolCalls.contains { !$0.providerExecuted }
@@ -98,6 +131,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     let shouldThrowPreOutputStreamErrors = isOpenAIBackedProvider(providerID, config: config)
                     var sourceCounter = 0
                     var pendingCompletedResponse: JSONValue?
+                    let openResponsesProviderOptionsName: String?
+                    if case let .openResponses(providerOptionsName) = config.responsesRequestMode {
+                        openResponsesProviderOptionsName = providerOptionsName
+                    } else {
+                        openResponsesProviderOptionsName = nil
+                    }
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -207,9 +246,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 encryptedContent: item["encrypted_content"],
                                 summaryParts: [0: .active]
                             )
-                            activeReasoningPartIDs.insert("\(itemID):0")
+                            let reasoningPartID = openResponsesProviderOptionsName == nil
+                                ? "\(itemID):0"
+                                : itemID
+                            activeReasoningPartIDs.insert(reasoningPartID)
                             continuation.yield(.reasoningStart(
-                                id: "\(itemID):0",
+                                id: reasoningPartID,
                                 providerMetadata: openAIResponsesReasoningProviderMetadata(
                                     itemID: itemID,
                                     encryptedContent: item["encrypted_content"],
@@ -217,6 +259,19 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                     providerID: providerID
                                 )
                             ))
+                        }
+                        if openResponsesProviderOptionsName != nil,
+                           let delta = raw["delta"]?.stringValue,
+                           raw["type"]?.stringValue == "response.reasoning_text.delta" {
+                            let eventItemID = raw["item_id"]?.stringValue ?? "reasoning-0"
+                            let itemID = resolvedOutputItemID(
+                                eventItemID,
+                                outputIndex: raw["output_index"]?.intValue
+                            )
+                            if activeReasoningPartIDs.insert(itemID).inserted {
+                                continuation.yield(.reasoningStart(id: itemID))
+                            }
+                            continuation.yield(.reasoningDeltaPart(id: itemID, delta: delta))
                         }
                         if let delta = raw["delta"]?.stringValue ?? raw["output_text_delta"]?.stringValue,
                            openAIResponsesIsTextDelta(raw) {
@@ -245,7 +300,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                            let logprobs = raw["logprobs"] {
                             streamOutputLogprobs.append(logprobs)
                         }
-                        if let delta = raw["delta"]?.stringValue,
+                        if openResponsesProviderOptionsName == nil,
+                           let delta = raw["delta"]?.stringValue,
                            raw["type"]?.stringValue == "response.reasoning_summary_text.delta" {
                             let eventItemID = raw["item_id"]?.stringValue ?? "reasoning-0"
                             let summaryIndex = raw["summary_index"]?.intValue ?? 0
@@ -253,7 +309,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 eventItemID,
                                 outputIndex: raw["output_index"]?.intValue
                             )
-                            let reasoningPartID = "\(itemID):\(summaryIndex)"
+                            let reasoningPartID = openResponsesProviderOptionsName == nil
+                                ? "\(itemID):\(summaryIndex)"
+                                : itemID
                             if activeReasoningPartIDs.insert(reasoningPartID).inserted {
                                 continuation.yield(.reasoningStart(
                                     id: reasoningPartID,
@@ -289,6 +347,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 eventItemID,
                                 outputIndex: raw["output_index"]?.intValue
                             )
+                            if openResponsesProviderOptionsName != nil {
+                                continue
+                            }
                             if var reasoning = activeReasoning[itemID] {
                                 reasoning.summaryParts[summaryIndex] = .active
                                 for canConcludeIndex in reasoning.summaryParts.keys.sorted()
@@ -329,7 +390,14 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             let outputIndex = raw["output_index"]?.intValue
                             let itemID = resolvedOutputItemID(eventItemID, outputIndex: outputIndex)
                             let phase = item["phase"] ?? textItemPhases[itemID]
-                            let annotations = textItemAnnotations[itemID] ?? []
+                            let annotations: [JSONValue]
+                            if openResponsesProviderOptionsName != nil {
+                                annotations = item["content"]?.arrayValue?.flatMap {
+                                    openResponsesURLCitationAnnotations($0["annotations"])
+                                } ?? []
+                            } else {
+                                annotations = textItemAnnotations[itemID] ?? []
+                            }
                             continuation.yield(.textEnd(
                                 id: itemID,
                                 providerMetadata: openAIResponsesTextProviderMetadata(itemID: itemID, phase: phase, annotations: annotations, providerID: providerID)
@@ -355,7 +423,17 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                            let eventItemID = item["id"]?.stringValue {
                             let outputIndex = raw["output_index"]?.intValue
                             let itemID = resolvedOutputItemID(eventItemID, outputIndex: outputIndex)
-                            if let reasoning = activeReasoning[itemID] {
+                            if let providerOptionsName = openResponsesProviderOptionsName {
+                                continuation.yield(.reasoningEnd(
+                                    id: itemID,
+                                    providerMetadata: openResponsesReasoningProviderMetadata(
+                                        item: item,
+                                        providerOptionsName: providerOptionsName
+                                    )
+                                ))
+                                activeReasoningPartIDs.remove(itemID)
+                                activeReasoning[itemID] = nil
+                            } else if let reasoning = activeReasoning[itemID] {
                                 let summaryPartIndices = reasoning.summaryParts.keys.sorted().filter {
                                     reasoning.summaryParts[$0] == .active || reasoning.summaryParts[$0] == .canConclude
                                 }
@@ -512,25 +590,46 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         var processedApprovalIDs: Set<String> = []
         let toolNamespaces = openAIResponsesToolNamespaces(from: request.tools)
         let preparedTools = try openAIResponsesTools(from: request.tools)
+        let providerDefinedToolNames = Set(request.tools.compactMap { name, schema -> String? in
+            let object = schema.objectValue
+            guard object?["type"]?.stringValue == "provider"
+                    || object?["id"]?.stringValue?.hasPrefix("openai.") == true else {
+                return nil
+            }
+            return object?["name"]?.stringValue ?? name
+        })
+        let shellToolNames = Set(request.tools.compactMap { name, schema -> String? in
+            let object = schema.objectValue
+            guard object?["id"]?.stringValue == "openai.shell" else { return nil }
+            return object?["name"]?.stringValue ?? name
+        })
         let useDeveloperRoleForSystem = isEffectiveReasoningModel
+        let compactionTrigger = (options.removeValue(forKey: "compactionTrigger")
+            ?? options.removeValue(forKey: "compaction_trigger"))?.boolValue == true
+        var input = try request.messages.flatMap {
+            try openAIResponsesInputMessageJSON(
+                $0,
+                store: store,
+                hasConversation: hasConversation,
+                hasPreviousResponseID: hasPreviousResponseID,
+                processedApprovalIDs: &processedApprovalIDs,
+                toolNamespaces: toolNamespaces,
+                customToolNames: preparedTools.customToolNames,
+                programmaticToolNames: preparedTools.programmaticToolNames,
+                outputSchemaToolNames: preparedTools.outputSchemaToolNames,
+                providerDefinedToolNames: providerDefinedToolNames,
+                shellToolNames: shellToolNames,
+                providerID: providerID,
+                useDeveloperRoleForSystem: useDeveloperRoleForSystem,
+                warnings: &warnings
+            )
+        }
+        if compactionTrigger {
+            input.append(.object(["type": .string("compaction_trigger")]))
+        }
         var body: [String: JSONValue] = [
             "model": .string(modelID),
-            "input": .array(try request.messages.flatMap {
-                try openAIResponsesInputMessageJSON(
-                    $0,
-                    store: store,
-                    hasConversation: hasConversation,
-                    hasPreviousResponseID: hasPreviousResponseID,
-                    processedApprovalIDs: &processedApprovalIDs,
-                    toolNamespaces: toolNamespaces,
-                    customToolNames: preparedTools.customToolNames,
-                    programmaticToolNames: preparedTools.programmaticToolNames,
-                    outputSchemaToolNames: preparedTools.outputSchemaToolNames,
-                    providerID: providerID,
-                    useDeveloperRoleForSystem: useDeveloperRoleForSystem,
-                    warnings: &warnings
-                )
-            })
+            "input": .array(input)
         ]
         if stream { body["stream"] = true }
         if let temperature = request.temperature, !stripsReasoningModelSampling { body["temperature"] = .number(temperature) }
@@ -566,7 +665,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 
     private func openResponsesPreparedRequest(for request: LanguageModelRequest, stream: Bool, providerOptionsName: String) throws -> OpenAICompatibleResponsesPreparedRequest {
-        let preparedInput = openResponsesInput(from: request.messages, providerID: providerID)
+        let preparedInput = openResponsesInput(
+            from: request.messages,
+            providerID: providerID,
+            providerOptionsName: providerOptionsName
+        )
         let providerOptions = try openResponsesProviderOptions(providerOptions: request.providerOptions, providerOptionsName: providerOptionsName)
         var warnings = openResponsesWarnings(for: request, includePenaltyWarnings: false) + preparedInput.warnings
         var body: [String: JSONValue] = [
@@ -581,7 +684,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
         if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
         var reasoning: [String: JSONValue] = [:]
-        if isCustomReasoning(request.reasoning),
+        if let providerReasoningEffort = providerOptions["reasoningEffort"] {
+            reasoning["effort"] = providerReasoningEffort
+        } else if isCustomReasoning(request.reasoning),
            let requestedReasoning = request.reasoning,
            let effort = mapReasoningToProviderEffort(
                reasoning: requestedReasoning,
@@ -599,6 +704,10 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         }
         if let summary = providerOptions["reasoningSummary"] { reasoning["summary"] = summary }
         if !reasoning.isEmpty { body["reasoning"] = .object(reasoning) }
+        for (_, schema) in request.tools where schema["type"]?.stringValue == "provider" {
+            let toolID = schema["id"]?.stringValue ?? "unknown"
+            warnings.append(AIWarning(type: "unsupported", feature: "provider-defined tool \(toolID)"))
+        }
         let tools = openResponsesFunctionTools(from: request.tools)
         if !tools.isEmpty { body["tools"] = .array(tools) }
         if let toolChoice = openResponsesToolChoice(from: request.toolChoice ?? request.extraBody["toolChoice"]) {

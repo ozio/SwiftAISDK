@@ -21,6 +21,7 @@ public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible 
     public var response: JSONValue?
     public var headers: [String: String]
     public var isRetryable: Bool
+    public var cause: AIAPICallError?
 
     public init(
         type: GatewayErrorType,
@@ -30,7 +31,8 @@ public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible 
         modelID: String? = nil,
         response: JSONValue? = nil,
         headers: [String: String] = [:],
-        isRetryable: Bool? = nil
+        isRetryable: Bool? = nil,
+        cause: AIAPICallError? = nil
     ) {
         self.type = type
         self.message = message
@@ -40,6 +42,7 @@ public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible 
         self.response = response
         self.headers = headers
         self.isRetryable = isRetryable ?? gatewayStatusIsRetryable(statusCode)
+        self.cause = cause
     }
 
     public var name: String {
@@ -75,6 +78,7 @@ public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible 
 
 func gatewayErrorFromHTTPStatus(statusCode: Int, body: String, headers: [String: String]) -> GatewayError {
     if let raw = try? secureJSONParse(body) {
+        let cause = gatewayAPICallCause(statusCode: statusCode, response: raw, headers: headers)
         if let error = raw["error"],
            let message = error["message"]?.stringValue {
             return GatewayError(
@@ -84,7 +88,8 @@ func gatewayErrorFromHTTPStatus(statusCode: Int, body: String, headers: [String:
                 generationID: raw["generationId"]?.stringValue,
                 modelID: error["param"]?["modelId"]?.stringValue,
                 response: raw,
-                headers: headers
+                headers: headers,
+                cause: cause
             )
         }
         if raw["type"]?.stringValue == "error", let message = raw["message"]?.stringValue {
@@ -93,7 +98,8 @@ func gatewayErrorFromHTTPStatus(statusCode: Int, body: String, headers: [String:
                 message: message,
                 statusCode: raw["statusCode"]?.intValue ?? statusCode,
                 response: raw,
-                headers: headers
+                headers: headers,
+                cause: cause
             )
         }
         return GatewayError(
@@ -101,7 +107,8 @@ func gatewayErrorFromHTTPStatus(statusCode: Int, body: String, headers: [String:
             message: "Invalid error response format: Gateway request failed",
             statusCode: statusCode,
             response: raw,
-            headers: headers
+            headers: headers,
+            cause: cause
         )
     }
 
@@ -110,7 +117,26 @@ func gatewayErrorFromHTTPStatus(statusCode: Int, body: String, headers: [String:
         message: "Invalid error response format: \(body.isEmpty ? "Gateway request failed" : body)",
         statusCode: statusCode,
         response: body.isEmpty ? nil : .string(body),
-        headers: headers
+        headers: headers,
+        cause: AIAPICallError(
+            provider: "gateway",
+            statusCode: statusCode,
+            responseHeaders: headers,
+            responseBody: body.isEmpty ? "unknown error" : body
+        )
+    )
+}
+
+private func gatewayAPICallCause(
+    statusCode: Int,
+    response: JSONValue,
+    headers: [String: String]
+) -> AIAPICallError {
+    AIAPICallError(
+        provider: "gateway",
+        statusCode: statusCode,
+        responseHeaders: headers,
+        responseBody: getErrorMessage(response)
     )
 }
 

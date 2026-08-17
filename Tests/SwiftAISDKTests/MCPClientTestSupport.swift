@@ -275,6 +275,7 @@ actor MockMCPOAuthProvider: MCPOAuthProvider {
     private var token: String?
     private let authorizedToken: String?
     private var metadataURLs: [URL] = []
+    private var authorizationScopes: [String?] = []
     private var invalidations: [MCPOAuthCredentialScope] = []
 
     init(initialToken: String?, authorizedToken: String?) {
@@ -287,9 +288,14 @@ actor MockMCPOAuthProvider: MCPOAuthProvider {
     }
 
     func authorize(resourceMetadataURL: URL?) async throws -> Bool {
+        try await authorize(resourceMetadataURL: resourceMetadataURL, scope: nil)
+    }
+
+    func authorize(resourceMetadataURL: URL?, scope: String?) async throws -> Bool {
         if let resourceMetadataURL {
             metadataURLs.append(resourceMetadataURL)
         }
+        authorizationScopes.append(scope)
         token = authorizedToken
         return authorizedToken != nil
     }
@@ -300,6 +306,10 @@ actor MockMCPOAuthProvider: MCPOAuthProvider {
 
     func resourceMetadataURLs() -> [URL] {
         metadataURLs
+    }
+
+    func scopes() -> [String?] {
+        authorizationScopes
     }
 
     func invalidatedScopes() -> [MCPOAuthCredentialScope] {

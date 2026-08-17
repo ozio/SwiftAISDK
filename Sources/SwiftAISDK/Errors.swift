@@ -6,7 +6,7 @@ public func getErrorMessage(_ value: Any?) -> String {
     if let jsonValue = value as? JSONValue { return errorMessageCompactJSONString(jsonValue) }
     if let bool = value as? Bool { return String(bool) }
     if let int = value as? Int { return String(int) }
-    if let double = value as? Double { return double.rounded() == double ? String(Int(double)) : String(double) }
+    if let double = value as? Double { return errorMessageNumberString(double) }
     if let convertible = value as? CustomStringConvertible { return convertible.description }
     if let error = value as? Error { return String(describing: error) }
     return String(describing: value)
@@ -53,7 +53,7 @@ private func errorMessageCompactJSONString(_ value: JSONValue) -> String {
     case let .string(string):
         return errorMessageJSONStringLiteral(string)
     case let .number(number):
-        return number.rounded() == number ? String(Int(number)) : String(number)
+        return errorMessageNumberString(number)
     case let .bool(bool):
         return String(bool)
     case let .array(array):
@@ -63,6 +63,13 @@ private func errorMessageCompactJSONString(_ value: JSONValue) -> String {
     case .null:
         return "null"
     }
+}
+
+private func errorMessageNumberString(_ value: Double) -> String {
+    if let integer = Int(exactly: value) {
+        return String(integer)
+    }
+    return String(value)
 }
 
 private func errorMessageJSONStringLiteral(_ value: String) -> String {

@@ -5,7 +5,7 @@ import Testing
 @Test func xAISpeechAndTranscriptionUseNativeAudioEndpoints() async throws {
     let speechTransport = RecordingTransport(response: AIHTTPResponse(
         statusCode: 200,
-        headers: ["content-type": "audio/wav", "xai-request-id": "speech-request"],
+        headers: ["content-type": "audio/wav", "xai-request-id": "speech-request", "x-trace-id": "trace-binary"],
         body: Data("xai-speech".utf8)
     ))
     let speechProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: speechTransport))
@@ -35,10 +35,11 @@ import Testing
         AIWarning(type: "unsupported", feature: "providerOptions", message: "xAI `bitRate` is supported only for mp3 output. It was ignored.")
     ])
     #expect(speech.responseMetadata.headers["xai-request-id"] == "speech-request")
+    #expect(speech.providerMetadata["xai"]?["traceId"]?.stringValue == "trace-binary")
     let speechRequest = try #require(await speechTransport.requests().first)
     #expect(speechRequest.url.absoluteString == "https://api.x.ai/v1/tts")
     #expect(speechRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(speechRequest.headers["user-agent"] == "ai-sdk/xai/4.0.33")
+    #expect(speechRequest.headers["user-agent"] == "ai-sdk/xai/4.0.40")
     let speechBody = try decodeJSONBody(try #require(speechRequest.body))
     #expect(speechBody["text"]?.stringValue == "Hello [pause] world")
     #expect(speechBody["voice_id"]?.stringValue == "eve")
@@ -84,7 +85,7 @@ import Testing
     let transcriptionRequest = try #require(await transcriptionTransport.requests().first)
     #expect(transcriptionRequest.url.absoluteString == "https://api.x.ai/v1/stt")
     #expect(transcriptionRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(transcriptionRequest.headers["user-agent"] == "ai-sdk/xai/4.0.33")
+    #expect(transcriptionRequest.headers["user-agent"] == "ai-sdk/xai/4.0.40")
     #expect(transcriptionRequest.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let transcriptionBody = String(data: try #require(transcriptionRequest.body), encoding: .utf8) ?? ""
     #expect(transcriptionBody.contains("name=\"audio_format\""))
@@ -112,12 +113,119 @@ import Testing
         _ = try await provider.speech().speak(SpeechRequest(text: "Hi", providerOptions: ["xai": ["optimizeStreamingLatency": 3]]))
     }
 
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.withTimestamps", message: "xAI withTimestamps must be a boolean.")) {
+        _ = try await provider.speech().speak(SpeechRequest(text: "Hi", providerOptions: ["xai": ["withTimestamps": "yes"]]))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.replace", message: "xAI replace must be an object with string values.")) {
+        _ = try await provider.speech().speak(SpeechRequest(text: "Hi", providerOptions: ["xai": ["replace": ["xAI": true]]]))
+    }
+
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.audioFormat", message: "xAI audioFormat must be pcm, mulaw, or alaw.")) {
         _ = try await provider.transcription().transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8), providerOptions: ["xai": ["audioFormat": "mp3"]]))
     }
 
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.channels", message: "xAI channels must be an integer from 2 to 8.")) {
         _ = try await provider.transcription().transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8), providerOptions: ["xai": ["channels": 1]]))
+    }
+}
+
+@Test func xAIAudioProviderOptionsAreNullishLikeUpstream() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "audio/mpeg"],
+        body: Data("audio".utf8)
+    ))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+
+    let result = try await provider.speech().speak(SpeechRequest(
+        text: "Hi",
+        providerOptions: [
+            "xai": [
+                "sampleRate": .null,
+                "bitRate": .null,
+                "optimizeStreamingLatency": .null,
+                "textNormalization": .null,
+                "withTimestamps": .null,
+                "replace": .null
+            ]
+        ]
+    ))
+
+    #expect(result.audio == Data("audio".utf8))
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["output_format"]?["sample_rate"] == nil)
+    #expect(body["output_format"]?["bit_rate"] == nil)
+    #expect(body["optimize_streaming_latency"] == nil)
+    #expect(body["text_normalization"] == nil)
+    #expect(body["with_timestamps"] == nil)
+    #expect(body["replace"] == nil)
+
+    let transcriptionTransport = RecordingTransport(response: jsonResponse(#"{"text":"hello"}"#))
+    let transcriptionProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transcriptionTransport))
+    _ = try await transcriptionProvider.transcription().transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        providerOptions: [
+            "xai": [
+                "audioFormat": .null,
+                "sampleRate": .null,
+                "language": .null,
+                "format": .null,
+                "multichannel": .null,
+                "channels": .null,
+                "diarize": .null,
+                "keyterm": .null,
+                "fillerWords": .null
+            ]
+        ]
+    ))
+
+    let transcriptionRequest = try #require((await transcriptionTransport.requests()).first)
+    let transcriptionBody = String(data: try #require(transcriptionRequest.body), encoding: .utf8) ?? ""
+    for field in ["audio_format", "sample_rate", "language", "format", "multichannel", "channels", "diarize", "keyterm", "filler_words"] {
+        #expect(!transcriptionBody.contains("name=\"\(field)\""))
+    }
+}
+
+@Test func xAISpeechTimestampsReplacementsMetadataAndErrorsMatchUpstream() async throws {
+    let timestampTransport = RecordingTransport(response: jsonResponse(#"{"audio":"AQIDBA==","content_type":"audio/mpeg","duration":1.19,"audio_timestamps":{"graph_chars":["H","i"],"graph_times":[[0.04,0.06],[0.06,0.1]]}}"#, headers: ["x-trace-id": "trace-timestamps"]))
+    let timestampProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: timestampTransport))
+
+    let result = try await timestampProvider.speech().speak(SpeechRequest(
+        text: "Hi xAI",
+        providerOptions: [
+            "xai": [
+                "withTimestamps": true,
+                "replace": ["xAI": "ex eye"]
+            ]
+        ]
+    ))
+
+    #expect(result.audio == Data([1, 2, 3, 4]))
+    #expect(result.contentType == "audio/mpeg")
+    #expect(result.providerMetadata["xai"]?["traceId"]?.stringValue == "trace-timestamps")
+    #expect(result.providerMetadata["xai"]?["duration"]?.doubleValue == 1.19)
+    #expect(result.providerMetadata["xai"]?["contentType"]?.stringValue == "audio/mpeg")
+    #expect(result.providerMetadata["xai"]?["audioTimestamps"]?["graphChars"]?[1]?.stringValue == "i")
+    #expect(result.providerMetadata["xai"]?["audioTimestamps"]?["graphTimes"]?[0]?[0]?.doubleValue == 0.04)
+    #expect(result.responseMetadata.body?["audio"]?.stringValue == "AQIDBA==")
+    let body = try decodeJSONBody(try #require((await timestampTransport.requests()).first?.body))
+    #expect(body["with_timestamps"]?.boolValue == true)
+    #expect(body["replace"]?["xAI"]?.stringValue == "ex eye")
+
+    let errorTransport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 400,
+        headers: ["x-trace-id": "trace-error"],
+        body: Data(#"{"error":"speed must be between 0.7 and 1.5"}"#.utf8)
+    ))
+    let errorProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: errorTransport))
+    await #expect(throws: AIError.apiCall(
+        provider: "xai.speech",
+        statusCode: 400,
+        body: "speed must be between 0.7 and 1.5",
+        headers: ["x-trace-id": "trace-error"]
+    )) {
+        _ = try await errorProvider.speech().speak(SpeechRequest(text: "Hi", speed: 2))
     }
 }
 
@@ -140,7 +248,7 @@ import Testing
     let imageRequest = try #require(imageRequests.first)
     #expect(imageRequest.url.absoluteString == "https://api.x.ai/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk/xai/4.0.33")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/xai/4.0.40")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "grok-2-image")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -172,7 +280,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.x.ai/v1/videos/generations")
     #expect(requests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/xai/4.0.33")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/xai/4.0.40")
     let videoBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(videoBody["model"]?.stringValue == "grok-2-video")
     #expect(videoBody["prompt"]?.stringValue == "cat running")
@@ -182,7 +290,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.x.ai/v1/videos/vid-1")
     #expect(requests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/xai/4.0.33")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/xai/4.0.40")
 
     let editTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"edit-1"}"#),
@@ -204,9 +312,9 @@ import Testing
     let editRequests = await editTransport.requests()
     #expect(editRequests[0].url.absoluteString == "https://api.x.ai/v1/videos/edits")
     #expect(editRequests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[0].headers["user-agent"] == "ai-sdk/xai/4.0.33")
+    #expect(editRequests[0].headers["user-agent"] == "ai-sdk/xai/4.0.40")
     #expect(editRequests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[1].headers["user-agent"] == "ai-sdk/xai/4.0.33")
+    #expect(editRequests[1].headers["user-agent"] == "ai-sdk/xai/4.0.40")
     let editBody = try decodeJSONBody(try #require(editRequests[0].body))
     #expect(editBody["video"]?["url"]?.stringValue == "https://x.ai/source.mp4")
     #expect(editBody["aspect_ratio"] == nil)
@@ -433,6 +541,159 @@ import Testing
     #expect(body["reference_images"]?[1]?["url"]?.stringValue == "data:image/png;base64,iVBORw==")
 }
 
+@Test func xAIVideo15Maps1080pReferenceVoicesAndModelWarningsLikeUpstream() async throws {
+    let referenceTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"r2v-1080"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/r2v-1080.mp4","respect_moderation":true}}"#)
+    ])
+    let referenceProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: referenceTransport))
+    let referenceResult = try await referenceProvider.videoModel("grok-imagine-video-1.5").generateVideo(VideoGenerationRequest(
+        prompt: "talking cat",
+        inputReferences: [ImageInputFile(url: "https://example.com/cat.png", mediaType: "image/png")],
+        resolution: "1920x1080",
+        providerOptions: ["xai": ["referenceVoiceIds": ["eve", "ara"], "pollIntervalMs": 1]]
+    ))
+
+    let referenceBody = try decodeJSONBody(try #require((await referenceTransport.requests()).first?.body))
+    #expect(referenceBody["resolution"]?.stringValue == "720p")
+    #expect(referenceBody["reference_images"]?[0]?["url"]?.stringValue == "https://example.com/cat.png")
+    #expect(referenceBody["reference_audios"]?[0]?["voice_id"]?.stringValue == "eve")
+    #expect(referenceBody["reference_audios"]?[1]?["voice_id"]?.stringValue == "ara")
+    #expect(referenceBody["referenceVoiceIds"] == nil)
+    #expect(referenceResult.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "resolution",
+        message: "xAI reference-to-video is limited to 720p. The request was downgraded from 1080p to 720p."
+    )))
+
+    let nativeTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"t2v-1080"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/t2v-1080.mp4","respect_moderation":true}}"#)
+    ])
+    let nativeProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: nativeTransport))
+    let nativeResult = try await nativeProvider.videoModel("grok-imagine-video-1.5").generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        resolution: "1920x1080",
+        providerOptions: ["xai": ["pollIntervalMs": 1]]
+    ))
+    let nativeBody = try decodeJSONBody(try #require((await nativeTransport.requests()).first?.body))
+    #expect(nativeBody["resolution"]?.stringValue == "1080p")
+    #expect(nativeResult.warnings.isEmpty)
+
+    let legacyTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"legacy-1080"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/legacy-1080.mp4","respect_moderation":true}}"#)
+    ])
+    let legacyProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: legacyTransport))
+    let legacyResult = try await legacyProvider.videoModel("grok-imagine-video").generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["xai": ["resolution": "1080p", "pollIntervalMs": 1]]
+    ))
+    #expect(legacyResult.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "resolution",
+        message: "xAI model \"grok-imagine-video\" does not support 1080p. Use \"grok-imagine-video-1.5\" for 1080p, or a lower resolution. The request was sent with 1080p."
+    )))
+}
+
+@Test func xAIVideoDoesNotRouteNonImageReferencesOrVoicesToReferenceMode() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"non-image-reference"}"#),
+        jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/non-image-reference.mp4","respect_moderation":true}}"#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let result = try await provider.videoModel("grok-imagine-video-1.5").generateVideo(VideoGenerationRequest(
+        prompt: "cat",
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/voice.mp3", mediaType: "audio/mpeg"),
+            ImageInputFile(url: "https://example.com/source.mp4", mediaType: "video/mp4")
+        ],
+        providerOptions: ["xai": ["referenceVoiceIds": ["eve"], "pollIntervalMs": 1]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["reference_images"] == nil)
+    #expect(body["reference_audios"] == nil)
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "inputReferences",
+        message: "xAI reference-to-video requires at least one image reference. The references were ignored."
+    )))
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "referenceVoiceIds",
+        message: "xAI only supports reference voices for reference-to-video generation. The reference voices were ignored."
+    )))
+}
+
+@Test func xAIVideoModerationAndMissingURLAreTerminalErrorsLikeUpstream() async throws {
+    let moderationTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"moderated"}"#),
+        jsonResponse(#"{"status":"done","video":{"respect_moderation":false}}"#)
+    ])
+    let moderationProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: moderationTransport))
+    await #expect(throws: AIError.invalidResponse(
+        provider: "xai.video",
+        message: "Video generation was blocked due to a content policy violation."
+    )) {
+        _ = try await moderationProvider.videoModel("grok-imagine-video-1.5").generateVideo(VideoGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["xai": ["pollIntervalMs": 1]]
+        ))
+    }
+    #expect(await moderationTransport.requests().count == 2)
+
+    let missingURLTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"missing-url"}"#),
+        jsonResponse(#"{"status":"done","video":{"respect_moderation":true}}"#)
+    ])
+    let missingURLProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: missingURLTransport))
+    await #expect(throws: AIError.invalidResponse(
+        provider: "xai.video",
+        message: "Video generation completed but no video URL was returned."
+    )) {
+        _ = try await missingURLProvider.videoModel("grok-imagine-video-1.5").generateVideo(VideoGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["xai": ["pollIntervalMs": 1]]
+        ))
+    }
+    #expect(await missingURLTransport.requests().count == 2)
+}
+
+@Test func xAIVideoFailedAndExpiredStatusesWinOverStaleURLsLikeUpstream() async throws {
+    let failedTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"failed"}"#),
+        jsonResponse(#"{"status":"failed","video":{"url":"https://x.ai/stale.mp4"},"error":{"message":"GPU unavailable"}}"#)
+    ])
+    let failedProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: failedTransport))
+    await #expect(throws: AIError.invalidResponse(
+        provider: "xai.video",
+        message: "Video generation failed: GPU unavailable"
+    )) {
+        _ = try await failedProvider.videoModel("grok-imagine-video-1.5").generateVideo(VideoGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["xai": ["pollIntervalMs": 1]]
+        ))
+    }
+    #expect(await failedTransport.requests().count == 2)
+
+    let expiredTransport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"expired"}"#),
+        jsonResponse(#"{"status":"expired","video":{"url":"https://x.ai/stale.mp4"}}"#)
+    ])
+    let expiredProvider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: expiredTransport))
+    await #expect(throws: AIError.invalidResponse(
+        provider: "xai.video",
+        message: "Video generation request expired."
+    )) {
+        _ = try await expiredProvider.videoModel("grok-imagine-video-1.5").generateVideo(VideoGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["xai": ["pollIntervalMs": 1]]
+        ))
+    }
+    #expect(await expiredTransport.requests().count == 2)
+}
+
 @Test func xAIVideoIgnoresInputReferencesWithFrameImagesLikeUpstream() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"frame-over-refs"}"#),
@@ -455,7 +716,7 @@ import Testing
     #expect(result.warnings.contains(AIWarning(
         type: "unsupported",
         feature: "inputReferences",
-        message: "xAI inputReferences are ignored when frameImages are provided."
+        message: "xAI only supports inputReferences for reference-to-video generation. The reference images were ignored."
     )))
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["image"]?["url"]?.stringValue == "https://example.com/first.png")
@@ -487,7 +748,7 @@ import Testing
     #expect(result.warnings.contains(AIWarning(
         type: "unsupported",
         feature: "inputReferences",
-        message: "xAI video editing does not support inputReferences."
+        message: "xAI only supports inputReferences for reference-to-video generation. The reference images were ignored."
     )))
     let request = try #require((await transport.requests()).first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/videos/edits")
@@ -547,8 +808,11 @@ import Testing
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.pollIntervalMs", message: "xAI pollIntervalMs must be a positive number or null.")) {
         _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat", providerOptions: ["xai": ["pollIntervalMs": 0]]))
     }
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 480p, 720p, or null.")) {
-        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat", providerOptions: ["xai": ["resolution": "1080p"]]))
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 480p, 720p, 1080p, or null.")) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat", providerOptions: ["xai": ["resolution": "4k"]]))
+    }
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.referenceVoiceIds", message: "xAI referenceVoiceIds must contain at most 3 non-empty strings.")) {
+        _ = try await model.generateVideo(VideoGenerationRequest(prompt: "cat", providerOptions: ["xai": ["referenceVoiceIds": ["a", "b", "c", "d"]]]))
     }
 }
 

@@ -63,6 +63,39 @@ import Testing
     #expect(arrayPartialElements(from: #"{ not valid json"#) == nil)
 }
 
+@Test func aiOutputArrayPreservesRootDefinitionsForElementReferencesLikeUpstream() {
+    let definitions: JSONValue = [
+        "content": [
+            "type": "object",
+            "properties": ["value": ["type": "string"]]
+        ]
+    ]
+    let defs: JSONValue = [
+        "metadata": [
+            "type": "object",
+            "properties": ["source": ["type": "string"]]
+        ]
+    ]
+    let schema = arrayOutputSchema(elementSchema: [
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "definitions": definitions,
+        "$defs": defs,
+        "type": "object",
+        "properties": [
+            "content": ["$ref": "#/definitions/content"],
+            "metadata": ["$ref": "#/$defs/metadata"]
+        ]
+    ])
+
+    #expect(schema["$schema"] == "http://json-schema.org/draft-07/schema#")
+    #expect(schema["definitions"] == definitions)
+    #expect(schema["$defs"] == defs)
+    #expect(schema["properties"]?["elements"]?["items"]?["definitions"] == nil)
+    #expect(schema["properties"]?["elements"]?["items"]?["$defs"] == nil)
+    #expect(schema["properties"]?["elements"]?["items"]?["properties"]?["content"]?["$ref"] == "#/definitions/content")
+    #expect(schema["properties"]?["elements"]?["items"]?["properties"]?["metadata"]?["$ref"] == "#/$defs/metadata")
+}
+
 @Test func aiOutputArrayStreamsCompleteObjectPartialsAndFinalOutputLikeUpstream() async throws {
     let elementSchema = outputContentSchema()
     let model = ObjectFacadeMockLanguageModel(
