@@ -4,6 +4,7 @@ public struct AIAgentCallOptions: Sendable {
     public var requestOptions: AIChatRequestOptions
     public var abortSignal: AIAbortSignal?
     public var timeoutNanoseconds: UInt64?
+    public var streamTimeout: AIStreamTimeoutConfiguration?
     public var retryPolicy: AIRetryPolicy?
     public var telemetry: Telemetry.Options?
 
@@ -11,12 +12,14 @@ public struct AIAgentCallOptions: Sendable {
         requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        streamTimeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy? = nil,
         telemetry: Telemetry.Options? = nil
     ) {
         self.requestOptions = requestOptions
         self.abortSignal = abortSignal
         self.timeoutNanoseconds = timeoutNanoseconds
+        self.streamTimeout = streamTimeout
         self.retryPolicy = retryPolicy
         self.telemetry = telemetry
     }
@@ -65,6 +68,7 @@ public struct AIToolLoopAgent: AIAgent {
     public var toolApproval: AIToolApproval?
     public var requestOptions: AIChatRequestOptions
     public var timeoutNanoseconds: UInt64?
+    public var streamTimeout: AIStreamTimeoutConfiguration?
     public var retryPolicy: AIRetryPolicy
     public var telemetry: Telemetry.Options?
 
@@ -80,6 +84,7 @@ public struct AIToolLoopAgent: AIAgent {
         toolApproval: AIToolApproval? = nil,
         requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
         timeoutNanoseconds: UInt64? = nil,
+        streamTimeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) {
@@ -94,6 +99,7 @@ public struct AIToolLoopAgent: AIAgent {
         self.toolApproval = toolApproval
         self.requestOptions = requestOptions
         self.timeoutNanoseconds = timeoutNanoseconds
+        self.streamTimeout = streamTimeout
         self.retryPolicy = retryPolicy
         self.telemetry = telemetry
     }
@@ -136,6 +142,8 @@ public struct AIToolLoopAgent: AIAgent {
             prepareStep: prepareStep,
             toolApproval: toolApproval,
             timeoutNanoseconds: options.timeoutNanoseconds ?? timeoutNanoseconds,
+            timeout: options.streamTimeout
+                ?? (options.timeoutNanoseconds == nil ? streamTimeout : nil),
             retryPolicy: retryPolicy(for: options),
             telemetry: options.telemetry ?? telemetry
         )

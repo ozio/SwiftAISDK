@@ -551,7 +551,7 @@ import Testing
     ))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.43")
+    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.44")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "user")
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")

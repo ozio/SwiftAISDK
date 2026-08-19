@@ -38,6 +38,8 @@ public struct MCPOAuthAuthorizationServerMetadata: Equatable, Sendable {
     public var authorizationEndpoint: URL
     public var tokenEndpoint: URL
     public var registrationEndpoint: URL?
+    public var authorizationResponseIssuerParameterSupported: Bool?
+    public var clientIDMetadataDocumentSupported: Bool?
     public var responseTypesSupported: [String]
     public var codeChallengeMethodsSupported: [String]
     public var grantTypesSupported: [String]
@@ -49,6 +51,8 @@ public struct MCPOAuthAuthorizationServerMetadata: Equatable, Sendable {
         authorizationEndpoint: URL,
         tokenEndpoint: URL,
         registrationEndpoint: URL? = nil,
+        authorizationResponseIssuerParameterSupported: Bool? = nil,
+        clientIDMetadataDocumentSupported: Bool? = nil,
         responseTypesSupported: [String],
         codeChallengeMethodsSupported: [String],
         grantTypesSupported: [String] = [],
@@ -59,6 +63,8 @@ public struct MCPOAuthAuthorizationServerMetadata: Equatable, Sendable {
         self.authorizationEndpoint = authorizationEndpoint
         self.tokenEndpoint = tokenEndpoint
         self.registrationEndpoint = registrationEndpoint
+        self.authorizationResponseIssuerParameterSupported = authorizationResponseIssuerParameterSupported
+        self.clientIDMetadataDocumentSupported = clientIDMetadataDocumentSupported
         self.responseTypesSupported = responseTypesSupported
         self.codeChallengeMethodsSupported = codeChallengeMethodsSupported
         self.grantTypesSupported = grantTypesSupported
@@ -88,6 +94,8 @@ public struct MCPOAuthAuthorizationServerMetadata: Equatable, Sendable {
             authorizationEndpoint: authorizationEndpoint,
             tokenEndpoint: tokenEndpoint,
             registrationEndpoint: json["registration_endpoint"]?.stringValue.flatMap(URL.init(string:)),
+            authorizationResponseIssuerParameterSupported: json["authorization_response_iss_parameter_supported"]?.boolValue,
+            clientIDMetadataDocumentSupported: json["client_id_metadata_document_supported"]?.boolValue,
             responseTypesSupported: json["response_types_supported"]?.arrayValue?.compactMap(\.stringValue) ?? [],
             codeChallengeMethodsSupported: codeChallengeMethods,
             grantTypesSupported: json["grant_types_supported"]?.arrayValue?.compactMap(\.stringValue) ?? [],
@@ -104,6 +112,7 @@ public struct MCPOAuthTokens: Equatable, Sendable {
     public var expiresIn: Int?
     public var scope: String?
     public var refreshToken: String?
+    public var issuer: String?
     public var authorizationServerURL: URL?
     public var tokenEndpoint: URL?
     public var rawValue: JSONValue
@@ -115,6 +124,7 @@ public struct MCPOAuthTokens: Equatable, Sendable {
         expiresIn: Int? = nil,
         scope: String? = nil,
         refreshToken: String? = nil,
+        issuer: String? = nil,
         authorizationServerURL: URL? = nil,
         tokenEndpoint: URL? = nil,
         rawValue: JSONValue = .object([:])
@@ -125,6 +135,7 @@ public struct MCPOAuthTokens: Equatable, Sendable {
         self.expiresIn = expiresIn
         self.scope = scope
         self.refreshToken = refreshToken
+        self.issuer = issuer
         self.authorizationServerURL = authorizationServerURL
         self.tokenEndpoint = tokenEndpoint
         self.rawValue = rawValue
@@ -142,6 +153,7 @@ public struct MCPOAuthTokens: Equatable, Sendable {
             expiresIn: json["expires_in"]?.intValue,
             scope: json["scope"]?.stringValue,
             refreshToken: json["refresh_token"]?.stringValue,
+            issuer: json["issuer"]?.stringValue,
             authorizationServerURL: json["authorization_server"]?.stringValue.flatMap(URL.init(string:)),
             tokenEndpoint: json["token_endpoint"]?.stringValue.flatMap(URL.init(string:)),
             rawValue: json
@@ -154,6 +166,7 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
     public var clientSecret: String?
     public var clientIDIssuedAt: Int?
     public var clientSecretExpiresAt: Int?
+    public var issuer: String?
     public var authorizationServerURL: URL?
     public var tokenEndpoint: URL?
     public var rawValue: JSONValue
@@ -163,6 +176,7 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
         clientSecret: String? = nil,
         clientIDIssuedAt: Int? = nil,
         clientSecretExpiresAt: Int? = nil,
+        issuer: String? = nil,
         authorizationServerURL: URL? = nil,
         tokenEndpoint: URL? = nil,
         rawValue: JSONValue = .object([:])
@@ -171,6 +185,7 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
         self.clientSecret = clientSecret
         self.clientIDIssuedAt = clientIDIssuedAt
         self.clientSecretExpiresAt = clientSecretExpiresAt
+        self.issuer = issuer
         self.authorizationServerURL = authorizationServerURL
         self.tokenEndpoint = tokenEndpoint
         self.rawValue = rawValue
@@ -185,6 +200,7 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
             clientSecret: json["client_secret"]?.stringValue,
             clientIDIssuedAt: json["client_id_issued_at"]?.intValue,
             clientSecretExpiresAt: json["client_secret_expires_at"]?.intValue,
+            issuer: json["issuer"]?.stringValue,
             authorizationServerURL: json["authorization_server"]?.stringValue.flatMap(URL.init(string:)),
             tokenEndpoint: json["token_endpoint"]?.stringValue.flatMap(URL.init(string:)),
             rawValue: json
@@ -195,15 +211,23 @@ public struct MCPOAuthClientInformation: Equatable, Sendable {
 public struct MCPOAuthAuthorizationServerInformation: Equatable, Sendable {
     public var authorizationServerURL: URL
     public var tokenEndpoint: URL
+    public var issuer: String?
 
-    public init(authorizationServerURL: URL, tokenEndpoint: URL) {
+    public init(authorizationServerURL: URL, tokenEndpoint: URL, issuer: String? = nil) {
         self.authorizationServerURL = authorizationServerURL
         self.tokenEndpoint = tokenEndpoint
+        self.issuer = issuer
     }
+}
+
+public enum MCPOAuthApplicationType: String, Equatable, Sendable {
+    case native
+    case web
 }
 
 public struct MCPOAuthClientMetadata: Equatable, Sendable {
     public var redirectURIs: [URL]
+    public var applicationType: MCPOAuthApplicationType?
     public var tokenEndpointAuthMethod: String?
     public var grantTypes: [String]
     public var responseTypes: [String]
@@ -222,6 +246,7 @@ public struct MCPOAuthClientMetadata: Equatable, Sendable {
 
     public init(
         redirectURIs: [URL],
+        applicationType: MCPOAuthApplicationType? = nil,
         tokenEndpointAuthMethod: String? = nil,
         grantTypes: [String] = [],
         responseTypes: [String] = [],
@@ -239,6 +264,7 @@ public struct MCPOAuthClientMetadata: Equatable, Sendable {
         softwareStatement: String? = nil
     ) {
         self.redirectURIs = redirectURIs
+        self.applicationType = applicationType
         self.tokenEndpointAuthMethod = tokenEndpointAuthMethod
         self.grantTypes = grantTypes
         self.responseTypes = responseTypes
@@ -266,8 +292,18 @@ public struct MCPOAuthClientMetadata: Equatable, Sendable {
         guard !redirectURIs.isEmpty else {
             throw MCPClientError(message: "Expected OAuth client metadata with redirect_uris.")
         }
+        let applicationType: MCPOAuthApplicationType?
+        if let rawApplicationType = json["application_type"]?.stringValue {
+            guard let parsedApplicationType = MCPOAuthApplicationType(rawValue: rawApplicationType) else {
+                throw MCPClientError(message: "Expected OAuth client metadata application_type to be native or web.")
+            }
+            applicationType = parsedApplicationType
+        } else {
+            applicationType = nil
+        }
         self.init(
             redirectURIs: redirectURIs,
+            applicationType: applicationType,
             tokenEndpointAuthMethod: json["token_endpoint_auth_method"]?.stringValue,
             grantTypes: json["grant_types"]?.arrayValue?.compactMap(\.stringValue) ?? [],
             responseTypes: json["response_types"]?.arrayValue?.compactMap(\.stringValue) ?? [],
@@ -289,6 +325,7 @@ public struct MCPOAuthClientMetadata: Equatable, Sendable {
     public var jsonValue: JSONValue {
         .object([
             "redirect_uris": .array(redirectURIs.map(\.absoluteString)),
+            "application_type": applicationType.map { .string($0.rawValue) },
             "token_endpoint_auth_method": tokenEndpointAuthMethod.map(JSONValue.string),
             "grant_types": grantTypes.isEmpty ? nil : .array(grantTypes.map(JSONValue.string)),
             "response_types": responseTypes.isEmpty ? nil : .array(responseTypes.map(JSONValue.string)),

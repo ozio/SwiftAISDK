@@ -188,7 +188,88 @@ import Testing
     #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/fal/3.0.28")
     #expect(requests[1].url.absoluteString == "https://status.example.com/fal/requests/req-foreign")
     #expect(requests[1].headers["authorization"] == nil)
-    #expect(requests[1].headers["user-agent"] == nil)
+    #expect(requests[1].headers["user-agent"] == "CustomApp/1.0 ai-sdk/fal/3.0.28")
+}
+
+@Test func falVideoAsyncStartStatusMatchesUpstreamQueueOperation() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"req-async","response_url":"https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-async"}"#),
+        AIHTTPResponse(
+            statusCode: 422,
+            headers: ["content-type": "application/json"],
+            body: Data(#"{"detail":"Request is still in progress"}"#.utf8)
+        ),
+        jsonResponse(#"{"video":{"url":"https://fal.example.com/async.mp4","content_type":"video/mp4","width":1280,"height":720},"seed":42}"#)
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try #require(try provider.videoModel("fal-ai/luma-dream-machine") as? any AsyncVideoModel)
+
+    let started = try await model.startVideoGeneration(VideoGenerationOperationStartRequest(
+        request: VideoGenerationRequest(prompt: "async clip", seed: 42)
+    ))
+    #expect(started.operation == [
+        "responseUrl": "https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-async",
+        "submitUrl": "https://queue.fal.run/fal-ai/luma-dream-machine"
+    ])
+    #expect(started.warnings.isEmpty)
+    #expect(model.maxVideosPerCall == 1)
+    #expect(model.supportsVideoGenerationWebhooks)
+
+    let pending = try await model.videoGenerationStatus(VideoGenerationOperationStatusRequest(
+        operation: started.operation
+    ))
+    guard case .pending = pending else {
+        Issue.record("Expected Fal in-progress response to map to pending")
+        return
+    }
+
+    let completed = try await model.videoGenerationStatus(VideoGenerationOperationStatusRequest(
+        operation: started.operation
+    ))
+    guard case let .completed(result) = completed else {
+        Issue.record("Expected Fal completed response")
+        return
+    }
+    #expect(result.urls == ["https://fal.example.com/async.mp4"])
+    #expect(result.providerMetadata["fal"]?["videos"]?[0]?["width"]?.intValue == 1280)
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests[0].method == "POST")
+    #expect(requests[1].method == "GET")
+    #expect(requests[2].method == "GET")
+    #expect(requests.dropFirst().allSatisfy { !$0.followRedirects })
+}
+
+@Test func falVideoFacadeUsesNativeWebhookAndEncodesFalWebhookQuery() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"request_id":"req-webhook","response_url":"https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-webhook"}"#),
+        jsonResponse(#"{"video":{"url":"https://fal.example.com/webhook.mp4","content_type":"video/mp4"}}"#)
+    ])
+    let provider = try AIProviders.fal(settings: ProviderSettings(apiKey: "fal-key", transport: transport))
+    let model = try provider.videoModel("fal-ai/luma-dream-machine")
+    let factoryCalls = FalWebhookCounter()
+
+    let result = try await AI.generateVideo(
+        model: model,
+        request: VideoGenerationRequest(prompt: "webhook clip"),
+        retryPolicy: .none,
+        webhook: {
+            await factoryCalls.increment()
+            return VideoGenerationWebhookRegistration(
+                url: "https://hooks.example.com/video?token=abc"
+            ) { _ in
+                VideoGenerationOperationWebhook(body: ["status": "ready"])
+            }
+        }
+    )
+
+    #expect(result.urls == ["https://fal.example.com/webhook.mp4"])
+    #expect(await factoryCalls.value() == 1)
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].url.absoluteString == "https://queue.fal.run/fal-ai/luma-dream-machine?fal_webhook=https%3A%2F%2Fhooks.example.com%2Fvideo%3Ftoken%3Dabc")
+    #expect(requests[1].url.absoluteString == "https://queue.fal.run/fal-ai/luma-dream-machine/requests/req-webhook")
 }
 
 @Test func falVideoMapsNestedOptionsAndImageInput() async throws {
@@ -358,4 +439,10 @@ import Testing
     #expect(transcriptionBody["chunkLevel"] == nil)
     #expect(transcriptionBody["batchSize"] == nil)
     #expect(transcriptionBody["numSpeakers"] == nil)
+}
+
+private actor FalWebhookCounter {
+    private var count = 0
+    func increment() { count += 1 }
+    func value() -> Int { count }
 }

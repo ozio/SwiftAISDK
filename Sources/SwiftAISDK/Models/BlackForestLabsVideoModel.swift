@@ -1,6 +1,6 @@
 import Foundation
 
-public final class BlackForestLabsVideoModel: VideoModel, @unchecked Sendable {
+public final class BlackForestLabsVideoModel: AsyncVideoModel, @unchecked Sendable {
     public let providerID = "black-forest-labs.video"
     public let modelID: String
     private let config: ModelHTTPConfig
@@ -8,6 +8,122 @@ public final class BlackForestLabsVideoModel: VideoModel, @unchecked Sendable {
     init(modelID: String, config: ModelHTTPConfig) {
         self.modelID = modelID
         self.config = config
+    }
+
+    public func startVideoGeneration(
+        _ operationRequest: VideoGenerationOperationStartRequest
+    ) async throws -> VideoGenerationOperationStartResult {
+        let request = operationRequest.request
+        let prepared = try blackForestLabsVideoRequest(request)
+        let submitResponse = try await config.transport.send(config.request(
+            path: "/\(modelID)",
+            modelID: modelID,
+            body: .object(prepared.body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(submitResponse.statusCode) else {
+            throw blackForestLabsHTTPStatusError(provider: providerID, response: submitResponse)
+        }
+
+        let submit = try submitResponse.jsonValue()
+        guard let requestID = submit["id"]?.stringValue,
+              let pollingURL = submit["polling_url"]?.stringValue,
+              blackForestLabsVideoIsURL(pollingURL) else {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "Black Forest Labs video submit response did not contain a valid id and polling_url."
+            )
+        }
+
+        let operation = BlackForestLabsVideoOperation(
+            requestID: requestID,
+            pollingURL: pollingURL,
+            cost: blackForestLabsNonNull(submit["cost"]),
+            inputMegapixels: blackForestLabsNonNull(submit["input_mp"]),
+            outputMegapixels: blackForestLabsNonNull(submit["output_mp"])
+        )
+        return VideoGenerationOperationStartResult(
+            operation: blackForestLabsVideoOperationJSON(operation),
+            warnings: prepared.warnings,
+            responseMetadata: AIResponseMetadata(
+                timestamp: Date(),
+                modelID: modelID,
+                headers: submitResponse.headers
+            )
+        )
+    }
+
+    public func videoGenerationStatus(
+        _ statusRequest: VideoGenerationOperationStatusRequest
+    ) async throws -> VideoGenerationOperationStatusResult {
+        let operation = try blackForestLabsVideoOperation(statusRequest.operation, providerID: providerID)
+        let pollURL = appendQueryItemIfMissing(
+            url: operation.pollingURL,
+            name: "id",
+            value: operation.requestID
+        )
+        let pollHeaders = blackForestLabsTrustedHeaders(
+            for: pollURL,
+            baseURL: config.baseURL,
+            headers: config.headers.mergingHeaders(statusRequest.headers)
+        )
+        let response = try await downloadURL(
+            pollURL,
+            transport: config.transport,
+            headers: pollHeaders,
+            abortSignal: statusRequest.abortSignal,
+            trustedOrigin: config.baseURL
+        )
+        guard (200..<300).contains(response.statusCode) else {
+            throw blackForestLabsHTTPStatusError(provider: providerID, response: response)
+        }
+
+        let raw = try response.jsonValue()
+        guard let status = raw["status"]?.stringValue ?? raw["state"]?.stringValue else {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "Missing status in Black Forest Labs poll response"
+            )
+        }
+        let responseMetadata = AIResponseMetadata(
+            timestamp: Date(),
+            modelID: modelID,
+            headers: response.headers,
+            body: raw
+        )
+
+        if status == "Ready" {
+            guard let sample = raw["result"]?["sample"]?.stringValue,
+                  blackForestLabsVideoIsURL(sample) else {
+                throw AIError.invalidResponse(
+                    provider: providerID,
+                    message: "Black Forest Labs reported the video as Ready but returned no result.sample URL. Request id: \(operation.requestID)"
+                )
+            }
+            return .completed(VideoGenerationResult(
+                urls: [sample],
+                operationID: operation.requestID,
+                mediaType: "video/mp4",
+                rawValue: raw,
+                providerMetadata: blackForestLabsVideoProviderMetadata(
+                    operation: operation,
+                    poll: raw,
+                    videoURL: sample
+                ),
+                responseMetadata: responseMetadata
+            ))
+        }
+
+        if blackForestLabsVideoTerminalFailureStatuses.contains(status) {
+            let details = blackForestLabsVideoPollDetails(raw["details"])
+            return .failed(
+                message: "Black Forest Labs video generation failed with status \"\(status)\"\(details.map { ": \($0)" } ?? ""). Request id: \(operation.requestID)",
+                responseMetadata: responseMetadata
+            )
+        }
+
+        return .pending(responseMetadata: responseMetadata)
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
@@ -93,7 +209,8 @@ public final class BlackForestLabsVideoModel: VideoModel, @unchecked Sendable {
                 pollURL,
                 transport: config.transport,
                 headers: pollHeaders,
-                abortSignal: abortSignal
+                abortSignal: abortSignal,
+                trustedOrigin: config.baseURL
             )
             guard (200..<300).contains(response.statusCode) else {
                 throw blackForestLabsHTTPStatusError(provider: providerID, response: response)
@@ -144,6 +261,37 @@ private struct BlackForestLabsVideoOperation {
     var cost: JSONValue?
     var inputMegapixels: JSONValue?
     var outputMegapixels: JSONValue?
+}
+
+private func blackForestLabsVideoOperationJSON(_ operation: BlackForestLabsVideoOperation) -> JSONValue {
+    .object([
+        "requestId": .string(operation.requestID),
+        "pollingUrl": .string(operation.pollingURL),
+        "cost": operation.cost,
+        "inputMegapixels": operation.inputMegapixels,
+        "outputMegapixels": operation.outputMegapixels
+    ])
+}
+
+private func blackForestLabsVideoOperation(
+    _ value: JSONValue,
+    providerID: String
+) throws -> BlackForestLabsVideoOperation {
+    guard let requestID = value["requestId"]?.stringValue,
+          let pollingURL = value["pollingUrl"]?.stringValue,
+          blackForestLabsVideoIsURL(pollingURL) else {
+        throw AIError.invalidResponse(
+            provider: providerID,
+            message: "Black Forest Labs video operation did not contain a valid requestId and pollingUrl."
+        )
+    }
+    return BlackForestLabsVideoOperation(
+        requestID: requestID,
+        pollingURL: pollingURL,
+        cost: blackForestLabsNonNull(value["cost"]),
+        inputMegapixels: blackForestLabsNonNull(value["inputMegapixels"]),
+        outputMegapixels: blackForestLabsNonNull(value["outputMegapixels"])
+    )
 }
 
 private struct BlackForestLabsVideoCompletion {

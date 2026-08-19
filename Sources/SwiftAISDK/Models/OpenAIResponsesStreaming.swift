@@ -296,13 +296,24 @@ struct OpenAIResponsesStreamingToolCalls {
             rawValue: item
         )
         return [
-            .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: true)
+            .toolInputStart(
+                id: toolCall.id,
+                name: toolCall.name,
+                providerExecuted: toolCall.providerExecuted
+            )
         ]
     }
 
     private mutating func handleComputerUseDone(item: JSONValue, index: Int) -> [LanguageStreamPart] {
         buffers[index] = nil
         guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
+        if item["call_id"]?.stringValue != nil {
+            return [
+                .toolInputDelta(id: toolCall.id, delta: toolCall.arguments),
+                .toolInputEnd(id: toolCall.id),
+                .toolCall(toolCall)
+            ]
+        }
         var parts: [LanguageStreamPart] = [
             .toolInputEnd(id: toolCall.id),
             .toolCall(toolCall)

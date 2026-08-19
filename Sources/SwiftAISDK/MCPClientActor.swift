@@ -1,8 +1,15 @@
 import Foundation
 
+private enum MCPProtocolEra: Sendable {
+    case legacy
+    case modern
+}
+
 public actor MCPClient {
-    public static let latestProtocolVersion = "2025-11-25"
+    public static let latestProtocolVersion = "2026-07-28"
+    public static let latestLegacyProtocolVersion = "2025-11-25"
     public static let supportedProtocolVersions: Set<String> = [
+        "2026-07-28",
         "2025-11-25",
         "2025-06-18",
         "2025-03-26",
@@ -13,7 +20,7 @@ public actor MCPClient {
     public private(set) var instructions: String?
     public private(set) var serverCapabilities: JSONValue = .object([:])
     public private(set) var initializeResult: JSONValue = .object([
-        "protocolVersion": .string(MCPClient.latestProtocolVersion),
+        "protocolVersion": .string(MCPClient.latestLegacyProtocolVersion),
         "capabilities": .object([:]),
         "serverInfo": .object([
             "name": .string(""),
@@ -27,9 +34,14 @@ public actor MCPClient {
     private let initialInitializeResult: JSONValue?
     private let initializationOptions: MCPRequestOptions?
     private let maxRetries: Int
+    private let protocolVersionDiscovery: Bool
+    private let onUncaughtError: (@Sendable (any Error) -> Void)?
     private var requestID = 0
     private var isClosed = true
     private var elicitationRequestHandler: MCPElicitationHandler?
+    private var protocolEra: MCPProtocolEra = .legacy
+    private var protocolVersion = MCPClient.latestLegacyProtocolVersion
+    private var toolHeaderBindings: [String: [MCPToolHeaderBinding]] = [:]
 
     private init(
         transport: any MCPTransport,
@@ -38,7 +50,9 @@ public actor MCPClient {
         clientCapabilities: JSONValue,
         initialInitializeResult: JSONValue?,
         initializationOptions: MCPRequestOptions?,
-        maxRetries: Int
+        maxRetries: Int,
+        protocolVersionDiscovery: Bool,
+        onUncaughtError: (@Sendable (any Error) -> Void)?
     ) {
         self.transport = transport
         self.clientInfo = MCPImplementation(name: clientName, version: clientVersion)
@@ -46,6 +60,8 @@ public actor MCPClient {
         self.initialInitializeResult = initialInitializeResult
         self.initializationOptions = initializationOptions
         self.maxRetries = maxRetries
+        self.protocolVersionDiscovery = protocolVersionDiscovery
+        self.onUncaughtError = onUncaughtError
     }
 
     public static func connect(
@@ -55,7 +71,9 @@ public actor MCPClient {
         clientCapabilities: JSONValue = .object([:]),
         initialInitializeResult: JSONValue? = nil,
         initializationOptions: MCPRequestOptions? = nil,
-        maxRetries: Int = 0
+        maxRetries: Int = 0,
+        protocolVersionDiscovery: Bool = true,
+        onUncaughtError: (@Sendable (any Error) -> Void)? = nil
     ) async throws -> MCPClient {
         guard maxRetries >= 0 else {
             throw MCPClientError(message: "maxRetries must be >= 0")
@@ -67,7 +85,9 @@ public actor MCPClient {
             clientCapabilities: clientCapabilities,
             initialInitializeResult: initialInitializeResult,
             initializationOptions: initializationOptions,
-            maxRetries: maxRetries
+            maxRetries: maxRetries,
+            protocolVersionDiscovery: protocolVersionDiscovery,
+            onUncaughtError: onUncaughtError
         )
         try await client.initialize()
         return client
@@ -86,7 +106,10 @@ public actor MCPClient {
             method: "tools/list",
             params: cursor.map { .object(["cursor": .string($0)]) }
         )
-        return try MCPListToolsResult(json: result)
+        return prepareToolDefinitions(
+            try MCPListToolsResult(json: result),
+            resetHeaderBindings: cursor == nil
+        )
     }
 
     public func callTool(name: String, arguments: JSONValue = .object([:]), options: MCPRequestOptions? = nil) async throws -> MCPCallToolResult {
@@ -110,7 +133,7 @@ public actor MCPClient {
     }
 
     public func toolsFromDefinitions(_ definitions: MCPListToolsResult) -> [String: AITool] {
-        definitions.tools.reduce(into: [String: AITool]()) { output, definition in
+        prepareToolDefinitions(definitions).tools.reduce(into: [String: AITool]()) { output, definition in
             output[definition.name] = tool(from: definition)
         }
     }
@@ -238,10 +261,20 @@ public actor MCPClient {
                 return
             }
 
+            if protocolVersionDiscovery, transport.supportsProtocolVersionDiscovery {
+                let discovered = try await tryProtocolDiscovery(options: effectiveOptions)
+                if discovered {
+                    return
+                }
+            }
+
+            protocolEra = .legacy
+            protocolVersion = Self.latestLegacyProtocolVersion
+            await transport.setProtocolVersion(protocolVersion)
             let result = try await request(
                 method: "initialize",
                 params: .object([
-                    "protocolVersion": .string(Self.latestProtocolVersion),
+                    "protocolVersion": .string(Self.latestLegacyProtocolVersion),
                     "capabilities": clientCapabilities,
                     "clientInfo": clientInfo.jsonValue
                 ]),
@@ -264,6 +297,57 @@ public actor MCPClient {
         }
     }
 
+    private func tryProtocolDiscovery(options: MCPRequestOptions) async throws -> Bool {
+        protocolEra = .modern
+        protocolVersion = Self.latestProtocolVersion
+        await transport.setProtocolVersion(protocolVersion)
+
+        do {
+            let result = try await request(
+                method: "server/discover",
+                skipCapabilityCheck: true,
+                options: MCPRequestOptions(
+                    abortSignal: options.abortSignal,
+                    timeoutMilliseconds: 1_000
+                )
+            )
+            try applyDiscoverResult(result)
+            return true
+        } catch let error as MCPClientError {
+            if let code = error.code, [-32020, -32021, -32022].contains(code) {
+                throw error
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    private func applyDiscoverResult(_ result: JSONValue) throws {
+        guard let supportedVersions = result["supportedVersions"]?.arrayValue?.compactMap(\.stringValue),
+              result["supportedVersions"]?.arrayValue?.count == supportedVersions.count,
+              let capabilities = result["capabilities"]?.objectValue else {
+            throw MCPClientError(message: "Server sent invalid protocol discovery result.")
+        }
+        guard supportedVersions.contains(protocolVersion) else {
+            throw MCPClientError(
+                message: "Server does not support the requested protocol version: \(protocolVersion)"
+            )
+        }
+
+        if let serverInfoValue = result["_meta"]?["io.modelcontextprotocol/serverInfo"] {
+            serverInfo = try MCPImplementation(json: serverInfoValue)
+        }
+        serverCapabilities = .object(capabilities)
+        instructions = result["instructions"]?.stringValue
+        initializeResult = .object([
+            "protocolVersion": .string(protocolVersion),
+            "capabilities": serverCapabilities,
+            "serverInfo": serverInfo.jsonValue,
+            "instructions": instructions.map(JSONValue.string)
+        ])
+    }
+
     private func applyInitializeResult(_ result: JSONValue) async throws {
         guard let protocolVersion = result["protocolVersion"]?.stringValue else {
             throw MCPClientError(message: "Server sent invalid initialize result.")
@@ -272,6 +356,8 @@ public actor MCPClient {
             throw MCPClientError(message: "Server protocol version is not supported: \(protocolVersion)")
         }
         serverCapabilities = result["capabilities"] ?? .object([:])
+        protocolEra = .legacy
+        self.protocolVersion = protocolVersion
         serverInfo = try MCPImplementation(json: result["serverInfo"] ?? .object([:]))
         initializeResult = result
         instructions = result["instructions"]?.stringValue
@@ -338,14 +424,17 @@ public actor MCPClient {
         }
         let id = requestID
         requestID += 1
+        let preparedParams = modernRequestParams(from: params)
         let message = JSONValue.object([
             "jsonrpc": .string("2.0"),
             "id": .number(Double(id)),
             "method": .string(method),
-            "params": params
+            "params": preparedParams
         ])
+        var requestOptions = options ?? MCPRequestOptions()
+        requestOptions.transportHeaders = try toolRequestHeaders(method: method, params: preparedParams)
         let response = try await mcpRunWithRequestOptions(
-            options,
+            requestOptions,
             timeoutMessage: { timeout in "Request timed out after \(timeout)ms" },
             abortMessage: "Request was aborted"
         ) { [transport] effectiveOptions in
@@ -388,6 +477,16 @@ public actor MCPClient {
         guard let result = response["result"] else {
             throw MCPClientError(message: "Expected MCP JSON-RPC response with result.")
         }
+        if protocolEra == .modern {
+            guard let resultType = result["resultType"]?.stringValue else {
+                throw MCPClientError(message: "Modern MCP result is missing resultType")
+            }
+            if resultType == "input_required" {
+                throw MCPClientError(
+                    message: "Server requested additional input, but multi round-trip requests are not supported yet"
+                )
+            }
+        }
         return result
     }
 
@@ -404,6 +503,67 @@ public actor MCPClient {
         if method.hasPrefix("prompts/") { return "prompts" }
         if method == "completion/complete" { return "completions" }
         return method
+    }
+
+    private func modernRequestParams(from params: JSONValue?) -> JSONValue? {
+        guard protocolEra == .modern else { return params }
+        var object = params?.objectValue ?? [:]
+        var metadata = object["_meta"]?.objectValue ?? [:]
+        metadata["io.modelcontextprotocol/protocolVersion"] = .string(protocolVersion)
+        metadata["io.modelcontextprotocol/clientCapabilities"] = clientCapabilities
+        metadata["io.modelcontextprotocol/clientInfo"] = clientInfo.jsonValue
+        object["_meta"] = .object(metadata)
+        return .object(object)
+    }
+
+    private func toolRequestHeaders(method: String, params: JSONValue?) throws -> [String: String]? {
+        guard protocolEra == .modern,
+              method == "tools/call",
+              let toolName = params?["name"]?.stringValue,
+              let bindings = toolHeaderBindings[toolName],
+              !bindings.isEmpty,
+              let arguments = params?["arguments"] else {
+            return nil
+        }
+        do {
+            return try createMCPToolHeaders(bindings: bindings, arguments: arguments)
+        } catch {
+            throw MCPClientError(message: "Failed to create MCP headers for tool \"\(toolName)\"")
+        }
+    }
+
+    private func prepareToolDefinitions(
+        _ definitions: MCPListToolsResult,
+        resetHeaderBindings: Bool = false
+    ) -> MCPListToolsResult {
+        guard protocolEra == .modern, transport.supportsMCPToolParameterHeaders else {
+            return definitions
+        }
+        if resetHeaderBindings {
+            toolHeaderBindings.removeAll()
+        }
+
+        let tools = definitions.tools.filter { definition in
+            switch mcpToolHeaderBindings(from: definition.inputSchema) {
+            case let .success(bindings):
+                toolHeaderBindings[definition.name] = bindings
+                return true
+            case let .failure(error):
+                onUncaughtError?(MCPClientError(
+                    message: "Ignoring MCP tool \"\(definition.name)\": \(error)"
+                ))
+                return false
+            }
+        }
+        var rawValue = definitions.rawValue.objectValue ?? [:]
+        rawValue["tools"] = .array(tools.map(\.jsonValue))
+        return MCPListToolsResult(
+            tools: tools,
+            nextCursor: definitions.nextCursor,
+            metadata: definitions.metadata,
+            resultType: definitions.resultType,
+            rawValue: .object(rawValue)
+        )
     }
 
     private func callToolWithRetry(
@@ -542,12 +702,15 @@ private func mcpRunWithRequestOptions<Value: Sendable>(
     }
     let timeout = options?.effectiveTimeoutMilliseconds
     guard externalSignal != nil || timeout != nil else {
-        return try await operation(MCPRequestOptions())
+        return try await operation(options ?? MCPRequestOptions())
     }
 
     let timeoutController = timeout.map { _ in AIAbortController() }
     let combinedSignal = mergeAbortSignals(externalSignal, timeoutController?.signal)
-    let effectiveOptions = MCPRequestOptions(abortSignal: combinedSignal)
+    let effectiveOptions = MCPRequestOptions(
+        abortSignal: combinedSignal,
+        transportHeaders: options?.transportHeaders
+    )
 
     return try await withCheckedThrowingContinuation { continuation in
         let race = MCPRequestRace<Value>(continuation: continuation)

@@ -49,3 +49,38 @@ for try await part in model.streamText(
     // Render parts.
 }
 ```
+
+## Semantic Stream Timeouts
+
+Use `AIStreamTimeoutConfiguration` when a streaming caller needs to distinguish
+the complete-operation deadline, each model-call step, a stalled first output,
+or a stall between output parts:
+
+```swift
+for try await part in AI.streamText(
+    model: model,
+    prompt: "Stream this carefully.",
+    timeout: AIStreamTimeoutConfiguration(
+        totalNanoseconds: 60_000_000_000,
+        stepNanoseconds: 30_000_000_000,
+        firstChunkNanoseconds: 10_000_000_000,
+        chunkNanoseconds: 15_000_000_000
+    )
+) {
+    // Render parts.
+}
+```
+
+The step/first/inter-chunk timers restart for every model-call step. Only semantic
+output disarms or resets them: non-empty text, reasoning, or tool-input deltas,
+files, reasoning files, and complete tool calls. Metadata, raw keep-alives,
+lifecycle markers, tool results, and empty deltas do not extend the deadline.
+First/inter-chunk failures throw `AIStreamTimeoutError` with `.firstChunk` or
+`.chunk`; step and total failures use `AIError.timeout`. The legacy flat
+`timeoutNanoseconds` remains available as the total deadline.
+
+Total and step budgets include time spent in retry backoff. A step deadline
+stays active after the model stream while client-side tools execute; when it
+fires, both the provider request and tool context see an aborted signal whose
+reason name is `TimeoutError`. Typed `AI.streamText(..., output: Output.*,
+timeout: ...)` overloads use the same timeout lifecycle.

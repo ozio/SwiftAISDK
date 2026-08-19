@@ -115,6 +115,8 @@ func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> 
             aliases["shell"] = toolName
         case "openai.apply_patch":
             aliases["apply_patch"] = toolName
+        case "openai.computer":
+            aliases["computer"] = toolName
         case "openai.tool_search":
             aliases["tool_search"] = toolName
         case "openai.programmatic_tool_calling":
@@ -156,6 +158,8 @@ func openAIResponsesProviderTool(
         return .object(tool)
     case "openai.apply_patch":
         return .object(["type": .string("apply_patch")])
+    case "openai.computer":
+        return .object(["type": .string("computer")])
     case "openai.web_search_preview":
         var tool: [String: JSONValue] = ["type": .string("web_search_preview")]
         if let searchContextSize = args["searchContextSize"] ?? args["search_context_size"] { tool["search_context_size"] = searchContextSize }
@@ -298,7 +302,7 @@ func openAIResponsesToolChoice(
         return object["type"]
     case "tool":
         guard let name = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue else { return nil }
-        let providerToolTypes: Set<String> = ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch"]
+        let providerToolTypes: Set<String> = ["code_interpreter", "file_search", "image_generation", "web_search_preview", "web_search", "mcp", "apply_patch", "computer"]
         if programmaticToolNames.contains(name) || name == "programmatic_tool_calling" {
             return .object(["type": .string("programmatic_tool_calling")])
         }

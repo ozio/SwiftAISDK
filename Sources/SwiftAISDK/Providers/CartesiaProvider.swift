@@ -7,6 +7,7 @@ public struct CartesiaProviderSettings: Sendable {
     public var headers: [String: String]
     public var environment: [String: String]?
     public var transport: any AITransport
+    public var webSocketTransport: any AIDuplexWebSocketTransport
 
     public init(
         apiKey: String? = nil,
@@ -14,7 +15,8 @@ public struct CartesiaProviderSettings: Sendable {
         baseURL: String? = nil,
         headers: [String: String] = [:],
         environment: [String: String]? = nil,
-        transport: any AITransport = URLSessionTransport.shared
+        transport: any AITransport = URLSessionTransport.shared,
+        webSocketTransport: any AIDuplexWebSocketTransport = URLSessionDuplexWebSocketTransport.shared
     ) {
         self.apiKey = apiKey
         self.version = version
@@ -22,6 +24,7 @@ public struct CartesiaProviderSettings: Sendable {
         self.headers = headers
         self.environment = environment
         self.transport = transport
+        self.webSocketTransport = webSocketTransport
     }
 }
 
@@ -32,6 +35,8 @@ public final class CartesiaProvider: AIProvider, @unchecked Sendable {
     public let supportedCapabilities: Set<ModelCapability> = [.speech, .transcription]
 
     private let config: ModelHTTPConfig
+    private let version: String
+    private let webSocketTransport: any AIDuplexWebSocketTransport
 
     public init(settings: CartesiaProviderSettings = CartesiaProviderSettings()) throws {
         let apiKey: String?
@@ -60,6 +65,8 @@ public final class CartesiaProvider: AIProvider, @unchecked Sendable {
             headers: headers,
             transport: settings.transport
         )
+        version = settings.version
+        webSocketTransport = settings.webSocketTransport
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {
@@ -74,6 +81,25 @@ public final class CartesiaProvider: AIProvider, @unchecked Sendable {
             modelID: modelID,
             config: config.withProviderID("cartesia.transcription")
         )
+    }
+
+    /// Creates a Cartesia Ink 2 duplex streaming transcription model.
+    public func streamingTranscriptionModel(
+        _ modelID: String
+    ) throws -> any StreamingTranscriptionModel {
+        CartesiaStreamingTranscriptionModel(
+            modelID: modelID,
+            config: config.withProviderID("cartesia.transcription"),
+            version: version,
+            webSocketTransport: webSocketTransport
+        )
+    }
+
+    /// Alias for ``streamingTranscriptionModel(_:)``.
+    public func streamingTranscription(
+        _ modelID: String
+    ) throws -> any StreamingTranscriptionModel {
+        try streamingTranscriptionModel(modelID)
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {

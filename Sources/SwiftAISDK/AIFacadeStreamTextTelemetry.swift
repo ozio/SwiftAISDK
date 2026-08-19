@@ -145,6 +145,9 @@ func streamTextWithTelemetry(
                 }
             } catch {
                 if isCancellationTelemetryError(error) {
+                    let abortDescription = abortSignal.flatMap { signal in
+                        signal.isAborted ? signal.reason : nil
+                    } ?? String(describing: error)
                     if await terminalState.claimTerminalEvent() {
                         await dispatcher.record(telemetryEvent(
                             kind: .abort,
@@ -155,7 +158,7 @@ func streamTextWithTelemetry(
                             options: telemetry,
                             maxRetries: retryPolicy.maxRetries,
                             durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                            errorDescription: String(describing: error)
+                            errorDescription: abortDescription
                         ))
                     }
                     continuation.finish()
@@ -180,6 +183,9 @@ func streamTextWithTelemetry(
 
         continuation.onTermination = { termination in
             if case .cancelled = termination {
+                let abortDescription = abortSignal.flatMap { signal in
+                    signal.isAborted ? signal.reason : nil
+                } ?? "Stream cancelled."
                 Task {
                     if await terminalState.claimTerminalEvent() {
                         await dispatcher.record(telemetryEvent(
@@ -191,7 +197,7 @@ func streamTextWithTelemetry(
                             options: telemetry,
                             maxRetries: retryPolicy.maxRetries,
                             durationNanoseconds: DispatchTime.now().uptimeNanoseconds - started,
-                            errorDescription: "Stream cancelled."
+                            errorDescription: abortDescription
                         ))
                     }
                 }

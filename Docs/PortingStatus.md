@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-08-17
+Snapshot date: 2026-08-19
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -16,10 +16,12 @@ for exact evidence.
 
 ## Current Shape
 
-- The `AI` facade covers text, streaming text, structured output, embeddings,
-  images, video, speech, transcription, reranking, file uploads, skill uploads,
-  middleware, telemetry, warnings, retries, aborts, tools, approvals, MCP tools,
-  UI messages, chat sessions, and agent helpers.
+- The `AI` facade covers text, streaming text, durable text batches, structured
+  output, embeddings, images, unary and asynchronous video, speech, batch and
+  streaming transcription, reranking, file uploads, skill uploads, middleware,
+  telemetry, warnings, retries, aborts, tools, approvals, MCP tools, UI
+  messages, chat sessions, agent helpers, and provider-neutral realtime
+  sessions.
 - HTTP language-model streaming consumes SSE and Amazon EventStream bodies
   incrementally through `AIStreamingTransport`; first parts can arrive before
   response EOF, and abort or early consumer termination cancels the body read.
@@ -49,18 +51,41 @@ for exact evidence.
 | Upstream test inventory | `Docs/UpstreamTestInventory.md` |
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
-Provider and core package version baselines were checked against npm registry
-metadata and published tarballs on 2026-08-17. The per-package decisions are
-recorded in `Docs/UpstreamPackageDiffAudit.md`.
+Provider and core package versions were checked against npm registry metadata
+on 2026-08-19. The packages changed by this focused follow-up were reviewed from
+their exact published tarballs; per-package decisions are recorded in
+`Docs/UpstreamPackageDiffAudit.md`.
 
 ## Provider State
 
-The 44 tracked provider/product packages in `Docs/ProviderVersionLedger.md`
-have Swift evidence in implementation files and focused tests. The 43 model
+The 46 tracked provider/product packages in `Docs/ProviderVersionLedger.md`
+have Swift evidence in implementation files and focused tests. All 45 model
 providers are represented in `Docs/ProviderCapabilityMatrix.md`; MCP is tracked
 separately as a product package without a model-capability row. The current pass
 audited the published package deltas and ported the applicable provider/core
 behavior; the remaining architectural differences are recorded below.
+
+The 2026-08-19 focused follow-up adds Fish Audio 3.0.5 speech/transcription and
+GMI Cloud 3.0.2 chat as complete provider verticals. It also ports Anthropic's
+deferred programmatic-result replay; retry-covering, abort-aware structured
+stream timeouts that remain active through client tool execution and typed
+output streams; Batch V4 with Anthropic Messages Batch and OpenAI Responses
+Batch; async Video V4 with Black Forest Labs and Fal, including native Fal
+webhooks and core count splitting; Cartesia Ink 2 streaming transcription; and
+provider-neutral Realtime V4 sessions with xAI as the first full adapter.
+Shared download handling validates every redirect before following it and
+strips provider credentials on cross-origin hops. Open Responses
+provider-defined tools were rechecked and are not a Swift gap: upstream 2.0.28
+intentionally warns and drops them.
+
+The same follow-up advances 14 newly published patch baselines. Portable
+changes include Fireworks JSON Schema structured output, the Gemini 3.7 Flash
+`low` thinking floor, OpenAI 4.0.43 Responses `allowedTools` plus the
+`computer` tool, MCP 2.0.33 protocol/OAuth hardening, and Bedrock EventStream
+failure/EOF parity. OpenAI-compatible raw usage preservation already covers
+its 3.0.31 delta; the remaining patch releases are dependency, version, or
+forward-compatible model-ID propagation. Exact decisions are in
+`Docs/UpstreamPackageDiffAudit.md`.
 
 The 2026-08-17 weekly pass advances 43 provider baselines, the MCP product
 baseline, and three changed core snapshots to current npm releases;
@@ -95,15 +120,11 @@ defines one built-in terminal outcome per logical response. Cross-surface regres
 cover text and reasoning collection, structured output, UI reduction, tool
 loops, in-band errors, thrown failures, and provider terminal behavior.
 
-Exact registry-prefix discovery finds 81 live `@ai-sdk/*` packages and 45 model
-providers. The 43 implemented providers remain represented. Fish Audio is
-still intentionally proposed rather than implemented and is current at
-`@ai-sdk/fish-audio@3.0.5`; new `@ai-sdk/gmicloud@3.0.1` is also proposed for a
-separate provider port. Fish Audio needs S1/S2/S2.1 binary speech and multipart
-batch transcription. GMI Cloud needs its OpenAI-compatible chat/auth/error
-surface. Both require provider options/metadata, registry/capability entries,
-docs, and focused tests. New `@ai-sdk/harness-cline@1.0.0` is a coding-agent
-harness, not a model provider.
+Exact registry-prefix discovery on 2026-08-19 finds 81 live `@ai-sdk/*`
+packages and 45 model providers. All 45 model providers are now represented.
+`@ai-sdk/harness-cline@1.0.3` is a coding-agent harness rather than a model
+provider; a faithful port depends on a separate HarnessV1, sandbox-provider,
+session/bridge, and Cline runtime product foundation.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -123,12 +144,10 @@ one of these is true:
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
 | P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
-| P1 | Streaming transcription, realtime models, and speech translation from Cartesia, ElevenLabs, Google, and OpenAI are not represented by current Swift protocols. | Design one reusable duplex WebSocket/audio transport and lifecycle surface, then port provider adapters as vertical slices. |
-| P1 | `ai@7.0.66` and `@ai-sdk/provider@4.0.7` include Batch V4 and async Video V4 start/status/webhook operations; Swift has neither shared public contract. Unary providers still poll internally, and retrying a lost start response can duplicate paid work without a stable logical-start idempotency key. | Design the shared batch model/result stream first, then async video operation state, polling/webhook controls, cancellation, metadata merging, and stable start idempotency before migrating providers. |
-| P1 | Current `ai@7.0.66` supports per-step first-content and semantic inter-chunk timeouts; Swift exposes only a total stream timeout. | Design a structured timeout configuration and per-step timer lifecycle before adding `firstChunkMs`/`chunkMs` parity. |
+| P1 | Duplex audio, Cartesia Ink 2 streaming transcription, provider-neutral Realtime V4 sessions, and xAI realtime are represented, but ElevenLabs realtime STT, Google/OpenAI streaming translation, and full non-xAI speech-session adapters are not. | Reuse `AIDuplexWebSocketTransport`, `AIRealtimeModelV4`, and the streaming-audio lifecycle for the next provider verticals without hiding provider-specific session semantics. |
+| P1 | Batch V4 and async Video V4 have shared contracts plus Anthropic/OpenAI Responses batch and Black Forest Labs/Fal video adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
 | P1 | `prepareStep` call-setting overrides and generic provider tool-callers across generate, stream, and agent orchestration have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
-| P1 | `@ai-sdk/provider-utils@5.0.27` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
-| P1 | `@ai-sdk/fish-audio@3.0.5` and `@ai-sdk/gmicloud@3.0.1` are the two registry model providers not yet represented by SwiftAISDK. | Port GMI Cloud's focused OpenAI-compatible chat surface next, then Fish Audio's speech/transcription surface as separate vertical batches. |
+| P1 | `@ai-sdk/provider-utils@5.0.27` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

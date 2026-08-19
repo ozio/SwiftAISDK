@@ -409,9 +409,9 @@ import Testing
     }
     let events = await recorder.events()
 
-    #expect(events.map(\.kind) == [.start, .error])
+    #expect(events.map(\.kind) == [.start, .abort])
     #expect(events[1].operationID == "ai.streamText")
-    #expect(events[1].errorDescription?.contains("timed out") == true)
+    #expect(events[1].errorDescription == "Total timeout of 1000000 nanoseconds exceeded.")
     #expect(model.streamRequests.count == 1)
 }
 @Test func aiStreamTextRejectsInvalidTimeout() async throws {

@@ -467,6 +467,93 @@ import Testing
     #expect(overrideBody["tool_choice"]?["tools"]?[0]?["name"]?.stringValue == "get_weather")
 }
 
+@Test func openAIResponsesAllowedToolsResolveBuiltInMCPAndCustomTools() async throws {
+    let body = try await recordedOpenAIResponsesBody(
+        tools: [
+            "searchAlias": OpenAITools.webSearch(),
+            "imageAlias": OpenAITools.imageGeneration(),
+            "computerAlias": OpenAITools.computer(),
+            "remoteDocs": OpenAITools.mcp(serverLabel: "docs", serverURL: "https://mcp.example.com"),
+            "grammarAlias": OpenAITools.customTool(name: "grammar_tool")
+        ],
+        extraBody: [
+            "allowedTools": [
+                "toolNames": ["searchAlias", "imageAlias", "computerAlias", "remoteDocs", "grammarAlias"]
+            ]
+        ]
+    )
+
+    let allowed = try #require(body["tool_choice"]?["tools"]?.arrayValue)
+    #expect(allowed.count == 5)
+    #expect(allowed.contains { $0["type"]?.stringValue == "web_search" && $0["name"] == nil })
+    #expect(allowed.contains { $0["type"]?.stringValue == "image_generation" && $0["name"] == nil })
+    #expect(allowed.contains { $0["type"]?.stringValue == "computer" && $0["name"] == nil })
+    #expect(allowed.contains {
+        $0["type"]?.stringValue == "mcp" && $0["server_label"]?.stringValue == "docs"
+    })
+    #expect(allowed.contains {
+        $0["type"]?.stringValue == "custom" && $0["name"]?.stringValue == "grammar_tool"
+    })
+
+    let canonicalAliasBody = try await recordedOpenAIResponsesBody(
+        tools: ["searchAlias": OpenAITools.webSearch()],
+        extraBody: ["allowedTools": ["toolNames": ["web_search"]]]
+    )
+    #expect(canonicalAliasBody["tool_choice"]?["tools"]?[0]?["type"]?.stringValue == "web_search")
+    #expect(canonicalAliasBody["tool_choice"]?["tools"]?[0]?["name"] == nil)
+}
+
+@Test func openAIResponsesAllowedToolsWarnAndDropUnsupportedEntries() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-5.1")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Use tools.")],
+        tools: [
+            "deferred": [
+                "type": "object",
+                "properties": [:],
+                "deferLoading": true
+            ],
+            "toolSearchAlias": OpenAITools.toolSearch(),
+            "regular": ["type": "object", "properties": [:]]
+        ],
+        extraBody: [
+            "allowedTools": [
+                "toolNames": ["deferred", "toolSearchAlias", "missing", "regular"]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let allowed = try #require(body["tool_choice"]?["tools"]?.arrayValue)
+    #expect(allowed.count == 2)
+    #expect(allowed.contains { $0["name"]?.stringValue == "missing" })
+    #expect(allowed.contains { $0["name"]?.stringValue == "regular" })
+    #expect(result.warnings.contains {
+        $0.feature == "allowedTools entry \"deferred\"" && ($0.message?.contains("deferred tools") ?? false)
+    })
+    #expect(result.warnings.contains {
+        $0.feature == "allowedTools entry \"toolSearchAlias\"" && ($0.message?.contains("tool_search") ?? false)
+    })
+    #expect(result.warnings.contains {
+        $0.feature == "allowedTools entry \"missing\"" && ($0.message?.contains("not part of the tools") ?? false)
+    })
+}
+
+@Test func openAIResponsesAllowedToolsRejectOnlyUnallowlistableTools() async throws {
+    await #expect(throws: AIError.invalidArgument(
+        argument: "allowedTools",
+        message: "allowedTools with only tools that cannot be allow-listed (toolSearchAlias)"
+    )) {
+        _ = try await recordedOpenAIResponsesBody(
+            tools: ["toolSearchAlias": OpenAITools.toolSearch()],
+            extraBody: ["allowedTools": ["toolNames": ["toolSearchAlias"]]]
+        )
+    }
+}
+
 @Test func openAIResponsesPassesThroughMixedFunctionToolStrictModeLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
     let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))

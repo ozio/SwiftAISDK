@@ -401,7 +401,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    fileprivate static func body(
+    static func body(
         for request: LanguageModelRequest,
         modelID: String,
         providerID: String,
@@ -1182,7 +1182,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         guard name == "code_execution",
               var object = input.objectValue,
               let inputType = object["type"]?.stringValue,
-              inputType == "bash_code_execution" || inputType == "text_editor_code_execution" else {
+              inputType == "bash_code_execution"
+                || inputType == "text_editor_code_execution"
+                || inputType == "programmatic-tool-call" else {
             return input
         }
         object.removeValue(forKey: "type")

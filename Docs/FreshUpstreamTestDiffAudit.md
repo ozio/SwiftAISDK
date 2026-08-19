@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-08-17`
-- Baseline upstream ref: `vercel/ai@74abcdfb6a41666b9910974510d6c9afd960ea1b`
-- Current upstream ref: `vercel/ai@86892f3f6b4de52ee7f41d73c9c477b839596468`
+- Date: `2026-08-19`
+- Baseline upstream ref: `vercel/ai@86892f3f6b4de52ee7f41d73c9c477b839596468`
+- Current upstream ref: `vercel/ai@2174f202c21f86a44124a11baea8baa29f5dd0e5`
 - Diff command:
 
   ```sh
-  git -C /tmp/vercel-ai-upstream-20260817 diff --name-status \
-    74abcdfb6a41666b9910974510d6c9afd960ea1b..86892f3f6b4de52ee7f41d73c9c477b839596468 \
+  git -C <vercel-ai-checkout> diff --name-status \
+    86892f3f6b4de52ee7f41d73c9c477b839596468..2174f202c21f86a44124a11baea8baa29f5dd0e5 \
     -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
        'packages/**/*.spec.ts' 'packages/**/*.test-d.ts'
   ```
@@ -28,9 +28,38 @@ Status meanings:
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
 
+## 2026-08-19 Focused Follow-up
+
+The follow-up used current upstream source/tests at
+`vercel/ai@2174f202c21f86a44124a11baea8baa29f5dd0e5` plus the exact published
+Fish Audio 3.0.5 and GMI Cloud 3.0.2 tarballs. It closes previously classified
+shared/provider gaps rather than replacing the complete 140-path 2026-08-17
+inventory below.
+
+| Upstream test/source group | Status | Swift evidence / rationale |
+| --- | --- | --- |
+| `packages/ai/src/batch/**`; `packages/provider/src/batch/**`; Anthropic/OpenAI batch fixtures | `ported` | `BatchV4FacadeTests.swift` covers validation, persistable references, headers/options/idempotency, aborts, normalized status, and independent terminal result items. `AnthropicBatchV4UpstreamTests.swift` and `OpenAIResponsesBatchV4UpstreamTests.swift` translate the provider request/status/JSONL or file-result verticals. |
+| `packages/ai/src/generate-video/**`; `packages/provider/src/video-model/v4/**`; BFL/Fal operation fixtures | `ported` | `VideoGenerationOperationTests.swift` covers stable start idempotency across retry, independent status retry, metadata/warning accumulation, polling, webhook precedence/fallback/timeout/cancel, unary compatibility, provider `maxVideosPerCall`, count splitting, and ordered result merging. BFL translates FLUX 3 start/status state; Fal forwards its native webhook URL and one-video-per-call limit. |
+| `packages/ai/src/generate-text/stream-text-timeout.test.ts` | `ported` | `AIStreamTimeoutConfigurationTests.swift` covers total/per-step/first-semantic/inter-semantic deadlines, semantic chunk classification, model-step re-arming, retry backoff inside total/step budgets, step deadlines through client tool execution, provider/tool abort signals with a `TimeoutError` reason, and typed `Output` streams. |
+| `packages/anthropic/src/message-batches/**`; deferred programmatic result replay | `ported` | Anthropic batch fixtures cover beta/header merging, request warnings and validation, lifecycle counts, chunked JSONL, succeeded/failed/cancelled/expired items, and item-local parse/tool failures. The deferred server-result fixture proves replay removes the internal `programmatic-tool-call` discriminator. |
+| `packages/black-forest-labs/src/black-forest-labs-video-model*` | `ported` | The operation adapter persists request ID, trusted polling URL, unsettled cost inputs, and maps pending/ready/terminal error responses while preserving the unary call surface. |
+| `packages/cartesia/src/cartesia-transcription-model*`; duplex WebSocket helpers | `ported` | Cartesia streaming tests cover access-token creation, token-redacted URL metadata, PCM/G.711 encoding and warning rules, turn/no-turn endpoints, audio sends/finalization, partial/final/raw/error events, close metadata, and cancellation. Core duplex tests cover input lifecycle plus headers/subprotocols. |
+| `packages/xai/src/realtime/**`; provider Realtime V4 contracts | `ported` | `CoreRealtimeTests.swift` and `XAIRealtimeModelTests.swift` cover client-secret creation, subprotocol/header configuration, session config, normalized audio/text/tool events, custom event preservation, health checks, sends, aborts, cancellation, and close metadata. Non-xAI realtime adapters remain deferred. |
+| `packages/provider-utils/**` redirect/download fixtures | `ported` | `HTTPRedirectSecurityTests.swift` covers manual per-hop validation, the exact 20-header sanitizer, same-origin credential retention, cross-origin provider-credential stripping, redirect limits, and cancellation of discarded streaming bodies on followed and rejected redirects. Resolver-backed DNS answer pinning remains a separate transport-level gap. |
+| published `@ai-sdk/fish-audio@3.0.5` source and repository provider tests | `ported` | Focused Swift provider/model tests cover provider creation, binary TTS, multipart ASR, schema/options/warnings, metadata, aborts, and structured errors. |
+| published `@ai-sdk/gmicloud@3.0.2` source/tests | `ported` | GMI tests cover factory/auth/URL/UA aliases, request/stream usage, nested diagnostic errors, unknown raw usage fields, and unsupported families. |
+| `packages/amazon-bedrock/**` EventStream failures | `ported` | Bedrock stream fixtures cover decoder/processor error propagation and rejection of an incomplete frame at EOF. |
+| `packages/fireworks/**` structured output | `ported` | Fireworks request fixtures cover native JSON Schema response formatting. |
+| `packages/google/**` Gemini 3.7 thinking floor | `ported` | Google and inherited Vertex capability fixtures map `none` and `minimal` to the supported `low` floor for Gemini 3.7 Flash. |
+| `packages/openai/**` `allowedTools`, computer, and Batch V4 | `ported` | OpenAI Responses coverage resolves supported function/hosted/MCP/custom/computer entries, warns and drops unsupported allow-list entries, rejects an empty effective allow-list, keeps `computer` distinct from `computer_use`, and covers ordered actions/safety checks, streaming lifecycle, stored/unstored replay, screenshot URL/file outputs, and the batch adapter noted above. |
+| `packages/openai-compatible/**` raw usage | `covered` | Swift preserves unknown raw usage keys, including nested prompt/completion details, for generated and streamed chat/completion responses. |
+| `packages/mcp/**` 2.0.33 patch | `ported` | MCP tests cover modern discovery and fallback/error rules, typed result metadata, stateless HTTP plus bound request headers, and OAuth issuer/application-type validation. |
+| `packages/open-responses/**` provider-defined tool preparation | `covered` | At upstream 2.0.28, provider-defined tools intentionally emit an unsupported warning and are removed. Swift's warning/drop behavior is therefore parity rather than a missing provider-tool execution surface. |
+| `packages/harness-cline/**` | `out-of-scope` | The 1.0.3 auth/session/bridge/MCP/sandbox fixtures depend on the separate HarnessV1 product graph and are not provider-model tests. |
+
 ## 2026-08-17 Diff
 
-The exact command above returns 140 unique test/declaration paths. Changed
+The 2026-08-17 comparison returned 140 unique test/declaration paths. Changed
 snapshots and fixtures for Anthropic, Google errors, Moonshot chat/reasoning,
 Open Responses, OpenAI-compatible usage, and xAI image generation were reviewed
 with their owning test groups.
@@ -77,7 +106,7 @@ with no unclassified test/declaration group.
 
 ## 2026-08-10 Diff
 
-The exact command above returns 110 changed test paths. They are grouped by
+The 2026-08-10 comparison returned 110 changed test paths. They are grouped by
 package below; the path count in each row sums back to 110 so newly added
 untracked-product fixtures remain visible rather than disappearing behind a
 provider-only filter.

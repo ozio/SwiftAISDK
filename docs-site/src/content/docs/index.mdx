@@ -5,7 +5,7 @@ description: Learn what SwiftAISDK is and where to start.
 
 # SwiftAISDK
 
-SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK. It gives Swift apps one facade for text, structured output, embeddings, media, audio, reranking, files, skills, middleware, MCP tools, and typed tool execution.
+SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK. It gives Swift apps one facade for text, durable batches, structured output, embeddings, media, streaming audio, realtime sessions, reranking, files, skills, middleware, MCP tools, and typed tool execution.
 
 <div class="hero-panel">
   Start with a provider, pick a model, and call Swift-native model methods such as `generateText`, `streamText`, and `generateObject`. Keep provider-specific behavior in provider settings and `providerOptions`; keep application behavior in Swift types, tools, and async sequences.
@@ -30,6 +30,10 @@ SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK. It g
     <strong>MCP</strong>
     <p>Discover remote tools and pass them into text generation.</p>
   </a>
+  <a class="doc-tile" href="core/realtime/">
+    <strong>Realtime</strong>
+    <p>Run an xAI audio, text, and tool session through the provider-neutral Realtime V4 lifecycle.</p>
+  </a>
 </div>
 
 ## How the Docs Are Organized
@@ -42,4 +46,8 @@ SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK. It g
 
 ## Current Scope
 
-SwiftAISDK tracks the provider-facing AI SDK surface. Web framework hooks and React Server Components are intentionally not the first thing you should look for here; SwiftUI-facing abstractions are expected to be Swift-native.
+SwiftAISDK tracks the provider-facing AI SDK surface. xAI is the first full
+Realtime V4 adapter; full non-xAI realtime sessions remain an explicit gap.
+Web framework hooks and React Server Components are intentionally not the first
+thing you should look for here; SwiftUI-facing abstractions are expected to be
+Swift-native.

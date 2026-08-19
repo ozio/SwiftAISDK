@@ -22,6 +22,7 @@ public struct MCPStdioConfig: Equatable, Sendable {
 }
 
 public final class MCPStdioTransport: MCPTransport, @unchecked Sendable {
+    public let supportsProtocolVersionDiscovery = true
     private let state: MCPStdioTransportState
 
     public init(config: MCPStdioConfig) {

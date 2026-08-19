@@ -38,11 +38,15 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
-        AnthropicLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID))
+        AnthropicBatchLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID))
     }
 
-    public func messages(_ modelID: String) throws -> any LanguageModel {
-        try languageModel(modelID)
+    public func messages(_ modelID: String) throws -> any BatchLanguageModel {
+        AnthropicBatchLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID))
+    }
+
+    public func batchLanguageModel(_ modelID: String) -> any BatchLanguageModel {
+        AnthropicBatchLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID))
     }
 
     public func files() -> any AIFileClient {

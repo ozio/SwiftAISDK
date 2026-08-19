@@ -141,8 +141,9 @@ import Testing
 
     let events = await recorder.events()
     #expect(model.streamRequests.count == 1)
-    #expect(events.map(\.kind) == [.start, .error])
+    #expect(events.map(\.kind) == [.start, .abort])
     #expect(events.first?.operationID == "ai.streamText")
+    #expect(events.last?.errorDescription == "Total timeout of 1000000 nanoseconds exceeded.")
 }
 
 @Test func toolLoopAgentRejectsStreamSystemMessagesByDefaultLikeUpstream() async throws {

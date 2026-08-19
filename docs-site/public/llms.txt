@@ -19,6 +19,7 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - [Tools](/llms/components/tools.txt): Public SwiftAISDK APIs for tools.
 - [Video and reranking](/llms/components/video-and-reranking.txt): Public SwiftAISDK APIs for video and reranking.
 - [MCP tools](/llms/cookbook/mcp-tools.txt): Discover MCP tools and pass them to a language model.
+- [Batch text](/llms/core/batch-text.txt): Start durable text batches and stream their terminal results.
 - [Dubbing](/llms/core/dubbing.txt): Create and inspect provider dubbing jobs.
 - [Embeddings](/llms/core/embeddings.txt): Convert text into vectors for search, clustering, and retrieval.
 - [Error handling](/llms/core/error-handling.txt): Handle validation, provider, retry, timeout, abort, and output errors.
@@ -27,6 +28,7 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - [Generate speech](/llms/core/generate-speech.txt): Convert text into audio with a speech model.
 - [Generate text](/llms/core/generate-text.txt): Use a language model for one-shot text generation.
 - [Generate video](/llms/core/generate-video.txt): Create video clips with a video model.
+- [Realtime sessions](/llms/core/realtime.txt): Run bidirectional text, audio, and tool sessions over a provider Realtime V4 model.
 - [Rerank](/llms/core/rerank.txt): Score and reorder documents for a query.
 - [Stream text](/llms/core/stream-text.txt): Consume language model output as an async sequence.
 - [Structured output](/llms/core/structured-output.txt): Generate Decodable Swift values from JSON output.
@@ -57,8 +59,10 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - ["elevenlabs"](/llms/providers/elevenlabs.txt): "elevenlabs provider capabilities and factories."
 - ["fal"](/llms/providers/fal.txt): "fal provider capabilities and factories."
 - ["fireworks"](/llms/providers/fireworks.txt): "fireworks provider capabilities and factories."
+- ["fish-audio"](/llms/providers/fish-audio.txt): "fish-audio provider capabilities and factories."
 - ["gateway"](/llms/providers/gateway.txt): "gateway provider capabilities and factories."
 - ["gladia"](/llms/providers/gladia.txt): "gladia provider capabilities and factories."
+- ["gmicloud"](/llms/providers/gmicloud.txt): "gmicloud provider capabilities and factories."
 - ["google.generative-ai"](/llms/providers/google-generative-ai.txt): "google.generative-ai provider capabilities and factories."
 - ["google.vertex"](/llms/providers/google-vertex.txt): "google.vertex provider capabilities and factories."
 - ["googleVertex.anthropic"](/llms/providers/googlevertex-anthropic.txt): "googleVertex.anthropic provider capabilities and factories."

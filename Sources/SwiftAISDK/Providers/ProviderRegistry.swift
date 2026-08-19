@@ -11,7 +11,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.42")
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.43")
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -99,7 +99,7 @@ public enum AIProviders {
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
             ),
-            userAgentSuffix: "ai-sdk/openai-compatible/3.0.30",
+            userAgentSuffix: "ai-sdk/openai-compatible/3.0.31",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
@@ -160,7 +160,17 @@ public enum AIProviders {
     }
 
     public static func fireworks(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(providerID: "fireworks", defaultBaseURL: "https://api.fireworks.ai/inference/v1", authorization: .bearer(environmentVariables: ["FIREWORKS_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image], settings: settings)
+        var settings = settings
+        settings.supportsStructuredOutputs = true
+        return try OpenAICompatibleProvider(providerID: "fireworks", defaultBaseURL: "https://api.fireworks.ai/inference/v1", authorization: .bearer(environmentVariables: ["FIREWORKS_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image], settings: settings)
+    }
+
+    public static func fishAudio(settings: ProviderSettings = ProviderSettings()) throws -> FishAudioProvider {
+        try FishAudioProvider(settings: settings)
+    }
+
+    public static func gmiCloud(settings: ProviderSettings = ProviderSettings()) throws -> GMICloudProvider {
+        try GMICloudProvider(settings: settings)
     }
 
     public static func deepInfra(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {

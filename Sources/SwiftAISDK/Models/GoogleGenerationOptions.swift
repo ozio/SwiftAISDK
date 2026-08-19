@@ -171,11 +171,12 @@ func googleToolConfigWithProviderOptions(_ toolConfig: JSONValue?, options: [Str
 func googleThinkingConfig(for reasoning: String?, modelID: String, warnings: inout [AIWarning]) -> [String: JSONValue]? {
     guard let reasoning, reasoning != "provider-default" else { return nil }
     if googleIsGemini3OrNewer(modelID), !modelID.lowercased().contains("gemini-3-pro-image") {
+        let minimumThinkingLevel = googleIsGemini37Flash(modelID) ? "low" : "minimal"
         if reasoning == "none" {
-            return ["thinkingLevel": .string("minimal")]
+            return ["thinkingLevel": .string(minimumThinkingLevel)]
         }
         let effortMap = [
-            "minimal": "minimal",
+            "minimal": minimumThinkingLevel,
             "low": "low",
             "medium": "medium",
             "high": "high",
@@ -212,6 +213,11 @@ func googleThinkingConfig(for reasoning: String?, modelID: String, warnings: ino
     let maxThinkingTokens = googleMaxThinkingTokensForGemini25Model(modelID)
     let budget = min(maxThinkingTokens, max(0, Int((65536 * percentage).rounded())))
     return ["thinkingBudget": .number(Double(budget))]
+}
+
+private func googleIsGemini37Flash(_ modelID: String) -> Bool {
+    let components = modelID.lowercased().split(separator: "/", omittingEmptySubsequences: false)
+    return components.last == "gemini-3.7-flash"
 }
 
 func googleMaxThinkingTokensForGemini25Model(_ modelID: String) -> Int {

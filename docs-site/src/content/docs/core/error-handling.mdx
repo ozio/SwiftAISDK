@@ -94,6 +94,16 @@ let options = LanguageGenerationOptions(
 let result = try await model.generateText("Summarize.", options: options)
 ```
 
+For `AI.streamText`, pass `AIStreamTimeoutConfiguration` to add a per-model-step
+deadline plus first-semantic and inter-semantic deadlines. Semantic timeout
+failures are surfaced as `AIStreamTimeoutError`; non-output metadata and
+keep-alives do not reset those timers. `totalNanoseconds` retains the
+complete-call behavior, while `stepNanoseconds` re-arms for each model call.
+Total and step budgets include retry backoff; a step remains active through
+client-side tool execution. When any configured deadline wins, the provider
+and tool abort signals carry the `TimeoutError` reason name. Typed `Output`
+streams use the same configuration.
+
 Streaming retries only happen before the first emitted part. Once the stream has yielded a part, later provider errors are surfaced through the stream instead of replaying already-delivered output.
 
 Language streams distinguish provider-reported error events from failures that stop the transport or parser:
@@ -141,6 +151,14 @@ do {
 ```
 
 Cancellation also propagates when a caller stops consuming a language stream early. SwiftAISDK cancels the provider producer task and the active HTTP response-body read; an explicit abort preserves the `AIAbortError` reason even when URLSession reports cancellation through another underlying error.
+
+## Redirect Safety
+
+Provider-controlled download URLs are followed manually. SwiftAISDK validates
+every redirect target before issuing the next request, preserves provider
+credentials for same-origin hops, and removes them when the origin changes.
+This does not yet claim resolver-backed DNS answer pinning; that remains a
+transport-level gap.
 
 ## Logging Safely
 

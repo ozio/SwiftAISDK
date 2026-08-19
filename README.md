@@ -1,9 +1,9 @@
 # SwiftAISDK
 
 SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK.
-It provides provider factories plus an `AI` facade for text, structured output,
-embeddings, media, audio, reranking, uploads, middleware, MCP tools, and typed
-tool execution.
+It provides provider factories plus an `AI` facade for text, durable batches,
+structured output, embeddings, media, streaming and realtime audio, reranking,
+uploads, middleware, MCP tools, and typed tool execution.
 
 Licensed under the [Apache License 2.0](LICENSE). SwiftAISDK is an independent
 Swift port; references to Vercel AI SDK describe compatibility and provenance,
@@ -110,6 +110,30 @@ chunks are not duplicated. Stopping iteration or aborting the request cancels
 the upstream response body. Pass `retryPolicy: .none` or a custom
 `AIRetryPolicy` to tune retries, backoff, and timeout.
 
+For streaming stalls, `AIStreamTimeoutConfiguration` distinguishes the total
+operation deadline, each model-call step, the first semantic output, and the
+gap between semantic output parts. Total and step budgets include retry
+backoff, step budgets stay active through client-side tool execution, and a
+timeout aborts the provider/tool signal with a `TimeoutError` reason. The same
+configuration works with typed `Output` streams. Step/first/inter-chunk timers
+restart for every model-call step; metadata, raw keep-alives, lifecycle
+markers, and empty deltas do not reset the semantic timers:
+
+```swift
+for try await part in AI.streamText(
+    model: model,
+    prompt: "Stream this.",
+    timeout: AIStreamTimeoutConfiguration(
+        totalNanoseconds: 60_000_000_000,
+        stepNanoseconds: 30_000_000_000,
+        firstChunkNanoseconds: 10_000_000_000,
+        chunkNanoseconds: 15_000_000_000
+    )
+) {
+    print(part)
+}
+```
+
 ## Structured Output
 
 `AI.generateObject` requests JSON output, validates it when a JSON Schema is
@@ -189,16 +213,52 @@ tools, approval hooks, and provider-defined helpers such as `OpenAITools`,
 For OpenAI Responses, `OpenAITools.programmaticToolCalling(...)` enables
 programmatic tool orchestration; function schemas accept OpenAI
 `allowedCallers` and `outputSchema` provider options.
+OpenAI 4.0.43 parity also includes `OpenAITools.computer()` and
+`allowedTools`: the Responses request builder resolves declared function,
+built-in, MCP, and custom tools into `tool_choice.allowed_tools`, warns when an
+entry cannot be allow-listed, and rejects an allow-list that becomes empty.
+The older `computerUse(...)` helper remains available for the separate
+`computer_use` wire tool.
 For xAI Responses, `XAITools.imageGeneration(action:)` exposes the hosted image
 tool with generated/streamed prompt and failure results. Gateway failures retain
 their normalized `AIAPICallError` through `GatewayError.cause`.
+
+## Durable Batch And Video Operations
+
+Batch V4 exposes persistable text-batch references plus status and terminal
+result streams. Anthropic Messages Batch and OpenAI Responses Batch implement
+the shared adapter:
+
+```swift
+let anthropic = try AIProviders.anthropic()
+let model = try anthropic.messages("claude-sonnet-4-5")
+let started = try await AI.startTextBatch(
+    model: model,
+    requests: [TextBatchRequest(
+        id: "summary-1",
+        request: LanguageModelRequest(messages: [.user("Summarize this.")])
+    )]
+)
+
+// OpenAI Responses uses the same facade:
+let openAI = try AIProviders.openAI()
+let openAIBatchModel = try openAI.batchLanguageModel("gpt-5.6")
+```
+
+Async Video V4 keeps unary `generateVideo` source compatible while adding
+serializable start/status operations, core-owned polling/webhook waiting, and a
+stable logical-start idempotency key. Black Forest Labs FLUX 3 and Fal expose
+operation adapters; select the flow with `poll: VideoGenerationPollOptions(...)`
+or a webhook registration. Fal forwards its native webhook URL, while BFL
+warns and falls back to polling. Requests above a model's
+`maxVideosPerCall` are split into independent starts and merged in input order.
 
 ## Providers
 
 Provider factories live under `AIProviders`, including OpenAI, Azure,
 Anthropic, Google, Google Vertex, Gateway, xAI, Mistral, Groq, Cohere, Voyage,
-MiniMax, Bedrock, Replicate, fal, Deepgram, ElevenLabs, Cartesia, and other official
-`@ai-sdk/*` provider packages.
+MiniMax, Bedrock, Replicate, fal, Fish Audio, GMI Cloud, Deepgram, ElevenLabs,
+Cartesia, and other official `@ai-sdk/*` provider packages.
 
 MiniMax uses its Anthropic-compatible Messages endpoint and reads
 `MINIMAX_API_KEY` by default. Adaptive thinking is selected through the
@@ -285,9 +345,63 @@ let transcript = try await transcription.transcribe(AudioTranscriptionRequest(
 ))
 ```
 
-Upstream Ink 2 streaming transcription and experimental realtime use duplex
-WebSockets. They are intentionally kept out of this unary REST port until
-SwiftAISDK has a reusable realtime transport and lifecycle surface.
+Cartesia Ink 2 also exposes duplex streaming transcription through the reusable
+`AIDuplexWebSocketTransport` and `AIStreamingAudioInput` lifecycle:
+
+```swift
+let streaming = try cartesia.streamingTranscription("ink-2")
+let pipe = AIStreamingAudioInput.makeStream()
+let session = try await streaming.stream(StreamingTranscriptionRequest(
+    audio: pipe.input,
+    inputAudioFormat: AIStreamingAudioFormat(
+        mediaType: "audio/pcm",
+        sampleRate: 16_000
+    )
+))
+```
+
+The transport is injectable, access tokens are removed from request metadata,
+and stopping either side cancels the socket/audio producer. This
+transcription-only lifecycle is separate from a full realtime response session.
+
+## Realtime Sessions
+
+`AIRealtimeModelV4` and `AIRealtimeSession` provide a provider-neutral duplex
+session for text, audio, tool calls, normalized server events, aborts, and
+explicit close/cancel behavior. xAI is the first full Realtime V4 adapter: it
+creates an ephemeral client secret, negotiates the WebSocket subprotocol, maps
+session/audio/text/tool events, and keeps provider-specific events available as
+custom events.
+
+```swift
+let xai = try AIProviders.xAI()
+let realtimeModel = try xai.realtime("grok-voice-latest")
+let session = try await AIRealtimeSession.connect(
+    model: realtimeModel,
+    sessionConfiguration: AIRealtimeSessionConfiguration(
+        instructions: "Answer briefly.",
+        voice: "Ara",
+        outputModalities: [.audio],
+        inputAudioFormat: AIRealtimeAudioFormat(
+            type: "audio/pcm",
+            rate: 24_000
+        )
+    )
+)
+
+try await session.appendAudio(pcmChunk)
+try await session.commitAudio()
+try await session.createResponse()
+
+for try await event in session {
+    if case let .server(.audioDelta(_, _, base64Audio, _)) = event {
+        // Decode or enqueue base64Audio for playback.
+    }
+}
+```
+
+Full provider adapters for non-xAI realtime speech sessions, Google/OpenAI
+streaming translation, and ElevenLabs realtime transcription remain deferred.
 
 ## Middleware
 
@@ -317,12 +431,15 @@ let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMidd
 
 ## MCP
 
-`MCPClient` mirrors the core of official `@ai-sdk/mcp`: initialize handshake,
+`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.33`: initialize handshake,
 tool discovery, dynamic `AITool` conversion, resources, prompts, elicitation,
 HTTP/SSE transport, stdio transport, and OAuth helpers.
 OAuth providers can implement `authorize(resourceMetadataURL:scope:)` to receive
 the scope advertised by `WWW-Authenticate` or Protected Resource Metadata; the
 existing `authorize(resourceMetadataURL:)` requirement remains source-compatible.
+The 2.0.33 compatibility patch is absorbed in the protocol/HTTP transport and
+OAuth layers without changing the high-level `MCPClient` workflow. Public
+wording stays conservative while that upstream source vertical settles.
 
 ```swift
 let mcp = try await MCPClient.connect(

@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-08-17
+Snapshot date: 2026-08-19
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.66`, `@ai-sdk/provider@4.0.7`,
-`@ai-sdk/provider-utils@5.0.27`, and `@ai-sdk/react@4.0.69`.
+snapshots, currently `ai@7.0.68`, `@ai-sdk/provider@4.0.7`,
+`@ai-sdk/provider-utils@5.0.27`, and `@ai-sdk/react@4.0.71`.
 
 References:
 
@@ -20,6 +20,8 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.66 -> 7.0.68` (dependency-only)
+- `@ai-sdk/react@4.0.69 -> 4.0.71` (dependency-only)
 - `ai@7.0.58 -> 7.0.66`
 - `@ai-sdk/provider@4.0.7` (unchanged)
 - `@ai-sdk/provider-utils@5.0.25 -> 5.0.27`
@@ -51,6 +53,16 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.68` and `@ai-sdk/react@4.0.71` contain dependency propagation only;
+  their published `src` trees are unchanged from 7.0.66 and 4.0.69.
+- The 2026-08-19 provider patch train advances Amazon Bedrock, Azure, Baseten,
+  Cerebras, DeepInfra, Fireworks, Gateway, Google, Google Vertex, Hugging Face,
+  MCP, OpenAI, OpenAI-compatible, and TogetherAI. Core-facing portable changes
+  are Fireworks JSON Schema output, the Gemini 3.7 Flash `low` thinking floor,
+  OpenAI Responses `allowedTools` plus the `computer` tool, MCP 2.0.33
+  compatibility hardening, Bedrock EventStream failure/EOF propagation, and
+  preservation of OpenAI-compatible raw usage details. The remaining package
+  deltas are version, dependency, or forward-compatible model-ID propagation.
 - `ai@7.0.66` array output wrappers now hoist both root `definitions` and
   `$defs`, preserving schemas whose array items reference root definitions.
   `AIChatSession` also stays `.submitted` for metadata-only response-start
@@ -98,14 +110,17 @@ Port decisions:
   call, reused indexes can start distinct calls, and finalization happens only
   on stream flush. Generic OpenAI-compatible text-token usage is also clamped
   at zero when a provider reports more reasoning than completion tokens.
-- `ai@7.0.58` and `@ai-sdk/provider@4.0.7` add the new Batch V4 model family
-  and async Video V4 start/status/webhook contracts. Swift providers continue
-  to expose terminal unary video generation with internal polling, so these
-  shared public protocols, batch JSONL result streaming, cancellation, and the
-  stable per-logical-start idempotency key remain an explicit core design gap.
-  Provider wire behavior that fits the unary contract is still ported where
-  possible; callers should note that retrying a lost unary video response may
-  repeat a paid start until the async operation surface is introduced.
+- `ai@7.0.68` and `@ai-sdk/provider@4.0.7` Batch V4 and async Video V4 are
+  represented by shared Swift protocols and facades. Text batches expose
+  persistable references, normalized status/counts, cancellable JSONL terminal
+  result streams, and per-item failures; Anthropic Messages Batch and OpenAI
+  Responses Batch provide vertical adapters. `AsyncVideoModel` exposes
+  serializable start/status state, core-owned polling/webhook waiting,
+  cancellation, provider-metadata merging, and one stable `idempotency-key`
+  across start retries while preserving unary `VideoModel` calls. Black Forest
+  Labs FLUX 3 and Fal provide operation adapters; Fal forwards a native webhook,
+  BFL warns and falls back to polling, and requests above a provider's
+  `maxVideosPerCall` are split into ordered logical starts.
 - `@ai-sdk/react@4.0.61` changes React `useChat` subscription throttling so an
   unrelated render cannot bypass the configured cadence. SwiftAISDK has no
   `useSyncExternalStore`/React render subscription, so there is no direct
@@ -115,12 +130,18 @@ Port decisions:
   local/provider caller abstraction, so the existing generic tool-caller gap
   now explicitly covers all three orchestration surfaces rather than adding a
   provider-specific shortcut.
-- `ai@7.0.45` warns when non-streaming generation receives streaming-only
-  `firstChunkMs` or `chunkMs` timeout fields. Swift cannot currently receive
-  those fields because it exposes only `timeoutNanoseconds`; the warning joins
-  the existing structured-timeout design gap without a no-op public option.
-  The clarified `GenerateTextResult.output` no-output documentation matches
-  Swift's existing `AINoOutputError` behavior.
+- `ai@7.0.45` streaming timeout behavior is represented by
+  `AIStreamTimeoutConfiguration`: total, per-model-step,
+  first-semantic-output, and inter-semantic-output deadlines are public;
+  total and step budgets include retry backoff, the step signal remains active
+  through client-side tool execution, and timeout aborts reach provider and
+  tool signals with the `TimeoutError` reason name. Step/first/inter-chunk
+  timers re-arm for every model step; metadata, lifecycle, raw keep-alives,
+  tool results, and empty deltas do not reset the semantic timers. Typed
+  `Output` streams accept the same configuration. `AIStreamTimeoutError`
+  identifies the first-chunk or chunk phase, while the legacy flat total
+  timeout remains source-compatible. The clarified `GenerateTextResult.output`
+  no-output documentation matches Swift's existing `AINoOutputError` behavior.
 - `@ai-sdk/provider-utils@5.0.18` centralizes empty usage and common response
   metadata construction without changing result shapes. Swift already uses
   shared `TokenUsage` and `AIResponseMetadata` conversion paths. Its switch
@@ -145,9 +166,13 @@ Port decisions:
   but automatic tool-owned caller registration needs one late-binding core
   contract rather than provider-specific shortcuts.
 - `@ai-sdk/provider@4.0.4` and `ai@7.0.38` add experimental streaming speech
-  translation. Google and OpenAI implementations use duplex WebSocket audio,
-  so the shared model/result/error surface is deferred until SwiftAISDK has a
-  reusable realtime audio transport.
+  translation. Swift now has reusable `AIDuplexWebSocketTransport`, streaming
+  audio input, lifecycle/result/error types, a Cartesia Ink 2 streaming
+  transcription adapter, and provider-neutral `AIRealtimeModelV4`/
+  `AIRealtimeSession` contracts with xAI as the first full Realtime V4 adapter.
+  Google/OpenAI translation, ElevenLabs realtime transcription, and full
+  non-xAI speech-session adapters still need provider-specific translations
+  above those shared contracts.
 - `@ai-sdk/provider-utils@5.0.16` adds resolver-backed DNS address validation
   and connection pinning. Swift still validates literal/private hosts and every
   redirect, but URLSession does not expose the same connector hook; DNS
@@ -179,11 +204,10 @@ Port decisions:
   is restored, the 128 KiB tag boundary matches upstream, and ISO-BMFF `ftyp`
   bytes resolve to `audio/mp4` in an audio context while generic detection keeps
   the ambiguous container as `video/mp4`.
-- `ai@7.0.35` `firstChunkMs` and semantic-content-only `chunkMs` behavior are
-  deferred. Swift currently exposes one total `timeoutNanoseconds` stream
-  timeout; faithful parity needs a structured public timeout configuration,
-  per-model-step timer lifecycle, semantic chunk classification, and cleanup
-  on provider failure or stream cancellation.
+- `ai@7.0.35` `stepMs`, `firstChunkMs`, and semantic-content-only `chunkMs`
+  behavior is ported through `AIStreamTimeoutConfiguration`, including
+  per-model-step re-arming and timer cleanup on normal completion, provider
+  failure, timeout, and consumer cancellation.
 - `ai@7.0.33` repeated tool-call ids across explicit UI stream steps are
   deferred. `AIUIMessageStreamReducer` currently indexes tool parts globally,
   and `LanguageStreamPart` has no `start-step` / `finish-step` cases from which
@@ -211,12 +235,28 @@ Port decisions:
 - `@ai-sdk/provider-utils@5.0.11` security/runtime changes were audited against
   Swift transports and parsers. Response-size limits, same-origin credential
   hardening, SSRF download validation, typed JSON parsing, and body cancellation
-  semantics are covered or Swift-native; JavaScript prototype-pollution fixes
-  are not applicable to Swift value dictionaries.
-- `@ai-sdk/provider-utils@5.0.11` and `ai@7.0.14` experimental realtime and
-  streaming-transcription surfaces are not represented by current SwiftAISDK
-  protocols. Existing provider rows call out WebSocket/realtime STT as
-  JS-runtime gaps where applicable.
+  semantics are covered or Swift-native. Redirects are followed manually,
+  every hop is validated before use, same-origin provider credentials are kept,
+  and cross-origin provider credentials are removed. JavaScript
+  prototype-pollution fixes are not applicable to Swift value dictionaries.
+- `@ai-sdk/provider-utils@5.0.11` and `ai@7.0.14` streaming transcription are
+  represented by `StreamingTranscriptionModel`, `StreamingTranscriptionPart`,
+  `AIStreamingAudioInput`, and the injectable duplex WebSocket transport, with
+  Cartesia Ink 2 as the first vertical adapter. Realtime session/media
+  negotiation is represented separately by `AIRealtimeModelV4` and
+  `AIRealtimeSession`; xAI is the first provider adapter, while full non-xAI
+  realtime remains deferred.
+- `@ai-sdk/openai@4.0.43` Responses `allowedTools` resolves declared function,
+  built-in, MCP, custom, and current computer tools to upstream allow-list
+  entries, warns for entries that cannot be represented, and rejects an
+  allow-list that becomes empty. `OpenAITools.computer()` is distinct from the
+  older `computerUse(...)` wire tool. `@ai-sdk/open-responses@2.0.28` remains
+  intentionally narrower: provider-defined tools warn and are dropped, matching
+  upstream rather than inventing an execution contract.
+- `@ai-sdk/mcp@2.0.33` is represented by the current MCP client, HTTP/SSE and
+  stdio transports, tool conversion, and OAuth helpers. The patch is treated as
+  protocol/transport and OAuth compatibility hardening; product-facing details
+  stay documented conservatively until the complete source vertical is settled.
 - `@ai-sdk/react@4.0.34 -> 4.0.40` has no direct source or declaration diff.
   Its releases only propagate `ai`, provider-utils, gateway, and MCP dependency
   updates. SwiftAISDK's UI analog remains `AIChatSession`,
@@ -266,14 +306,17 @@ Port decisions:
 | Upstream reference item | SwiftAISDK status | Current Swift evidence | Notes / next decision |
 | --- | --- | --- | --- |
 | `generateText` | `covered` | `AI.generateText`, `LanguageModelRequest`, `TextGenerationResult` | Supports prompt/request overloads, tools, multi-step loops, retries, telemetry, provider metadata, response metadata, raw chunks, and abort signals. Later tool-loop steps recheck cancellation before another model call and preserve the caller's abort reason. |
-| `streamText` | `partial` | `AI.streamText`, `LanguageStreamPart`, `AIStreamingTransport`, incremental SSE/EventStream and canonical semantic-stream regressions, `timeoutNanoseconds` | Async sequence surface with provider parts delivered before HTTP EOF, one part-aware content lifecycle, one built-in terminal outcome per logical response, in-band errors, tools, approvals, retries-before-first-yield, telemetry, total timeout, response-body cancellation, and abort propagation. Structured `firstChunkMs` plus semantic-content-only inter-chunk timeout behavior remains deferred. |
+| `streamText` | `covered` | `AI.streamText`, `LanguageStreamPart`, `AIStreamingTransport`, `AIStreamTimeoutConfiguration`, incremental SSE/EventStream and semantic-timeout regressions | Async sequence surface with provider parts delivered before HTTP EOF, one part-aware content lifecycle, one built-in terminal outcome per logical response, in-band errors, tools, approvals, retries-before-first-yield, telemetry, and total/per-step/first-semantic/inter-semantic deadlines. Total/step budgets include retry backoff, step deadlines span client tool execution, typed `Output` streams share the configuration, and timeout aborts propagate to provider/tool signals. |
 | `embed` | `covered` | `AI.embed`, `EmbeddingRequest`, `EmbeddingResult` | Single-value helper delegates through the embedding request shape. |
 | `embedMany` | `covered` | `AI.embedMany` | Supports batching through `chunkSize` and aggregates usage/warnings/metadata. |
 | `rerank` | `covered` | `AI.rerank`, `RerankingRequest`, `RerankingResult` | Native model family exists. |
 | `generateImage` | `covered` | `AI.generateImage`, `ImageGenerationRequest` | Includes files, masks, provider options, metadata, warnings, retries, and aborts. |
 | `transcribe` | `covered` | `AI.transcribe`, `AudioTranscriptionRequest`, `detectMediaType` | Upstream now documents `transcribe`; older experimental naming is intentionally not mirrored. Shared media detection recognizes MP4/M4A from the ISO-BMFF `ftyp` box in an audio context and bounds ID3 scanning. |
+| `StreamingTranscriptionModel` | `covered` | `StreamingTranscriptionModel`, `AIStreamingAudioInput`, `StreamingTranscriptionPart`, `CartesiaStreamingTranscriptionModel` | Provider-neutral duplex transcription lifecycle with Cartesia Ink 2 as the first provider adapter; ElevenLabs realtime STT remains deferred. |
 | `generateSpeech` | `covered` | `AI.generateSpeech`, `SpeechRequest` | Native model family exists. |
-| `experimental_generateVideo` | `covered` | `AI.generateVideo`, `VideoGenerationRequest` | Swift uses stable `generateVideo` naming. Decide only if an `experimental_` alias is useful for discoverability. |
+| `experimental_generateVideo` | `covered` | `AI.generateVideo`, `VideoGenerationRequest`, `AsyncVideoModel`, `VideoGenerationPollOptions` | Stable Swift naming preserves unary generation and adds V4 start/status, polling, webhook waiting, cancellation, metadata merging, logical-start idempotency, and count splitting. BFL and Fal are vertical adapters; Fal supports native webhooks and BFL falls back to polling with a warning. |
+| `startTextBatch` / `getBatchStatus` / `getBatchResults` | `covered` | `AI.startTextBatch`, `AI.getBatchStatus`, `AI.getBatchResults`, `BatchLanguageModel` | Durable text batches expose persistable references, normalized status and complete per-item terminal result streams through Anthropic Messages Batch and OpenAI Responses Batch. |
+| `Experimental_RealtimeModelV4` | `covered` | `AIRealtimeModelV4`, `AIRealtimeSession`, `XAIRealtimeModel` | Provider-neutral client-secret, duplex event, audio/text/tool, abort and close lifecycle with xAI as the first full adapter. Full non-xAI realtime adapters remain deferred. |
 | `Output` | `covered` | `Output.text/object/array/choice/json`, `AI.generateText(... output:)`, `AI.streamText(... output:)`, existing object-generation facades | Swift now mirrors the v6-style `generateText/streamText + Output.*` entry point while still keeping the older Swift-native object/array/enum/json facades. `Output.object` partial streaming uses `JSONValue` because Swift has no automatic `DeepPartial<T>`. |
 | `Agent` interface | `covered` | `AIAgent`, `AIAgentCallOptions` | Swift-native agent protocol mirrors upstream `version: "agent-v1"`, optional `id`, tool exposure, and generate/stream calls over model messages or prompts. |
 | `ToolLoopAgent` | `covered` | `AIToolLoopAgent`, tool-loop overloads on `AI.generateText` and `AI.streamText` | Reusable agent object wraps the existing Swift tool loop. Default `maxSteps` is 20 to match upstream `stepCountIs(20)` behavior. |
@@ -282,7 +325,7 @@ Port decisions:
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
 | `dynamicTool` | `swift-native` | `AITool.dynamic`, MCP tool conversion | Behavior exists; naming differs. |
-| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, tool-call retries, and tool conversion coverage. |
+| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, tool-call retries, and tool conversion coverage, with the `@ai-sdk/mcp@2.0.33` compatibility patch represented conservatively. |
 | `Experimental_StdioMCPTransport` | `covered` | `MCPStdioTransport` | Swift uses stable transport naming. |
 | `jsonSchema` | `swift-native` | `AIJSONSchema`, `JSONValue`, `parseJSON`, schema validator | Usable JSON Schema adapter exists; exact factory naming does not. |
 | `zodSchema` | `out of scope candidate` | none | Zod is TypeScript-specific. Could document `AIJSONSchema` as the Swift alternative. |
@@ -352,24 +395,20 @@ it means JavaScript-style error-class parity is only partial.
 
 ## Recommended Next Passes
 
-1. Design one structured Swift timeout configuration before porting
-   `firstChunkMs`: define total, per-step, first-semantic-content, and
-   inter-semantic-content timeouts together, including cancellation/error
-   cleanup and multi-step re-arming.
-2. Decide how explicit model-step boundaries should enter
+1. Decide how explicit model-step boundaries should enter
    `LanguageStreamPart`, then scope `AIUIMessageStreamReducer` tool lookup to
    the current step while retaining backwards lookup for late tool outputs.
-3. Continue polishing the new `AIOutput` surface where it proves useful:
+2. Continue polishing the new `AIOutput` surface where it proves useful:
    document examples and consider array `elementStream` ergonomics. The
    `choice/json` factories already propagate `name` and `description` as
    provider hints.
-4. Decide whether `DefaultGeneratedFile` deserves a named Swift analog or
+3. Decide whether `DefaultGeneratedFile` deserves a named Swift analog or
    whether `AIStreamFile` plus generated media result structs are sufficient.
-5. Keep JS response helpers (`createAgentUIStreamResponse`,
+4. Keep JS response helpers (`createAgentUIStreamResponse`,
    `pipeAgentUIStreamToResponse`, `createUIMessageStreamResponse`,
    `pipeUIMessageStreamToResponse`) out of core unless SwiftAISDK grows a
    server-side Swift target.
-6. Continue typed-error parity only where it improves Swift diagnostics. The
+5. Continue typed-error parity only where it improves Swift diagnostics. The
    middle-path batches now cover API calls, type validation, no-output,
    no-such-tool, invalid tool input, tool-call repair, approval-link failures,
    no-generated media, and too-many embedding values. Remaining candidates are

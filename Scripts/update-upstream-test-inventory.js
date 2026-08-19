@@ -282,5 +282,8 @@ function renderMarkdown({ commit, commitLine, testFiles, grouped, tracked }) {
     lines.push("");
   }
 
+  while (lines.at(-1) === "") {
+    lines.pop();
+  }
   return `${lines.join("\n")}\n`;
 }

@@ -1,0 +1,24 @@
+---
+title: "gmicloud"
+description: "gmicloud provider capabilities and factories."
+---
+
+## Package
+
+`@ai-sdk/gmicloud`
+
+## Factories
+
+`AIProviders.gmiCloud`
+
+## Capabilities
+
+- Language
+
+## Notes
+
+GMI Cloud chat mirrors upstream 3.0.2: `GMI_CLOUD_APIKEY`, bearer auth, custom base URL and headers, versioned user-agent suffix, callable/language/chat aliases, forward-compatible string model IDs, OpenAI-compatible chat streaming, usage enabled by default with unknown usage fields preserved, and nested JSON `error.details` unwrapping for actionable backend diagnostics. Embedding and image families remain unsupported.
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](./).

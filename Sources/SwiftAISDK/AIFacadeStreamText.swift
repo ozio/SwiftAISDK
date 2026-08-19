@@ -5,6 +5,7 @@ extension AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
+        timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil,
         logWarnings: Bool
@@ -43,29 +44,90 @@ extension AI {
                 logWarnings: logWarnings
             )
         }
-        return streamTextWithTelemetry(
+        if let validationError = validateStreamTimeoutConfiguration(timeout) {
+            return streamTextWithTelemetry(
+                makeStream: { failingPartStream(validationError) },
+                operationID: "ai.streamText",
+                providerID: model.providerID,
+                modelID: model.modelID,
+                input: languageRequestTelemetryInput(preparedRequest),
+                retryPolicy: retryPolicy,
+                telemetry: telemetry,
+                abortSignal: preparedRequest.abortSignal,
+                logWarnings: logWarnings
+            )
+        }
+        let totalTimeoutNanoseconds = minimumTimeoutNanoseconds(
+            timeout?.totalNanoseconds,
+            timeoutNanoseconds
+        )
+        let stepTimeoutNanoseconds = timeout?.stepNanoseconds
+        let totalTimeoutController = totalTimeoutNanoseconds.map { _ in AIAbortController() }
+        let stepTimeoutController = stepTimeoutNanoseconds.map { _ in AIAbortController() }
+        let semanticTimeoutController = timeout?.firstChunkNanoseconds != nil
+            || timeout?.chunkNanoseconds != nil
+            ? AIAbortController()
+            : nil
+        var requestWithTimeoutSignals = preparedRequest
+        requestWithTimeoutSignals.abortSignal = mergeAbortSignals(
+            preparedRequest.abortSignal,
+            totalTimeoutController?.signal,
+            stepTimeoutController?.signal,
+            semanticTimeoutController?.signal
+        )
+        let operationRequest = requestWithTimeoutSignals
+
+        let retriedStream = streamTextWithTelemetry(
             makeStream: {
+                let attemptTimeoutController = retryPolicy.timeoutNanoseconds.map { _ in
+                    AIAbortController()
+                }
+                var attemptRequest = operationRequest
+                attemptRequest.abortSignal = mergeAbortSignals(
+                    operationRequest.abortSignal,
+                    attemptTimeoutController?.signal
+                )
                 let stream = streamWithAbortSignal(
-                    model.stream(preparedRequest),
-                    abortSignal: preparedRequest.abortSignal
+                    model.stream(attemptRequest),
+                    abortSignal: attemptRequest.abortSignal
                 )
                 let canonicalStream = canonicalLanguageStream(
                     stream,
                     providerID: model.providerID
                 )
+                let outputTimedStream = streamWithSemanticOutputTimeouts(
+                    forwardedLanguageStream(canonicalStream, request: attemptRequest),
+                    firstChunkNanoseconds: timeout?.firstChunkNanoseconds,
+                    chunkNanoseconds: timeout?.chunkNanoseconds,
+                    abortController: semanticTimeoutController
+                )
                 return streamWithTimeout(
-                    forwardedLanguageStream(canonicalStream, request: preparedRequest),
-                    timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
+                    outputTimedStream,
+                    timeoutNanoseconds: retryPolicy.timeoutNanoseconds,
+                    abortController: attemptTimeoutController,
+                    timeoutLabel: "Retry attempt"
                 )
             },
             operationID: "ai.streamText",
             providerID: model.providerID,
             modelID: model.modelID,
-            input: languageRequestTelemetryInput(preparedRequest),
+            input: languageRequestTelemetryInput(operationRequest),
             retryPolicy: retryPolicy,
             telemetry: telemetry,
-            abortSignal: preparedRequest.abortSignal,
+            abortSignal: operationRequest.abortSignal,
             logWarnings: logWarnings
+        )
+        let stepTimedStream = streamWithTimeout(
+            retriedStream,
+            timeoutNanoseconds: stepTimeoutNanoseconds,
+            abortController: stepTimeoutController,
+            timeoutLabel: "Step"
+        )
+        return streamWithTimeout(
+            stepTimedStream,
+            timeoutNanoseconds: totalTimeoutNanoseconds,
+            abortController: totalTimeoutController,
+            timeoutLabel: "Total"
         )
     }
 
@@ -73,6 +135,7 @@ extension AI {
         model: any LanguageModel,
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
+        timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
@@ -80,6 +143,7 @@ extension AI {
             model: model,
             request: request,
             timeoutNanoseconds: timeoutNanoseconds,
+            timeout: timeout,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
             logWarnings: true
@@ -96,34 +160,60 @@ extension AI {
         toolApproval: AIToolApproval? = nil,
         repairToolCall: AIToolCallRepair? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        guard !executableTools.isEmpty || prepareStep != nil else {
+            return streamText(
+                model: model,
+                request: request,
+                timeoutNanoseconds: timeoutNanoseconds,
+                timeout: timeout,
+                retryPolicy: retryPolicy,
+                telemetry: telemetry
+            )
+        }
+        if let validationError = validateStreamTimeoutConfiguration(timeout) {
+            return streamTextWithTelemetry(
+                makeStream: { failingPartStream(validationError) },
+                operationID: "ai.streamText",
+                providerID: model.providerID,
+                modelID: model.modelID,
+                input: languageRequestTelemetryInput(request),
+                retryPolicy: .none,
+                telemetry: telemetry,
+                abortSignal: request.abortSignal,
+                logWarnings: false
+            )
+        }
+
+        let explicitTotalTimeoutNanoseconds = minimumTimeoutNanoseconds(
+            timeout?.totalNanoseconds,
+            timeoutNanoseconds
+        )
+        let totalTimeoutNanoseconds = explicitTotalTimeoutNanoseconds
+            ?? retryPolicy.timeoutNanoseconds
+        let totalTimeoutController = totalTimeoutNanoseconds.map { _ in AIAbortController() }
+        var requestWithTimeoutSignals = request
+        requestWithTimeoutSignals.abortSignal = mergeAbortSignals(
+            request.abortSignal,
+            totalTimeoutController?.signal
+        )
+        let operationRequest = requestWithTimeoutSignals
+
         let stream = AsyncThrowingStream<LanguageStreamPart, Error> { continuation in
             let task = Task {
                 do {
-                    guard !executableTools.isEmpty || prepareStep != nil else {
-                        let request = try prepareLanguageModelCallOptions(request)
-                        var innerRetryPolicy = retryPolicy
-                        innerRetryPolicy.timeoutNanoseconds = nil
-                        for try await part in streamText(
-                            model: model,
-                            request: request,
-                            timeoutNanoseconds: nil,
-                            retryPolicy: innerRetryPolicy,
-                            telemetry: nil
-                        ) {
-                            continuation.yield(part)
-                        }
-                        continuation.finish()
-                        return
+                    if let validationError = validateStreamTimeoutConfiguration(timeout) {
+                        throw validationError
                     }
                     guard maxSteps > 0 else {
                         throw AIError.invalidArgument(argument: "maxSteps", message: "maxSteps must be greater than zero.")
                     }
 
-                    let initialRequest = request
-                    var currentRequest = request
+                    let initialRequest = operationRequest
+                    var currentRequest = operationRequest
                     currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
                     var steps: [AIToolStep] = []
                     var responseMessages: [AIMessage] = []
@@ -136,16 +226,29 @@ extension AI {
                     )
 
                     for index in 0..<maxSteps {
+                        let stepDeadline = AIStreamTimeoutDeadline(
+                            durationNanoseconds: timeout?.stepNanoseconds,
+                            label: "Step"
+                        )
+                        stepDeadline.start()
+                        defer { stepDeadline.cancel() }
+                        do {
+                        var stepCurrentRequest = currentRequest
+                        stepCurrentRequest.abortSignal = mergeAbortSignals(
+                            currentRequest.abortSignal,
+                            stepDeadline.signal
+                        )
                         let historicalApprovalExecution = try await executeHistoricalToolApprovals(
-                            request: currentRequest,
+                            request: stepCurrentRequest,
                             toolsByName: try toolsByName(from: executableTools),
                             toolApproval: toolApproval,
                             telemetry: toolTelemetry,
                             stepIndex: index
                         )
+                        try stepDeadline.throwIfTimedOut()
                         if !historicalApprovalExecution.responseMessages.isEmpty {
                             responseMessages.append(contentsOf: historicalApprovalExecution.responseMessages)
-                            currentRequest.messages.append(contentsOf: historicalApprovalExecution.responseMessages)
+                            stepCurrentRequest.messages.append(contentsOf: historicalApprovalExecution.responseMessages)
                             for approvalResponse in historicalApprovalExecution.approvalResponses {
                                 continuation.yield(.toolApprovalResponse(approvalResponse))
                             }
@@ -158,14 +261,29 @@ extension AI {
                             model: model,
                             stepNumber: index,
                             steps: steps,
-                            request: currentRequest,
+                            request: stepCurrentRequest,
                             initialRequest: initialRequest,
                             responseMessages: responseMessages
                         ))
+                        try stepDeadline.throwIfTimedOut()
                         let stepModel = prepared?.model ?? model
                         let stepTools = prepared?.executableTools ?? executableTools
                         let toolsByName = try toolsByName(from: stepTools)
-                        var stepRequest = try prepareLanguageModelCallOptions(prepared?.request ?? currentRequest)
+                        var stepRequest = try prepareLanguageModelCallOptions(
+                            prepared?.request ?? stepCurrentRequest
+                        )
+                        if stepRequest.abortSignal === operationRequest.abortSignal {
+                            stepRequest.abortSignal = mergeAbortSignals(
+                                stepRequest.abortSignal,
+                                stepDeadline.signal
+                            )
+                        } else {
+                            stepRequest.abortSignal = mergeAbortSignals(
+                                stepRequest.abortSignal,
+                                operationRequest.abortSignal,
+                                stepDeadline.signal
+                            )
+                        }
                         if prepared?.executableTools != nil {
                             stepRequest.tools = toolsDictionary(from: stepTools)
                         } else {
@@ -179,13 +297,25 @@ extension AI {
                             request: stepRequest,
                             tools: stepTools
                         )
+                        try stepDeadline.throwIfTimedOut()
                         let step = try await forwardLanguageStream(
-                            streamText(model: stepModel, request: stepRequest, retryPolicy: retryPolicy),
+                            streamText(
+                                model: stepModel,
+                                request: stepRequest,
+                                timeout: timeout.map {
+                                    AIStreamTimeoutConfiguration(
+                                        firstChunkNanoseconds: $0.firstChunkNanoseconds,
+                                        chunkNanoseconds: $0.chunkNanoseconds
+                                    )
+                                },
+                                retryPolicy: retryPolicy
+                            ),
                             to: continuation,
                             toolsByName: toolsByName,
                             request: stepRequest,
                             repairToolCall: repairToolCall
                         )
+                        try stepDeadline.throwIfTimedOut()
                         let executableCalls = step.toolCalls.filter { !$0.providerExecuted }
                         let providerExecutedToolCallIDs = Set(step.toolCalls.filter(\.providerExecuted).map(\.id))
                         pendingProviderExecutedToolCallIDs.formUnion(providerExecutedToolCallIDs)
@@ -208,7 +338,9 @@ extension AI {
                             )
                             steps.append(completedStep)
                             await toolTelemetry.recordStepEnd(completedStep)
+                            try stepDeadline.throwIfTimedOut()
                             if try await isStopConditionMet(stopWhen, steps: steps) {
+                                try stepDeadline.throwIfTimedOut()
                                 continuation.finish()
                                 return
                             }
@@ -218,11 +350,14 @@ extension AI {
                             )
                             responseMessages.append(contentsOf: stepResponseMessages)
                             currentRequest = stepRequest
+                            currentRequest.abortSignal = operationRequest.abortSignal
                             currentRequest.messages.append(contentsOf: stepResponseMessages)
                             guard !pendingProviderExecutedToolCallIDs.isEmpty, index < maxSteps - 1 else {
+                                try stepDeadline.throwIfTimedOut()
                                 continuation.finish()
                                 return
                             }
+                            try stepDeadline.throwIfTimedOut()
                             continue
                         }
 
@@ -237,6 +372,7 @@ extension AI {
                             convertToolErrorsToResults: true,
                             invokeInputAvailableCallbacks: false
                         )
+                        try stepDeadline.throwIfTimedOut()
                         for approvalRequest in toolExecution.approvalRequests {
                             continuation.yield(.toolApprovalRequest(approvalRequest))
                         }
@@ -255,11 +391,13 @@ extension AI {
                         )
                         steps.append(completedStep)
                         await toolTelemetry.recordStepEnd(completedStep)
+                        try stepDeadline.throwIfTimedOut()
                         if toolExecution.needsUserApproval {
                             continuation.finish()
                             return
                         }
                         if try await isStopConditionMet(stopWhen, steps: steps) {
+                            try stepDeadline.throwIfTimedOut()
                             continuation.finish()
                             return
                         }
@@ -269,7 +407,16 @@ extension AI {
                         )
                         responseMessages.append(contentsOf: stepResponseMessages)
                         currentRequest = stepRequest
+                        currentRequest.abortSignal = operationRequest.abortSignal
                         currentRequest.messages.append(contentsOf: stepResponseMessages)
+                        try stepDeadline.throwIfTimedOut()
+                        } catch {
+                            if stepDeadline.hasTimedOut,
+                               let durationNanoseconds = stepDeadline.durationNanoseconds {
+                                throw AIError.timeout(durationNanoseconds: durationNanoseconds)
+                            }
+                            throw error
+                        }
                     }
 
                     continuation.finish()
@@ -282,21 +429,22 @@ extension AI {
                 task.cancel()
             }
         }
-        return streamTextWithTelemetry(
-            makeStream: {
-                streamWithTimeout(
-                    stream,
-                    timeoutNanoseconds: timeoutNanoseconds ?? retryPolicy.timeoutNanoseconds
-                )
-            },
+        let telemeteredStream = streamTextWithTelemetry(
+            makeStream: { stream },
             operationID: "ai.streamText",
             providerID: model.providerID,
             modelID: model.modelID,
-            input: languageRequestTelemetryInput(request),
+            input: languageRequestTelemetryInput(operationRequest),
             retryPolicy: .none,
             telemetry: telemetry,
-            abortSignal: request.abortSignal,
+            abortSignal: operationRequest.abortSignal,
             logWarnings: false
+        )
+        return streamWithTimeout(
+            telemeteredStream,
+            timeoutNanoseconds: totalTimeoutNanoseconds,
+            abortController: totalTimeoutController,
+            timeoutLabel: "Total"
         )
     }
 
@@ -327,6 +475,7 @@ extension AI {
         headers: [String: String] = [:],
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
@@ -356,6 +505,7 @@ extension AI {
                 model: model,
                 request: request,
                 timeoutNanoseconds: timeoutNanoseconds,
+                timeout: timeout,
                 retryPolicy: retryPolicy,
                 telemetry: telemetry
             )
@@ -371,6 +521,7 @@ extension AI {
             toolApproval: toolApproval,
             repairToolCall: repairToolCall,
             timeoutNanoseconds: timeoutNanoseconds,
+            timeout: timeout,
             retryPolicy: retryPolicy,
             telemetry: telemetry
         )
@@ -381,19 +532,67 @@ extension AI {
         request: LanguageModelRequest,
         output: AIOutput<FinalOutput, PartialOutput>,
         timeoutNanoseconds: UInt64? = nil,
+        timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
     ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
-        output.streamFromRequest(
+        if let timeoutNanoseconds, timeoutNanoseconds == 0 {
+            return failingPartStream(AIError.invalidArgument(
+                argument: "timeoutNanoseconds",
+                message: "timeoutNanoseconds must be greater than zero."
+            ))
+        }
+        if let validationError = validateStreamTimeoutConfiguration(timeout) {
+            return failingPartStream(validationError)
+        }
+
+        let totalTimeoutNanoseconds = minimumTimeoutNanoseconds(
+            timeout?.totalNanoseconds,
+            timeoutNanoseconds
+        )
+        let stepTimeoutNanoseconds = timeout?.stepNanoseconds
+        let totalTimeoutController = totalTimeoutNanoseconds.map { _ in AIAbortController() }
+        let stepTimeoutController = stepTimeoutNanoseconds.map { _ in AIAbortController() }
+        let semanticTimeoutController = timeout?.firstChunkNanoseconds != nil
+            || timeout?.chunkNanoseconds != nil
+            ? AIAbortController()
+            : nil
+        var requestWithTimeoutSignals = request
+        requestWithTimeoutSignals.abortSignal = mergeAbortSignals(
+            request.abortSignal,
+            totalTimeoutController?.signal,
+            stepTimeoutController?.signal,
+            semanticTimeoutController?.signal
+        )
+        let operationRequest = requestWithTimeoutSignals
+        let outputStream = output.streamFromRequest(
             model,
-            request,
-            timeoutNanoseconds,
+            operationRequest,
+            nil,
             retryPolicy,
             telemetry,
             jsonInstruction,
             repairText
+        )
+        let semanticTimedStream = streamWithSemanticOutputTimeouts(
+            outputStream,
+            firstChunkNanoseconds: timeout?.firstChunkNanoseconds,
+            chunkNanoseconds: timeout?.chunkNanoseconds,
+            abortController: semanticTimeoutController
+        )
+        let stepTimedStream = streamWithTimeout(
+            semanticTimedStream,
+            timeoutNanoseconds: stepTimeoutNanoseconds,
+            abortController: stepTimeoutController,
+            timeoutLabel: "Step"
+        )
+        return streamWithTimeout(
+            stepTimedStream,
+            timeoutNanoseconds: totalTimeoutNanoseconds,
+            abortController: totalTimeoutController,
+            timeoutLabel: "Total"
         )
     }
 
@@ -415,6 +614,7 @@ extension AI {
         headers: [String: String] = [:],
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil,
+        timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
@@ -440,6 +640,7 @@ extension AI {
             ),
             output: output,
             timeoutNanoseconds: timeoutNanoseconds,
+            timeout: timeout,
             retryPolicy: retryPolicy,
             telemetry: telemetry,
             jsonInstruction: jsonInstruction,

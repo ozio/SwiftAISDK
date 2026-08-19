@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-08-17
+Snapshot date: 2026-08-19
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every tracked package was packed at both the prior
@@ -15,6 +15,87 @@ Status meanings:
   Swift design before provider-specific code is useful.
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
+
+## 2026-08-19 Focused Gap Closure
+
+Fresh npm metadata and exact registry-prefix metadata were queried again before
+this follow-up. The prefix still contains 81 live `@ai-sdk/*` packages and 45
+model providers. Fish Audio and GMI Cloud are now both represented, so all 45
+model-provider packages have Swift factories and capability evidence.
+
+Published tarballs for Fish Audio, GMI Cloud, Harness Cline, `ai`, Provider,
+and React were unpacked into a temporary workspace. The current upstream source
+and tests at `vercel/ai@2174f202c21f` were used for the shared Batch, video,
+timeout, Anthropic replay, Open Responses, and Cartesia duplex decisions.
+
+| Package | Previous reference | Current npm | Result |
+| --- | ---: | ---: | --- |
+| `ai` | `7.0.66` | `7.0.68` | `version-only/ported` — the npm delta is dependency propagation with an unchanged published source tree. Previously audited Batch V4, async Video V4, and structured stream timeout surfaces are now ported: durable text batch start/status/results, serializable video operations with polling/webhooks and stable logical-start idempotency, plus total/per-step/first-semantic/inter-semantic stream deadlines. Total and step budgets include retry backoff, the step signal covers client tool execution, timeout aborts reach provider/tool signals, and typed `Output` streams accept the same configuration. |
+| `@ai-sdk/provider` | `4.0.7` | `4.0.7` | `ported` — unchanged on npm; the already-published Batch V4 and Video V4 structural capabilities now have public Swift protocols/results and focused facade coverage. |
+| `@ai-sdk/provider-utils` | `5.0.27` | `5.0.27` | `ported/covered` — the reusable injectable duplex WebSocket transport preserves messages, close metadata, headers/subprotocols, cancellation, and abort propagation for streaming audio adapters. Shared downloads validate every redirect hop, filter the upstream set of 20 unsafe forwarding/metadata/cookie headers, strip credentials after an origin change, and cancel discarded streaming redirect bodies. Resolver-backed connection pinning remains deferred. |
+| `@ai-sdk/react` | `4.0.69` | `4.0.71` | `version-only`; both releases only propagate dependencies and their published source trees are identical. |
+| `@ai-sdk/anthropic` | `4.0.39` | `4.0.39` | `ported` — Anthropic Messages Batch implements prepared request bodies, beta aggregation, provider validation, normalized lifecycle/counts, and incremental JSONL result items. Deferred programmatic-result replay also strips the internal discriminator before reconstructing provider content. |
+| `@ai-sdk/black-forest-labs` | `2.0.28` | `2.0.28` | `ported` — FLUX 3 adds a serializable start/status adapter while retaining unary generation, trusted polling URLs, terminal failures, and settled provider metadata. |
+| `@ai-sdk/fal` | `3.0.28` | `3.0.28` | `ported` — Fal video now exposes the shared async start/status surface, forwards the provider-native `fal_webhook` URL, and declares its one-video-per-call limit so core can split larger counts and merge results in request order. |
+| `@ai-sdk/cartesia` | `3.0.22` | `3.0.22` | `ported` — Ink 2 streaming transcription now uses short-lived STT access tokens, an injectable duplex WebSocket, PCM/G.711 options, server-turn or explicit-finalization flows, partial/final events, redacted request metadata, and cancellation cleanup. |
+| `@ai-sdk/fish-audio` | untracked | `3.0.5` | `ported` — S1/S2/S2.1 binary speech and multipart ASR transcription include authentication, model headers, formats/options/warnings, segments/language/duration, response metadata, aborts, and Fish error envelopes. |
+| `@ai-sdk/gmicloud` | `3.0.1` (reported gap) | `3.0.2` | `ported/version-only` — OpenAI-compatible chat includes the GMI endpoint/auth identity, streaming usage, raw usage preservation, aliases, and nested `error.details` diagnostics. The `3.0.1 -> 3.0.2` package delta only updates its compatible dependency. |
+| `@ai-sdk/openai` | `4.0.42` | `4.0.43` | `ported` — OpenAI Responses implements Batch V4 and the patch's `allowedTools` allow-list resolution, warnings and empty-list validation. The current `OpenAITools.computer()` path is distinct from legacy `computerUse(...)` and preserves ordered actions, pending safety checks, streaming lifecycle, stored/unstored replay, and screenshot URL/file outputs. |
+| `@ai-sdk/open-responses` | `2.0.28` | `2.0.28` | `covered` — provider-defined tools were rechecked against published/current source. Upstream deliberately warns and drops them, which the Swift port already does; inventing an execution surface would diverge from upstream. |
+| `@ai-sdk/xai` | `4.0.40` | `4.0.40` | `ported` — `AIRealtimeModelV4` and `AIRealtimeSession` now have an xAI vertical covering ephemeral secrets, WebSocket subprotocol negotiation, normalized text/audio/tool events, provider-specific custom events, aborts, cancellation, and close metadata. Full non-xAI realtime adapters remain deferred. |
+| `@ai-sdk/harness-cline` | `1.0.0` | `1.0.3` | `deferred/out-of-scope` — this is a coding-agent harness, not a model provider. A faithful port first needs a HarnessV1 agent/session contract, sandbox-provider abstraction, bridge/event protocol, MCP/auth integration, and a Cline runtime; it cannot be represented by a provider factory without creating a separate product subsystem. |
+
+The reusable surfaces are intentionally vertical rather than claiming every
+possible adapter: Anthropic and OpenAI Responses implement Batch V4, Black
+Forest Labs and Fal implement async Video V4, Cartesia Ink 2 is the first
+duplex streaming-transcription adapter, and xAI is the first full Realtime V4
+adapter. Additional providers can now reuse those contracts without redesigning
+the core.
+
+### 2026-08-19 Verification
+
+- `node Scripts/check-upstream-versions.js --all --json --fail-on-outdated`:
+  all 50 tracked provider/core rows match npm `latest`; zero registry errors.
+- Exact registry-prefix discovery: 81 live `@ai-sdk/*` packages and 45 model
+  providers; all 45 model-provider packages are tracked with Swift capability
+  evidence.
+- `node Scripts/update-upstream-test-inventory.js --upstream-dir
+  <vercel-ai-checkout> --no-refresh`: regenerated the inventory for 804
+  upstream test files at `2174f202c21f`.
+- Focused provider/core suites passed, including Fish Audio 16, GMI Cloud 8,
+  Cartesia 25, xAI 50 plus 10 realtime tests, MCP 76, OpenAI computer 6,
+  HTTP redirect security 6, and the combined 126-test upstream-gap filter.
+- `swift test`: 2,510 tests across 3 suites passed with zero failures.
+- `npm ci --prefix docs-site`: completed successfully; npm reported 8
+  dependency advisories (1 low, 7 high).
+- `npm --prefix docs-site run check`: 4 files checked with zero errors,
+  warnings, or hints.
+- `npm --prefix docs-site run build`: 89 pages built successfully and indexed
+  by Pagefind.
+- `git diff --check`: passed after the final runtime, test, and docs updates.
+
+## 2026-08-19 Patch Baseline Results
+
+Fourteen tracked npm packages published newer patch versions after the initial
+weekly snapshot. Their exact tarballs were reviewed separately; the ledger and
+provider notes use these baselines.
+
+| Package | Previous | Current | Result |
+| --- | ---: | ---: | --- |
+| `@ai-sdk/amazon-bedrock` | `5.0.57` | `5.0.58` | `ported` — EventStream decode and process failures propagate, and an incomplete frame at EOF is rejected instead of being silently discarded. |
+| `@ai-sdk/azure` | `4.0.43` | `4.0.44` | `version-only`; shared OpenAI Responses behavior is recorded under `@ai-sdk/openai`. |
+| `@ai-sdk/baseten` | `2.1.8` | `2.1.9` | `version-only`. |
+| `@ai-sdk/cerebras` | `3.0.30` | `3.0.31` | `covered/version-only` — current model IDs remain forward-compatible Swift strings. |
+| `@ai-sdk/deepinfra` | `3.0.30` | `3.0.31` | `version-only`. |
+| `@ai-sdk/fireworks` | `3.0.32` | `3.0.34` | `ported` — native JSON Schema structured output is represented in the Fireworks chat request builder. |
+| `@ai-sdk/gateway` | `4.0.52` | `4.0.54` | `covered/version-only` — model-setting and dependency propagation remain covered by string model IDs and provider-option pass-through. |
+| `@ai-sdk/google` | `4.0.44` | `4.0.45` | `ported` — Gemini 3.7 Flash maps `none` and `minimal` reasoning requests to its supported `low` thinking floor. |
+| `@ai-sdk/google-vertex` | `5.0.54` | `5.0.56` | `ported/covered` — Vertex inherits the shared Gemini 3.7 `low` thinking-floor behavior; the remaining package delta is dependency propagation. |
+| `@ai-sdk/huggingface` | `2.0.30` | `2.0.31` | `version-only`. |
+| `@ai-sdk/mcp` | `2.0.32` | `2.0.33` | `ported` — modern discovery with legacy fallback, typed result metadata, stateless HTTP/header bindings, and OAuth issuer/application-type validation match the published patch behavior. |
+| `@ai-sdk/openai` | `4.0.42` | `4.0.43` | `ported` — Responses `allowedTools` resolves supported function and hosted-tool names, warns for dropped entries, and rejects an empty effective allow-list. The current computer path covers ordered actions/safety checks, stream events, replay modes, and screenshot outputs. |
+| `@ai-sdk/openai-compatible` | `3.0.30` | `3.0.31` | `covered` — Swift already preserves unknown raw usage fields, including nested prompt and completion details, for generated and streamed chat/completion results. |
+| `@ai-sdk/togetherai` | `3.0.31` | `3.0.32` | `version-only`. |
 
 ## 2026-08-17 Tracked Package Results
 

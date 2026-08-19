@@ -1,7 +1,12 @@
 import Foundation
 
 func openAICompatibleHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
-    let body = openAICompatibleErrorMessage(from: response.body) ?? response.bodyText
+    let body: String
+    if provider == "gmicloud.chat" {
+        body = gmiCloudErrorMessage(from: response.body) ?? response.bodyText
+    } else {
+        body = openAICompatibleErrorMessage(from: response.body) ?? response.bodyText
+    }
     guard !response.headers.isEmpty else {
         return .apiCall(provider: provider, statusCode: response.statusCode, body: body)
     }

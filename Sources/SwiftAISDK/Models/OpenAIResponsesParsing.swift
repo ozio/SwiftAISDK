@@ -321,6 +321,18 @@ func openAIResponsesToolCall(
     case "web_search_call":
         return openAIResponsesHostedToolCall(item: item, name: toolNameAliases["web_search"] ?? "web_search")
     case "computer_call":
+        if let callID = item["call_id"]?.stringValue {
+            return AIToolCall(
+                id: callID,
+                name: toolNameAliases["computer"] ?? "computer",
+                arguments: openAIResponsesJSONString(openAIResponsesComputerCallInput(from: item)) ?? "{}",
+                providerMetadata: openAIResponsesItemProviderMetadata(
+                    itemID: item["id"]?.stringValue,
+                    providerID: providerID
+                ),
+                rawValue: item
+            )
+        }
         return openAIResponsesHostedToolCall(item: item, name: toolNameAliases["computer_use"] ?? "computer_use", arguments: "")
     case "file_search_call":
         return openAIResponsesHostedToolCall(item: item, name: toolNameAliases["file_search"] ?? "file_search")
@@ -428,6 +440,7 @@ func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCal
             result: openAIResponsesWebSearchResult(from: item["action"])
         )
     case "computer_call":
+        guard item["call_id"]?.stringValue == nil else { return nil }
         return AIToolResult(
             toolCallID: item["id"]?.stringValue ?? "computer-call",
             toolName: toolNameAliases["computer_use"] ?? "computer_use",
@@ -522,6 +535,43 @@ func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCal
     default:
         return nil
     }
+}
+
+func openAIResponsesComputerCallInput(from item: JSONValue) -> JSONValue {
+    let actions: [JSONValue]
+    if let batchedActions = item["actions"]?.arrayValue {
+        actions = batchedActions
+    } else if let action = item["action"], action != .null {
+        actions = [action]
+    } else {
+        actions = []
+    }
+    return .object([
+        "actions": .array(actions.map(openAIResponsesComputerActionForModel)),
+        "pendingSafetyChecks": .array((item["pending_safety_checks"]?.arrayValue ?? []).map {
+            guard let object = $0.objectValue else { return $0 }
+            var mapped: [String: JSONValue] = [:]
+            for key in ["id", "code", "message"] where object[key] != nil && object[key] != .null {
+                mapped[key] = object[key]
+            }
+            return .object(mapped)
+        }),
+        "status": item["status"] ?? .string("completed")
+    ])
+}
+
+private func openAIResponsesComputerActionForModel(_ action: JSONValue) -> JSONValue {
+    guard var object = action.objectValue else { return action }
+    if let scrollX = object.removeValue(forKey: "scroll_x") {
+        object["scrollX"] = scrollX
+    }
+    if let scrollY = object.removeValue(forKey: "scroll_y") {
+        object["scrollY"] = scrollY
+    }
+    if object["keys"] == .null {
+        object.removeValue(forKey: "keys")
+    }
+    return .object(object)
 }
 
 func openAIResponsesWebSearchResult(from action: JSONValue?) -> JSONValue {

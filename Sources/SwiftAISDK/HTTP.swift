@@ -70,15 +70,28 @@ public struct AIHTTPStreamResponse: Sendable {
     public var statusCode: Int
     public var headers: [String: String]
     public var body: AsyncThrowingStream<Data, Error>
+    private let bodyCancellation: @Sendable () -> Void
 
-    public init(statusCode: Int, headers: [String: String] = [:], body: AsyncThrowingStream<Data, Error>) {
+    public init(
+        statusCode: Int,
+        headers: [String: String] = [:],
+        body: AsyncThrowingStream<Data, Error>,
+        cancelBody: @escaping @Sendable () -> Void = {}
+    ) {
         self.statusCode = statusCode
         self.headers = headers
         self.body = body
+        self.bodyCancellation = cancelBody
     }
 
     public func headerValue(_ name: String) -> String? {
         headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+
+    /// Cancels production of the response body when a caller intentionally
+    /// discards it, for example before following or rejecting a redirect.
+    public func cancelBody() {
+        bodyCancellation()
     }
 }
 
@@ -217,52 +230,89 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
                 )
             )
         }
+        let bodyCancellation = HTTPStreamBodyCancellation()
+        let body = AsyncThrowingStream<Data, Error> { continuation in
+            let task = Task {
+                do {
+                    var totalBytes = 0
+                    for try await byte in bytes {
+                        try Task.checkCancellation()
+                        totalBytes += 1
+                        if totalBytes > maxResponseBytes {
+                            bytes.task.cancel()
+                            throw AIDownloadError(
+                                url: urlText,
+                                message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes)
+                            )
+                        }
+                        continuation.yield(Data([byte]))
+                    }
+                    continuation.finish()
+                } catch {
+                    if let abortSignal = request.abortSignal, abortSignal.isAborted {
+                        continuation.finish(throwing: AIAbortError(
+                            reason: abortSignal.reason,
+                            reasonName: abortSignal.reasonName
+                        ))
+                    } else {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+            let registration = request.abortSignal?.addAbortHandler { reason in
+                continuation.finish(throwing: AIAbortError(
+                    reason: reason,
+                    reasonName: request.abortSignal?.reasonName
+                ))
+                bytes.task.cancel()
+                task.cancel()
+            }
+            bodyCancellation.install {
+                registration?.cancel()
+                bytes.task.cancel()
+                task.cancel()
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                bodyCancellation.cancel()
+            }
+        }
         return AIHTTPStreamResponse(
             statusCode: httpResponse?.statusCode ?? 0,
             headers: headers,
-            body: AsyncThrowingStream { continuation in
-                let task = Task {
-                    do {
-                        var totalBytes = 0
-                        for try await byte in bytes {
-                            try Task.checkCancellation()
-                            totalBytes += 1
-                            if totalBytes > maxResponseBytes {
-                                bytes.task.cancel()
-                                throw AIDownloadError(
-                                    url: urlText,
-                                    message: downloadSizeLimitExceededMessage(url: urlText, maxBytes: maxResponseBytes)
-                                )
-                            }
-                            continuation.yield(Data([byte]))
-                        }
-                        continuation.finish()
-                    } catch {
-                        if let abortSignal = request.abortSignal, abortSignal.isAborted {
-                            continuation.finish(throwing: AIAbortError(
-                                reason: abortSignal.reason,
-                                reasonName: abortSignal.reasonName
-                            ))
-                        } else {
-                            continuation.finish(throwing: error)
-                        }
-                    }
-                }
-                let registration = request.abortSignal?.addAbortHandler { reason in
-                    continuation.finish(throwing: AIAbortError(
-                        reason: reason,
-                        reasonName: request.abortSignal?.reasonName
-                    ))
-                    bytes.task.cancel()
-                    task.cancel()
-                }
-                continuation.onTermination = { _ in
-                    registration?.cancel()
-                    bytes.task.cancel()
-                    task.cancel()
-                }
-            }
+            body: body,
+            cancelBody: { bodyCancellation.cancel() }
         )
+    }
+}
+
+private final class HTTPStreamBodyCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancellation: (@Sendable () -> Void)?
+    private var isCancelled = false
+
+    func install(_ cancellation: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if isCancelled {
+            lock.unlock()
+            cancellation()
+            return
+        }
+        self.cancellation = cancellation
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        guard !isCancelled else {
+            lock.unlock()
+            return
+        }
+        isCancelled = true
+        let cancellation = self.cancellation
+        self.cancellation = nil
+        lock.unlock()
+        cancellation?()
     }
 }
 
@@ -591,34 +641,43 @@ func downloadURL(
     transport: AITransport,
     headers: [String: String] = [:],
     abortSignal: AIAbortSignal? = nil,
-    maxBytes: Int = AIDefaultMaxDownloadSize
+    maxBytes: Int = AIDefaultMaxDownloadSize,
+    trustedOrigin: String? = nil,
+    credentialedOrigin: String? = nil
 ) async throws -> AIHTTPResponse {
-    let initialURL = try validateDownloadURL(string)
+    let initialURL = try validatedRemoteURL(string, trustedOrigin: trustedOrigin)
     if initialURL.scheme?.lowercased() == "data" {
         return try downloadDataURL(initialURL)
     }
 
     var current = string
+    let sanitizedHeaders = sanitizedDownloadRequestHeaders(headers)
+    var currentHeaders = if let credentialedOrigin, !isSameOrigin(string, credentialedOrigin) {
+        userAgentOnlyHeaders(sanitizedHeaders)
+    } else {
+        sanitizedHeaders
+    }
     let maxRedirects = 10
     for _ in 0...maxRedirects {
-        let url = try validateDownloadURL(current)
+        let url = try validatedRemoteURL(current, trustedOrigin: trustedOrigin)
         let response = try await transport.send(AIHTTPRequest(
             method: "GET",
             url: url,
-            headers: headers,
+            headers: currentHeaders,
             abortSignal: abortSignal,
             maxResponseBytes: maxBytes,
             followRedirects: false
         ))
-        if (300..<400).contains(response.statusCode),
+        if httpRedirectStatusCodes.contains(response.statusCode),
            let location = response.headerValue("location"),
            let nextURL = URL(string: location, relativeTo: url)?.absoluteURL {
-            _ = try validateDownloadURL(nextURL.absoluteString)
+            _ = try validatedRemoteURL(nextURL.absoluteString, trustedOrigin: trustedOrigin)
+            currentHeaders = redirectedRequestHeaders(currentHeaders, from: url, to: nextURL)
             current = nextURL.absoluteString
             continue
         }
         if let finalURL = response.url, finalURL != url {
-            _ = try validateDownloadURL(finalURL.absoluteString)
+            _ = try validatedRemoteURL(finalURL.absoluteString, trustedOrigin: trustedOrigin)
         }
         if response.body.count > maxBytes {
             throw AIDownloadError(
@@ -629,6 +688,97 @@ func downloadURL(
         return response
     }
     throw AIDownloadError(url: string, message: "Too many redirects (max \(maxRedirects)).")
+}
+
+/// Streams a response-supplied URL with the same URL and redirect protections as
+/// `downloadURL`. Callers can identify the only origin allowed to receive their
+/// credentials and separately exempt a developer-configured origin from the
+/// private-address guard (for example, a local test or self-hosted endpoint).
+func streamDownloadURL(
+    _ string: String,
+    transport: any AIStreamingTransport,
+    headers: [String: String] = [:],
+    credentialedOrigin: String? = nil,
+    trustedOrigin: String? = nil,
+    abortSignal: AIAbortSignal? = nil,
+    maxBytes: Int = AIDefaultMaxDownloadSize
+) async throws -> (response: AIHTTPStreamResponse, request: AIHTTPRequest) {
+    var current = string
+    let sanitizedHeaders = sanitizedDownloadRequestHeaders(headers)
+    var currentHeaders: [String: String]
+    if let credentialedOrigin, !isSameOrigin(string, credentialedOrigin) {
+        currentHeaders = userAgentOnlyHeaders(sanitizedHeaders)
+    } else {
+        currentHeaders = sanitizedHeaders
+    }
+
+    let maxRedirects = 10
+    for _ in 0...maxRedirects {
+        let url = try validatedRemoteURL(current, trustedOrigin: trustedOrigin)
+        let request = AIHTTPRequest(
+            method: "GET",
+            url: url,
+            headers: currentHeaders,
+            abortSignal: abortSignal,
+            maxResponseBytes: maxBytes,
+            followRedirects: false
+        )
+        let response = try await transport.stream(request)
+        if httpRedirectStatusCodes.contains(response.statusCode),
+           let location = response.headerValue("location"),
+           let nextURL = URL(string: location, relativeTo: url)?.absoluteURL {
+            response.cancelBody()
+            _ = try validatedRemoteURL(nextURL.absoluteString, trustedOrigin: trustedOrigin)
+            currentHeaders = redirectedRequestHeaders(currentHeaders, from: url, to: nextURL)
+            current = nextURL.absoluteString
+            continue
+        }
+        return (response, request)
+    }
+    throw AIDownloadError(url: string, message: "Too many redirects (max \(maxRedirects)).")
+}
+
+private let httpRedirectStatusCodes: Set<Int> = [301, 302, 303, 307, 308]
+
+private let blockedDownloadRequestHeaders: Set<String> = [
+    "connection", "keep-alive", "te", "trailer", "transfer-encoding", "upgrade",
+    "host",
+    "forwarded", "proxy-authorization", "via", "x-forwarded-for", "x-forwarded-host",
+    "x-forwarded-proto", "x-real-ip",
+    "metadata", "metadata-flavor", "x-aws-ec2-metadata-token", "x-metadata-token",
+    "cookie", "set-cookie"
+]
+
+private func sanitizedDownloadRequestHeaders(_ headers: [String: String]) -> [String: String] {
+    headers.filter { !blockedDownloadRequestHeaders.contains($0.key.lowercased()) }
+}
+
+private func validatedRemoteURL(_ string: String, trustedOrigin: String?) throws -> URL {
+    if let trustedOrigin, isSameOrigin(string, trustedOrigin) {
+        guard let url = URL(string: string),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false else {
+            throw AIError.invalidURL(string)
+        }
+        return url
+    }
+    return try validateDownloadURL(string)
+}
+
+private func redirectedRequestHeaders(
+    _ headers: [String: String],
+    from currentURL: URL,
+    to nextURL: URL
+) -> [String: String] {
+    isSameOrigin(currentURL.absoluteString, nextURL.absoluteString)
+        ? headers
+        : userAgentOnlyHeaders(headers)
+}
+
+private func userAgentOnlyHeaders(_ headers: [String: String]) -> [String: String] {
+    let normalized = normalizeHeaders(headers)
+    return normalized["user-agent"].map { ["user-agent": $0] } ?? [:]
 }
 
 private func downloadDataURL(_ url: URL) throws -> AIHTTPResponse {

@@ -534,6 +534,15 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         }
     }
 
+    /// Prepares the same non-streaming Responses payload used by `generate`.
+    /// Durable batch adapters use this hook so request conversion, provider
+    /// options, warnings, and request-body transforms stay on one code path.
+    func preparedBatchRequest(
+        for request: LanguageModelRequest
+    ) throws -> OpenAICompatibleResponsesPreparedRequest {
+        try preparedRequest(for: request, stream: false)
+    }
+
     private func preparedRequest(for request: LanguageModelRequest, stream: Bool) throws -> OpenAICompatibleResponsesPreparedRequest {
         switch config.responsesRequestMode {
         case .openAICompatible:
@@ -603,6 +612,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             guard object?["id"]?.stringValue == "openai.shell" else { return nil }
             return object?["name"]?.stringValue ?? name
         })
+        let computerToolNames = Set(request.tools.compactMap { name, schema -> String? in
+            let object = schema.objectValue
+            guard object?["id"]?.stringValue == "openai.computer" else { return nil }
+            return object?["name"]?.stringValue ?? name
+        })
         let useDeveloperRoleForSystem = isEffectiveReasoningModel
         let compactionTrigger = (options.removeValue(forKey: "compactionTrigger")
             ?? options.removeValue(forKey: "compaction_trigger"))?.boolValue == true
@@ -619,6 +633,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                 outputSchemaToolNames: preparedTools.outputSchemaToolNames,
                 providerDefinedToolNames: providerDefinedToolNames,
                 shellToolNames: shellToolNames,
+                computerToolNames: computerToolNames,
                 providerID: providerID,
                 useDeveloperRoleForSystem: useDeveloperRoleForSystem,
                 warnings: &warnings
@@ -650,7 +665,11 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)
             if let allowedTools = options["allowedTools"] ?? options["allowed_tools"] {
-                body["tool_choice"] = openAIResponsesAllowedToolsChoice(from: allowedTools)
+                body["tool_choice"] = try openAIResponsesAllowedToolsChoice(
+                    from: allowedTools,
+                    tools: request.tools,
+                    warnings: &warnings
+                )
             } else if let toolChoice = openAIResponsesToolChoice(
                 from: request.toolChoice ?? request.extraBody["toolChoice"],
                 customToolNames: preparedTools.customToolNames,

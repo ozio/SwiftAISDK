@@ -1,0 +1,65 @@
+# Realtime sessions
+
+Source URL: /core/realtime/
+
+`AIRealtimeModelV4` is the provider-neutral model contract for ephemeral client
+secrets, WebSocket configuration, session options, normalized server events,
+and client events. `AIRealtimeSession` owns the connection lifecycle, sends the
+initial session configuration after the socket opens, and exposes events as an
+`AsyncSequence`.
+
+xAI is the first full adapter:
+
+```swift
+let xai = try AIProviders.xAI()
+let model = try xai.realtime("grok-voice-latest")
+
+let session = try await AIRealtimeSession.connect(
+    model: model,
+    sessionConfiguration: AIRealtimeSessionConfiguration(
+        instructions: "Answer briefly.",
+        voice: "Ara",
+        outputModalities: [.audio],
+        inputAudioFormat: AIRealtimeAudioFormat(
+            type: "audio/pcm",
+            rate: 24_000
+        )
+    )
+)
+
+try await session.appendAudio(pcmChunk)
+try await session.commitAudio()
+try await session.createResponse()
+
+for try await event in session {
+    switch event {
+    case let .server(.audioDelta(_, _, base64Audio, _)):
+        enqueueForPlayback(base64Audio)
+    case let .server(.functionCallArgumentsDone(_, _, callID, name, arguments, _)):
+        let output = try await executeTool(name, arguments)
+        try await session.sendFunctionCallOutput(
+            callID: callID,
+            name: name,
+            output: output
+        )
+        try await session.createResponse()
+    default:
+        break
+    }
+}
+```
+
+The xAI adapter creates an ephemeral client secret, negotiates the
+`xai-client-secret.*` WebSocket subprotocol, maps audio/text/tool lifecycle
+events, and preserves unknown provider events as `.custom`. Pass an
+`AIAbortSignal` to `connect` for caller-owned cancellation, or use
+`session.close()` / `session.cancel()` for an explicit terminal lifecycle.
+
+## Scope
+
+Realtime sessions are separate from `StreamingTranscriptionModel`, which only
+streams audio in and transcript events out. Cartesia Ink 2 uses that narrower
+transcription contract. Full non-xAI realtime speech sessions, ElevenLabs
+realtime transcription, and Google/OpenAI streaming translation remain
+deferred until their provider-specific session semantics are translated onto
+the shared duplex contracts.

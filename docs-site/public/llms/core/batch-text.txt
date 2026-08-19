@@ -1,0 +1,83 @@
+# Batch text
+
+Source URL: /core/batch-text/
+
+Use Batch V4 when a provider supports durable, asynchronous text generation.
+The returned `TextBatchReference` is persistable, so status and result reads can
+resume in another process without keeping the original request alive.
+
+Anthropic Messages Batch and OpenAI Responses Batch implement the shared
+adapter. Choose a batch-capable model from either provider:
+
+```swift
+let anthropic = try AIProviders.anthropic()
+let model = try anthropic.messages("claude-sonnet-4-5")
+
+let started = try await AI.startTextBatch(
+    model: model,
+    requests: [
+        TextBatchRequest(
+            id: "summary-1",
+            request: LanguageModelRequest(messages: [
+                .user("Summarize the release notes.")
+            ])
+        )
+    ]
+)
+
+// Persist started.batch.reference if another process will resume the batch.
+let status = try await AI.getBatchStatus(
+    model: model,
+    batch: started.batch.reference
+)
+```
+
+OpenAI Responses uses the same facade and reference/result types:
+
+```swift
+let openAI = try AIProviders.openAI()
+let openAIModel = try openAI.batchLanguageModel("gpt-5.6")
+
+let started = try await AI.startTextBatch(
+    model: openAIModel,
+    requests: [
+        TextBatchRequest(
+            id: "summary-1",
+            request: LanguageModelRequest(messages: [
+                .user("Summarize the release notes.")
+            ])
+        )
+    ]
+)
+```
+
+Starting a batch is not retried automatically because it may create billable
+work. Status and results setup use the normal retry policy. A caller may pass a
+stable `idempotencyKey` when the provider or gateway honors one.
+
+## Results
+
+`getBatchResults` is an async stream of independent terminal items. One failed,
+cancelled, or expired request does not terminate results for the other IDs:
+
+```swift
+let results = try AI.getBatchResults(
+    model: model,
+    batch: started.batch.reference
+)
+
+for try await item in results {
+    switch item {
+    case let .succeeded(id, generation):
+        print(id, generation.text)
+    case let .failed(id, error, _):
+        print(id, error.message)
+    case let .cancelled(id, _, _), let .expired(id, _, _):
+        print(id, "did not complete")
+    }
+}
+```
+
+Stopping result consumption cancels the active provider stream. Batch
+references are validated against provider and model identity before status or
+result I/O, preventing accidental cross-model reads.

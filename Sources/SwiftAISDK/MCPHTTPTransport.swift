@@ -1,9 +1,17 @@
 import Foundation
 
+private func mcpSingleChunkStream(_ data: Data) -> AsyncThrowingStream<Data, Error> {
+    AsyncThrowingStream { continuation in
+        continuation.yield(data)
+        continuation.finish()
+    }
+}
+
 public struct MCPRequestOptions: Sendable {
     public var abortSignal: AIAbortSignal?
     public var timeoutMilliseconds: Int?
     public var maxTotalTimeoutMilliseconds: Int?
+    var transportHeaders: [String: String]?
 
     public init(
         abortSignal: AIAbortSignal? = nil,
@@ -13,6 +21,19 @@ public struct MCPRequestOptions: Sendable {
         self.abortSignal = abortSignal
         self.timeoutMilliseconds = timeoutMilliseconds
         self.maxTotalTimeoutMilliseconds = maxTotalTimeoutMilliseconds
+        self.transportHeaders = nil
+    }
+
+    init(
+        abortSignal: AIAbortSignal?,
+        timeoutMilliseconds: Int? = nil,
+        maxTotalTimeoutMilliseconds: Int? = nil,
+        transportHeaders: [String: String]?
+    ) {
+        self.abortSignal = abortSignal
+        self.timeoutMilliseconds = timeoutMilliseconds
+        self.maxTotalTimeoutMilliseconds = maxTotalTimeoutMilliseconds
+        self.transportHeaders = transportHeaders
     }
 
     var effectiveTimeoutMilliseconds: Int? {
@@ -26,6 +47,8 @@ public struct MCPRequestOptions: Sendable {
 }
 
 public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
+    public let supportsProtocolVersionDiscovery = true
+    public let supportsMCPToolParameterHeaders = true
     private let url: URL
     private let headers: [String: String]
     private let transport: any AITransport
@@ -38,6 +61,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private let onSessionExpired: (@Sendable (String) -> Void)?
     private var requestHandler: (@Sendable (JSONValue) async -> JSONValue)?
     private var inboundTask: Task<Void, Never>?
+    private var isStarted = false
     private var lastInboundEventID: String?
     private let maxInboundReconnectAttempts: Int
     private let inboundReconnectDelayNanoseconds: UInt64
@@ -60,7 +84,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         self.transport = transport
         self.streamingTransport = transport as? any AIStreamingTransport
         self.authProvider = authProvider
-        self.protocolVersion = initialProtocolVersion
+        self.protocolVersion = initialProtocolVersion ?? MCPClient.latestLegacyProtocolVersion
         self.sessionID = initialSessionID
         self.terminateSessionOnClose = terminateSessionOnClose
         self.onSessionIDChange = onSessionIDChange
@@ -103,16 +127,33 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
 
     public func setProtocolVersion(_ protocolVersion: String?) async {
         self.protocolVersion = protocolVersion
+        guard isStarted else { return }
+        if isModernProtocol {
+            inboundTask?.cancel()
+            inboundTask = nil
+        } else if inboundTask == nil {
+            startInboundSSE()
+        }
     }
 
     public func start() async throws {
-        guard inboundTask == nil else { return }
+        guard !isStarted else {
+            throw MCPClientError(message: "MCP HTTP Transport Error: Transport already started. Note: client.connect() calls start() automatically.")
+        }
+        isStarted = true
+        guard !isModernProtocol else { return }
+        startInboundSSE()
+    }
+
+    private func startInboundSSE() {
+        guard !isModernProtocol, inboundTask == nil else { return }
         inboundTask = Task { [weak self] in
             await self?.openInboundSSELoop()
         }
     }
 
     private func openInboundSSELoop() async {
+        guard !isModernProtocol else { return }
         var attempts = 0
         while !Task.isCancelled {
             do {
@@ -131,6 +172,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
 
     @discardableResult
     private func openInboundSSEOnce() async throws -> Bool {
+        guard !isModernProtocol else { return false }
         if let streamingTransport {
             let response = try await sendRawStream(
                 method: "GET",
@@ -197,7 +239,8 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     public func close() async throws {
         inboundTask?.cancel()
         inboundTask = nil
-        guard terminateSessionOnClose, sessionID != nil else { return }
+        defer { isStarted = false }
+        guard !isModernProtocol, terminateSessionOnClose, sessionID != nil else { return }
         _ = try? await sendRaw(
             method: "DELETE",
             accept: "application/json",
@@ -208,11 +251,13 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private func send(_ message: JSONValue, options: MCPRequestOptions? = nil) async throws -> JSONValue {
         try options?.abortSignal?.throwIfAborted()
         let isInitializeRequest = message["method"]?.stringValue == "initialize"
+        let extraHeaders = modernRequestHeaders(for: message, options: options)
         if let streamingTransport {
             let response = try await sendRawStream(
                 method: "POST",
                 accept: "application/json, text/event-stream",
                 body: try encodeJSONBody(message),
+                extraHeaders: extraHeaders,
                 includeSessionID: !isInitializeRequest,
                 abortSignal: options?.abortSignal,
                 transport: streamingTransport
@@ -224,6 +269,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             method: "POST",
             accept: "application/json, text/event-stream",
             body: try encodeJSONBody(message),
+            extraHeaders: extraHeaders,
             includeSessionID: !isInitializeRequest,
             abortSignal: options?.abortSignal
         )
@@ -258,7 +304,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         triedAuth: Bool = false
     ) async throws -> AIHTTPResponse {
         try abortSignal?.throwIfAborted()
-        let requestSessionID = includeSessionID ? sessionID : nil
+        let requestSessionID = !isModernProtocol && includeSessionID ? sessionID : nil
         let requestHeaders = try await commonHeaders(accept: accept, hasBody: body != nil, extraHeaders: extraHeaders, includeSessionID: includeSessionID)
         let response = try await transport.send(AIHTTPRequest(
             method: method,
@@ -296,9 +342,13 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                 triedAuth: true
             )
         }
+        if method == "POST", !(200..<300).contains(response.statusCode),
+           let json = try? response.jsonValue(), json["error"] != nil {
+            return response
+        }
         guard (200..<300).contains(response.statusCode) else {
             var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode): \(response.bodyText)"
-            if method == "POST", response.statusCode == 404 {
+            if !isModernProtocol, method == "POST", response.statusCode == 404 {
                 if let requestSessionID {
                     expireSessionID(requestSessionID)
                     message += ". The MCP session expired. Create a new client without `initialSessionID` to start a fresh session"
@@ -327,7 +377,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         transport: any AIStreamingTransport
     ) async throws -> AIHTTPStreamResponse {
         try abortSignal?.throwIfAborted()
-        let requestSessionID = includeSessionID ? sessionID : nil
+        let requestSessionID = !isModernProtocol && includeSessionID ? sessionID : nil
         let requestHeaders = try await commonHeaders(accept: accept, hasBody: body != nil, extraHeaders: extraHeaders, includeSessionID: includeSessionID)
         let response = try await transport.stream(AIHTTPRequest(
             method: method,
@@ -365,9 +415,34 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                 transport: transport
             )
         }
+        if method == "POST", !(200..<300).contains(response.statusCode) {
+            let responseBody = try await collectStreamData(response.body)
+            if let json = try? decodeJSONBody(responseBody), json["error"] != nil {
+                return AIHTTPStreamResponse(
+                    statusCode: response.statusCode,
+                    headers: response.headers,
+                    body: mcpSingleChunkStream(responseBody)
+                )
+            }
+            var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode)"
+            if !isModernProtocol, response.statusCode == 404 {
+                if let requestSessionID {
+                    expireSessionID(requestSessionID)
+                    message += ". The MCP session expired. Create a new client without `initialSessionID` to start a fresh session"
+                } else {
+                    message += ". This server does not support HTTP transport. Try using `sse` transport instead"
+                }
+            }
+            throw MCPClientError(
+                message: message,
+                statusCode: response.statusCode,
+                url: url.absoluteString,
+                responseBody: String(data: responseBody, encoding: .utf8)
+            )
+        }
         guard (200..<300).contains(response.statusCode) else {
             var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode)"
-            if method == "POST", response.statusCode == 404 {
+            if !isModernProtocol, method == "POST", response.statusCode == 404 {
                 if let requestSessionID {
                     expireSessionID(requestSessionID)
                     message += ". The MCP session expired. Create a new client without `initialSessionID` to start a fresh session"
@@ -387,11 +462,11 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private func commonHeaders(accept: String, hasBody: Bool, extraHeaders: [String: String], includeSessionID: Bool = true) async throws -> [String: String] {
         var requestHeaders = headers
         requestHeaders["accept"] = accept
-        requestHeaders["mcp-protocol-version"] = protocolVersion ?? MCPClient.latestProtocolVersion
+        requestHeaders["mcp-protocol-version"] = protocolVersion ?? MCPClient.latestLegacyProtocolVersion
         if hasBody {
             requestHeaders["content-type"] = "application/json"
         }
-        if includeSessionID, let sessionID {
+        if !isModernProtocol, includeSessionID, let sessionID {
             requestHeaders["mcp-session-id"] = sessionID
         }
         requestHeaders.merge(extraHeaders) { _, new in new }
@@ -408,12 +483,14 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     }
 
     private func applySessionID(from response: AIHTTPResponse) {
+        guard !isModernProtocol else { return }
         if let sessionID = response.headerValue("mcp-session-id") {
             setSessionID(sessionID)
         }
     }
 
     private func applySessionID(from response: AIHTTPStreamResponse) {
+        guard !isModernProtocol else { return }
         if let sessionID = response.headerValue("mcp-session-id") {
             setSessionID(sessionID)
         }
@@ -424,6 +501,35 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             setSessionID(nil)
         }
         onSessionExpired?(expiredSessionID)
+    }
+
+    private var isModernProtocol: Bool {
+        (protocolVersion ?? MCPClient.latestProtocolVersion) == MCPClient.latestProtocolVersion
+    }
+
+    private func modernRequestHeaders(
+        for message: JSONValue,
+        options: MCPRequestOptions?
+    ) -> [String: String] {
+        guard isModernProtocol else { return [:] }
+        var requestHeaders = options?.transportHeaders ?? [:]
+        guard message["id"] != nil, let method = message["method"]?.stringValue else {
+            return requestHeaders
+        }
+        requestHeaders["Mcp-Method"] = method
+        let name: String?
+        switch method {
+        case "resources/read":
+            name = message["params"]?["uri"]?.stringValue
+        case "tools/call", "prompts/get":
+            name = message["params"]?["name"]?.stringValue
+        default:
+            name = nil
+        }
+        if let name {
+            requestHeaders["Mcp-Name"] = encodeMCPHeaderValue(name)
+        }
+        return requestHeaders
     }
 
     private func handleBufferedResponse(_ response: AIHTTPResponse, expectedID: Int?) async throws -> JSONValue {

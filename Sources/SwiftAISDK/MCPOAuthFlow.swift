@@ -6,6 +6,7 @@ public enum MCPOAuth {
         serverURL: URL,
         authorizationCode: String? = nil,
         callbackState: String? = nil,
+        callbackIssuer: String? = nil,
         scope: String? = nil,
         resourceMetadataURL: URL? = nil,
         protocolVersion: String = MCPClient.latestProtocolVersion,
@@ -17,6 +18,7 @@ public enum MCPOAuth {
                 serverURL: serverURL,
                 authorizationCode: authorizationCode,
                 callbackState: callbackState,
+                callbackIssuer: callbackIssuer,
                 scope: scope,
                 resourceMetadataURL: resourceMetadataURL,
                 protocolVersion: protocolVersion,
@@ -36,6 +38,7 @@ public enum MCPOAuth {
                 serverURL: serverURL,
                 authorizationCode: authorizationCode,
                 callbackState: callbackState,
+                callbackIssuer: callbackIssuer,
                 scope: scope,
                 resourceMetadataURL: resourceMetadataURL,
                 protocolVersion: protocolVersion,
@@ -49,6 +52,7 @@ public enum MCPOAuth {
         serverURL: String,
         authorizationCode: String? = nil,
         callbackState: String? = nil,
+        callbackIssuer: String? = nil,
         scope: String? = nil,
         resourceMetadataURL: String? = nil,
         protocolVersion: String = MCPClient.latestProtocolVersion,
@@ -59,6 +63,7 @@ public enum MCPOAuth {
             serverURL: requireURL(serverURL),
             authorizationCode: authorizationCode,
             callbackState: callbackState,
+            callbackIssuer: callbackIssuer,
             scope: scope,
             resourceMetadataURL: try resourceMetadataURL.map(requireURL),
             protocolVersion: protocolVersion,
@@ -249,7 +254,11 @@ public enum MCPOAuth {
         } else {
             registrationURL = URL(string: "/register", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL
         }
-        let body = try JSONEncoder().encode(clientMetadata.jsonValue)
+        var registrationMetadata = clientMetadata.jsonValue.objectValue ?? [:]
+        registrationMetadata["application_type"] = .string(
+            (clientMetadata.applicationType ?? inferMCPOAuthApplicationType(clientMetadata.redirectURIs)).rawValue
+        )
+        let body = try JSONEncoder().encode(JSONValue.object(registrationMetadata))
         let response = try await transport.send(AIHTTPRequest(
             method: "POST",
             url: registrationURL,
@@ -266,6 +275,7 @@ func authInternal(
     serverURL: URL,
     authorizationCode: String?,
     callbackState: String?,
+    callbackIssuer: String?,
     scope: String?,
     resourceMetadataURL: URL?,
     protocolVersion: String,
@@ -307,6 +317,16 @@ func authInternal(
     )
 
     var clientInformation = try await provider.clientInformation()
+    if let clientInformation, clientInformation.issuer != nil,
+       let storedInformation = try await storedAuthorizationServerInformation(
+           provider: provider,
+           clientInformation: clientInformation
+       ) {
+        try assertAuthorizationServerInformationMatches(
+            storedInformation,
+            currentAuthorizationServerInformation
+        )
+    }
     if clientInformation == nil {
         if authorizationCode != nil {
             throw MCPClientError(message: "Existing OAuth client information is required when exchanging an authorization code")
@@ -336,6 +356,12 @@ func authInternal(
         guard let storedAuthorizationServerInformation = try await storedAuthorizationServerInformation(provider: provider, clientInformation: clientInformation) else {
             throw MCPClientError(message: "Stored OAuth authorization server metadata is required when exchanging an authorization code")
         }
+        try validateAuthorizationResponseIssuer(
+            callbackIssuer,
+            expectedIssuer: storedAuthorizationServerInformation.issuer
+                ?? metadata?.issuer
+                ?? resolvedAuthorizationServerURL.absoluteString
+        )
         try assertAuthorizationServerInformationMatches(storedAuthorizationServerInformation, currentAuthorizationServerInformation)
         let tokens = try await MCPOAuth.exchangeAuthorization(
             authorizationServerURL: resolvedAuthorizationServerURL,
@@ -427,7 +453,8 @@ private func mcpOAuthAuthorizationServerInformation(
 ) -> MCPOAuthAuthorizationServerInformation {
     MCPOAuthAuthorizationServerInformation(
         authorizationServerURL: authorizationServerURL.absoluteURL,
-        tokenEndpoint: metadata?.tokenEndpoint ?? (URL(string: "/token", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL)
+        tokenEndpoint: metadata?.tokenEndpoint ?? (URL(string: "/token", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL),
+        issuer: metadata?.issuer ?? authorizationServerURL.absoluteString
     )
 }
 
@@ -458,24 +485,61 @@ private func assertAuthorizationServerInformationMatches(
     _ stored: MCPOAuthAuthorizationServerInformation,
     _ current: MCPOAuthAuthorizationServerInformation
 ) throws {
-    guard stored.normalized == current.normalized else {
+    let normalizedStored = stored.normalized
+    let normalizedCurrent = current.normalized
+    let issuerMatches = normalizedStored.issuer == nil
+        || normalizedCurrent.issuer == nil
+        || normalizedStored.issuer == normalizedCurrent.issuer
+    guard issuerMatches,
+          normalizedStored.authorizationServerURL == normalizedCurrent.authorizationServerURL,
+          normalizedStored.tokenEndpoint == normalizedCurrent.tokenEndpoint else {
         throw MCPClientError(message: "OAuth authorization server metadata does not match the metadata that issued the stored credentials")
     }
+}
+
+private func validateAuthorizationResponseIssuer(
+    _ callbackIssuer: String?,
+    expectedIssuer: String
+) throws {
+    guard let callbackIssuer, callbackIssuer != expectedIssuer else { return }
+    throw MCPClientError(
+        message: "OAuth authorization response issuer \(callbackIssuer) does not match expected issuer \(expectedIssuer)"
+    )
+}
+
+func inferMCPOAuthApplicationType(_ redirectURIs: [URL]) -> MCPOAuthApplicationType {
+    let everyRedirectIsNative = redirectURIs.allSatisfy { redirectURI in
+        guard let scheme = redirectURI.scheme?.lowercased() else { return false }
+        guard scheme == "http" || scheme == "https" else { return true }
+        let host = redirectURI.host?.lowercased() ?? ""
+        return host == "localhost"
+            || host.hasSuffix(".localhost")
+            || host == "127.0.0.1"
+            || host == "::1"
+            || host == "[::1]"
+    }
+    return everyRedirectIsNative ? .native : .web
 }
 
 private extension MCPOAuthTokens {
     var authorizationServerInformation: MCPOAuthAuthorizationServerInformation? {
         guard let authorizationServerURL, let tokenEndpoint else { return nil }
-        return MCPOAuthAuthorizationServerInformation(authorizationServerURL: authorizationServerURL, tokenEndpoint: tokenEndpoint).normalized
+        return MCPOAuthAuthorizationServerInformation(
+            authorizationServerURL: authorizationServerURL,
+            tokenEndpoint: tokenEndpoint,
+            issuer: issuer
+        ).normalized
     }
 
     func withAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) -> MCPOAuthTokens {
         var copy = self
         copy.authorizationServerURL = information.normalized.authorizationServerURL
         copy.tokenEndpoint = information.normalized.tokenEndpoint
+        copy.issuer = information.issuer
         if var object = copy.rawValue.objectValue {
             object["authorization_server"] = .string(information.normalized.authorizationServerURL.absoluteString)
             object["token_endpoint"] = .string(information.normalized.tokenEndpoint.absoluteString)
+            object["issuer"] = information.issuer.map(JSONValue.string)
             copy.rawValue = .object(object)
         }
         return copy
@@ -485,16 +549,22 @@ private extension MCPOAuthTokens {
 private extension MCPOAuthClientInformation {
     var authorizationServerInformation: MCPOAuthAuthorizationServerInformation? {
         guard let authorizationServerURL, let tokenEndpoint else { return nil }
-        return MCPOAuthAuthorizationServerInformation(authorizationServerURL: authorizationServerURL, tokenEndpoint: tokenEndpoint).normalized
+        return MCPOAuthAuthorizationServerInformation(
+            authorizationServerURL: authorizationServerURL,
+            tokenEndpoint: tokenEndpoint,
+            issuer: issuer
+        ).normalized
     }
 
     func withAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) -> MCPOAuthClientInformation {
         var copy = self
         copy.authorizationServerURL = information.normalized.authorizationServerURL
         copy.tokenEndpoint = information.normalized.tokenEndpoint
+        copy.issuer = information.issuer
         if var object = copy.rawValue.objectValue {
             object["authorization_server"] = .string(information.normalized.authorizationServerURL.absoluteString)
             object["token_endpoint"] = .string(information.normalized.tokenEndpoint.absoluteString)
+            object["issuer"] = information.issuer.map(JSONValue.string)
             copy.rawValue = .object(object)
         }
         return copy
@@ -505,7 +575,8 @@ private extension MCPOAuthAuthorizationServerInformation {
     var normalized: MCPOAuthAuthorizationServerInformation {
         MCPOAuthAuthorizationServerInformation(
             authorizationServerURL: authorizationServerURL.absoluteURL,
-            tokenEndpoint: tokenEndpoint.absoluteURL
+            tokenEndpoint: tokenEndpoint.absoluteURL,
+            issuer: issuer
         )
     }
 }

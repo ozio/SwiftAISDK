@@ -41,6 +41,56 @@ let result = try await model.generateVideo(
 
 `frameImages` is used for providers that distinguish first and last frames. `inputReferences` is used for reference-to-video or style/reference-image workflows. Providers that do not support a combination return warnings or provider-specific errors rather than silently changing the request.
 
+## Async Start And Status
+
+Models conforming to `AsyncVideoModel` expose serializable start/status
+operations in addition to the existing unary `VideoModel` call. Pass `poll` to
+the facade to select that flow. The facade creates one stable idempotency key
+per logical start and reuses it across transient start retries, so retrying a
+lost response does not intentionally create a second paid job:
+
+```swift
+let result = try await AI.generateVideo(
+    model: model,
+    request: VideoGenerationRequest(prompt: "A slow aerial shot."),
+    poll: VideoGenerationPollOptions(
+        intervalMilliseconds: 2_000,
+        timeoutMilliseconds: 600_000
+    )
+)
+```
+
+A caller-supplied `Idempotency-Key` header wins. Black Forest Labs FLUX 3 and
+Fal are operation adapters; callers can also invoke `startVideoGeneration` and
+`videoGenerationStatus` directly and persist the returned JSON operation.
+
+Models with native webhook support can opt into the same flow without polling:
+
+```swift
+let result = try await AI.generateVideo(
+    model: model,
+    request: VideoGenerationRequest(prompt: "Animate the storyboard."),
+    webhook: {
+        VideoGenerationWebhookRegistration(
+            url: "https://example.com/hooks/video"
+        ) { abortSignal in
+            try await webhookInbox.nextVideoEvent(abortSignal: abortSignal)
+        }
+    }
+)
+```
+
+Fal forwards the registration URL through its native `fal_webhook` start
+parameter. The webhook factory is not invoked for providers without native
+webhook support; Black Forest Labs emits an unsupported warning and falls back
+to polling. `timeoutMilliseconds` also bounds the webhook wait, and caller
+cancellation closes either path.
+
+Each async model declares `maxVideosPerCall`. When `request.count` is larger,
+the facade starts independent provider operations and merges their URLs/base64
+payloads, warnings, and provider metadata in request order. Fal declares a
+one-video limit, so multi-video requests use this split automatically.
+
 ## Options
 
 - `aspectRatio`, `resolution`, and `fps` describe output shape and playback.
@@ -50,7 +100,9 @@ let result = try await model.generateVideo(
 - `inputReferences` supplies reference images for providers that support them.
 - `seed` requests deterministic output when supported.
 - `count` requests multiple videos.
-- `providerOptions` carries provider-specific controls, including polling settings for async providers.
+- `providerOptions` carries provider-specific request controls.
+- `poll` selects/configures shared async start/status polling.
+- `webhook` supplies a cancellation-aware endpoint/notification registration.
 - `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
 
 ## Results

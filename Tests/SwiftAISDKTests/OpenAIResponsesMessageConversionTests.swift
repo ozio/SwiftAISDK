@@ -41,7 +41,7 @@ import Testing
     #expect(request.headers["authorization"] == "Bearer test-key")
     #expect(request.headers["openai-organization"] == "org-123")
     #expect(request.headers["openai-project"] == "proj-123")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.42")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.43")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-5-mini")
     #expect(body["temperature"] == nil)

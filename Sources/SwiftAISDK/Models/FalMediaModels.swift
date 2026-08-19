@@ -55,9 +55,12 @@ public final class FalImageModel: ImageModel, @unchecked Sendable {
     }
 }
 
-public final class FalVideoModel: VideoModel, @unchecked Sendable {
+public final class FalVideoModel: AsyncVideoModel, @unchecked Sendable {
     public let providerID = "fal.video"
     public let modelID: String
+    public let supportsUnaryVideoGeneration = true
+    public let supportsVideoGenerationWebhooks = true
+    public let maxVideosPerCall = 1
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -65,36 +68,107 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         self.config = config
     }
 
-    public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = try falProviderOptions(from: request)
-        var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
-        if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
-        if let durationSeconds = request.durationSeconds { body["duration"] = .string("\(formatDuration(durationSeconds))s") }
-        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
-        if let imageInput = try falVideoImageInput(from: request, options: options) {
-            body["image_url"] = imageInput
-        }
-        body.merge(falVideoOptions(from: options)) { _, new in new }
+    public func handleVideoGenerationWebhookOption(
+        _ factory: @escaping VideoGenerationWebhookFactory
+    ) async throws -> VideoGenerationWebhookRegistration {
+        try await factory()
+    }
 
-        let normalized = modelID.replacingOccurrences(of: #"^(fal-ai/|fal/)"#, with: "", options: .regularExpression)
-        let submitURL = "https://queue.fal.run/fal-ai/\(normalized)"
-        let queueResponse = try await config.transport.send(config.request(
-            path: "/fal-ai/\(normalized)",
-            modelID: modelID,
-            body: .object(body),
+    public func startVideoGeneration(
+        _ operationRequest: VideoGenerationOperationStartRequest
+    ) async throws -> VideoGenerationOperationStartResult {
+        let request = operationRequest.request
+        let prepared = try prepareVideoRequest(request)
+        let submission = try await submitVideoRequest(
+            body: prepared.body,
             headers: request.headers,
+            webhookURL: operationRequest.webhookURL,
             abortSignal: request.abortSignal
-        ).withURL(try requireURL(submitURL)))
-        guard (200..<300).contains(queueResponse.statusCode) else {
-            throw apiCallError(provider: providerID, response: queueResponse)
+        )
+        guard let responseURL = submission.queued["response_url"]?.stringValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Fal queue response did not contain response_url.")
         }
-        let queued = try queueResponse.jsonValue()
+        return VideoGenerationOperationStartResult(
+            operation: [
+                "responseUrl": .string(responseURL),
+                "submitUrl": .string(submission.submitURL)
+            ],
+            responseMetadata: AIResponseMetadata(
+                timestamp: Date(),
+                modelID: modelID,
+                headers: submission.response.headers
+            )
+        )
+    }
+
+    public func videoGenerationStatus(
+        _ statusRequest: VideoGenerationOperationStatusRequest
+    ) async throws -> VideoGenerationOperationStatusResult {
+        guard let operation = statusRequest.operation.objectValue,
+              let responseURL = operation["responseUrl"]?.stringValue,
+              let submitURL = operation["submitUrl"]?.stringValue else {
+            throw AIError.invalidArgument(
+                argument: "operation",
+                message: "Fal video operation must contain responseUrl and submitUrl."
+            )
+        }
+        let response = try await downloadURL(
+            responseURL,
+            transport: config.transport,
+            headers: config.headers.mergingHeaders(statusRequest.headers),
+            abortSignal: statusRequest.abortSignal,
+            trustedOrigin: submitURL,
+            credentialedOrigin: submitURL
+        )
+        let raw = try? response.jsonValue()
+        let responseMetadata = AIResponseMetadata(
+            timestamp: Date(),
+            modelID: modelID,
+            headers: response.headers,
+            body: raw
+        )
+
+        guard (200..<300).contains(response.statusCode) else {
+            if raw?["detail"]?.stringValue == "Request is still in progress" {
+                return .pending(responseMetadata: responseMetadata)
+            }
+            return .failed(
+                message: apiCallError(provider: providerID, response: response).description,
+                responseMetadata: responseMetadata
+            )
+        }
+        guard let raw else {
+            throw AIError.invalidResponse(provider: providerID, message: "Fal video status response was not valid JSON.")
+        }
+        guard let videoURL = raw["video"]?["url"]?.stringValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "No video URL in response")
+        }
+        return .completed(VideoGenerationResult(
+            urls: [videoURL],
+            mediaType: raw["video"]?["content_type"]?.stringValue ?? "video/mp4",
+            rawValue: raw,
+            providerMetadata: falVideoProviderMetadata(from: raw),
+            responseMetadata: responseMetadata
+        ))
+    }
+
+    public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
+        let prepared = try prepareVideoRequest(request)
+        let body = prepared.body
+        let options = prepared.options
+        let submission = try await submitVideoRequest(
+            body: body,
+            headers: request.headers,
+            webhookURL: nil,
+            abortSignal: request.abortSignal
+        )
+        let queued = submission.queued
         guard let responseURL = queued["response_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Fal queue response did not contain response_url.")
         }
         let finalResponse = try await pollFalResponse(
             url: responseURL,
-            submitURL: submitURL,
+            submitURL: submission.submitURL,
             headers: request.headers,
             intervalNanoseconds: falPollInterval(options),
             timeoutNanoseconds: falPollTimeout(options),
@@ -115,11 +189,65 @@ public final class FalVideoModel: VideoModel, @unchecked Sendable {
         )
     }
 
+    private func prepareVideoRequest(
+        _ request: VideoGenerationRequest
+    ) throws -> (body: [String: JSONValue], options: [String: JSONValue]) {
+        let options = try falProviderOptions(from: request)
+        var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
+        if let aspectRatio = request.aspectRatio { body["aspect_ratio"] = .string(aspectRatio) }
+        if let durationSeconds = request.durationSeconds { body["duration"] = .string("\(formatDuration(durationSeconds))s") }
+        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+        if let imageInput = try falVideoImageInput(from: request, options: options) {
+            body["image_url"] = imageInput
+        }
+        body.merge(falVideoOptions(from: options)) { _, new in new }
+        return (body, options)
+    }
+
+    private func submitVideoRequest(
+        body: [String: JSONValue],
+        headers: [String: String],
+        webhookURL: String?,
+        abortSignal: AIAbortSignal?
+    ) async throws -> (queued: JSONValue, response: AIHTTPResponse, submitURL: String) {
+        let normalized = modelID.replacingOccurrences(of: #"^(fal-ai/|fal/)"#, with: "", options: .regularExpression)
+        let baseSubmitURL = "https://queue.fal.run/fal-ai/\(normalized)"
+        var components = URLComponents(string: baseSubmitURL)
+        if let webhookURL {
+            var allowed = CharacterSet.alphanumerics
+            allowed.formUnion(CharacterSet(charactersIn: "-_.~"))
+            guard let encodedWebhookURL = webhookURL.addingPercentEncoding(withAllowedCharacters: allowed) else {
+                throw AIError.invalidURL(webhookURL)
+            }
+            components?.percentEncodedQuery = "fal_webhook=\(encodedWebhookURL)"
+        }
+        guard let submitURL = components?.url else {
+            throw AIError.invalidURL(baseSubmitURL)
+        }
+        let queueResponse = try await config.transport.send(config.request(
+            path: "/fal-ai/\(normalized)",
+            modelID: modelID,
+            body: .object(body),
+            headers: headers,
+            abortSignal: abortSignal
+        ).withURL(submitURL))
+        guard (200..<300).contains(queueResponse.statusCode) else {
+            throw apiCallError(provider: providerID, response: queueResponse)
+        }
+        return (try queueResponse.jsonValue(), queueResponse, submitURL.absoluteString)
+    }
+
     private func pollFalResponse(url: String, submitURL: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let pollHeaders = isSameOrigin(url, submitURL) ? config.headers.mergingHeaders(headers) : [:]
-            let response = try await downloadURL(url, transport: config.transport, headers: pollHeaders, abortSignal: abortSignal)
+            let response = try await downloadURL(
+                url,
+                transport: config.transport,
+                headers: config.headers.mergingHeaders(headers),
+                abortSignal: abortSignal,
+                trustedOrigin: submitURL,
+                credentialedOrigin: submitURL
+            )
             if (200..<300).contains(response.statusCode) {
                 return (try response.jsonValue(), response)
             }

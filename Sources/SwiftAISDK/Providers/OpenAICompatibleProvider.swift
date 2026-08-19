@@ -85,7 +85,10 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             throw AIError.unsupportedModel(provider: providerID, capability: .language, modelID: modelID)
         }
         if routesLikeOpenAI || providerID == "openai" {
-            return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
+            return OpenAIResponsesBatchLanguageModel(
+                modelID: modelID,
+                config: modelConfig(surface: "responses")
+            )
         }
         if providerID == "xai" {
             return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
@@ -192,11 +195,47 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         guard supportedCapabilities.contains(.language) else {
             throw AIError.unsupportedModel(provider: providerID, capability: .language, modelID: modelID)
         }
+        if routesLikeOpenAI || providerID == "openai" {
+            return OpenAIResponsesBatchLanguageModel(
+                modelID: modelID,
+                config: modelConfig(surface: "responses")
+            )
+        }
         return OpenAICompatibleResponsesModel(modelID: modelID, config: modelConfig(surface: "responses"))
     }
 
     public func responses(_ modelID: String) throws -> any LanguageModel {
         try responsesModel(modelID)
+    }
+
+    public func realtimeModel(_ modelID: String) throws -> XAIRealtimeModel {
+        guard providerID == "xai" else {
+            throw AIError.invalidArgument(
+                argument: "providerID",
+                message: "Realtime models are only supported by the xAI provider."
+            )
+        }
+        return XAIRealtimeModel(
+            modelID: modelID,
+            config: modelConfig(surface: "realtime")
+        )
+    }
+
+    public func realtime(_ modelID: String) throws -> XAIRealtimeModel {
+        try realtimeModel(modelID)
+    }
+
+    public func batchLanguageModel(_ modelID: String) throws -> any BatchLanguageModel {
+        guard routesLikeOpenAI || providerID == "openai" else {
+            throw AIError.invalidArgument(
+                argument: "providerID",
+                message: "Batch language models are only supported by the OpenAI Responses provider."
+            )
+        }
+        return OpenAIResponsesBatchLanguageModel(
+            modelID: modelID,
+            config: modelConfig(surface: "responses")
+        )
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
@@ -502,19 +541,19 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.39")
         }
         if providerID == "google.generative-ai" {
-            return withUserAgentSuffix(headers, "ai-sdk/google/4.0.44")
+            return withUserAgentSuffix(headers, "ai-sdk/google/4.0.45")
         }
         if providerID == "moonshotai" {
             return withUserAgentSuffix(headers, "ai-sdk/moonshotai/3.0.35")
         }
         if providerID == "cerebras" {
-            return withUserAgentSuffix(headers, "ai-sdk/cerebras/3.0.30")
+            return withUserAgentSuffix(headers, "ai-sdk/cerebras/3.0.31")
         }
         if providerID == "deepseek" {
             return withUserAgentSuffix(headers, "ai-sdk/deepseek/3.0.28")
         }
         if providerID == "baseten" {
-            return withUserAgentSuffix(headers, "ai-sdk/baseten/2.1.8")
+            return withUserAgentSuffix(headers, "ai-sdk/baseten/2.1.9")
         }
         if providerID == "groq" {
             return withUserAgentSuffix(headers, "ai-sdk/groq/4.0.28")
@@ -577,13 +616,13 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return withUserAgentSuffix(headers, "ai-sdk/quiverai/2.0.27")
         }
         if providerID == "togetherai" {
-            return withUserAgentSuffix(headers, "ai-sdk/togetherai/3.0.31")
+            return withUserAgentSuffix(headers, "ai-sdk/togetherai/3.0.32")
         }
         if providerID == "fireworks" {
-            return withUserAgentSuffix(headers, "ai-sdk/fireworks/3.0.32")
+            return withUserAgentSuffix(headers, "ai-sdk/fireworks/3.0.34")
         }
         if providerID == "deepinfra" {
-            return withUserAgentSuffix(headers, "ai-sdk/deepinfra/3.0.30")
+            return withUserAgentSuffix(headers, "ai-sdk/deepinfra/3.0.31")
         }
         if providerID == "xai" {
             return withUserAgentSuffix(headers, "ai-sdk/xai/4.0.40")

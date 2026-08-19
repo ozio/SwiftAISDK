@@ -155,7 +155,22 @@ public protocol AudioTransformationModel: Sendable {
 public protocol VideoModel: Sendable {
     var providerID: String { get }
     var modelID: String { get }
+    /// Whether this model has a native unary implementation. Async-only V4
+    /// models set this to `false` so the facade selects start/status without
+    /// requiring poll or webhook options.
+    var supportsUnaryVideoGeneration: Bool { get }
     func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult
+}
+
+public extension VideoModel {
+    var supportsUnaryVideoGeneration: Bool { true }
+
+    func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
+        throw AIError.invalidArgument(
+            argument: "model",
+            message: "Video model \(modelID) does not implement unary video generation."
+        )
+    }
 }
 
 public protocol RerankingModel: Sendable {

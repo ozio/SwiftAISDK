@@ -230,15 +230,35 @@ extension AI {
         }
     }
 
-    public static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> VideoGenerationResult {
+    public static func generateVideo(
+        model: any VideoModel,
+        request: VideoGenerationRequest,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil,
+        poll: VideoGenerationPollOptions? = nil,
+        webhook: VideoGenerationWebhookFactory? = nil
+    ) async throws -> VideoGenerationResult {
         let normalized = normalizeVideoGenerationRequest(request)
+        let operationOptionsRequested = poll != nil || webhook != nil
+        let availableOperationModel = model as? any AsyncVideoModel
+        let operationModel = availableOperationModel.flatMap { candidate in
+            operationOptionsRequested || !model.supportsUnaryVideoGeneration ? candidate : nil
+        }
+        if !model.supportsUnaryVideoGeneration, availableOperationModel == nil {
+            throw AIError.invalidArgument(
+                argument: "model",
+                message: "Video model \(model.modelID) does not implement unary generation or start/status operations."
+            )
+        }
         return try await withTelemetry(
             operationID: "ai.generateVideo",
             providerID: model.providerID,
             modelID: model.modelID,
             input: videoRequestTelemetryInput(normalized.request),
             telemetry: telemetry,
-            retryPolicy: retryPolicy,
+            // Start/status calls own their retry boundaries. Retrying this outer
+            // closure after a successful billable start could create a second job.
+            retryPolicy: operationModel == nil ? retryPolicy : .none,
             abortSignal: normalized.request.abortSignal,
             output: videoTelemetryOutput,
             usage: { _ in nil },
@@ -247,7 +267,24 @@ extension AI {
             responseMetadata: { $0.responseMetadata },
             logEmptyWarnings: false
         ) {
-            var result = try await model.generateVideo(normalized.request)
+            var result: VideoGenerationResult
+            if let operationModel {
+                result = try await generateVideoUsingOperations(
+                    model: operationModel,
+                    request: normalized.request,
+                    poll: poll,
+                    webhook: webhook,
+                    retryPolicy: retryPolicy
+                )
+            } else {
+                result = try await model.generateVideo(normalized.request)
+                if operationOptionsRequested {
+                    result.warnings.insert(AIWarning(
+                        type: "other",
+                        message: "poll/webhook options were provided but the model does not support start/status operations. Falling back to unary generateVideo."
+                    ), at: 0)
+                }
+            }
             result.warnings = normalized.warnings + result.warnings
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = videoGenerationRequestMetadata(normalized.request)

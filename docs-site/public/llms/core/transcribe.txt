@@ -40,12 +40,67 @@ let request = AudioTranscriptionRequest(
 let result = try await AI.transcribe(model: model, request: request)
 ```
 
+## Streaming Transcription
+
+`StreamingTranscriptionModel` is the duplex WebSocket counterpart to batch
+transcription. Feed microphone or other incremental PCM chunks through an
+`AIStreamingAudioInput` pipe and consume partial/final transcript events while
+audio is still being produced:
+
+```swift
+let cartesia = try AIProviders.cartesia()
+let model = try cartesia.streamingTranscription("ink-2")
+let audioPipe = AIStreamingAudioInput.makeStream()
+
+let result = try await model.stream(StreamingTranscriptionRequest(
+    audio: audioPipe.input,
+    inputAudioFormat: AIStreamingAudioFormat(
+        mediaType: "audio/pcm",
+        sampleRate: 16_000
+    )
+))
+
+Task {
+    for await chunk in microphonePCMChunks {
+        _ = audioPipe.writer.send(chunk)
+    }
+    audioPipe.writer.finish()
+}
+
+for try await part in result.stream {
+    switch part {
+    case let .transcriptPartial(_, text, _, _, _, _):
+        print("partial:", text)
+    case let .transcriptFinal(_, text, _, _, _, _):
+        print("final:", text)
+    case let .finish(summary):
+        print("complete:", summary.text)
+    default:
+        break
+    }
+}
+```
+
+Cartesia Ink 2 is the first vertical adapter. It obtains a short-lived STT
+access token, supports server turn detection or explicit finalization, maps
+partial/final events, and redacts the access token from request metadata. The
+underlying `AIDuplexWebSocketTransport` is injectable for deterministic tests
+or custom networking; stopping consumption, `result.cancel()`, or an
+`AIAbortSignal` closes the socket and the audio producer.
+
+Streaming transcription is intentionally narrower than a full bidirectional
+speech session. For audio/text responses, function-call events, and session
+configuration, use [Realtime sessions](../realtime/). xAI is the first full
+Realtime V4 provider; ElevenLabs realtime STT and Google/OpenAI streaming
+translation remain deferred.
+
 ## Options
 
 - `fileName` and `mimeType` describe the submitted audio.
 - `language` hints the expected language when the provider supports it.
 - `prompt` gives the model context for names, vocabulary, or formatting.
 - `providerOptions` carries provider-specific transcription settings.
+- `inputAudioFormat` declares the raw encoding and sample rate for streaming models.
 - `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
 
 ## Results

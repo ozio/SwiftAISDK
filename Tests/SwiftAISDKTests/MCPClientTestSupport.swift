@@ -34,7 +34,7 @@ actor MockMCPTransport: MCPTransport {
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": [
-                    "protocolVersion": .string(MCPClient.latestProtocolVersion),
+                    "protocolVersion": .string(MCPClient.latestLegacyProtocolVersion),
                     "capabilities": capabilities,
                     "serverInfo": [
                         "name": "mock-server",

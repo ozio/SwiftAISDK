@@ -147,7 +147,7 @@ private actor MCPTimeoutTestTransport: MCPTransport {
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": [
-                    "protocolVersion": .string(MCPClient.latestProtocolVersion),
+                    "protocolVersion": .string(MCPClient.latestLegacyProtocolVersion),
                     "capabilities": ["resources": [:]],
                     "serverInfo": ["name": "timeout-test", "version": "1"]
                 ]
@@ -663,7 +663,7 @@ private actor MCPTimeoutTestTransport: MCPTransport {
     #expect(request.url.absoluteString == "https://mcp.example.com/rpc")
     #expect(request.headers["authorization"] == "Bearer token")
     #expect(request.headers["accept"] == "application/json, text/event-stream")
-    #expect(request.headers["mcp-protocol-version"] == MCPClient.latestProtocolVersion)
+    #expect(request.headers["mcp-protocol-version"] == MCPClient.latestLegacyProtocolVersion)
     let body = try #require(request.body).jsonValueForTest()
     #expect(body["method"]?.stringValue == "ping")
     #expect(requests.count == 2)

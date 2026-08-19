@@ -105,14 +105,26 @@ public struct MCPToolDefinition: Equatable, Hashable, Sendable {
 public struct MCPListToolsResult: Equatable, Hashable, Sendable {
     public var tools: [MCPToolDefinition]
     public var nextCursor: String?
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(tools: [MCPToolDefinition], nextCursor: String? = nil, rawValue: JSONValue? = nil) {
+    public init(
+        tools: [MCPToolDefinition],
+        nextCursor: String? = nil,
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.tools = tools
         self.nextCursor = nextCursor
+        self.metadata = metadata
+        self.resultType = resultType
         self.rawValue = rawValue ?? .object([
             "tools": .array(tools.map(\.jsonValue)),
-            "nextCursor": nextCursor.map(JSONValue.string)
+            "nextCursor": nextCursor.map(JSONValue.string),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
         ])
     }
 
@@ -123,6 +135,8 @@ public struct MCPListToolsResult: Equatable, Hashable, Sendable {
         self.init(
             tools: try toolValues.map(MCPToolDefinition.init(json:)),
             nextCursor: json["nextCursor"]?.stringValue,
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
             rawValue: json
         )
     }
@@ -133,6 +147,8 @@ public struct MCPCallToolResult: Equatable, Hashable, Sendable {
     public var structuredContent: JSONValue?
     public var toolResult: JSONValue?
     public var isError: Bool
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
     public init(
@@ -140,17 +156,23 @@ public struct MCPCallToolResult: Equatable, Hashable, Sendable {
         structuredContent: JSONValue? = nil,
         toolResult: JSONValue? = nil,
         isError: Bool = false,
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
         rawValue: JSONValue? = nil
     ) {
         self.content = content
         self.structuredContent = structuredContent
         self.toolResult = toolResult
         self.isError = isError
+        self.metadata = metadata
+        self.resultType = resultType
         self.rawValue = rawValue ?? .object([
             "content": .array(content),
             "structuredContent": structuredContent,
             "toolResult": toolResult,
-            "isError": .bool(isError)
+            "isError": .bool(isError),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
         ])
     }
 
@@ -160,6 +182,8 @@ public struct MCPCallToolResult: Equatable, Hashable, Sendable {
             structuredContent: json["structuredContent"],
             toolResult: json["toolResult"],
             isError: json["isError"]?.boolValue ?? false,
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
             rawValue: json
         )
     }
@@ -191,18 +215,31 @@ public struct MCPCompleteResult: Equatable, Hashable, Sendable {
     public var values: [String]
     public var total: Int?
     public var hasMore: Bool?
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(values: [String], total: Int? = nil, hasMore: Bool? = nil, rawValue: JSONValue? = nil) {
+    public init(
+        values: [String],
+        total: Int? = nil,
+        hasMore: Bool? = nil,
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.values = values
         self.total = total
         self.hasMore = hasMore
+        self.metadata = metadata
+        self.resultType = resultType
         self.rawValue = rawValue ?? .object([
             "completion": .object([
                 "values": .array(values.map(JSONValue.string)),
                 "total": total.map { .number(Double($0)) },
                 "hasMore": hasMore.map(JSONValue.bool)
-            ])
+            ]),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
         ])
     }
 
@@ -214,6 +251,8 @@ public struct MCPCompleteResult: Equatable, Hashable, Sendable {
             values: values.compactMap(\.stringValue),
             total: json["completion"]?["total"]?.intValue,
             hasMore: json["completion"]?["hasMore"]?.boolValue,
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
             rawValue: json
         )
     }
@@ -264,14 +303,26 @@ public struct MCPResource: Equatable, Hashable, Sendable {
 public struct MCPListResourcesResult: Equatable, Hashable, Sendable {
     public var resources: [MCPResource]
     public var nextCursor: String?
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(resources: [MCPResource], nextCursor: String? = nil, rawValue: JSONValue? = nil) {
+    public init(
+        resources: [MCPResource],
+        nextCursor: String? = nil,
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.resources = resources
         self.nextCursor = nextCursor
+        self.metadata = metadata
+        self.resultType = resultType
         self.rawValue = rawValue ?? .object([
             "resources": .array(resources.map(\.rawValue)),
-            "nextCursor": nextCursor.map(JSONValue.string)
+            "nextCursor": nextCursor.map(JSONValue.string),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
         ])
     }
 
@@ -282,6 +333,8 @@ public struct MCPListResourcesResult: Equatable, Hashable, Sendable {
         self.init(
             resources: try values.map(MCPResource.init(json:)),
             nextCursor: json["nextCursor"]?.stringValue,
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
             rawValue: json
         )
     }
@@ -331,18 +384,36 @@ public struct MCPResourceContent: Equatable, Hashable, Sendable {
 
 public struct MCPReadResourceResult: Equatable, Hashable, Sendable {
     public var contents: [MCPResourceContent]
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(contents: [MCPResourceContent], rawValue: JSONValue? = nil) {
+    public init(
+        contents: [MCPResourceContent],
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.contents = contents
-        self.rawValue = rawValue ?? .object(["contents": .array(contents.map(\.rawValue))])
+        self.metadata = metadata
+        self.resultType = resultType
+        self.rawValue = rawValue ?? .object([
+            "contents": .array(contents.map(\.rawValue)),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
+        ])
     }
 
     init(json: JSONValue) throws {
         guard let values = json["contents"]?.arrayValue else {
             throw MCPClientError(message: "Expected MCP resources/read result with contents array.")
         }
-        self.init(contents: try values.map(MCPResourceContent.init(json:)), rawValue: json)
+        self.init(
+            contents: try values.map(MCPResourceContent.init(json:)),
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
+            rawValue: json
+        )
     }
 }
 
@@ -386,18 +457,36 @@ public struct MCPResourceTemplate: Equatable, Hashable, Sendable {
 
 public struct MCPListResourceTemplatesResult: Equatable, Hashable, Sendable {
     public var resourceTemplates: [MCPResourceTemplate]
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(resourceTemplates: [MCPResourceTemplate], rawValue: JSONValue? = nil) {
+    public init(
+        resourceTemplates: [MCPResourceTemplate],
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.resourceTemplates = resourceTemplates
-        self.rawValue = rawValue ?? .object(["resourceTemplates": .array(resourceTemplates.map(\.rawValue))])
+        self.metadata = metadata
+        self.resultType = resultType
+        self.rawValue = rawValue ?? .object([
+            "resourceTemplates": .array(resourceTemplates.map(\.rawValue)),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
+        ])
     }
 
     init(json: JSONValue) throws {
         guard let values = json["resourceTemplates"]?.arrayValue else {
             throw MCPClientError(message: "Expected MCP resources/templates/list result with resourceTemplates array.")
         }
-        self.init(resourceTemplates: try values.map(MCPResourceTemplate.init(json:)), rawValue: json)
+        self.init(
+            resourceTemplates: try values.map(MCPResourceTemplate.init(json:)),
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
+            rawValue: json
+        )
     }
 }
 
@@ -468,14 +557,26 @@ public struct MCPPrompt: Equatable, Hashable, Sendable {
 public struct MCPListPromptsResult: Equatable, Hashable, Sendable {
     public var prompts: [MCPPrompt]
     public var nextCursor: String?
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(prompts: [MCPPrompt], nextCursor: String? = nil, rawValue: JSONValue? = nil) {
+    public init(
+        prompts: [MCPPrompt],
+        nextCursor: String? = nil,
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.prompts = prompts
         self.nextCursor = nextCursor
+        self.metadata = metadata
+        self.resultType = resultType
         self.rawValue = rawValue ?? .object([
             "prompts": .array(prompts.map(\.rawValue)),
-            "nextCursor": nextCursor.map(JSONValue.string)
+            "nextCursor": nextCursor.map(JSONValue.string),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
         ])
     }
 
@@ -486,6 +587,8 @@ public struct MCPListPromptsResult: Equatable, Hashable, Sendable {
         self.init(
             prompts: try values.map(MCPPrompt.init(json:)),
             nextCursor: json["nextCursor"]?.stringValue,
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
             rawValue: json
         )
     }
@@ -516,14 +619,26 @@ public struct MCPPromptMessage: Equatable, Hashable, Sendable {
 public struct MCPGetPromptResult: Equatable, Hashable, Sendable {
     public var description: String?
     public var messages: [MCPPromptMessage]
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(description: String? = nil, messages: [MCPPromptMessage], rawValue: JSONValue? = nil) {
+    public init(
+        description: String? = nil,
+        messages: [MCPPromptMessage],
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.description = description
         self.messages = messages
+        self.metadata = metadata
+        self.resultType = resultType
         self.rawValue = rawValue ?? .object([
             "description": description.map(JSONValue.string),
-            "messages": .array(messages.map(\.rawValue))
+            "messages": .array(messages.map(\.rawValue)),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
         ])
     }
 
@@ -534,6 +649,8 @@ public struct MCPGetPromptResult: Equatable, Hashable, Sendable {
         self.init(
             description: json["description"]?.stringValue,
             messages: try values.map(MCPPromptMessage.init(json:)),
+            metadata: json["_meta"],
+            resultType: json["resultType"]?.stringValue,
             rawValue: json
         )
     }
@@ -578,14 +695,26 @@ public enum MCPElicitAction: String, Sendable {
 public struct MCPElicitResult: Equatable, Hashable, Sendable {
     public var action: MCPElicitAction
     public var content: [String: JSONValue]?
+    public var metadata: JSONValue?
+    public var resultType: String?
     public var rawValue: JSONValue
 
-    public init(action: MCPElicitAction, content: [String: JSONValue]? = nil, rawValue: JSONValue? = nil) {
+    public init(
+        action: MCPElicitAction,
+        content: [String: JSONValue]? = nil,
+        metadata: JSONValue? = nil,
+        resultType: String? = nil,
+        rawValue: JSONValue? = nil
+    ) {
         self.action = action
         self.content = content
+        self.metadata = metadata
+        self.resultType = resultType
         self.rawValue = rawValue ?? .object([
             "action": .string(action.rawValue),
-            "content": content.map(JSONValue.object)
+            "content": content.map(JSONValue.object),
+            "_meta": metadata,
+            "resultType": resultType.map(JSONValue.string)
         ])
     }
 }
@@ -615,6 +744,8 @@ public extension MCPOAuthProvider {
 }
 
 public protocol MCPTransport: Sendable {
+    var supportsProtocolVersionDiscovery: Bool { get }
+    var supportsMCPToolParameterHeaders: Bool { get }
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async
     func setProtocolVersion(_ protocolVersion: String?) async
     func start() async throws
@@ -625,6 +756,8 @@ public protocol MCPTransport: Sendable {
 }
 
 public extension MCPTransport {
+    var supportsProtocolVersionDiscovery: Bool { false }
+    var supportsMCPToolParameterHeaders: Bool { false }
     func setRequestHandler(_ handler: (@Sendable (JSONValue) async -> JSONValue)?) async {}
     func setProtocolVersion(_ protocolVersion: String?) async {}
     func request(_ message: JSONValue, options: MCPRequestOptions?) async throws -> JSONValue {

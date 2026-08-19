@@ -29,8 +29,10 @@ import Testing
         "@ai-sdk/deepseek",
         "@ai-sdk/elevenlabs",
         "@ai-sdk/fal",
+        "@ai-sdk/fish-audio",
         "@ai-sdk/fireworks",
         "@ai-sdk/gateway",
+        "@ai-sdk/gmicloud",
         "@ai-sdk/gladia",
         "@ai-sdk/google",
         "@ai-sdk/google-vertex",
@@ -109,4 +111,21 @@ import Testing
     #expect(cartesiaRow.supportedCapabilities == cartesia.supportedCapabilities)
     #expect(cartesiaRow.supports(.speech))
     #expect(cartesiaRow.supports(.transcription))
+
+    let fishAudio = try AIProviders.fishAudio(settings: ProviderSettings(
+        apiKey: "fish-key",
+        environment: [:]
+    ))
+    let fishAudioRow = try #require(AIProviderCapabilities.row(providerID: "fish-audio"))
+    #expect(fishAudioRow.supportedCapabilities == fishAudio.supportedCapabilities)
+    #expect(fishAudioRow.supports(.speech))
+    #expect(fishAudioRow.supports(.transcription))
+
+    let gmiCloud = try AIProviders.gmiCloud(settings: ProviderSettings(
+        apiKey: "gmi-key",
+        environment: [:]
+    ))
+    let gmiCloudRow = try #require(AIProviderCapabilities.row(providerID: "gmicloud"))
+    #expect(gmiCloudRow.supportedCapabilities == gmiCloud.supportedCapabilities)
+    #expect(gmiCloudRow.supports(.language))
 }

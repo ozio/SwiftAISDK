@@ -32,3 +32,8 @@ print(answer.text)
 - You want the same tool catalog available to multiple Swift clients.
 
 For local processes, use `MCPStdioTransport`. For remote servers, use `MCPHTTPTransport`.
+
+SwiftAISDK tracks `@ai-sdk/mcp@2.0.33`. The current client absorbs the patch's
+protocol/HTTP transport and OAuth compatibility hardening behind the same
+`MCPClient.connect` workflow; existing tool-discovery code does not need a
+migration for this patch.

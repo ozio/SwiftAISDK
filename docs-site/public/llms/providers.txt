@@ -4,12 +4,12 @@ Source URL: /providers/
 
 This page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.
 
-Language: 32
+Language: 33
 Completion: 7
 Embedding: 17
 Image: 18
-Transcription: 14
-Speech: 13
+Transcription: 15
+Speech: 14
 Audio generation: 1
 Audio transformation: 1
 Dubbing: 1
@@ -39,8 +39,10 @@ Skills: 3
 | [`deepseek`](deepseek/) | `@ai-sdk/deepseek` | `AIProviders.deepSeek` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`elevenlabs`](elevenlabs/) | `@ai-sdk/elevenlabs` | `AIProviders.elevenLabs` |  |  |  |  | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  |  |
 | [`fal`](fal/) | `@ai-sdk/fal` | `AIProviders.fal` |  |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  |  |  |
+| [`fish-audio`](fish-audio/) | `@ai-sdk/fish-audio` | `AIProviders.fishAudio` |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`fireworks`](fireworks/) | `@ai-sdk/fireworks` | `AIProviders.fireworks` | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
 | [`gateway`](gateway/) | `@ai-sdk/gateway` | `AIProviders.gateway` | ✅ |  | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ | ✅ |  |  |
+| [`gmicloud`](gmicloud/) | `@ai-sdk/gmicloud` | `AIProviders.gmiCloud` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`gladia`](gladia/) | `@ai-sdk/gladia` | `AIProviders.gladia` |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |
 | [`google.generative-ai`](google-generative-ai/) | `@ai-sdk/google` | `AIProviders.google` | ✅ |  | ✅ | ✅ |  | ✅ |  |  |  | ✅ |  | ✅ |  |
 | [`google.vertex`](google-vertex/) | `@ai-sdk/google-vertex` | `AIProviders.googleVertex` | ✅ |  | ✅ | ✅ | ✅ | ✅ |  |  |  | ✅ |  |  |  |

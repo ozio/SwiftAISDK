@@ -26,6 +26,12 @@ public enum OpenAITools {
         return providerTool(id: "openai.computer_use", name: "computer_use", args: args)
     }
 
+    /// OpenAI Responses computer tool. The model emits ordered UI actions and
+    /// safety checks; callers return a screenshot through the normal tool-result path.
+    public static func computer() -> JSONValue {
+        providerTool(id: "openai.computer", name: "computer")
+    }
+
     public static func fileSearch(vectorStoreIDs: [String], maxNumResults: Int? = nil, ranking: JSONValue? = nil, filters: JSONValue? = nil) -> JSONValue {
         providerTool(id: "openai.file_search", name: "file_search", args: JSONValue.object([
             "vectorStoreIds": .array(vectorStoreIDs),

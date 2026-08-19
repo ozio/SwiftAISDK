@@ -136,6 +136,7 @@ func openAIResponsesInputMessageJSON(
     outputSchemaToolNames: Set<String> = [],
     providerDefinedToolNames: Set<String> = [],
     shellToolNames: Set<String> = [],
+    computerToolNames: Set<String> = [],
     providerID: String = "openai",
     useDeveloperRoleForSystem: Bool = false,
     warnings: inout [AIWarning]
@@ -173,6 +174,9 @@ func openAIResponsesInputMessageJSON(
                 }
                 if result.toolName == "apply_patch" {
                     return [.object(openAIResponsesApplyPatchOutput(result))]
+                }
+                if computerToolNames.contains(result.toolName) {
+                    return [.object(openAIResponsesComputerOutput(result))]
                 }
                 if programmaticToolNames.contains(result.toolName) {
                     return [.object(openAIResponsesProgrammaticOutput(result, store: store))]
@@ -281,6 +285,10 @@ func openAIResponsesInputMessageJSON(
                 }
                 if call.name == "apply_patch" {
                     output.append(openAIResponsesApplyPatchCallItem(call, store: store))
+                    break
+                }
+                if computerToolNames.contains(call.name) {
+                    output.append(openAIResponsesComputerCallItem(call))
                     break
                 }
                 if customToolNames.contains(call.name) {
@@ -702,6 +710,79 @@ func openAIResponsesApplyPatchOutput(_ result: AIToolResult) -> [String: JSONVal
     ]
 }
 
+func openAIResponsesComputerCallItem(_ call: AIToolCall) -> JSONValue {
+    let input = openAIResponsesParsedToolArguments(call.arguments)
+    let itemID = openAIResponsesItemID(from: call.providerMetadata)
+        ?? call.rawValue?["id"]?.stringValue
+        ?? call.id
+    return .object([
+        "type": .string("computer_call"),
+        "id": .string(itemID),
+        "call_id": .string(call.id),
+        "status": input["status"] ?? .string("completed"),
+        "actions": .array((input["actions"]?.arrayValue ?? []).map(openAIResponsesComputerActionForRequest)),
+        "pending_safety_checks": .array((input["pendingSafetyChecks"]?.arrayValue
+            ?? input["pending_safety_checks"]?.arrayValue
+            ?? []).map(openAIResponsesComputerSafetyCheckForRequest))
+    ])
+}
+
+func openAIResponsesComputerOutput(_ result: AIToolResult) -> [String: JSONValue] {
+    let rawOutput = result.modelOutput ?? result.result
+    let value = rawOutput["type"]?.stringValue == "json"
+        ? (rawOutput["value"] ?? .object([:]))
+        : (rawOutput["value"] ?? rawOutput)
+    let screenshot = value["output"] ?? .object([:])
+    var mappedScreenshot: [String: JSONValue] = [
+        "type": .string("computer_screenshot")
+    ]
+    if let imageURL = screenshot["imageUrl"] ?? screenshot["image_url"] {
+        mappedScreenshot["image_url"] = imageURL
+    }
+    if let fileID = screenshot["fileId"] ?? screenshot["file_id"] {
+        mappedScreenshot["file_id"] = fileID
+    }
+    if let detail = screenshot["detail"] {
+        mappedScreenshot["detail"] = detail
+    }
+
+    var item: [String: JSONValue] = [
+        "type": .string("computer_call_output"),
+        "call_id": .string(result.toolCallID),
+        "output": .object(mappedScreenshot)
+    ]
+    if let safetyChecks = (value["acknowledgedSafetyChecks"]
+        ?? value["acknowledged_safety_checks"])?.arrayValue {
+        item["acknowledged_safety_checks"] = .array(
+            safetyChecks.map(openAIResponsesComputerSafetyCheckForRequest)
+        )
+    }
+    return item
+}
+
+private func openAIResponsesComputerActionForRequest(_ action: JSONValue) -> JSONValue {
+    guard var object = action.objectValue else { return action }
+    if let scrollX = object.removeValue(forKey: "scrollX") {
+        object["scroll_x"] = scrollX
+    }
+    if let scrollY = object.removeValue(forKey: "scrollY") {
+        object["scroll_y"] = scrollY
+    }
+    if object["keys"] == .null {
+        object.removeValue(forKey: "keys")
+    }
+    return .object(object)
+}
+
+private func openAIResponsesComputerSafetyCheckForRequest(_ safetyCheck: JSONValue) -> JSONValue {
+    guard let object = safetyCheck.objectValue else { return safetyCheck }
+    var mapped: [String: JSONValue] = [:]
+    for key in ["id", "code", "message"] where object[key] != nil && object[key] != .null {
+        mapped[key] = object[key]
+    }
+    return .object(mapped)
+}
+
 func openAIResponsesCustomToolCallItem(_ call: AIToolCall) -> JSONValue {
     let itemID = openAIResponsesItemID(from: call.providerMetadata) ?? call.rawValue?["id"]?.stringValue
     var item: [String: JSONValue] = [
@@ -1039,16 +1120,191 @@ private func openAIGPTVersion(_ modelID: String) -> (major: Int, minor: Int?, va
     return (major, minor, variant)
 }
 
-func openAIResponsesAllowedToolsChoice(from value: JSONValue) -> JSONValue {
+private enum OpenAIResponsesAllowedToolResolution: Equatable {
+    case supported(JSONValue)
+    case unsupported(String)
+}
+
+func openAIResponsesAllowedToolsChoice(
+    from value: JSONValue,
+    tools: [String: JSONValue],
+    warnings: inout [AIWarning]
+) throws -> JSONValue {
     let object = value.objectValue ?? [:]
     let toolNames = object["toolNames"]?.arrayValue ?? object["tool_names"]?.arrayValue ?? []
+    var directResolutions: [String: OpenAIResponsesAllowedToolResolution] = [:]
+    var aliasResolutions: [String: OpenAIResponsesAllowedToolResolution] = [:]
+    var ambiguousAliases: Set<String> = []
+
+    func record(
+        name: String,
+        aliases: [String] = [],
+        resolution: OpenAIResponsesAllowedToolResolution
+    ) {
+        directResolutions[name] = resolution
+        for alias in Set(aliases) where alias != name {
+            if ambiguousAliases.contains(alias) { continue }
+            if let existing = aliasResolutions[alias], existing != resolution {
+                aliasResolutions.removeValue(forKey: alias)
+                ambiguousAliases.insert(alias)
+            } else {
+                aliasResolutions[alias] = resolution
+            }
+        }
+    }
+
+    for (name, schema) in tools {
+        let tool = schema.objectValue ?? [:]
+        let providerToolID = tool["id"]?.stringValue
+        let isProviderTool = tool["type"]?.stringValue == "provider"
+            || providerToolID?.hasPrefix("openai.") == true
+
+        if !isProviderTool {
+            let openAIOptions = tool["providerOptions"]?["openai"]?.objectValue
+                ?? tool["openai"]?.objectValue
+            let isNamespaced = openAIOptions?["namespace"] != nil
+            let isDeferred = (openAIOptions?["deferLoading"] ?? openAIOptions?["defer_loading"]
+                ?? tool["deferLoading"] ?? tool["defer_loading"])?.boolValue == true
+            let resolution: OpenAIResponsesAllowedToolResolution
+            if isNamespaced {
+                resolution = .unsupported("tools inside an OpenAI tool namespace are not visible to tool_choice.allowed_tools")
+            } else if isDeferred {
+                resolution = .unsupported("deferred tools are not visible to tool_choice.allowed_tools")
+            } else {
+                resolution = .supported(.object(["type": .string("function"), "name": .string(name)]))
+            }
+            record(name: name, resolution: resolution)
+            continue
+        }
+
+        let declaredName = tool["name"]?.stringValue ?? name
+        let args = tool["args"]?.objectValue ?? [:]
+        let resolution: OpenAIResponsesAllowedToolResolution?
+        let canonicalName: String?
+        switch providerToolID ?? name {
+        case "openai.file_search":
+            canonicalName = "file_search"
+            resolution = .supported(.object(["type": .string("file_search")]))
+        case "openai.local_shell":
+            canonicalName = "local_shell"
+            resolution = .supported(.object(["type": .string("local_shell")]))
+        case "openai.shell":
+            canonicalName = "shell"
+            resolution = .supported(.object(["type": .string("shell")]))
+        case "openai.apply_patch":
+            canonicalName = "apply_patch"
+            resolution = .supported(.object(["type": .string("apply_patch")]))
+        case "openai.computer":
+            canonicalName = "computer"
+            resolution = .supported(.object(["type": .string("computer")]))
+        case "openai.web_search_preview":
+            canonicalName = "web_search_preview"
+            resolution = .supported(.object(["type": .string("web_search_preview")]))
+        case "openai.web_search":
+            canonicalName = "web_search"
+            resolution = .supported(.object(["type": .string("web_search")]))
+        case "openai.code_interpreter":
+            canonicalName = "code_interpreter"
+            resolution = .supported(.object(["type": .string("code_interpreter")]))
+        case "openai.image_generation":
+            canonicalName = "image_generation"
+            resolution = .supported(.object(["type": .string("image_generation")]))
+        case "openai.mcp":
+            canonicalName = "mcp"
+            if let serverLabel = (args["serverLabel"] ?? args["server_label"])?.stringValue {
+                resolution = .supported(.object([
+                    "type": .string("mcp"),
+                    "server_label": .string(serverLabel)
+                ]))
+            } else {
+                resolution = .unsupported("MCP tools without a server label cannot be used in tool_choice.allowed_tools")
+            }
+        case "openai.custom":
+            canonicalName = declaredName
+            resolution = .supported(.object([
+                "type": .string("custom"),
+                "name": .string(declaredName)
+            ]))
+        case "openai.programmatic_tool_calling":
+            canonicalName = "programmatic_tool_calling"
+            resolution = .supported(.object(["type": .string("programmatic_tool_calling")]))
+        case "openai.tool_search":
+            canonicalName = "tool_search"
+            resolution = .unsupported("OpenAI does not support tool_search tools in tool_choice.allowed_tools")
+        case "openai.computer_use":
+            canonicalName = "computer_use"
+            resolution = .unsupported("OpenAI does not support computer_use tools in tool_choice.allowed_tools")
+        default:
+            canonicalName = nil
+            resolution = nil
+        }
+        if let resolution {
+            record(
+                name: name,
+                aliases: [declaredName, canonicalName].compactMap { $0 },
+                resolution: resolution
+            )
+        }
+    }
+
+    var allowedEntries: [JSONValue] = []
+    var droppedNames: [String] = []
+    for rawName in toolNames {
+        guard let name = rawName.stringValue else { continue }
+        let direct = directResolutions[name]
+        if direct != nil && (aliasResolutions[name] != nil || ambiguousAliases.contains(name)) {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "allowedTools entry \"\(name)\"",
+                message: "this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed"
+            ))
+        }
+
+        let resolution: OpenAIResponsesAllowedToolResolution?
+        if let direct {
+            resolution = direct
+        } else if ambiguousAliases.contains(name) {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "allowedTools entry \"\(name)\"",
+                message: "several tools in this request share this provider tool name; use the tool name from the tools for this request instead"
+            ))
+            droppedNames.append(name)
+            continue
+        } else {
+            resolution = aliasResolutions[name]
+        }
+
+        switch resolution {
+        case let .supported(entry):
+            allowedEntries.append(entry)
+        case let .unsupported(reason):
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "allowedTools entry \"\(name)\"",
+                message: "\(reason); the tool is removed from the allowed tools"
+            ))
+            droppedNames.append(name)
+        case nil:
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "allowedTools entry \"\(name)\"",
+                message: "the tool is not part of the tools for this request and is sent as a function tool"
+            ))
+            allowedEntries.append(.object(["type": .string("function"), "name": .string(name)]))
+        }
+    }
+
+    guard !allowedEntries.isEmpty else {
+        throw AIError.invalidArgument(
+            argument: "allowedTools",
+            message: "allowedTools with only tools that cannot be allow-listed (\(droppedNames.joined(separator: ", ")))"
+        )
+    }
     return .object([
         "type": .string("allowed_tools"),
         "mode": object["mode"] ?? .string("auto"),
-        "tools": .array(toolNames.compactMap { name in
-            guard let name = name.stringValue else { return nil }
-            return .object(["type": .string("function"), "name": .string(name)])
-        })
+        "tools": .array(allowedEntries)
     ])
 }
 

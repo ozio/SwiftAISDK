@@ -17,7 +17,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.44")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.45")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
 }
@@ -47,7 +47,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.44")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.45")
 }
 @Test func googleCustomXGoogAPIKeyOverridesConfiguredAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -220,6 +220,32 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["generationConfig"]?["thinkingConfig"]?["thinkingBudget"]?.intValue == 32768)
+}
+
+@Test func googleGemini37FlashCoercesNoneAndMinimalReasoningToLow() {
+    for modelID in ["gemini-3.7-flash", "models/gemini-3.7-flash", "MODELS/GEMINI-3.7-FLASH"] {
+        var noneWarnings: [AIWarning] = []
+        let none = googleThinkingConfig(for: "none", modelID: modelID, warnings: &noneWarnings)
+        #expect(none?["thinkingLevel"]?.stringValue == "low")
+        #expect(noneWarnings.isEmpty)
+
+        var minimalWarnings: [AIWarning] = []
+        let minimal = googleThinkingConfig(for: "minimal", modelID: modelID, warnings: &minimalWarnings)
+        #expect(minimal?["thinkingLevel"]?.stringValue == "low")
+        #expect(minimalWarnings.contains(AIWarning(
+            type: "compatibility",
+            feature: "reasoning",
+            message: "reasoning \"minimal\" is not directly supported by this model. mapped to effort \"low\"."
+        )))
+    }
+
+    var previewWarnings: [AIWarning] = []
+    let preview = googleThinkingConfig(
+        for: "minimal",
+        modelID: "gemini-3.7-flash-preview",
+        warnings: &previewWarnings
+    )
+    #expect(preview?["thinkingLevel"]?.stringValue == "minimal")
 }
 @Test func googleModelCapabilitiesKeepLegacyModelsAndDefaultFutureModelsToNewestBehavior() {
     #expect(googleModelCapabilities(for: "gemini-pro") == GoogleModelCapabilities(

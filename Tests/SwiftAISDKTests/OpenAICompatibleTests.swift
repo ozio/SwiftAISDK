@@ -45,7 +45,7 @@ import Testing
     #expect(requests.count == 4)
     #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
     #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.30" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.31" })
 }
 
 @Test func openAICompatibleClampsOutputTextTokensWhenReasoningExceedsCompletionLikeUpstream() async throws {
@@ -74,6 +74,33 @@ import Testing
     #expect(result.usage?.outputTextTokens == 0)
     #expect(result.usage?.outputReasoningTokens == 9)
     #expect(result.usage?.totalTokens == 8)
+}
+
+@Test func openAICompatiblePreservesUnknownNestedAndCompletionUsageFields() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"choices":[{"message":{"content":"chat"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"provider_total":9,"prompt_tokens_details":{"cached_tokens":1,"audio_tokens":7},"completion_tokens_details":{"reasoning_tokens":1,"image_tokens":4,"text_tokens":2}}}"#),
+        jsonResponse(#"{"choices":[{"text":"completion","finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"provider_total":11,"completion_tokens_details":{"vendor_tokens":6}}}"#)
+    ])
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    let chat = try await provider.chatModel("chat-model").generate(
+        LanguageModelRequest(messages: [.user("Hi")])
+    )
+    #expect(chat.usage?.rawValue?["provider_total"]?.intValue == 9)
+    #expect(chat.usage?.rawValue?["prompt_tokens_details"]?["audio_tokens"]?.intValue == 7)
+    #expect(chat.usage?.rawValue?["completion_tokens_details"]?["image_tokens"]?.intValue == 4)
+    #expect(chat.usage?.rawValue?["completion_tokens_details"]?["text_tokens"]?.intValue == 2)
+
+    let completion = try await provider.completionModel("completion-model").generate(
+        LanguageModelRequest(messages: [.user("Complete")])
+    )
+    #expect(completion.usage?.rawValue?["provider_total"]?.intValue == 11)
+    #expect(completion.usage?.rawValue?["completion_tokens_details"]?["vendor_tokens"]?.intValue == 6)
 }
 
 @Test func openAICompatibleStreamsIncludeUsageWhenEnabled() async throws {

@@ -103,3 +103,41 @@ let dynamicTool = AITool.dynamic(
     ["ok": true, "input": arguments]
 }
 ```
+
+## OpenAI Responses Allow Lists
+
+OpenAI 4.0.43 `allowedTools` limits the tools that Responses may choose while
+still sending the complete request tool set. Declare tool names in the OpenAI
+provider options (or the equivalent `extraBody` shape):
+
+```swift
+let request = LanguageModelRequest(
+    messages: [.user("Search the docs, but do not edit anything.")],
+    tools: [
+        "docs": OpenAITools.mcp(
+            serverLabel: "docs",
+            serverURL: "https://mcp.example.com"
+        ),
+        "computer": OpenAITools.computer()
+    ],
+    providerOptions: [
+        "openai": [
+            "allowedTools": [
+                "toolNames": ["docs", "computer"],
+                "mode": "required"
+            ]
+        ]
+    ]
+)
+```
+
+Function tools, supported hosted tools, labeled MCP servers, custom tools, and
+`OpenAITools.computer()` map to `tool_choice.allowed_tools`. Deferred,
+namespaced, tool-search, and legacy `computerUse(...)` entries warn and are
+removed; an allow-list containing only unrepresentable entries is rejected.
+The current `computer` tool is distinct from the older `computer_use` wire
+shape.
+
+The generic Open Responses 2.0.28 provider intentionally does not gain this
+execution surface: provider-defined tools emit an unsupported warning and are
+dropped, matching upstream behavior.
