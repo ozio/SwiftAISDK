@@ -424,7 +424,11 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                     body: mcpSingleChunkStream(responseBody)
                 )
             }
+            let responseBodyText = String(data: responseBody, encoding: .utf8)
             var message = "MCP HTTP Transport Error: \(method) \(url.absoluteString) failed with HTTP \(response.statusCode)"
+            if let responseBodyText {
+                message += ": \(responseBodyText)"
+            }
             if !isModernProtocol, response.statusCode == 404 {
                 if let requestSessionID {
                     expireSessionID(requestSessionID)
@@ -437,7 +441,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
                 message: message,
                 statusCode: response.statusCode,
                 url: url.absoluteString,
-                responseBody: String(data: responseBody, encoding: .utf8)
+                responseBody: responseBodyText
             )
         }
         guard (200..<300).contains(response.statusCode) else {

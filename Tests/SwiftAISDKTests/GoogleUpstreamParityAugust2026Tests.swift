@@ -156,3 +156,189 @@ import Testing
         #expect(data["error"]?["details"]?[1]?["retryDelay"]?.stringValue == "34.4s")
     }
 }
+
+@Test func googleUpstreamInlinesDirectAndNestedRootSchemaReferences() throws {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "settings": [
+                "$ref": "#/$defs/Settings",
+                "description": "Formatting settings"
+            ],
+            "legacyLocale": ["$ref": "#/definitions/LegacyLocale"]
+        ],
+        "required": ["settings"],
+        "$defs": [
+            "Locale": ["type": "string", "enum": ["de", "en"]],
+            "Settings": [
+                "type": "object",
+                "properties": ["locale": ["$ref": "#/$defs/Locale"]],
+                "required": ["locale"]
+            ]
+        ],
+        "definitions": [
+            "LegacyLocale": ["type": "string", "enum": ["ja", "en"]]
+        ]
+    ]
+
+    #expect(try googleOpenAPISchema(from: schema, isRoot: true) == [
+        "type": "object",
+        "properties": [
+            "settings": [
+                "type": "object",
+                "properties": [
+                    "locale": ["type": "string", "enum": ["de", "en"]]
+                ],
+                "required": ["locale"],
+                "description": "Formatting settings"
+            ],
+            "legacyLocale": ["type": "string", "enum": ["ja", "en"]]
+        ],
+        "required": ["settings"]
+    ])
+
+    let rootReference: JSONValue = [
+        "type": "object",
+        "$ref": "#/$defs/Parameters",
+        "$defs": [
+            "Parameters": [
+                "type": "object",
+                "properties": ["value": ["type": "string"]]
+            ]
+        ]
+    ]
+    #expect(try googleOpenAPISchema(from: rootReference, isRoot: true) == [
+        "type": "object",
+        "properties": ["value": ["type": "string"]]
+    ])
+
+    let falseReference: JSONValue = [
+        "$ref": "#/$defs/Disabled",
+        "$defs": ["Disabled": false]
+    ]
+    #expect(try googleOpenAPISchema(from: falseReference, isRoot: true) == [
+        "type": "boolean",
+        "properties": [:]
+    ])
+}
+
+@Test func googleUpstreamRejectsUnsupportedMissingAndRecursiveSchemaReferences() {
+    #expect(throws: AIError.invalidArgument(
+        argument: "schema",
+        message: "Google schema conversion only supports references to direct children of root-level $defs or definitions. Unsupported reference: #/properties/value"
+    )) {
+        _ = try googleOpenAPISchema(from: ["$ref": "#/properties/value"], isRoot: true)
+    }
+
+    #expect(throws: AIError.invalidArgument(
+        argument: "schema",
+        message: "Google schema conversion only supports references to direct children of root-level $defs or definitions. Unsupported reference: #/$defs/Missing"
+    )) {
+        _ = try googleOpenAPISchema(from: ["$ref": "#/$defs/Missing"], isRoot: true)
+    }
+
+    let recursiveSchema: JSONValue = [
+        "type": "object",
+        "properties": ["node": ["$ref": "#/$defs/Node"]],
+        "$defs": [
+            "Node": [
+                "type": "object",
+                "properties": ["child": ["$ref": "#/$defs/Node"]]
+            ]
+        ]
+    ]
+    #expect(throws: AIError.invalidArgument(
+        argument: "schema",
+        message: "Google schema conversion does not support recursive JSON Schema references."
+    )) {
+        _ = try googleOpenAPISchema(from: recursiveSchema, isRoot: true)
+    }
+}
+
+@Test func googleAndVertexUpstreamInlineLocalReferencesInRequests() async throws {
+    let response = jsonResponse("""
+    {"candidates":[{"content":{"parts":[{"text":"Done"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}
+    """)
+    let toolSchema: JSONValue = [
+        "type": "object",
+        "description": "Format a date",
+        "properties": [
+            "locale": [
+                "$ref": "#/$defs/Locale",
+                "description": "Locale for formatting"
+            ]
+        ],
+        "required": ["locale"],
+        "$defs": [
+            "Locale": ["type": "string", "enum": ["de", "en"]]
+        ]
+    ]
+    let expectedParameters: JSONValue = [
+        "type": "object",
+        "description": "Format a date",
+        "properties": [
+            "locale": [
+                "type": "string",
+                "enum": ["de", "en"],
+                "description": "Locale for formatting"
+            ]
+        ],
+        "required": ["locale"]
+    ]
+
+    let googleTransport = RecordingTransport(response: response)
+    let google = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: googleTransport))
+    _ = try await google.languageModel("gemini-2.5-flash").generate(LanguageModelRequest(
+        messages: [.user("Format it.")],
+        tools: ["formatDate": toolSchema]
+    ))
+    _ = try await google.languageModel("gemini-2.5-flash").generate(LanguageModelRequest(
+        messages: [.user("Return JSON.")],
+        responseFormat: .json(schema: toolSchema)
+    ))
+    let googleRequests = await googleTransport.requests()
+    let googleToolBody = try decodeJSONBody(try #require(googleRequests.first?.body))
+    let googleResponseBody = try decodeJSONBody(try #require(googleRequests.last?.body))
+    #expect(googleToolBody["tools"]?[0]?["functionDeclarations"]?[0]?["parameters"] == expectedParameters)
+    #expect(googleResponseBody["generationConfig"]?["responseSchema"] == expectedParameters)
+
+    let vertexTransport = RecordingTransport(response: response)
+    let vertex = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        apiKey: "vertex-key",
+        transport: vertexTransport
+    ))
+    _ = try await vertex.languageModel("gemini-2.5-flash").generate(LanguageModelRequest(
+        messages: [.user("Format it.")],
+        tools: ["formatDate": toolSchema]
+    ))
+    let vertexBody = try decodeJSONBody(try #require((await vertexTransport.requests()).first?.body))
+    #expect(vertexBody["tools"]?[0]?["functionDeclarations"]?[0]?["parameters"] == expectedParameters)
+}
+
+@Test func googleUpstreamFutureFullFlashModelsUseLowMinimumThinkingLevel() {
+    let cases: [(modelID: String, reasoning: String, expected: String)] = [
+        ("gemini-3.7-flash-video-understanding-eap", "minimal", "low"),
+        ("gemini-3.7-flash-video-understanding-eap", "none", "low"),
+        ("gemini-flash-latest", "minimal", "low"),
+        ("gemini-flash-latest", "none", "low"),
+        ("models/gemini-3.7-flash", "minimal", "low"),
+        ("gemini-3.8-flash", "minimal", "low"),
+        ("gemini-3.10-flash-preview", "minimal", "low"),
+        ("gemini-4.0-flash", "minimal", "low"),
+        ("gemini-3-flash-preview", "minimal", "minimal"),
+        ("gemini-3.6-flash", "minimal", "minimal"),
+        ("gemini-3.7-flash-lite", "minimal", "minimal"),
+        ("gemini-3.10-flash-lite-preview", "minimal", "minimal"),
+        ("gemini-flash-lite-latest", "minimal", "minimal")
+    ]
+
+    for testCase in cases {
+        var warnings: [AIWarning] = []
+        let config = googleThinkingConfig(
+            for: testCase.reasoning,
+            modelID: testCase.modelID,
+            warnings: &warnings
+        )
+        #expect(config?["thinkingLevel"]?.stringValue == testCase.expected)
+    }
+}

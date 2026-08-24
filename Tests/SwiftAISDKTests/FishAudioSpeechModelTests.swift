@@ -39,7 +39,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.fish.audio/v1/tts")
     #expect(request.headers["authorization"] == "Bearer fish-key")
     #expect(request.headers["model"] == "s2.1-pro")
-    #expect(request.headers["user-agent"] == "ai-sdk/fish-audio/3.0.5")
+    #expect(request.headers["user-agent"] == "ai-sdk/fish-audio/3.0.7")
     #expect(request.headers["X-Request"] == "request-value")
     #expect(request.abortSignal === controller.signal)
     #expect(try decodeJSONBody(try #require(request.body)) == result.requestMetadata.body)

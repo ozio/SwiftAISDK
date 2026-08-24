@@ -99,9 +99,11 @@ func gatewayImageFile(_ file: ImageInputFile) -> JSONValue {
     ])
 }
 
-public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
+public final class GatewayVideoModel: AsyncVideoModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
+    public let maxVideosPerCall = Int.max
+    public let supportsVideoGenerationWebhooks = true
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -111,28 +113,12 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
-        if let aspectRatio = request.aspectRatio { body["aspectRatio"] = .string(aspectRatio) }
-        if let durationSeconds = request.durationSeconds { body["duration"] = .number(durationSeconds) }
-        if let count = request.count { body["n"] = .number(Double(count)) }
-        if let resolution = request.resolution { body["resolution"] = .string(resolution) }
-        if let fps = request.fps { body["fps"] = .number(fps) }
-        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
-        if let generateAudio = request.generateAudio { body["generateAudio"] = .bool(generateAudio) }
-        if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
-        if let image = request.image { body["image"] = gatewayVideoFile(image) }
-        if !request.frameImages.isEmpty {
-            body["frameImages"] = .array(request.frameImages.map(gatewayVideoFrameImage))
-        }
-        if !request.inputReferences.isEmpty {
-            body["inputReferences"] = .array(request.inputReferences.map(gatewayVideoFile))
-        }
-        body.merge(request.extraBody) { _, new in new }
+        let body = gatewayVideoBody(request)
         let httpRequest = try config.request(path: "/video-model", modelID: modelID, body: .object(body), headers: request.headers.mergingHeaders([
             "ai-video-model-specification-version": "4",
             "ai-model-id": modelID,
             "accept": "text/event-stream"
-        ]))
+        ]), abortSignal: request.abortSignal)
         let response = try await config.transport.send(httpRequest)
         guard (200..<300).contains(response.statusCode) else {
             throw apiCallError(provider: providerID, response: response)
@@ -171,6 +157,119 @@ public final class GatewayVideoModel: VideoModel, @unchecked Sendable {
             responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
         )
     }
+
+    public func handleVideoGenerationWebhookOption(
+        _ factory: @escaping VideoGenerationWebhookFactory
+    ) async throws -> VideoGenerationWebhookRegistration {
+        try await factory()
+    }
+
+    public func startVideoGeneration(
+        _ operationRequest: VideoGenerationOperationStartRequest
+    ) async throws -> VideoGenerationOperationStartResult {
+        let request = operationRequest.request
+        var body = gatewayVideoBody(request)
+        if let webhookURL = operationRequest.webhookURL, !webhookURL.isEmpty {
+            body["callbackUrl"] = .string(webhookURL)
+        }
+        let response = try await config.sendJSONResponse(
+            path: "/video-model/start",
+            modelID: modelID,
+            body: .object(body),
+            headers: request.headers.mergingHeaders(gatewayVideoModelHeaders(modelID: modelID)),
+            abortSignal: request.abortSignal
+        )
+        guard let operation = response.json["operation"] else {
+            throw AIError.invalidResponse(provider: providerID, message: "Gateway video start response is missing operation.")
+        }
+        return VideoGenerationOperationStartResult(
+            operation: operation,
+            warnings: gatewayWarnings(from: response.json["warnings"]),
+            providerMetadata: gatewayProviderMetadata(response.json["providerMetadata"]),
+            responseMetadata: aiResponseMetadata(from: response.json, response: response.response, modelID: modelID)
+        )
+    }
+
+    public func videoGenerationStatus(
+        _ operationRequest: VideoGenerationOperationStatusRequest
+    ) async throws -> VideoGenerationOperationStatusResult {
+        let response = try await config.sendJSONResponse(
+            path: "/video-model/status",
+            modelID: modelID,
+            body: .object(["operation": operationRequest.operation]),
+            headers: operationRequest.headers.mergingHeaders(gatewayVideoModelHeaders(modelID: modelID)),
+            abortSignal: operationRequest.abortSignal
+        )
+        let raw = response.json
+        let providerMetadata = gatewayProviderMetadata(raw["providerMetadata"])
+        let responseMetadata = aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        switch raw["status"]?.stringValue {
+        case "pending":
+            return .pending(
+                warnings: gatewayWarnings(from: raw["warnings"]),
+                providerMetadata: providerMetadata,
+                responseMetadata: responseMetadata
+            )
+        case "completed":
+            let videos = raw["videos"]?.arrayValue ?? []
+            return .completed(VideoGenerationResult(
+                urls: videos.compactMap { item in
+                    item["type"]?.stringValue == "url" ? item["url"]?.stringValue : nil
+                },
+                base64Videos: videos.compactMap { item in
+                    item["type"]?.stringValue == "base64" ? item["data"]?.stringValue : nil
+                },
+                operationID: operationRequest.operation["gatewayJobId"]?.stringValue,
+                mediaType: videos.first?["mediaType"]?.stringValue,
+                rawValue: raw,
+                warnings: gatewayWarnings(from: raw["warnings"]),
+                providerMetadata: providerMetadata,
+                responseMetadata: responseMetadata
+            ))
+        case "error":
+            return .failed(
+                message: raw["error"]?.stringValue ?? "Gateway video generation failed.",
+                providerMetadata: providerMetadata,
+                responseMetadata: responseMetadata
+            )
+        case "cancelled":
+            return .failed(
+                message: "Video generation was cancelled.",
+                providerMetadata: providerMetadata,
+                responseMetadata: responseMetadata
+            )
+        default:
+            throw AIError.invalidResponse(provider: providerID, message: "Gateway video status response has an invalid status.")
+        }
+    }
+}
+
+private func gatewayVideoBody(_ request: VideoGenerationRequest) -> [String: JSONValue] {
+    var body: [String: JSONValue] = ["prompt": .string(request.prompt)]
+    if let aspectRatio = request.aspectRatio { body["aspectRatio"] = .string(aspectRatio) }
+    if let durationSeconds = request.durationSeconds { body["duration"] = .number(durationSeconds) }
+    if let count = request.count { body["n"] = .number(Double(count)) }
+    if let resolution = request.resolution { body["resolution"] = .string(resolution) }
+    if let fps = request.fps { body["fps"] = .number(fps) }
+    if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+    if let generateAudio = request.generateAudio { body["generateAudio"] = .bool(generateAudio) }
+    if !request.providerOptions.isEmpty { body["providerOptions"] = .object(request.providerOptions) }
+    if let image = request.image { body["image"] = gatewayVideoFile(image) }
+    if !request.frameImages.isEmpty {
+        body["frameImages"] = .array(request.frameImages.map(gatewayVideoFrameImage))
+    }
+    if !request.inputReferences.isEmpty {
+        body["inputReferences"] = .array(request.inputReferences.map(gatewayVideoFile))
+    }
+    body.merge(request.extraBody) { _, new in new }
+    return body
+}
+
+private func gatewayVideoModelHeaders(modelID: String) -> [String: String] {
+    [
+        "ai-video-model-specification-version": "4",
+        "ai-model-id": modelID
+    ]
 }
 
 func gatewayVideoFile(_ file: ImageInputFile) -> JSONValue {
@@ -257,15 +356,24 @@ public final class GatewaySpeechModel: SpeechModel, @unchecked Sendable {
     }
 }
 
-public final class GatewayTranscriptionModel: TranscriptionModel, @unchecked Sendable {
+public final class GatewayTranscriptionModel:
+    TranscriptionModel,
+    StreamingTranscriptionModel,
+    @unchecked Sendable {
     public let providerID: String
     public let modelID: String
-    private let config: ModelHTTPConfig
+    let config: ModelHTTPConfig
+    let webSocketTransport: any AIDuplexWebSocketTransport
 
-    init(modelID: String, config: ModelHTTPConfig) {
+    init(
+        modelID: String,
+        config: ModelHTTPConfig,
+        webSocketTransport: any AIDuplexWebSocketTransport = URLSessionDuplexWebSocketTransport.shared
+    ) {
         self.providerID = config.providerID
         self.modelID = modelID
         self.config = config
+        self.webSocketTransport = webSocketTransport
     }
 
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {

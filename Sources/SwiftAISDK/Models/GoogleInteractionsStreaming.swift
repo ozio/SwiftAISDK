@@ -13,7 +13,7 @@ func googleInteractionsToolCalls(from raw: JSONValue) -> [AIToolCall] {
             return nil
         }
         return AIToolCall(
-            id: step["id"]?.stringValue ?? "tool-call-\(name)",
+            id: resolvedToolCallID(step["id"]?.stringValue, whenMissing: "tool-call-\(name)"),
             name: name,
             arguments: googleInteractionsArguments(step["arguments"]),
             rawValue: step

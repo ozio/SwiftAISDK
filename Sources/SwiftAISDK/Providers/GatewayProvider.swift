@@ -103,12 +103,140 @@ public struct GatewayGenerationInfo: Equatable, Sendable {
     public var billableWebSearchCalls: Int
 }
 
+/// Options for minting a short-lived AI Gateway streaming-transcription
+/// client secret.
+public struct GatewayTranscriptionFactoryGetTokenOptions: Equatable, Sendable {
+    public var model: String
+    /// Token lifetime in seconds. AI Gateway defaults to 60 seconds and caps
+    /// the lifetime at 300 seconds.
+    public var expiresAfterSeconds: Int?
+
+    public init(model: String, expiresAfterSeconds: Int? = nil) {
+        self.model = model
+        self.expiresAfterSeconds = expiresAfterSeconds
+    }
+}
+
+/// A short-lived secret and WebSocket URL for browser-safe Gateway streaming
+/// transcription.
+public struct GatewayTranscriptionFactoryGetTokenResult: Equatable, Sendable {
+    public var token: String
+    public var url: String
+    public var expiresAt: Int?
+
+    public init(token: String, url: String, expiresAt: Int? = nil) {
+        self.token = token
+        self.url = url
+        self.expiresAt = expiresAt
+    }
+}
+
+/// Gateway's experimental streaming-transcription factory.
+///
+/// The factory is callable to create a model and also mints a short-lived
+/// transcription-bound client secret through ``getToken(_:)``. Mint secrets
+/// on a trusted server and pass only the returned `vcst_` token to clients.
+public struct GatewayTranscriptionFactory: Sendable {
+    private let config: ModelHTTPConfig
+    private let webSocketTransport: any AIDuplexWebSocketTransport
+
+    init(
+        config: ModelHTTPConfig,
+        webSocketTransport: any AIDuplexWebSocketTransport
+    ) {
+        self.config = config
+        self.webSocketTransport = webSocketTransport
+    }
+
+    public func callAsFunction(_ modelID: String) -> GatewayTranscriptionModel {
+        GatewayTranscriptionModel(
+            modelID: modelID,
+            config: config,
+            webSocketTransport: webSocketTransport
+        )
+    }
+
+    public func getToken(
+        _ options: GatewayTranscriptionFactoryGetTokenOptions
+    ) async throws -> GatewayTranscriptionFactoryGetTokenResult {
+        var body: [String: JSONValue] = [
+            "model": .string(options.model),
+            "routeKind": .string("transcription")
+        ]
+        if let expiresAfterSeconds = options.expiresAfterSeconds {
+            body["expiresIn"] = .number(Double(expiresAfterSeconds))
+        }
+
+        let response: AIHTTPResponse
+        do {
+            response = try await config.transport.send(AIHTTPRequest(
+                method: "POST",
+                url: try gatewayOriginURL(
+                    baseURL: config.baseURL,
+                    path: "/v1/realtime/client-secrets"
+                ),
+                headers: config.headers.mergingHeaders([
+                    "content-type": "application/json"
+                ]),
+                body: try encodeJSONBody(.object(body))
+            ))
+        } catch let error as GatewayError {
+            throw error
+        } catch {
+            throw GatewayError(
+                type: .internalServerError,
+                message: String(describing: error),
+                statusCode: 500
+            )
+        }
+
+        guard (200..<300).contains(response.statusCode) else {
+            throw gatewayErrorFromHTTPStatus(
+                statusCode: response.statusCode,
+                body: response.bodyText,
+                headers: response.headers
+            )
+        }
+        let raw = try response.jsonValue()
+        guard let token = raw["token"]?.stringValue, !token.isEmpty else {
+            throw AIError.invalidResponse(
+                provider: "gateway",
+                message: "Gateway transcription client-secret response did not contain a non-empty token."
+            )
+        }
+        return GatewayTranscriptionFactoryGetTokenResult(
+            token: token,
+            url: try gatewayTranscriptionWebSocketURL(
+                baseURL: config.baseURL,
+                modelID: options.model
+            ).absoluteString,
+            expiresAt: raw["expiresAt"]?.intValue
+        )
+    }
+}
+
 public final class GatewayProvider: AIProvider, @unchecked Sendable {
     public let providerID = "gateway"
     public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .speech, .video, .reranking]
     private let config: ModelHTTPConfig
+    private let webSocketTransport: any AIDuplexWebSocketTransport
 
-    public init(settings: ProviderSettings = ProviderSettings(), teamIDOrSlug: String? = nil) throws {
+    public convenience init(
+        settings: ProviderSettings = ProviderSettings(),
+        teamIDOrSlug: String? = nil
+    ) throws {
+        try self.init(
+            settings: settings,
+            teamIDOrSlug: teamIDOrSlug,
+            webSocketTransport: URLSessionDuplexWebSocketTransport.shared
+        )
+    }
+
+    public init(
+        settings: ProviderSettings = ProviderSettings(),
+        teamIDOrSlug: String? = nil,
+        webSocketTransport: any AIDuplexWebSocketTransport
+    ) throws {
         var settings = settings
         if let teamIDOrSlug {
             settings.headers["x-vercel-ai-gateway-team"] = teamIDOrSlug
@@ -124,7 +252,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
         if normalizedHeaders["ai-gateway-auth-method"] == nil {
             settings.headers["ai-gateway-auth-method"] = auth.method
         }
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.54")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.62")
         config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v4/ai",
@@ -136,6 +264,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
             maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
             transformRequestBody: settings.transformRequestBody
         )
+        self.webSocketTransport = webSocketTransport
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
@@ -151,7 +280,39 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
     }
 
     public func transcriptionModel(_ modelID: String) throws -> any TranscriptionModel {
-        GatewayTranscriptionModel(modelID: modelID, config: config)
+        GatewayTranscriptionModel(
+            modelID: modelID,
+            config: config,
+            webSocketTransport: webSocketTransport
+        )
+    }
+
+    /// Creates a Gateway model for the shared streaming-transcription
+    /// WebSocket envelope.
+    public func streamingTranscriptionModel(
+        _ modelID: String
+    ) throws -> any StreamingTranscriptionModel {
+        GatewayTranscriptionModel(
+            modelID: modelID,
+            config: config,
+            webSocketTransport: webSocketTransport
+        )
+    }
+
+    /// Alias for ``streamingTranscriptionModel(_:)``.
+    public func streamingTranscription(
+        _ modelID: String
+    ) throws -> any StreamingTranscriptionModel {
+        try streamingTranscriptionModel(modelID)
+    }
+
+    /// Callable experimental factory matching
+    /// `gateway.experimental_transcription` upstream.
+    public var experimentalTranscription: GatewayTranscriptionFactory {
+        GatewayTranscriptionFactory(
+            config: config,
+            webSocketTransport: webSocketTransport
+        )
     }
 
     public func speechModel(_ modelID: String) throws -> any SpeechModel {

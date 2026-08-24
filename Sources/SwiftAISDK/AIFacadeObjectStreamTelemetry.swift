@@ -90,6 +90,8 @@ func objectStreamWithTelemetry<Object: Sendable>(
                                 providerMetadata.merge(metadata) { _, new in new }
                             case let .responseMetadata(metadata):
                                 responseMetadata = metadata
+                            case .raw(.error):
+                                finishReason = "error"
                             case let .finish(reason, partUsage):
                                 finishReason = reason
                                 usage = partUsage

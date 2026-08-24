@@ -366,7 +366,7 @@ extension AI {
     }
 }
 
-private func normalizeVideoGenerationRequest(_ request: VideoGenerationRequest) -> (request: VideoGenerationRequest, warnings: [AIWarning]) {
+func normalizeVideoGenerationRequest(_ request: VideoGenerationRequest) -> (request: VideoGenerationRequest, warnings: [AIWarning]) {
     var normalized = request
     var warnings: [AIWarning] = []
 

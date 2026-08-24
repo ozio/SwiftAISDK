@@ -37,7 +37,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.cerebras.ai/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer cerebras-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/cerebras/3.0.31")
+    #expect(request.headers["user-agent"] == "ai-sdk/cerebras/3.0.35")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[1]?["reasoning"]?.stringValue == "I should call a tool.")
     #expect(body["messages"]?[1]?["reasoning_content"] == nil)
@@ -110,7 +110,7 @@ import Testing
     _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/cerebras/3.0.31")
+    #expect(request.headers["user-agent"] == "TestApp/1.0 ai-sdk/cerebras/3.0.35")
     #expect(request.headers["authorization"] == "Bearer cerebras-key")
 }
 
@@ -186,6 +186,66 @@ import Testing
     #expect(body["strictJsonSchema"] == nil)
 }
 
+@Test func cerebrasLanguageMapsMaxOutputTokensToDocumentedCompletionField() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("gpt-oss-120b")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        maxOutputTokens: 64
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["max_completion_tokens"]?.intValue == 64)
+    #expect(body["max_tokens"] == nil)
+}
+
+@Test func cerebrasLanguageMapsTypedProviderOptionsToRequestFields() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: transport))
+    let model = try provider.languageModel("gpt-oss-120b")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        responseFormat: .json(schema: ["type": "object"], name: "answer"),
+        providerOptions: [
+            "cerebras": [
+                "user": "user-123",
+                "strictJsonSchema": false,
+                "parallelToolCalls": false,
+                "logprobs": true,
+                "topLogprobs": 2,
+                "logitBias": ["42": 1],
+                "serviceTier": "priority",
+                "reasoningEffort": "none",
+                "reasoningFormat": "parsed",
+                "prediction": [
+                    "type": "content",
+                    "content": [["type": "text", "text": "expected"]]
+                ],
+                "promptCacheKey": "cache-key"
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["user"]?.stringValue == "user-123")
+    #expect(body["parallel_tool_calls"]?.boolValue == false)
+    #expect(body["logprobs"]?.boolValue == true)
+    #expect(body["top_logprobs"]?.intValue == 2)
+    #expect(body["logit_bias"]?["42"]?.intValue == 1)
+    #expect(body["service_tier"]?.stringValue == "priority")
+    #expect(body["reasoning_effort"]?.stringValue == "none")
+    #expect(body["reasoning_format"]?.stringValue == "parsed")
+    #expect(body["prediction"]?["content"]?[0]?["text"]?.stringValue == "expected")
+    #expect(body["prompt_cache_key"]?.stringValue == "cache-key")
+    #expect(body["response_format"]?["json_schema"]?["strict"]?.boolValue == false)
+    #expect(body["parallelToolCalls"] == nil)
+    #expect(body["reasoningFormat"] == nil)
+    #expect(body["promptCacheKey"] == nil)
+}
+
 @Test func cerebrasProviderOptionsValidateKnownOpenAICompatibleSchema() async throws {
     let provider = try AIProviders.cerebras(settings: ProviderSettings(apiKey: "cerebras-key", transport: RecordingTransport(responses: [])))
     let model = try provider.languageModel("zai-glm-4.7")
@@ -204,7 +264,7 @@ import Testing
         ))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.openaiCompatible.reasoningEffort", message: "Cerebras reasoningEffort must be a string.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.openaiCompatible.reasoningEffort", message: "Cerebras reasoningEffort must be none, low, medium, or high.")) {
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
             providerOptions: ["openaiCompatible": ["reasoningEffort": 7]]
@@ -215,6 +275,34 @@ import Testing
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
             providerOptions: ["cerebras": ["strictJsonSchema": "yes"]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cerebras.topLogprobs", message: "Cerebras topLogprobs must be an integer from 0 to 20.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["cerebras": ["topLogprobs": 21]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cerebras.logitBias", message: "Cerebras logitBias must be an object whose values are numbers from -100 to 100.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["cerebras": ["logitBias": ["42": 101]]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cerebras.prediction", message: "Cerebras prediction must contain type content and string or text-part content.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["cerebras": ["prediction": ["type": "content", "content": [["type": "image", "text": "invalid"]]]]]
+        ))
+    }
+
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.cerebras.promptCacheKey", message: "Cerebras promptCacheKey must be a string with at most 1024 characters.")) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["cerebras": ["promptCacheKey": .string(String(repeating: "x", count: 1_025))]]
         ))
     }
 }

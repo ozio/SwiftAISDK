@@ -245,6 +245,57 @@ import Testing
     #expect(events.error?.errorDescription == "StreamObjectStartFailure()")
 }
 
+@Test func aiStreamObjectSettlesProviderErrorPartsAsFailuresLikeUpstream() async throws {
+    let recorder = ObjectCallbackRecorder<StreamObjectContent>()
+    let providerError = LanguageStreamPart.error(
+        message: "provider stream failed",
+        rawValue: ["code": "stream_error"]
+    )
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: [:]),
+        streamParts: [providerError]
+    )
+    var rawParts: [LanguageStreamPart] = []
+    var emittedObject = false
+    var emittedFinish = false
+
+    do {
+        for try await part in AI.streamObject(
+            model: model,
+            prompt: "prompt",
+            as: StreamObjectContent.self,
+            schema: streamObjectContentSchema(),
+            retryPolicy: .none,
+            callbacks: AIObjectGenerationCallbacks(
+                onError: { event in await recorder.recordError(event) }
+            )
+        ) {
+            switch part {
+            case let .raw(rawPart):
+                rawParts.append(rawPart)
+            case .object:
+                emittedObject = true
+            case .finish:
+                emittedFinish = true
+            default:
+                break
+            }
+        }
+        Issue.record("Expected the provider error part to terminate streamObject with an error.")
+    } catch let error as AIError {
+        #expect(error == .invalidResponse(provider: "mock", message: "provider stream failed"))
+    }
+
+    #expect(rawParts == [providerError])
+    #expect(!emittedObject)
+    #expect(!emittedFinish)
+    let events = await recorder.events()
+    #expect(events.names == ["error"])
+    #expect(events.error?.finishReason == "error")
+    #expect(events.error?.usage == nil)
+    #expect(events.error?.errorDescription.contains("provider stream failed") == true)
+}
+
 @Test func aiStreamObjectResolvesProviderMetadataLikeUpstream() async throws {
     let providerMetadata: [String: JSONValue] = [
         "testProvider": [

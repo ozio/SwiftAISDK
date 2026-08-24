@@ -9,7 +9,7 @@ Source URL: /components/chat-and-ui-messages/
 | Case | 6 |
 | Class | 1 |
 | Enumeration | 2 |
-| Function | 4 |
+| Function | 5 |
 | Initializer | 10 |
 | Instance Method | 19 |
 | Instance Property | 71 |
@@ -32,6 +32,7 @@ Source URL: /components/chat-and-ui-messages/
 | Enumeration | `AIChatTransportTrigger` | `enum AIChatTransportTrigger` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |
 | Function | `convertToModelMessage(_:)` | `func convertToModelMessage(_ message: AIUIMessage) throws -> AIMessage` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `convertToModelMessages(_:)` | `func convertToModelMessages(_ messages: [AIUIMessage]) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
+| Function | `convertToModelMessages(_:ignoreIncompleteToolCalls:)` | `func convertToModelMessages(_ messages: [AIUIMessage], ignoreIncompleteToolCalls: Bool) throws -> [AIMessage]` | [Sources/SwiftAISDK/AIUIMessageConversion.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageConversion.swift) |
 | Function | `safeValidateUIMessages(_:)` | `func safeValidateUIMessages(_ messages: [AIUIMessage]) -> AIUIMessageValidationResult` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Function | `validateUIMessages(_:)` | `@discardableResult func validateUIMessages(_ messages: [AIUIMessage]) throws -> [AIUIMessage]` | [Sources/SwiftAISDK/AIUIMessageValidation.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIUIMessageValidation.swift) |
 | Initializer | `init(chatID:abortSignal:headers:body:metadata:)` | `init(chatID: String, abortSignal: AIAbortSignal? = nil, headers: [String : String] = [:], body: [String : JSONValue] = [:], metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/AIChatTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIChatTransport.swift) |

@@ -66,6 +66,135 @@ public final class MultipartFileClient: AIFileClient, @unchecked Sendable {
     }
 }
 
+/// DeepSeek's Files V4 upload surface. Unlike the generic OpenAI-compatible
+/// multipart route, DeepSeek fixes the purpose to `user_data` and exposes a
+/// bounded `expiresAfter` provider option.
+public final class DeepSeekFileClient: AIFileClient, @unchecked Sendable {
+    public let providerID = "deepseek.files"
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        self.config = config
+    }
+
+    public func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
+        let expiresAfter = try deepSeekFileExpiresAfter(request.providerOptions)
+        var form = MultipartFormData()
+        form.appendFile(
+            name: "file",
+            fileName: request.filename ?? "blob",
+            mimeType: request.mediaType,
+            data: request.data
+        )
+        form.appendField(name: "purpose", value: "user_data")
+        if let expiresAfter {
+            form.appendField(name: "expires_after[anchor]", value: "created_at")
+            form.appendField(name: "expires_after[seconds]", value: String(expiresAfter))
+        }
+
+        let uploadRequest = try config.rawRequest(
+            path: "/files",
+            modelID: "",
+            body: form.finalize(),
+            contentType: "multipart/form-data; boundary=\(form.boundary)",
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        )
+        let response = try await config.transport.send(uploadRequest)
+        guard (200..<300).contains(response.statusCode) else {
+            throw deepSeekFileHTTPStatusError(response: response)
+        }
+
+        let raw = try response.jsonValue()
+        guard let id = raw["id"]?.stringValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response is missing id.")
+        }
+        try deepSeekValidateOptionalFileResponseFields(raw, providerID: providerID)
+
+        var metadata: [String: JSONValue] = [:]
+        if let filename = raw["filename"], filename != .null { metadata["filename"] = filename }
+        if let purpose = raw["purpose"], purpose != .null { metadata["purpose"] = purpose }
+        if let bytes = raw["bytes"], bytes != .null { metadata["bytes"] = bytes }
+        if let createdAt = raw["created_at"], createdAt != .null { metadata["createdAt"] = createdAt }
+        if let expiresAt = raw["expires_at"], expiresAt != .null { metadata["expiresAt"] = expiresAt }
+
+        var warnings: [AIWarning] = []
+        if request.displayName != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "displayName"))
+        }
+        if request.purpose != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "purpose"))
+        }
+        if !request.extraBody.isEmpty {
+            warnings.append(AIWarning(type: "unsupported", feature: "extraBody"))
+        }
+
+        var requestBody: [String: JSONValue] = [
+            "file": .object(fileUploadMetadata(request, defaultFilename: "blob")),
+            "purpose": .string("user_data")
+        ]
+        if let expiresAfter {
+            requestBody["expiresAfter"] = .number(Double(expiresAfter))
+        }
+
+        return FileUploadResult(
+            providerReference: ["deepseek": id],
+            filename: raw["filename"]?.stringValue ?? request.filename,
+            mediaType: request.mediaType,
+            rawValue: raw,
+            warnings: warnings,
+            providerMetadata: ["deepseek": .object(metadata)],
+            requestMetadata: AIRequestMetadata(body: .object(requestBody), headers: request.headers),
+            responseMetadata: aiResponseMetadata(from: raw, response: response)
+        )
+    }
+}
+
+private func deepSeekFileHTTPStatusError(response: AIHTTPResponse) -> AIError {
+    let body = (try? response.jsonValue())?["error"]?["message"]?.stringValue
+        ?? response.bodyText
+    return .apiCall(
+        provider: "deepseek.files",
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+private func deepSeekFileExpiresAfter(_ providerOptions: [String: JSONValue]) throws -> Int? {
+    guard let namespace = providerOptions["deepseek"], namespace != .null else { return nil }
+    guard let options = namespace.objectValue else {
+        throw AIError.invalidArgument(
+            argument: "providerOptions.deepseek",
+            message: "DeepSeek file provider options must be an object."
+        )
+    }
+    guard let value = options["expiresAfter"] else { return nil }
+    guard let number = value.doubleValue,
+          number.isFinite,
+          let seconds = Int(exactly: number),
+          (3_600...2_592_000).contains(seconds) else {
+        throw AIError.invalidArgument(
+            argument: "providerOptions.deepseek.expiresAfter",
+            message: "DeepSeek expiresAfter must be an integer between 3600 and 2592000."
+        )
+    }
+    return seconds
+}
+
+private func deepSeekValidateOptionalFileResponseFields(_ raw: JSONValue, providerID: String) throws {
+    for key in ["object", "filename", "purpose"] {
+        if let value = raw[key], value != .null, value.stringValue == nil {
+            throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field \(key) must be a string.")
+        }
+    }
+    for key in ["bytes", "created_at", "expires_at"] {
+        if let value = raw[key], value != .null, value.doubleValue == nil {
+            throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field \(key) must be a number.")
+        }
+    }
+}
+
 public final class GoogleFileClient: AIFileClient, @unchecked Sendable {
     public let providerID: String
     private let config: ModelHTTPConfig

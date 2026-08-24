@@ -218,6 +218,7 @@ extension AI {
                     var steps: [AIToolStep] = []
                     var responseMessages: [AIMessage] = []
                     var pendingProviderExecutedToolCallIDs: Set<String> = []
+                    let partIDReserver = LanguageStreamPartIDReserver()
                     let toolTelemetry = AIToolLoopTelemetryContext(
                         operationID: "ai.streamText",
                         providerID: model.providerID,
@@ -313,7 +314,8 @@ extension AI {
                             to: continuation,
                             toolsByName: toolsByName,
                             request: stepRequest,
-                            repairToolCall: repairToolCall
+                            repairToolCall: repairToolCall,
+                            partIDReserver: partIDReserver
                         )
                         try stepDeadline.throwIfTimedOut()
                         let executableCalls = step.toolCalls.filter { !$0.providerExecuted }
@@ -328,6 +330,20 @@ extension AI {
                             return nil
                         })
                         pendingProviderExecutedToolCallIDs.subtract(providerExecutedToolResultIDs)
+
+                        if !isAutomaticToolExecutionAllowed(finishReason: step.finishReason) {
+                            let completedStep = step.toolStep(
+                                index: index,
+                                toolResults: [],
+                                approvalRequests: [],
+                                approvalResponses: []
+                            )
+                            steps.append(completedStep)
+                            await toolTelemetry.recordStepEnd(completedStep)
+                            try stepDeadline.throwIfTimedOut()
+                            continuation.finish()
+                            return
+                        }
 
                         guard !executableCalls.isEmpty else {
                             let completedStep = step.toolStep(

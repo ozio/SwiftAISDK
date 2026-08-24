@@ -1,10 +1,42 @@
 import Foundation
 
 func googleOpenAPISchema(from schema: JSONValue, isRoot: Bool) throws -> JSONValue? {
-    if case let .bool(value) = schema {
-        return value ? .object(["type": .string("boolean"), "properties": .object([:])]) : nil
+    let rootObject = schema.objectValue
+    return try googleOpenAPISchema(
+        from: schema,
+        isRoot: isRoot,
+        referenceContext: GoogleSchemaReferenceContext(
+            definitions: rootObject?["definitions"]?.objectValue,
+            dollarDefinitions: rootObject?["$defs"]?.objectValue,
+            resolvingReferences: []
+        )
+    )
+}
+
+private struct GoogleSchemaReferenceContext {
+    var definitions: [String: JSONValue]?
+    var dollarDefinitions: [String: JSONValue]?
+    var resolvingReferences: Set<String>
+}
+
+private func googleOpenAPISchema(
+    from schema: JSONValue,
+    isRoot: Bool,
+    referenceContext: GoogleSchemaReferenceContext
+) throws -> JSONValue? {
+    if case .bool = schema {
+        return .object(["type": .string("boolean"), "properties": .object([:])])
     }
     guard let object = schema.objectValue else { return schema }
+
+    if let reference = object["$ref"]?.stringValue {
+        return try googleOpenAPISchemaReference(
+            object,
+            reference: reference,
+            isRoot: isRoot,
+            referenceContext: referenceContext
+        )
+    }
 
     if isRoot,
        object["type"]?.stringValue == "object",
@@ -44,37 +76,177 @@ func googleOpenAPISchema(from schema: JSONValue, isRoot: Bool) throws -> JSONVal
     if let properties = object["properties"]?.objectValue {
         var converted: [String: JSONValue] = [:]
         for (name, propertySchema) in properties {
-            converted[name] = try googleOpenAPISchema(from: propertySchema, isRoot: false) ?? .object([:])
+            converted[name] = try googleOpenAPISchema(
+                from: propertySchema,
+                isRoot: false,
+                referenceContext: referenceContext
+            ) ?? .object([:])
         }
         result["properties"] = .object(converted)
     }
     if let items = object["items"] {
         if let array = items.arrayValue {
-            result["items"] = .array(try array.map { try googleOpenAPISchema(from: $0, isRoot: false) ?? .object([:]) })
-        } else if let converted = try googleOpenAPISchema(from: items, isRoot: false) {
+            result["items"] = .array(try array.map {
+                try googleOpenAPISchema(
+                    from: $0,
+                    isRoot: false,
+                    referenceContext: referenceContext
+                ) ?? .object([:])
+            })
+        } else if let converted = try googleOpenAPISchema(
+            from: items,
+            isRoot: false,
+            referenceContext: referenceContext
+        ) {
             result["items"] = converted
         }
     }
     for key in ["allOf", "oneOf"] {
         if let array = object[key]?.arrayValue {
-            result[key] = .array(try array.map { try googleOpenAPISchema(from: $0, isRoot: false) ?? .object([:]) })
+            result[key] = .array(try array.map {
+                try googleOpenAPISchema(
+                    from: $0,
+                    isRoot: false,
+                    referenceContext: referenceContext
+                ) ?? .object([:])
+            })
         }
     }
     if let anyOf = object["anyOf"]?.arrayValue {
         let nonNullSchemas = anyOf.filter { $0["type"]?.stringValue != "null" }
         if nonNullSchemas.count != anyOf.count {
             result["nullable"] = true
-            if nonNullSchemas.count == 1, let converted = try googleOpenAPISchema(from: nonNullSchemas[0], isRoot: false)?.objectValue {
+            if nonNullSchemas.count == 1,
+               let converted = try googleOpenAPISchema(
+                   from: nonNullSchemas[0],
+                   isRoot: false,
+                   referenceContext: referenceContext
+               )?.objectValue {
                 result.merge(converted) { _, new in new }
             } else {
-                result["anyOf"] = .array(try nonNullSchemas.map { try googleOpenAPISchema(from: $0, isRoot: false) ?? .object([:]) })
+                result["anyOf"] = .array(try nonNullSchemas.map {
+                    try googleOpenAPISchema(
+                        from: $0,
+                        isRoot: false,
+                        referenceContext: referenceContext
+                    ) ?? .object([:])
+                })
             }
         } else {
-            result["anyOf"] = .array(try anyOf.map { try googleOpenAPISchema(from: $0, isRoot: false) ?? .object([:]) })
+            result["anyOf"] = .array(try anyOf.map {
+                try googleOpenAPISchema(
+                    from: $0,
+                    isRoot: false,
+                    referenceContext: referenceContext
+                ) ?? .object([:])
+            })
         }
     }
 
     return result.isEmpty ? nil : .object(result)
+}
+
+private func googleOpenAPISchemaReference(
+    _ schema: [String: JSONValue],
+    reference: String,
+    isRoot: Bool,
+    referenceContext: GoogleSchemaReferenceContext
+) throws -> JSONValue? {
+    let resolvedReference = try googleReferencedSchema(
+        reference,
+        referenceContext: referenceContext
+    )
+    guard !referenceContext.resolvingReferences.contains(resolvedReference.key) else {
+        throw AIError.invalidArgument(
+            argument: "schema",
+            message: "Google schema conversion does not support recursive JSON Schema references."
+        )
+    }
+
+    var resolvingReferences = referenceContext.resolvingReferences
+    resolvingReferences.insert(resolvedReference.key)
+
+    var siblings = schema
+    siblings.removeValue(forKey: "$ref")
+
+    let resolvedSchema: JSONValue
+    switch resolvedReference.schema {
+    case .bool(true):
+        resolvedSchema = .object(siblings)
+    case .bool(false):
+        resolvedSchema = .bool(false)
+    case let .object(definition):
+        var resolved = definition
+        resolved.merge(siblings) { _, sibling in sibling }
+        resolvedSchema = .object(resolved)
+    default:
+        resolvedSchema = resolvedReference.schema
+    }
+
+    return try googleOpenAPISchema(
+        from: resolvedSchema,
+        isRoot: isRoot,
+        referenceContext: GoogleSchemaReferenceContext(
+            definitions: referenceContext.definitions,
+            dollarDefinitions: referenceContext.dollarDefinitions,
+            resolvingReferences: resolvingReferences
+        )
+    )
+}
+
+private func googleReferencedSchema(
+    _ reference: String,
+    referenceContext: GoogleSchemaReferenceContext
+) throws -> (schema: JSONValue, key: String) {
+    let prefix: String
+    let definitions: [String: JSONValue]?
+    if reference.hasPrefix("#/$defs/") {
+        prefix = "#/$defs/"
+        definitions = referenceContext.dollarDefinitions
+    } else if reference.hasPrefix("#/definitions/") {
+        prefix = "#/definitions/"
+        definitions = referenceContext.definitions
+    } else {
+        throw googleUnsupportedSchemaReference(reference)
+    }
+
+    let encodedName = String(reference.dropFirst(prefix.count))
+    guard !encodedName.isEmpty,
+          !encodedName.contains("/"),
+          let decodedName = encodedName.removingPercentEncoding,
+          !decodedName.contains("/"),
+          !googleHasInvalidJSONPointerEscape(decodedName),
+          let definitions else {
+        throw googleUnsupportedSchemaReference(reference)
+    }
+
+    let definitionName = decodedName
+        .replacingOccurrences(of: "~1", with: "/")
+        .replacingOccurrences(of: "~0", with: "~")
+    guard let definition = definitions[definitionName] else {
+        throw googleUnsupportedSchemaReference(reference)
+    }
+
+    return (definition, "\(prefix)\(definitionName)")
+}
+
+private func googleHasInvalidJSONPointerEscape(_ value: String) -> Bool {
+    var index = value.startIndex
+    while let tilde = value[index...].firstIndex(of: "~") {
+        let next = value.index(after: tilde)
+        guard next != value.endIndex, value[next] == "0" || value[next] == "1" else {
+            return true
+        }
+        index = value.index(after: next)
+    }
+    return false
+}
+
+private func googleUnsupportedSchemaReference(_ reference: String) -> AIError {
+    AIError.invalidArgument(
+        argument: "schema",
+        message: "Google schema conversion only supports references to direct children of root-level $defs or definitions. Unsupported reference: \(reference)"
+    )
 }
 
 private enum GoogleEnumPrimitiveType: String {

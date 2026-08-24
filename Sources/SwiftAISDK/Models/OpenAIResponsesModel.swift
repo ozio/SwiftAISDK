@@ -45,7 +45,13 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             }
         }
         let toolNameAliases = openAIResponsesProviderToolNameAliases(from: request.tools)
-        let toolCalls = openAIResponsesToolCalls(from: raw, providerID: providerID, toolNameAliases: toolNameAliases)
+        let functionToolNames = openAIResponsesFunctionToolNames(from: request.tools)
+        let toolCalls = openAIResponsesToolCalls(
+            from: raw,
+            providerID: providerID,
+            toolNameAliases: toolNameAliases,
+            functionToolNames: functionToolNames
+        )
         let toolResults = openAIResponsesToolResults(from: raw, providerID: providerID, toolNameAliases: toolNameAliases)
         let toolApprovalRequests = openAIResponsesToolApprovalRequests(from: raw, providerID: providerID)
         let sources = openAIResponsesSources(from: raw, providerID: providerID)
@@ -57,7 +63,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             sources: sources,
             providerID: providerID,
             mode: config.responsesRequestMode,
-            toolNameAliases: toolNameAliases
+            toolNameAliases: toolNameAliases,
+            functionToolNames: functionToolNames
         )
         let text = openAIResponsesOutputText(from: raw)
             ?? raw["choices"]?[0]?["message"]?["content"]?.stringValue
@@ -111,7 +118,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
                     let toolNameAliases = openAIResponsesProviderToolNameAliases(from: request.tools)
-                    var toolCallBuffers = OpenAIResponsesStreamingToolCalls(providerID: providerID, toolNameAliases: toolNameAliases)
+                    let functionToolNames = openAIResponsesFunctionToolNames(from: request.tools)
+                    var toolCallBuffers = OpenAIResponsesStreamingToolCalls(
+                        providerID: providerID,
+                        toolNameAliases: toolNameAliases,
+                        functionToolNames: functionToolNames
+                    )
                     var providerMetadata: [String: JSONValue] = [:]
                     var streamResponseID: JSONValue?
                     var textItemPhases: [String: JSONValue] = [:]
@@ -201,7 +213,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             activeReasoningPartIDs = []
                             toolCallBuffers = OpenAIResponsesStreamingToolCalls(
                                 providerID: providerID,
-                                toolNameAliases: toolNameAliases
+                                toolNameAliases: toolNameAliases,
+                                functionToolNames: functionToolNames
                             )
                             streamResponseID = responsePayload["id"]
                             openResponsesHasToolCalls = false
@@ -487,6 +500,9 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     for reasoningID in activeReasoningPartIDs.sorted() {
                         continuation.yield(.reasoningEnd(id: reasoningID))
                     }
+                    for eventPart in toolCallBuffers.finishedParts() {
+                        continuation.yield(eventPart)
+                    }
                     if let response = pendingCompletedResponse {
                         let finishReason = response["status"]?.stringValue == "failed" &&
                             response["incomplete_details"]?["reason"]?.stringValue == nil
@@ -620,7 +636,15 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         let useDeveloperRoleForSystem = isEffectiveReasoningModel
         let compactionTrigger = (options.removeValue(forKey: "compactionTrigger")
             ?? options.removeValue(forKey: "compaction_trigger"))?.boolValue == true
-        var input = try request.messages.flatMap {
+        let preparedMessages = openAIResponsesMessagesByCollapsingParallelToolResults(
+            request.messages,
+            providerID: providerID,
+            hasConversation: hasConversation,
+            hasPreviousResponseID: hasPreviousResponseID,
+            outputSchemaToolNames: preparedTools.outputSchemaToolNames,
+            warnings: &warnings
+        )
+        var input = try preparedMessages.flatMap {
             try openAIResponsesInputMessageJSON(
                 $0,
                 store: store,

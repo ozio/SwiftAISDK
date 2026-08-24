@@ -6,8 +6,9 @@ Use Batch V4 when a provider supports durable, asynchronous text generation.
 The returned `TextBatchReference` is persistable, so status and result reads can
 resume in another process without keeping the original request alive.
 
-Anthropic Messages Batch and OpenAI Responses Batch implement the shared
-adapter. Choose a batch-capable model from either provider:
+Anthropic Messages Batch, OpenAI Responses Batch, and Gateway Batch V4
+implement the shared adapter. Choose a batch-capable model from any of these
+providers:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -40,6 +41,25 @@ let openAIModel = try openAI.batchLanguageModel("gpt-5.6")
 
 let started = try await AI.startTextBatch(
     model: openAIModel,
+    requests: [
+        TextBatchRequest(
+            id: "summary-1",
+            request: LanguageModelRequest(messages: [
+                .user("Summarize the release notes.")
+            ])
+        )
+    ]
+)
+```
+
+Gateway language models also expose the shared batch facade:
+
+```swift
+let gateway = try AIProviders.gateway()
+let gatewayModel = try gateway.languageModel("openai/gpt-5.6")
+
+let started = try await AI.startTextBatch(
+    model: gatewayModel,
     requests: [
         TextBatchRequest(
             id: "summary-1",

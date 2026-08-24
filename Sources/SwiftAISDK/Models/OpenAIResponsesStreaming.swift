@@ -3,14 +3,22 @@ import Foundation
 struct OpenAIResponsesStreamingToolCalls {
     let providerID: String
     let toolNameAliases: [String: String]
+    let functionToolNames: Set<String>
     private var buffers: [Int: OpenAICompatibleToolCallBuffer] = [:]
+    private var suppressedParallelIndexes: Set<Int> = []
+    private var suppressedParallelDeltas: [Int: [String]] = [:]
     private var hostedToolSearchCallIDs: [String] = []
     private var xaiImageGenerationToolCallIDs: Set<String> = []
     private var approvalToolCallIndex = 0
 
-    init(providerID: String, toolNameAliases: [String: String] = [:]) {
+    init(
+        providerID: String,
+        toolNameAliases: [String: String] = [:],
+        functionToolNames: Set<String> = []
+    ) {
         self.providerID = providerID
         self.toolNameAliases = toolNameAliases
+        self.functionToolNames = functionToolNames
     }
 
     mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
@@ -46,6 +54,14 @@ struct OpenAIResponsesStreamingToolCalls {
                 inputStarted: true,
                 rawValue: item
             )
+            if openAIResponsesIsUndeclaredParallelToolCall(
+                name: toolCall.name,
+                functionToolNames: functionToolNames
+            ) {
+                suppressedParallelIndexes.insert(index)
+                suppressedParallelDeltas[index] = []
+                return []
+            }
             return [
                 .toolInputStart(id: toolCall.id, name: toolCall.name, providerExecuted: toolCall.providerExecuted, dynamic: toolCall.dynamic),
                 .toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: "", index: index)
@@ -56,6 +72,10 @@ struct OpenAIResponsesStreamingToolCalls {
             let delta = raw["delta"]?.stringValue ?? ""
             buffer.arguments += delta
             buffers[index] = buffer
+            if suppressedParallelIndexes.contains(index) {
+                suppressedParallelDeltas[index, default: []].append(delta)
+                return []
+            }
             let id = buffer.id ?? "tool-call-\(index)"
             var parts: [LanguageStreamPart] = [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: delta, index: index)]
             if !delta.isEmpty {
@@ -203,15 +223,43 @@ struct OpenAIResponsesStreamingToolCalls {
             default:
                 break
             }
+            let suppressedParallel = suppressedParallelIndexes.remove(index) != nil
+            let bufferedParallelDeltas = suppressedParallelDeltas.removeValue(forKey: index) ?? []
             buffers[index] = nil
             guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
-            var parts: [LanguageStreamPart] = [
+            if suppressedParallel,
+               let expanded = openAIResponsesExpandedParallelToolCalls(
+                   from: toolCall,
+                   itemID: item["id"]?.stringValue ?? toolCall.id,
+                   providerID: providerID,
+                   functionToolNames: functionToolNames
+               ) {
+                return expanded.flatMap { call in
+                    [
+                        .toolInputStart(id: call.id, name: call.name, providerMetadata: call.providerMetadata),
+                        .toolInputDelta(id: call.id, delta: call.arguments, providerMetadata: call.providerMetadata),
+                        .toolInputEnd(id: call.id, providerMetadata: call.providerMetadata),
+                        .toolCall(call)
+                    ]
+                }
+            }
+            var parts: [LanguageStreamPart] = []
+            if suppressedParallel {
+                parts.append(.toolInputStart(id: toolCall.id, name: toolCall.name))
+                let fallbackDeltas = bufferedParallelDeltas.isEmpty && !toolCall.arguments.isEmpty
+                    ? [toolCall.arguments]
+                    : bufferedParallelDeltas
+                parts.append(contentsOf: fallbackDeltas.map {
+                    .toolInputDelta(id: toolCall.id, delta: $0)
+                })
+            }
+            parts.append(contentsOf: [
                 .toolInputEnd(
                     id: toolCall.id,
                     providerMetadata: openAIResponsesToolInputEndProviderMetadata(from: item, providerID: providerID)
                 ),
                 .toolCall(toolCall)
-            ]
+            ])
             if let toolResult = openAIResponsesToolResult(from: item, providerID: providerID, toolNameAliases: toolNameAliases) {
                 parts.append(.toolResult(toolResult))
             }
@@ -222,6 +270,22 @@ struct OpenAIResponsesStreamingToolCalls {
         default:
             return []
         }
+    }
+
+    mutating func finishedParts() -> [LanguageStreamPart] {
+        var parts: [LanguageStreamPart] = []
+        for index in suppressedParallelIndexes.sorted() {
+            guard let buffer = buffers[index],
+                  let id = buffer.id,
+                  let name = buffer.name else { continue }
+            parts.append(.toolInputStart(id: id, name: name))
+            parts.append(contentsOf: (suppressedParallelDeltas[index] ?? []).map {
+                .toolInputDelta(id: id, delta: $0)
+            })
+        }
+        suppressedParallelIndexes = []
+        suppressedParallelDeltas = [:]
+        return parts
     }
 
     private mutating func handleToolSearchAdded(item: JSONValue, index: Int) -> [LanguageStreamPart] {

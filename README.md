@@ -226,8 +226,8 @@ their normalized `AIAPICallError` through `GatewayError.cause`.
 ## Durable Batch And Video Operations
 
 Batch V4 exposes persistable text-batch references plus status and terminal
-result streams. Anthropic Messages Batch and OpenAI Responses Batch implement
-the shared adapter:
+result streams. Anthropic Messages Batch, OpenAI Responses Batch, and Gateway
+Batch V4 implement the shared adapter:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -243,15 +243,36 @@ let started = try await AI.startTextBatch(
 // OpenAI Responses uses the same facade:
 let openAI = try AIProviders.openAI()
 let openAIBatchModel = try openAI.batchLanguageModel("gpt-5.6")
+
+// Gateway models use the same facade through their language-model adapter:
+let gateway = try AIProviders.gateway()
+let gatewayBatchModel = try gateway.languageModel("openai/gpt-5.6")
 ```
 
 Async Video V4 keeps unary `generateVideo` source compatible while adding
 serializable start/status operations, core-owned polling/webhook waiting, and a
-stable logical-start idempotency key. Black Forest Labs FLUX 3 and Fal expose
-operation adapters; select the flow with `poll: VideoGenerationPollOptions(...)`
-or a webhook registration. Fal forwards its native webhook URL, while BFL
-warns and falls back to polling. Requests above a model's
+stable logical-start idempotency key. Black Forest Labs FLUX 3, Fal, ByteDance,
+and Gateway expose operation adapters; select the managed flow with
+`poll: VideoGenerationPollOptions(...)` or a webhook registration. Fal and
+Gateway forward native webhook URLs, while providers without native webhooks
+fall back to polling with a warning. Requests above a model's
 `maxVideosPerCall` are split into independent starts and merged in input order.
+
+Use `AI.startVideo` and `AI.getVideoStatus` when the operation must outlive the
+current process or be polled by another worker:
+
+```swift
+let model = try AIProviders.gateway().videoModel("bytedance/seedance-1-5-pro")
+let started = try await AI.startVideo(
+    model: model,
+    request: VideoGenerationRequest(prompt: "A lantern floating over Tokyo")
+)
+
+let status = try await AI.getVideoStatus(
+    model: model,
+    operation: started.operation
+)
+```
 
 ## Providers
 
@@ -313,6 +334,11 @@ let result = try await AI.generateText(
 
 Provider-specific options can be passed through request types or facade
 overloads via `providerOptions`, `extraBody`, `headers`, and `ProviderSettings`.
+DeepSeek V4 Flash Vision accepts image data, URLs, and uploaded DeepSeek file
+references; `try AIProviders.deepSeek().files()` exposes its `user_data` upload
+route. OpenAI-compatible chat accepts hosted video input through
+`AIContentPart.videoURL(...)` and preserves Gemini thought signatures under a
+custom provider namespace.
 
 Cartesia has dedicated speech and batch-transcription models:
 
@@ -363,6 +389,26 @@ let session = try await streaming.stream(StreamingTranscriptionRequest(
 The transport is injectable, access tokens are removed from request metadata,
 and stopping either side cancels the socket/audio producer. This
 transcription-only lifecycle is separate from a full realtime response session.
+
+Gateway exposes the same streaming-transcription protocol and can mint a
+short-lived, model-bound client token on a trusted server:
+
+```swift
+let gateway = try AIProviders.gateway()
+let credential = try await gateway.experimentalTranscription.getToken(.init(
+    model: "openai/gpt-realtime-whisper",
+    expiresAfterSeconds: 120
+))
+
+let gatewayStreaming = gateway.experimentalTranscription(
+    "openai/gpt-realtime-whisper"
+)
+```
+
+`gateway.streamingTranscription(_:)` is the direct model alias. The injectable
+duplex transport preserves Gateway auth/team subprotocols, splits large audio
+frames safely, and maps provider stream metadata and errors into the shared
+Swift lifecycle.
 
 ## Realtime Sessions
 
@@ -431,15 +477,16 @@ let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMidd
 
 ## MCP
 
-`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.33`: initialize handshake,
+`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.36`: initialize handshake,
 tool discovery, dynamic `AITool` conversion, resources, prompts, elicitation,
 HTTP/SSE transport, stdio transport, and OAuth helpers.
 OAuth providers can implement `authorize(resourceMetadataURL:scope:)` to receive
 the scope advertised by `WWW-Authenticate` or Protected Resource Metadata; the
 existing `authorize(resourceMetadataURL:)` requirement remains source-compatible.
-The 2.0.33 compatibility patch is absorbed in the protocol/HTTP transport and
-OAuth layers without changing the high-level `MCPClient` workflow. Public
-wording stays conservative while that upstream source vertical settles.
+The 2.0.36 behavior is absorbed in the protocol/HTTP transport and OAuth layers
+without changing the high-level `MCPClient` workflow. Non-successful POST/SSE
+responses preserve HTTP status, URL, and body details; upstream Windows command
+shim handling has no Swift process-transport analogue.
 
 ```swift
 let mcp = try await MCPClient.connect(

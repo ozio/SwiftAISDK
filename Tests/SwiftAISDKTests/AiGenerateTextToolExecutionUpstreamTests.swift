@@ -2,6 +2,48 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test(arguments: ["length", "error", "content-filter", "other"])
+func aiGenerateTextDoesNotExecuteToolsAfterUnsafeFinishReasonsLikeUpstream(
+    finishReason: String
+) async throws {
+    let capture = GenerateUnsafeToolInvocationCapture()
+    let toolCall = AIToolCall(
+        id: "call-1",
+        name: "testTool",
+        arguments: #"{"value":"test"}"#
+    )
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "",
+        content: [.toolCall(toolCall)],
+        finishReason: finishReason,
+        rawValue: [:]
+    ))
+    let tool = AITool(
+        name: "testTool",
+        parameters: [
+            "type": "object",
+            "properties": ["value": ["type": "string"]],
+            "required": ["value"]
+        ]
+    ) { input in
+        await capture.record(input)
+        return "tool-result"
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "test-input",
+        executableTools: [tool],
+        maxSteps: 2
+    )
+
+    #expect(result.toolCalls == [toolCall])
+    #expect(result.toolResults.isEmpty)
+    #expect(result.steps.count == 1)
+    #expect(await capture.count() == 0)
+    #expect(model.requests.count == 1)
+}
+
 @Test func aiGenerateTextKeepsProviderExecutedToolCallsAndResultsLikeUpstream() async throws {
     let call1 = AIToolCall(
         id: "call-1",
@@ -211,4 +253,63 @@ import Testing
         AIMessage(role: .assistant, content: [.toolCall(toolCall)]),
         AIMessage(role: .tool, content: [.toolResult(errorResult)])
     ])
+}
+
+@Test func aiGenerateTextStopsForClientApprovalWhileProviderResultIsDeferredLikeUpstream() async throws {
+    let capture = GenerateUnsafeToolInvocationCapture()
+    let providerCall = AIToolCall(
+        id: "program-call",
+        name: "program",
+        arguments: #"{"code":"getHours()"}"#,
+        providerExecuted: true
+    )
+    let clientCall = AIToolCall(
+        id: "get-hours-call",
+        name: "getHours",
+        arguments: #"{"member":"Ada"}"#
+    )
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "",
+        content: [.toolCall(providerCall), .toolCall(clientCall)],
+        finishReason: "tool-calls",
+        rawValue: [:]
+    ))
+    let clientTool = AITool(
+        name: "getHours",
+        parameters: [
+            "type": "object",
+            "properties": ["member": ["type": "string"]],
+            "required": ["member"]
+        ]
+    ) { input in
+        await capture.record(input)
+        return "hours"
+    }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "Get Ada hours with a program.",
+        executableTools: [clientTool],
+        maxSteps: 3,
+        toolApproval: { _ in .userApproval }
+    )
+
+    #expect(model.requests.count == 1)
+    #expect(await capture.count() == 0)
+    #expect(result.steps.count == 1)
+    #expect(result.toolApprovalRequests.map(\.toolCallID) == ["get-hours-call"])
+    #expect(result.content.contains(.toolCall(providerCall)))
+    #expect(result.content.contains(.toolCall(clientCall)))
+}
+
+private actor GenerateUnsafeToolInvocationCapture {
+    private var inputs: [JSONValue] = []
+
+    func record(_ input: JSONValue) {
+        inputs.append(input)
+    }
+
+    func count() -> Int {
+        inputs.count
+    }
 }

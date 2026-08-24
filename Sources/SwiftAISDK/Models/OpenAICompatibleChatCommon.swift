@@ -246,13 +246,25 @@ struct OpenAICompatibleToolCallBuffer {
 
 typealias OpenAICompatibleStreamingToolCalls = OpenAIStyleStreamingToolCalls
 
-func openAICompatibleChatToolCalls(from value: JSONValue?) -> [AIToolCall] {
+func openAICompatibleChatToolCalls(
+    from value: JSONValue?,
+    providerMetadataNamespace: String? = nil
+) -> [AIToolCall] {
     value?.arrayValue?.enumerated().compactMap { index, item in
         guard let name = item["function"]?["name"]?.stringValue else { return nil }
+        var providerMetadata: [String: JSONValue] = [:]
+        if let providerMetadataNamespace,
+           let thoughtSignature = item["extra_content"]?["google"]?["thought_signature"]?.stringValue,
+           !thoughtSignature.isEmpty {
+            providerMetadata[providerMetadataNamespace] = .object([
+                "thoughtSignature": .string(thoughtSignature)
+            ])
+        }
         return AIToolCall(
-            id: item["id"]?.stringValue ?? "tool-call-\(index)",
+            id: resolvedToolCallID(item["id"]?.stringValue, whenMissing: "tool-call-\(index)"),
             name: name,
             arguments: item["function"]?["arguments"]?.stringValue ?? "",
+            providerMetadata: providerMetadata,
             rawValue: item
         )
     } ?? []

@@ -228,6 +228,9 @@ public final class XAIImageModel: ImageModel, @unchecked Sendable {
         let response = try await config.sendJSONResponse(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let data = raw["data"]?.arrayValue ?? []
+        guard !data.contains(where: { $0["respect_moderation"]?.boolValue == false }) else {
+            throw AIError.invalidResponse(provider: providerID, message: "Image generation was blocked due to a content policy violation.")
+        }
         let urls = data.compactMap { $0["url"]?.stringValue }
         let base64Images: [String]
         let inlineImages = data.compactMap { $0["b64_json"]?.stringValue }

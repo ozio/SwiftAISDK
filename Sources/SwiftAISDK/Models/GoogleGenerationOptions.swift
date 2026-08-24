@@ -171,7 +171,7 @@ func googleToolConfigWithProviderOptions(_ toolConfig: JSONValue?, options: [Str
 func googleThinkingConfig(for reasoning: String?, modelID: String, warnings: inout [AIWarning]) -> [String: JSONValue]? {
     guard let reasoning, reasoning != "provider-default" else { return nil }
     if googleIsGemini3OrNewer(modelID), !modelID.lowercased().contains("gemini-3-pro-image") {
-        let minimumThinkingLevel = googleIsGemini37Flash(modelID) ? "low" : "minimal"
+        let minimumThinkingLevel = googleMinimumThinkingLevelForGemini3Model(modelID)
         if reasoning == "none" {
             return ["thinkingLevel": .string(minimumThinkingLevel)]
         }
@@ -215,9 +215,36 @@ func googleThinkingConfig(for reasoning: String?, modelID: String, warnings: ino
     return ["thinkingBudget": .number(Double(budget))]
 }
 
-private func googleIsGemini37Flash(_ modelID: String) -> Bool {
-    let components = modelID.lowercased().split(separator: "/", omittingEmptySubsequences: false)
-    return components.last == "gemini-3.7-flash"
+private func googleMinimumThinkingLevelForGemini3Model(_ modelID: String) -> String {
+    guard let modelName = modelID
+        .lowercased()
+        .split(separator: "/", omittingEmptySubsequences: false)
+        .last
+        .map(String.init) else {
+        return "minimal"
+    }
+    if modelName == "gemini-flash-latest" {
+        return "low"
+    }
+
+    let prefix = "gemini-"
+    guard modelName.hasPrefix(prefix) else { return "minimal" }
+    let afterPrefix = String(modelName.dropFirst(prefix.count))
+    guard let flashRange = afterPrefix.range(of: "-flash") else { return "minimal" }
+    let version = String(afterPrefix[..<flashRange.lowerBound])
+    let suffix = String(afterPrefix[flashRange.upperBound...])
+    guard suffix.isEmpty || suffix.hasPrefix("-") else { return "minimal" }
+    if suffix == "-lite" || suffix.hasPrefix("-lite-") {
+        return "minimal"
+    }
+
+    let versionComponents = version.split(separator: ".", omittingEmptySubsequences: false)
+    guard versionComponents.count == 2,
+          let majorVersion = Int(versionComponents[0]),
+          let minorVersion = Int(versionComponents[1]) else {
+        return "minimal"
+    }
+    return majorVersion > 3 || (majorVersion == 3 && minorVersion >= 7) ? "low" : "minimal"
 }
 
 func googleMaxThinkingTokensForGemini25Model(_ modelID: String) -> Int {

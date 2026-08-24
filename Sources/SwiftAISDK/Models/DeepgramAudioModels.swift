@@ -14,8 +14,7 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
     public func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult {
         let options = try deepgramProviderOptions(from: request)
         var query: [String: String] = [
-            "model": modelID,
-            "diarize": "true"
+            "model": modelID
         ]
         query.merge(deepgramTranscriptionQuery(from: options)) { _, new in new }
 
@@ -28,7 +27,7 @@ public final class DeepgramTranscriptionModel: TranscriptionModel, @unchecked Se
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw audioProviderHTTPStatusError(provider: providerID, response: response)
+            throw deepgramHTTPStatusError(provider: providerID, response: response)
         }
         let raw = try response.jsonValue()
         let text = raw["results"]?["channels"]?[0]?["alternatives"]?[0]?["transcript"]?.stringValue ?? ""
@@ -59,9 +58,9 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
         let options = try deepgramProviderOptions(from: request)
         var query = deepgramSpeechQuery(for: request.format)
         query["model"] = modelID
-        let prepared = deepgramSpeechOptions(from: options, current: query, request: request, modelID: modelID)
+        let prepared = try deepgramSpeechOptions(from: options, current: query, request: request, modelID: modelID)
         query = prepared.query
-        query["model"] = modelID
+        query["model"] = prepared.upstreamModelID
 
         let response = try await config.transport.send(config.request(
             path: "/v1/speak?\(queryString(query))",
@@ -71,12 +70,13 @@ public final class DeepgramSpeechModel: SpeechModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         ))
         guard (200..<300).contains(response.statusCode) else {
-            throw audioProviderHTTPStatusError(provider: providerID, response: response)
+            throw deepgramHTTPStatusError(provider: providerID, response: response)
         }
         return SpeechResult(
             audio: response.body,
             contentType: response.headers.contentType,
             warnings: prepared.warnings,
+            providerMetadata: deepgramSpeechProviderMetadata(from: response.headers),
             requestMetadata: AIRequestMetadata(body: .object(["text": .string(request.text)]), headers: request.headers),
             responseMetadata: aiResponseMetadata(response: response, modelID: modelID)
         )
@@ -252,11 +252,36 @@ private let deepgramSpeechProviderOptionKeys: Set<String> = [
 private struct DeepgramPreparedSpeechOptions {
     var query: [String: String]
     var warnings: [AIWarning]
+    var upstreamModelID: String
 }
 
-private func deepgramSpeechOptions(from extraBody: [String: JSONValue], current: [String: String], request: SpeechRequest, modelID: String) -> DeepgramPreparedSpeechOptions {
+private let deepgramVoiceFamilyIDs: Set<String> = ["aura", "aura-2"]
+
+private func deepgramSpeechOptions(from extraBody: [String: JSONValue], current: [String: String], request: SpeechRequest, modelID: String) throws -> DeepgramPreparedSpeechOptions {
     var query = current
     var warnings: [AIWarning] = []
+    var upstreamModelID = modelID
+
+    if deepgramVoiceFamilyIDs.contains(modelID) {
+        let voice = request.voice?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !voice.isEmpty else {
+            throw AIError.invalidArgument(
+                argument: "voice",
+                message: "Deepgram speech model \"\(modelID)\" requires a `voice` to be set (e.g. voice: 'thalia')."
+            )
+        }
+        var language = request.language
+        if language == "auto" {
+            warnings.append(AIWarning(
+                type: "compatibility",
+                feature: "language",
+                message: "Deepgram TTS models do not support automatic language detection. Language \"en\" was used instead."
+            ))
+            language = "en"
+        }
+        upstreamModelID = "\(modelID)-\(voice)-\((language?.isEmpty == false ? language : nil) ?? "en")"
+    }
+
     for (key, value) in extraBody {
         switch key {
         case "bitRate":
@@ -331,21 +356,17 @@ private func deepgramSpeechOptions(from extraBody: [String: JSONValue], current:
         deepgramApplyBitRate(bitRate, query: &query, warnings: &warnings)
     }
 
-    if let voice = request.voice, voice != modelID {
+    if upstreamModelID == modelID, let voice = request.voice, !voice.isEmpty, voice != modelID {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "voice",
             message: "Deepgram TTS models embed the voice in the model ID. The voice parameter \"\(voice)\" was ignored. Use the model ID to select a voice (e.g., \"aura-2-helena-en\")."
         ))
     }
-    if request.speed != nil {
-        warnings.append(AIWarning(
-            type: "unsupported",
-            feature: "speed",
-            message: "Deepgram TTS REST API does not support speed adjustment. Speed parameter was ignored."
-        ))
+    if let speed = request.speed {
+        query["speed"] = deepgramQueryValue(.number(speed))
     }
-    if let language = request.language {
+    if upstreamModelID == modelID, let language = request.language, !language.isEmpty {
         warnings.append(AIWarning(
             type: "unsupported",
             feature: "language",
@@ -360,7 +381,68 @@ private func deepgramSpeechOptions(from extraBody: [String: JSONValue], current:
         ))
     }
 
-    return DeepgramPreparedSpeechOptions(query: query.filter { $0.key != "model" }, warnings: warnings)
+    return DeepgramPreparedSpeechOptions(
+        query: query.filter { $0.key != "model" },
+        warnings: warnings,
+        upstreamModelID: upstreamModelID
+    )
+}
+
+private func deepgramHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    let body = deepgramErrorMessage(from: response.body) ?? response.bodyText
+    return apiCallError(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
+private func deepgramErrorMessage(from data: Data) -> String? {
+    guard let json = try? decodeJSONBody(data),
+          json["err_code"]?.stringValue != nil,
+          let message = json["err_msg"]?.stringValue else {
+        return nil
+    }
+    if let requestID = json["request_id"], requestID.stringValue == nil {
+        return nil
+    }
+    return message
+}
+
+private func deepgramSpeechProviderMetadata(from headers: [String: String]) -> [String: JSONValue] {
+    var metadata: [String: JSONValue] = [:]
+    if let modelName = deepgramHeader("dg-model-name", in: headers), !modelName.isEmpty {
+        metadata["modelName"] = .string(modelName)
+    }
+    if let modelUUID = deepgramHeader("dg-model-uuid", in: headers), !modelUUID.isEmpty {
+        metadata["modelUuid"] = .string(modelUUID)
+    }
+    if let additionalModelUUIDs = deepgramHeader("dg-additional-model-uuids", in: headers) {
+        metadata["additionalModelUuids"] = .array(additionalModelUUIDs.components(separatedBy: ",").map(JSONValue.string))
+    }
+    for (header, key) in [
+        ("dg-char-count", "charCount"),
+        ("dg-breaks-applied", "breaksApplied"),
+        ("dg-pronunciations-applied", "pronunciationsApplied")
+    ] {
+        if let value = deepgramHeader(header, in: headers),
+           let number = Double(value),
+           !number.isNaN {
+            metadata[key] = .number(number)
+        }
+    }
+    if let pronunciationWarnings = deepgramHeader("dg-pronunciation-warnings", in: headers), !pronunciationWarnings.isEmpty {
+        metadata["pronunciationWarnings"] = .string(pronunciationWarnings)
+    }
+    if let requestID = deepgramHeader("dg-request-id", in: headers), !requestID.isEmpty {
+        metadata["requestId"] = .string(requestID)
+    }
+    return ["deepgram": .object(metadata)]
+}
+
+private func deepgramHeader(_ name: String, in headers: [String: String]) -> String? {
+    headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
 }
 
 private func deepgramApplyContainer(_ container: String, for encoding: String, query: inout [String: String], warnings: inout [AIWarning]) {
@@ -544,4 +626,3 @@ private func deepgramSpeechQuery(for outputFormat: String?) -> [String: String] 
         return [:]
     }
 }
-

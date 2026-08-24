@@ -2,6 +2,87 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func aiStreamTextRemapsDuplicateTextAndReasoningPartIDsAcrossStepsLikeUpstream() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: "{}")
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: [:]),
+        streamSequences: [
+            [
+                .reasoningStart(id: "0"),
+                .reasoningDeltaPart(id: "0", delta: "thinking"),
+                .reasoningEnd(id: "0"),
+                .textStart(id: "0"),
+                .textDeltaPart(id: "0", delta: "Let me check."),
+                .textEnd(id: "0"),
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .reasoningStart(id: "0"),
+                .reasoningDeltaPart(id: "0", delta: "thinking more"),
+                .reasoningEnd(id: "0"),
+                .textStart(id: "0"),
+                .textDeltaPart(id: "0", delta: "It is sunny."),
+                .textEnd(id: "0"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 5))
+            ]
+        ]
+    )
+    let tool = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": [:]]
+    ) { _ in "sunny" }
+
+    var parts: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Weather?",
+        executableTools: [tool],
+        maxSteps: 3
+    ) {
+        parts.append(part)
+    }
+
+    let textStarts = parts.compactMap { part -> String? in
+        guard case let .textStart(id, _) = part else { return nil }
+        return id
+    }
+    let textDeltas = parts.compactMap { part -> (String, String)? in
+        guard case let .textDeltaPart(id, delta, _) = part else { return nil }
+        return (id, delta)
+    }
+    let textEnds = parts.compactMap { part -> String? in
+        guard case let .textEnd(id, _) = part else { return nil }
+        return id
+    }
+    let reasoningStarts = parts.compactMap { part -> String? in
+        guard case let .reasoningStart(id, _) = part else { return nil }
+        return id
+    }
+    let reasoningDeltas = parts.compactMap { part -> (String, String)? in
+        guard case let .reasoningDeltaPart(id, delta, _) = part else { return nil }
+        return (id, delta)
+    }
+    let reasoningEnds = parts.compactMap { part -> String? in
+        guard case let .reasoningEnd(id, _) = part else { return nil }
+        return id
+    }
+
+    #expect(textStarts.count == 2)
+    #expect(textStarts[0] == "0")
+    #expect(textStarts[1] != "0")
+    #expect(textDeltas.map(\.0) == textStarts)
+    #expect(textDeltas.map(\.1) == ["Let me check.", "It is sunny."])
+    #expect(textEnds == textStarts)
+    #expect(reasoningStarts.count == 2)
+    #expect(reasoningStarts[0] == "0")
+    #expect(reasoningStarts[1] != "0")
+    #expect(reasoningDeltas.map(\.0) == reasoningStarts)
+    #expect(reasoningDeltas.map(\.1) == ["thinking", "thinking more"])
+    #expect(reasoningEnds == reasoningStarts)
+    #expect(model.streamRequests.count == 2)
+}
+
 @Test func aiStreamTextStopsWhenToolLoopConditionMatches() async throws {
     let toolCall = AIToolCall(id: "call-1", name: "lookup", arguments: #"{"query":"weather"}"#)
     let model = MockLanguageModel(

@@ -46,7 +46,7 @@ import Testing
     #expect(options.requests[0].request.maxOutputTokens == 100)
     #expect(options.providerOptions == ["mock": ["batch": true]])
     #expect(options.headers["x-test"] == "test-value")
-    #expect(options.headers["user-agent"] == "ai/7.0.68")
+    #expect(options.headers["user-agent"] == "ai/7.0.77")
     #expect(options.headers["idempotency-key"] == "stable-create-key")
     #expect(options.idempotencyKey == "stable-create-key")
 }

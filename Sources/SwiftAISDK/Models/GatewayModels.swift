@@ -1,5 +1,110 @@
 import Foundation
 
+public struct GatewayTakoDataSourceConfig: Equatable, Sendable {
+    public var count: Int?
+    public var includeContents: Bool?
+    public var mode: String?
+    public var contentFormat: String?
+    public var maxRows: Int?
+    public var nodeIDs: [String]
+    public var strict: Bool?
+
+    public init(
+        count: Int? = nil,
+        includeContents: Bool? = nil,
+        mode: String? = nil,
+        contentFormat: String? = nil,
+        maxRows: Int? = nil,
+        nodeIDs: [String] = [],
+        strict: Bool? = nil
+    ) {
+        self.count = count
+        self.includeContents = includeContents
+        self.mode = mode
+        self.contentFormat = contentFormat
+        self.maxRows = maxRows
+        self.nodeIDs = nodeIDs
+        self.strict = strict
+    }
+}
+
+public struct GatewayTakoWebSourceConfig: Equatable, Sendable {
+    public var count: Int?
+    public var includeContents: Bool?
+    public var category: String?
+    public var includeDomains: [String]
+    public var excludeDomains: [String]
+    public var snippetMaxCharacters: Int?
+    public var highlights: Bool?
+    public var articleContentMaxCharacters: Int?
+    public var publishedAfter: String?
+    public var publishedBefore: String?
+
+    public init(
+        count: Int? = nil,
+        includeContents: Bool? = nil,
+        category: String? = nil,
+        includeDomains: [String] = [],
+        excludeDomains: [String] = [],
+        snippetMaxCharacters: Int? = nil,
+        highlights: Bool? = nil,
+        articleContentMaxCharacters: Int? = nil,
+        publishedAfter: String? = nil,
+        publishedBefore: String? = nil
+    ) {
+        self.count = count
+        self.includeContents = includeContents
+        self.category = category
+        self.includeDomains = includeDomains
+        self.excludeDomains = excludeDomains
+        self.snippetMaxCharacters = snippetMaxCharacters
+        self.highlights = highlights
+        self.articleContentMaxCharacters = articleContentMaxCharacters
+        self.publishedAfter = publishedAfter
+        self.publishedBefore = publishedBefore
+    }
+}
+
+public struct GatewayTakoSearchConfig: Equatable, Sendable {
+    public var effort: String?
+    public var dataSource: GatewayTakoDataSourceConfig?
+    public var webSource: GatewayTakoWebSourceConfig?
+    public var latitude: Double?
+    public var longitude: Double?
+    public var countryCode: String?
+    public var locale: String?
+    public var timezone: String?
+    public var imageDarkMode: Bool?
+    public var forceRefresh: Bool?
+    public var includeRelated: Int?
+
+    public init(
+        effort: String? = nil,
+        dataSource: GatewayTakoDataSourceConfig? = nil,
+        webSource: GatewayTakoWebSourceConfig? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        countryCode: String? = nil,
+        locale: String? = nil,
+        timezone: String? = nil,
+        imageDarkMode: Bool? = nil,
+        forceRefresh: Bool? = nil,
+        includeRelated: Int? = nil
+    ) {
+        self.effort = effort
+        self.dataSource = dataSource
+        self.webSource = webSource
+        self.latitude = latitude
+        self.longitude = longitude
+        self.countryCode = countryCode
+        self.locale = locale
+        self.timezone = timezone
+        self.imageDarkMode = imageDarkMode
+        self.forceRefresh = forceRefresh
+        self.includeRelated = includeRelated
+    }
+}
+
 public enum GatewayTools {
     public static func perplexitySearch(
         maxResults: Int? = nil,
@@ -56,6 +161,56 @@ public enum GatewayTools {
             args["fetchPolicy"] = fetchPolicy
         }
         return providerTool(id: "gateway.parallel_search", name: "parallel_search", args: args)
+    }
+
+    public static func takoSearch(_ config: GatewayTakoSearchConfig = GatewayTakoSearchConfig()) -> JSONValue {
+        var args: [String: JSONValue] = [:]
+        if let effort = config.effort { args["effort"] = .string(effort) }
+
+        var sources: [String: JSONValue] = [:]
+        if let data = config.dataSource {
+            var value: [String: JSONValue] = [:]
+            if let count = data.count { value["count"] = .number(Double(count)) }
+            if let includeContents = data.includeContents { value["includeContents"] = .bool(includeContents) }
+            if let mode = data.mode { value["mode"] = .string(mode) }
+            if let contentFormat = data.contentFormat { value["contentFormat"] = .string(contentFormat) }
+            if let maxRows = data.maxRows { value["maxRows"] = .number(Double(maxRows)) }
+            if !data.nodeIDs.isEmpty { value["nodeIds"] = .array(data.nodeIDs) }
+            if let strict = data.strict { value["strict"] = .bool(strict) }
+            sources["data"] = .object(value)
+        }
+        if let web = config.webSource {
+            var value: [String: JSONValue] = [:]
+            if let count = web.count { value["count"] = .number(Double(count)) }
+            if let includeContents = web.includeContents { value["includeContents"] = .bool(includeContents) }
+            if let category = web.category { value["category"] = .string(category) }
+            if !web.includeDomains.isEmpty { value["includeDomains"] = .array(web.includeDomains) }
+            if !web.excludeDomains.isEmpty { value["excludeDomains"] = .array(web.excludeDomains) }
+            if let snippetMaxCharacters = web.snippetMaxCharacters { value["snippetMaxChars"] = .number(Double(snippetMaxCharacters)) }
+            if let highlights = web.highlights { value["highlights"] = .bool(highlights) }
+            if let articleContentMaxCharacters = web.articleContentMaxCharacters { value["articleContentMaxChars"] = .number(Double(articleContentMaxCharacters)) }
+            if let publishedAfter = web.publishedAfter { value["publishedAfter"] = .string(publishedAfter) }
+            if let publishedBefore = web.publishedBefore { value["publishedBefore"] = .string(publishedBefore) }
+            sources["web"] = .object(value)
+        }
+        if !sources.isEmpty { args["sources"] = .object(sources) }
+
+        if let latitude = config.latitude, let longitude = config.longitude {
+            args["location"] = .object([
+                "latitude": .number(latitude),
+                "longitude": .number(longitude)
+            ])
+        }
+        if let countryCode = config.countryCode { args["countryCode"] = .string(countryCode) }
+        if let locale = config.locale { args["locale"] = .string(locale) }
+        if let timezone = config.timezone { args["timezone"] = .string(timezone) }
+        var outputSettings: [String: JSONValue] = [:]
+        if let imageDarkMode = config.imageDarkMode { outputSettings["imageDarkMode"] = .bool(imageDarkMode) }
+        if let forceRefresh = config.forceRefresh { outputSettings["forceRefresh"] = .bool(forceRefresh) }
+        if !outputSettings.isEmpty { args["outputSettings"] = .object(outputSettings) }
+        if let includeRelated = config.includeRelated { args["includeRelated"] = .number(Double(includeRelated)) }
+
+        return providerTool(id: "gateway.tako_search", name: "tako_search", args: args)
     }
 
     private static func providerTool(id: String, name: String, args: [String: JSONValue]) -> JSONValue {
@@ -363,6 +518,597 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
             "ai-language-model-streaming": String(streaming)
         ]
     }
+}
+
+extension GatewayLanguageModel: BatchLanguageModel {
+    public func startBatch(
+        _ options: AIBatchStartOptions<AILanguageModelBatchRequest>
+    ) async throws -> AIBatchStartResult {
+        try options.abortSignal?.throwIfAborted()
+        let forwardedProviderOptions = gatewayBatchProviderOptionsWithoutIdempotencyKey(options.providerOptions)
+        var body: [String: JSONValue] = [
+            "modelId": .string(modelID),
+            "requests": .array(options.requests.map { request in
+                .object([
+                    "id": .string(request.id),
+                    "options": gatewayLanguageBody(for: request.request)
+                ])
+            })
+        ]
+        if !forwardedProviderOptions.isEmpty {
+            body["providerOptions"] = .object(forwardedProviderOptions)
+        }
+
+        let request = try config.request(
+            path: "/batch/start",
+            modelID: modelID,
+            body: .object(body),
+            headers: gatewayBatchHeaders(
+                options.headers,
+                modelID: modelID,
+                explicitIdempotencyKey: options.idempotencyKey,
+                providerOptions: options.providerOptions
+            ),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        guard let batchID = raw["batchId"]?.stringValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Gateway batch start response is missing batchId.")
+        }
+        return AIBatchStartResult(
+            batchID: batchID,
+            status: try gatewayBatchStatus(from: raw, providerID: providerID),
+            warnings: gatewayBatchWarnings(from: raw["warnings"])
+        )
+    }
+
+    public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
+        try options.abortSignal?.throwIfAborted()
+        let request = try config.request(
+            path: "/batch/status",
+            modelID: modelID,
+            body: .object(["batchId": .string(options.batchID)]),
+            headers: gatewayBatchHeaders(options.headers, modelID: modelID),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: providerID, response: response)
+        }
+        return try gatewayBatchStatus(from: response.jsonValue(), providerID: providerID)
+    }
+
+    public func getBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchItemResult<TextGenerationResult>, Error> {
+        try options.abortSignal?.throwIfAborted()
+        let request = try config.request(
+            path: "/batch/results",
+            modelID: modelID,
+            body: .object(["batchId": .string(options.batchID)]),
+            headers: gatewayBatchHeaders(options.headers, modelID: modelID),
+            abortSignal: options.abortSignal
+        )
+        let transport = try requireStreamingTransport(config.transport, providerID: providerID)
+        let response = try await transport.stream(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(
+                provider: providerID,
+                response: try await bufferedHTTPResponse(from: response, request: request)
+            )
+        }
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await yieldGatewayBatchResultLines(
+                        response.body,
+                        providerID: providerID,
+                        abortSignal: options.abortSignal,
+                        continuation: continuation
+                    )
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                response.cancelBody()
+                task.cancel()
+            }
+        }
+    }
+}
+
+private func gatewayBatchHeaders(
+    _ headers: [String: String],
+    modelID: String,
+    explicitIdempotencyKey: String? = nil,
+    providerOptions: [String: JSONValue] = [:]
+) -> [String: String] {
+    var output = headers
+    output["ai-model-id"] = modelID
+    if normalizeHeaders(output)["idempotency-key"] == nil,
+       let key = explicitIdempotencyKey ?? gatewayBatchProviderIdempotencyKey(providerOptions) {
+        output["idempotency-key"] = key
+    }
+    return output
+}
+
+private func gatewayBatchProviderIdempotencyKey(_ providerOptions: [String: JSONValue]) -> String? {
+    guard let key = providerOptions["gateway"]?["idempotencyKey"]?.stringValue,
+          !key.isEmpty else {
+        return nil
+    }
+    return key
+}
+
+private func gatewayBatchProviderOptionsWithoutIdempotencyKey(
+    _ providerOptions: [String: JSONValue]
+) -> [String: JSONValue] {
+    guard let gatewayOptions = providerOptions["gateway"]?.objectValue,
+          gatewayOptions["idempotencyKey"] != nil else {
+        return providerOptions
+    }
+    var output = providerOptions
+    var forwardedGatewayOptions = gatewayOptions
+    forwardedGatewayOptions.removeValue(forKey: "idempotencyKey")
+    if forwardedGatewayOptions.isEmpty {
+        output.removeValue(forKey: "gateway")
+    } else {
+        output["gateway"] = .object(forwardedGatewayOptions)
+    }
+    return output
+}
+
+private func gatewayBatchStatus(from raw: JSONValue, providerID: String) throws -> AIBatchStatus {
+    guard let statusString = raw["status"]?.stringValue,
+          let status = AIBatchLifecycleStatus(rawValue: statusString) else {
+        throw AIError.invalidResponse(provider: providerID, message: "Gateway batch response has an invalid status.")
+    }
+
+    let counts: AIBatchRequestCounts?
+    if let value = raw["requestCounts"], value != .null,
+       let total = value["total"]?.intValue,
+       let pending = value["pending"]?.intValue,
+       let completed = value["completed"]?.intValue,
+       let failed = value["failed"]?.intValue {
+        counts = AIBatchRequestCounts(total: total, pending: pending, completed: completed, failed: failed)
+    } else {
+        counts = nil
+    }
+
+    let error: AIBatchError?
+    if let value = raw["error"], value != .null {
+        guard let message = value["message"]?.stringValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Gateway batch error is missing message.")
+        }
+        error = AIBatchError(
+            message: message,
+            type: value["type"]?.stringValue,
+            code: value["code"]?.stringValue,
+            statusCode: value["statusCode"]?.intValue
+        )
+    } else {
+        error = nil
+    }
+
+    return AIBatchStatus(
+        status: status,
+        rawStatus: raw["rawStatus"]?.stringValue,
+        requestCounts: counts,
+        error: error,
+        createdAt: raw["createdAt"]?.stringValue,
+        expiresAt: raw["expiresAt"]?.stringValue,
+        providerMetadata: gatewayProviderMetadata(raw["providerMetadata"])
+    )
+}
+
+private func gatewayBatchWarnings(from value: JSONValue?) -> [AIBatchWarning] {
+    value?.arrayValue?.map { item in
+        AIBatchWarning(
+            requestID: item["requestId"]?.stringValue,
+            warning: gatewayBatchWarning(from: item["warning"] ?? .null)
+        )
+    } ?? []
+}
+
+private func gatewayBatchWarning(from value: JSONValue) -> AIWarning {
+    if let object = value.objectValue {
+        return AIWarning(
+            type: object["type"]?.stringValue ?? "other",
+            feature: object["feature"]?.stringValue,
+            setting: object["setting"]?.stringValue,
+            message: object["message"]?.stringValue ?? object["details"]?.stringValue
+        )
+    }
+    return AIWarning(type: "other", message: getErrorMessage(value))
+}
+
+private func yieldGatewayBatchResultLines(
+    _ body: AsyncThrowingStream<Data, Error>,
+    providerID: String,
+    abortSignal: AIAbortSignal?,
+    continuation: AsyncThrowingStream<AIBatchItemResult<TextGenerationResult>, Error>.Continuation
+) async throws {
+    var buffer = Data()
+    for try await chunk in body {
+        try Task.checkCancellation()
+        try abortSignal?.throwIfAborted()
+        buffer.append(chunk)
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            let line = Data(buffer[..<newline])
+            buffer.removeSubrange(...newline)
+            if let item = try gatewayBatchResultItem(from: line, providerID: providerID) {
+                continuation.yield(item)
+            }
+        }
+    }
+    if let item = try gatewayBatchResultItem(from: buffer, providerID: providerID) {
+        continuation.yield(item)
+    }
+}
+
+private func gatewayBatchResultItem(
+    from data: Data,
+    providerID: String
+) throws -> AIBatchItemResult<TextGenerationResult>? {
+    var line = data
+    if line.last == 0x0D { line.removeLast() }
+    guard let text = String(data: line, encoding: .utf8) else {
+        throw AIError.invalidResponse(provider: providerID, message: "Gateway batch result line is not valid UTF-8.")
+    }
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    let raw = try secureJSONParse(text)
+    guard let id = raw["id"]?.stringValue,
+          let status = raw["status"]?.stringValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "Gateway batch result line is missing id or status.")
+    }
+    let providerMetadata = gatewayProviderMetadata(raw["providerMetadata"])
+    let error = gatewayBatchItemError(raw["error"])
+
+    switch status {
+    case "succeeded":
+        guard let result = raw["result"], result.objectValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Gateway succeeded batch item is missing result.")
+        }
+        return .succeeded(id: id, result: gatewayBatchTextResult(from: result))
+    case "failed":
+        return .failed(
+            id: id,
+            error: error ?? AIBatchError(message: "Gateway batch item failed."),
+            providerMetadata: providerMetadata
+        )
+    case "cancelled":
+        return .cancelled(id: id, error: error, providerMetadata: providerMetadata)
+    case "expired":
+        return .expired(id: id, error: error, providerMetadata: providerMetadata)
+    default:
+        throw AIError.invalidResponse(provider: providerID, message: "Gateway batch result has invalid status \"\(status)\".")
+    }
+}
+
+private func gatewayBatchItemError(_ value: JSONValue?) -> AIBatchError? {
+    guard let value, value != .null else { return nil }
+    return AIBatchError(
+        message: value["message"]?.stringValue ?? "Gateway batch item failed.",
+        type: value["type"]?.stringValue,
+        code: value["code"]?.stringValue,
+        statusCode: value["statusCode"]?.intValue
+    )
+}
+
+private func gatewayBatchTextResult(from raw: JSONValue) -> TextGenerationResult {
+    let content = gatewayBatchResultContent(from: raw["content"])
+    let text = content.compactMap { part -> String? in
+        guard case let .text(text, _) = part else { return nil }
+        return text
+    }.joined()
+    let reasoning = content.compactMap { part -> String? in
+        guard case let .reasoning(text, _) = part else { return nil }
+        return text
+    }.joined()
+    let hasToolCalls = content.contains { part in
+        if case .toolCall = part { return true }
+        return false
+    }
+    let finishReason = raw["finishReason"]?.stringValue
+        ?? raw["finishReason"]?["unified"]?.stringValue
+    let response = raw["response"]
+    return TextGenerationResult(
+        text: text,
+        content: content,
+        reasoning: reasoning,
+        // Gateway Batch V4 results are already normalized server-side. Keep an
+        // explicit unified finish reason even when the ordered content includes
+        // tool calls; only infer it for older responses that omit the field.
+        finishReason: finishReason.map { $0 == "tool_calls" ? "tool-calls" : $0 }
+            ?? (hasToolCalls ? "tool-calls" : nil),
+        usage: gatewayBatchUsage(from: raw),
+        providerMetadata: gatewayProviderMetadata(raw["providerMetadata"]),
+        rawValue: raw,
+        warnings: (raw["warnings"]?.arrayValue ?? []).map(gatewayBatchWarning),
+        responseMetadata: AIResponseMetadata(
+            id: response?["id"]?.stringValue,
+            timestamp: response?["timestamp"]?.stringValue.flatMap(gatewayBatchDate),
+            modelID: response?["modelId"]?.stringValue ?? response?["modelID"]?.stringValue,
+            headers: response?["headers"]?.objectValue?.compactMapValues(\.stringValue) ?? [:],
+            body: response
+        )
+    )
+}
+
+private func gatewayBatchResultContent(from value: JSONValue?) -> [AIResultContentPart] {
+    let parts = gatewayContentParts(value)
+    var toolCallsByID: [String: AIToolCall] = [:]
+    for part in parts {
+        guard let call = gatewayBatchToolCall(from: part), toolCallsByID[call.id] == nil else { continue }
+        toolCallsByID[call.id] = call
+    }
+
+    return parts.map { part in
+        gatewayBatchResultContentPart(part, toolCallsByID: toolCallsByID)
+    }
+}
+
+private func gatewayBatchResultContentPart(
+    _ part: JSONValue,
+    toolCallsByID: [String: AIToolCall]
+) -> AIResultContentPart {
+    let providerMetadata = gatewayProviderMetadata(
+        part["providerMetadata"] ?? part["provider_metadata"]
+    )
+    switch part["type"]?.stringValue {
+    case "text":
+        guard let text = part["text"]?.stringValue else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .text(text, providerMetadata: providerMetadata)
+    case "reasoning":
+        guard let text = part["text"]?.stringValue else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .reasoning(text, providerMetadata: providerMetadata)
+    case "file":
+        guard let file = gatewayBatchFile(from: part) else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .file(file)
+    case "reasoning-file":
+        guard let file = gatewayBatchFile(from: part) else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .reasoningFile(file)
+    case "source":
+        guard let source = gatewaySource(from: part, fallbackIndex: 0) else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .source(source)
+    case "custom":
+        guard let kind = part["kind"]?.stringValue else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .custom(
+            .object(["kind": .string(kind)]),
+            providerMetadata: providerMetadata
+        )
+    case "tool-call":
+        guard let call = gatewayBatchToolCall(from: part) else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .toolCall(call)
+    case "tool-result":
+        guard let result = gatewayBatchToolResult(from: part) else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .toolResult(result)
+    case "tool-approval-request":
+        guard let request = gatewayBatchToolApprovalRequest(
+            from: part,
+            toolCallsByID: toolCallsByID
+        ) else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .toolApprovalRequest(request)
+    case "tool-approval-response":
+        guard let response = gatewayBatchToolApprovalResponse(from: part) else {
+            return .custom(part, providerMetadata: providerMetadata)
+        }
+        return .toolApprovalResponse(response)
+    default:
+        // Gateway validates only the batch item envelope and otherwise passes
+        // provider output through. Preserve future content parts losslessly in
+        // Swift's provider-specific escape hatch instead of dropping them.
+        return .custom(part, providerMetadata: providerMetadata)
+    }
+}
+
+private func gatewayBatchToolCall(from part: JSONValue) -> AIToolCall? {
+    guard part["type"]?.stringValue == "tool-call",
+          let id = part["toolCallId"]?.stringValue ?? part["tool_call_id"]?.stringValue,
+          let name = part["toolName"]?.stringValue ?? part["tool_name"]?.stringValue,
+          let input = part["input"]?.stringValue else {
+        return nil
+    }
+    return AIToolCall(
+        id: id,
+        name: name,
+        arguments: input,
+        providerExecuted: part["providerExecuted"]?.boolValue ?? false,
+        dynamic: part["dynamic"]?.boolValue ?? false,
+        title: part["title"]?.stringValue,
+        providerMetadata: gatewayProviderMetadata(
+            part["providerMetadata"] ?? part["provider_metadata"]
+        ),
+        rawValue: part
+    )
+}
+
+private func gatewayBatchToolResult(from part: JSONValue) -> AIToolResult? {
+    guard part["type"]?.stringValue == "tool-result",
+          let toolCallID = part["toolCallId"]?.stringValue ?? part["tool_call_id"]?.stringValue,
+          let toolName = part["toolName"]?.stringValue ?? part["tool_name"]?.stringValue,
+          let result = part["result"], result != .null else {
+        return nil
+    }
+    return AIToolResult(
+        toolCallID: toolCallID,
+        toolName: toolName,
+        result: result,
+        modelOutput: part["modelOutput"] ?? part["model_output"],
+        isError: part["isError"]?.boolValue ?? part["is_error"]?.boolValue ?? false,
+        preliminary: part["preliminary"]?.boolValue ?? false,
+        dynamic: part["dynamic"]?.boolValue ?? false,
+        providerExecuted: part["providerExecuted"]?.boolValue ?? true,
+        providerMetadata: gatewayProviderMetadata(
+            part["providerMetadata"] ?? part["provider_metadata"]
+        )
+    )
+}
+
+private func gatewayBatchToolApprovalRequest(
+    from part: JSONValue,
+    toolCallsByID: [String: AIToolCall]
+) -> AIToolApprovalRequest? {
+    guard part["type"]?.stringValue == "tool-approval-request",
+          let approvalID = part["approvalId"]?.stringValue ?? part["approval_id"]?.stringValue,
+          let toolCallID = part["toolCallId"]?.stringValue ?? part["tool_call_id"]?.stringValue else {
+        return nil
+    }
+    let call = toolCallsByID[toolCallID]
+    guard let toolName = part["toolName"]?.stringValue
+        ?? part["tool_name"]?.stringValue
+        ?? call?.name else {
+        return nil
+    }
+    let arguments = part["input"]?.stringValue
+        ?? part["arguments"]?.stringValue
+        ?? call?.arguments
+        ?? "{}"
+    return AIToolApprovalRequest(
+        id: approvalID,
+        toolName: toolName,
+        arguments: arguments,
+        toolCallID: toolCallID,
+        isAutomatic: part["isAutomatic"]?.boolValue ?? part["is_automatic"]?.boolValue ?? false,
+        providerMetadata: gatewayProviderMetadata(
+            part["providerMetadata"] ?? part["provider_metadata"]
+        )
+    )
+}
+
+private func gatewayBatchToolApprovalResponse(from part: JSONValue) -> AIToolApprovalResponse? {
+    guard part["type"]?.stringValue == "tool-approval-response",
+          let approvalID = part["approvalId"]?.stringValue ?? part["approval_id"]?.stringValue,
+          let approved = part["approved"]?.boolValue else {
+        return nil
+    }
+    return AIToolApprovalResponse(
+        id: approvalID,
+        approved: approved,
+        reason: part["reason"]?.stringValue,
+        providerExecuted: part["providerExecuted"]?.boolValue ?? false,
+        providerMetadata: gatewayProviderMetadata(
+            part["providerMetadata"] ?? part["provider_metadata"]
+        )
+    )
+}
+
+private func gatewayBatchFile(from part: JSONValue) -> AIStreamFile? {
+    guard let mediaType = part["mediaType"]?.stringValue ?? part["media_type"]?.stringValue else {
+        return nil
+    }
+    let payload = part["data"]
+    var data: Data?
+    var url: String?
+    var providerReference: AIProviderReference?
+
+    switch payload?["type"]?.stringValue {
+    case "data":
+        data = gatewayBatchFileData(payload?["data"])
+    case "url":
+        url = payload?["url"]?.stringValue
+    case "reference":
+        if let reference = payload?["reference"]?.objectValue {
+            let stringReference = reference.compactMapValues(\.stringValue)
+            if stringReference.count == reference.count {
+                providerReference = stringReference
+            }
+        }
+    case "text":
+        data = payload?["text"]?.stringValue.map { Data($0.utf8) }
+    default:
+        if let directURL = payload?.stringValue, URL(string: directURL)?.scheme != nil {
+            url = directURL
+        } else {
+            data = gatewayBatchFileData(payload)
+        }
+    }
+
+    return AIStreamFile(
+        id: part["id"]?.stringValue,
+        mediaType: mediaType,
+        data: data,
+        url: url,
+        filename: part["filename"]?.stringValue,
+        providerReference: providerReference,
+        providerMetadata: gatewayProviderMetadata(
+            part["providerMetadata"] ?? part["provider_metadata"]
+        ),
+        rawValue: part
+    )
+}
+
+private func gatewayBatchFileData(_ value: JSONValue?) -> Data? {
+    if let base64 = value?.stringValue {
+        return Data(base64Encoded: base64)
+    }
+    guard let values = value?.arrayValue else { return nil }
+    var bytes: [UInt8] = []
+    bytes.reserveCapacity(values.count)
+    for value in values {
+        guard let number = value.doubleValue,
+              number.isFinite,
+              number.rounded(.towardZero) == number,
+              (0...255).contains(number) else {
+            return nil
+        }
+        bytes.append(UInt8(number))
+    }
+    return Data(bytes)
+}
+
+private func gatewayBatchUsage(from raw: JSONValue) -> TokenUsage? {
+    guard let usage = raw["usage"] else { return nil }
+    let input = usage["inputTokens"]
+    let output = usage["outputTokens"]
+    guard input?.objectValue != nil || output?.objectValue != nil else {
+        return tokenUsage(from: raw)
+    }
+    let inputTotal = input?["total"]?.intValue
+    let outputTotal = output?["total"]?.intValue
+    let totalTokens = inputTotal.flatMap { input in outputTotal.map { input + $0 } }
+    return TokenUsage(
+        inputTokens: inputTotal,
+        outputTokens: outputTotal,
+        totalTokens: totalTokens,
+        inputTokensNoCache: input?["noCache"]?.intValue,
+        inputTokensCacheRead: input?["cacheRead"]?.intValue,
+        inputTokensCacheWrite: input?["cacheWrite"]?.intValue,
+        outputTextTokens: output?["text"]?.intValue,
+        outputReasoningTokens: output?["reasoning"]?.intValue,
+        rawValue: usage
+    )
+}
+
+private func gatewayBatchDate(_ value: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
 }
 
 private func gatewayToolArguments(_ arguments: String) -> JSONValue {

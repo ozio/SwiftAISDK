@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-08-19
+Snapshot date: 2026-08-24
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -52,7 +52,7 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package versions were checked against npm registry metadata
-on 2026-08-19. The packages changed by this focused follow-up were reviewed from
+on 2026-08-24. The packages changed by this weekly pass were reviewed from
 their exact published tarballs; per-package decisions are recorded in
 `Docs/UpstreamPackageDiffAudit.md`.
 
@@ -64,6 +64,22 @@ providers are represented in `Docs/ProviderCapabilityMatrix.md`; MCP is tracked
 separately as a product package without a model-capability row. The current pass
 audited the published package deltas and ported the applicable provider/core
 behavior; the remaining architectural differences are recorded below.
+
+The 2026-08-24 weekly pass advances 45 provider/product baselines plus `ai`,
+`@ai-sdk/provider-utils`, and `@ai-sdk/react`; `@ai-sdk/provider` and
+`@ai-sdk/vercel` remain current. Portable changes cover empty tool-call IDs,
+Bedrock redacted reasoning and modeled stream failures, Cerebras options,
+Deepgram 3.1 audio behavior, DeepSeek V4 vision/files, Gateway Batch V4,
+ordered mixed batch results, webhook-aware async video, Tako Search, and
+Gateway streaming transcription/token minting, Google local schema references and
+Gemini 3.7+ reasoning floors, MCP unsuccessful POST/SSE handling, fragmented
+Mistral tool calls, OpenAI Responses parallel wrappers, OpenAI-compatible
+video/thought-signature/truncated-stream/image-usage behavior, and xAI image
+moderation failures. Core changes add direct async-video start/status calls,
+safer tool execution and structured streams, and stable text/reasoning part
+identity. Google and Vertex Imagen factories remain available for source and
+runtime compatibility despite upstream shutdown removal; removing that public
+surface needs a deprecation cycle.
 
 The 2026-08-19 focused follow-up adds Fish Audio 3.0.5 speech/transcription and
 GMI Cloud 3.0.2 chat as complete provider verticals. It also ports Anthropic's
@@ -120,11 +136,13 @@ defines one built-in terminal outcome per logical response. Cross-surface regres
 cover text and reasoning collection, structured output, UI reduction, tool
 loops, in-band errors, thrown failures, and provider terminal behavior.
 
-Exact registry-prefix discovery on 2026-08-19 finds 81 live `@ai-sdk/*`
+Exact registry-prefix discovery on 2026-08-24 finds 81 live `@ai-sdk/*`
 packages and 45 model providers. All 45 model providers are now represented.
-`@ai-sdk/harness-cline@1.0.3` is a coding-agent harness rather than a model
-provider; a faithful port depends on a separate HarnessV1, sandbox-provider,
-session/bridge, and Cline runtime product foundation.
+No new unported model provider appeared. The other 32 untracked packages are
+framework adapters, harness/sandbox/workflow products, UI bindings, telemetry
+or development tooling rather than provider model packages; they need separate
+product decisions and shared runtime foundations instead of automatic provider
+ports.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -144,10 +162,10 @@ one of these is true:
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
 | P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
-| P1 | Duplex audio, Cartesia Ink 2 streaming transcription, provider-neutral Realtime V4 sessions, and xAI realtime are represented, but ElevenLabs realtime STT, Google/OpenAI streaming translation, and full non-xAI speech-session adapters are not. | Reuse `AIDuplexWebSocketTransport`, `AIRealtimeModelV4`, and the streaming-audio lifecycle for the next provider verticals without hiding provider-specific session semantics. |
-| P1 | Batch V4 and async Video V4 have shared contracts plus Anthropic/OpenAI Responses batch and Black Forest Labs/Fal video adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
+| P1 | Duplex audio, Cartesia Ink 2 and Gateway streaming transcription, provider-neutral Realtime V4 sessions, and xAI realtime are represented, but ElevenLabs realtime STT, Google/OpenAI streaming translation, and full non-xAI speech-session adapters are not. | Reuse `AIDuplexWebSocketTransport`, `AIRealtimeModelV4`, and the streaming-audio lifecycle for the next provider verticals without hiding provider-specific session semantics. |
+| P1 | Batch V4 has Anthropic, OpenAI Responses, and Gateway adapters; async Video V4 has Black Forest Labs, Fal, ByteDance, and Gateway adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
 | P1 | `prepareStep` call-setting overrides and generic provider tool-callers across generate, stream, and agent orchestration have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
-| P1 | `@ai-sdk/provider-utils@5.0.27` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | `@ai-sdk/provider-utils@5.0.29` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

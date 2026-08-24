@@ -75,14 +75,20 @@ struct OpenAIStyleToolCallBuffer {
     var arguments: String = ""
     var inputStarted = false
     var rawValue: JSONValue?
+    var providerMetadata: [String: JSONValue] = [:]
     var fallbackIndex: Int
 }
 
 struct OpenAIStyleStreamingToolCalls {
+    private let thoughtSignatureNamespace: String?
     private var buffers: [OpenAIStyleToolCallBuffer] = []
     private var positionsByID: [String: Int] = [:]
     private var positionsByIndex: [Int: Int] = [:]
     private var latestPosition: Int?
+
+    init(thoughtSignatureNamespace: String? = nil) {
+        self.thoughtSignatureNamespace = thoughtSignatureNamespace
+    }
 
     func hasMatchingBuffer(for delta: JSONValue) -> Bool {
         resolvedPosition(for: delta) != nil
@@ -100,7 +106,7 @@ struct OpenAIStyleStreamingToolCalls {
             buffer.id = id
             positionsByID[id] = position
         }
-        if let name = delta["function"]?["name"]?.stringValue {
+        if let name = delta["function"]?["name"]?.stringValue, !name.isEmpty {
             buffer.name = name
         }
         let argumentsDelta = delta["function"]?["arguments"]?.stringValue ?? ""
@@ -108,6 +114,13 @@ struct OpenAIStyleStreamingToolCalls {
             buffer.arguments += argumentsDelta
         }
         buffer.rawValue = delta
+        if let namespace = thoughtSignatureNamespace,
+           let thoughtSignature = delta["extra_content"]?["google"]?["thought_signature"]?.stringValue,
+           !thoughtSignature.isEmpty {
+            buffer.providerMetadata[namespace] = .object([
+                "thoughtSignature": .string(thoughtSignature)
+            ])
+        }
 
         let id = buffer.id ?? "tool-call-\(buffer.fallbackIndex)"
         var parts: [LanguageStreamPart] = []
@@ -148,6 +161,7 @@ struct OpenAIStyleStreamingToolCalls {
                 id: id,
                 name: name,
                 arguments: buffer.arguments,
+                providerMetadata: buffer.providerMetadata,
                 rawValue: buffer.rawValue
             )))
         }

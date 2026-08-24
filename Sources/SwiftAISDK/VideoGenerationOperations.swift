@@ -167,6 +167,91 @@ public extension AsyncVideoModel {
     }
 }
 
+extension AI {
+    /// Starts one asynchronous video operation without waiting for completion.
+    public static func startVideo(
+        model: any VideoModel,
+        request: VideoGenerationRequest,
+        webhookURL: String? = nil,
+        retryPolicy: AIRetryPolicy = .default
+    ) async throws -> VideoGenerationOperationStartResult {
+        guard let model = model as? any AsyncVideoModel else {
+            throw AIError.invalidArgument(
+                argument: "model",
+                message: "Video model \(model.modelID) does not implement start/status operations."
+            )
+        }
+
+        let normalized = normalizeVideoGenerationRequest(request)
+        let requestedCount = normalized.request.count ?? 1
+        guard requestedCount > 0 else {
+            throw AIError.invalidArgument(
+                argument: "count",
+                message: "count must be greater than zero."
+            )
+        }
+        guard model.maxVideosPerCall > 0 else {
+            throw AIError.invalidArgument(
+                argument: "model.maxVideosPerCall",
+                message: "maxVideosPerCall must be greater than zero."
+            )
+        }
+        guard requestedCount <= model.maxVideosPerCall else {
+            throw AIError.invalidArgument(
+                argument: "count",
+                message: "Video model \(model.modelID) supports at most \(model.maxVideosPerCall) video(s) per call, but \(requestedCount) were requested. Split the batch across multiple startVideo calls."
+            )
+        }
+
+        var startRequest = normalized.request
+        if !startRequest.headers.keys.contains(where: {
+            $0.caseInsensitiveCompare("idempotency-key") == .orderedSame
+        }) {
+            startRequest.headers["idempotency-key"] = videoGenerationIdempotencyKey()
+        }
+        let resolvedRequest = startRequest
+        var result = try await withRetry(
+            policy: retryPolicy,
+            abortSignal: resolvedRequest.abortSignal
+        ) {
+            try await model.startVideoGeneration(VideoGenerationOperationStartRequest(
+                request: resolvedRequest,
+                webhookURL: webhookURL
+            ))
+        }
+        result.warnings = normalized.warnings + result.warnings
+        await AIWarningLogging.logWarnings(
+            result.warnings,
+            providerID: model.providerID,
+            modelID: model.modelID
+        )
+        return result
+    }
+
+    /// Performs one status check for an operation returned by ``startVideo``.
+    public static func getVideoStatus(
+        model: any VideoModel,
+        operation: JSONValue,
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        retryPolicy: AIRetryPolicy = .default
+    ) async throws -> VideoGenerationOperationStatusResult {
+        guard let model = model as? any AsyncVideoModel else {
+            throw AIError.invalidArgument(
+                argument: "model",
+                message: "Video model \(model.modelID) does not implement start/status operations."
+            )
+        }
+        return try await withRetry(policy: retryPolicy, abortSignal: abortSignal) {
+            try await model.videoGenerationStatus(VideoGenerationOperationStatusRequest(
+                operation: operation,
+                headers: headers,
+                abortSignal: abortSignal
+            ))
+        }
+    }
+}
+
 func generateVideoUsingOperations(
     model: any AsyncVideoModel,
     request: VideoGenerationRequest,
@@ -276,7 +361,7 @@ private func generateSingleVideoUsingOperations(
 
     var startRequest = request
     if !startRequest.headers.keys.contains(where: { $0.caseInsensitiveCompare("idempotency-key") == .orderedSame }) {
-        startRequest.headers["idempotency-key"] = "aisdk_vid_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        startRequest.headers["idempotency-key"] = videoGenerationIdempotencyKey()
     }
     let resolvedStartRequest = startRequest
     let webhookURL = webhookRegistration?.url
@@ -352,6 +437,10 @@ private func generateSingleVideoUsingOperations(
             throw VideoGenerationOperationError.providerFailed(message)
         }
     }
+}
+
+private func videoGenerationIdempotencyKey() -> String {
+    "aisdk_vid_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
 }
 
 private func mergeVideoOperationResults(

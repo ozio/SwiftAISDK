@@ -15,7 +15,7 @@ Audio transformation: 1
 Dubbing: 1
 Video: 12
 Reranking: 5
-Files: 5
+Files: 6
 Skills: 3
 
 | Provider | Upstream package | Swift factories | Language | Completion | Embedding | Image | Transcription | Speech | Audio generation | Audio transformation | Dubbing | Video | Reranking | Files | Skills |
@@ -36,7 +36,7 @@ Skills: 3
 | [`cohere`](cohere/) | `@ai-sdk/cohere` | `AIProviders.cohere` | ✅ |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |
 | [`deepgram`](deepgram/) | `@ai-sdk/deepgram` | `AIProviders.deepgram` |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |
 | [`deepinfra`](deepinfra/) | `@ai-sdk/deepinfra` | `AIProviders.deepInfra` | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |
-| [`deepseek`](deepseek/) | `@ai-sdk/deepseek` | `AIProviders.deepSeek` | ✅ |  |  |  |  |  |  |  |  |  |  |  |  |
+| [`deepseek`](deepseek/) | `@ai-sdk/deepseek` | `AIProviders.deepSeek` | ✅ |  |  |  |  |  |  |  |  |  |  | ✅ |  |
 | [`elevenlabs`](elevenlabs/) | `@ai-sdk/elevenlabs` | `AIProviders.elevenLabs` |  |  |  |  | ✅ | ✅ | ✅ | ✅ | ✅ |  |  |  |  |
 | [`fal`](fal/) | `@ai-sdk/fal` | `AIProviders.fal` |  |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  |  |  |
 | [`fish-audio`](fish-audio/) | `@ai-sdk/fish-audio` | `AIProviders.fishAudio` |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  |  |

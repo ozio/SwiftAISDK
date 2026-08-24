@@ -10,6 +10,12 @@ public enum GatewayErrorType: String, Equatable, Hashable, Sendable {
     case internalServerError = "internal_server_error"
     case responseError = "response_error"
     case timeoutError = "timeout_error"
+
+    /// Source-compatible spelling for Gateway's generic `not_found` error.
+    /// Inspect ``GatewayError/upstreamType`` when distinguishing it from
+    /// `model_not_found`, since adding a public enum case would break
+    /// exhaustive switches compiled against earlier SwiftAISDK releases.
+    public static let notFound = GatewayErrorType.modelNotFound
 }
 
 public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible {
@@ -46,6 +52,9 @@ public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible 
     }
 
     public var name: String {
+        if isNotFound {
+            return "GatewayNotFoundError"
+        }
         switch type {
         case .authenticationError:
             return "GatewayAuthenticationError"
@@ -66,6 +75,23 @@ public struct GatewayError: Error, Equatable, Sendable, CustomStringConvertible 
         case .timeoutError:
             return "GatewayTimeoutError"
         }
+    }
+
+    /// The exact upstream Gateway error discriminator when it is available.
+    public var upstreamType: String {
+        if let rawType = response?["error"]?["type"]?.stringValue {
+            return rawType
+        }
+        if response?["type"]?.stringValue == "error",
+           let rawType = response?["errorType"]?.stringValue {
+            return rawType
+        }
+        return type.rawValue
+    }
+
+    /// Whether Gateway returned its generic `not_found` discriminator.
+    public var isNotFound: Bool {
+        upstreamType == "not_found"
     }
 
     public var description: String {
@@ -150,6 +176,8 @@ private func gatewayErrorType(_ raw: String?) -> GatewayErrorType {
         return .rateLimitExceeded
     case GatewayErrorType.modelNotFound.rawValue:
         return .modelNotFound
+    case "not_found":
+        return .notFound
     case GatewayErrorType.failedDependency.rawValue:
         return .failedDependency
     case GatewayErrorType.forbidden.rawValue:

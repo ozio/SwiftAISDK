@@ -1,8 +1,9 @@
 import Foundation
 
-public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
+public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
     public let providerID = "bytedance.video"
     public let modelID: String
+    public let maxVideosPerCall = 1
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -11,22 +12,10 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let options = try byteDanceProviderOptions(from: request)
-        let warnings = byteDanceWarnings(for: request)
-        var body: [String: JSONValue] = [
-            "model": .string(modelID),
-            "content": .array(try byteDanceContent(from: request, options: options))
-        ]
-        if let aspectRatio = request.aspectRatio { body["ratio"] = .string(aspectRatio) }
-        if let duration = request.durationSeconds { body["duration"] = .number(duration) }
-        if let seed = request.seed { body["seed"] = .number(Double(seed)) }
-        if let resolution = request.resolution {
-            body["resolution"] = .string(byteDanceResolutionMap[resolution] ?? resolution)
-        }
-        body.merge(byteDanceOptions(from: options)) { _, new in new }
-        if let generateAudio = request.generateAudio {
-            body["generate_audio"] = .bool(generateAudio)
-        }
+        let prepared = try byteDancePreparedVideoRequest(request, modelID: modelID)
+        let options = prepared.options
+        let body = prepared.body
+        let warnings = prepared.warnings
 
         let createResponse = try await config.transport.send(config.request(path: "/contents/generations/tasks", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
         guard (200..<300).contains(createResponse.statusCode) else {
@@ -64,6 +53,90 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
         )
     }
 
+    public func startVideoGeneration(
+        _ operationRequest: VideoGenerationOperationStartRequest
+    ) async throws -> VideoGenerationOperationStartResult {
+        let request = operationRequest.request
+        let prepared = try byteDancePreparedVideoRequest(request, modelID: modelID)
+        var warnings = prepared.warnings
+        warnings.append(contentsOf: byteDanceDeprecatedPollWarnings(prepared.options))
+        let response = try await config.transport.send(config.request(
+            path: "/contents/generations/tasks",
+            modelID: modelID,
+            body: .object(prepared.body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(response.statusCode) else {
+            throw byteDanceHTTPStatusError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        guard let taskID = raw["id"]?.stringValue, !taskID.isEmpty else {
+            throw AIError.invalidResponse(provider: providerID, message: "No task ID returned from API")
+        }
+        return VideoGenerationOperationStartResult(
+            operation: ["taskId": .string(taskID)],
+            warnings: warnings,
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
+    }
+
+    public func videoGenerationStatus(
+        _ operationRequest: VideoGenerationOperationStatusRequest
+    ) async throws -> VideoGenerationOperationStatusResult {
+        guard let taskID = operationRequest.operation["taskId"]?.stringValue,
+              !taskID.isEmpty else {
+            throw AIError.invalidArgument(
+                argument: "operation",
+                message: "ByteDance video operation must contain a non-empty taskId."
+            )
+        }
+        let response = try await config.transport.send(AIHTTPRequest(
+            method: "GET",
+            url: try requireURL("\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)"),
+            headers: config.headers.mergingHeaders(operationRequest.headers),
+            abortSignal: operationRequest.abortSignal
+        ))
+        guard (200..<300).contains(response.statusCode) else {
+            throw byteDanceHTTPStatusError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        let responseMetadata = aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        switch raw["status"]?.stringValue {
+        case "succeeded":
+            guard let videoURL = raw["content"]?["video_url"]?.stringValue,
+                  !videoURL.isEmpty else {
+                throw AIError.invalidResponse(
+                    provider: providerID,
+                    message: "No video URL in response. Task ID: \(taskID)"
+                )
+            }
+            var metadata: [String: JSONValue] = ["taskId": .string(taskID)]
+            if let usage = raw["usage"], usage != .null { metadata["usage"] = usage }
+            return .completed(VideoGenerationResult(
+                urls: [videoURL],
+                operationID: taskID,
+                mediaType: "video/mp4",
+                rawValue: raw,
+                providerMetadata: ["bytedance": .object(metadata)],
+                responseMetadata: responseMetadata
+            ))
+        case "failed", "cancelled", "canceled":
+            let status = raw["status"]?.stringValue ?? "failed"
+            let detail = raw["error"]?["message"]?.stringValue
+                ?? raw["error"]?["code"]?.stringValue
+                ?? byteDanceJSONString(raw)
+            return .failed(
+                message: "Video generation \(status). Task ID: \(taskID). \(detail)",
+                responseMetadata: responseMetadata
+            )
+        case nil:
+            throw AIError.invalidResponse(provider: providerID, message: "ByteDance video status response is missing status.")
+        default:
+            return .pending(responseMetadata: responseMetadata)
+        }
+    }
+
     private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, timeoutMilliseconds: Double, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
@@ -89,6 +162,39 @@ public final class ByteDanceVideoModel: VideoModel, @unchecked Sendable {
                 try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             }
         }
+    }
+}
+
+private func byteDancePreparedVideoRequest(
+    _ request: VideoGenerationRequest,
+    modelID: String
+) throws -> (body: [String: JSONValue], warnings: [AIWarning], options: ByteDanceResolvedOptions) {
+    let options = try byteDanceProviderOptions(from: request)
+    var body: [String: JSONValue] = [
+        "model": .string(modelID),
+        "content": .array(try byteDanceContent(from: request, options: options))
+    ]
+    if let aspectRatio = request.aspectRatio { body["ratio"] = .string(aspectRatio) }
+    if let duration = request.durationSeconds { body["duration"] = .number(duration) }
+    if let seed = request.seed { body["seed"] = .number(Double(seed)) }
+    if let resolution = request.resolution {
+        body["resolution"] = .string(byteDanceResolutionMap[resolution] ?? resolution)
+    }
+    body.merge(byteDanceOptions(from: options)) { _, new in new }
+    if let generateAudio = request.generateAudio {
+        body["generate_audio"] = .bool(generateAudio)
+    }
+    return (body, byteDanceWarnings(for: request), options)
+}
+
+private func byteDanceDeprecatedPollWarnings(_ options: ByteDanceResolvedOptions) -> [AIWarning] {
+    ["pollIntervalMs", "pollTimeoutMs"].compactMap { setting in
+        guard let value = options.known[setting], value != .null else { return nil }
+        return AIWarning(
+            type: "deprecated",
+            setting: setting,
+            message: "`\(setting)` is ignored. Polling is orchestrated by the AI SDK: pass VideoGenerationPollOptions to generateVideo instead."
+        )
     }
 }
 

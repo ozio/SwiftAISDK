@@ -458,6 +458,44 @@ import Testing
     #expect(finishReason == "tool-calls")
     #expect(totalTokens == 146)
 }
+@Test func mistralLanguageAccumulatesIncrementalStreamingToolCallsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: sseResponse(#"""
+    data: {"id":"735e434874a24f68a2390b3cab149242","object":"chat.completion.chunk","created":1787234678,"model":"zai-glm-5-2","choices":[{"index":0,"delta":{"tool_calls":[{"id":"chatcmpl-tool-9f149c74c42f265b","type":"function","function":{"name":"webSearchTool","arguments":""},"index":0}],"index":0,"content":""},"finish_reason":null,"logprobs":null}]}
+
+    data: {"id":"735e434874a24f68a2390b3cab149242","object":"chat.completion.chunk","created":1787234678,"model":"zai-glm-5-2","choices":[{"index":0,"delta":{"tool_calls":[{"type":"function","function":{"name":"","arguments":"{\"query\": \"current Berlin weather\"}"},"index":0}],"index":0,"content":""},"finish_reason":null,"logprobs":null}]}
+
+    data: {"id":"735e434874a24f68a2390b3cab149242","object":"chat.completion.chunk","created":1787234678,"model":"zai-glm-5-2","choices":[{"index":0,"delta":{"index":0,"content":""},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":171,"total_tokens":185,"completion_tokens":14,"prompt_tokens_details":{"cached_tokens":128}}}
+
+    """#))
+    let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
+    let model = try provider.languageModel("zai-glm-5-2")
+
+    var lifecycle: [String] = []
+    var finalCall: AIToolCall?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Weather?")])) {
+        switch part {
+        case let .toolInputStart(id, name, _, _, _, _):
+            lifecycle.append("start:\(id):\(name)")
+        case let .toolInputDelta(id, delta, _):
+            lifecycle.append("delta:\(id):\(delta)")
+        case let .toolInputEnd(id, _):
+            lifecycle.append("end:\(id)")
+        case let .toolCall(call):
+            finalCall = call
+        default:
+            break
+        }
+    }
+
+    #expect(lifecycle == [
+        "start:chatcmpl-tool-9f149c74c42f265b:webSearchTool",
+        #"delta:chatcmpl-tool-9f149c74c42f265b:{"query": "current Berlin weather"}"#,
+        "end:chatcmpl-tool-9f149c74c42f265b"
+    ])
+    #expect(finalCall?.id == "chatcmpl-tool-9f149c74c42f265b")
+    #expect(finalCall?.name == "webSearchTool")
+    #expect(finalCall?.arguments == #"{"query": "current Berlin weather"}"#)
+}
 @Test func mistralEmbeddingUsesFloatEncodingAndLimit() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"embedding":[0.1,0.2]},{"embedding":[0.3,0.4]}],"usage":{"prompt_tokens":6}}"#))
     let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
@@ -516,7 +554,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.mistral.ai/v1/audio/speech")
     #expect(request.headers["authorization"] == "Bearer mistral-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/mistral/4.0.29")
+    #expect(request.headers["user-agent"] == "ai-sdk/mistral/4.0.32")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "voxtral-mini-tts-2603")
     #expect(body["input"]?.stringValue == "Hello")

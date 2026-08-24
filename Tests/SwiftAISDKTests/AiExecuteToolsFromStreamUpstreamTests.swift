@@ -2,6 +2,38 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test(arguments: ["length", "error", "content-filter", "other"])
+func aiExecuteToolsFromStreamDoesNotExecuteAfterUnsafeFinishReasonsLikeUpstream(
+    finishReason: String
+) async throws {
+    let capture = StreamToolInvocationCapture()
+    let toolCall = streamToolCall(name: "testTool")
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: [:]),
+        streamSequences: [[
+            .toolCall(toolCall),
+            .finish(reason: finishReason, usage: streamToolUsage())
+        ]]
+    )
+    let tool = streamTestTool(name: "testTool", executeWithContext: { input, _ in
+        await capture.record(input)
+        return "tool-result"
+    })
+
+    let streamed = try await collectStreamToolParts(
+        model: model,
+        tools: [tool],
+        maxSteps: 2
+    )
+
+    #expect(streamed == [
+        .toolCall(toolCall),
+        .finishMetadata(reason: finishReason, usage: streamToolUsage(), providerMetadata: [:])
+    ])
+    #expect(await capture.count() == 0)
+    #expect(model.streamRequests.count == 1)
+}
+
 @Test func aiExecuteToolsFromStreamExecutesToolAfterStreamingCallLikeUpstream() async throws {
     let toolCall = streamToolCall(name: "syncTool")
     let model = MockLanguageModel(
@@ -65,6 +97,65 @@ import Testing
     ])
     #expect(await capture.count() == 0)
     #expect(model.streamRequests.count == 1)
+}
+
+@Test func aiExecuteToolsFromStreamStopsForClientApprovalWhileProviderResultIsDeferredLikeUpstream() async throws {
+    let capture = StreamToolInvocationCapture()
+    let providerCall = AIToolCall(
+        id: "program-call",
+        name: "program",
+        arguments: #"{"code":"getHours()"}"#,
+        providerExecuted: true
+    )
+    let clientCall = AIToolCall(
+        id: "get-hours-call",
+        name: "getHours",
+        arguments: #"{"member":"Ada"}"#
+    )
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: [:]),
+        streamSequences: [[
+            .toolCall(providerCall),
+            .toolCall(clientCall),
+            .finish(reason: "tool-calls", usage: streamToolUsage())
+        ]]
+    )
+    let clientTool = AITool(
+        name: "getHours",
+        parameters: [
+            "type": "object",
+            "properties": ["member": ["type": "string"]],
+            "required": ["member"]
+        ],
+        executeWithContext: { input, _ in
+            await capture.record(input)
+            return "hours"
+        },
+        execute: { input in
+            await capture.record(input)
+            return "hours"
+        }
+    )
+
+    let streamed = try await collectStreamToolParts(
+        model: model,
+        tools: [clientTool],
+        maxSteps: 3,
+        toolApproval: { _ in .userApproval }
+    )
+
+    #expect(model.streamRequests.count == 1)
+    #expect(await capture.count() == 0)
+    #expect(!streamed.contains { part in
+        if case .error = part { return true }
+        return false
+    })
+    #expect(streamed.contains(.toolApprovalRequest(AIToolApprovalRequest(
+        id: "approval-get-hours-call",
+        toolName: "getHours",
+        arguments: #"{"member":"Ada"}"#,
+        toolCallID: "get-hours-call"
+    ))))
 }
 
 @Test func aiExecuteToolsFromStreamEmitsAutoApprovedApprovalPartsAndResultLikeUpstream() async throws {

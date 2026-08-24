@@ -304,6 +304,11 @@ public func generateId() -> String {
     createIdGenerator()()
 }
 
+func resolvedToolCallID(_ value: String?, whenMissing fallback: @autoclosure () -> String) -> String {
+    guard let value else { return fallback() }
+    return value.isEmpty ? generateId() : value
+}
+
 public func createIdGenerator(
     prefix: String? = nil,
     separator: String = "-",

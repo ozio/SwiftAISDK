@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.43")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.46")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-mini")
     #expect(body["messages"]?[1]?["content"]?.stringValue == "Hi")
@@ -30,6 +30,7 @@ import Testing
     let model = try provider.chatModel("gpt-4.1-mini")
     let image = Data([0x89, 0x50, 0x4E, 0x47])
     let audio = Data("RIFF".utf8)
+    let video = Data([0, 1, 2, 3])
     let pdf = Data("%PDF".utf8)
 
     _ = try await model.generate(LanguageModelRequest(messages: [
@@ -37,6 +38,8 @@ import Testing
             .text("Inspect these."),
             .data(mimeType: "image/png", data: image, providerMetadata: ["openai": ["imageDetail": "high"]]),
             .data(mimeType: "audio/wav", data: audio),
+            .data(mimeType: "video/mp4", data: video, providerMetadata: ["openai": ["fps": 1]]),
+            .videoURL("https://example.com/video.mp4", providerMetadata: ["openai": ["fps": 2]]),
             .file(mimeType: "application/pdf", data: pdf, filename: "brief.pdf")
         ])
     ]))
@@ -49,9 +52,92 @@ import Testing
     #expect(content[2]["type"]?.stringValue == "input_audio")
     #expect(content[2]["input_audio"]?["data"]?.stringValue == audio.base64EncodedString())
     #expect(content[2]["input_audio"]?["format"]?.stringValue == "wav")
-    #expect(content[3]["type"]?.stringValue == "file")
-    #expect(content[3]["file"]?["filename"]?.stringValue == "brief.pdf")
-    #expect(content[3]["file"]?["file_data"]?.stringValue == "data:application/pdf;base64,\(pdf.base64EncodedString())")
+    #expect(content[3]["type"]?.stringValue == "video_url")
+    #expect(content[3]["video_url"]?["url"]?.stringValue == "data:video/mp4;base64,\(video.base64EncodedString())")
+    #expect(content[3]["fps"]?.intValue == 1)
+    #expect(content[4]["type"]?.stringValue == "video_url")
+    #expect(content[4]["video_url"]?["url"]?.stringValue == "https://example.com/video.mp4")
+    #expect(content[4]["fps"]?.intValue == 2)
+    #expect(content[5]["type"]?.stringValue == "file")
+    #expect(content[5]["file"]?["filename"]?.stringValue == "brief.pdf")
+    #expect(content[5]["file"]?["file_data"]?.stringValue == "data:application/pdf;base64,\(pdf.base64EncodedString())")
+}
+
+@Test func openAICompatibleChatPreservesCustomGeminiThoughtSignatures() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.openAICompatible(
+        name: "my-gateway",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+    let model = try provider.chatModel("gemini-model")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [AIMessage(role: .assistant, content: [
+            .toolCall(AIToolCall(
+                id: "call-1",
+                name: "lookup",
+                arguments: #"{"city":"Tokyo"}"#,
+                providerMetadata: [
+                    "myGateway": ["thoughtSignature": "custom-signature"],
+                    "google": ["thoughtSignature": "fallback-signature"]
+                ]
+            ))
+        ])],
+        providerOptions: ["myGateway": ["custom": true]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["tool_calls"]?[0]?["extra_content"]?["google"]?["thought_signature"]?.stringValue == "custom-signature")
+}
+
+@Test func openAICompatibleChatCapturesGeminiThoughtSignaturesUnderCustomNamespace() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"},"extra_content":{"google":{"thought_signature":"server-signature"}}}]},"finish_reason":"tool_calls"}]}
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "my-gateway",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    let result = try await provider.chatModel("gemini-model").generate(LanguageModelRequest(
+        messages: [.user("Use a tool")],
+        providerOptions: ["myGateway": ["custom": true]]
+    ))
+
+    #expect(result.toolCalls[0].providerMetadata["myGateway"]?["thoughtSignature"]?.stringValue == "server-signature")
+    #expect(result.toolCalls[0].providerMetadata["google"] == nil)
+}
+
+@Test func openAICompatibleChatOmitsEmptyGeminiThoughtSignaturesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"choices":[{"message":{"content":null,"tool_calls":[{"id":"call-2","type":"function","function":{"name":"lookup","arguments":"{}"},"extra_content":{"google":{"thought_signature":""}}}]},"finish_reason":"tool_calls"}]}
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "my-gateway",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    let result = try await provider.chatModel("gemini-model").generate(LanguageModelRequest(
+        messages: [AIMessage(role: .assistant, content: [
+            .toolCall(AIToolCall(
+                id: "call-1",
+                name: "lookup",
+                arguments: "{}",
+                providerMetadata: ["myGateway": ["thoughtSignature": ""]]
+            ))
+        ])],
+        providerOptions: ["myGateway": ["custom": true]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["tool_calls"]?[0]?["extra_content"] == nil)
+    #expect(result.toolCalls[0].providerMetadata["myGateway"]?["thoughtSignature"] == nil)
 }
 
 @Test func openAIChatRejectsUnsupportedFileMediaTypeLikeUpstream() async throws {
@@ -582,6 +668,35 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["stream"] == true)
     #expect(body["stream_options"] == nil)
+}
+
+@Test func openAICompatibleChatReportsTruncatedStreamsWithoutFinishReason() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"content":"partial"}}]}
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    var errors: [String] = []
+    var finishReason: String?
+    let model = try provider.chatModel("chat-model")
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if case let .error(message, _) = part {
+            errors.append(message)
+        } else if case let .finishMetadata(reason, _, _) = part {
+            finishReason = reason
+        }
+    }
+
+    #expect(errors == ["Response stream ended without a finish reason."])
+    #expect(finishReason == "error")
 }
 
 private struct OpenAIObjectAnswer: Codable, Equatable, Sendable {

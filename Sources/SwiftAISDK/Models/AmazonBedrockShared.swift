@@ -177,6 +177,13 @@ func bedrockReasoningContentBlock(text: String, providerMetadata: [String: JSONV
             ])
         ])
     }
+    if let redactedContent = metadata["redactedContent"]?.stringValue {
+        return .object([
+            "reasoningContent": .object([
+                "redactedContent": .string(redactedContent)
+            ])
+        ])
+    }
     if let redactedData = metadata["redactedData"]?.stringValue {
         return .object([
             "reasoningContent": .object([
@@ -494,15 +501,19 @@ func bedrockDeduplicatedWarnings(_ warnings: [AIWarning]) -> [AIWarning] {
 
 func bedrockToolCalls(from value: JSONValue?) -> [AIToolCall] {
     value?.arrayValue?.enumerated().compactMap { index, part in
-        guard let toolUse = part["toolUse"] else { return nil }
-        let name = toolUse["name"]?.stringValue ?? "tool-\(index)"
-        return AIToolCall(
-            id: toolUse["toolUseId"]?.stringValue ?? "tool-call-\(index)",
-            name: name,
-            arguments: bedrockToolArguments(toolUse["input"]),
-            rawValue: part
-        )
+        bedrockToolCall(from: part, index: index)
     } ?? []
+}
+
+func bedrockToolCall(from part: JSONValue, index: Int) -> AIToolCall? {
+    guard let toolUse = part["toolUse"] else { return nil }
+    let name = toolUse["name"]?.stringValue ?? "tool-\(index)"
+    return AIToolCall(
+        id: resolvedToolCallID(toolUse["toolUseId"]?.stringValue, whenMissing: "tool-call-\(index)"),
+        name: name,
+        arguments: bedrockToolArguments(toolUse["input"]),
+        rawValue: part
+    )
 }
 
 func bedrockToolArguments(_ value: JSONValue?) -> String {

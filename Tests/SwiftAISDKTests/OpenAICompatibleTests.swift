@@ -45,7 +45,7 @@ import Testing
     #expect(requests.count == 4)
     #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
     #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.31" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.35" })
 }
 
 @Test func openAICompatibleClampsOutputTextTokensWhenReasoningExceedsCompletionLikeUpstream() async throws {
@@ -699,6 +699,24 @@ import Testing
     }
 
     #expect(await transport.requests().isEmpty)
+}
+
+@Test func openAICompatibleImageMapsUpstreamTokenUsage() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"aW1hZ2U="}],"usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18}}"#))
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    let result = try await provider.imageModel("image-model").generateImage(
+        ImageGenerationRequest(prompt: "cat")
+    )
+
+    #expect(result.usage?.inputTokens == 11)
+    #expect(result.usage?.outputTokens == 7)
+    #expect(result.usage?.totalTokens == 18)
 }
 
 @Test func openAIImageRejectsMoreThanModelSpecificMaxImagesPerCall() async throws {

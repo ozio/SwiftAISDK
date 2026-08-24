@@ -58,8 +58,8 @@ events, and preserves unknown provider events as `.custom`. Pass an
 ## Scope
 
 Realtime sessions are separate from `StreamingTranscriptionModel`, which only
-streams audio in and transcript events out. Cartesia Ink 2 uses that narrower
-transcription contract. Full non-xAI realtime speech sessions, ElevenLabs
-realtime transcription, and Google/OpenAI streaming translation remain
-deferred until their provider-specific session semantics are translated onto
-the shared duplex contracts.
+streams audio in and transcript events out. Cartesia Ink 2 and Gateway use that
+narrower transcription contract. Full non-xAI realtime speech sessions,
+ElevenLabs realtime transcription, and Google/OpenAI streaming translation
+remain deferred until their provider-specific session semantics are translated
+onto the shared duplex contracts.

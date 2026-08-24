@@ -1,8 +1,13 @@
 import Foundation
 
-func openAIResponsesToolCalls(from raw: JSONValue, providerID: String, toolNameAliases: [String: String] = [:]) -> [AIToolCall] {
+func openAIResponsesToolCalls(
+    from raw: JSONValue,
+    providerID: String,
+    toolNameAliases: [String: String] = [:],
+    functionToolNames: Set<String> = []
+) -> [AIToolCall] {
     var approvalToolCallIndex = 0
-    return raw["output"]?.arrayValue?.compactMap { item in
+    return raw["output"]?.arrayValue?.flatMap { item -> [AIToolCall] in
         let approvalToolCallIDOverride: String?
         if item["type"]?.stringValue == "mcp_approval_request" {
             approvalToolCallIDOverride = openAIResponsesApprovalToolCallID(from: item, generatedIndex: approvalToolCallIndex)
@@ -10,12 +15,20 @@ func openAIResponsesToolCalls(from raw: JSONValue, providerID: String, toolNameA
         } else {
             approvalToolCallIDOverride = nil
         }
-        return openAIResponsesToolCall(
+        guard let toolCall = openAIResponsesToolCall(
             from: item,
             providerID: providerID,
             toolNameAliases: toolNameAliases,
             approvalToolCallIDOverride: approvalToolCallIDOverride
-        )
+        ) else {
+            return []
+        }
+        return openAIResponsesExpandedParallelToolCalls(
+            from: toolCall,
+            itemID: item["id"]?.stringValue ?? toolCall.id,
+            providerID: providerID,
+            functionToolNames: functionToolNames
+        ) ?? [toolCall]
     } ?? []
 }
 
@@ -62,7 +75,8 @@ func openAIResponsesResultContent(
     sources: [AISource],
     providerID: String,
     mode: ResponsesRequestMode = .openAICompatible,
-    toolNameAliases: [String: String] = [:]
+    toolNameAliases: [String: String] = [:],
+    functionToolNames: Set<String> = []
 ) -> [AIResultContentPart] {
     var content: [AIResultContentPart] = []
     var hostedToolSearchCallIDs: [String] = []
@@ -86,7 +100,13 @@ func openAIResponsesResultContent(
             toolNameAliases: toolNameAliases,
             approvalToolCallIDOverride: approvalToolCallIDOverride
         ) {
-            content.append(.toolCall(toolCall))
+            let expanded = openAIResponsesExpandedParallelToolCalls(
+                from: toolCall,
+                itemID: item["id"]?.stringValue ?? toolCall.id,
+                providerID: providerID,
+                functionToolNames: functionToolNames
+            )
+            content.append(contentsOf: (expanded ?? [toolCall]).map(AIResultContentPart.toolCall))
         }
         if item["type"]?.stringValue == "tool_search_call",
            item["execution"]?.stringValue == "server",

@@ -66,7 +66,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fish.audio/v1/asr")
     #expect(request.headers["authorization"] == "Bearer fish-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/fish-audio/3.0.5")
+    #expect(request.headers["user-agent"] == "ai-sdk/fish-audio/3.0.7")
     #expect(request.headers["model"] == nil)
     #expect(request.headers["content-type"]?.hasPrefix(
         "multipart/form-data; boundary=SwiftAISDK-"

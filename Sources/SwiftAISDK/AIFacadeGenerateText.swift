@@ -194,7 +194,7 @@ extension AI {
                 )
             }
 
-            if executableCalls.isEmpty {
+            if executableCalls.isEmpty || !isAutomaticToolExecutionAllowed(finishReason: result.finishReason) {
                 let finalContent = allContent + result.content
                 let finalResponseMessages = responseMessages + (try await makeResponseMessages(from: result.content))
                 let finalStep = AIToolStep(

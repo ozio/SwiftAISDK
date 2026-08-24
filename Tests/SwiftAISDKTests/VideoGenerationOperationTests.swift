@@ -2,6 +2,100 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func videoStartFacadeReturnsImmediatelyAndReusesOneLogicalStartAcrossRetriesLikeUpstream() async throws {
+    let providerMetadata: [String: JSONValue] = [
+        "mock": ["asyncJob": ["jobId": "job-1", "webhookSigningSecret": "secret-1"]]
+    ]
+    let responseMetadata = AIResponseMetadata(id: "response-1", modelID: "mock-video")
+    let state = VideoOperationTestState(
+        startFailures: 1,
+        startResult: VideoGenerationOperationStartResult(
+            operation: ["id": "operation-1"],
+            warnings: [AIWarning(type: "other", message: "queued")],
+            providerMetadata: providerMetadata,
+            responseMetadata: responseMetadata
+        )
+    )
+    let model = VideoOperationTestModel(state: state)
+    let promptImage = ImageInputFile(url: "https://example.com/prompt.png")
+    let firstFrame = ImageInputFile(url: "https://example.com/first.png")
+
+    let result = try await AI.startVideo(
+        model: model,
+        request: VideoGenerationRequest(
+            prompt: "a cat walking on a beach",
+            image: promptImage,
+            frameImages: [VideoFrameImage(image: firstFrame, frameType: .firstFrame)]
+        ),
+        webhookURL: "https://example.com/hook",
+        retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0)
+    )
+
+    #expect(result.operation == ["id": "operation-1"])
+    #expect(result.providerMetadata == providerMetadata)
+    #expect(result.responseMetadata == responseMetadata)
+    #expect(result.warnings.map(\.message) == [
+        "prompt.image was ignored because a first_frame frameImage was provided; the first_frame frameImage takes precedence as the start image.",
+        "queued"
+    ])
+    #expect(await state.startCallCount() == 2)
+    #expect(await state.statusCallCount() == 0)
+    #expect(await state.startImages() == [firstFrame, firstFrame])
+    #expect(await state.startWebhookURLs().compactMap { $0 } == [
+        "https://example.com/hook", "https://example.com/hook"
+    ])
+    let idempotencyKeys = await state.startHeaders().compactMap { headers in
+        headers.first { $0.key.lowercased() == "idempotency-key" }?.value
+    }
+    #expect(idempotencyKeys.count == 2)
+    #expect(idempotencyKeys[0].hasPrefix("aisdk_vid_"))
+    #expect(idempotencyKeys[0] == idempotencyKeys[1])
+}
+
+@Test func videoStartFacadeRejectsCountsAboveOneOperationLimitLikeUpstream() async throws {
+    let state = VideoOperationTestState()
+    let model = VideoOperationTestModel(state: state)
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "count",
+        message: "Video model mock-video supports at most 1 video(s) per call, but 2 were requested. Split the batch across multiple startVideo calls."
+    )) {
+        _ = try await AI.startVideo(
+            model: model,
+            request: VideoGenerationRequest(prompt: "two clips", count: 2),
+            retryPolicy: .none
+        )
+    }
+
+    #expect(await state.startCallCount() == 0)
+}
+
+@Test func videoStatusFacadePerformsOneRetryableStatusCheckLikeUpstream() async throws {
+    let state = VideoOperationTestState(
+        statusFailures: 1,
+        statuses: [.pending(providerMetadata: ["mock": ["state": "queued"]])]
+    )
+    let model = VideoOperationTestModel(state: state)
+
+    let status = try await AI.getVideoStatus(
+        model: model,
+        operation: ["id": "operation-1"],
+        headers: ["x-status": "one-shot"],
+        retryPolicy: AIRetryPolicy(maxRetries: 1, initialDelayNanoseconds: 0)
+    )
+
+    guard case let .pending(_, providerMetadata, _) = status else {
+        Issue.record("Expected a pending operation status.")
+        return
+    }
+    #expect(providerMetadata == ["mock": ["state": "queued"]])
+    #expect(await state.startCallCount() == 0)
+    #expect(await state.statusCallCount() == 2)
+    #expect(await state.statusHeaders() == [
+        ["x-status": "one-shot"], ["x-status": "one-shot"]
+    ])
+}
+
 @Test func videoOperationsReuseOneIdempotencyKeyAcrossStartRetriesAndDoNotRestartForStatusRetries() async throws {
     let state = VideoOperationTestState(
         startFailures: 1,
@@ -297,6 +391,7 @@ private actor VideoOperationTestState {
     private let configuredStartResult: VideoGenerationOperationStartResult
     private var configuredStatuses: [VideoGenerationOperationStatusResult]
     private var recordedStartHeaders: [[String: String]] = []
+    private var recordedStartImages: [ImageInputFile?] = []
     private var recordedStartCounts: [Int?] = []
     private var recordedWebhookURLs: [String?] = []
     private var recordedStatusHeaders: [[String: String]] = []
@@ -322,6 +417,7 @@ private actor VideoOperationTestState {
 
     func start(_ request: VideoGenerationOperationStartRequest) throws -> VideoGenerationOperationStartResult {
         recordedStartHeaders.append(request.request.headers)
+        recordedStartImages.append(request.request.image)
         recordedStartCounts.append(request.request.count)
         recordedWebhookURLs.append(request.webhookURL)
         if remainingStartFailures > 0 {
@@ -352,6 +448,7 @@ private actor VideoOperationTestState {
     }
 
     func startHeaders() -> [[String: String]] { recordedStartHeaders }
+    func startImages() -> [ImageInputFile?] { recordedStartImages }
     func startCounts() -> [Int?] { recordedStartCounts }
     func startWebhookURLs() -> [String?] { recordedWebhookURLs }
     func statusHeaders() -> [[String: String]] { recordedStatusHeaders }

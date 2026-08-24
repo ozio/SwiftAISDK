@@ -120,6 +120,29 @@ import Testing
     ])
 }
 
+@Test func addAdditionalPropertiesToJSONSchemaPreservesSchemaValuedCatchallsLikeUpstream() {
+    let schema: JSONValue = [
+        "type": "object",
+        "additionalProperties": [
+            "type": "object",
+            "properties": [
+                "value": ["type": "string"]
+            ]
+        ]
+    ]
+
+    #expect(addAdditionalPropertiesToJSONSchema(schema) == [
+        "type": "object",
+        "additionalProperties": [
+            "type": "object",
+            "additionalProperties": false,
+            "properties": [
+                "value": ["type": "string"]
+            ]
+        ]
+    ])
+}
+
 @Test func addAdditionalPropertiesToJSONSchemaNormalizesNestedObjectSchemas() {
     let schema: JSONValue = [
         "type": "object",

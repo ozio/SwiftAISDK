@@ -1,6 +1,6 @@
 import Foundation
 
-private let aiBatchUserAgent = "ai/7.0.68"
+private let aiBatchUserAgent = "ai/7.0.77"
 
 extension AI {
     /// Starts a durable text-generation batch. Starting is intentionally not retried because it is billable.

@@ -31,7 +31,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.44")
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.48")
         let baseURL = withoutTrailingSlash(basePrefix)
         let useAzureOpenAIEndpoint = settings.baseURL.map(isAzureOpenAIBaseURL) ?? true
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport

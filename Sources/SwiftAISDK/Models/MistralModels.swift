@@ -62,6 +62,7 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                     var emittedResponseMetadata = false
                     var activeText = false
                     var activeReasoningID: String?
+                    var toolCalls = OpenAIStyleStreamingToolCalls()
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -95,14 +96,10 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                             continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning))
                         }
-                        for toolCall in mistralToolCalls(from: raw["choices"]?[0]?["delta"]?["tool_calls"]) {
-                            continuation.yield(.toolInputStart(id: toolCall.id, name: toolCall.name))
-                            continuation.yield(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: toolCall.arguments, index: nil))
-                            if !toolCall.arguments.isEmpty {
-                                continuation.yield(.toolInputDelta(id: toolCall.id, delta: toolCall.arguments))
+                        for toolCallDelta in raw["choices"]?[0]?["delta"]?["tool_calls"]?.arrayValue ?? [] {
+                            for part in toolCalls.apply(delta: toolCallDelta) {
+                                continuation.yield(part)
                             }
-                            continuation.yield(.toolInputEnd(id: toolCall.id))
-                            continuation.yield(.toolCall(toolCall))
                         }
                         if let reason = raw["choices"]?[0]?["finish_reason"]?.stringValue {
                             finishReason = mapMistralFinishReason(reason)
@@ -116,6 +113,9 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                     }
                     if activeText {
                         continuation.yield(.textEnd(id: "0"))
+                    }
+                    for part in toolCalls.finishedParts() {
+                        continuation.yield(part)
                     }
                     continuation.yield(.finishMetadata(
                         reason: finishReason,

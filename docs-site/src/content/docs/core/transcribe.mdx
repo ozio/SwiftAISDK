@@ -63,12 +63,15 @@ for try await part in result.stream {
 }
 ```
 
-Cartesia Ink 2 is the first vertical adapter. It obtains a short-lived STT
-access token, supports server turn detection or explicit finalization, maps
-partial/final events, and redacts the access token from request metadata. The
-underlying `AIDuplexWebSocketTransport` is injectable for deterministic tests
-or custom networking; stopping consumption, `result.cancel()`, or an
-`AIAbortSignal` closes the socket and the audio producer.
+Cartesia Ink 2 obtains a short-lived STT access token, supports server turn
+detection or explicit finalization, maps partial/final events, and redacts the
+access token from request metadata. Gateway uses the shared transcription
+WebSocket envelope, splits audio frames at 64 KiB, and exposes
+`experimentalTranscription.getToken(...)` for minting short-lived route-bound
+client tokens on a trusted server. The underlying
+`AIDuplexWebSocketTransport` is injectable for deterministic tests or custom
+networking; stopping consumption, `result.cancel()`, or an `AIAbortSignal`
+closes the socket and the audio producer.
 
 Streaming transcription is intentionally narrower than a full bidirectional
 speech session. For audio/text responses, function-call events, and session

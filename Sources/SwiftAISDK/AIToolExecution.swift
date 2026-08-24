@@ -1,5 +1,9 @@
 import Foundation
 
+func isAutomaticToolExecutionAllowed(finishReason: String?) -> Bool {
+    finishReason == "stop" || finishReason == "tool-calls"
+}
+
 func toolsDictionary(from tools: [AITool]) -> [String: JSONValue] {
     Dictionary(uniqueKeysWithValues: tools.map { ($0.name, $0.schema) })
 }

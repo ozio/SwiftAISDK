@@ -74,6 +74,21 @@ public enum AIContentPart: Equatable, Hashable, Sendable {
     }
 }
 
+public extension AIContentPart {
+    /// Creates a hosted video input for OpenAI-compatible chat providers.
+    static func videoURL(
+        _ url: String,
+        mediaType: String = "video/*",
+        providerMetadata: [String: JSONValue] = [:]
+    ) -> AIContentPart {
+        .providerReference(
+            mimeType: mediaType,
+            reference: ["openaiCompatible": url],
+            providerMetadata: providerMetadata
+        )
+    }
+}
+
 public struct AIMessage: Equatable, Hashable, Sendable {
     public var role: MessageRole
     public var content: [AIContentPart]

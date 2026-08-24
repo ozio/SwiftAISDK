@@ -274,16 +274,45 @@ private func mergeProviderMetadata(
     return merged
 }
 
+final class LanguageStreamPartIDReserver: @unchecked Sendable {
+    private var usedTextIDs: Set<String> = []
+    private var usedReasoningIDs: Set<String> = []
+
+    func reserveTextID(_ id: String) -> String {
+        reserve(id, usedIDs: &usedTextIDs)
+    }
+
+    func reserveReasoningID(_ id: String) -> String {
+        reserve(id, usedIDs: &usedReasoningIDs)
+    }
+
+    private func reserve(_ id: String, usedIDs: inout Set<String>) -> String {
+        guard !usedIDs.contains(id) else {
+            var candidate: String
+            repeat {
+                candidate = "part-\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+            } while usedIDs.contains(candidate)
+            usedIDs.insert(candidate)
+            return candidate
+        }
+        usedIDs.insert(id)
+        return id
+    }
+}
+
 func forwardLanguageStream(
     _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
     to continuation: AsyncThrowingStream<LanguageStreamPart, Error>.Continuation,
     toolsByName: [String: AITool] = [:],
     request: LanguageModelRequest? = nil,
-    repairToolCall: AIToolCallRepair? = nil
+    repairToolCall: AIToolCallRepair? = nil,
+    partIDReserver: LanguageStreamPartIDReserver? = nil
 ) async throws -> LanguageStreamToolStep {
     var step = LanguageStreamToolStep()
     var inputToolNamesByID: [String: String] = [:]
     var toolCallsByID: [String: AIToolCall] = [:]
+    var textPartIDs: [String: String] = [:]
+    var reasoningPartIDs: [String: String] = [:]
     for try await part in stream {
         try Task.checkCancellation()
         let forwardedPart: LanguageStreamPart
@@ -304,7 +333,12 @@ func forwardLanguageStream(
             toolInput = nil
             shouldInvokeInputAvailable = false
         } else {
-            forwardedPart = annotateStreamPart(part, toolsByName: toolsByName)
+            forwardedPart = remapLanguageStreamPartID(
+                annotateStreamPart(part, toolsByName: toolsByName),
+                reserver: partIDReserver,
+                textPartIDs: &textPartIDs,
+                reasoningPartIDs: &reasoningPartIDs
+            )
             toolInput = nil
             shouldInvokeInputAvailable = false
         }
@@ -344,6 +378,45 @@ func forwardLanguageStream(
         }
     }
     return step
+}
+
+private func remapLanguageStreamPartID(
+    _ part: LanguageStreamPart,
+    reserver: LanguageStreamPartIDReserver?,
+    textPartIDs: inout [String: String],
+    reasoningPartIDs: inout [String: String]
+) -> LanguageStreamPart {
+    guard let reserver else { return part }
+    switch part {
+    case let .textStart(id, providerMetadata):
+        let reservedID = reserver.reserveTextID(id)
+        textPartIDs[id] = reservedID
+        return .textStart(id: reservedID, providerMetadata: providerMetadata)
+    case let .textDeltaPart(id, delta, providerMetadata):
+        return .textDeltaPart(
+            id: textPartIDs[id] ?? id,
+            delta: delta,
+            providerMetadata: providerMetadata
+        )
+    case let .textEnd(id, providerMetadata):
+        let reservedID = textPartIDs.removeValue(forKey: id) ?? id
+        return .textEnd(id: reservedID, providerMetadata: providerMetadata)
+    case let .reasoningStart(id, providerMetadata):
+        let reservedID = reserver.reserveReasoningID(id)
+        reasoningPartIDs[id] = reservedID
+        return .reasoningStart(id: reservedID, providerMetadata: providerMetadata)
+    case let .reasoningDeltaPart(id, delta, providerMetadata):
+        return .reasoningDeltaPart(
+            id: reasoningPartIDs[id] ?? id,
+            delta: delta,
+            providerMetadata: providerMetadata
+        )
+    case let .reasoningEnd(id, providerMetadata):
+        let reservedID = reasoningPartIDs.removeValue(forKey: id) ?? id
+        return .reasoningEnd(id: reservedID, providerMetadata: providerMetadata)
+    default:
+        return part
+    }
 }
 
 func forwardedLanguageStream(

@@ -51,7 +51,7 @@ func cerebrasPreparedCall(for request: LanguageModelRequest, modelID: String, st
     if let frequencyPenalty = request.frequencyPenalty { body["frequency_penalty"] = .number(frequencyPenalty) }
     if let presencePenalty = request.presencePenalty { body["presence_penalty"] = .number(presencePenalty) }
     if let seed = request.seed { body["seed"] = .number(Double(seed)) }
-    if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
+    if let maxOutputTokens = request.maxOutputTokens { body["max_completion_tokens"] = .number(Double(maxOutputTokens)) }
     if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
     let preparedTools = cerebrasTools(from: request.tools)
     if !preparedTools.tools.isEmpty {
@@ -101,7 +101,15 @@ let cerebrasOpenAICompatibleOptionKeys: Set<String> = [
     "user",
     "reasoningEffort",
     "textVerbosity",
-    "strictJsonSchema"
+    "strictJsonSchema",
+    "parallelToolCalls",
+    "logprobs",
+    "topLogprobs",
+    "logitBias",
+    "serviceTier",
+    "reasoningFormat",
+    "prediction",
+    "promptCacheKey"
 ]
 
 func cerebrasValidateOpenAICompatibleOptions(_ options: [String: JSONValue], argumentPrefix: String) throws -> [String: JSONValue] {
@@ -112,13 +120,51 @@ func cerebrasValidateOpenAICompatibleOptions(_ options: [String: JSONValue], arg
             throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "Cerebras \(key) cannot be null.")
         }
         switch key {
-        case "user", "reasoningEffort", "textVerbosity":
+        case "user", "textVerbosity":
             guard value.stringValue != nil else {
                 throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "Cerebras \(key) must be a string.")
             }
-        case "strictJsonSchema":
+        case "strictJsonSchema", "parallelToolCalls", "logprobs":
             guard value.boolValue != nil else {
-                throw AIError.invalidArgument(argument: "\(argumentPrefix).strictJsonSchema", message: "Cerebras strictJsonSchema must be a boolean.")
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "Cerebras \(key) must be a boolean.")
+            }
+        case "topLogprobs":
+            guard let topLogprobs = value.doubleValue,
+                  topLogprobs.isFinite,
+                  topLogprobs.rounded() == topLogprobs,
+                  (0...20).contains(topLogprobs) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).topLogprobs", message: "Cerebras topLogprobs must be an integer from 0 to 20.")
+            }
+        case "logitBias":
+            guard let logitBias = value.objectValue,
+                  logitBias.values.allSatisfy({ bias in
+                      guard let number = bias.doubleValue else { return false }
+                      return number.isFinite && (-100...100).contains(number)
+                  }) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).logitBias", message: "Cerebras logitBias must be an object whose values are numbers from -100 to 100.")
+            }
+        case "serviceTier":
+            guard let serviceTier = value.stringValue,
+                  ["auto", "default", "flex", "priority"].contains(serviceTier) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).serviceTier", message: "Cerebras serviceTier must be auto, default, flex, or priority.")
+            }
+        case "reasoningEffort":
+            guard let reasoningEffort = value.stringValue,
+                  ["none", "low", "medium", "high"].contains(reasoningEffort) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningEffort", message: "Cerebras reasoningEffort must be none, low, medium, or high.")
+            }
+        case "reasoningFormat":
+            guard let reasoningFormat = value.stringValue,
+                  ["none", "parsed", "text_parsed", "raw", "hidden"].contains(reasoningFormat) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).reasoningFormat", message: "Cerebras reasoningFormat must be none, parsed, text_parsed, raw, or hidden.")
+            }
+        case "prediction":
+            guard cerebrasIsValidPrediction(value) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).prediction", message: "Cerebras prediction must contain type content and string or text-part content.")
+            }
+        case "promptCacheKey":
+            guard let promptCacheKey = value.stringValue, promptCacheKey.utf16.count <= 1_024 else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).promptCacheKey", message: "Cerebras promptCacheKey must be a string with at most 1024 characters.")
             }
         default:
             break
@@ -126,6 +172,20 @@ func cerebrasValidateOpenAICompatibleOptions(_ options: [String: JSONValue], arg
         output[key] = value
     }
     return output
+}
+
+private func cerebrasIsValidPrediction(_ value: JSONValue) -> Bool {
+    guard let prediction = value.objectValue,
+          prediction["type"]?.stringValue == "content",
+          let content = prediction["content"] else {
+        return false
+    }
+    if content.stringValue != nil { return true }
+    guard let parts = content.arrayValue else { return false }
+    return parts.allSatisfy { part in
+        guard let object = part.objectValue else { return false }
+        return object["type"]?.stringValue == "text" && object["text"]?.stringValue != nil
+    }
 }
 
 func cerebrasOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue] {
@@ -151,6 +211,21 @@ func cerebrasApplyKnownOptions(from options: inout [String: JSONValue], reasonin
     }
     if let verbosity = options.removeValue(forKey: "textVerbosity") {
         body["verbosity"] = verbosity
+    }
+    let mappedKeys: [(source: String, destination: String)] = [
+        ("parallelToolCalls", "parallel_tool_calls"),
+        ("logprobs", "logprobs"),
+        ("topLogprobs", "top_logprobs"),
+        ("logitBias", "logit_bias"),
+        ("serviceTier", "service_tier"),
+        ("reasoningFormat", "reasoning_format"),
+        ("prediction", "prediction"),
+        ("promptCacheKey", "prompt_cache_key")
+    ]
+    for mapping in mappedKeys {
+        if let value = options.removeValue(forKey: mapping.source) {
+            body[mapping.destination] = value
+        }
     }
     if let reasoning, reasoning != "none", body["reasoning_effort"] == nil {
         body["reasoning_effort"] = .string(reasoning)

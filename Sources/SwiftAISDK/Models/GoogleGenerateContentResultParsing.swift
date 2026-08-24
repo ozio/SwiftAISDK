@@ -25,7 +25,7 @@ func googleGenerateContentToolCalls(from raw: JSONValue) -> [AIToolCall] {
         if let functionCall = part["functionCall"],
            let name = functionCall["name"]?.stringValue {
             calls.append(AIToolCall(
-                id: functionCall["id"]?.stringValue ?? "tool-call-\(index)",
+                id: resolvedToolCallID(functionCall["id"]?.stringValue, whenMissing: "tool-call-\(index)"),
                 name: name,
                 arguments: googleGenerateContentArguments(functionCall["args"]),
                 providerMetadata: googleThoughtSignatureProviderMetadata(from: part),
@@ -35,7 +35,8 @@ func googleGenerateContentToolCalls(from raw: JSONValue) -> [AIToolCall] {
         }
         if let serverToolCall = part["toolCall"],
            let toolType = serverToolCall["toolType"]?.stringValue {
-            let id = serverToolCall["id"]?.stringValue ?? "google-server-tool-\(index)"
+            let id = serverToolCall["id"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+                ?? "google-server-tool-\(index)"
             calls.append(AIToolCall(
                 id: id,
                 name: "server:\(toolType)",
@@ -71,12 +72,15 @@ func googleGenerateContentToolResults(from raw: JSONValue) -> [AIToolResult] {
         }
         if let serverToolCall = part["toolCall"],
            serverToolCall["toolType"]?.stringValue != nil {
-            lastServerToolCallID = serverToolCall["id"]?.stringValue ?? "google-server-tool-\(index)"
+            lastServerToolCallID = serverToolCall["id"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+                ?? "google-server-tool-\(index)"
             continue
         }
         if let serverToolResponse = part["toolResponse"],
-           let toolType = serverToolResponse["toolType"]?.stringValue {
-            let id = lastServerToolCallID ?? serverToolResponse["id"]?.stringValue ?? "google-server-tool-response-\(index)"
+            let toolType = serverToolResponse["toolType"]?.stringValue {
+            let id = lastServerToolCallID
+                ?? serverToolResponse["id"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+                ?? "google-server-tool-response-\(index)"
             results.append(AIToolResult(
                 toolCallID: id,
                 toolName: "server:\(toolType)",

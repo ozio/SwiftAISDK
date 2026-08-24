@@ -50,6 +50,7 @@ struct BedrockStreamState {
     var jsonObjectTextExtractor: BedrockJSONObjectTextExtractor?
     var isJsonResponseFromTool = false
     private var contentBlocks: [Int: ContentBlock] = [:]
+    private var redactedReasoningContent: [Int: String] = [:]
     private var latestProviderMetadata: [String: JSONValue] = [:]
     private var sawTerminalEvent = false
 
@@ -109,6 +110,15 @@ struct BedrockStreamState {
                 providerMetadata: ["amazonBedrock": .object(payload), "bedrock": .object(payload)]
             ))
         }
+        if let redactedContent = raw["contentBlockDelta"]?["delta"]?["reasoningContent"]?["redactedContent"]?.stringValue,
+           !redactedContent.isEmpty {
+            let id = String(contentBlockIndex)
+            if contentBlocks[contentBlockIndex] == nil {
+                contentBlocks[contentBlockIndex] = .reasoning
+                parts.append(.reasoningStart(id: id))
+            }
+            redactedReasoningContent[contentBlockIndex, default: ""] += redactedContent
+        }
         if let start = raw["contentBlockStart"],
            let toolUse = start["start"]?["toolUse"] {
             let index = start["contentBlockIndex"]?.intValue ?? 0
@@ -145,6 +155,7 @@ struct BedrockStreamState {
         if let stop = raw["contentBlockStop"],
            let index = stop["contentBlockIndex"]?.intValue {
             let block = contentBlocks.removeValue(forKey: index)
+            let redactedContent = redactedReasoningContent.removeValue(forKey: index)
             if let toolCall = toolCalls.removeValue(forKey: index) {
                 if toolCall.name == jsonResponseToolName {
                     isJsonResponseFromTool = true
@@ -159,7 +170,10 @@ struct BedrockStreamState {
                     rawValue: toolCall.rawValue
                 )))
             } else if block == .reasoning {
-                parts.append(.reasoningEnd(id: String(index)))
+                parts.append(.reasoningEnd(
+                    id: String(index),
+                    providerMetadata: bedrockRedactedReasoningProviderMetadata(redactedContent)
+                ))
             } else if block == .text {
                 parts.append(.textEnd(id: String(index)))
             }
@@ -189,7 +203,10 @@ struct BedrockStreamState {
         for index in contentBlocks.keys.sorted() {
             switch contentBlocks[index] {
             case .reasoning:
-                parts.append(.reasoningEnd(id: String(index)))
+                parts.append(.reasoningEnd(
+                    id: String(index),
+                    providerMetadata: bedrockRedactedReasoningProviderMetadata(redactedReasoningContent[index])
+                ))
             case .text:
                 parts.append(.textEnd(id: String(index)))
             case .tool, nil:
@@ -197,6 +214,7 @@ struct BedrockStreamState {
             }
         }
         contentBlocks.removeAll()
+        redactedReasoningContent.removeAll()
         guard sawTerminalEvent else { return parts }
         parts.append(.finishMetadata(
             reason: latestFinishReason,
@@ -206,6 +224,15 @@ struct BedrockStreamState {
         sawTerminalEvent = false
         return parts
     }
+}
+
+private func bedrockRedactedReasoningProviderMetadata(_ redactedContent: String?) -> [String: JSONValue] {
+    guard let redactedContent else { return [:] }
+    let payload: JSONValue = .object(["redactedContent": .string(redactedContent)])
+    return [
+        "amazonBedrock": payload,
+        "bedrock": payload
+    ]
 }
 
 private func bedrockMergeStreamProviderMetadata(

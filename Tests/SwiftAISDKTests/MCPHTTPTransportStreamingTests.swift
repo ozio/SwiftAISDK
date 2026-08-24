@@ -2,6 +2,39 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func mcpHTTPTransportRejectsUnsuccessfulPOSTSSEResponsesWithHTTPDetailsLikeUpstream() async throws {
+    let http = StreamingRecordingTransport(responses: [
+        streamResponse(
+            statusCode: 500,
+            headers: ["content-type": "text/plain"],
+            chunks: ["Internal Server Error"]
+        )
+    ])
+    let transport = try MCPHTTPTransport(
+        url: "https://mcp.example.com/messages",
+        transport: http
+    )
+
+    do {
+        _ = try await transport.request([
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list"
+        ])
+        Issue.record("Expected the unsuccessful MCP POST response to reject.")
+    } catch let error as MCPClientError {
+        #expect(error.message == "MCP HTTP Transport Error: POST https://mcp.example.com/messages failed with HTTP 500: Internal Server Error")
+        #expect(error.statusCode == 500)
+        #expect(error.url == "https://mcp.example.com/messages")
+        #expect(error.responseBody == "Internal Server Error")
+    }
+
+    let requests = await http.requests()
+    #expect(requests.count == 1)
+    #expect(requests[0].method == "POST")
+    #expect(requests[0].headers["accept"] == "application/json, text/event-stream")
+}
+
 @Test func mcpHTTPTransportStartHandlesBufferedInboundSSERequests() async throws {
     let http = RecordingTransport(responses: [
         AIHTTPResponse(

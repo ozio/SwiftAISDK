@@ -27,7 +27,10 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         let response = (json: try httpResponse.jsonValue(), response: httpResponse)
         let raw = response.json
         let choice = raw["choices"]?[0]
-        let toolCalls = openAICompatibleChatToolCalls(from: choice?["message"]?["tool_calls"])
+        let toolCalls = openAICompatibleChatToolCalls(
+            from: choice?["message"]?["tool_calls"],
+            providerMetadataNamespace: metadataNamespace
+        )
         let text = choice?["message"]?["content"]?.stringValue
             ?? choice?["text"]?.stringValue
             ?? raw["output_text"]?.stringValue
@@ -69,12 +72,14 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     }
                     let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
-                    var toolCalls = OpenAICompatibleStreamingToolCalls()
+                    var toolCalls = OpenAICompatibleStreamingToolCalls(
+                        thoughtSignatureNamespace: metadataNamespace
+                    )
                     var providerMetadata: [String: JSONValue] = [:]
                     var didEmitResponseMetadata = false
                     var activeReasoningID: String?
                     var activeTextID: String?
-                    var finishReason: String? = "other"
+                    var finishReason: String?
                     var finishUsage: TokenUsage?
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
@@ -163,6 +168,14 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     }
                     for part in toolCalls.finishedParts() {
                         continuation.yield(part)
+                    }
+                    if finishReason == nil {
+                        if config.usesGenericOpenAICompatibleProviderOptions {
+                            finishReason = "error"
+                            continuation.yield(.error(message: "Response stream ended without a finish reason."))
+                        } else {
+                            finishReason = "other"
+                        }
                     }
                     continuation.yield(.finishMetadata(
                         reason: finishReason,
@@ -292,6 +305,10 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                 converted.append(try Self.messageJSON(
                     message,
                     providerID: providerID,
+                    providerOptionsKey: openAICompatibleProviderMetadataNamespace(
+                        providerID,
+                        providerOptions: request.providerOptions
+                    ),
                     systemRole: message.role == .system ? systemMessageMode : nil
                 ))
             }
@@ -377,7 +394,12 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         return body
     }
 
-    static func messageJSON(_ message: AIMessage, providerID: String, systemRole: String? = nil) throws -> JSONValue {
+    static func messageJSON(
+        _ message: AIMessage,
+        providerID: String,
+        providerOptionsKey: String? = nil,
+        systemRole: String? = nil
+    ) throws -> JSONValue {
         if message.role == .tool,
            let result = message.content.compactMap({ part -> AIToolResult? in
                if case let .toolResult(result) = part { result } else { nil }
@@ -398,14 +420,22 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                 "content": .string(message.combinedText)
             ]
             output["tool_calls"] = .array(toolCalls.map { call in
-                .object([
+                var toolCall: [String: JSONValue] = [
                     "id": .string(call.id),
                     "type": .string("function"),
                     "function": .object([
                         "name": .string(call.name),
                         "arguments": .string(call.arguments)
                     ])
-                ])
+                ]
+                let thoughtSignature = providerOptionsKey.flatMap { call.providerMetadata[$0]?["thoughtSignature"]?.stringValue }
+                    ?? call.providerMetadata["google"]?["thoughtSignature"]?.stringValue
+                if let thoughtSignature, !thoughtSignature.isEmpty {
+                    toolCall["extra_content"] = .object([
+                        "google": .object(["thought_signature": .string(thoughtSignature)])
+                    ])
+                }
+                return .object(toolCall)
             })
             return .object(output)
         }
@@ -440,7 +470,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     filename: nil,
                     providerMetadata: providerMetadata,
                     index: index,
-                    providerID: providerID
+                    providerID: providerID,
+                    providerOptionsKey: providerOptionsKey
                 )
             case let .file(mimeType, data, filename, providerMetadata):
                 return try chatFilePart(
@@ -449,9 +480,25 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     filename: filename,
                     providerMetadata: providerMetadata,
                     index: index,
-                    providerID: providerID
+                    providerID: providerID,
+                    providerOptionsKey: providerOptionsKey
                 )
-            case let .providerReference(_, reference, _, _):
+            case let .providerReference(mimeType, reference, _, providerMetadata):
+                if mimeType.hasPrefix("video/"),
+                   let url = reference["openaiCompatible"]
+                    ?? reference[providerOptionsKey ?? ""]
+                    ?? reference[openAICompatibleProviderRoot(providerID)] {
+                    var output: [String: JSONValue] = [
+                        "type": .string("video_url"),
+                        "video_url": .object(["url": .string(url)])
+                    ]
+                    let namespace = providerOptionsKey ?? openAICompatibleProviderMetadataNamespace(providerID)
+                    if let metadata = providerMetadata[namespace]?.objectValue
+                        ?? providerMetadata["openaiCompatible"]?.objectValue {
+                        output.merge(metadata) { _, value in value }
+                    }
+                    return .object(output)
+                }
                 return .object([
                     "type": .string("file"),
                     "file": .object([
@@ -476,7 +523,8 @@ private func chatFilePart(
     filename: String?,
     providerMetadata: [String: JSONValue],
     index: Int,
-    providerID: String
+    providerID: String,
+    providerOptionsKey: String?
 ) throws -> JSONValue {
     let base64 = data.base64EncodedString()
     if mimeType.hasPrefix("image/") {
@@ -485,6 +533,18 @@ private func chatFilePart(
             imageURL["detail"] = imageDetail
         }
         return .object(["type": .string("image_url"), "image_url": .object(imageURL)])
+    }
+    if mimeType.hasPrefix("video/") {
+        var output: [String: JSONValue] = [
+            "type": .string("video_url"),
+            "video_url": .object(["url": .string("data:\(mimeType);base64,\(base64)")])
+        ]
+        let namespace = providerOptionsKey ?? openAICompatibleProviderMetadataNamespace(providerID)
+        if let metadata = providerMetadata[namespace]?.objectValue
+            ?? providerMetadata["openaiCompatible"]?.objectValue {
+            output.merge(metadata) { _, value in value }
+        }
+        return .object(output)
     }
     switch mimeType {
     case "audio/wav":

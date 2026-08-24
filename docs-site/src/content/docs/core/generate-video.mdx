@@ -60,9 +60,11 @@ let result = try await AI.generateVideo(
 )
 ```
 
-A caller-supplied `Idempotency-Key` header wins. Black Forest Labs FLUX 3 and
-Fal are operation adapters; callers can also invoke `startVideoGeneration` and
-`videoGenerationStatus` directly and persist the returned JSON operation.
+A caller-supplied `Idempotency-Key` header wins. Black Forest Labs FLUX 3, Fal,
+ByteDance, and Gateway are operation adapters. Callers can invoke
+`AI.startVideo` and `AI.getVideoStatus` (or the model-level
+`startVideoGeneration` and `videoGenerationStatus`) and persist the returned
+JSON operation across processes.
 
 Models with native webhook support can opt into the same flow without polling:
 
@@ -81,10 +83,11 @@ let result = try await AI.generateVideo(
 ```
 
 Fal forwards the registration URL through its native `fal_webhook` start
-parameter. The webhook factory is not invoked for providers without native
-webhook support; Black Forest Labs emits an unsupported warning and falls back
-to polling. `timeoutMilliseconds` also bounds the webhook wait, and caller
-cancellation closes either path.
+parameter, while Gateway forwards it as `callbackUrl`. The webhook factory is
+not invoked for providers without native webhook support; Black Forest Labs
+and ByteDance emit an unsupported warning and fall back to polling.
+`timeoutMilliseconds` also bounds the webhook wait, and caller cancellation
+closes either path.
 
 Each async model declares `maxVideosPerCall`. When `request.count` is larger,
 the facade starts independent provider operations and merges their URLs/base64

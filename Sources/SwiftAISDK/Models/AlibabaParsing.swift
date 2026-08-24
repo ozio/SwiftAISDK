@@ -18,7 +18,7 @@ func alibabaToolCalls(from value: JSONValue?) -> [AIToolCall] {
     value?.arrayValue?.enumerated().compactMap { index, item in
         guard let name = item["function"]?["name"]?.stringValue else { return nil }
         return AIToolCall(
-            id: item["id"]?.stringValue ?? generateId(),
+            id: resolvedToolCallID(item["id"]?.stringValue, whenMissing: generateId()),
             name: name,
             arguments: item["function"]?["arguments"]?.stringValue ?? "",
             rawValue: item

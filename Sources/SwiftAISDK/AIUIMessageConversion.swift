@@ -1,9 +1,21 @@
 import Foundation
 
-public func convertToModelMessages(_ messages: [AIUIMessage]) throws -> [AIMessage] {
+public func convertToModelMessages(
+    _ messages: [AIUIMessage]
+) throws -> [AIMessage] {
+    try convertToModelMessages(messages, ignoreIncompleteToolCalls: false)
+}
+
+public func convertToModelMessages(
+    _ messages: [AIUIMessage],
+    ignoreIncompleteToolCalls: Bool
+) throws -> [AIMessage] {
     _ = try validateUIMessages(messages)
     return try messages.enumerated().flatMap { index, message in
-        let modelMessage = try convertToModelMessage(message, path: "messages[\(index)]")
+        let filteredMessage = ignoreIncompleteToolCalls
+            ? message.omittingPreliminaryToolCalls()
+            : message
+        let modelMessage = try convertToModelMessage(filteredMessage, path: "messages[\(index)]")
         return splitAssistantResponseMessages(modelMessage)
     }
 }
@@ -171,4 +183,39 @@ private func unsupportedModelConversionPart(path: String, message: String) -> AI
         message: "Cannot convert UI messages to model messages.",
         validationIssues: [AIUIMessageValidationIssue(path: path, message: message)]
     )
+}
+
+private extension AIUIMessage {
+    func omittingPreliminaryToolCalls() -> AIUIMessage {
+        let preliminaryToolCallIDs = Set(parts.compactMap { part -> String? in
+            guard case let .toolResult(result) = part, result.preliminary else { return nil }
+            return result.toolCallID
+        })
+        guard !preliminaryToolCallIDs.isEmpty else { return self }
+        let preliminaryApprovalIDs = Set(parts.compactMap { part -> String? in
+            guard case let .toolApprovalRequest(request) = part,
+                  let toolCallID = request.toolCallID,
+                  preliminaryToolCallIDs.contains(toolCallID) else {
+                return nil
+            }
+            return request.id
+        })
+
+        var filtered = self
+        filtered.parts.removeAll { part in
+            switch part {
+            case let .toolCall(call):
+                return preliminaryToolCallIDs.contains(call.id)
+            case let .toolResult(result):
+                return result.preliminary && preliminaryToolCallIDs.contains(result.toolCallID)
+            case let .toolApprovalRequest(request):
+                return request.toolCallID.map(preliminaryToolCallIDs.contains) ?? false
+            case let .toolApprovalResponse(response):
+                return preliminaryApprovalIDs.contains(response.id)
+            default:
+                return false
+            }
+        }
+        return filtered
+    }
 }

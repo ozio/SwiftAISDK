@@ -70,7 +70,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages/batches")
     #expect(request.headers["x-api-key"] == "test-api-key")
     #expect(request.headers["operation-header"] == "operation")
-    #expect(request.headers["user-agent"] == "ai/7.0.68")
+    #expect(request.headers["user-agent"] == "ai/7.0.77")
     let betaHeader = try #require(request.headers["anthropic-beta"])
     let betas = Set(betaHeader.split(separator: ",").map(String.init))
     #expect(betas.contains("batch-beta"))

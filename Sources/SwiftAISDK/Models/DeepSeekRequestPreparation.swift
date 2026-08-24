@@ -12,7 +12,7 @@ func deepSeekPreparedCall(
     let optionToolChoice = options.removeValue(forKey: "toolChoice")
     let strictJsonSchema = options.removeValue(forKey: "strictJsonSchema")
     let toolChoice = request.toolChoice ?? optionToolChoice
-    let preparedMessages = deepSeekMessages(
+    let preparedMessages = try deepSeekMessages(
         request.messages,
         responseFormat: responseFormat,
         modelID: modelID,
@@ -81,7 +81,7 @@ func deepSeekMessages(
     responseFormat: JSONValue?,
     modelID: String,
     supportsStructuredOutputs: Bool = false
-) -> DeepSeekPreparedMessages {
+) throws -> DeepSeekPreparedMessages {
     var output: [JSONValue] = []
     var warnings: [AIWarning] = []
     let isDeepSeekV4 = modelID.contains("deepseek-v4")
@@ -110,17 +110,53 @@ func deepSeekMessages(
                 "content": .string(message.combinedText)
             ]))
         case .user:
-            var text = ""
+            let hasImagePart = message.content.contains(where: deepSeekIsImagePart)
+            if !hasImagePart {
+                var text = ""
+                for part in message.content {
+                    if case let .text(value, _) = part {
+                        text += value
+                    } else {
+                        warnings.append(AIWarning(type: "unsupported", feature: deepSeekUserPartFeature(part)))
+                    }
+                }
+                output.append(.object([
+                    "role": .string("user"),
+                    "content": .string(text)
+                ]))
+                continue
+            }
+
+            var content: [JSONValue] = []
             for part in message.content {
-                if case let .text(value, _) = part {
-                    text += value
-                } else {
+                switch part {
+                case let .text(text, _):
+                    content.append(.object([
+                        "type": .string("text"),
+                        "text": .string(text)
+                    ]))
+                case let .imageURL(url, _):
+                    content.append(deepSeekImageURLPart(url))
+                case let .data(mimeType, data, _),
+                     let .file(mimeType, data, _, _)
+                    where topLevelMediaType(mimeType) == "image":
+                    let resolvedMediaType = try resolveFullMediaType(mediaType: mimeType, data: data)
+                    content.append(deepSeekImageURLPart(
+                        "data:\(resolvedMediaType);base64,\(data.base64EncodedString())"
+                    ))
+                case let .providerReference(mimeType, reference, _, _)
+                    where topLevelMediaType(mimeType) == "image":
+                    content.append(.object([
+                        "type": .string("file"),
+                        "file_id": .string(try resolveProviderReference(reference, provider: "deepseek"))
+                    ]))
+                default:
                     warnings.append(AIWarning(type: "unsupported", feature: deepSeekUserPartFeature(part)))
                 }
             }
             output.append(.object([
                 "role": .string("user"),
-                "content": .string(text)
+                "content": .array(content)
             ]))
         case .assistant:
             let toolCalls = message.content.compactMap { part -> AIToolCall? in
@@ -162,6 +198,26 @@ func deepSeekMessages(
     }
 
     return DeepSeekPreparedMessages(messages: output, warnings: warnings)
+}
+
+private func deepSeekIsImagePart(_ part: AIContentPart) -> Bool {
+    switch part {
+    case .imageURL:
+        return true
+    case let .data(mimeType, _, _),
+         let .file(mimeType, _, _, _),
+         let .providerReference(mimeType, _, _, _):
+        return topLevelMediaType(mimeType) == "image"
+    default:
+        return false
+    }
+}
+
+private func deepSeekImageURLPart(_ url: String) -> JSONValue {
+    .object([
+        "type": .string("image_url"),
+        "image_url": .object(["url": .string(url)])
+    ])
 }
 
 func deepSeekUserPartFeature(_ part: AIContentPart) -> String {

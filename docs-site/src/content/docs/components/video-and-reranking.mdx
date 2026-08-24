@@ -15,6 +15,7 @@ description: Public SwiftAISDK APIs for video and reranking.
 | Protocol | 1 |
 | Structure | 12 |
 | Type Alias | 2 |
+| Type Method | 2 |
 
 ## Public symbols
 
@@ -127,3 +128,5 @@ description: Public SwiftAISDK APIs for video and reranking.
 | Structure | `VideoGenerationWebhookRegistration` | `struct VideoGenerationWebhookRegistration` | [Sources/SwiftAISDK/VideoGenerationOperations.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/VideoGenerationOperations.swift) |
 | Type Alias | `VideoGenerationDelay` | `typealias VideoGenerationDelay = @Sendable (Int, AIAbortSignal?) async throws -> Void` | [Sources/SwiftAISDK/VideoGenerationOperations.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/VideoGenerationOperations.swift) |
 | Type Alias | `VideoGenerationWebhookFactory` | `typealias VideoGenerationWebhookFactory = @Sendable () async throws -> VideoGenerationWebhookRegistration` | [Sources/SwiftAISDK/VideoGenerationOperations.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/VideoGenerationOperations.swift) |
+| Type Method | `getVideoStatus(model:operation:headers:abortSignal:retryPolicy:)` | `static func getVideoStatus(model: any VideoModel, operation: JSONValue, headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default) async throws -> VideoGenerationOperationStatusResult` | [Sources/SwiftAISDK/VideoGenerationOperations.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/VideoGenerationOperations.swift) |
+| Type Method | `startVideo(model:request:webhookURL:retryPolicy:)` | `static func startVideo(model: any VideoModel, request: VideoGenerationRequest, webhookURL: String? = nil, retryPolicy: AIRetryPolicy = .default) async throws -> VideoGenerationOperationStartResult` | [Sources/SwiftAISDK/VideoGenerationOperations.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/VideoGenerationOperations.swift) |

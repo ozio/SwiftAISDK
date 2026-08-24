@@ -166,7 +166,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepseek-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.28")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.31")
 }
 
 @Test func deepSeekLanguageGeneratesMissingToolCallIDLikeUpstreamV4() async throws {
@@ -392,7 +392,7 @@ import Testing
     #expect(body["reasoningEffort"] == nil)
 }
 
-@Test func deepSeekLanguageDropsUnsupportedUserFilePartsWithWarning() async throws {
+@Test func deepSeekLanguageConvertsUserImageFilePartsLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
     let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
     let model = try provider.languageModel("deepseek-chat")
@@ -404,13 +404,32 @@ import Testing
         ])
     ]))
 
+    #expect(result.warnings.isEmpty)
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let content = try #require(body["messages"]?[0]?["content"]?.arrayValue)
+    #expect(content[0]["type"]?.stringValue == "text")
+    #expect(content[0]["text"]?.stringValue == "Hello")
+    #expect(content[1]["type"]?.stringValue == "image_url")
+    #expect(content[1]["image_url"]?["url"]?.stringValue == "data:image/png;base64,AAECAw==")
+}
+
+@Test func deepSeekLanguageDropsUnsupportedNonImageFilesWithWarning() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-chat")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .text("Hello"),
+            .file(mimeType: "application/pdf", data: Data([0, 1, 2, 3]), filename: "file.pdf")
+        ])
+    ]))
+
     #expect(result.warnings == [
         AIWarning(type: "unsupported", feature: "user message part type: file")
     ])
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hello")
-    #expect(body["messages"]?[0]?["content"]?.arrayValue == nil)
-    #expect(String(data: try #require((await transport.requests()).first?.body), encoding: .utf8)?.contains("image_url") == false)
 }
 
 @Test func deepSeekLanguageWarnsForProviderDefinedToolsAndUnsupportedToolChoice() async throws {
@@ -551,7 +570,7 @@ import Testing
     ))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.44")
+    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.48")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "user")
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")

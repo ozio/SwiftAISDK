@@ -6,7 +6,12 @@ public func addAdditionalPropertiesToJSONSchema(_ schema: JSONValue) -> JSONValu
     }
 
     if jsonSchemaTypeIncludesObject(object["type"]) {
-        object["additionalProperties"] = .bool(false)
+        if let additionalProperties = object["additionalProperties"],
+           additionalProperties.objectValue != nil {
+            object["additionalProperties"] = addAdditionalPropertiesToJSONSchema(additionalProperties)
+        } else {
+            object["additionalProperties"] = .bool(false)
+        }
         if let properties = object["properties"]?.objectValue {
             object["properties"] = .object(properties.mapValues(addAdditionalPropertiesToJSONSchema))
         }

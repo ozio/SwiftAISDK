@@ -6,16 +6,17 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-08-19`
-- Baseline upstream ref: `vercel/ai@86892f3f6b4de52ee7f41d73c9c477b839596468`
-- Current upstream ref: `vercel/ai@2174f202c21f86a44124a11baea8baa29f5dd0e5`
+- Date: `2026-08-24`
+- Baseline upstream ref: `vercel/ai@2174f202c21f86a44124a11baea8baa29f5dd0e5`
+- Current upstream ref: `vercel/ai@9d9a73f1551f2243035491e9de5a2e00ebf9eb17`
 - Diff command:
 
   ```sh
   git -C <vercel-ai-checkout> diff --name-status \
-    86892f3f6b4de52ee7f41d73c9c477b839596468..2174f202c21f86a44124a11baea8baa29f5dd0e5 \
+    2174f202c21f86a44124a11baea8baa29f5dd0e5..9d9a73f1551f2243035491e9de5a2e00ebf9eb17 \
     -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
-       'packages/**/*.spec.ts' 'packages/**/*.test-d.ts'
+       'packages/**/*.test.mts' 'packages/**/*.spec.ts' \
+       'packages/**/*.spec.tsx' 'packages/**/*.spec.mts'
   ```
 
 Status meanings:
@@ -27,6 +28,37 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-08-24 Diff
+
+The inventory grows from 804 to 815 executable test/spec files. The exact
+comparison above returns 82 changed executable test paths; declaration-only
+`*.test-d.ts` files are audited through published API/source review but are not
+counted by the inventory generator.
+
+| Upstream test group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `packages/ai/**` | 8 | `ported/deferred` | Focused Swift regressions cover unsafe finish reasons, deferred approval stopping, preliminary output filtering, stream-object provider errors, unique text/reasoning IDs, and direct video start/status. WorkflowAgent retry reset remains deferred because SwiftAISDK has no resumable WorkflowAgent chunk runtime. |
+| `packages/amazon-bedrock/**` | 3 | `ported` | Unary Converse preserves exact content order and signature/redacted metadata; event streams surface modeled failures; empty IDs are normalized and replay is covered. |
+| `packages/bytedance/**` | 1 | `ported/covered` | Image-token usage has no local image-model surface; the complete API review also closes ByteDance async video start/status parity. |
+| `packages/cerebras/**` | 1 | `ported` | Typed provider options, `max_completion_tokens`, and empty tool-call IDs have translated tests. |
+| `packages/deepgram/**` | 3 | `ported` | Transcription defaults, voice/language construction, speed, usage headers, and provider error bodies have focused coverage. |
+| `packages/deepseek/**` | 3 | `ported` | V4 vision conversion and Files V4 upload/options/errors/default multipart naming are covered. |
+| `packages/gateway/**` | 5 | `ported` | Gateway coverage adds Batch V4 ordered result conversion with preserved server finish reasons, typed HTTP/WebSocket `not_found`, Tako Search, async video callbacks/start/status, streaming transcription, and token minting. |
+| `packages/google/**`; `packages/google-vertex/**` | 10 | `ported/deferred` | Local JSON Schema refs, boolean refs, empty IDs, interactions reasoning, and Gemini 3.7+ floors are covered on Google and inherited Vertex paths. Removed Imagen factories remain temporarily for source compatibility. |
+| `packages/mcp/**` | 2 | `ported/no-swift-action` | Non-2xx POST/SSE failures preserve status, URL, and body. Windows command shims are Node-specific. |
+| `packages/mistral/**` | 1 | `ported` | Fragmented stream tool names/arguments and empty identifiers are covered. |
+| `packages/openai/**` | 3 | `ported` | Generated, streamed, replayed, and done-only fallbacks expand internal parallel tool-call wrappers without leaking the wrapper. |
+| `packages/openai-compatible/**` | 3 | `ported` | Hosted/data video input, image usage, truncated-stream errors, and nonempty custom-namespace thought signatures are covered. |
+| `packages/provider-utils/**` | 2 | `ported` | Recursive schema-valued `additionalProperties` and shared empty-ID behavior have focused regressions. |
+| `packages/xai/**` | 1 | `ported` | Image moderation blocks map to a content-policy failure. |
+| `packages/otel/**` | 2 | `covered/no-swift-action` | Swift telemetry already retains typed request/response/provider metadata; JavaScript message-format serialization has no additional runtime contract. |
+| `packages/harness*/**`; `packages/workflow/**` | 30 | `out-of-scope` | Agent bridges, remote operations, session mirroring, network sandboxing, and Workflow runtime chunks belong to untracked products rather than provider models. |
+| `packages/rsc/**`; `packages/vue/**` | 2 | `out-of-scope` | React Server Components and Vue hook behavior are framework adapters. |
+| `packages/sandbox-just-bash/**`; `packages/sandbox-vercel/**` | 2 | `out-of-scope` | JavaScript sandbox networking/runtime behavior is not a provider-facing Swift model. |
+
+Coverage check: the grouped path counts total 82 and match the executable-test
+diff exactly; no changed package group is hidden by provider-only filtering.
 
 ## 2026-08-19 Focused Follow-up
 

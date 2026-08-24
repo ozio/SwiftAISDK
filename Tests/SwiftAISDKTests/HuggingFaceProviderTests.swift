@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://router.huggingface.co/v1/responses")
     #expect(request.headers["authorization"] == "Bearer hf-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/huggingface/2.0.31")
+    #expect(request.headers["user-agent"] == "ai-sdk/huggingface/2.0.35")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai/gpt-oss-120b")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -36,7 +36,7 @@ import Testing
     _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/huggingface/2.0.31")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/huggingface/2.0.35")
 }
 
 @Test func huggingFaceResponsesAliasAndUnsupportedFamiliesMatchProviderWrapper() async throws {

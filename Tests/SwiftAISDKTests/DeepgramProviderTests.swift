@@ -35,11 +35,11 @@ import Testing
 
     #expect(result.text == "hello world")
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_entities=true&detect_language=false&diarize=true&filler_words=true&model=nova-3&redact=ssn%2Cpci&search=Codex&smart_format=true&summarize=v2&topics=true&utt_split=0.8&utterances=true")
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?detect_entities=true&detect_language=false&filler_words=true&model=nova-3&redact=ssn%2Cpci&search=Codex&smart_format=true&summarize=v2&topics=true&utt_split=0.8&utterances=true")
     #expect(request.headers["authorization"] == "Token deepgram-key")
     #expect(request.headers["custom-provider-header"] == "provider-header-value")
     #expect(request.headers["Custom-Request-Header"] == "request-header-value")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.0.27")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.1.0")
     #expect(request.headers["content-type"] == "audio/wav")
     #expect(request.body == Data("wav".utf8))
 }
@@ -83,13 +83,30 @@ import Testing
     #expect(request.body == Data("wav".utf8))
 }
 
+@Test func deepgramTranscriptionOnlySendsDiarizeWhenExplicitlyRequested() async throws {
+    let response = jsonResponse(#"{"results":{"channels":[{"alternatives":[{"transcript":"hello","words":[]}]}]}}"#)
+    let transport = RecordingTransport(responses: [response, response])
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+    let model = try provider.transcriptionModel("nova-3")
+
+    _ = try await model.transcribe(AudioTranscriptionRequest(audio: Data("wav".utf8)))
+    _ = try await model.transcribe(AudioTranscriptionRequest(
+        audio: Data("wav".utf8),
+        providerOptions: ["deepgram": ["diarize": true]]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[0].url.absoluteString == "https://api.deepgram.com/v1/listen?model=nova-3")
+    #expect(requests[1].url.absoluteString == "https://api.deepgram.com/v1/listen?diarize=true&model=nova-3")
+}
+
 @Test func deepgramAudioModelsUseUpstreamErrorMessageSchema() async throws {
     let transcriptionProvider = try AIProviders.deepgram(settings: ProviderSettings(
         apiKey: "deepgram-key",
         transport: RecordingTransport(response: AIHTTPResponse(
             statusCode: 400,
             headers: ["content-type": "application/json", "x-deepgram": "bad"],
-            body: Data(#"{"error":{"message":"transcription failed","code":400}}"#.utf8)
+            body: Data(#"{"err_code":"INVALID_QUERY_PARAMETER","err_msg":"transcription failed","request_id":"transcription-request"}"#.utf8)
         ))
     ))
     let transcriptionModel = try transcriptionProvider.transcriptionModel("nova-3")
@@ -108,7 +125,7 @@ import Testing
         transport: RecordingTransport(response: AIHTTPResponse(
             statusCode: 429,
             headers: ["content-type": "application/json", "x-deepgram": "rate"],
-            body: Data(#"{"error":{"message":"speech rate limited","code":429}}"#.utf8)
+            body: Data(#"{"err_code":"RATE_LIMITED","err_msg":"speech rate limited","request_id":"speech-request"}"#.utf8)
         ))
     ))
     let speechModel = try speechProvider.speechModel("aura-2-helena-en")
@@ -182,7 +199,7 @@ import Testing
     ))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?diarize=true&language=ja&model=nova-3&smart_format=true")
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?language=ja&model=nova-3&smart_format=true")
 }
 
 @Test func deepgramTranscriptionIgnoresStandardLanguageLikeUpstream() async throws {
@@ -199,7 +216,7 @@ import Testing
     ))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?diarize=true&model=nova-3")
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/listen?model=nova-3")
 }
 
 @Test func deepgramAudioModelsMapNestedExtraBodyOptions() async throws {
@@ -267,12 +284,100 @@ import Testing
 
     #expect(result.audio == Data("audio".utf8))
     #expect(result.contentType == "audio/wav")
+    #expect(result.providerMetadata == ["deepgram": [:]])
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?callback=https%3A%2F%2Fexample.com%2Fhook&callback_method=PUT&container=wav&encoding=linear16&mip_opt_out=true&model=aura-2-helena-en&sample_rate=24000&tag=test%2Cswift")
     #expect(request.headers["authorization"] == "Token deepgram-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.0.27")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.1.0")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
+}
+
+@Test func deepgramSpeechComposesVoiceFamilyModelIDsAndPassesSpeed() async throws {
+    let transport = RecordingTransport(responses: Array(
+        repeating: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("audio".utf8)),
+        count: 3
+    ))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+
+    let english = try await provider.speechModel("aura-2").speak(SpeechRequest(
+        text: "Hello",
+        voice: " thalia ",
+        speed: 1.5
+    ))
+    let spanish = try await provider.speechModel("aura-2").speak(SpeechRequest(
+        text: "Hola",
+        voice: "celeste",
+        language: "es"
+    ))
+    let automatic = try await provider.speechModel("aura").speak(SpeechRequest(
+        text: "Hello",
+        voice: "asteria",
+        language: "auto"
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[0].url.absoluteString == "https://api.deepgram.com/v1/speak?encoding=mp3&model=aura-2-thalia-en&speed=1.5")
+    #expect(requests[1].url.absoluteString == "https://api.deepgram.com/v1/speak?encoding=mp3&model=aura-2-celeste-es")
+    #expect(requests[2].url.absoluteString == "https://api.deepgram.com/v1/speak?encoding=mp3&model=aura-asteria-en")
+    #expect(english.warnings.isEmpty)
+    #expect(spanish.warnings.isEmpty)
+    #expect(automatic.warnings == [
+        AIWarning(
+            type: "compatibility",
+            feature: "language",
+            message: "Deepgram TTS models do not support automatic language detection. Language \"en\" was used instead."
+        )
+    ])
+}
+
+@Test func deepgramSpeechVoiceFamilyRequiresVoice() async throws {
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(
+        apiKey: "deepgram-key",
+        transport: RecordingTransport(responses: [])
+    ))
+    let model = try provider.speechModel("aura-2")
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "voice",
+        message: "Deepgram speech model \"aura-2\" requires a `voice` to be set (e.g. voice: 'thalia')."
+    )) {
+        _ = try await model.speak(SpeechRequest(text: "Hello"))
+    }
+}
+
+@Test func deepgramSpeechExtractsProviderMetadataFromResponseHeaders() async throws {
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: [
+            "content-type": "audio/mpeg",
+            "dg-model-name": "aura-2-helena-en",
+            "dg-model-uuid": "model-uuid",
+            "dg-additional-model-uuids": "additional-1,additional-2",
+            "dg-char-count": "69",
+            "dg-breaks-applied": "0",
+            "dg-pronunciations-applied": "2",
+            "dg-pronunciation-warnings": "1 unknown word",
+            "dg-request-id": "request-id",
+            "dg-project-id": "must-not-leak"
+        ],
+        body: Data("audio".utf8)
+    ))
+    let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
+    let model = try provider.speechModel("aura-2-helena-en")
+
+    let result = try await model.speak(SpeechRequest(text: "Hello"))
+
+    let metadata = try #require(result.providerMetadata["deepgram"]?.objectValue)
+    #expect(metadata["modelName"]?.stringValue == "aura-2-helena-en")
+    #expect(metadata["modelUuid"]?.stringValue == "model-uuid")
+    #expect(metadata["additionalModelUuids"] == ["additional-1", "additional-2"])
+    #expect(metadata["charCount"]?.intValue == 69)
+    #expect(metadata["breaksApplied"]?.intValue == 0)
+    #expect(metadata["pronunciationsApplied"]?.intValue == 2)
+    #expect(metadata["pronunciationWarnings"]?.stringValue == "1 unknown word")
+    #expect(metadata["requestId"]?.stringValue == "request-id")
+    #expect(metadata["projectId"] == nil)
 }
 
 @Test func deepgramSpeechPassesProviderAndRequestHeadersLikeUpstream() async throws {
@@ -294,7 +399,7 @@ import Testing
     #expect(request.headers["content-type"] == "application/json")
     #expect(request.headers["custom-provider-header"] == "provider-header-value")
     #expect(request.headers["Custom-Request-Header"] == "request-header-value")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.0.27")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepgram/3.1.0")
 }
 
 @Test func deepgramSpeechParsesOutputFormatSampleRatesLikeUpstream() async throws {
@@ -447,7 +552,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?container=wav&encoding=linear16&model=aura-2-helena-en&sample_rate=16000")
 }
 
-@Test func deepgramSpeechWarnsForUnsupportedStandardOptions() async throws {
+@Test func deepgramSpeechPassesSpeedAndWarnsForRemainingUnsupportedStandardOptions() async throws {
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: Data("audio".utf8)))
     let provider = try AIProviders.deepgram(settings: ProviderSettings(apiKey: "deepgram-key", transport: transport))
     let model = try provider.speechModel("aura-2-helena-en")
@@ -462,11 +567,6 @@ import Testing
     #expect(result.warnings == [
         AIWarning(
             type: "unsupported",
-            feature: "speed",
-            message: "Deepgram TTS REST API does not support speed adjustment. Speed parameter was ignored."
-        ),
-        AIWarning(
-            type: "unsupported",
             feature: "language",
             message: "Deepgram TTS models are language-specific via the model ID. Language parameter \"en\" was ignored. Select a model with the appropriate language suffix (e.g., \"-en\" for English)."
         ),
@@ -478,7 +578,7 @@ import Testing
     ])
 
     let request = try #require(await transport.requests().first)
-    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?encoding=mp3&model=aura-2-helena-en")
+    #expect(request.url.absoluteString == "https://api.deepgram.com/v1/speak?encoding=mp3&model=aura-2-helena-en&speed=1.5")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["text"]?.stringValue == "Hello")
     #expect(body["speed"] == nil)

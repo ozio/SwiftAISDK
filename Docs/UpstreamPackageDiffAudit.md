@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-08-19
+Snapshot date: 2026-08-24
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every tracked package was packed at both the prior
@@ -15,6 +15,104 @@ Status meanings:
   Swift design before provider-specific code is useful.
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
+
+## 2026-08-24 Weekly Audit
+
+Fresh `npm view`, exact registry-prefix metadata, and published old/latest
+tarballs were checked independently for all 50 tracked rows. The prefix contains
+81 live `@ai-sdk/*` packages and 45 model-provider packages; all 45 providers
+remain represented, so this run found no new unported provider. Current upstream
+repository tests were also compared separately; the tarballs remain the release
+artifact of record for package-version decisions.
+
+| Package | Reference -> latest | Result |
+| --- | ---: | --- |
+| `ai` | `7.0.68 -> 7.0.77` | `ported/deferred` — ported unsafe-finish execution guards, preliminary output filtering, provider-error settlement, deferred-result approval stopping, duplicate stream-ID prevention, and direct video start/status calls. Callback rejection and nullish branded-ID inference have no Swift failure mode; WorkflowAgent retry reset remains deferred because that runtime is not exposed. |
+| `@ai-sdk/provider` | `4.0.7 -> 4.0.7` | `covered` — current, with no tarball drift. |
+| `@ai-sdk/provider-utils` | `5.0.27 -> 5.0.29` | `ported` — recursively preserves schema-valued `additionalProperties` and normalizes empty tool-call IDs. |
+| `@ai-sdk/react` | `4.0.71 -> 4.0.80` | `version-only` — React hook/dependency changes do not map to SwiftAISDK's native chat session. |
+| `@ai-sdk/alibaba` | `2.0.32 -> 2.0.34` | `ported` — the direct delta is empty tool-call ID normalization plus dependency propagation; the 2.0.32 reasoning-history behavior was already in the prior Swift baseline. |
+| `@ai-sdk/amazon-bedrock` | `5.0.58 -> 5.0.61` | `ported` — modeled event-stream exceptions, current and legacy redacted reasoning replay, ordered unary content metadata, and empty tool-call IDs. |
+| `@ai-sdk/anthropic` | `4.0.39 -> 4.0.41` | `version-only` — dependency/version propagation and a documentation typo only. |
+| `@ai-sdk/anthropic-aws` | `2.0.31 -> 2.0.33` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/assemblyai` | `3.0.27 -> 3.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/azure` | `4.0.44 -> 4.0.48` | `covered` — dependency propagation; shared OpenAI/provider-utils fixes apply centrally. |
+| `@ai-sdk/baseten` | `2.1.9 -> 2.1.13` | `covered` — dependency propagation; shared OpenAI-compatible fixes apply centrally. |
+| `@ai-sdk/black-forest-labs` | `2.0.28 -> 2.0.30` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/bytedance` | `2.0.29 -> 2.0.32` | `ported/covered` — the direct delta adds image token usage, which has no local image model. The full API review also closed the pre-existing async video start/status gap while preserving unary generation. |
+| `@ai-sdk/cartesia` | `3.0.22 -> 3.0.24` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/cerebras` | `3.0.31 -> 3.0.35` | `ported` — typed options, `max_completion_tokens`, and empty tool-call IDs. |
+| `@ai-sdk/cohere` | `4.0.27 -> 4.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/deepgram` | `3.0.27 -> 3.1.0` | `ported` — corrected diarization defaults, voice/language composition, speech speed, response-header usage metadata, and structured errors. |
+| `@ai-sdk/deepinfra` | `3.0.31 -> 3.0.35` | `covered` — dependency propagation; shared OpenAI-compatible fixes apply centrally. |
+| `@ai-sdk/deepseek` | `3.0.28 -> 3.0.31` | `ported` — V4 Flash Vision inline/URL/reference images, Files V4 upload with `user_data` and expiry validation, structured file errors, and empty IDs. |
+| `@ai-sdk/elevenlabs` | `3.0.28 -> 3.0.30` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/fal` | `3.0.28 -> 3.0.30` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/fish-audio` | `3.0.5 -> 3.0.7` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/fireworks` | `3.0.34 -> 3.0.38` | `covered` — dependency propagation; shared OpenAI-compatible fixes apply centrally. |
+| `@ai-sdk/gateway` | `4.0.54 -> 4.0.62` | `ported` — durable Batch V4 with ordered result content and preserved server finish reasons, typed HTTP/WebSocket `not_found`, Tako Search, async-video callback/start/status, and DeepSeek catalog propagation. The full API review also closes Gateway streaming transcription and short-lived token minting that predated the reference version. |
+| `@ai-sdk/gmicloud` | `3.0.2 -> 3.0.6` | `covered` — dependency propagation; shared OpenAI-compatible fixes apply centrally. |
+| `@ai-sdk/gladia` | `3.0.27 -> 3.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/google` | `4.0.45 -> 4.0.50` | `ported/deferred` — local JSON Schema references, Gemini 3.7+ reasoning floor, and empty IDs are ported. Imagen remains temporarily available for source compatibility despite upstream shutdown removal. |
+| `@ai-sdk/google-vertex` | `5.0.56 -> 5.0.61` | `ported/deferred` — inherits Google schema/reasoning and shared empty-ID fixes; Vertex Imagen remains temporarily available for source compatibility. |
+| `@ai-sdk/groq` | `4.0.28 -> 4.0.30` | `ported` — empty tool-call ID normalization; remaining changes are dependencies/versioning. |
+| `@ai-sdk/huggingface` | `2.0.31 -> 2.0.35` | `covered` — dependency propagation; shared utility fixes apply centrally. |
+| `@ai-sdk/hume` | `3.0.27 -> 3.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/klingai` | `4.0.29 -> 4.0.31` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/lmnt` | `3.0.27 -> 3.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/luma` | `3.0.28 -> 3.0.30` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/mcp` | `2.0.33 -> 2.0.36` | `ported/covered` — non-2xx POST/SSE responses synchronously surface status, URL, and body. Windows command shims have no Swift transport analogue; the remaining OAuth/HTTP foundation was already present. |
+| `@ai-sdk/minimax` | `3.0.15 -> 3.0.17` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/mistral` | `4.0.29 -> 4.0.32` | `ported` — fragmented streaming tool-call names/arguments and empty IDs. |
+| `@ai-sdk/moonshotai` | `3.0.35 -> 3.0.37` | `ported` — the direct delta is empty tool-call ID normalization plus dependencies; owned conversion, MFJS normalization, video, references, and reasoning options were already in the 3.0.35 baseline. |
+| `@ai-sdk/open-responses` | `2.0.28 -> 2.0.30` | `covered` — dependency/version propagation; shared utility fixes apply centrally. |
+| `@ai-sdk/openai` | `4.0.43 -> 4.0.46` | `ported` — expands internal Responses parallel-tool wrappers in generated, streamed, continuation, and fallback paths, plus empty tool-call IDs. `allowedTools` and compaction were already in the 4.0.43 baseline. |
+| `@ai-sdk/openai-compatible` | `3.0.31 -> 3.0.35` | `ported` — hosted/data video input, image token usage, truncated-stream errors, custom-namespace Gemini thought signatures, raw usage, and empty IDs. |
+| `@ai-sdk/perplexity` | `4.0.29 -> 4.0.31` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/prodia` | `2.0.28 -> 2.0.30` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/quiverai` | `2.0.27 -> 2.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/replicate` | `3.0.28 -> 3.0.30` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/revai` | `3.0.27 -> 3.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/togetherai` | `3.0.32 -> 3.0.36` | `covered` — dependency propagation; shared OpenAI-compatible fixes apply centrally. |
+| `@ai-sdk/vercel` | `3.0.30 -> 3.0.30` | `covered` — current, with no tarball drift. |
+| `@ai-sdk/voyage` | `2.0.27 -> 2.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/xai` | `4.0.40 -> 4.0.43` | `ported` — image moderation blocks now surface as content-policy errors; the remaining package changes are dependencies/versioning. |
+
+The 32 untracked non-provider packages are retained as explicit product gaps:
+harnesses and sandboxes need agent/session/bridge foundations; framework/UI
+adapters need separate Swift UI product decisions; workflow, policy, telemetry,
+schema/tooling, and development packages are not model-provider factories.
+
+### 2026-08-24 Verification
+
+- `node Scripts/check-upstream-versions.js --all --json --fail-on-outdated`:
+  all 50 tracked provider/core rows match npm `latest`; zero outdated rows and
+  zero registry errors.
+- `node Scripts/check-upstream-versions.js --discover-packages --all --json`,
+  `npm search --json --searchlimit=250 --scope=@ai-sdk ai-sdk`, and the exact
+  npm replication-registry prefix were queried independently: the exact prefix
+  contains 81 live `@ai-sdk/*` packages, search metadata returns 66, and all 45
+  model-provider packages are tracked. The 32 untracked rows contain zero model
+  providers.
+- Published old/latest tarballs were unpacked and reviewed separately for every
+  changed row. Current upstream source/tests were checked at
+  `vercel/ai@9d9a73f1551f2243035491e9de5a2e00ebf9eb17`; the executable inventory now
+  contains 815 paths and the fresh diff classifies all 82 changed test paths.
+- The combined focused upstream-parity filter passed 79 tests; additional
+  boundary reruns covered updated version constants, DeepSeek image/PDF
+  conversion, Google reasoning floors, and the distinct generic
+  OpenAI-compatible versus Moonshot truncated-stream outcomes.
+- `swift test`: 2,575 tests across 3 suites passed with zero failures. One
+  unrelated 40 ms timeout assertion flaked once under parallel load, passed on
+  immediate isolated rerun, and passed in the recorded clean full run.
+- `npm ci --prefix docs-site`: completed successfully; npm reported 8 existing
+  dependency advisories (1 low, 7 high).
+- `npm --prefix docs-site run check`: 4 files checked with zero errors,
+  warnings, or hints.
+- `npm --prefix docs-site run build`: 89 pages built successfully and indexed
+  by Pagefind.
+- `git diff --check`: passed after the runtime, test, generated docs, and audit
+  updates.
 
 ## 2026-08-19 Focused Gap Closure
 

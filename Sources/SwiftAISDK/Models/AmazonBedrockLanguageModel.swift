@@ -16,23 +16,72 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let prepared = try converseBody(for: request)
         let raw = try await config.sendJSON(path: "/model/\(encodedModelID)/converse", body: prepared.body, headers: request.headers, abortSignal: request.abortSignal)
-        let rawText = raw["output"]?["message"]?["content"]?.arrayValue?.compactMap { $0["text"]?.stringValue }.joined()
-        let text = rawText.map { text in
-            prepared.usesJsonInstruction ? BedrockJSONObjectTextExtractor().process(text) : text
+        let responseBlocks = raw["output"]?["message"]?["content"]?.arrayValue ?? []
+        let jsonTextExtractor = prepared.usesJsonInstruction ? BedrockJSONObjectTextExtractor() : nil
+        var content: [AIResultContentPart] = []
+        var text = ""
+        var reasoning = ""
+        var toolCalls: [AIToolCall] = []
+        var isJsonResponseFromTool = false
+
+        for (index, block) in responseBlocks.enumerated() {
+            if let rawText = block["text"]?.stringValue {
+                let parsedText = jsonTextExtractor?.process(rawText) ?? rawText
+                text += parsedText
+                content.append(.text(parsedText))
+                continue
+            }
+
+            if let reasoningContent = block["reasoningContent"] {
+                if let reasoningText = reasoningContent["reasoningText"] {
+                    let value = reasoningText["text"]?.stringValue ?? ""
+                    reasoning += value
+                    let metadata = bedrockReasoningProviderMetadata(
+                        key: "signature",
+                        value: reasoningText["signature"]
+                    )
+                    content.append(.reasoning(value, providerMetadata: metadata))
+                    continue
+                }
+                if let redactedData = reasoningContent["redactedReasoning"]?["data"] {
+                    content.append(.reasoning(
+                        "",
+                        providerMetadata: bedrockReasoningProviderMetadata(key: "redactedData", value: redactedData)
+                    ))
+                    continue
+                }
+                if let redactedContent = reasoningContent["redactedContent"] {
+                    content.append(.reasoning(
+                        "",
+                        providerMetadata: bedrockReasoningProviderMetadata(key: "redactedContent", value: redactedContent)
+                    ))
+                    continue
+                }
+            }
+
+            if let toolCall = bedrockToolCall(from: block, index: index) {
+                if prepared.usesJsonResponseTool, toolCall.name == "json" {
+                    text += toolCall.arguments
+                    content.append(.text(toolCall.arguments))
+                    isJsonResponseFromTool = true
+                } else {
+                    toolCalls.append(toolCall)
+                    content.append(.toolCall(toolCall))
+                }
+            }
         }
-        let reasoning = bedrockReasoningText(from: raw["output"]?["message"]?["content"])
-        let toolCalls = bedrockToolCalls(from: raw["output"]?["message"]?["content"])
-        guard text != nil || !reasoning.isEmpty || !toolCalls.isEmpty else {
+
+        guard !content.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Bedrock Converse response.")
         }
-        let jsonResponseToolCall = prepared.usesJsonResponseTool ? toolCalls.first { $0.name == "json" } : nil
         return TextGenerationResult(
-            text: jsonResponseToolCall?.arguments ?? text ?? "",
+            text: text,
+            content: content,
             reasoning: reasoning,
-            finishReason: bedrockFinishReason(raw["stopReason"]?.stringValue, isJsonResponseFromTool: jsonResponseToolCall != nil),
+            finishReason: bedrockFinishReason(raw["stopReason"]?.stringValue, isJsonResponseFromTool: isJsonResponseFromTool),
             usage: bedrockUsage(from: raw["usage"]),
-            toolCalls: jsonResponseToolCall == nil ? toolCalls : [],
-            providerMetadata: bedrockProviderMetadata(from: raw, isJsonResponseFromTool: jsonResponseToolCall != nil),
+            toolCalls: toolCalls,
+            providerMetadata: bedrockProviderMetadata(from: raw, isJsonResponseFromTool: isJsonResponseFromTool),
             rawValue: raw,
             warnings: prepared.warnings
         )
@@ -78,6 +127,15 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
 
     private var encodedModelID: String {
         bedrockEncodeModelID(modelID)
+    }
+
+    private func bedrockReasoningProviderMetadata(key: String, value: JSONValue?) -> [String: JSONValue] {
+        guard let value else { return [:] }
+        let payload: JSONValue = .object([key: value])
+        return [
+            "amazonBedrock": payload,
+            "bedrock": payload
+        ]
     }
 
     private func converseBody(for request: LanguageModelRequest) throws -> BedrockPreparedConverseCall {

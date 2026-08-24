@@ -31,7 +31,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke")
     #expect(request.headers["Authorization"] == "Bearer bedrock-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.58")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.61")
     #expect(request.headers["anthropic-beta"] == nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"] == nil)
@@ -255,7 +255,7 @@ import Testing
     #expect(request.url.absoluteString == "https://bedrock-mantle.us-west-2.api.aws/v1/chat/completions")
     #expect(request.headers["Authorization"] == "Bearer mantle-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.58")
+    #expect(request.headers["user-agent"] == "ai-sdk/amazon-bedrock/5.0.61")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai.gpt-oss-20b")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")
@@ -330,6 +330,85 @@ import Testing
     #expect(result.toolCalls[0].name == "test-tool")
     #expect(try decodeJSONBody(Data(result.toolCalls[0].arguments.utf8))["value"]?.stringValue == "Sparkle Day")
 }
+
+@Test func amazonBedrockConverseGeneratesDistinctToolCallIDsWhenToolUseIDsAreEmpty() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[
+      {"toolUse":{"toolUseId":"","name":"first","input":{"value":1}}},
+      {"toolUse":{"toolUseId":"","name":"second","input":{"value":2}}}
+    ]}},"stopReason":"tool_use","usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("us.openai.gpt-5.6-luna")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Use tools.")]))
+    let ids = result.toolCalls.map(\.id)
+
+    #expect(ids.count == 2)
+    #expect(ids.allSatisfy { !$0.isEmpty })
+    #expect(Set(ids).count == 2)
+}
+
+@Test func amazonBedrockConverseSurfacesRedactedContentForReplay() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[
+      {"reasoningContent":{"redactedContent":"encrypted-reasoning-payload"}},
+      {"text":"The answer is 42."}
+    ]}},"stopReason":"end_turn","usage":{"inputTokens":4,"outputTokens":34,"totalTokens":38}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("us.openai.gpt-5.6-luna")
+
+    let result = try await model.generate(LanguageModelRequest(messages: [.user("Think.")]))
+
+    #expect(result.text == "The answer is 42.")
+    #expect(result.content.count == 2)
+    guard case let .reasoning(reasoning, metadata) = result.content[0],
+          case let .text(text, _) = result.content[1] else {
+        Issue.record("Expected redacted reasoning followed by text.")
+        return
+    }
+    #expect(reasoning.isEmpty)
+    #expect(text == "The answer is 42.")
+    #expect(metadata["amazonBedrock"]?["redactedContent"]?.stringValue == "encrypted-reasoning-payload")
+    #expect(metadata["bedrock"] == metadata["amazonBedrock"])
+}
+
+@Test func amazonBedrockConverseReplaysRedactedContentMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[{"text":"restored"}]}},"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("us.openai.gpt-5.6-luna")
+    let redactedContent = "encrypted-reasoning-payload"
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        .user("Explain your reasoning."),
+        AIMessage(role: .assistant, content: [
+            .reasoning("", providerMetadata: [
+                "bedrock": .object(["redactedContent": .string(redactedContent)])
+            ])
+        ]),
+        .user("Continue.")
+    ]))
+
+    let request = try #require(await transport.requests().first)
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["messages"]?[1]?["content"]?[0]?["reasoningContent"]?["redactedContent"]?.stringValue == redactedContent)
+}
+
 @Test func amazonBedrockConverseParsesReasoningAndProviderMetadata() async throws {
     let fixedDate = DateComponents(
         calendar: Calendar(identifier: .gregorian),
@@ -357,6 +436,13 @@ import Testing
 
     #expect(result.text == "answer")
     #expect(result.reasoning == "Think it through.")
+    #expect(result.content.count == 2)
+    guard case let .reasoning(_, reasoningMetadata) = result.content[0] else {
+        Issue.record("Expected reasoning content first.")
+        return
+    }
+    #expect(reasoningMetadata["amazonBedrock"]?["signature"]?.stringValue == "sig-1")
+    #expect(reasoningMetadata["bedrock"] == reasoningMetadata["amazonBedrock"])
     #expect(result.providerMetadata["amazonBedrock"]?["trace"]?["guardrail"]?["action"]?.stringValue == "NONE")
     #expect(result.providerMetadata["amazonBedrock"]?["performanceConfig"]?["latency"]?.stringValue == "optimized")
     #expect(result.providerMetadata["amazonBedrock"]?["serviceTier"]?.stringValue == "priority")
@@ -364,6 +450,56 @@ import Testing
     #expect(result.providerMetadata["amazonBedrock"]?["usage"]?["cacheDetails"]?["cache"]?.stringValue == "warm")
     #expect(result.providerMetadata["amazonBedrock"]?["stopSequence"]?.stringValue == "END")
     #expect(result.providerMetadata["bedrock"] == result.providerMetadata["amazonBedrock"])
+}
+
+@Test func amazonBedrockConversePreservesOrderedContentAndAllReasoningMetadataLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"output":{"message":{"content":[
+      {"text":"before"},
+      {"reasoningContent":{"reasoningText":{"text":"think","signature":"sig-ordered"}}},
+      {"toolUse":{"toolUseId":"tool-1","name":"lookup","input":{"city":"Tokyo"}}},
+      {"reasoningContent":{"redactedReasoning":{"data":"legacy-redacted"}}},
+      {"text":"after"},
+      {"reasoningContent":{"redactedContent":"current-redacted"}}
+    ]}},"stopReason":"tool_use","usage":{"inputTokens":2,"outputTokens":3,"totalTokens":5}}
+    """))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+
+    let result = try await provider.languageModel("us.openai.gpt-5.6-luna").generate(
+        LanguageModelRequest(messages: [.user("Think and use a tool.")])
+    )
+
+    #expect(result.text == "beforeafter")
+    #expect(result.reasoning == "think")
+    #expect(result.toolCalls.count == 1)
+    #expect(result.content.count == 6)
+
+    guard case let .text(firstText, _) = result.content[0],
+          case let .reasoning(reasoning, signatureMetadata) = result.content[1],
+          case let .toolCall(toolCall) = result.content[2],
+          case let .reasoning(legacyRedacted, legacyMetadata) = result.content[3],
+          case let .text(lastText, _) = result.content[4],
+          case let .reasoning(currentRedacted, currentMetadata) = result.content[5] else {
+        Issue.record("Expected Bedrock result content to preserve wire order.")
+        return
+    }
+    #expect(firstText == "before")
+    #expect(reasoning == "think")
+    #expect(signatureMetadata["amazonBedrock"]?["signature"]?.stringValue == "sig-ordered")
+    #expect(signatureMetadata["bedrock"] == signatureMetadata["amazonBedrock"])
+    #expect(toolCall.id == "tool-1")
+    #expect(toolCall.name == "lookup")
+    #expect(legacyRedacted.isEmpty)
+    #expect(legacyMetadata["amazonBedrock"]?["redactedData"]?.stringValue == "legacy-redacted")
+    #expect(legacyMetadata["bedrock"] == legacyMetadata["amazonBedrock"])
+    #expect(lastText == "after")
+    #expect(currentRedacted.isEmpty)
+    #expect(currentMetadata["amazonBedrock"]?["redactedContent"]?.stringValue == "current-redacted")
+    #expect(currentMetadata["bedrock"] == currentMetadata["amazonBedrock"])
 }
 @Test func amazonBedrockLanguageStreamsConverseEvents() async throws {
     let fixedDate = DateComponents(
@@ -475,6 +611,50 @@ import Testing
     #expect(eventMetadata["bedrock"] == eventMetadata["amazonBedrock"])
     #expect(totalTokens == 4)
 }
+
+@Test func amazonBedrockLanguageAccumulatesAndSeparatesStreamedRedactedContent() async throws {
+    let transport = RecordingTransport(response: amazonEventStreamResponse([
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"encrypted-reasoning-"}}}"#),
+        ("contentBlockDelta", #"{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"payload"}}}"#),
+        ("contentBlockStop", #"{"contentBlockIndex":0}"#),
+        ("contentBlockDelta", #"{"contentBlockIndex":1,"delta":{"reasoningContent":{"redactedContent":"second-payload"}}}"#),
+        ("contentBlockStop", #"{"contentBlockIndex":1}"#),
+        ("contentBlockDelta", #"{"contentBlockIndex":2,"delta":{"text":"The answer is 42."}}"#),
+        ("contentBlockStop", #"{"contentBlockIndex":2}"#),
+        ("messageStop", #"{"stopReason":"end_turn"}"#),
+        ("metadata", #"{"usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2}}"#)
+    ]))
+    let provider = try AIProviders.amazonBedrock(settings: AmazonBedrockProviderSettings(
+        region: "us-east-1",
+        apiKey: "bedrock-key",
+        transport: transport
+    ))
+    let model = try provider.languageModel("us.openai.gpt-5.6-luna")
+    var reasoningStarts: [String] = []
+    var reasoningEnds: [String: [String: JSONValue]] = [:]
+    var errors: [String] = []
+
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Think.")])) {
+        switch part {
+        case let .reasoningStart(id, _):
+            reasoningStarts.append(id)
+        case let .reasoningEnd(id, metadata):
+            reasoningEnds[id] = metadata
+        case let .error(message, _):
+            errors.append(message)
+        default:
+            break
+        }
+    }
+
+    #expect(errors.isEmpty)
+    #expect(reasoningStarts == ["0", "1"])
+    #expect(reasoningEnds["0"]?["amazonBedrock"]?["redactedContent"]?.stringValue == "encrypted-reasoning-payload")
+    #expect(reasoningEnds["0"]?["bedrock"] == reasoningEnds["0"]?["amazonBedrock"])
+    #expect(reasoningEnds["1"]?["amazonBedrock"]?["redactedContent"]?.stringValue == "second-payload")
+    #expect(reasoningEnds["1"]?["bedrock"] == reasoningEnds["1"]?["amazonBedrock"])
+}
+
 @Test func amazonBedrockLanguageStreamsToolUseBlocks() async throws {
     let fixedDate = DateComponents(
         calendar: Calendar(identifier: .gregorian),

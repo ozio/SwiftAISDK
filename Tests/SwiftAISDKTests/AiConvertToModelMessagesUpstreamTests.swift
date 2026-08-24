@@ -2,6 +2,30 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func aiConvertToModelMessagesOmitsPreliminaryToolOutputWhenIgnoringIncompleteCallsLikeUpstream() throws {
+    let toolCall = AIToolCall(
+        id: "call-preliminary",
+        name: "streamingTool",
+        arguments: #"{"task":"finish the work"}"#
+    )
+    let preliminaryResult = AIToolResult(
+        toolCallID: toolCall.id,
+        toolName: toolCall.name,
+        result: ["complete": false, "progress": "half finished"],
+        preliminary: true
+    )
+
+    let result = try convertToModelMessages([
+        .assistant(parts: [
+            .toolCall(toolCall),
+            .toolResult(preliminaryResult)
+        ]),
+        .user("Continue.")
+    ], ignoreIncompleteToolCalls: true)
+
+    #expect(result == [.user("Continue.")])
+}
+
 @Test func aiConvertToModelMessagesConvertsSimpleTextMessagesLikeUpstream() throws {
     let result = try convertToModelMessages([
         .system("System message", id: "system-1"),

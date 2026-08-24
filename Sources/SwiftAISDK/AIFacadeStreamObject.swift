@@ -121,6 +121,13 @@ extension AI {
                             flushPendingTextDelta()
                             rawValues.append(raw)
                             continuation.yield(.raw(part))
+                        case let .error(message, _):
+                            flushPendingTextDelta()
+                            continuation.yield(.raw(part))
+                            throw AIError.invalidResponse(
+                                provider: model.providerID,
+                                message: message
+                            )
                         case let .finish(reason, partUsage):
                             flushPendingTextDelta()
                             finishReason = reason
