@@ -113,13 +113,17 @@ func aiStreamTotalAndStepTimeoutsIncludeRetryBackoff(
 }
 
 @Test func aiStreamChunkTimeoutResetsForEverySemanticOutputPart() async throws {
+    // The cumulative delay exceeds one timeout interval, while each individual
+    // gap leaves enough scheduling headroom for hosted CI runners.
+    let chunkTimeoutNanoseconds: UInt64 = 500_000_000
+    let interChunkDelayNanoseconds: UInt64 = 200_000_000
     let model = TimeoutScriptLanguageModel(scripts: [[
         .yield(.textDelta("Hello")),
-        .sleep(20_000_000),
+        .sleep(interChunkDelayNanoseconds),
         .yield(.reasoningDelta("Thinking")),
-        .sleep(20_000_000),
+        .sleep(interChunkDelayNanoseconds),
         .yield(.toolInputDelta(id: "call-1", delta: #"{"value":"#, providerMetadata: [:])),
-        .sleep(20_000_000),
+        .sleep(interChunkDelayNanoseconds),
         .yield(.toolCall(AIToolCall(id: "call-1", name: "tool1", arguments: #"{"value":"ok"}"#))),
         .yield(.finish(reason: "tool-calls", usage: nil)),
         .finish,
@@ -130,8 +134,8 @@ func aiStreamTotalAndStepTimeoutsIncludeRetryBackoff(
         model: model,
         prompt: "test-input",
         timeout: AIStreamTimeoutConfiguration(
-            firstChunkNanoseconds: 40_000_000,
-            chunkNanoseconds: 40_000_000
+            firstChunkNanoseconds: chunkTimeoutNanoseconds,
+            chunkNanoseconds: chunkTimeoutNanoseconds
         ),
         retryPolicy: .none
     ) {
