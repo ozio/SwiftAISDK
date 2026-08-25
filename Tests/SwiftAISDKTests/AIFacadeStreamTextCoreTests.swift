@@ -407,7 +407,7 @@ import Testing
     } catch let error as AIError {
         #expect(error == .timeout(durationNanoseconds: 1_000_000))
     }
-    let events = await recorder.events()
+    let events = await recorder.events(waitingForAtLeast: 2)
 
     #expect(events.map(\.kind) == [.start, .abort])
     #expect(events[1].operationID == "ai.streamText")

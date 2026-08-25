@@ -129,6 +129,18 @@ actor TelemetryRecorder: Telemetry.Integration {
     func events() -> [Telemetry.Event] {
         recordedEvents
     }
+
+    func events(
+        waitingForAtLeast minimumCount: Int,
+        timeoutNanoseconds: UInt64 = 5_000_000_000
+    ) async -> [Telemetry.Event] {
+        let started = DispatchTime.now().uptimeNanoseconds
+        while recordedEvents.count < minimumCount,
+              DispatchTime.now().uptimeNanoseconds - started < timeoutNanoseconds {
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return recordedEvents
+    }
 }
 actor ExecutionWrapperLog {
     private var values: [String] = []

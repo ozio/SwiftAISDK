@@ -25,8 +25,10 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
-      - name: Run Swift tests
-        run: swift test
+      - name: Run Swift tests serially
+        # Swift Testing otherwise starts the entire suite concurrently, which
+        # can starve short timeout and polling tasks on hosted runners.
+        run: swift test --no-parallel
 
   build:
     needs: test

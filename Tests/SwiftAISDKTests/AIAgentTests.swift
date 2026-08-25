@@ -139,7 +139,7 @@ import Testing
         #expect(error == .timeout(durationNanoseconds: 1_000_000))
     }
 
-    let events = await recorder.events()
+    let events = await recorder.events(waitingForAtLeast: 2)
     #expect(model.streamRequests.count == 1)
     #expect(events.map(\.kind) == [.start, .abort])
     #expect(events.first?.operationID == "ai.streamText")
