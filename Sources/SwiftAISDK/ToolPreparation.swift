@@ -199,10 +199,16 @@ struct AICollectedToolApproval: Equatable, Sendable {
 struct AICollectedToolApprovals: Equatable, Sendable {
     var approvedToolApprovals: [AICollectedToolApproval]
     var deniedToolApprovals: [AICollectedToolApproval]
+    var invalidToolApprovals: [AIInvalidCollectedToolApproval] = []
 
     static var empty: AICollectedToolApprovals {
-        AICollectedToolApprovals(approvedToolApprovals: [], deniedToolApprovals: [])
+        AICollectedToolApprovals(approvedToolApprovals: [], deniedToolApprovals: [], invalidToolApprovals: [])
     }
+}
+
+struct AIInvalidCollectedToolApproval: Equatable, Sendable {
+    var approval: AICollectedToolApproval
+    var error: AIInvalidToolInputError
 }
 
 func collectToolApprovals(messages: [AIMessage]) throws -> AICollectedToolApprovals {
@@ -264,7 +270,8 @@ func collectToolApprovals(messages: [AIMessage]) throws -> AICollectedToolApprov
 
     return AICollectedToolApprovals(
         approvedToolApprovals: approvedToolApprovals,
-        deniedToolApprovals: deniedToolApprovals
+        deniedToolApprovals: deniedToolApprovals,
+        invalidToolApprovals: []
     )
 }
 
@@ -277,13 +284,20 @@ func validateApprovedToolApprovals(
 ) async throws -> AICollectedToolApprovals {
     var approved: [AICollectedToolApproval] = []
     var denied: [AICollectedToolApproval] = []
+    var invalid: [AIInvalidCollectedToolApproval] = []
 
     for approval in approvedToolApprovals {
         let toolCall = approval.toolCall
         guard let tool = toolsByName[toolCall.name] else {
             throw AINoSuchToolError(toolName: toolCall.name, availableToolNames: Array(toolsByName.keys))
         }
-        let arguments = try toolArguments(from: toolCall)
+        let arguments: JSONValue
+        do {
+            arguments = try toolArguments(from: toolCall)
+        } catch let error as AIInvalidToolInputError {
+            invalid.append(AIInvalidCollectedToolApproval(approval: approval, error: error))
+            continue
+        }
 
         if let toolApprovalSecret {
             let signature = approval.approvalRequest.providerMetadata["signature"]?.stringValue
@@ -312,7 +326,12 @@ func validateApprovedToolApprovals(
             }
         }
 
-        try validateToolArguments(arguments, schema: tool.parameters, call: toolCall)
+        do {
+            try validateToolArguments(arguments, schema: tool.parameters, call: toolCall)
+        } catch let error as AIInvalidToolInputError {
+            invalid.append(AIInvalidCollectedToolApproval(approval: approval, error: error))
+            continue
+        }
 
         let approvalStatus = try await resolveToolApproval(
             toolsByName: toolsByName,
@@ -334,7 +353,8 @@ func validateApprovedToolApprovals(
 
     return AICollectedToolApprovals(
         approvedToolApprovals: approved,
-        deniedToolApprovals: denied
+        deniedToolApprovals: denied,
+        invalidToolApprovals: invalid
     )
 }
 

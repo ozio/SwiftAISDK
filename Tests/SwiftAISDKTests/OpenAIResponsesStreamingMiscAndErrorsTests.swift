@@ -167,16 +167,16 @@ import Testing
 
     var textStartID: String?
     var errorMessage: String?
-    var errorRaw: JSONValue?
+    var streamProviderError: AIStreamProviderError?
     var finishReason: String?
     var finishMetadata: [String: JSONValue] = [:]
     for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
         switch part {
         case let .textStart(id, _):
             textStartID = id
-        case let .error(message, rawValue):
+        case let .error(message, _):
             errorMessage = message
-            errorRaw = rawValue
+            streamProviderError = part.streamProviderError
         case let .finish(reason, _):
             finishReason = reason
         case let .finishMetadata(reason, _, providerMetadata):
@@ -189,7 +189,11 @@ import Testing
 
     #expect(textStartID == "msg_failed_with_reason")
     #expect(errorMessage == "response failed")
-    #expect(errorRaw?["error"]?["code"]?.stringValue == "server_error")
+    #expect(streamProviderError?.type == "server_error")
+    #expect(streamProviderError?.code == "server_error")
+    #expect(streamProviderError?.statusCode == 500)
+    #expect(streamProviderError?.isRetryable == true)
+    #expect(streamProviderError?.data?["error"]?["code"]?.stringValue == "server_error")
     #expect(finishReason == "length")
     #expect(finishMetadata["openai"]?["responseId"]?.stringValue == "resp_failed_with_reason")
 }
@@ -209,7 +213,7 @@ import Testing
         let apiError = try #require(error.apiCallError)
         #expect(apiError.statusCode == 429)
         #expect(apiError.responseBody == expectedMessage)
-        #expect(apiError.isRetryable)
+        #expect(!apiError.isRetryable)
     }
 }
 

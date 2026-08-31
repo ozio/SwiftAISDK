@@ -79,6 +79,7 @@ public final class DeepSeekFileClient: AIFileClient, @unchecked Sendable {
 
     public func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
         let expiresAfter = try deepSeekFileExpiresAfter(request.providerOptions)
+        try deepSeekValidateFileUpload(request)
         var form = MultipartFormData()
         form.appendFile(
             name: "file",
@@ -112,6 +113,7 @@ public final class DeepSeekFileClient: AIFileClient, @unchecked Sendable {
         try deepSeekValidateOptionalFileResponseFields(raw, providerID: providerID)
 
         var metadata: [String: JSONValue] = [:]
+        if let object = raw["object"], object != .null { metadata["object"] = object }
         if let filename = raw["filename"], filename != .null { metadata["filename"] = filename }
         if let purpose = raw["purpose"], purpose != .null { metadata["purpose"] = purpose }
         if let bytes = raw["bytes"], bytes != .null { metadata["bytes"] = bytes }
@@ -150,6 +152,81 @@ public final class DeepSeekFileClient: AIFileClient, @unchecked Sendable {
     }
 }
 
+private let deepSeekMaximumFileSizeBytes = 64 * 1_024 * 1_024
+private let deepSeekMaximumFilenameScalars = 512
+private let deepSeekFileSupportedMediaTypes: Set<String> = [
+    "image/gif", "image/jpeg", "image/jpg", "image/png", "image/webp"
+]
+private let deepSeekFileGenericMediaTypes: Set<String> = [
+    "", "application/binary", "application/octet-stream", "binary/octet-stream", "image", "image/*"
+]
+private let deepSeekFileSupportedExtensions: Set<String> = ["gif", "jpeg", "jpg", "png", "webp"]
+
+private func deepSeekValidateFileUpload(_ request: FileUploadRequest) throws {
+    guard request.data.count <= deepSeekMaximumFileSizeBytes else {
+        throw AIError.invalidArgument(
+            argument: "data",
+            message: "DeepSeek file uploads must not exceed 64 MiB (\(deepSeekMaximumFileSizeBytes) bytes). Received \(request.data.count) bytes."
+        )
+    }
+
+    if let filename = request.filename {
+        let scalarCount = filename.unicodeScalars.count
+        guard scalarCount <= deepSeekMaximumFilenameScalars else {
+            throw AIError.invalidArgument(
+                argument: "filename",
+                message: "DeepSeek filenames must not exceed 512 characters. Received \(scalarCount) characters."
+            )
+        }
+    }
+
+    let normalizedMediaType = request.mediaType
+        .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+        .first
+        .map(String.init)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased() ?? ""
+    let detectedMediaType = detectMediaType(data: request.data)
+
+    if let detectedMediaType,
+       !deepSeekFileSupportedMediaTypes.contains(detectedMediaType) {
+        throw AIError.invalidArgument(
+            argument: "data",
+            message: "DeepSeek file uploads support JPEG, PNG, GIF, and WebP images. Detected unsupported file content type \"\(detectedMediaType)\"."
+        )
+    }
+
+    if deepSeekFileSupportedMediaTypes.contains(normalizedMediaType) {
+        return
+    }
+
+    guard deepSeekFileGenericMediaTypes.contains(normalizedMediaType) else {
+        throw AIError.invalidArgument(
+            argument: "mediaType",
+            message: "DeepSeek file uploads support JPEG, PNG, GIF, and WebP images. Received unsupported media type \"\(request.mediaType)\"."
+        )
+    }
+
+    if detectedMediaType != nil || deepSeekHasSupportedFileExtension(request.filename) {
+        return
+    }
+
+    throw AIError.invalidArgument(
+        argument: "mediaType",
+        message: "DeepSeek file uploads support JPEG, PNG, GIF, and WebP images. Provide a supported media type or a filename ending in .jpg, .jpeg, .png, .gif, or .webp. Received \"\(request.mediaType)\"."
+    )
+}
+
+private func deepSeekHasSupportedFileExtension(_ filename: String?) -> Bool {
+    guard let filename,
+          let separator = filename.lastIndex(of: "."),
+          separator < filename.index(before: filename.endIndex) else {
+        return false
+    }
+    let extensionStart = filename.index(after: separator)
+    return deepSeekFileSupportedExtensions.contains(filename[extensionStart...].lowercased())
+}
+
 private func deepSeekFileHTTPStatusError(response: AIHTTPResponse) -> AIError {
     let body = (try? response.jsonValue())?["error"]?["message"]?.stringValue
         ?? response.bodyText
@@ -183,16 +260,30 @@ private func deepSeekFileExpiresAfter(_ providerOptions: [String: JSONValue]) th
 }
 
 private func deepSeekValidateOptionalFileResponseFields(_ raw: JSONValue, providerID: String) throws {
-    for key in ["object", "filename", "purpose"] {
-        if let value = raw[key], value != .null, value.stringValue == nil {
-            throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field \(key) must be a string.")
-        }
+    if let object = raw["object"], object != .null, object.stringValue != "file" {
+        throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field object must be \"file\".")
+    }
+    if let filename = raw["filename"], filename != .null, filename.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field filename must be a string.")
+    }
+    if let purpose = raw["purpose"], purpose != .null, purpose.stringValue != "user_data" {
+        throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field purpose must be \"user_data\".")
     }
     for key in ["bytes", "created_at", "expires_at"] {
-        if let value = raw[key], value != .null, value.doubleValue == nil {
-            throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field \(key) must be a number.")
+        if let value = raw[key], value != .null, !deepSeekIsNonnegativeSafeInteger(value) {
+            throw AIError.invalidResponse(provider: providerID, message: "DeepSeek Files response field \(key) must be a nonnegative safe integer.")
         }
     }
+}
+
+private func deepSeekIsNonnegativeSafeInteger(_ value: JSONValue) -> Bool {
+    guard let number = value.doubleValue,
+          number.isFinite,
+          number >= 0,
+          number.rounded(.towardZero) == number else {
+        return false
+    }
+    return number <= 9_007_199_254_740_991
 }
 
 public final class GoogleFileClient: AIFileClient, @unchecked Sendable {

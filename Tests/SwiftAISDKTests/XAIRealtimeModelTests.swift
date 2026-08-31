@@ -45,7 +45,7 @@ import Testing
         "application/json")
     #expect(xaiRealtimeHeader(request, "x-custom") == "custom-value")
     #expect(xaiRealtimeHeader(request, "user-agent")?.contains(
-        "ai-sdk/xai/4.0.43"
+        "ai-sdk/xai/4.0.50"
     ) == true)
     #expect(try xaiRealtimeRequestJSON(request) == [
         "expires_after": .object(["seconds": 90])

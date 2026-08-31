@@ -15,9 +15,31 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://inference.baseten.co/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.13")
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.19")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "deepseek-ai/DeepSeek-V3-0324")
+}
+
+@Test func basetenChatForwardsJSONSchemaStructuredOutputsByDefault() async throws {
+    let transport = RecordingTransport(response: jsonResponse(
+        #"{"choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#
+    ))
+    let provider = try AIProviders.baseten(settings: ProviderSettings(apiKey: "baseten-key", transport: transport))
+
+    _ = try await provider.chatModel("deepseek-ai/DeepSeek-V3-0324").generate(LanguageModelRequest(
+        messages: [.user("Return JSON")],
+        extraBody: [
+            "responseFormat": [
+                "type": "json",
+                "name": "answer",
+                "schema": ["type": "object", "properties": ["value": ["type": "string"]]]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["name"]?.stringValue == "answer")
 }
 
 @Test func basetenChatUsesCustomBaseURLHeadersAndUserAgentLikeUpstream() async throws {
@@ -39,7 +61,7 @@ import Testing
     #expect(request.url.absoluteString == "https://custom.baseten.co/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
     #expect(request.headers["custom-header"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/baseten/2.1.13")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/baseten/2.1.19")
 }
 
 @Test func basetenReadsEnvironmentAPIKeyAndReportsMissingKeyLikeUpstream() async throws {
@@ -52,7 +74,7 @@ import Testing
 
         let request = try #require(await transport.requests().first)
         #expect(request.headers["authorization"] == "Bearer env-baseten-key")
-        #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.13")
+        #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.19")
     }
 
     _ = await withTemporaryBasetenEnvironment(["BASETEN_API_KEY": nil]) {
@@ -135,6 +157,7 @@ import Testing
         transport: transport
     ))
     let model = try provider.embeddingModel()
+    #expect(model.maxEmbeddingsPerCall == 128)
 
     let result = try await model.embed(EmbeddingRequest(
         values: ["hello"],
@@ -157,7 +180,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://model-123.api.baseten.co/environments/production/sync/v1/embeddings")
     #expect(request.headers["authorization"] == "Bearer baseten-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.13")
+    #expect(request.headers["user-agent"] == "ai-sdk/baseten/2.1.19")
     #expect(request.headers["x-baseten-customer-request-id"] == nil)
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "embeddings")

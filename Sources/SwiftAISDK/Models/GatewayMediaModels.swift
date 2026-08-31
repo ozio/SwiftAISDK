@@ -3,6 +3,7 @@ import Foundation
 public final class GatewayEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { 2_048 }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {

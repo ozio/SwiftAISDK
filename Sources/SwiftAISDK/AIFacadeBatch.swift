@@ -1,8 +1,31 @@
 import Foundation
 
-private let aiBatchUserAgent = "ai/7.0.77"
+private let aiBatchUserAgent = "ai/7.0.85"
 
 extension AI {
+    /// Source-compatible overload retained from Batch V4 before completion
+    /// webhooks were added.
+    public static func startTextBatch(
+        model: any LanguageModel,
+        requests: [TextBatchRequest],
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        idempotencyKey: String? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil
+    ) async throws -> StartTextBatchResult {
+        try await startTextBatch(
+            model: model,
+            requests: requests,
+            providerOptions: providerOptions,
+            headers: headers,
+            idempotencyKey: idempotencyKey,
+            webhookURL: nil,
+            abortSignal: abortSignal,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+    }
+
     /// Starts a durable text-generation batch. Starting is intentionally not retried because it is billable.
     public static func startTextBatch(
         model: any LanguageModel,
@@ -10,6 +33,7 @@ extension AI {
         providerOptions: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         idempotencyKey: String? = nil,
+        webhookURL: String? = nil,
         abortSignal: AIAbortSignal? = nil,
         timeoutNanoseconds: UInt64? = nil
     ) async throws -> StartTextBatchResult {
@@ -37,7 +61,8 @@ extension AI {
             providerOptions: providerOptions,
             abortSignal: operationAbortSignal,
             headers: operationHeaders,
-            idempotencyKey: idempotencyKey
+            idempotencyKey: idempotencyKey,
+            webhookURL: webhookURL
         ))
         await AIWarningLogging.logWarnings(
             result.warnings.map(\.warning),
@@ -257,6 +282,7 @@ private func convertTextBatchItemResult(
                 guard case let .text(text, _) = part else { return nil }
                 return text
             }.joined(),
+            content: result.content,
             finishReason: result.finishReason,
             rawFinishReason: result.rawValue["stop_reason"]?.stringValue,
             usage: usage,

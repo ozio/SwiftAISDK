@@ -36,6 +36,37 @@ import Testing
     #expect(completionBody["stream_options"]?["include_usage"]?.boolValue == true)
 }
 
+@Test func togetherAIForwardsJSONSchemaOnlyForDeepSeekV4FlashLikeUpstream() async throws {
+    let supportedTransport = RecordingTransport(response: jsonResponse(
+        #"{"choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#
+    ))
+    let provider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: supportedTransport))
+    let responseFormat: JSONValue = [
+        "type": "json",
+        "name": "answer",
+        "schema": ["type": "object", "properties": ["value": ["type": "string"]]]
+    ]
+
+    _ = try await provider.chatModel("deepseek-ai/DeepSeek-V4-Flash-0731").generate(LanguageModelRequest(
+        messages: [.user("Return JSON")],
+        extraBody: ["responseFormat": responseFormat]
+    ))
+
+    var body = try decodeJSONBody(try #require((await supportedTransport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+
+    let fallbackTransport = RecordingTransport(response: jsonResponse(
+        #"{"choices":[{"message":{"content":"{}"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}"#
+    ))
+    let fallbackProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: fallbackTransport))
+    _ = try await fallbackProvider.chatModel("meta-llama/Llama-3.3-70B-Instruct-Turbo").generate(LanguageModelRequest(
+        messages: [.user("Return JSON")],
+        extraBody: ["responseFormat": responseFormat]
+    ))
+    body = try decodeJSONBody(try #require((await fallbackTransport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_object")
+}
+
 @Test func togetherAIImageAndRerankingUseNativeEndpoints() async throws {
     let imageTransport = RecordingTransport(response: jsonResponse(#"{"data":[{"b64_json":"base64-image"}]}"#))
     let imageProvider = try AIProviders.togetherAI(settings: ProviderSettings(apiKey: "together-key", transport: imageTransport))
@@ -58,7 +89,7 @@ import Testing
     let imageRequest = try #require(await imageTransport.requests().first)
     #expect(imageRequest.url.absoluteString == "https://api.together.xyz/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer together-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.36")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.42")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "black-forest-labs/FLUX.1-schnell-Free")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -83,7 +114,7 @@ import Testing
     let rerankRequest = try #require(await rerankTransport.requests().first)
     #expect(rerankRequest.url.absoluteString == "https://api.together.xyz/v1/rerank")
     #expect(rerankRequest.headers["authorization"] == "Bearer together-key")
-    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.36")
+    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/togetherai/3.0.42")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["top_n"]?.intValue == 1)
     #expect(rerankBody["return_documents"]?.boolValue == false)
@@ -103,7 +134,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer together-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/3.0.36")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/togetherai/3.0.42")
 }
 
 @Test func togetherAIMapsNestedProviderOptions() async throws {

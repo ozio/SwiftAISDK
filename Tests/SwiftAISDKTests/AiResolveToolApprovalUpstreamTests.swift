@@ -212,6 +212,28 @@ import Testing
     ])
 }
 
+@Test func aiExecuteToolCallsSurfacesHumanApprovalRequestReasonLikeUpstream() async throws {
+    let batch = try await executeToolCalls(
+        [weatherToolCall()],
+        toolsByName: ["weather": weatherTool()],
+        request: approvalRequest(),
+        toolApproval: { context in
+            context.userApproval(reason: "requires operator review")
+        }
+    )
+
+    #expect(batch.needsUserApproval)
+    #expect(batch.approvalRequests == [
+        AIToolApprovalRequest(
+            id: "approval-call-1",
+            toolName: "weather",
+            arguments: #"{"city":"Berlin"}"#,
+            toolCallID: "call-1",
+            reason: "requires operator review"
+        )
+    ])
+}
+
 private actor ApprovalSpy {
     private var genericApprovalContexts: [AIToolApprovalContext] = []
     private var needsApprovalContexts: [(input: JSONValue, context: AIToolNeedsApprovalContext)] = []

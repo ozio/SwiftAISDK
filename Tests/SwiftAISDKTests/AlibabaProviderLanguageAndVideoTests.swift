@@ -493,3 +493,112 @@ import Testing
     #expect(t2vResult.warnings.contains { $0.feature == "shotType" })
     #expect(t2vResult.warnings.contains { $0.feature == "generateAudio" })
 }
+
+@Test func alibabaVideoMapsWan3AllInOneMediaResolutionAndUsageLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-wan3"},"request_id":"req-1"}"#),
+        jsonResponse(#"{"output":{"task_id":"task-wan3","task_status":"SUCCEEDED","video_url":"https://dashscope.example.com/wan3.mp4"},"usage":{"duration":12,"output_video_duration":8,"input_video_duration":4,"fps":24,"SR":720,"size":"1280x720","ratio":"16:9"},"request_id":"req-2"}"#)
+    ])
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+    let model = try provider.videoModel("wan3.0-video")
+
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "Image 1 and Video 1 meet",
+        aspectRatio: "adaptive",
+        image: ImageInputFile(url: "https://example.com/legacy.png"),
+        frameImages: [
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/first.png"), frameType: .firstFrame),
+            VideoFrameImage(image: ImageInputFile(url: "https://example.com/last.png"), frameType: .lastFrame)
+        ],
+        inputReferences: [
+            ImageInputFile(url: "https://example.com/character.png"),
+            ImageInputFile(url: "https://example.com/motion.mp4")
+        ],
+        resolution: "832x480",
+        generateAudio: false,
+        providerOptions: ["alibaba": ["shotType": "multi", "pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["model"]?.stringValue == "wan3.0-video")
+    #expect(body["input"]?["img_url"] == nil)
+    #expect(body["input"]?["media"]?[0]?["type"]?.stringValue == "reference_image")
+    #expect(body["input"]?["media"]?[1]?["type"]?.stringValue == "reference_video")
+    #expect(body["input"]?["media"]?[2]?["url"]?.stringValue == "https://example.com/first.png")
+    #expect(body["input"]?["media"]?[3]?["url"]?.stringValue == "https://example.com/last.png")
+    #expect(body["parameters"]?["resolution"]?.stringValue == "480P")
+    #expect(body["parameters"]?["ratio"]?.stringValue == "adaptive")
+    #expect(body["parameters"]?["audio"]?.boolValue == false)
+    #expect(body["parameters"]?["shot_type"] == nil)
+    #expect(result.warnings.contains { $0.feature == "frameImages" } == false)
+    #expect(result.warnings.contains { $0.feature == "inputReferences" } == false)
+    #expect(result.warnings.contains { $0.feature == "aspectRatio" } == false)
+    #expect(result.warnings.contains { $0.feature == "shotType" })
+    #expect(result.providerMetadata["alibaba"]?["usage"]?["inputVideoDuration"]?.doubleValue == 4)
+    #expect(result.providerMetadata["alibaba"]?["usage"]?["fps"]?.doubleValue == 24)
+    #expect(result.providerMetadata["alibaba"]?["usage"]?["ratio"]?.stringValue == "16:9")
+}
+
+@Test func alibabaVideoAcceptsWan3OnlyMediaKindsAndAdaptiveRatio() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-wan3-media"}}"#),
+        jsonResponse(#"{"output":{"task_id":"task-wan3-media","task_status":"SUCCEEDED","video_url":"https://dashscope.example.com/wan3-media.mp4"}}"#)
+    ])
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+
+    _ = try await provider.videoModel("wan3.0-video").generateVideo(VideoGenerationRequest(
+        prompt: "Use every source",
+        providerOptions: [
+            "alibaba": [
+                "ratio": "adaptive",
+                "media": [
+                    ["type": "reference_audio", "url": "https://example.com/voice.mp3"],
+                    ["type": "file", "url": "https://example.com/deck.pdf"],
+                    ["type": "link", "url": "https://example.com/article"],
+                    ["type": "last_frame", "url": "https://example.com/last.png"]
+                ],
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?["media"]?[0]?["type"]?.stringValue == "reference_audio")
+    #expect(body["input"]?["media"]?[1]?["type"]?.stringValue == "file")
+    #expect(body["input"]?["media"]?[2]?["type"]?.stringValue == "link")
+    #expect(body["input"]?["media"]?[3]?["type"]?.stringValue == "last_frame")
+    #expect(body["parameters"]?["ratio"]?.stringValue == "adaptive")
+}
+
+@Test func alibabaVideoWarnsWhenWan3SkipsInlineVideoReferenceLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"output":{"task_status":"PENDING","task_id":"task-wan3-inline-video"}}"#),
+        jsonResponse(#"{"output":{"task_id":"task-wan3-inline-video","task_status":"SUCCEEDED","video_url":"https://dashscope.example.com/wan3-inline-video.mp4"}}"#)
+    ])
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+
+    let result = try await provider.videoModel("wan3.0-video").generateVideo(VideoGenerationRequest(
+        prompt: "Use the motion reference",
+        inputReferences: [ImageInputFile(data: Data([0, 1, 2, 3]), mediaType: "video/mp4")],
+        providerOptions: ["alibaba": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?["media"] == nil)
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "inputReferences",
+        message: "Alibaba reference-to-video requires URL references for videos. Non-URL video reference was skipped."
+    )))
+}
+
+@Test func alibabaUsageClampsTextTokensWhenReasoningExceedsCompletion() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5,"completion_tokens_details":{"reasoning_tokens":7}}}"#))
+    let provider = try AIProviders.alibaba(settings: ProviderSettings(apiKey: "dashscope-key", transport: transport))
+
+    let result = try await provider.languageModel("qwen3-max").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.usage?.outputTextTokens == 0)
+    #expect(result.usage?.outputReasoningTokens == 7)
+}

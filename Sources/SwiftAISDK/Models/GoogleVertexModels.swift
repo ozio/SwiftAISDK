@@ -79,6 +79,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
 public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { googleVertexUsesEmbedContentEndpoint(modelID) ? 1 : 250 }
     private let config: GoogleVertexConfig
 
     init(modelID: String, config: GoogleVertexConfig) {
@@ -88,12 +89,12 @@ public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendab
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        let maxEmbeddingsPerCall = googleVertexUsesEmbedContentEndpoint(modelID) ? 1 : 2048
-        guard request.values.count <= maxEmbeddingsPerCall else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 1
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }
@@ -386,11 +387,18 @@ public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchec
                     var hasFunctionCall = false
                     var sourceCounter = 0
                     var emittedSourceKeys: Set<String> = []
+                    var didEmitFinish = false
+                    var didReceiveStreamError = false
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
+                        }
+                        if let providerError = googleInteractionsStreamProviderError(from: raw) {
+                            didReceiveStreamError = true
+                            continuation.yield(.providerError(providerError))
+                            continue
                         }
                         for source in googleInteractionsSources(from: raw, sourceCounter: &sourceCounter, emittedKeys: &emittedSourceKeys) {
                             continuation.yield(.source(source))
@@ -437,8 +445,19 @@ public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchec
                                 usage: googleInteractionsUsage(from: interaction),
                                 providerMetadata: googleInteractionsProviderMetadata(from: interaction)
                             ))
+                            didEmitFinish = true
                             break
                         }
+                    }
+                    if didReceiveStreamError, !didEmitFinish {
+                        for part in content.finishParts() {
+                            continuation.yield(part)
+                        }
+                        continuation.yield(.finishMetadata(
+                            reason: "error",
+                            usage: nil,
+                            providerMetadata: [:]
+                        ))
                     }
                     continuation.finish()
                 } catch {

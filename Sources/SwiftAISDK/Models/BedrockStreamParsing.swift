@@ -224,6 +224,11 @@ struct BedrockStreamState {
         sawTerminalEvent = false
         return parts
     }
+
+    mutating func markFailed() {
+        latestFinishReason = "error"
+        sawTerminalEvent = true
+    }
 }
 
 private func bedrockRedactedReasoningProviderMetadata(_ redactedContent: String?) -> [String: JSONValue] {
@@ -255,6 +260,53 @@ struct BedrockRawStreamItem {
     var rawValue: JSONValue
     var errorMessage: String?
     var eventType: String? = nil
+}
+
+func amazonBedrockStreamErrorMetadata(
+    for type: String
+) -> (statusCode: Int?, isRetryable: Bool?) {
+    switch type {
+    case "internalServerException", "InternalServerException":
+        return (500, true)
+    case "modelStreamErrorException", "ModelStreamErrorException":
+        return (424, true)
+    case "serviceUnavailableException", "ServiceUnavailableException":
+        return (503, true)
+    case "throttlingException", "ThrottlingException":
+        return (429, true)
+    case "validationException", "ValidationException":
+        return (400, false)
+    default:
+        return (nil, nil)
+    }
+}
+
+func amazonBedrockStreamProviderError(
+    from item: BedrockRawStreamItem
+) -> AIStreamProviderError? {
+    let raw = item.rawValue
+    guard item.errorMessage != nil || raw["type"]?.stringValue == "error" else {
+        return nil
+    }
+    let type = item.eventType
+        ?? raw["error"]?["type"]?.stringValue
+        ?? raw["type"]?.stringValue
+        ?? "error"
+    let payload = raw[type] ?? raw["error"] ?? raw
+    let message = payload["message"]?.stringValue
+        ?? payload["Message"]?.stringValue
+        ?? raw["message"]?.stringValue
+        ?? item.errorMessage
+        ?? "Amazon Bedrock stream failed with \(type)"
+    let metadata = amazonBedrockStreamErrorMetadata(for: type)
+    return AIStreamProviderError(
+        message: message,
+        type: type,
+        code: payload["code"],
+        statusCode: metadata.statusCode,
+        isRetryable: metadata.isRetryable,
+        data: raw
+    )
 }
 
 struct BedrockRawStreamParser {
@@ -379,8 +431,10 @@ func streamFromBedrockResponse(
             if includeRawChunks {
                 emit(.raw(item.rawValue))
             }
-            if let errorMessage = item.errorMessage {
-                throw AIError.invalidResponse(provider: providerID, message: errorMessage)
+            if let providerError = amazonBedrockStreamProviderError(from: item) {
+                state.markFailed()
+                emit(.providerError(providerError))
+                continue
             }
             for part in state.parts(from: item.rawValue) {
                 emit(part)

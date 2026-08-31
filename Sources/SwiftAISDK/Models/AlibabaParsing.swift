@@ -41,7 +41,7 @@ func alibabaUsage(from raw: JSONValue) -> TokenUsage? {
         inputTokensNoCache: max(0, inputTokens - cacheReadTokens - cacheWriteTokens),
         inputTokensCacheRead: cacheReadTokens,
         inputTokensCacheWrite: cacheWriteTokens,
-        outputTextTokens: outputTokens - reasoningTokens,
+        outputTextTokens: max(0, outputTokens - reasoningTokens),
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )

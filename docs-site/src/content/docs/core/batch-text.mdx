@@ -7,9 +7,9 @@ Use Batch V4 when a provider supports durable, asynchronous text generation.
 The returned `TextBatchReference` is persistable, so status and result reads can
 resume in another process without keeping the original request alive.
 
-Anthropic Messages Batch, OpenAI Responses Batch, and Gateway Batch V4
-implement the shared adapter. Choose a batch-capable model from any of these
-providers:
+Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses Batch, and
+Gateway Batch V4 implement the shared adapter. Choose a batch-capable model
+from any of these providers:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -53,6 +53,25 @@ let started = try await AI.startTextBatch(
 )
 ```
 
+xAI Responses exposes the same durable batch lifecycle:
+
+```swift
+let xAI = try AIProviders.xAI()
+let xAIModel = try xAI.batchLanguageModel("grok-4")
+
+let started = try await AI.startTextBatch(
+    model: xAIModel,
+    requests: [
+        TextBatchRequest(
+            id: "summary-1",
+            request: LanguageModelRequest(messages: [
+                .user("Summarize the release notes.")
+            ])
+        )
+    ]
+)
+```
+
 Gateway language models also expose the shared batch facade:
 
 ```swift
@@ -76,6 +95,11 @@ Starting a batch is not retried automatically because it may create billable
 work. Status and results setup use the normal retry policy. A caller may pass a
 stable `idempotencyKey` when the provider or gateway honors one.
 
+Pass `webhookURL` to request a completion callback. Gateway forwards the URL as
+its native `callbackUrl`; direct Anthropic, OpenAI, and xAI adapters return an
+unsupported warning so the caller can fall back to status polling without
+silently assuming webhook delivery.
+
 ## Results
 
 `getBatchResults` is an async stream of independent terminal items. One failed,
@@ -91,6 +115,7 @@ for try await item in results {
     switch item {
     case let .succeeded(id, generation):
         print(id, generation.text)
+        print(generation.content)
     case let .failed(id, error, _):
         print(id, error.message)
     case let .cancelled(id, _, _), let .expired(id, _, _):
@@ -101,4 +126,5 @@ for try await item in results {
 
 Stopping result consumption cancels the active provider stream. Batch
 references are validated against provider and model identity before status or
-result I/O, preventing accidental cross-model reads.
+result I/O, preventing accidental cross-model reads. Provider-native request
+counts are normalized before they reach the shared status type.

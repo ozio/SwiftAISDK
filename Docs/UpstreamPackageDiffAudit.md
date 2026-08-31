@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-08-24
+Snapshot date: 2026-08-31
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every tracked package was packed at both the prior
@@ -11,10 +11,96 @@ Status meanings:
 - `ported`: portable runtime behavior and focused Swift coverage changed.
 - `covered`: the published change is already represented by the current Swift
   architecture, or only expands string model IDs accepted by Swift.
-- `deferred`: the package adds a product surface that needs a shared public
-  Swift design before provider-specific code is useful.
+- `deferred`: portable behavior was audited but remains for a dedicated
+  provider pass or a shared public Swift design.
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
+
+## 2026-08-31 Weekly Audit
+
+Fresh `npm view`, exact registry-prefix metadata, published old/latest
+tarballs, and the current upstream repository were checked independently. Of
+the 50 tracked rows, 49 published newer versions; only `@ai-sdk/vercel` stayed
+current. The exact prefix now contains 85 live `@ai-sdk/*` packages and 46
+model-provider packages. The existing Swift registry represents 45 of those
+providers; newly published `@ai-sdk/zai@3.0.3` is the one unported provider.
+
+| Package | Reference -> latest | Result |
+| --- | ---: | --- |
+| `ai` | `7.0.77 -> 7.0.85` | `ported/covered/deferred/no-swift-action` — adds the individual image-call result surface, UTF-8 embedding byte-budget splitting, batch webhooks and complete batch content/counts, typed provider stream errors, approval reasons and signed approval revalidation, model-visible invalid approval results, and structured-output finish handling. Parsed stream-end output, active UI parts, and body `URLError` retryability are already covered. Stitch/smoothing cancellation belongs to JavaScript stream-controller helpers, and JavaScript `undefined` hash slots have no Swift `JSONValue` analogue, so neither adds a distinct Swift surface. Typed UI-tool schema conversion, denied-chat auto-submit/outcomes, `Uint8Array` secrets, true multi-call image splitting/per-image metadata, and split Gateway cost aggregation remain outside this batch. |
+| `@ai-sdk/provider` | `4.0.7 -> 4.0.9` | `ported` — the public batch start contract accepts a webhook URL, batch results preserve full content, and provider-native request counts remain available. |
+| `@ai-sdk/provider-utils` | `5.0.29 -> 5.0.34` | `ported/covered` — shared approval reasons, normalized batch counts, embedding byte budgets, and `AIStreamProviderError` preserve provider type/code/status/retry/raw payload details. Swift already classifies body-read `URLError` failures at the retry boundary. |
+| `@ai-sdk/react` | `4.0.80 -> 4.0.88` | `version-only` — React hook and dependency propagation does not map to SwiftAISDK's native chat session. |
+| `@ai-sdk/alibaba` | `2.0.34 -> 2.0.39` | `ported` — WAN 3 all-in-one video maps its media, resolution, aspect-ratio, audio, and usage metadata contracts; reasoning-adjusted output text tokens cannot become negative. |
+| `@ai-sdk/amazon-bedrock` | `5.0.61 -> 5.0.68` | `ported` — covers inference-profile reasoning, cache-only assistant omission, ARN embedding families, citations, parallel-tool disabling, guardrail blocks, complete raw usage, model-specific reasoning shapes, and typed stream errors. |
+| `@ai-sdk/anthropic` | `4.0.41 -> 4.0.46` | `ported` — Messages Batch accepts the full request option/content surface, preserves native counts and raw status, isolates invalid/unknown result items, warns on unsupported webhooks, and safely encodes returned skill identifiers. |
+| `@ai-sdk/anthropic-aws` | `2.0.33 -> 2.0.38` | `covered/version-only` — the package-local delta is dependency propagation; the shared Anthropic behavior applies to the AWS adapter. |
+| `@ai-sdk/assemblyai` | `3.0.29 -> 3.0.34` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/azure` | `4.0.48 -> 4.0.54` | `ported/covered` — OpenAI/Azure embeddings use the shared UTF-8 byte budget; Azure deliberately preserves DeepSeek frequency/presence penalties while the direct DeepSeek provider warns and omits them. |
+| `@ai-sdk/baseten` | `2.1.13 -> 2.1.19` | `ported` — native JSON Schema structured output is enabled by default so `response_format.json_schema` is forwarded. |
+| `@ai-sdk/black-forest-labs` | `2.0.30 -> 2.0.35` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/bytedance` | `2.0.32 -> 2.0.37` | `ported` — async video provider metadata now preserves the returned last-frame URL. |
+| `@ai-sdk/cartesia` | `3.0.24 -> 3.0.29` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/cerebras` | `3.0.35 -> 3.0.41` | `covered` — upstream removes a deprecated model ID; Swift accepts forward-compatible string model IDs rather than maintaining a restrictive enum. |
+| `@ai-sdk/cohere` | `4.0.29 -> 4.0.35` | `ported` — raw usage now preserves the complete provider usage object. |
+| `@ai-sdk/deepgram` | `3.1.0 -> 3.1.5` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/deepinfra` | `3.0.35 -> 3.0.41` | `ported` — native JSON Schema structured output is enabled by default so `response_format.json_schema` is forwarded. |
+| `@ai-sdk/deepseek` | `3.0.31 -> 3.0.37` | `ported` — adds current reasoning/sampling rules, log probabilities, user and message metadata, beta prefix/strict-tool behavior, file/media validation, model IDs, complete metadata/usage, and typed stream failures. |
+| `@ai-sdk/elevenlabs` | `3.0.30 -> 3.0.35` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/fal` | `3.0.30 -> 3.0.35` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/fish-audio` | `3.0.7 -> 3.0.12` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/fireworks` | `3.0.38 -> 3.0.44` | `covered/version-only` — the release train only propagates shared compatible/core dependencies; existing native structured-output behavior remains current. |
+| `@ai-sdk/gateway` | `4.0.62 -> 4.0.69` | `ported/covered` — Batch forwards callback URLs and accepts native request counts only when nonnegative values reconcile to the total. Existing async-job raw metadata and model-setting string coverage remain current; internal Tako presentation fields stay intentionally private, while body-read `URLError` retryability is already handled by the core retry boundary. |
+| `@ai-sdk/gmicloud` | `3.0.6 -> 3.0.12` | `covered/version-only` — package-local source is unchanged; shared OpenAI-compatible behavior applies centrally. |
+| `@ai-sdk/gladia` | `3.0.29 -> 3.0.34` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/google` | `4.0.50 -> 4.0.58` | `ported/deferred` — the published 100-input embedding preflight limit is ported. Google Batch, Gemini 3.5 unary/live transcription, prompt-level safety blocks, Gemini 2.5 penalty warnings, complete raw usage, recursive tool schemas, and custom-base Files URL recognition form a broader provider vertical audited for a dedicated pass. |
+| `@ai-sdk/google-vertex` | `5.0.61 -> 5.0.70` | `ported/deferred/covered` — the embedding preflight now follows the published 250-input standard-model limit and one-input Gemini multimodal limit. String model IDs and existing shared conversion remain covered; shared Google language changes, Gemini 3.5 transcription, and Google Batch remain deferred to a dedicated provider pass. |
+| `@ai-sdk/groq` | `4.0.30 -> 4.0.35` | `ported` — top-level `reasoning: none` is model-aware, reasoning-adjusted text usage is clamped, and provider stream errors are normalized. |
+| `@ai-sdk/huggingface` | `2.0.35 -> 2.0.41` | `ported` — streamed provider failures preserve normalized type/code/status/retry/raw metadata. |
+| `@ai-sdk/hume` | `3.0.29 -> 3.0.34` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/klingai` | `4.0.31 -> 4.0.36` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/lmnt` | `3.0.29 -> 3.0.34` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/luma` | `3.0.30 -> 3.0.35` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/mcp` | `2.0.36 -> 2.0.41` | `ported` — tool discovery follows every page; OAuth scope selection reaches dynamic registration; private token/registration endpoints are rejected before credential transmission and redirects are disabled for those POSTs. |
+| `@ai-sdk/minimax` | `3.0.17 -> 3.0.22` | `ported` — H3/H3-Max use model-aware 480P/768P/2K tiers, duration bounds, audio support, and reference-input validation. |
+| `@ai-sdk/mistral` | `4.0.32 -> 4.0.37` | `ported` — `promptCacheKey` maps to `prompt_cache_key` with validation, and complete raw usage remains preserved. |
+| `@ai-sdk/moonshotai` | `3.0.37 -> 3.0.43` | `deferred` — current V1/Kimi models, partial/predicted output, message names, log probabilities, media references, reasoning/sampling rules, structured output, response metadata, raw usage, and error codes form a broad provider delta audited for a dedicated pass. |
+| `@ai-sdk/open-responses` | `2.0.30 -> 2.0.36` | `ported/deferred` — reasoning-summary deltas stream as reasoning output, failed/error events preserve an error finish, malformed known events surface validation failures, and hosted tool-search replay keys off the declared hosted tool. The experimental extension codec registry/lossless custom-event surface needs a public Swift design. |
+| `@ai-sdk/openai` | `4.0.46 -> 4.0.52` | `ported` — adds webhook warnings and aligned Batch results/counts, embedding byte budgets, typed and schema-invalid stream failures, safe replay of non-object tool arguments, function-name-aware tool-search history, scalar cache breakpoints, prompt-cache preservation across collapsed parallel result groups, and identifier encoding. |
+| `@ai-sdk/openai-compatible` | `3.0.35 -> 3.0.41` | `ported` — top-level reasoning disablement sends `reasoning_effort: none`; array content yields text and thinking parts while unknown future parts are ignored. |
+| `@ai-sdk/perplexity` | `4.0.31 -> 4.0.36` | `ported` — reasoning tokens are separate from completion tokens in output and total usage accounting. |
+| `@ai-sdk/prodia` | `2.0.30 -> 2.0.35` | `ported` — unsupported language-model `seed` produces an explicit warning. |
+| `@ai-sdk/quiverai` | `2.0.29 -> 2.0.34` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/replicate` | `3.0.30 -> 3.0.35` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/revai` | `3.0.29 -> 3.0.34` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/togetherai` | `3.0.36 -> 3.0.42` | `ported` — DeepSeek V4 Flash uses native JSON Schema structured output without enabling that behavior for unrelated TogetherAI models. |
+| `@ai-sdk/vercel` | `3.0.30 -> 3.0.30` | `covered` — current, with no tarball drift. |
+| `@ai-sdk/voyage` | `2.0.29 -> 2.0.34` | `version-only` — no package-local portable source delta. |
+| `@ai-sdk/xai` | `4.0.43 -> 4.0.50` | `ported` — Responses Batch uploads requests, forwards callback URLs, paginates durable results, preserves full content/counts, isolates provider errors/cancellations per item, and hardens dot-segment IDs; raw chat/Responses usage is preserved, web-search actions retain query/source/open-page data, follow-up identifiers are encoded, and stream failures are normalized. |
+
+Exact registry discovery also found new non-provider packages
+`@ai-sdk/harness-cursor@1.0.7` and `@ai-sdk/harness-fx@1.0.7`, plus the empty
+reserved `@ai-sdk/spacexai@0.0.0`. The two harnesses require the separate agent
+session/bridge product graph. Z.AI is not silently added to the 50-row tracked
+ledger: its factory, authentication/base URL, chat options and warnings,
+structured errors, media conversion, registry/capability evidence, and focused
+tests remain one explicit provider vertical.
+
+### 2026-08-31 Audit Evidence
+
+- Exact prefix discovery returns 85 live `@ai-sdk/*` packages; npm search
+  metadata returns 70. There are 46 model providers, 45 represented in Swift,
+  and one newly unported provider (`@ai-sdk/zai@3.0.3`).
+- Published old/latest tarballs were unpacked and reviewed for each of the 49
+  changed tracked rows; `@ai-sdk/vercel@3.0.30` was separately confirmed
+  current.
+- Current upstream source/tests were checked at
+  `vercel/ai@e1bfe50427d09e65404cffea9f71a60a66af0f3e`. The executable inventory
+  contains 849 paths in 80 groups, and the fresh audit classifies all 178
+  changed executable test/spec paths.
+- Focused and full Swift verification, documentation-site checks, and the final
+  zero-drift npm gate are release gates; their actual outcomes are recorded by
+  the release run rather than assumed by this source audit.
 
 ## 2026-08-24 Weekly Audit
 

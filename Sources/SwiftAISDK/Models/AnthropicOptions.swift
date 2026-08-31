@@ -35,6 +35,7 @@ let anthropicLanguageProviderOptionKeys: Set<String> = [
     "speed",
     "inferenceGeo",
     "fallbacks",
+    "serviceTier",
     "anthropicBeta",
     "contextManagement"
 ]
@@ -92,6 +93,13 @@ func anthropicOptions(from request: LanguageModelRequest, providerID: String) th
 }
 
 func anthropicTypedOptions(from options: [String: JSONValue], argumentPrefix: String) throws -> AnthropicMappedOptions {
+    if let serviceTier = options["serviceTier"], serviceTier != .null,
+       !["auto", "standard_only"].contains(serviceTier.stringValue) {
+        throw AIError.invalidArgument(
+            argument: "\(argumentPrefix).serviceTier",
+            message: "Anthropic serviceTier must be auto or standard_only."
+        )
+    }
     let knownOptions = options.filter { anthropicLanguageProviderOptionKeys.contains($0.key) }
     var body = anthropicOptions(from: knownOptions)
     body.removeValue(forKey: "anthropicBeta")
@@ -170,6 +178,7 @@ func anthropicOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue
     anthropicMoveKey("topK", to: "top_k", in: &output)
     anthropicMoveKey("cacheControl", to: "cache_control", in: &output)
     anthropicMoveKey("inferenceGeo", to: "inference_geo", in: &output)
+    anthropicMoveKey("serviceTier", to: "service_tier", in: &output)
     anthropicMoveKey("toolChoice", to: "tool_choice", in: &output)
 
     if let thinking = output.removeValue(forKey: "thinking") {

@@ -7,7 +7,7 @@ import Testing
         jsonResponse(#"{"id":"task-async-1"}"#, headers: ["x-create": "accepted"]),
         jsonResponse(#"{"id":"task-async-1","status":"running"}"#, headers: ["x-status": "running"]),
         jsonResponse(
-            #"{"id":"task-async-1","model":"seedance-final","status":"succeeded","content":{"video_url":"https://bytedance.example.com/async.mp4"},"usage":{"completion_tokens":100}}"#,
+            #"{"id":"task-async-1","model":"seedance-final","status":"succeeded","content":{"video_url":"https://bytedance.example.com/async.mp4","last_frame_url":"https://bytedance.example.com/last-frame.png"},"usage":{"completion_tokens":100}}"#,
             headers: ["x-status": "complete"]
         )
     ])
@@ -65,6 +65,7 @@ import Testing
     #expect(result.mediaType == "video/mp4")
     #expect(result.providerMetadata["bytedance"]?["taskId"]?.stringValue == "task-async-1")
     #expect(result.providerMetadata["bytedance"]?["usage"]?["completion_tokens"]?.intValue == 100)
+    #expect(result.providerMetadata["bytedance"]?["lastFrameUrl"]?.stringValue == "https://bytedance.example.com/last-frame.png")
     #expect(result.responseMetadata.modelID == "seedance-final")
     #expect(result.responseMetadata.headers["x-status"] == "complete")
 

@@ -52,7 +52,7 @@ private actor TokenStore {
     #expect(request.headers["api-key"] == "azure-key")
     #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
-    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/4.0.48")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/4.0.54")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -219,7 +219,8 @@ private actor TokenStore {
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "deepseek-deployment")
     #expect(body["thinking"] == nil)
-    #expect(body["reasoning_effort"]?.stringValue == "xhigh")
+    #expect(body["reasoning_effort"]?.stringValue == "max")
+    #expect(result.warnings.contains { $0.feature == "reasoningEffort" && $0.type == "compatibility" })
 }
 
 @Test func azureProviderAliasesRouteToUpstreamEndpoints() async throws {

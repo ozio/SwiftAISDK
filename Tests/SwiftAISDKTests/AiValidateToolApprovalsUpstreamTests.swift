@@ -16,43 +16,40 @@ private let approvalSignatureSecret = "test-secret-for-signature"
     #expect(result.deniedToolApprovals.isEmpty)
 }
 
-@Test func aiValidateApprovedToolApprovalsThrowsInvalidToolInputForSchemaMismatchLikeUpstream() async {
-    do {
-        _ = try await validateApprovedToolApprovals(
-            approvedToolApprovals: [toolApproval(arguments: ["value": 42])],
-            toolsByName: ["tool1": tool1()],
-            request: approvalValidationRequest(),
-            toolApproval: nil
-        )
-        Issue.record("expected invalid tool input error")
-    } catch let error as AIInvalidToolInputError {
-        #expect(error.toolName == "tool1")
-        #expect(error.toolCallID == "call-1")
-        #expect(error.input == ["value": 42])
-        #expect(error.description.contains("Invalid input for tool tool1"))
-    } catch {
-        Issue.record("expected AIInvalidToolInputError, got \(error)")
-    }
+@Test func aiValidateApprovedToolApprovalsCollectsInvalidToolInputForSchemaMismatchLikeUpstream() async throws {
+    let result = try await validateApprovedToolApprovals(
+        approvedToolApprovals: [toolApproval(arguments: ["value": 42])],
+        toolsByName: ["tool1": tool1()],
+        request: approvalValidationRequest(),
+        toolApproval: nil
+    )
+
+    #expect(result.approvedToolApprovals.isEmpty)
+    #expect(result.deniedToolApprovals.isEmpty)
+    let invalid = try #require(result.invalidToolApprovals.first)
+    #expect(invalid.approval.toolCall.id == "call-1")
+    #expect(invalid.error.toolName == "tool1")
+    #expect(invalid.error.toolCallID == "call-1")
+    #expect(invalid.error.input == ["value": 42])
+    #expect(invalid.error.description.contains("Invalid input for tool tool1"))
 }
 
-@Test func aiValidateApprovedToolApprovalsThrowsForForgedStrictPropertyLikeUpstream() async {
-    do {
-        _ = try await validateApprovedToolApprovals(
-            approvedToolApprovals: [toolApproval(
-                toolName: "deleteFile",
-                arguments: ["path": "/app/.env", "extra": "forged"]
-            )],
-            toolsByName: ["deleteFile": deleteFileTool()],
-            request: approvalValidationRequest(),
-            toolApproval: nil
-        )
-        Issue.record("expected invalid tool input error")
-    } catch let error as AIInvalidToolInputError {
-        #expect(error.toolName == "deleteFile")
-        #expect(error.input == ["path": "/app/.env", "extra": "forged"])
-    } catch {
-        Issue.record("expected AIInvalidToolInputError, got \(error)")
-    }
+@Test func aiValidateApprovedToolApprovalsCollectsForgedStrictPropertyLikeUpstream() async throws {
+    let result = try await validateApprovedToolApprovals(
+        approvedToolApprovals: [toolApproval(
+            toolName: "deleteFile",
+            arguments: ["path": "/app/.env", "extra": "forged"]
+        )],
+        toolsByName: ["deleteFile": deleteFileTool()],
+        request: approvalValidationRequest(),
+        toolApproval: nil
+    )
+
+    #expect(result.approvedToolApprovals.isEmpty)
+    #expect(result.deniedToolApprovals.isEmpty)
+    let invalid = try #require(result.invalidToolApprovals.first)
+    #expect(invalid.error.toolName == "deleteFile")
+    #expect(invalid.error.input == ["path": "/app/.env", "extra": "forged"])
 }
 
 @Test func aiValidateApprovedToolApprovalsMovesApprovedApprovalToDeniedWhenPolicyDeniesLikeUpstream() async throws {

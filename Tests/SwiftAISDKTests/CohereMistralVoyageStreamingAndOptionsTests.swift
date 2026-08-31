@@ -250,6 +250,7 @@ import Testing
     """))
     let embeddingProvider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: embeddingTransport))
     let embeddingModel = try embeddingProvider.embeddingModel("embed-english-v3.0")
+    #expect(embeddingModel.maxEmbeddingsPerCall == 96)
 
     let embedding = try await embeddingModel.embed(EmbeddingRequest(values: ["hello", "world"], dimensions: 512, extraBody: ["inputType": "classification", "truncate": "END"]))
 
@@ -404,7 +405,7 @@ import Testing
     let embeddingRequest = try #require(await embeddingTransport.requests().first)
     #expect(embeddingRequest.url.absoluteString == "https://api.voyageai.com/v1/embeddings")
     #expect(embeddingRequest.headers["authorization"] == "Bearer voyage-key")
-    #expect(embeddingRequest.headers["user-agent"] == "ai-sdk/voyage/2.0.29")
+    #expect(embeddingRequest.headers["user-agent"] == "ai-sdk/voyage/2.0.34")
     let embeddingBody = try decodeJSONBody(try #require(embeddingRequest.body))
     #expect(embeddingBody["input"]?[0]?.stringValue == "a")
     #expect(embeddingBody["input_type"]?.stringValue == "query")
@@ -421,7 +422,7 @@ import Testing
     #expect(reranking.results.map(\.score) == [0.7, 0.2])
     let rerankRequest = try #require(await rerankTransport.requests().first)
     #expect(rerankRequest.url.absoluteString == "https://api.voyageai.com/v1/rerank")
-    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/voyage/2.0.29")
+    #expect(rerankRequest.headers["user-agent"] == "ai-sdk/voyage/2.0.34")
     let rerankBody = try decodeJSONBody(try #require(rerankRequest.body))
     #expect(rerankBody["top_k"]?.intValue == 2)
     #expect(rerankBody["return_documents"]?.boolValue == true)

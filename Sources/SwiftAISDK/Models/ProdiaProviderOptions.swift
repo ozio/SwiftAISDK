@@ -193,6 +193,7 @@ func prodiaLanguageWarnings(for request: LanguageModelRequest) -> [AIWarning] {
     if request.temperature != nil { warnings.append(AIWarning(type: "unsupported", feature: "temperature")) }
     if request.topP != nil { warnings.append(AIWarning(type: "unsupported", feature: "topP")) }
     if request.topK != nil { warnings.append(AIWarning(type: "unsupported", feature: "topK")) }
+    if request.seed != nil { warnings.append(AIWarning(type: "unsupported", feature: "seed")) }
     if request.maxOutputTokens != nil { warnings.append(AIWarning(type: "unsupported", feature: "maxOutputTokens")) }
     if !request.stopSequences.isEmpty { warnings.append(AIWarning(type: "unsupported", feature: "stopSequences")) }
     if request.presencePenalty != nil { warnings.append(AIWarning(type: "unsupported", feature: "presencePenalty")) }

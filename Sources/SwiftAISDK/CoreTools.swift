@@ -229,6 +229,8 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
     public var toolCallID: String?
     public var toolName: String
     public var arguments: String
+    /// Reason shown to the human approver for why this operation requires approval.
+    public var reason: String?
     public var isAutomatic: Bool
     public var providerMetadata: [String: JSONValue]
 
@@ -237,6 +239,7 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
         toolName: String,
         arguments: String,
         toolCallID: String? = nil,
+        reason: String? = nil,
         isAutomatic: Bool = false,
         providerMetadata: [String: JSONValue] = [:]
     ) {
@@ -244,8 +247,30 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.arguments = arguments
+        self.reason = reason
         self.isAutomatic = isAutomatic
         self.providerMetadata = providerMetadata
+    }
+
+    /// Source-compatible initializer retained from approval requests without a
+    /// policy reason.
+    public init(
+        id: String,
+        toolName: String,
+        arguments: String,
+        toolCallID: String? = nil,
+        isAutomatic: Bool = false,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.init(
+            id: id,
+            toolName: toolName,
+            arguments: arguments,
+            toolCallID: toolCallID,
+            reason: nil,
+            isAutomatic: isAutomatic,
+            providerMetadata: providerMetadata
+        )
     }
 }
 
@@ -278,12 +303,30 @@ public enum AIToolApprovalStatus: Equatable, Hashable, Sendable {
     case userApproval
 }
 
+final class AIToolApprovalReasonCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String?
+
+    func set(_ reason: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        value = reason
+    }
+
+    func get() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 public struct AIToolApprovalContext: Sendable {
     public var toolCall: AIToolCall
     public var arguments: JSONValue
     public var tool: AITool
     public var request: LanguageModelRequest
     public var toolContext: JSONValue?
+    let approvalReasonCapture: AIToolApprovalReasonCapture?
 
     public init(
         toolCall: AIToolCall,
@@ -297,6 +340,30 @@ public struct AIToolApprovalContext: Sendable {
         self.tool = tool
         self.request = request
         self.toolContext = toolContext
+        self.approvalReasonCapture = nil
+    }
+
+    init(
+        toolCall: AIToolCall,
+        arguments: JSONValue,
+        tool: AITool,
+        request: LanguageModelRequest,
+        toolContext: JSONValue?,
+        approvalReasonCapture: AIToolApprovalReasonCapture
+    ) {
+        self.toolCall = toolCall
+        self.arguments = arguments
+        self.tool = tool
+        self.request = request
+        self.toolContext = toolContext
+        self.approvalReasonCapture = approvalReasonCapture
+    }
+
+    /// Requests human approval and attaches an optional policy reason to the
+    /// emitted `AIToolApprovalRequest`.
+    public func userApproval(reason: String? = nil) -> AIToolApprovalStatus {
+        approvalReasonCapture?.set(reason)
+        return .userApproval
     }
 }
 

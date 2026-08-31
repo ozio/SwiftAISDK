@@ -40,11 +40,50 @@ extension AI {
         retryPolicy: AIRetryPolicy = .default,
         telemetry: Telemetry.Options? = nil
     ) async throws -> EmbeddingResult {
-        guard let chunkSize, chunkSize > 0, values.count > chunkSize else {
+        let effectiveMaxEmbeddingsPerCall: Int?
+        switch (chunkSize, model.maxEmbeddingsPerCall) {
+        case let (requested?, providerMaximum?):
+            effectiveMaxEmbeddingsPerCall = min(requested, providerMaximum)
+        case let (requested?, nil):
+            effectiveMaxEmbeddingsPerCall = requested
+        case let (nil, providerMaximum?):
+            effectiveMaxEmbeddingsPerCall = providerMaximum
+        case (nil, nil):
+            effectiveMaxEmbeddingsPerCall = nil
+        }
+        let chunks = try embeddingValueChunks(
+            values,
+            maxEmbeddingsPerCall: effectiveMaxEmbeddingsPerCall,
+            maxInputBytesPerCall: model.maxInputBytesPerCall
+        )
+        let request = EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal)
+        if chunks.isEmpty {
+            return try await withTelemetry(
+                operationID: "ai.embedMany",
+                providerID: model.providerID,
+                modelID: model.modelID,
+                input: embeddingRequestTelemetryInput(request),
+                telemetry: telemetry,
+                retryPolicy: retryPolicy,
+                abortSignal: request.abortSignal,
+                output: embeddingTelemetryOutput,
+                usage: { $0.usage },
+                warnings: { $0.warnings },
+                providerMetadata: { $0.providerMetadata },
+                responseMetadata: { $0.responseMetadata }
+            ) {
+                EmbeddingResult(
+                    embeddings: [],
+                    usage: TokenUsage(inputTokens: 0, totalTokens: 0),
+                    rawValue: .array([JSONValue]()),
+                    requestMetadata: AIRequestMetadata(body: embeddingRequestMetadataBody(request), headers: headers)
+                )
+            }
+        }
+        guard chunks.count > 1 else {
             return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
         }
 
-        let request = EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal)
         return try await withTelemetry(
             operationID: "ai.embedMany",
             providerID: model.providerID,
@@ -67,7 +106,7 @@ extension AI {
             var requestMetadata = AIRequestMetadata(body: embeddingRequestMetadataBody(request), headers: request.headers)
             var responseMetadata = AIResponseMetadata()
 
-            for chunk in values.chunked(size: chunkSize) {
+            for chunk in chunks {
                 let result = try await withRetry(policy: retryPolicy) {
                     try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal))
                 }
@@ -114,6 +153,16 @@ extension AI {
             var result = try await model.generateImage(request)
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = imageGenerationRequestMetadata(request)
+            }
+            if result.calls.isEmpty {
+                result.calls = [ImageGenerationCall(
+                    urls: result.urls,
+                    base64Images: result.base64Images,
+                    warnings: result.warnings,
+                    usage: result.usage,
+                    providerMetadata: result.providerMetadata,
+                    responseMetadata: result.responseMetadata
+                )]
             }
             guard !result.urls.isEmpty || !result.base64Images.isEmpty else {
                 throw AINoOutputError(kind: .image, responses: [result.responseMetadata])
@@ -364,6 +413,47 @@ extension AI {
             return result
         }
     }
+}
+
+private func embeddingValueChunks(
+    _ values: [String],
+    maxEmbeddingsPerCall: Int?,
+    maxInputBytesPerCall: Int?
+) throws -> [[String]] {
+    if let maxEmbeddingsPerCall, maxEmbeddingsPerCall <= 0 {
+        throw AIError.invalidArgument(
+            argument: "maxEmbeddingsPerCall",
+            message: "maxEmbeddingsPerCall must be greater than zero."
+        )
+    }
+    if let maxInputBytesPerCall, maxInputBytesPerCall <= 0 {
+        throw AIError.invalidArgument(
+            argument: "maxInputBytesPerCall",
+            message: "maxInputBytesPerCall must be greater than zero."
+        )
+    }
+    guard !values.isEmpty else { return [] }
+    guard maxEmbeddingsPerCall != nil || maxInputBytesPerCall != nil else { return [values] }
+
+    var chunks: [[String]] = []
+    var current: [String] = []
+    var currentInputBytes = 0
+
+    for value in values {
+        let inputBytes = value.utf8.count
+        let exceedsCount = maxEmbeddingsPerCall.map { current.count >= $0 } ?? false
+        let exceedsBytes = maxInputBytesPerCall.map { currentInputBytes + inputBytes > $0 } ?? false
+        if !current.isEmpty, exceedsCount || exceedsBytes {
+            chunks.append(current)
+            current = []
+            currentInputBytes = 0
+        }
+        current.append(value)
+        currentInputBytes += inputBytes
+    }
+
+    chunks.append(current)
+    return chunks
 }
 
 func normalizeVideoGenerationRequest(_ request: VideoGenerationRequest) -> (request: VideoGenerationRequest, warnings: [AIWarning]) {

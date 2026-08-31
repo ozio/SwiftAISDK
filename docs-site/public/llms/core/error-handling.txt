@@ -67,6 +67,8 @@ Other public error types cover narrower workflows:
 
 - `AIAbortError` for caller cancellation through `AIAbortController`.
 - `AIRetryError` when retry orchestration fails or is cancelled.
+- `AIStreamProviderError` for a structured provider-owned failure reported
+after a language stream has started.
 - `AINoOutputError` when a provider returns a valid response without usable output.
 - `AITypeValidationError` and `AIObjectGenerationError` for structured output parsing, schema validation, and decoding.
 - `AINoSuchToolError`, `AIInvalidToolInputError`, `AIToolCallRepairError`, `AIInvalidToolApprovalError`, `AIInvalidToolApprovalSignatureError`, and `AIToolCallNotFoundForApprovalError` for tool execution and approval flows.
@@ -148,12 +150,22 @@ Streaming retries only happen before the first emitted part. Once the stream has
 
 Language streams distinguish provider-reported error events from failures that stop the transport or parser:
 
-- `.error(message:rawValue:)` is a repeatable in-band `LanguageStreamPart`. The full stream forwards every such part and records `error` as the provisional step outcome; a later explicit provider terminal reason remains authoritative.
+- `.error(message:rawValue:)` is a repeatable in-band `LanguageStreamPart`. The full stream forwards every such part and records `error` as the provisional step outcome; a later explicit provider terminal reason remains authoritative. Read `part.streamProviderError` to normalize its message, provider type/code, status, retryability, and original payload into `AIStreamProviderError`.
 - setup, HTTP, framing, and network failures are thrown by the async sequence;
 - if a provider closes after an in-band error without its own terminal part, the facade supplies one `finishMetadata` with finish reason `error`;
 - `toTextStream()` intentionally skips in-band error parts, matching its text-only role, but still throws stream-stopping failures.
 
 An in-band error counts as an emitted part, so a model call is never retried after the caller could have observed one. Consumers that need provider error payloads should use the full `LanguageStreamPart` sequence rather than `toTextStream()`.
+
+```swift
+for try await part in model.streamText("Stream this.") {
+    if let providerError = part.streamProviderError {
+        print(providerError.type ?? "provider_error")
+        print(providerError.code ?? .null)
+        print(providerError.isRetryable)
+    }
+}
+```
 
 Language-model streaming requires an `AIStreamingTransport`. If provider settings contain a send-only custom `AITransport`, unary generation still works, while streaming throws a non-retryable `AIError.invalidArgument` instead of silently buffering the complete response. Non-success streaming HTTP responses are bounded by the request response-size limit and retain their status, headers, and body when mapped to the provider error.
 

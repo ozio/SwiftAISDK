@@ -92,6 +92,7 @@ func bedrockImageFormat(forURL value: String) -> String? {
 
 struct BedrockPreparedTools {
     var toolConfig: JSONValue?
+    var additionalModelRequestFields: [String: JSONValue]? = nil
     var warnings: [AIWarning]
 }
 
@@ -163,6 +164,38 @@ func bedrockCachePoint(from providerMetadata: [String: JSONValue]) -> JSONValue?
     return .object(["cachePoint": cachePoint])
 }
 
+func bedrockGuardedTextBlock(text: String, providerMetadata: [String: JSONValue]) throws -> JSONValue {
+    let options = providerMetadata["amazonBedrock"]?.objectValue
+        ?? providerMetadata["bedrock"]?.objectValue
+    guard let options, options["guardContent"]?.boolValue == true else {
+        return .object(["text": .string(text)])
+    }
+    var guardedText: [String: JSONValue] = ["text": .string(text)]
+    if let rawQualifiers = options["guardContentQualifiers"] {
+        guard let qualifiers = rawQualifiers.arrayValue?.compactMap(\.stringValue),
+              qualifiers.count == rawQualifiers.arrayValue?.count,
+              qualifiers.allSatisfy({ ["grounding_source", "query", "guard_content"].contains($0) }) else {
+            throw AIError.invalidArgument(
+                argument: "messages.content.providerMetadata.bedrock.guardContentQualifiers",
+                message: "Bedrock guardContentQualifiers must contain only grounding_source, query, or guard_content."
+            )
+        }
+        guardedText["qualifiers"] = .array(qualifiers.map(JSONValue.string))
+    }
+    return .object([
+        "guardContent": .object([
+            "text": .object(guardedText)
+        ])
+    ])
+}
+
+func bedrockGuardedImageBlock(_ imageBlock: JSONValue, providerMetadata: [String: JSONValue]) -> JSONValue {
+    let options = providerMetadata["amazonBedrock"]?.objectValue
+        ?? providerMetadata["bedrock"]?.objectValue
+    guard options?["guardContent"]?.boolValue == true else { return imageBlock }
+    return .object(["guardContent": imageBlock])
+}
+
 func bedrockReasoningContentBlock(text: String, providerMetadata: [String: JSONValue]) -> JSONValue? {
     let metadata = providerMetadata["amazonBedrock"]?.objectValue
         ?? providerMetadata["bedrock"]?.objectValue
@@ -194,7 +227,12 @@ func bedrockReasoningContentBlock(text: String, providerMetadata: [String: JSONV
     return nil
 }
 
-func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?, modelID: String) -> BedrockPreparedTools {
+func bedrockPrepareTools(
+    from tools: [String: JSONValue],
+    toolChoice: JSONValue?,
+    modelID: String,
+    disableParallelToolUse: Bool = false
+) -> BedrockPreparedTools {
     guard !tools.isEmpty else {
         return BedrockPreparedTools(toolConfig: nil, warnings: [])
     }
@@ -259,13 +297,41 @@ func bedrockPrepareTools(from tools: [String: JSONValue], toolChoice: JSONValue?
     }
 
     var toolConfig: [String: JSONValue] = ["tools": .array(bedrockTools)]
-    if let choice = bedrockToolChoice(from: toolChoice), !bedrockUsesAnthropicProviderTools(tools: tools, modelID: modelID) {
+    var additionalModelRequestFields: [String: JSONValue]?
+    let usesAnthropicProviderTools = bedrockUsesAnthropicProviderTools(tools: tools, modelID: modelID)
+    let toolChoiceType = toolChoice?.stringValue ?? toolChoice?["type"]?.stringValue
+    if isAnthropicModel,
+       !usesAnthropicProviderTools,
+       disableParallelToolUse,
+       toolChoiceType != "none" {
+        var anthropicToolChoice: [String: JSONValue]
+        switch toolChoiceType {
+        case "required":
+            anthropicToolChoice = ["type": .string("any")]
+        case "tool":
+            anthropicToolChoice = [
+                "type": .string("tool"),
+                "name": .string(bedrockForcedToolName(from: toolChoice) ?? "")
+            ]
+        default:
+            anthropicToolChoice = ["type": .string("auto")]
+        }
+        anthropicToolChoice["disable_parallel_tool_use"] = .bool(true)
+        additionalModelRequestFields = ["tool_choice": .object(anthropicToolChoice)]
+    }
+    if let choice = bedrockToolChoice(from: toolChoice),
+       !usesAnthropicProviderTools,
+       additionalModelRequestFields == nil {
         if choice == .null {
             return BedrockPreparedTools(toolConfig: nil, warnings: warnings)
         }
         toolConfig["toolChoice"] = choice
     }
-    return BedrockPreparedTools(toolConfig: .object(toolConfig), warnings: warnings)
+    return BedrockPreparedTools(
+        toolConfig: .object(toolConfig),
+        additionalModelRequestFields: additionalModelRequestFields,
+        warnings: warnings
+    )
 }
 
 func bedrockSupportsStrictToolSpec(modelID: String) -> Bool {
@@ -360,8 +426,10 @@ func bedrockApplyReasoningConfig(
     let budgetTokens = reasoningConfig["budgetTokens"]?.intValue
     let maxReasoningEffort = reasoningConfig["maxReasoningEffort"]?.stringValue
     let display = reasoningConfig["display"]?.stringValue
-    let isAnthropicModel = modelID.contains("anthropic.")
-    let isOpenAIModel = modelID.hasPrefix("openai.")
+    let isAnthropicModel = bedrockIsAnthropicModel(modelID: modelID, reasoningConfig: value)
+    let openAIModelID = bedrockOpenAIModelID(modelID)
+    let isOpenAIModel = openAIModelID != nil
+    let isOpenAIGptOssModel = openAIModelID?.hasPrefix("openai.gpt-oss-") == true
     let isAnthropicThinkingEnabled = isAnthropicModel && (type == "enabled" || type == "adaptive")
 
     if isAnthropicModel && type == "disabled" {
@@ -408,7 +476,13 @@ func bedrockApplyReasoningConfig(
             "output_config": .object(existing.merging(["effort": .string(maxReasoningEffort)]) { _, new in new })
         ], into: &providerOptions)
     } else if isOpenAIModel {
-        bedrockMergeAdditionalModelRequestFields(["reasoning_effort": .string(maxReasoningEffort)], into: &providerOptions)
+        if isOpenAIGptOssModel {
+            bedrockMergeAdditionalModelRequestFields(["reasoning_effort": .string(maxReasoningEffort)], into: &providerOptions)
+        } else {
+            bedrockMergeAdditionalModelRequestFields([
+                "reasoning": .object(["effort": .string(maxReasoningEffort)])
+            ], into: &providerOptions)
+        }
     } else {
         var nested: [String: JSONValue] = [:]
         if let type, type != "adaptive" {
@@ -431,7 +505,10 @@ func bedrockApplyTopLevelReasoning(
 ) {
     guard isCustomReasoning(reasoning), let reasoning else { return }
     let existing = providerOptions["reasoningConfig"]?.objectValue ?? [:]
-    let isAnthropicModel = modelID.contains("anthropic.")
+    let isAnthropicModel = bedrockIsAnthropicModel(
+        modelID: modelID,
+        reasoningConfig: providerOptions["reasoningConfig"]
+    )
     var reasoningConfig: [String: JSONValue]
 
     if reasoning == "none" {
@@ -472,6 +549,19 @@ func bedrockApplyTopLevelReasoning(
     if !reasoningConfig.isEmpty {
         providerOptions["reasoningConfig"] = .object(reasoningConfig)
     }
+}
+
+func bedrockIsAnthropicModel(modelID: String, reasoningConfig: JSONValue?) -> Bool {
+    modelID.contains("anthropic")
+        || (modelID.contains(":application-inference-profile/")
+            && reasoningConfig?["budgetTokens"]?.intValue != nil)
+}
+
+func bedrockOpenAIModelID(_ modelID: String) -> String? {
+    if modelID.hasPrefix("openai.") { return modelID }
+    guard let dot = modelID.firstIndex(of: ".") else { return nil }
+    let suffix = String(modelID[modelID.index(after: dot)...])
+    return suffix.hasPrefix("openai.") ? suffix : nil
 }
 
 func bedrockMergeAdditionalModelRequestFields(_ fields: [String: JSONValue], into providerOptions: inout [String: JSONValue]) {
@@ -669,15 +759,8 @@ func bedrockProviderMetadata(from raw: JSONValue, isJsonResponseFromTool: Bool =
     if let stopSequence = raw["additionalModelResponseFields"]?["delta"]?["stop_sequence"] {
         payload["stopSequence"] = stopSequence
     }
-    var usage: [String: JSONValue] = [:]
-    if let cacheWriteInputTokens = raw["usage"]?["cacheWriteInputTokens"] {
-        usage["cacheWriteInputTokens"] = cacheWriteInputTokens
-    }
-    if let cacheDetails = raw["usage"]?["cacheDetails"] {
-        usage["cacheDetails"] = cacheDetails
-    }
-    if !usage.isEmpty {
-        payload["usage"] = .object(usage)
+    if let usage = raw["usage"] {
+        payload["usage"] = usage
     }
     if isJsonResponseFromTool {
         payload["isJsonResponseFromTool"] = .bool(true)
@@ -701,15 +784,8 @@ func bedrockProviderMetadata(fromStreamMetadata raw: JSONValue?) -> [String: JSO
     if let serviceTier = raw["serviceTier"] {
         payload["serviceTier"] = serviceTier
     }
-    var usage: [String: JSONValue] = [:]
-    if let cacheWriteInputTokens = raw["usage"]?["cacheWriteInputTokens"] {
-        usage["cacheWriteInputTokens"] = cacheWriteInputTokens
-    }
-    if let cacheDetails = raw["usage"]?["cacheDetails"] {
-        usage["cacheDetails"] = cacheDetails
-    }
-    if !usage.isEmpty {
-        payload["usage"] = .object(usage)
+    if let usage = raw["usage"] {
+        payload["usage"] = usage
     }
     guard !payload.isEmpty else { return [:] }
     return [

@@ -442,6 +442,7 @@ func toolApprovalRequestTelemetryJSON(_ request: AIToolApprovalRequest) -> JSONV
         "toolCallID": request.toolCallID.map(JSONValue.string),
         "toolName": .string(request.toolName),
         "arguments": .string(request.arguments),
+        "reason": request.reason.map(JSONValue.string),
         "isAutomatic": .bool(request.isAutomatic),
         "providerMetadata": request.providerMetadata.isEmpty ? nil : .object(request.providerMetadata)
     ])

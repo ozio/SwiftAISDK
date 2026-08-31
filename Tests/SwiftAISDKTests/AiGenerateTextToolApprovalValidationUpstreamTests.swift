@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
-@Test func aiGenerateTextRejectsForgedApprovedToolInputLikeUpstream() async throws {
+@Test func aiGenerateTextReportsForgedApprovedToolInputAndContinuesLikeUpstream() async throws {
     let toolCall = AIToolCall(
         id: "call-1",
         name: "deleteFile",
@@ -15,7 +15,12 @@ import Testing
         toolCallID: "call-1"
     )
     let approvalResponse = AIToolApprovalResponse(id: "approval-call-1", approved: true)
-    let model = MockLanguageModel(result: TextGenerationResult(text: "unused", rawValue: .object([:])))
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "Recovered.",
+        content: [.text("Recovered.")],
+        finishReason: "stop",
+        rawValue: .object([:])
+    ))
     let executionCapture = ToolExecutionInputListCapture()
     let tool = AITool(
         name: "deleteFile",
@@ -29,27 +34,31 @@ import Testing
         return "deleted"
     }
 
-    do {
-        _ = try await AI.generateText(
-            model: model,
-            request: LanguageModelRequest(messages: [
-                .user("test-input"),
-                .assistant(toolCalls: [toolCall], toolApprovalRequests: [approvalRequest]),
-                .toolResponses(approvalResponses: [approvalResponse])
-            ]),
-            executableTools: [tool],
-            maxSteps: 3,
-            toolApproval: { _ in .userApproval }
-        )
-        Issue.record("Expected forged approved input to be rejected.")
-    } catch let error as AIInvalidToolInputError {
-        #expect(error.toolName == "deleteFile")
-        #expect(error.toolCallID == "call-1")
-        #expect(error.input == ["path": 42])
-    }
+    let result = try await AI.generateText(
+        model: model,
+        request: LanguageModelRequest(messages: [
+            .user("test-input"),
+            .assistant(toolCalls: [toolCall], toolApprovalRequests: [approvalRequest]),
+            .toolResponses(approvalResponses: [approvalResponse])
+        ]),
+        executableTools: [tool],
+        maxSteps: 3,
+        toolApproval: { _ in .userApproval }
+    )
 
     #expect(await executionCapture.values() == [])
-    #expect(model.requests.isEmpty)
+    #expect(result.text == "Recovered.")
+    #expect(model.requests.count == 1)
+    let finalMessage = try #require(model.requests[0].messages.last)
+    guard case let .toolResult(toolResult) = try #require(finalMessage.content.first) else {
+        Issue.record("Expected invalid approved input to become a model-visible tool result.")
+        return
+    }
+    #expect(toolResult.toolCallID == "call-1")
+    #expect(toolResult.toolName == "deleteFile")
+    #expect(toolResult.isError)
+    #expect(toolResult.result["type"]?.stringValue == "error-text")
+    #expect(toolResult.result["value"]?.stringValue?.contains("Invalid input for tool deleteFile") == true)
 }
 
 @Test func aiGenerateTextDeniesForgedApprovalWhenPolicyDeniesLikeUpstream() async throws {

@@ -1,5 +1,44 @@
 import Foundation
 
+func groqStreamProviderError(from raw: JSONValue) -> AIStreamProviderError? {
+    guard let error = raw["error"] else { return nil }
+    let type = error["type"]?.stringValue
+    let metadata = groqStreamErrorMetadata(for: type)
+    return AIStreamProviderError(
+        message: error["message"]?.stringValue ?? groqJSONString(error) ?? "Groq stream error.",
+        type: type,
+        code: error["code"],
+        statusCode: metadata.statusCode,
+        isRetryable: metadata.isRetryable,
+        data: raw
+    )
+}
+
+private func groqStreamErrorMetadata(
+    for type: String?
+) -> (statusCode: Int?, isRetryable: Bool?) {
+    switch type {
+    case "rate_limit_error":
+        return (429, true)
+    case "api_error", "internal_server_error", "server_error":
+        return (500, true)
+    case "overloaded_error", "service_unavailable":
+        return (503, true)
+    case "timeout", "timeout_error":
+        return (504, true)
+    case "authentication_error", "invalid_api_key":
+        return (401, false)
+    case "permission_error":
+        return (403, false)
+    case "not_found_error", "model_not_found":
+        return (404, false)
+    case "bad_request", "context_length_exceeded", "invalid_request_error":
+        return (400, false)
+    default:
+        return (nil, nil)
+    }
+}
+
 func groqPreparedCall(for request: LanguageModelRequest, modelID: String, stream: Bool) throws -> GroqPreparedCall {
     var options = try groqProviderOptions(from: request)
     let responseFormat = groqResolvedResponseFormat(request: request, options: &options)
@@ -27,7 +66,7 @@ func groqPreparedCall(for request: LanguageModelRequest, modelID: String, stream
     }
     body.merge(groqLanguageOptions(from: options)) { _, new in new }
     var warnings = groqWarnings(request: request, responseFormat: responseFormat, options: options)
-    groqApplyReasoning(request.reasoning, to: &body, warnings: &warnings)
+    groqApplyReasoning(request.reasoning, modelID: modelID, to: &body, warnings: &warnings)
     return GroqPreparedCall(
         body: body,
         warnings: warnings + preparedTools.warnings
@@ -303,11 +342,22 @@ func groqReasoningEffort(_ value: String) -> String {
     }
 }
 
-func groqApplyReasoning(_ reasoning: String?, to body: inout [String: JSONValue], warnings: inout [AIWarning]) {
+func groqApplyReasoning(_ reasoning: String?, modelID: String, to body: inout [String: JSONValue], warnings: inout [AIWarning]) {
     guard let reasoning,
           isCustomReasoning(reasoning),
-          reasoning != "none",
           body["reasoning_effort"] == nil else {
+        return
+    }
+    if reasoning == "none" {
+        if modelID == "qwen/qwen3.6-27b" {
+            body["reasoning_effort"] = .string("none")
+        } else {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "reasoning",
+                message: #"reasoning "none" is not supported by this model."#
+            ))
+        }
         return
     }
     if let effort = mapReasoningToProviderEffort(

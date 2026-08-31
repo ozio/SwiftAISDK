@@ -39,7 +39,8 @@ func tokenRequest(
         method: "POST",
         url: url,
         headers: headers,
-        body: Data(formEncoded(parameters).utf8)
+        body: Data(formEncoded(parameters).utf8),
+        followRedirects: false
     ))
     try throwOAuthServerErrorIfNeeded(response)
     return response
@@ -106,4 +107,3 @@ func urlFormEncode(_ value: String) -> String {
     allowed.remove(charactersIn: "&+=")
     return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
 }
-

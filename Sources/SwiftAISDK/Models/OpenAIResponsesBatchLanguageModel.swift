@@ -33,6 +33,13 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
 
         var jsonLines = Data()
         var warnings: [AIBatchWarning] = []
+        if options.webhookURL != nil {
+            warnings.append(AIBatchWarning(warning: AIWarning(
+                type: "unsupported",
+                feature: "webhookUrl",
+                message: "The OpenAI Batch API does not support per-batch webhook URLs."
+            )))
+        }
         for request in options.requests {
             try options.abortSignal?.throwIfAborted()
             let prepared = try languageModel.preparedBatchRequest(for: request.request)
@@ -125,6 +132,12 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
         }
 
         let fileIDs = [batch.outputFileID, batch.errorFileID].compactMap { $0 }
+        if openAIBatchStatus(batch).status == .completed, fileIDs.isEmpty {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "OpenAI batch \"\(options.batchID)\" completed without batch output."
+            )
+        }
         guard !fileIDs.isEmpty else {
             return AsyncThrowingStream { $0.finish() }
         }
@@ -248,9 +261,9 @@ private func parseOpenAIBatchResponse(_ raw: JSONValue, providerID: String) thro
             providerID: providerID,
             entity: "OpenAI Batch request_counts"
         )
-        if let total = countObject["total"]?.intValue,
-           let completed = countObject["completed"]?.intValue,
-           let failed = countObject["failed"]?.intValue {
+        if let total = normalizedBatchJSONInteger(countObject["total"]),
+           let completed = normalizedBatchJSONInteger(countObject["completed"]),
+           let failed = normalizedBatchJSONInteger(countObject["failed"]) {
             counts = (total, completed, failed)
         }
     }
@@ -306,13 +319,13 @@ private func openAIBatchStatus(_ batch: OpenAIBatchResponse) -> AIBatchStatus {
     }
 
     let requestCounts = batch.requestCounts.flatMap { counts -> AIBatchRequestCounts? in
-        guard counts.total >= 0,
-              counts.completed >= 0,
-              counts.failed >= 0,
-              counts.completed + counts.failed <= counts.total else {
+        guard let completedAndFailed = checkedBatchSafeIntegerSum([
+            counts.completed,
+            counts.failed
+        ]), completedAndFailed <= counts.total else {
             return nil
         }
-        return AIBatchRequestCounts(
+        return normalizedBatchRequestCounts(
             total: counts.total,
             pending: counts.total - counts.completed - counts.failed,
             completed: counts.completed,
@@ -377,77 +390,92 @@ private func parseOpenAIBatchResultLine(
         throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Batch result line.")
     }
 
-    let response: [String: JSONValue]?
-    if let rawResponse = object["response"], rawResponse != .null {
-        guard let responseObject = rawResponse.objectValue,
-              responseObject["status_code"]?.doubleValue != nil,
-              responseObject["status_code"]?.intValue != nil,
-              responseObject["body"] != nil else {
-            throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Batch result response.")
+    do {
+        let response: [String: JSONValue]?
+        if let rawResponse = object["response"], rawResponse != .null {
+            guard let responseObject = rawResponse.objectValue,
+                  normalizedBatchJSONInteger(responseObject["status_code"]) != nil,
+                  responseObject["body"] != nil else {
+                throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Batch result response.")
+            }
+            try validateOpenAIOptionalStringFields(
+                responseObject,
+                keys: ["request_id"],
+                providerID: providerID,
+                entity: "OpenAI Batch result response"
+            )
+            response = responseObject
+        } else {
+            response = nil
         }
-        try validateOpenAIOptionalStringFields(
-            responseObject,
-            keys: ["request_id"],
-            providerID: providerID,
-            entity: "OpenAI Batch result response"
-        )
-        response = responseObject
-    } else {
-        response = nil
-    }
 
-    let lineError: [String: JSONValue]?
-    if let rawError = object["error"], rawError != .null {
-        guard let errorObject = rawError.objectValue,
-              errorObject["code"]?.stringValue != nil,
-              errorObject["message"]?.stringValue != nil else {
-            throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Batch result error.")
+        let lineError: [String: JSONValue]?
+        if let rawError = object["error"], rawError != .null {
+            guard let errorObject = rawError.objectValue,
+                  errorObject["code"]?.stringValue != nil,
+                  errorObject["message"]?.stringValue != nil else {
+                throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Batch result error.")
+            }
+            lineError = errorObject
+        } else {
+            lineError = nil
         }
-        lineError = errorObject
-    } else {
-        lineError = nil
-    }
 
-    if let lineError {
-        let error = AIBatchError(
-            message: lineError["message"]?.stringValue ?? "OpenAI batch item failed.",
-            code: lineError["code"]?.stringValue
-        )
-        switch lineError["code"]?.stringValue {
-        case "batch_cancelled":
-            return .cancelled(id: customID, error: error)
-        case "batch_expired":
-            return .expired(id: customID, error: error)
-        default:
+        if let lineError {
+            let error = AIBatchError(
+                message: lineError["message"]?.stringValue ?? "OpenAI batch item failed.",
+                code: lineError["code"]?.stringValue
+            )
+            switch lineError["code"]?.stringValue {
+            case "batch_cancelled":
+                return .cancelled(id: customID, error: error)
+            case "batch_expired":
+                return .expired(id: customID, error: error)
+            default:
+                return .failed(id: customID, error: error)
+            }
+        }
+
+        guard let response else {
+            return .failed(
+                id: customID,
+                error: AIBatchError(
+                    message: "OpenAI returned a batch result without a response or error.",
+                    code: "invalid_batch_result"
+                )
+            )
+        }
+
+        let statusCode = normalizedBatchJSONInteger(response["status_code"]) ?? 0
+        let responseBody = response["body"] ?? .null
+        guard (200..<300).contains(statusCode) else {
+            return .failed(
+                id: customID,
+                error: openAIBatchItemHTTPError(body: responseBody, statusCode: statusCode)
+            )
+        }
+
+        switch try convertOpenAIResponsesBatchBody(responseBody, providerID: providerID) {
+        case let .success(result):
+            return .succeeded(id: customID, result: result)
+        case let .failure(error):
             return .failed(id: customID, error: error)
         }
+    } catch {
+        return invalidOpenAIResponsesBatchResult(id: customID)
     }
+}
 
-    guard let response else {
-        return .failed(
-            id: customID,
-            error: AIBatchError(
-                message: "OpenAI returned a batch result without a response or error.",
-                code: "invalid_batch_result"
-            )
+private func invalidOpenAIResponsesBatchResult(
+    id: String
+) -> AIBatchItemResult<TextGenerationResult> {
+    .failed(
+        id: id,
+        error: AIBatchError(
+            message: "OpenAI returned an invalid Responses batch result.",
+            code: "invalid_response"
         )
-    }
-
-    let statusCode = response["status_code"]?.intValue ?? 0
-    let responseBody = response["body"] ?? .null
-    guard (200..<300).contains(statusCode) else {
-        return .failed(
-            id: customID,
-            error: openAIBatchItemHTTPError(body: responseBody, statusCode: statusCode)
-        )
-    }
-
-    switch try convertOpenAIResponsesBatchBody(responseBody, providerID: providerID) {
-    case let .success(result):
-        return .succeeded(id: customID, result: result)
-    case let .failure(error):
-        return .failed(id: customID, error: error)
-    }
+    )
 }
 
 private enum OpenAIResponsesBatchConversion {
@@ -479,6 +507,11 @@ private func convertOpenAIResponsesBatchBody(
     var content: [AIResultContentPart] = []
     for item in output {
         switch item["type"]?.stringValue {
+        case "reasoning":
+            content.append(contentsOf: openAIResponsesOutputContentItem(
+                from: item,
+                providerID: providerID
+            ))
         case "message":
             for part in item["content"]?.arrayValue ?? [] {
                 content.append(.text(part["text"]?.stringValue ?? ""))
@@ -486,10 +519,14 @@ private func convertOpenAIResponsesBatchBody(
         case "function_call", "custom_tool_call":
             return .failure(AIBatchError(
                 message: "OpenAI returned a tool call, but tool calls are not supported in AI SDK text batches.",
-                code: "unsupported_tool_call"
+                code: "unsupported_content"
             ))
         default:
-            continue
+            let type = item["type"]?.stringValue ?? "unknown"
+            return .failure(AIBatchError(
+                message: "OpenAI returned an unsupported \"\(type)\" output item in an AI SDK text batch.",
+                code: "unsupported_content"
+            ))
         }
     }
 
@@ -506,7 +543,7 @@ private func convertOpenAIResponsesBatchBody(
             hasToolCalls: false
         ),
         usage: tokenUsage(from: raw),
-        providerMetadata: openAIResponsesProviderMetadata(from: raw, providerID: providerID),
+        providerMetadata: openAIBatchProviderMetadata(from: raw, providerID: providerID),
         rawValue: raw,
         responseMetadata: AIResponseMetadata(
             id: raw["id"]?.stringValue,
@@ -514,6 +551,32 @@ private func convertOpenAIResponsesBatchBody(
             modelID: raw["model"]?.stringValue
         )
     ))
+}
+
+private func openAIBatchProviderMetadata(
+    from raw: JSONValue,
+    providerID: String
+) -> [String: JSONValue] {
+    var providerMetadata = openAIResponsesProviderMetadata(from: raw, providerID: providerID)
+    let namespace = openAICompatibleProviderMetadataNamespace(providerID)
+    var metadata = providerMetadata[namespace]?.objectValue ?? [:]
+    let logprobs = raw["output"]?.arrayValue?.flatMap { item in
+        item["content"]?.arrayValue?.compactMap { part -> JSONValue? in
+            guard let value = part["logprobs"], value != .null else { return nil }
+            return value
+        } ?? []
+    } ?? []
+    if logprobs.isEmpty {
+        metadata.removeValue(forKey: "logprobs")
+    } else {
+        metadata["logprobs"] = .array(logprobs)
+    }
+    if metadata.isEmpty {
+        providerMetadata.removeValue(forKey: namespace)
+    } else {
+        providerMetadata[namespace] = .object(metadata)
+    }
+    return providerMetadata
 }
 
 private func validateOpenAIResponsesBatchBody(
@@ -629,6 +692,16 @@ private func validateOpenAIResponsesBatchBody(
                   itemObject["id"]?.stringValue != nil else {
                 throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Responses custom_tool_call output.")
             }
+        case "reasoning":
+            guard itemObject["id"]?.stringValue != nil,
+                  let summaries = itemObject["summary"]?.arrayValue,
+                  summaries.allSatisfy({ summary in
+                      summary["type"]?.stringValue == "summary_text"
+                          && summary["text"]?.stringValue != nil
+                  }),
+                  isNullishOpenAIString(itemObject["encrypted_content"]) else {
+                throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Responses reasoning output.")
+            }
         default:
             guard ignoredOutputTypes.contains(type) else {
                 throw AIError.invalidResponse(provider: providerID, message: "Unknown OpenAI Responses output type \"\(type)\".")
@@ -636,6 +709,10 @@ private func validateOpenAIResponsesBatchBody(
         }
     }
     return output
+}
+
+private func isNullishOpenAIString(_ value: JSONValue?) -> Bool {
+    value == nil || value == .null || value?.stringValue != nil
 }
 
 private func openAIBatchItemHTTPError(body: JSONValue, statusCode: Int) -> AIBatchError {

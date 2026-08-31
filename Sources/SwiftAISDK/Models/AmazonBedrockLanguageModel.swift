@@ -162,13 +162,17 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         var effectiveTools = request.tools
         var effectiveToolChoice = request.toolChoice ?? providerOptions["toolChoice"] ?? request.extraBody["toolChoice"]
         let responseJSONSchema = bedrockResponseJSONSchema(from: request.responseFormat)
+        let isAnthropicModel = bedrockIsAnthropicModel(
+            modelID: modelID,
+            reasoningConfig: providerOptions["reasoningConfig"]
+        )
         let modelSupportsStructuredOutput = anthropicModelCapabilities(modelID).supportsStructuredOutput
         let useNativeStructuredOutput = responseJSONSchema != nil
-            && modelID.contains("anthropic")
+            && isAnthropicModel
             && bedrockSupportsNativeStructuredOutput(modelID: modelID)
             && (modelSupportsStructuredOutput || bedrockReasoningConfigEnabled(providerOptions["reasoningConfig"]))
         let usesJsonInstruction = responseJSONSchema != nil
-            && modelID.contains("anthropic")
+            && isAnthropicModel
             && !bedrockSupportsStrictToolSpec(modelID: modelID)
             && !request.tools.isEmpty
         let usesJsonResponseTool = responseJSONSchema != nil && !useNativeStructuredOutput && !usesJsonInstruction
@@ -188,8 +192,14 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         let preparedTools = bedrockPrepareTools(
             from: effectiveTools,
             toolChoice: effectiveToolChoice,
-            modelID: modelID
+            modelID: modelID,
+            disableParallelToolUse: request.providerOptions["anthropic"]?["disableParallelToolUse"]?.boolValue
+                ?? request.extraBody["anthropic"]?["disableParallelToolUse"]?.boolValue
+                ?? false
         )
+        if let additionalModelRequestFields = preparedTools.additionalModelRequestFields {
+            bedrockMergeAdditionalModelRequestFields(additionalModelRequestFields, into: &providerOptions)
+        }
         warnings.append(contentsOf: preparedTools.warnings)
 
         let messagesWithJSONInstruction = usesJsonInstruction
@@ -219,7 +229,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 for part in message.content {
                     switch part {
                     case let .text(text, providerMetadata):
-                        content.append(.object(["text": .string(text)]))
+                        content.append(try bedrockGuardedTextBlock(text: text, providerMetadata: providerMetadata))
                         if let cachePoint = bedrockCachePoint(from: providerMetadata) {
                             content.append(cachePoint)
                         }
@@ -239,26 +249,28 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                                 message: "Amazon Bedrock Converse supports only s3:// image URLs ending in .jpg, .jpeg, .png, .gif, or .webp."
                             )
                         }
-                        content.append(.object([
+                        let imageBlock: JSONValue = .object([
                             "image": .object([
                                 "format": .string(imageFormat),
                                 "source": .object([
                                     "s3Location": .object(["uri": .string(url)])
                                 ])
                             ])
-                        ]))
+                        ])
+                        content.append(bedrockGuardedImageBlock(imageBlock, providerMetadata: providerMetadata))
                         if let cachePoint = bedrockCachePoint(from: providerMetadata) {
                             content.append(cachePoint)
                         }
                     case let .data(mimeType, data, providerMetadata):
                         let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
                         if let imageFormat = bedrockImageFormat(for: resolvedMimeType) {
-                            content.append(.object([
+                            let imageBlock: JSONValue = .object([
                                 "image": .object([
                                     "format": .string(imageFormat),
                                     "source": .object(["bytes": .string(data.base64EncodedString())])
                                 ])
-                            ]))
+                            ])
+                            content.append(bedrockGuardedImageBlock(imageBlock, providerMetadata: providerMetadata))
                             if let cachePoint = bedrockCachePoint(from: providerMetadata) {
                                 content.append(cachePoint)
                             }
@@ -301,12 +313,13 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                     case let .file(mimeType, data, filename, providerMetadata):
                         let resolvedMimeType = try resolveFullMediaType(mediaType: mimeType, data: data)
                         if let imageFormat = bedrockImageFormat(for: resolvedMimeType) {
-                            content.append(.object([
+                            let imageBlock: JSONValue = .object([
                                 "image": .object([
                                     "format": .string(imageFormat),
                                     "source": .object(["bytes": .string(data.base64EncodedString())])
                                 ])
-                            ]))
+                            ])
+                            content.append(bedrockGuardedImageBlock(imageBlock, providerMetadata: providerMetadata))
                             if let cachePoint = bedrockCachePoint(from: providerMetadata) {
                                 content.append(cachePoint)
                             }
@@ -394,7 +407,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 // Bedrock rejects empty Converse messages. Unsigned reasoning is
                 // intentionally filtered above, so drop an assistant turn when
                 // it has no replayable content left.
-                if message.role == .assistant, content.isEmpty {
+                if message.role == .assistant,
+                   content.allSatisfy({ $0["cachePoint"] != nil }) {
                     return nil
                 }
 

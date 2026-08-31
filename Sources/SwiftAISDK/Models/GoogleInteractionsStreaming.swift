@@ -166,6 +166,23 @@ func googleInteractionsFinishReason(status: String?, hasFunctionCall: Bool) -> S
     }
 }
 
+func googleInteractionsStreamProviderError(from raw: JSONValue) -> AIStreamProviderError? {
+    guard raw["event_type"]?.stringValue == "error" else { return nil }
+    let error = raw["error"] ?? raw
+    let code: JSONValue?
+    if error["code"]?.stringValue != nil || error["code"]?.doubleValue != nil {
+        code = error["code"]
+    } else {
+        code = nil
+    }
+    return AIStreamProviderError(
+        message: error["message"]?.stringValue ?? "Unknown interaction error",
+        type: "error",
+        code: code,
+        data: raw
+    )
+}
+
 func googleInteractionsUsage(from raw: JSONValue) -> TokenUsage? {
     guard let usage = raw["usage"] else { return nil }
     let output = (usage["total_output_tokens"]?.intValue ?? 0) + (usage["total_thought_tokens"]?.intValue ?? 0)

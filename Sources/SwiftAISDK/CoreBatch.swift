@@ -37,6 +37,59 @@ public struct AIBatchRequestCounts: Equatable, Codable, Sendable {
     }
 }
 
+// JSON numbers use IEEE-754 doubles throughout the provider adapters. Keep
+// batch counters within JavaScript's exact integer range so converting them to
+// `Int` cannot silently round a provider value or trap on overflow.
+let aiBatchMaximumSafeInteger = 9_007_199_254_740_991
+
+func normalizedBatchJSONInteger(_ value: JSONValue?) -> Int? {
+    guard case let .number(number)? = value,
+          number.isFinite,
+          number >= 0,
+          number <= Double(aiBatchMaximumSafeInteger),
+          number.rounded(.towardZero) == number else {
+        return nil
+    }
+    return Int(number)
+}
+
+func checkedBatchSafeIntegerSum(_ values: [Int]) -> Int? {
+    var sum = 0
+    for value in values {
+        guard (0...aiBatchMaximumSafeInteger).contains(value) else { return nil }
+        let addition = sum.addingReportingOverflow(value)
+        guard !addition.overflow,
+              addition.partialValue <= aiBatchMaximumSafeInteger else {
+            return nil
+        }
+        sum = addition.partialValue
+    }
+    return sum
+}
+
+func normalizedBatchRequestCounts(
+    total: Int?,
+    pending: Int?,
+    completed: Int?,
+    failed: Int?
+) -> AIBatchRequestCounts? {
+    guard let total,
+          let pending,
+          let completed,
+          let failed,
+          (0...aiBatchMaximumSafeInteger).contains(total),
+          let itemTotal = checkedBatchSafeIntegerSum([pending, completed, failed]),
+          itemTotal == total else {
+        return nil
+    }
+    return AIBatchRequestCounts(
+        total: total,
+        pending: pending,
+        completed: completed,
+        failed: failed
+    )
+}
+
 /// Normalized, provider-independent lifecycle status for a durable batch.
 public struct AIBatchStatus: Equatable, Codable, Sendable {
     public var status: AIBatchLifecycleStatus
@@ -83,7 +136,27 @@ public struct AIBatchStartOptions<Request: Sendable>: Sendable {
     public var headers: [String: String]
     /// Optional stable key forwarded to providers that implement idempotent batch creation.
     public var idempotencyKey: String?
+    /// Optional callback URL for providers that support per-batch completion webhooks.
+    public var webhookURL: String?
 
+    public init(
+        requests: [Request],
+        providerOptions: [String: JSONValue] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        headers: [String: String] = [:],
+        idempotencyKey: String? = nil,
+        webhookURL: String? = nil
+    ) {
+        self.requests = requests
+        self.providerOptions = providerOptions
+        self.abortSignal = abortSignal
+        self.headers = headers
+        self.idempotencyKey = idempotencyKey
+        self.webhookURL = webhookURL
+    }
+
+    /// Source-compatible initializer retained for clients built against Batch V4
+    /// before completion webhooks were added.
     public init(
         requests: [Request],
         providerOptions: [String: JSONValue] = [:],
@@ -91,11 +164,14 @@ public struct AIBatchStartOptions<Request: Sendable>: Sendable {
         headers: [String: String] = [:],
         idempotencyKey: String? = nil
     ) {
-        self.requests = requests
-        self.providerOptions = providerOptions
-        self.abortSignal = abortSignal
-        self.headers = headers
-        self.idempotencyKey = idempotencyKey
+        self.init(
+            requests: requests,
+            providerOptions: providerOptions,
+            abortSignal: abortSignal,
+            headers: headers,
+            idempotencyKey: idempotencyKey,
+            webhookURL: nil
+        )
     }
 }
 
@@ -226,6 +302,7 @@ public struct StartTextBatchResult: Equatable, Sendable {
 
 public struct TextBatchGenerationResult: Sendable {
     public var text: String
+    public var content: [AIResultContentPart]
     public var finishReason: String?
     public var rawFinishReason: String?
     public var usage: TokenUsage
@@ -234,6 +311,7 @@ public struct TextBatchGenerationResult: Sendable {
 
     public init(
         text: String,
+        content: [AIResultContentPart] = [],
         finishReason: String? = nil,
         rawFinishReason: String? = nil,
         usage: TokenUsage = TokenUsage(),
@@ -241,11 +319,32 @@ public struct TextBatchGenerationResult: Sendable {
         providerMetadata: [String: JSONValue] = [:]
     ) {
         self.text = text
+        self.content = content
         self.finishReason = finishReason
         self.rawFinishReason = rawFinishReason
         self.usage = usage
         self.response = response
         self.providerMetadata = providerMetadata
+    }
+
+    /// Source-compatible initializer retained from the text-only batch result.
+    public init(
+        text: String,
+        finishReason: String? = nil,
+        rawFinishReason: String? = nil,
+        usage: TokenUsage = TokenUsage(),
+        response: AIResponseMetadata? = nil,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.init(
+            text: text,
+            content: [],
+            finishReason: finishReason,
+            rawFinishReason: rawFinishReason,
+            usage: usage,
+            response: response,
+            providerMetadata: providerMetadata
+        )
     }
 }
 

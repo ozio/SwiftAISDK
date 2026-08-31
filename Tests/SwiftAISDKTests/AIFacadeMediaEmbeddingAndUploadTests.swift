@@ -47,6 +47,89 @@ import Testing
     #expect(result.providerMetadata["provider"]?["second"]?.boolValue == true)
     #expect(result.responseMetadata.id == "resp-1")
 }
+
+@Test func aiEmbedManySplitsByUTF8BytesAndCountInOnePassLikeUpstream() async throws {
+    let model = MockEmbeddingModel(
+        results: [
+            EmbeddingResult(embeddings: [[1], [2]], rawValue: ["chunk": 1]),
+            EmbeddingResult(embeddings: [[3], [4]], rawValue: ["chunk": 2])
+        ],
+        maxEmbeddingsPerCall: 3,
+        maxInputBytesPerCall: 10
+    )
+
+    let result = try await AI.embedMany(
+        model: model,
+        values: ["12345678", "12", "12", "12345678"]
+    )
+
+    #expect(model.requests.map(\.values) == [
+        ["12345678", "12"],
+        ["12", "12345678"]
+    ])
+    #expect(result.embeddings == [[1], [2], [3], [4]])
+}
+
+@Test func aiEmbedManyDoesNotLetCallerChunkSizeExceedProviderMaximum() async throws {
+    let model = MockEmbeddingModel(
+        results: [
+            EmbeddingResult(embeddings: [[1], [2]], rawValue: ["chunk": 1]),
+            EmbeddingResult(embeddings: [[3], [4]], rawValue: ["chunk": 2]),
+            EmbeddingResult(embeddings: [[5]], rawValue: ["chunk": 3])
+        ],
+        maxEmbeddingsPerCall: 2
+    )
+
+    _ = try await AI.embedMany(
+        model: model,
+        values: ["a", "b", "c", "d", "e"],
+        chunkSize: 4
+    )
+
+    #expect(model.requests.map(\.values) == [["a", "b"], ["c", "d"], ["e"]])
+}
+
+@Test func aiEmbedManyWithLimitsReturnsEmptyWithoutCallingProviderLikeUpstream() async throws {
+    let recorder = TelemetryRecorder()
+    let model = MockEmbeddingModel(results: [], maxEmbeddingsPerCall: 2)
+
+    let result = try await AI.embedMany(
+        model: model,
+        values: [],
+        telemetry: Telemetry.Options(integrations: [recorder])
+    )
+
+    #expect(model.requests.isEmpty)
+    #expect(result.embeddings.isEmpty)
+    #expect(result.usage == TokenUsage(inputTokens: 0, totalTokens: 0))
+    #expect(result.rawValue == .array([JSONValue]()))
+    #expect(result.requestMetadata.body?["values"]?.arrayValue == [])
+    #expect((await recorder.events()).map(\.kind) == [.start, .end])
+}
+
+@Test func aiEmbedManyUsesUTF8ByteCountsAndKeepsOversizedInputsWholeLikeUpstream() async throws {
+    let unicodeModel = MockEmbeddingModel(
+        results: [
+            EmbeddingResult(embeddings: [[1]], rawValue: ["chunk": 1]),
+            EmbeddingResult(embeddings: [[2], [3]], rawValue: ["chunk": 2])
+        ],
+        maxInputBytesPerCall: 7
+    )
+
+    _ = try await AI.embedMany(model: unicodeModel, values: ["éé", "éé", "abc"])
+    #expect(unicodeModel.requests.map(\.values) == [["éé"], ["éé", "abc"]])
+
+    let oversizedModel = MockEmbeddingModel(
+        results: [
+            EmbeddingResult(embeddings: [[1]], rawValue: ["chunk": 1]),
+            EmbeddingResult(embeddings: [[2]], rawValue: ["chunk": 2])
+        ],
+        maxInputBytesPerCall: 3
+    )
+
+    _ = try await AI.embedMany(model: oversizedModel, values: ["abcd", "e"])
+    #expect(oversizedModel.requests.map(\.values) == [["abcd"], ["e"]])
+}
 @Test func aiFacadeForwardsMediaRerankAndUploadRequests() async throws {
     let imageModel = MockImageModel(result: ImageGenerationResult(urls: ["https://example.com/image.png"], rawValue: .object([:])))
     let image = try await AI.generateImage(model: imageModel, prompt: "cat", size: "1024x1024", providerOptions: ["image": .object(["quality": .string("high")])])

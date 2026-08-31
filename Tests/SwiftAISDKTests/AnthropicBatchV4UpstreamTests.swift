@@ -29,7 +29,8 @@ import Testing
                 request: LanguageModelRequest(
                     messages: [.user("What is the capital of France?")],
                     frequencyPenalty: 0.5,
-                    maxOutputTokens: 100
+                    maxOutputTokens: 100,
+                    providerOptions: ["anthropic": ["serviceTier": "auto"]]
                 )
             ),
             TextBatchRequest(
@@ -49,7 +50,8 @@ import Testing
             )
         ],
         providerOptions: ["anthropic": ["anthropicBeta": ["batch-beta"]]],
-        headers: ["Operation-Header": "operation"]
+        headers: ["Operation-Header": "operation"],
+        webhookURL: "https://example.com/batch-complete"
     )
 
     #expect(result.batch.status.status == .pending)
@@ -65,12 +67,18 @@ import Testing
             && $0.warning.type == "unsupported"
             && $0.warning.feature == "frequencyPenalty"
     })
+    #expect(result.warnings.contains {
+        $0.requestID == nil
+            && $0.warning.type == "unsupported"
+            && $0.warning.feature == "webhookUrl"
+            && $0.warning.message == "The Anthropic Message Batches API does not support completion webhooks."
+    })
 
     let request = try #require(await transport.sendRequests().first)
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/messages/batches")
     #expect(request.headers["x-api-key"] == "test-api-key")
     #expect(request.headers["operation-header"] == "operation")
-    #expect(request.headers["user-agent"] == "ai/7.0.77")
+    #expect(request.headers["user-agent"] == "ai/7.0.85")
     let betaHeader = try #require(request.headers["anthropic-beta"])
     let betas = Set(betaHeader.split(separator: ",").map(String.init))
     #expect(betas.contains("batch-beta"))
@@ -81,6 +89,7 @@ import Testing
     #expect(body["requests"]?[0]?["custom_id"]?.stringValue == "france")
     #expect(body["requests"]?[0]?["params"]?["model"]?.stringValue == "claude-3-haiku-20240307")
     #expect(body["requests"]?[0]?["params"]?["max_tokens"]?.intValue == 100)
+    #expect(body["requests"]?[0]?["params"]?["service_tier"]?.stringValue == "auto")
     #expect(body["requests"]?[0]?["params"]?["messages"]?[0]?["content"]?[0]?["text"]?.stringValue == "What is the capital of France?")
     #expect(body["requests"]?[1]?["params"]?["fallbacks"]?[0]?["model"]?.stringValue == "claude-sonnet-4-5")
 }
@@ -166,6 +175,8 @@ import Testing
         completed: 2,
         failed: 3
     ))
+    #expect(status.providerMetadata["anthropic"]?["requestCounts"]?["succeeded"]?.intValue == 2)
+    #expect(status.providerMetadata["anthropic"]?["resultsUrl"]?.stringValue == "https://api.anthropic.com/v1/messages/batches/msgbatch_123/results")
 
     let stream = try await model.getBatchResults(AIBatchOperationOptions(
         batchID: "msgbatch_123",
@@ -210,12 +221,12 @@ import Testing
     #expect(streamRequest.headers["operation-header"] == "operation")
 }
 
-@Test func anthropicBatchV4FailsUnsupportedOrInvalidItemsWithoutEndingTheStream() async throws {
+@Test func anthropicBatchV4PreservesToolContentAndFailsInvalidItemsWithoutEndingTheStream() async throws {
     let statusResponse = anthropicBatchResponse(
         status: "ended",
         resultsURL: "https://api.anthropic.com/v1/messages/batches/msgbatch_123/results"
     )
-    let unsupported = """
+    let toolCall = """
     {"custom_id":"tool-call","result":{"type":"succeeded","message":{"id":"msg_tool","type":"message","model":"claude-3-haiku-20240307","content":[{"type":"tool_use","id":"toolu_123","name":"get_weather","input":{"city":"Paris"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}}}
     """
     let invalid = #"{"custom_id":"invalid","result":{"type":"succeeded","message":{"type":"message"}}}"#
@@ -224,7 +235,7 @@ import Testing
     """
     let transport = AnthropicBatchScriptedTransport(
         sendResponses: [jsonResponse(statusResponse)],
-        streamChunks: [Data("\(unsupported)\n\(invalid)\n\(valid)".utf8)]
+        streamChunks: [Data("\(toolCall)\n\(invalid)\n\(valid)".utf8)]
     )
     let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "test-api-key", transport: transport))
     let model = provider.batchLanguageModel("claude-3-haiku-20240307")
@@ -235,12 +246,14 @@ import Testing
     }
 
     #expect(items.count == 3)
-    guard case let .failed(_, toolError, _) = items[0] else {
-        Issue.record("Expected unsupported-tool item failure")
+    guard case let .succeeded(toolID, toolResult) = items[0] else {
+        Issue.record("Expected tool content to be preserved")
         return
     }
-    #expect(toolError.code == "unsupported_tool_content")
-    #expect(toolError.message.contains("\"tool_use\""))
+    #expect(toolID == "tool-call")
+    #expect(toolResult.toolCalls.first?.id == "toolu_123")
+    #expect(toolResult.toolCalls.first?.name == "get_weather")
+    #expect(toolResult.toolCalls.first?.arguments == #"{"city":"Paris"}"#)
     guard case let .failed(_, invalidError, _) = items[1] else {
         Issue.record("Expected invalid-response item failure")
         return
@@ -252,6 +265,101 @@ import Testing
     }
     #expect(id == "valid")
     #expect(result.text == "Paris")
+}
+
+@Test func anthropicBatchV4SkipsUnknownContentAndKeepsUnknownResultTypesItemLocal() async throws {
+    let statusResponse = anthropicBatchResponse(
+        status: "ended",
+        resultsURL: "https://api.anthropic.com/v1/messages/batches/msgbatch_123/results"
+    )
+    let unknownContent = """
+    {"custom_id":"unknown-content","result":{"type":"succeeded","message":{"id":"msg_unknown","type":"message","model":"claude-3-haiku-20240307","content":[{"type":"future_block","value":1},{"type":"container_upload","file_id":"file_123"},{"type":"text","text":"kept"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}}}
+    """
+    let unknownResult = #"{"custom_id":"unknown-result","result":{"type":"future_result"}}"#
+    let later = """
+    {"custom_id":"later","result":{"type":"succeeded","message":{"id":"msg_later","type":"message","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"later"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}}}
+    """
+    let transport = AnthropicBatchScriptedTransport(
+        sendResponses: [jsonResponse(statusResponse)],
+        streamChunks: [Data("\(unknownContent)\n\(unknownResult)\n\(later)".utf8)]
+    )
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "test-api-key", transport: transport))
+    let stream = try await provider.batchLanguageModel("claude-3-haiku-20240307")
+        .getBatchResults(AIBatchOperationOptions(batchID: "msgbatch_123"))
+    var items: [AIBatchItemResult<TextGenerationResult>] = []
+    for try await item in stream { items.append(item) }
+
+    #expect(items.count == 3)
+    guard case let .succeeded(id, result) = items[0] else {
+        Issue.record("Expected the recoverable content result to succeed")
+        return
+    }
+    #expect(id == "unknown-content")
+    #expect(result.text == "kept")
+    #expect(result.content.contains {
+        if case let .custom(value, metadata) = $0 {
+            return value["kind"]?.stringValue == "anthropic.container_upload"
+                && metadata["anthropic"]?["fileId"]?.stringValue == "file_123"
+        }
+        return false
+    })
+    guard case let .failed(id, error, _) = items[1] else {
+        Issue.record("Expected unknown result type to be an item failure")
+        return
+    }
+    #expect(id == "unknown-result")
+    #expect(error.code == "invalid_response")
+    guard case let .succeeded(id, result) = items[2] else {
+        Issue.record("Expected the later result to remain readable")
+        return
+    }
+    #expect(id == "later")
+    #expect(result.text == "later")
+}
+
+@Test func anthropicBatchV4RejectsContextDependentToolAliasesAndJSONFallbacks() async throws {
+    let transport = AnthropicBatchScriptedTransport(sendResponses: [jsonResponse("{}")])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "test-api-key", transport: transport))
+    let model = provider.batchLanguageModel("claude-3-haiku-20240307")
+
+    await #expect(throws: AIError.self) {
+        try await model.startBatch(AIBatchStartOptions(requests: [
+            AILanguageModelBatchRequest(
+                id: "aliased",
+                request: LanguageModelRequest(
+                    messages: [.user("search")],
+                    tools: ["custom_search": AnthropicTools.webSearch_20250305()]
+                )
+            )
+        ]))
+    }
+    await #expect(throws: AIError.self) {
+        try await model.startBatch(AIBatchStartOptions(requests: [
+            AILanguageModelBatchRequest(
+                id: "json",
+                request: LanguageModelRequest(
+                    messages: [.user("json")],
+                    responseFormat: .json(schema: ["type": "object"])
+                )
+            )
+        ]))
+    }
+    #expect(await transport.sendRequests().isEmpty)
+}
+
+@Test func anthropicBatchV4ReportsCompletedBatchWithoutOutputAsInvalidResponse() async throws {
+    let transport = AnthropicBatchScriptedTransport(
+        sendResponses: [jsonResponse(anthropicBatchResponse(status: "ended", resultsURL: nil))]
+    )
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "test-api-key", transport: transport))
+
+    await #expect(throws: AIError.invalidResponse(
+        provider: "anthropic.messages",
+        message: "Anthropic batch \"msgbatch_123\" completed without batch output."
+    )) {
+        _ = try await provider.batchLanguageModel("claude-3-haiku-20240307")
+            .getBatchResults(AIBatchOperationOptions(batchID: "msgbatch_123"))
+    }
 }
 
 @Test func anthropicBatchV4RejectsIncompleteStatusResponses() async throws {
@@ -311,6 +419,49 @@ import Testing
     #expect(error.code == "invalid_response")
     guard case let .succeeded(id, result) = items[1] else {
         Issue.record("Expected the later valid item to succeed")
+        return
+    }
+    #expect(id == "valid")
+    #expect(result.text == "Paris")
+}
+
+@Test func anthropicBatchV4KeepsMalformedResultAndErroredEnvelopesItemLocal() async throws {
+    let statusResponse = anthropicBatchResponse(
+        status: "ended",
+        resultsURL: "https://api.anthropic.com/v1/messages/batches/msgbatch_123/results"
+    )
+    let missingResult = #"{"custom_id":"missing-result","result":null}"#
+    let malformedError = #"{"custom_id":"malformed-error","result":{"type":"errored","error":{"type":"error","error":{"type":"invalid_request_error"}}}}"#
+    let valid = """
+    {"custom_id":"valid","result":{"type":"succeeded","message":{"id":"msg_valid","type":"message","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"Paris"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}}}
+    """
+    let transport = AnthropicBatchScriptedTransport(
+        sendResponses: [jsonResponse(statusResponse)],
+        streamChunks: [Data("\(missingResult)\n\(malformedError)\n\(valid)".utf8)]
+    )
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(
+        apiKey: "test-api-key",
+        transport: transport
+    ))
+    let stream = try await provider.batchLanguageModel("claude-3-haiku-20240307")
+        .getBatchResults(AIBatchOperationOptions(batchID: "msgbatch_123"))
+    var items: [AIBatchItemResult<TextGenerationResult>] = []
+    for try await item in stream { items.append(item) }
+
+    #expect(items.count == 3)
+    for (index, expectedID) in ["missing-result", "malformed-error"].enumerated() {
+        guard case let .failed(id, error, _) = items[index] else {
+            Issue.record("Expected item-local Anthropic invalid response")
+            return
+        }
+        #expect(id == expectedID)
+        #expect(error == AIBatchError(
+            message: "Anthropic returned an invalid Message batch result.",
+            code: "invalid_response"
+        ))
+    }
+    guard case let .succeeded(id, result) = items[2] else {
+        Issue.record("Expected the later Anthropic item to succeed")
         return
     }
     #expect(id == "valid")

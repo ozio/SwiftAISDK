@@ -20,6 +20,28 @@ import Testing
     #expect(try provider.imageModel("black-forest-labs/FLUX.1-Kontext-dev").providerID == "deepinfra.image")
 }
 
+@Test func deepInfraChatForwardsJSONSchemaStructuredOutputsByDefault() async throws {
+    let transport = RecordingTransport(response: jsonResponse(
+        #"{"choices":[{"message":{"content":"{\"value\":\"ok\"}"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}"#
+    ))
+    let provider = try AIProviders.deepInfra(settings: ProviderSettings(apiKey: "deepinfra-key", transport: transport))
+
+    _ = try await provider.chatModel("meta-llama/Llama-3.3-70B-Instruct").generate(LanguageModelRequest(
+        messages: [.user("Return JSON")],
+        extraBody: [
+            "responseFormat": [
+                "type": "json",
+                "name": "answer",
+                "schema": ["type": "object", "properties": ["value": ["type": "string"]]]
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
+    #expect(body["response_format"]?["json_schema"]?["schema"]?["type"]?.stringValue == "object")
+}
+
 @Test func deepInfraChatCorrectsGemmaReasoningUsageLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"test-id","object":"chat.completion","created":1234567890,"model":"google/gemma-2-9b-it","choices":[{"index":0,"message":{"role":"assistant","content":"Test response"},"finish_reason":"stop"}],"usage":{"prompt_tokens":19,"completion_tokens":84,"total_tokens":1184,"prompt_tokens_details":null,"completion_tokens_details":{"reasoning_tokens":1081}}}
@@ -38,7 +60,7 @@ import Testing
     #expect(result.usage?.rawValue?["completion_tokens"]?.intValue == 1165)
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/3.0.35")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/3.0.41")
 }
 
 @Test func deepInfraChatCorrectsGemmaReasoningUsageOnStreamFinish() async throws {
@@ -99,7 +121,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepinfra.com/v1/inference/black-forest-labs/FLUX-1-schnell")
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/3.0.35")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/3.0.41")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["num_images"]?.intValue == 1)
@@ -229,7 +251,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.deepinfra.com/v1/openai/images/edits")
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/3.0.35")
+    #expect(request.headers["user-agent"] == "ai-sdk/deepinfra/3.0.41")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = try #require(request.body)
     #expect(body.range(of: Data(#"name="model""#.utf8)) != nil)
@@ -277,7 +299,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepinfra-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/deepinfra/3.0.35")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/deepinfra/3.0.41")
 }
 
 @Test func deepInfraImageSizeMappingMatchesUpstreamSplit() async throws {

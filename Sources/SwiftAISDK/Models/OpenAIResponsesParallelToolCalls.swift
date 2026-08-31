@@ -224,19 +224,44 @@ func openAIResponsesMessagesByCollapsingParallelToolResults(
                     continue
                 }
                 if emittedResults.insert(metadata.toolCallID).inserted {
-                    let outputs = group.results.map { child -> String in
+                    let outputs = group.results.map { child -> (text: String, breakpoint: JSONValue?) in
                         let output = openResponsesToolResultOutput(
                             child,
                             providerID: providerID,
                             jsonEncodeText: outputSchemaToolNames.contains(child.toolName),
                             warnings: &warnings
                         )
-                        return output.stringValue ?? openAIResponsesJSONString(output) ?? ""
+                        return (
+                            output.stringValue ?? openAIResponsesJSONString(output) ?? "",
+                            openAIResponsesScalarToolResultPromptCacheBreakpoint(child)
+                        )
+                    }
+                    let collapsedResult: JSONValue
+                    if outputs.contains(where: { $0.breakpoint != nil }) {
+                        collapsedResult = .object([
+                            "type": .string("content"),
+                            "value": .array(outputs.enumerated().map { index, output in
+                                var item: [String: JSONValue] = [
+                                    "type": .string("text"),
+                                    "text": .string(index == 0 ? output.text : "\n\(output.text)")
+                                ]
+                                if let breakpoint = output.breakpoint {
+                                    item["providerOptions"] = .object([
+                                        "openai": .object([
+                                            "promptCacheBreakpoint": breakpoint
+                                        ])
+                                    ])
+                                }
+                                return .object(item)
+                            })
+                        ])
+                    } else {
+                        collapsedResult = .string(outputs.map(\.text).joined(separator: "\n"))
                     }
                     content.append(.toolResult(AIToolResult(
                         toolCallID: metadata.toolCallID,
                         toolName: metadata.toolName,
-                        result: .string(outputs.joined(separator: "\n"))
+                        result: collapsedResult
                     )))
                 }
             default:

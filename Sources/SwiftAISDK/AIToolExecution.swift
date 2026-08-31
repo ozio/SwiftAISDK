@@ -161,22 +161,49 @@ func resolveToolApproval(
     request: LanguageModelRequest,
     toolApproval: AIToolApproval?
 ) async throws -> AIToolApprovalStatus {
+    try await resolveToolApprovalDecision(
+        toolsByName: toolsByName,
+        toolCall: toolCall,
+        arguments: arguments,
+        request: request,
+        toolApproval: toolApproval
+    ).status
+}
+
+private struct AIResolvedToolApproval {
+    var status: AIToolApprovalStatus
+    var userApprovalReason: String?
+}
+
+private func resolveToolApprovalDecision(
+    toolsByName: [String: AITool],
+    toolCall: AIToolCall,
+    arguments: JSONValue,
+    request: LanguageModelRequest,
+    toolApproval: AIToolApproval?
+) async throws -> AIResolvedToolApproval {
     guard let tool = toolsByName[toolCall.name] else {
         throw AINoSuchToolError(toolName: toolCall.name, availableToolNames: Array(toolsByName.keys))
     }
 
     if let toolApproval {
-        return try await toolApproval(AIToolApprovalContext(
+        let reasonCapture = AIToolApprovalReasonCapture()
+        let status = try await toolApproval(AIToolApprovalContext(
             toolCall: toolCall,
             arguments: arguments,
             tool: tool,
             request: request,
-            toolContext: rawToolContext(for: tool, toolCall: toolCall, request: request)
+            toolContext: rawToolContext(for: tool, toolCall: toolCall, request: request),
+            approvalReasonCapture: reasonCapture
         )) ?? .notApplicable
+        return AIResolvedToolApproval(
+            status: status,
+            userApprovalReason: status == .userApproval ? reasonCapture.get() : nil
+        )
     }
 
     guard let needsApproval = tool.needsApproval else {
-        return .notApplicable
+        return AIResolvedToolApproval(status: .notApplicable, userApprovalReason: nil)
     }
 
     let toolContext = try validatedToolContext(for: tool, toolCall: toolCall, request: request)
@@ -185,7 +212,10 @@ func resolveToolApproval(
         messages: request.messages,
         context: toolContext
     ))
-    return needsUserApproval ? .userApproval : .notApplicable
+    return AIResolvedToolApproval(
+        status: needsUserApproval ? .userApproval : .notApplicable,
+        userApprovalReason: nil
+    )
 }
 
 private func rawToolContext(for tool: AITool, toolCall: AIToolCall, request: LanguageModelRequest) -> JSONValue? {
@@ -236,13 +266,14 @@ func executeToolCalls(
                 ))
             }
             await telemetry?.recordToolStart(stepIndex: stepIndex, call: parsedCall, tool: tool)
-            let approvalStatus = try await resolveToolApproval(
+            let approvalDecision = try await resolveToolApprovalDecision(
                 toolsByName: toolsByName,
                 toolCall: parsedCall,
                 arguments: refinedArguments,
                 request: request,
                 toolApproval: toolApproval
             )
+            let approvalStatus = approvalDecision.status
             let approvalID = "approval-\(parsedCall.id)"
             var approvalRequest: AIToolApprovalRequest?
             var approvalResponse: AIToolApprovalResponse?
@@ -310,6 +341,7 @@ func executeToolCalls(
                     toolName: parsedCall.name,
                     arguments: parsedCall.arguments,
                     toolCallID: parsedCall.id,
+                    reason: approvalDecision.userApprovalReason,
                     providerMetadata: parsedCall.providerMetadata
                 )
                 batch.approvalRequests.append(approvalRequest!)
@@ -452,7 +484,15 @@ func executeHistoricalToolApprovals(
             providerMetadata: providerMetadata
         )
     }
-    let toolResults = approvedBatch.results + deniedResults
+    let invalidResults = validated.invalidToolApprovals.map { invalid in
+        let toolCall = invalid.approval.toolCall
+        return toolCallErrorResult(
+            invalid.error,
+            toolCall: toolCall,
+            dynamic: toolCall.dynamic || (toolsByName[toolCall.name]?.dynamic == true)
+        )
+    }
+    let toolResults = approvedBatch.results + invalidResults + deniedResults
 
     return AIHistoricalToolApprovalExecution(
         responseMessages: toolResponseMessages(

@@ -17,7 +17,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.50")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.58")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
 }
@@ -47,7 +47,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.50")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.58")
 }
 @Test func googleCustomXGoogAPIKeyOverridesConfiguredAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -419,11 +419,12 @@ import Testing
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: RecordingTransport(response: jsonResponse("{}"))))
     let model = try provider.embeddingModel("gemini-embedding-001")
 
-    let tooManyValues = Array(repeating: "x", count: 2049)
+    #expect(model.maxEmbeddingsPerCall == 100)
+    let tooManyValues = Array(repeating: "x", count: 101)
     await #expect(throws: AITooManyEmbeddingValuesForCallError(
         provider: "google.generative-ai",
         modelID: "gemini-embedding-001",
-        maxEmbeddingsPerCall: 2048,
+        maxEmbeddingsPerCall: 100,
         values: tooManyValues
     )) {
         _ = try await model.embed(EmbeddingRequest(values: tooManyValues))

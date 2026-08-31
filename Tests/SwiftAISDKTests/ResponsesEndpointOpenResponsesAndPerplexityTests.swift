@@ -169,7 +169,7 @@ import Testing
     let toolTransport = RecordingTransport(response: sseResponse("""
     data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":""}}
 
-    data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{}"}
+    data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{}"}
 
     data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{}"}}
 
@@ -246,10 +246,11 @@ import Testing
     ))
 
     #expect(result.text == "answer")
-    #expect(result.usage?.totalTokens == 7)
+    #expect(result.usage?.totalTokens == 8)
+    #expect(result.usage?.outputTokens == 5)
     #expect(result.usage?.inputTokensNoCache == 3)
     #expect(result.usage?.outputReasoningTokens == 1)
-    #expect(result.usage?.outputTextTokens == 3)
+    #expect(result.usage?.outputTextTokens == 4)
     #expect(result.usage?.rawValue?["reasoning_tokens"]?.intValue == 1)
     #expect(result.sources.count == 1)
     #expect(result.sources[0].id == "citation-0")
@@ -268,7 +269,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.perplexity.ai/chat/completions")
     #expect(request.headers["authorization"] == "Bearer pplx-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/4.0.31")
+    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/4.0.36")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "sonar")
     #expect(body["temperature"]?.doubleValue == 0.2)
@@ -517,9 +518,9 @@ import Testing
     #expect(sources[0].url == "https://example.com/a")
     #expect(sources[0].providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
     #expect(finishReason == "stop")
-    #expect(totalTokens == 4)
+    #expect(totalTokens == 5)
     #expect(outputReasoningTokens == 1)
-    #expect(outputTextTokens == 1)
+    #expect(outputTextTokens == 2)
     #expect(providerMetadata["perplexity"]?["usage"]?["citationTokens"]?.intValue == 1)
     #expect(providerMetadata["perplexity"]?["usage"]?["numSearchQueries"]?.intValue == 1)
     #expect(providerMetadata["perplexity"]?["images"] == .null)

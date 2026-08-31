@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-08-24
+Snapshot date: 2026-08-31
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.77`, `@ai-sdk/provider@4.0.7`,
-`@ai-sdk/provider-utils@5.0.29`, and `@ai-sdk/react@4.0.80`.
+snapshots, currently `ai@7.0.85`, `@ai-sdk/provider@4.0.9`,
+`@ai-sdk/provider-utils@5.0.34`, and `@ai-sdk/react@4.0.88`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.77 -> 7.0.85`
+- `@ai-sdk/provider@4.0.7 -> 4.0.9`
+- `@ai-sdk/provider-utils@5.0.29 -> 5.0.34`
+- `@ai-sdk/react@4.0.80 -> 4.0.88`
 - `ai@7.0.68 -> 7.0.77`
 - `@ai-sdk/provider@4.0.7` (unchanged)
 - `@ai-sdk/provider-utils@5.0.27 -> 5.0.29`
@@ -57,6 +61,41 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.85`, `@ai-sdk/provider@4.0.9`, and
+  `@ai-sdk/provider-utils@5.0.34` extend the Swift public core vertically:
+  image results expose their underlying per-call outputs; embedding models can
+  declare a UTF-8 byte budget combined with the per-call count limit; Batch V4
+  accepts completion webhooks and retains full result content plus validated
+  native request counts; and `AIStreamProviderError` preserves provider-owned
+  type, code, HTTP status, retryability, and raw data for in-band stream
+  failures.
+- Manual approval requests retain an optional policy reason. Replayed approved
+  calls are revalidated against the current tool schema and signature secret;
+  invalid persisted input becomes a model-visible error result so the loop can
+  continue without executing it. Object output parsing also avoids treating a
+  mixed tool-call finish as terminal structured output while retaining valid
+  text when the provider omits a finish reason.
+- The current core batch alignment carries the complete language-model option
+  surface into provider batches and makes webhook support explicit: Gateway
+  forwards its callback URL while direct Anthropic, OpenAI, and xAI batch
+  adapters return an unsupported warning. Native counts are exposed only when
+  nonnegative values reconcile to the total.
+- Canonical-hash preservation for JavaScript `undefined` array slots has no
+  Swift `JSONValue` analogue. Stateful/empty-match JavaScript RegExp handling
+  in `smoothStream`, React hook updates, and cancellation before a JavaScript
+  stitchable stream registers its inner stream are runtime-specific and do not
+  add Swift behavior.
+- Transient body-read `URLError` values were already retryable in the shared
+  Swift retry boundary. Parsed output was already emitted to `streamText` end
+  callbacks, and the UI reducer already preserves active parts, so those
+  upstream patches require regression evidence rather than new runtime code.
+- Typed UI-tool schema conversion, automatic chat submission after a denied
+  approval, operation-level UI outcomes, byte-array approval secrets, true
+  image request splitting with per-call metadata, and Gateway cost aggregation
+  across those split calls remain deferred. They need broader public UI/media
+  contracts than the additive `ImageGenerationResult.calls` surface alone.
+- `@ai-sdk/react@4.0.88` contains React hook and dependency propagation only;
+  SwiftAISDK continues to expose `AIChatSession` rather than React stores.
 - `ai@7.0.68 -> 7.0.77` ports every applicable core behavior: automatic tool
   execution now stops after unsafe finish reasons; preliminary tool output can
   be filtered from model-message conversion; in-band `streamObject` errors
@@ -330,16 +369,16 @@ Port decisions:
 | Upstream reference item | SwiftAISDK status | Current Swift evidence | Notes / next decision |
 | --- | --- | --- | --- |
 | `generateText` | `covered` | `AI.generateText`, `LanguageModelRequest`, `TextGenerationResult` | Supports prompt/request overloads, tools, multi-step loops, retries, telemetry, provider metadata, response metadata, raw chunks, and abort signals. Later tool-loop steps recheck cancellation before another model call and preserve the caller's abort reason. |
-| `streamText` | `covered` | `AI.streamText`, `LanguageStreamPart`, `AIStreamingTransport`, `AIStreamTimeoutConfiguration`, incremental SSE/EventStream and semantic-timeout regressions | Async sequence surface with provider parts delivered before HTTP EOF, one part-aware content lifecycle, one built-in terminal outcome per logical response, in-band errors, tools, approvals, retries-before-first-yield, telemetry, and total/per-step/first-semantic/inter-semantic deadlines. Total/step budgets include retry backoff, step deadlines span client tool execution, typed `Output` streams share the configuration, and timeout aborts propagate to provider/tool signals. |
+| `streamText` | `covered` | `AI.streamText`, `LanguageStreamPart`, `AIStreamProviderError`, `AIStreamingTransport`, `AIStreamTimeoutConfiguration`, incremental SSE/EventStream and semantic-timeout regressions | Async sequence surface with provider parts delivered before HTTP EOF, one part-aware content lifecycle, one built-in terminal outcome per logical response, typed in-band provider failures, tools, approvals, retries-before-first-yield, telemetry, and total/per-step/first-semantic/inter-semantic deadlines. Total/step budgets include retry backoff, step deadlines span client tool execution, typed `Output` streams share the configuration, and timeout aborts propagate to provider/tool signals. |
 | `embed` | `covered` | `AI.embed`, `EmbeddingRequest`, `EmbeddingResult` | Single-value helper delegates through the embedding request shape. |
-| `embedMany` | `covered` | `AI.embedMany` | Supports batching through `chunkSize` and aggregates usage/warnings/metadata. |
+| `embedMany` | `covered` | `AI.embedMany`, `EmbeddingModel.maxEmbeddingsPerCall`, `EmbeddingModel.maxInputBytesPerCall` | Splits once against the caller/model count limit and provider UTF-8 byte budget, keeps an individually oversized value intact, and aggregates usage/warnings/metadata in request order. |
 | `rerank` | `covered` | `AI.rerank`, `RerankingRequest`, `RerankingResult` | Native model family exists. |
-| `generateImage` | `covered` | `AI.generateImage`, `ImageGenerationRequest` | Includes files, masks, provider options, metadata, warnings, retries, and aborts. |
+| `generateImage` | `covered` | `AI.generateImage`, `ImageGenerationRequest`, `ImageGenerationResult.calls` | Includes files, masks, provider options, aggregate metadata, per-call results, warnings, retries, and aborts. True request splitting and provider-specific cost aggregation across multiple calls remain deferred. |
 | `transcribe` | `covered` | `AI.transcribe`, `AudioTranscriptionRequest`, `detectMediaType` | Upstream now documents `transcribe`; older experimental naming is intentionally not mirrored. Shared media detection recognizes MP4/M4A from the ISO-BMFF `ftyp` box in an audio context and bounds ID3 scanning. |
 | `StreamingTranscriptionModel` | `covered` | `StreamingTranscriptionModel`, `AIStreamingAudioInput`, `StreamingTranscriptionPart`, `CartesiaStreamingTranscriptionModel`, `GatewayTranscriptionModel` | Provider-neutral duplex transcription lifecycle with Cartesia Ink 2 and Gateway adapters. Gateway adds a short-lived route-bound token factory; ElevenLabs realtime STT remains deferred. |
 | `generateSpeech` | `covered` | `AI.generateSpeech`, `SpeechRequest` | Native model family exists. |
 | `experimental_generateVideo` | `covered` | `AI.generateVideo`, `AI.startVideo`, `AI.getVideoStatus`, `VideoGenerationRequest`, `AsyncVideoModel`, `VideoGenerationPollOptions` | Stable Swift naming preserves unary generation and adds directly persistable V4 start/status, polling, webhook waiting, cancellation, metadata merging, logical-start idempotency, and count splitting. BFL, Fal, ByteDance, and Gateway are vertical adapters; Fal and Gateway support native callback URLs while BFL and ByteDance fall back to polling with a warning. |
-| `startTextBatch` / `getBatchStatus` / `getBatchResults` | `covered` | `AI.startTextBatch`, `AI.getBatchStatus`, `AI.getBatchResults`, `BatchLanguageModel` | Durable text batches expose persistable references, normalized status and complete per-item terminal result streams through Anthropic Messages Batch, OpenAI Responses Batch, and Gateway Batch V4. |
+| `startTextBatch` / `getBatchStatus` / `getBatchResults` | `covered` | `AI.startTextBatch`, `AI.getBatchStatus`, `AI.getBatchResults`, `BatchLanguageModel` | Durable text batches expose persistable references, optional completion webhooks, normalized status/counts, full result content, and complete per-item terminal streams through Anthropic Messages Batch, OpenAI Responses Batch, Gateway Batch V4, and xAI Responses Batch. Gateway forwards webhooks; the direct providers warn that they are unsupported. |
 | `Experimental_RealtimeModelV4` | `covered` | `AIRealtimeModelV4`, `AIRealtimeSession`, `XAIRealtimeModel` | Provider-neutral client-secret, duplex event, audio/text/tool, abort and close lifecycle with xAI as the first full adapter. Full non-xAI realtime adapters remain deferred. |
 | `Output` | `covered` | `Output.text/object/array/choice/json`, `AI.generateText(... output:)`, `AI.streamText(... output:)`, existing object-generation facades | Swift now mirrors the v6-style `generateText/streamText + Output.*` entry point while still keeping the older Swift-native object/array/enum/json facades. `Output.object` partial streaming uses `JSONValue` because Swift has no automatic `DeepPartial<T>`. |
 | `Agent` interface | `covered` | `AIAgent`, `AIAgentCallOptions` | Swift-native agent protocol mirrors upstream `version: "agent-v1"`, optional `id`, tool exposure, and generate/stream calls over model messages or prompts. |
@@ -349,7 +388,7 @@ Port decisions:
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
 | `dynamicTool` | `swift-native` | `AITool.dynamic`, MCP tool conversion | Behavior exists; naming differs. |
-| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, tool-call retries, tool conversion, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.36`. |
+| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, paginated tool discovery, tool-call retries, tool conversion, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.41`. OAuth scope reaches dynamic registration, and private credential endpoints are rejected without redirects. |
 | `Experimental_StdioMCPTransport` | `covered` | `MCPStdioTransport` | Swift uses stable transport naming. |
 | `jsonSchema` | `swift-native` | `AIJSONSchema`, `JSONValue`, `parseJSON`, schema validator | Usable JSON Schema adapter exists; exact factory naming does not. |
 | `zodSchema` | `out of scope candidate` | none | Zod is TypeScript-specific. Could document `AIJSONSchema` as the Swift alternative. |
@@ -394,7 +433,7 @@ it means JavaScript-style error-class parity is only partial.
 | `AI_InvalidPromptError` | `partial` | `AIError.invalidArgument`, provider conversion errors | No dedicated prompt error with structured prompt details. |
 | `AI_InvalidResponseDataError` | `covered` | `AIError.invalidResponse` | Functional analog exists, though less structured. |
 | `AI_InvalidToolApprovalError` | `covered` | `AIInvalidToolApprovalError`, `validateUIMessages` | Throwing UI-message validation now reports unknown approval response ids with a typed approval error; `safeValidateUIMessages` still returns accumulated issues. |
-| `AI_InvalidToolInputError` | `covered` | `AIInvalidToolInputError`, `AITypeValidationError`, `AITool` validation/refinement | Tool argument JSON/schema failures now throw typed tool-input errors. |
+| `AI_InvalidToolInputError` | `covered` | `AIInvalidToolInputError`, `AITypeValidationError`, `AITool` validation/refinement | New tool argument JSON/schema failures throw typed tool-input errors. Invalid persisted approved calls become model-visible error results and continue without executing the tool. |
 | `AI_JSONParseError` | `covered` | `AIJSONParseError` | Direct Swift analog exists. |
 | `AI_LoadAPIKeyError` | `covered` | `AIError.missingAPIKey` | Functional analog exists. |
 | `AI_LoadSettingError` | `partial` | `AIError.invalidArgument`, provider settings validation | No dedicated setting-load error. |
@@ -410,6 +449,7 @@ it means JavaScript-style error-class parity is only partial.
 | `AI_NoSuchProviderError` | `covered` | `AIProviderRegistryError.noSuchProvider` | Direct registry analog exists. |
 | `AI_NoSuchToolError` | `covered` | `AINoSuchToolError` | Local tool loops now throw a typed error when the model asks for an unavailable non-provider-executed tool. |
 | `AI_RetryError` | `covered` | `AIRetryError`, `AIRetryErrorReason` | Direct Swift analog exists. |
+| `AI_StreamProviderError` | `covered` | `AIStreamProviderError`, `LanguageStreamPart.providerError`, `LanguageStreamPart.streamProviderError` | Public typed view of an in-band provider failure, preserving the provider's message, type, string/numeric code, HTTP status, retryability, and raw payload while retaining the source-compatible stream error case. |
 | `AI_ToolCallNotFoundForApprovalError` | `covered` | `AIToolCallNotFoundForApprovalError`, `validateUIMessages` | Approval requests that reference a missing tool call now surface as a typed error in throwing validation. |
 | `AI_ToolCallRepairError` / `ToolCallRepairError` | `covered` | `AIToolCallRepairError`, `AITool.refineArguments` | Swift maps the existing argument-refinement hook to a typed tool-call repair failure. |
 | `AI_TooManyEmbeddingValuesForCallError` | `covered` | `AITooManyEmbeddingValuesForCallError`, embedding model preflight guards | OpenAI-compatible, Google, Google Vertex, Voyage, Mistral, Cohere, and Amazon Bedrock embedding limits now throw a typed error carrying provider, model id, max count, and values. |

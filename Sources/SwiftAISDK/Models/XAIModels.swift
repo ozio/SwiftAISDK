@@ -428,7 +428,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
             let response = try await config.transport.send(AIHTTPRequest(
                 method: "GET",
-                url: try requireURL("\(withoutTrailingSlash(config.baseURL))/videos/\(requestID)"),
+                url: try requireURL("\(withoutTrailingSlash(config.baseURL))/videos/\(xaiEncodedPathSegment(requestID))"),
                 headers: config.headers.mergingHeaders(headers),
                 abortSignal: abortSignal
             ))
@@ -467,6 +467,19 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             }
         }
     }
+}
+
+private func xaiEncodedPathSegment(_ value: String) -> String {
+    if value == "." { return "%252E" }
+    if value == ".." { return "%252E%252E" }
+
+    let unescaped = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()".utf8)
+    return value.utf8.map { byte in
+        if unescaped.contains(byte) {
+            return String(UnicodeScalar(byte))
+        }
+        return String(format: "%%%02X", byte)
+    }.joined()
 }
 
 private let xaiMaxPendingVideoBodyBytes = 1024 * 1024

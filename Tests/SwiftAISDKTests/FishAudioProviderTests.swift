@@ -23,7 +23,7 @@ import Testing
     #expect(transcriptionAlias.modelID == "custom-route")
     #expect(provider.providerID == "fish-audio")
     #expect(provider.supportedCapabilities == [.speech, .transcription])
-    #expect(fishAudioProviderVersion == "3.0.7")
+    #expect(fishAudioProviderVersion == "3.0.12")
 }
 
 @Test func fishAudioProviderRejectsUnsupportedModelFamilies() throws {
@@ -90,7 +90,7 @@ import Testing
     #expect(request.url.absoluteString == "https://fish.example.test/v1/tts")
     #expect(request.headers["authorization"] == "Bearer environment-key")
     #expect(request.headers["x-custom"] == "custom")
-    #expect(request.headers["user-agent"] == "app/1.0 ai-sdk/fish-audio/3.0.7")
+    #expect(request.headers["user-agent"] == "app/1.0 ai-sdk/fish-audio/3.0.12")
 }
 
 @Test func fishAudioProviderRequiresAPIKeyAndHonorsCustomAuthorization() async throws {

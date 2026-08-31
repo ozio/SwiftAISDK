@@ -45,3 +45,9 @@ let result = try await model.generateImage(
 - `providerMetadata`
 - `requestMetadata`
 - `responseMetadata`
+- `calls`, one `ImageGenerationCall` per underlying model request, preserving
+  call-scoped images, warnings, usage, provider metadata, and response metadata.
+
+The aggregate URL/base64/usage fields remain convenient for callers that do not
+need per-request attribution. Use `calls` when cost or response metadata must
+remain associated with an individual provider call.

@@ -116,9 +116,6 @@ func mistralProviderOptions(from request: LanguageModelRequest) throws -> [Strin
         guard let nested = value.objectValue else {
             throw AIError.invalidArgument(argument: "providerOptions.mistral", message: "Mistral provider options must be an object.")
         }
-        for key in mistralLanguageProviderOptionKeys {
-            output.removeValue(forKey: key)
-        }
         output.merge(try mistralValidateLanguageProviderOptions(nested)) { _, nested in nested }
     }
     return output
@@ -131,6 +128,7 @@ let mistralLanguageProviderOptionKeys: Set<String> = [
     "structuredOutputs",
     "strictJsonSchema",
     "parallelToolCalls",
+    "promptCacheKey",
     "reasoningEffort"
 ]
 
@@ -152,6 +150,11 @@ func mistralValidateLanguageProviderOptions(_ options: [String: JSONValue]) thro
             output[key] = value
         case "documentImageLimit", "documentPageLimit":
             try mistralRequireNumber(value, argument: "providerOptions.mistral.\(key)", message: "Mistral \(key) must be a number.")
+            output[key] = value
+        case "promptCacheKey":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.mistral.promptCacheKey", message: "Mistral promptCacheKey must be a string.")
+            }
             output[key] = value
         case "reasoningEffort":
             guard let string = value.stringValue, ["high", "none"].contains(string) else {

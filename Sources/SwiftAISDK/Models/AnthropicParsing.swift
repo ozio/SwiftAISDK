@@ -74,6 +74,14 @@ func anthropicGeneratedContent(
                     providerID: providerID
                 )
             ))
+        case "container_upload":
+            content.append(.custom(
+                .object(["kind": .string("anthropic.container_upload")]),
+                providerMetadata: anthropicContentBlockProviderMetadata(
+                    ["fileId": part["file_id"] ?? .null],
+                    providerID: providerID
+                )
+            ))
         case "text":
             guard !usesJSONToolResponseFormat else { continue }
             let partText = part["text"]?.stringValue ?? ""
@@ -558,11 +566,59 @@ func anthropicHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIE
 }
 
 func anthropicStreamError(from raw: JSONValue, provider: String, headers: [String: String]) -> AIError? {
+    guard let error = anthropicStreamProviderError(from: raw) else { return nil }
+    return .apiCall(
+        provider: provider,
+        statusCode: error.statusCode ?? 500,
+        body: error.message,
+        headers: headers
+    )
+}
+
+func anthropicStreamProviderError(from raw: JSONValue) -> AIStreamProviderError? {
     guard raw["type"]?.stringValue == "error" else { return nil }
     let error = raw["error"] ?? raw
-    let message = error["message"]?.stringValue ?? "Anthropic stream returned an error event."
-    let statusCode = error["type"]?.stringValue == "overloaded_error" ? 529 : 500
-    return .apiCall(provider: provider, statusCode: statusCode, body: message, headers: headers)
+    let type = error["type"]?.stringValue ?? "error"
+    let inferred = anthropicStreamErrorMetadata(for: type)
+    let code: JSONValue?
+    if error["code"]?.stringValue != nil || error["code"]?.doubleValue != nil {
+        code = error["code"]
+    } else {
+        code = nil
+    }
+    return AIStreamProviderError(
+        message: error["message"]?.stringValue ?? "Anthropic stream returned an error event.",
+        type: type,
+        code: code,
+        statusCode: error["statusCode"]?.intValue ?? inferred.statusCode,
+        isRetryable: error["isRetryable"]?.boolValue ?? inferred.isRetryable,
+        data: error["data"] ?? error
+    )
+}
+
+private func anthropicStreamErrorMetadata(
+    for type: String
+) -> (statusCode: Int?, isRetryable: Bool?) {
+    switch type {
+    case "api_error":
+        return (500, true)
+    case "overloaded_error":
+        return (529, true)
+    case "rate_limit_error":
+        return (429, true)
+    case "request_too_large":
+        return (413, false)
+    case "authentication_error":
+        return (401, false)
+    case "permission_error":
+        return (403, false)
+    case "not_found_error":
+        return (404, false)
+    case "billing_error", "invalid_request_error":
+        return (400, false)
+    default:
+        return (nil, nil)
+    }
 }
 
 func anthropicErrorMessage(from data: Data) -> String? {

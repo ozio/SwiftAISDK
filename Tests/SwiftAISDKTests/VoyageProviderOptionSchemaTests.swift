@@ -60,6 +60,7 @@ import Testing
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"index":0,"embedding":[0.1]}],"usage":{"total_tokens":1}}"#))
     let provider = try AIProviders.voyage(settings: ProviderSettings(apiKey: "voyage-key", transport: transport))
     let model = try provider.embeddingModel("voyage-4")
+    #expect(model.maxEmbeddingsPerCall == 128)
 
     _ = try await model.embed(EmbeddingRequest(
         values: ["hello"],

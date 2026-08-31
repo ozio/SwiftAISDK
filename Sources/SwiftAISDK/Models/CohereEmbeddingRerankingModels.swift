@@ -3,6 +3,7 @@ import Foundation
 public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID = "cohere.textEmbedding"
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { 96 }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -15,11 +16,12 @@ public final class CohereEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             extraBody: request.extraBody,
             providerOptions: request.providerOptions
         )
-        guard request.values.count <= 96 else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 96
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: 96,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }

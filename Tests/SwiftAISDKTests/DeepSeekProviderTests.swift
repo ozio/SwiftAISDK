@@ -51,7 +51,11 @@ import Testing
         }
     }
 
-    #expect(streamStartWarnings == [])
+    #expect(streamStartWarnings == [AIWarning(
+        type: "compatibility",
+        feature: "reasoningEffort",
+        message: "reasoningEffort xhigh is not a canonical DeepSeek value and was mapped to max."
+    )])
     #expect(responseMetadata?.id == "ds-1")
     #expect(responseMetadata?.modelID == "deepseek-reasoner")
     #expect(responseMetadata?.headers["x-deepseek"] == "stream")
@@ -68,7 +72,7 @@ import Testing
     #expect(body["stream"] == true)
     #expect(body["stream_options"]?["include_usage"]?.boolValue == true)
     #expect(body["thinking"]?["type"]?.stringValue == "enabled")
-    #expect(body["reasoning_effort"]?.stringValue == "xhigh")
+    #expect(body["reasoning_effort"]?.stringValue == "max")
 }
 
 @Test func deepSeekLanguageParsesToolCallsMetadataAndReasoning() async throws {
@@ -166,7 +170,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer deepseek-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.31")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/deepseek/3.0.37")
 }
 
 @Test func deepSeekLanguageGeneratesMissingToolCallIDLikeUpstreamV4() async throws {
@@ -277,7 +281,7 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["thinking"] == nil)
-    #expect(body["reasoning_effort"]?.stringValue == "xhigh")
+    #expect(body["reasoning_effort"]?.stringValue == "max")
 }
 
 @Test func deepSeekProviderOptionsValidateAndStripLikeUpstreamSchema() async throws {
@@ -346,7 +350,7 @@ import Testing
     ))
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["thinking"]?["type"]?.stringValue == "adaptive")
+    #expect(body["thinking"]?["type"]?.stringValue == "enabled")
     #expect(body["thinking"]?["unsupported"] == nil)
     #expect(body["reasoning_effort"]?.stringValue == "max")
     #expect(body["unsupportedProperty"] == nil)
@@ -493,7 +497,9 @@ import Testing
 
     #expect(result.warnings == [
         AIWarning(type: "unsupported", feature: "topK"),
-        AIWarning(type: "unsupported", feature: "seed")
+        AIWarning(type: "unsupported", feature: "seed"),
+        AIWarning(type: "deprecated", feature: "frequencyPenalty", message: "frequencyPenalty is deprecated by DeepSeek and has been omitted."),
+        AIWarning(type: "deprecated", feature: "presencePenalty", message: "presencePenalty is deprecated by DeepSeek and has been omitted.")
     ])
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "system")
@@ -501,8 +507,8 @@ import Testing
     #expect(body["messages"]?[1]?["role"]?.stringValue == "user")
     #expect(body["response_format"]?["type"]?.stringValue == "json_object")
     #expect(body["thinking"]?["type"]?.stringValue == "enabled")
-    #expect(body["presence_penalty"]?.doubleValue == 0.1)
-    #expect(body["frequency_penalty"]?.doubleValue == 0.2)
+    #expect(body["presence_penalty"] == nil)
+    #expect(body["frequency_penalty"] == nil)
     #expect(body["topK"] == nil)
     #expect(body["seed"] == nil)
     #expect(body["deepseek"] == nil)
@@ -570,7 +576,7 @@ import Testing
     ))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.48")
+    #expect(request.headers["user-agent"] == "ai-sdk/azure/4.0.54")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "user")
     #expect(body["response_format"]?["type"]?.stringValue == "json_schema")
@@ -700,4 +706,136 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["messages"]?[0]?["role"]?.stringValue == "assistant")
     #expect(body["messages"]?[0]?["reasoning_content"]?.stringValue == "")
+}
+
+@Test func deepSeekCurrentOptionsNamesPrefixAndStrictToolsMatchUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"object":"chat.completion","system_fingerprint":"fp_123","choices":[{"index":2,"message":{"role":"assistant","content":"done"},"finish_reason":"stop","logprobs":{"content":[]}}],"usage":{"prompt_tokens":4,"completion_tokens":1,"completion_tokens_details":{"reasoning_tokens":3},"future_usage":{"nested":true}}}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        baseURL: "https://api.deepseek.com/beta",
+        transport: transport
+    ))
+    let model = try provider.languageModel("deepseek-chat")
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [
+            AIMessage(role: .system, content: [.text("Guide")], providerMetadata: ["deepseek": ["name": "guide"]]),
+            AIMessage(role: .user, content: [.text("Continue")], providerMetadata: ["deepseek": ["name": "alice"]]),
+            AIMessage(role: .assistant, content: [.text("Once")], providerMetadata: ["deepseek": ["name": "writer", "prefix": true]])
+        ],
+        tools: ["lookup": ["type": "object", "strict": true, "properties": [:]]],
+        providerOptions: ["deepseek": ["logprobs": true, "topLogprobs": 4, "userId": "user_123"]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["messages"]?[0]?["name"]?.stringValue == "guide")
+    #expect(body["messages"]?[1]?["name"]?.stringValue == "alice")
+    #expect(body["messages"]?[2]?["name"]?.stringValue == "writer")
+    #expect(body["messages"]?[2]?["prefix"]?.boolValue == true)
+    #expect(body["logprobs"]?.boolValue == true)
+    #expect(body["top_logprobs"]?.intValue == 4)
+    #expect(body["user_id"]?.stringValue == "user_123")
+    #expect(body["tools"]?[0]?["function"]?["strict"]?.boolValue == true)
+    #expect(result.usage?.outputTextTokens == 0)
+    #expect(result.usage?.rawValue?["future_usage"]?["nested"]?.boolValue == true)
+    #expect(result.providerMetadata["deepseek"]?["responseObject"]?.stringValue == "chat.completion")
+    #expect(result.providerMetadata["deepseek"]?["choiceIndex"]?.intValue == 2)
+    #expect(result.providerMetadata["deepseek"]?["messageRole"]?.stringValue == "assistant")
+    #expect(result.providerMetadata["deepseek"]?["logprobs"]?["content"]?.arrayValue?.isEmpty == true)
+    #expect(result.providerMetadata["deepseek"]?["systemFingerprint"]?.stringValue == "fp_123")
+}
+
+@Test func deepSeekRejectsCurrentInvalidOptionsAndStrictToolsOutsideBeta() async throws {
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        transport: RecordingTransport(responses: [])
+    ))
+    let model = try provider.languageModel("deepseek-chat")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["deepseek": ["userId": "not valid"]]
+        ))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["deepseek": ["topLogprobs": 21]]
+        ))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            tools: ["lookup": ["type": "object", "strict": true, "properties": [:]]]
+        ))
+    }
+}
+
+@Test func deepSeekStrictToolValidationIgnoresProviderDefinedTools() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        baseURL: "https://api.deepseek.com/beta",
+        transport: transport
+    ))
+    let model = try provider.languageModel("deepseek-chat")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        tools: [
+            "lookup": ["type": "object", "strict": true, "properties": [:]],
+            "deepseek.search": ["type": "provider", "id": "deepseek.search"]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["tools"]?.arrayValue?.count == 1)
+    #expect(body["tools"]?[0]?["function"]?["strict"]?.boolValue == true)
+    #expect(result.warnings.contains(AIWarning(
+        type: "unsupported",
+        feature: "provider-defined tool deepseek.search"
+    )))
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            tools: [
+                "strict": ["type": "object", "strict": true, "properties": [:]],
+                "ordinary": ["type": "object", "properties": [:]],
+                "deepseek.search": ["type": "provider", "id": "deepseek.search"]
+            ]
+        ))
+    }
+    #expect((await transport.requests()).count == 1)
+}
+
+@Test func deepSeekStreamingAccumulatesContentAndReasoningLogprobsAcrossChunks() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"think"},"finish_reason":null,"logprobs":{"content":[{"token":"A","logprob":-0.1}],"reasoning_content":[{"token":"R1","logprob":-0.2}]}}]}
+
+    data: {"object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop","logprobs":{"content":[{"token":"B","logprob":-0.3}],"reasoning_content":[{"token":"R2","logprob":-0.4}]}}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-v4-flash")
+
+    var finalMetadata: [String: JSONValue] = [:]
+    for try await part in model.stream(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["deepseek": ["logprobs": true, "topLogprobs": 1]]
+    )) {
+        if case let .finishMetadata(_, _, providerMetadata) = part {
+            finalMetadata = providerMetadata
+        }
+    }
+
+    let content = try #require(finalMetadata["deepseek"]?["logprobs"]?["content"]?.arrayValue)
+    let reasoning = try #require(finalMetadata["deepseek"]?["logprobs"]?["reasoning_content"]?.arrayValue)
+    #expect(content.compactMap { $0["token"]?.stringValue } == ["A", "B"])
+    #expect(reasoning.compactMap { $0["token"]?.stringValue } == ["R1", "R2"])
+    #expect(finalMetadata["deepseek"]?["responseObject"]?.stringValue == "chat.completion.chunk")
+    #expect(finalMetadata["deepseek"]?["choiceIndex"]?.intValue == 0)
+    #expect(finalMetadata["deepseek"]?["messageRole"]?.stringValue == "assistant")
 }

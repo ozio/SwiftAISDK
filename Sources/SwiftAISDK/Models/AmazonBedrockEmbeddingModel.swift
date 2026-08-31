@@ -1,31 +1,52 @@
 import Foundation
 
+public enum AmazonBedrockEmbeddingModelFamily: String, Sendable {
+    case titan
+    case cohere
+    case nova
+}
+
+public struct AmazonBedrockEmbeddingModelSettings: Sendable {
+    public var modelFamily: AmazonBedrockEmbeddingModelFamily?
+
+    public init(modelFamily: AmazonBedrockEmbeddingModelFamily? = nil) {
+        self.modelFamily = modelFamily
+    }
+}
+
 public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID = "amazon-bedrock"
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { modelFamily == .cohere ? 96 : 1 }
     private let config: BedrockRuntimeConfig
+    private let settings: AmazonBedrockEmbeddingModelSettings
 
-    init(modelID: String, config: BedrockRuntimeConfig) {
+    init(
+        modelID: String,
+        config: BedrockRuntimeConfig,
+        settings: AmazonBedrockEmbeddingModelSettings = AmazonBedrockEmbeddingModelSettings()
+    ) {
         self.modelID = modelID
         self.config = config
+        self.settings = settings
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
         guard !request.values.isEmpty else {
             return EmbeddingResult(embeddings: [], rawValue: .object([:]))
         }
-        let maxEmbeddingsPerCall = bedrockMaxEmbeddingsPerCall(modelID: modelID)
-        guard request.values.count <= maxEmbeddingsPerCall else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 1
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }
         let providerOptions = try bedrockEmbeddingProviderOptions(extraBody: request.extraBody, providerOptions: request.providerOptions)
         var body: [String: JSONValue]
-        if modelID.contains("cohere.embed-") {
+        if modelFamily == .cohere {
             body = [
                 "input_type": .string(try bedrockEmbeddingStringOption(
                     providerOptions["inputType"],
@@ -40,7 +61,7 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
             if let outputDimension = try bedrockEmbeddingIntOption(providerOptions["outputDimension"], argument: "providerOptions.bedrock.outputDimension", allowed: [256, 512, 1024, 1536]) {
                 body["output_dimension"] = .number(Double(outputDimension))
             }
-        } else if modelID.starts(with: "amazon.nova-"), modelID.contains("embed") {
+        } else if modelFamily == .nova {
             let value = request.values[0]
             let embeddingPurpose = try bedrockEmbeddingStringOption(
                 providerOptions["embeddingPurpose"],
@@ -99,6 +120,13 @@ public final class AmazonBedrockEmbeddingModel: EmbeddingModel, @unchecked Senda
 
     private var encodedModelID: String {
         bedrockEncodeModelID(modelID)
+    }
+
+    private var modelFamily: AmazonBedrockEmbeddingModelFamily {
+        if let configured = settings.modelFamily { return configured }
+        if modelID.contains("amazon.nova-"), modelID.contains("embed") { return .nova }
+        if modelID.contains("cohere.embed-") { return .cohere }
+        return .titan
     }
 }
 

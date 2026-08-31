@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-08-24`
-- Baseline upstream ref: `vercel/ai@2174f202c21f86a44124a11baea8baa29f5dd0e5`
-- Current upstream ref: `vercel/ai@9d9a73f1551f2243035491e9de5a2e00ebf9eb17`
+- Date: `2026-08-31`
+- Baseline upstream ref: `vercel/ai@9d9a73f1551f2243035491e9de5a2e00ebf9eb17`
+- Current upstream ref: `vercel/ai@e1bfe50427d09e65404cffea9f71a60a66af0f3e`
 - Diff command:
 
   ```sh
   git -C <vercel-ai-checkout> diff --name-status \
-    2174f202c21f86a44124a11baea8baa29f5dd0e5..9d9a73f1551f2243035491e9de5a2e00ebf9eb17 \
+    9d9a73f1551f2243035491e9de5a2e00ebf9eb17..e1bfe50427d09e65404cffea9f71a60a66af0f3e \
     -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
        'packages/**/*.test.mts' 'packages/**/*.spec.ts' \
        'packages/**/*.spec.tsx' 'packages/**/*.spec.mts'
@@ -28,6 +28,44 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-08-31 Diff
+
+The generated inventory grows from 815 to 849 executable test/spec files and
+from 76 to 80 groups. The exact comparison above returns 178 changed executable
+paths: 108 in locally tracked package groups, one OpenTelemetry fixture, two
+tests for the newly discovered Z.AI provider, and 67 untracked product or
+framework paths. Declaration-only `*.test-d.ts` files remain part of the source
+and API audit but are not counted by the executable inventory.
+
+| Upstream test group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `packages/ai/**` | 26 | `ported/no-swift-action` | Focused core regressions cover typed in-band provider errors, embedding byte-budget splitting, individual image calls, parsed structured-output diagnostics/callback values, approval reasons and revalidation, denial continuation, batch webhooks/counts, stream cancellation, and active UI stream parts. Undefined JavaScript array slots in canonical hashes and browser/framework-only chat details have no Swift value-model analogue. |
+| `packages/provider-utils/**` | 5 | `ported/covered` | Public provider-stream-error metadata and normalized batch request counts have translated core tests. Successful-response body-read `URLError` values were already classified by the shared Swift retry boundary; the remaining JavaScript response helpers do not add a distinct Swift surface. |
+| `packages/alibaba/**` | 2 | `ported` | WAN 3 all-in-one video request/metadata behavior and nonnegative reasoning-adjusted usage are covered. |
+| `packages/amazon-bedrock/**` | 8 | `ported` | Focused tests cover inference-profile reasoning, cache-only assistant omission, embedding ARN families, citations, tool parallelism, guardrail blocks, complete raw usage, reasoning shapes, and typed stream failures. |
+| `packages/anthropic/**` | 4 | `ported` | Batch option/count alignment, webhook warnings, identifier encoding, and typed stream failures are covered across direct and AWS-backed paths. |
+| `packages/azure/**`; `packages/baseten/**`; `packages/bytedance/**`; `packages/cerebras/**`; `packages/cohere/**`; `packages/deepinfra/**` | 6 | `ported/covered` | Azure DeepSeek option handling and shared embedding limits, Baseten/DeepInfra structured outputs, ByteDance last-frame metadata, Cohere raw usage, and the forward-compatible Cerebras model-ID removal are accounted for. |
+| `packages/deepseek/**` | 6 | `ported` | Message/media conversion, current thinking and sampling options, strict tools, files, log probabilities, complete usage, response metadata, model IDs, and provider stream failures have focused Swift coverage. |
+| `packages/gateway/**` | 4 | `ported` | Batch callbacks/counts, retry/error handling, model settings, and Tako Search metadata changes are covered. |
+| `packages/google/**`; `packages/google-vertex/**` | 10 | `ported/covered/deferred` | The published embedding limits are ported: 100 inputs for Google, 250 for standard Vertex models, and one for Gemini multimodal embeddings. Existing Swift behavior covers the unchanged provider foundations; Files URL recognition, recursive-tool changes, complete usage/safety/request updates, Gemini 2.5 penalty warnings, Google Batch, shared Vertex additions, and Gemini 3.5 transcription remain scoped for dedicated Google/Vertex passes. Live API WebSocket transcription also needs a provider-session adapter. |
+| `packages/groq/**`; `packages/huggingface/**` | 3 | `ported` | Groq reasoning disablement and clamped usage plus Groq/Hugging Face typed stream failures have translated fixtures. |
+| `packages/mcp/**` | 2 | `ported` | Tool pagination, OAuth scope propagation into dynamic registration, and private OAuth endpoint rejection are covered. |
+| `packages/minimax/**`; `packages/mistral/**` | 3 | `ported` | MiniMax model-aware video tiers and reference rules plus Mistral prompt-cache affinity and complete raw usage are covered. |
+| `packages/moonshotai/**` | 5 | `deferred` | The broad V1/Kimi media/message conversion, option, tool-preparation, metadata, usage, log-probability, error, and partial/predicted-output delta was audited but is intentionally deferred to a dedicated Moonshot pass. |
+| `packages/open-responses/**` | 2 | `ported/deferred` | Reasoning-summary streaming, failed/error finish normalization, and validation failures for malformed known events have focused Swift coverage. The experimental extension item/tool/event codec registry and lossless custom-event replay still need a public Swift design. |
+| `packages/openai/**` | 11 | `ported` | Batch webhook warnings/counts, embedding byte budgets, typed stream/schema failures, tool-search history, scalar cache breakpoints including collapsed parallel-result preservation, non-object tool arguments, and usage mapping are covered. |
+| `packages/openai-compatible/**` | 2 | `ported` | Array-based text/thinking content and top-level reasoning disablement are covered by the shared compatible chat path. |
+| `packages/perplexity/**`; `packages/prodia/**`; `packages/togetherai/**` | 4 | `ported` | Perplexity reasoning usage, Prodia seed warnings, and TogetherAI DeepSeek V4 Flash structured-output routing are covered. |
+| `packages/xai/**` | 5 | `ported` | `XAIResponsesBatchLanguageModel.swift` implements Responses Batch, and `ProviderGroupBUpstreamParity20260831Tests.swift` covers it alongside complete raw usage, web-search action preservation, identifier encoding, and typed stream failures. |
+| `packages/otel/**` | 1 | `covered/no-swift-action` | The legacy OpenTelemetry JavaScript fixture does not add a new contract to SwiftAISDK's typed telemetry model. |
+| `packages/zai/**` | 2 | `deferred` | Z.AI is a newly published provider and is intentionally proposal-only in this automation run; its factory, options, errors, media conversion, registry, tests, and docs need a dedicated vertical port. |
+| `packages/angular/**`; `packages/codemod/**` | 2 | `out-of-scope` | Angular UI bindings and JavaScript codemod scaffolding are not provider-facing Swift runtime surfaces. |
+| `packages/harness*/**` | 54 | `out-of-scope` | Harness agents, authentication, bridges, session/process lifecycle, skills, credential forwarding, and the new Cursor/fx adapters are separate coding-agent products. |
+| `packages/policy-opa/**`; `packages/sandbox-just-bash/**`; `packages/sandbox-vercel/**`; `packages/workflow/**`; `packages/workflow-harness/**` | 11 | `out-of-scope` | OPA policy, JavaScript sandbox networking, durable workflow/video, and harness slicing require separate product runtimes rather than provider-model ports. |
+
+Coverage check: the grouped path counts total 178 and match the executable-test
+diff exactly; the new provider and every untracked product group remain visible.
 
 ## 2026-08-24 Diff
 

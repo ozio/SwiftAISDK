@@ -538,6 +538,9 @@ extension GatewayLanguageModel: BatchLanguageModel {
         if !forwardedProviderOptions.isEmpty {
             body["providerOptions"] = .object(forwardedProviderOptions)
         }
+        if let webhookURL = options.webhookURL {
+            body["callbackUrl"] = .string(webhookURL)
+        }
 
         let request = try config.request(
             path: "/batch/start",
@@ -672,12 +675,13 @@ private func gatewayBatchStatus(from raw: JSONValue, providerID: String) throws 
     }
 
     let counts: AIBatchRequestCounts?
-    if let value = raw["requestCounts"], value != .null,
-       let total = value["total"]?.intValue,
-       let pending = value["pending"]?.intValue,
-       let completed = value["completed"]?.intValue,
-       let failed = value["failed"]?.intValue {
-        counts = AIBatchRequestCounts(total: total, pending: pending, completed: completed, failed: failed)
+    if let value = raw["requestCounts"], value != .null {
+        counts = normalizedBatchRequestCounts(
+            total: normalizedBatchJSONInteger(value["total"]),
+            pending: normalizedBatchJSONInteger(value["pending"]),
+            completed: normalizedBatchJSONInteger(value["completed"]),
+            failed: normalizedBatchJSONInteger(value["failed"])
+        )
     } else {
         counts = nil
     }

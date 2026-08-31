@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-08-24
+Snapshot date: 2026-08-31
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -52,18 +52,54 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package versions were checked against npm registry metadata
-on 2026-08-24. The packages changed by this weekly pass were reviewed from
+on 2026-08-31. The packages changed by this weekly pass were reviewed from
 their exact published tarballs; per-package decisions are recorded in
-`Docs/UpstreamPackageDiffAudit.md`.
+`Docs/UpstreamPackageDiffAudit.md`. The current upstream inventory contains
+849 executable test/spec paths in 80 groups, and the fresh diff audit
+classifies all 178 changed executable paths.
 
 ## Provider State
 
-The 46 tracked provider/product packages in `Docs/ProviderVersionLedger.md`
-have Swift evidence in implementation files and focused tests. All 45 model
-providers are represented in `Docs/ProviderCapabilityMatrix.md`; MCP is tracked
-separately as a product package without a model-capability row. The current pass
-audited the published package deltas and ported the applicable provider/core
-behavior; the remaining architectural differences are recorded below.
+The 46 tracked provider/product rows in `Docs/ProviderVersionLedger.md` have
+Swift evidence in implementation files and focused tests: 45 model providers
+are represented in `Docs/ProviderCapabilityMatrix.md`, and MCP is tracked
+separately as a product package without a model-capability row. Exact registry
+discovery now finds 46 model providers because `@ai-sdk/zai@3.0.3` was newly
+published; Z.AI remains the one explicit unported provider rather than being
+silently added without a complete vertical. The current pass audited every
+published package delta and records deferred architectural work below.
+
+The 2026-08-31 weekly pass advances 49 of the 50 tracked provider/core rows;
+`@ai-sdk/vercel@3.0.30` remains current. Portable core work adds per-call image
+results, UTF-8 embedding byte budgets, Batch V4 completion webhooks and full
+content/count preservation, typed provider stream errors, approval reasons and
+signed persisted-call revalidation, model-visible invalid approval results,
+and structured-output finish handling. Provider work covers Alibaba WAN 3,
+Bedrock inference-profile/reasoning/guardrail/usage behavior, richer Anthropic
+Batch, Baseten/DeepInfra/TogetherAI structured output, ByteDance last-frame
+metadata, Cohere/Mistral raw usage, current DeepSeek options and metadata,
+Groq reasoning/usage, Hugging Face stream errors, MCP pagination/OAuth
+hardening, MiniMax video tiers, Mistral prompt cache affinity, Open Responses
+reasoning summaries, OpenAI request/replay/batch fixes, generic compatible
+array content and reasoning disablement, Perplexity usage, Prodia warnings,
+Gateway callbacks/count validation, and xAI Responses Batch/web-search/ID
+handling, including malformed known-event errors and item-local batch failures.
+Google and Vertex embedding preflight limits now match the published 100-input,
+250-input, and one-input Gemini multimodal contracts.
+
+The same pass keeps scope boundaries explicit. Google Batch, Gemini 3.5 unary
+and live transcription, current Google safety/usage/request changes, the shared
+Vertex additions, and the broad Moonshot V1/Kimi option/media/metadata delta
+are audited but deferred to dedicated provider passes. Open Responses'
+experimental extension codec registry and lossless custom-event replay still
+need a public Swift design. Body-read `URLError` retryability,
+parsed stream-end output, and active UI parts were already covered. Typed
+UI-tool schema conversion, automatic denied-chat submission/outcomes,
+byte-array approval secrets, true image request splitting/per-call metadata,
+and cost aggregation across split Gateway calls remain broader core/media
+gaps. `@ai-sdk/zai` needs its own factory, auth/base URL, chat options,
+warnings/errors, media conversion, registry/capability row, and focused tests
+before it can be called represented.
 
 The 2026-08-24 weekly pass advances 45 provider/product baselines plus `ai`,
 `@ai-sdk/provider-utils`, and `@ai-sdk/react`; `@ai-sdk/provider` and
@@ -136,13 +172,13 @@ defines one built-in terminal outcome per logical response. Cross-surface regres
 cover text and reasoning collection, structured output, UI reduction, tool
 loops, in-band errors, thrown failures, and provider terminal behavior.
 
-Exact registry-prefix discovery on 2026-08-24 finds 81 live `@ai-sdk/*`
-packages and 45 model providers. All 45 model providers are now represented.
-No new unported model provider appeared. The other 32 untracked packages are
-framework adapters, harness/sandbox/workflow products, UI bindings, telemetry
-or development tooling rather than provider model packages; they need separate
-product decisions and shared runtime foundations instead of automatic provider
-ports.
+Exact registry-prefix discovery on 2026-08-31 finds 85 live `@ai-sdk/*`
+packages and 46 model providers. Swift represents 45 of the 46 providers; the
+new `@ai-sdk/zai@3.0.3` package is the remaining provider gap. Of the 36
+untracked scoped packages, the other 35 are framework adapters,
+harness/sandbox/workflow products, UI bindings, telemetry or development
+tooling rather than provider model packages; they need separate product
+decisions and shared runtime foundations instead of automatic provider ports.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -161,11 +197,12 @@ one of these is true:
 | --- | --- | --- |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
+| P1 | `@ai-sdk/zai@3.0.3` is a newly published provider and is not represented in Swift. | Port one complete Z.AI language vertical: factory/auth/base URL, current chat options and warnings, structured errors, media conversion, registry/capability evidence, focused tests, and public docs. |
 | P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
 | P1 | Duplex audio, Cartesia Ink 2 and Gateway streaming transcription, provider-neutral Realtime V4 sessions, and xAI realtime are represented, but ElevenLabs realtime STT, Google/OpenAI streaming translation, and full non-xAI speech-session adapters are not. | Reuse `AIDuplexWebSocketTransport`, `AIRealtimeModelV4`, and the streaming-audio lifecycle for the next provider verticals without hiding provider-specific session semantics. |
-| P1 | Batch V4 has Anthropic, OpenAI Responses, and Gateway adapters; async Video V4 has Black Forest Labs, Fal, ByteDance, and Gateway adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
+| P1 | Batch V4 has Anthropic, OpenAI Responses, Gateway, and xAI adapters; Google Batch is not yet ported. Async Video V4 has Black Forest Labs, Fal, ByteDance, and Gateway adapters, but other capable providers still use unary or internal-polling paths. | Migrate Google Batch and additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
 | P1 | `prepareStep` call-setting overrides and generic provider tool-callers across generate, stream, and agent orchestration have no faithful shared Swift contract. | Add isolated per-step setting overlays and late-bound provider tool-caller routing before enabling provider-specific automatic callers. |
-| P1 | `@ai-sdk/provider-utils@5.0.29` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | `@ai-sdk/provider-utils@5.0.34` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

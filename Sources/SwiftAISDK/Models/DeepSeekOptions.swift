@@ -22,7 +22,9 @@ func deepSeekOptions(from request: LanguageModelRequest) throws -> [String: JSON
     return output
 }
 
-let deepSeekProviderOptionKeys: Set<String> = ["thinking", "reasoningEffort", "strictJsonSchema"]
+let deepSeekProviderOptionKeys: Set<String> = [
+    "logprobs", "topLogprobs", "userId", "thinking", "reasoningEffort", "strictJsonSchema"
+]
 
 func deepSeekValidateProviderOptions(_ options: [String: JSONValue]) throws -> [String: JSONValue] {
     var output: [String: JSONValue] = [:]
@@ -31,6 +33,32 @@ func deepSeekValidateProviderOptions(_ options: [String: JSONValue]) throws -> [
             throw AIError.invalidArgument(argument: "providerOptions.deepseek.\(key)", message: "DeepSeek \(key) cannot be null.")
         }
         switch key {
+        case "logprobs":
+            guard value.boolValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepseek.logprobs", message: "DeepSeek logprobs must be a boolean.")
+            }
+            output[key] = value
+        case "topLogprobs":
+            guard let number = value.doubleValue,
+                  number.isFinite,
+                  number.rounded(.towardZero) == number,
+                  (0...20).contains(number) else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepseek.topLogprobs", message: "DeepSeek topLogprobs must be an integer between 0 and 20.")
+            }
+            output[key] = value
+        case "userId":
+            guard let userID = value.stringValue,
+                  !userID.isEmpty,
+                  userID.utf8.count <= 512,
+                  userID.unicodeScalars.allSatisfy({ scalar in
+                      (scalar.value >= 48 && scalar.value <= 57)
+                          || (scalar.value >= 65 && scalar.value <= 90)
+                          || (scalar.value >= 97 && scalar.value <= 122)
+                          || scalar == "_" || scalar == "-"
+                  }) else {
+                throw AIError.invalidArgument(argument: "providerOptions.deepseek.userId", message: "DeepSeek userId must match ^[A-Za-z0-9_-]+$ and be at most 512 characters long.")
+            }
+            output[key] = value
         case "thinking":
             guard let object = value.objectValue else {
                 throw AIError.invalidArgument(argument: "providerOptions.deepseek.thinking", message: "DeepSeek thinking must be an object.")

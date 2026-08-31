@@ -131,7 +131,7 @@ import Testing
     #expect(events[1].errorMessage == "InternalFailure: service failed")
 }
 
-@Test func amazonBedrockConverseTerminatesOnSmithyExceptionFrame() async throws {
+@Test func amazonBedrockConverseEmitsSmithyExceptionAsTypedError() async throws {
     let frame = amazonEventStreamFrame(
         messageType: "exception",
         eventTypeHeader: ":exception-type",
@@ -150,16 +150,19 @@ import Testing
     ))
     let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
 
-    do {
-        for try await _ in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {}
-        Issue.record("Expected the Converse stream to fail on an exception frame.")
-    } catch let AIError.invalidResponse(provider, message) {
-        #expect(provider == "amazon-bedrock")
-        #expect(message == "validationException: bad request")
+    var parts: [LanguageStreamPart] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        parts.append(part)
     }
+    let error = try #require(parts.compactMap(\.streamProviderError).first)
+    #expect(error.message == "bad request")
+    #expect(error.type == "validationException")
+    #expect(error.statusCode == 400)
+    #expect(!error.isRetryable)
+    #expect(parts.contains { if case let .finishMetadata(reason, _, _) = $0 { reason == "error" } else { false } })
 }
 
-@Test func amazonBedrockAnthropicTerminatesOnSmithyErrorFrame() async throws {
+@Test func amazonBedrockAnthropicEmitsSmithyErrorAsTypedError() async throws {
     let frame = amazonEventStreamFrame(
         messageType: "error",
         eventTypeHeader: ":error-code",
@@ -179,13 +182,16 @@ import Testing
     ))
     let model = try provider.languageModel("anthropic.claude-3-haiku-20240307-v1:0")
 
-    do {
-        for try await _ in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {}
-        Issue.record("Expected the Bedrock Anthropic stream to fail on an error frame.")
-    } catch let AIError.invalidResponse(provider, message) {
-        #expect(provider == "bedrock.anthropic.messages")
-        #expect(message == "InternalFailure: service failed")
+    var parts: [LanguageStreamPart] = []
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        parts.append(part)
     }
+    let error = try #require(parts.compactMap(\.streamProviderError).first)
+    #expect(error.message == "InternalFailure: service failed")
+    #expect(error.type == "InternalFailure")
+    #expect(error.statusCode == nil)
+    #expect(!error.isRetryable)
+    #expect(parts.contains { if case let .finishMetadata(reason, _, _) = $0 { reason == "error" } else { false } })
 }
 
 @Test func amazonBedrockConverseYieldsDeltaBeforeEventStreamEOF() async throws {

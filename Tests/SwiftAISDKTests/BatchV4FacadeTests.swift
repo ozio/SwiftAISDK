@@ -2,6 +2,31 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func batchRequestCountNormalizerAcceptsOnlyConsistentNonnegativeSafeIntegers() {
+    let maximum = aiBatchMaximumSafeInteger
+
+    #expect(normalizedBatchJSONInteger(.number(Double(maximum))) == maximum)
+    #expect(normalizedBatchJSONInteger(.number(Double(maximum) + 1)) == nil)
+    #expect(normalizedBatchJSONInteger(.number(-1)) == nil)
+    #expect(normalizedBatchJSONInteger(.number(0.5)) == nil)
+    #expect(normalizedBatchJSONInteger(.number(.infinity)) == nil)
+    #expect(normalizedBatchJSONInteger(.string("1")) == nil)
+
+    #expect(normalizedBatchRequestCounts(
+        total: maximum,
+        pending: maximum,
+        completed: 0,
+        failed: 0
+    ) == AIBatchRequestCounts(total: maximum, pending: maximum, completed: 0, failed: 0))
+    #expect(normalizedBatchRequestCounts(
+        total: maximum,
+        pending: maximum,
+        completed: 1,
+        failed: 0
+    ) == nil)
+    #expect(normalizedBatchRequestCounts(total: 2, pending: 0, completed: 1, failed: 0) == nil)
+}
+
 @Test func batchV4FacadeNormalizesRequestsAndForwardsOperationMetadata() async throws {
     let model = BatchFacadeMockModel()
     model.startResult = AIBatchStartResult(
@@ -23,13 +48,25 @@ import Testing
                     messages: [.user("What is the capital of France?")],
                     temperature: 0,
                     maxOutputTokens: 100,
+                    responseFormat: .json(
+                        schema: ["type": "object", "properties": ["answer": ["type": "string"]]],
+                        name: "answer"
+                    ),
+                    tools: [
+                        "lookup": [
+                            "type": "object",
+                            "properties": ["query": ["type": "string"]]
+                        ]
+                    ],
+                    toolChoice: ["type": "tool", "toolName": "lookup"],
                     providerOptions: ["mock": ["perRequest": true]]
                 )
             )
         ],
         providerOptions: ["mock": ["batch": true]],
         headers: ["x-test": "test-value"],
-        idempotencyKey: "stable-create-key"
+        idempotencyKey: "stable-create-key",
+        webhookURL: "https://example.com/batches/complete"
     )
 
     #expect(result.batch.reference == TextBatchReference(
@@ -44,11 +81,18 @@ import Testing
     #expect(options.requests[0].request.messages == [.user("What is the capital of France?")])
     #expect(options.requests[0].request.temperature == 0)
     #expect(options.requests[0].request.maxOutputTokens == 100)
+    #expect(options.requests[0].request.responseFormat == .json(
+        schema: ["type": "object", "properties": ["answer": ["type": "string"]]],
+        name: "answer"
+    ))
+    #expect(options.requests[0].request.tools["lookup"]?["properties"]?["query"]?["type"]?.stringValue == "string")
+    #expect(options.requests[0].request.toolChoice?["toolName"]?.stringValue == "lookup")
     #expect(options.providerOptions == ["mock": ["batch": true]])
     #expect(options.headers["x-test"] == "test-value")
-    #expect(options.headers["user-agent"] == "ai/7.0.77")
+    #expect(options.headers["user-agent"] == "ai/7.0.85")
     #expect(options.headers["idempotency-key"] == "stable-create-key")
     #expect(options.idempotencyKey == "stable-create-key")
+    #expect(options.webhookURL == "https://example.com/batches/complete")
 }
 
 @Test func batchV4FacadeRejectsInvalidRequestsAndIncompatibleReferences() async throws {
@@ -120,6 +164,7 @@ import Testing
     }
     #expect(id == "request-1")
     #expect(result.text == "Paris")
+    #expect(result.content == [.text("Par"), .text("is")])
     #expect(result.finishReason == "stop")
     #expect(result.rawFinishReason == "end_turn")
     #expect(result.usage.totalTokens == 8)

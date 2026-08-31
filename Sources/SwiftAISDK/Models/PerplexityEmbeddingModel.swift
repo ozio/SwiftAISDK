@@ -3,6 +3,7 @@ import Foundation
 public final class PerplexityEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID = "perplexity.embedding"
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { 512 }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -11,11 +12,12 @@ public final class PerplexityEmbeddingModel: EmbeddingModel, @unchecked Sendable
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        guard request.values.count <= 512 else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 512
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: 512,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }

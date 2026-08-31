@@ -135,6 +135,32 @@ func isVideoInputFile(_ file: ImageInputFile) -> Bool {
     return false
 }
 
+/// The result of one underlying image-model call.
+public struct ImageGenerationCall: Sendable {
+    public var urls: [String]
+    public var base64Images: [String]
+    public var warnings: [AIWarning]
+    public var usage: TokenUsage?
+    public var providerMetadata: [String: JSONValue]
+    public var responseMetadata: AIResponseMetadata
+
+    public init(
+        urls: [String],
+        base64Images: [String] = [],
+        warnings: [AIWarning] = [],
+        usage: TokenUsage? = nil,
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
+        self.urls = urls
+        self.base64Images = base64Images
+        self.warnings = warnings
+        self.usage = usage
+        self.providerMetadata = providerMetadata
+        self.responseMetadata = responseMetadata
+    }
+}
+
 public struct ImageGenerationResult: Sendable {
     public var urls: [String]
     public var base64Images: [String]
@@ -144,7 +170,32 @@ public struct ImageGenerationResult: Sendable {
     public var providerMetadata: [String: JSONValue]
     public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
+    /// Per-call results, preserving response and provider metadata scopes.
+    public var calls: [ImageGenerationCall]
 
+    public init(
+        urls: [String],
+        base64Images: [String] = [],
+        rawValue: JSONValue,
+        warnings: [AIWarning] = [],
+        usage: TokenUsage? = nil,
+        providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
+        responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+        calls: [ImageGenerationCall] = []
+    ) {
+        self.urls = urls
+        self.base64Images = base64Images
+        self.rawValue = rawValue
+        self.warnings = warnings
+        self.usage = usage
+        self.providerMetadata = providerMetadata
+        self.requestMetadata = requestMetadata
+        self.responseMetadata = responseMetadata
+        self.calls = calls
+    }
+
+    /// Source-compatible initializer retained from the aggregate-only image result.
     public init(
         urls: [String],
         base64Images: [String] = [],
@@ -155,13 +206,16 @@ public struct ImageGenerationResult: Sendable {
         requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
-        self.urls = urls
-        self.base64Images = base64Images
-        self.rawValue = rawValue
-        self.warnings = warnings
-        self.usage = usage
-        self.providerMetadata = providerMetadata
-        self.requestMetadata = requestMetadata
-        self.responseMetadata = responseMetadata
+        self.init(
+            urls: urls,
+            base64Images: base64Images,
+            rawValue: rawValue,
+            warnings: warnings,
+            usage: usage,
+            providerMetadata: providerMetadata,
+            requestMetadata: requestMetadata,
+            responseMetadata: responseMetadata,
+            calls: []
+        )
     }
 }

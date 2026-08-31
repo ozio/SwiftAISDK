@@ -31,7 +31,33 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             from: choice?["message"]?["tool_calls"],
             providerMetadataNamespace: metadataNamespace
         )
-        let text = choice?["message"]?["content"]?.stringValue
+        let responseContent = openAICompatibleChatContentParts(choice?["message"]?["content"])
+        let contentText = responseContent.compactMap { part -> String? in
+            guard case let .text(text) = part else { return nil }
+            return text
+        }.joined()
+        let contentReasoning = responseContent.compactMap { part -> String? in
+            guard case let .reasoning(text) = part else { return nil }
+            return text
+        }.joined()
+        let separateReasoning = choice?["message"]?["reasoning_content"]?.stringValue
+            ?? choice?["message"]?["reasoning"]?.stringValue
+            ?? ""
+        var orderedContent = responseContent.map { part -> AIResultContentPart in
+            switch part {
+            case let .text(text):
+                return .text(text)
+            case let .reasoning(reasoning):
+                return .reasoning(reasoning)
+            }
+        }
+        if !separateReasoning.isEmpty {
+            orderedContent.append(.reasoning(separateReasoning))
+        }
+        orderedContent.append(contentsOf: toolCalls.map(AIResultContentPart.toolCall))
+        let contentValue = choice?["message"]?["content"]
+        let text = contentValue?.stringValue
+            ?? (contentValue?.arrayValue != nil ? contentText : nil)
             ?? choice?["text"]?.stringValue
             ?? raw["output_text"]?.stringValue
             ?? raw["text"]?.stringValue
@@ -40,9 +66,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         }
         return TextGenerationResult(
             text: text,
-            reasoning: choice?["message"]?["reasoning_content"]?.stringValue
-                ?? choice?["message"]?["reasoning"]?.stringValue
-                ?? "",
+            content: orderedContent,
+            reasoning: contentReasoning + separateReasoning,
             finishReason: openAICompatibleFinishReason(choice?["finish_reason"]?.stringValue),
             usage: usage(from: raw),
             toolCalls: toolCalls,
@@ -81,6 +106,8 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                     var activeTextID: String?
                     var finishReason: String?
                     var finishUsage: TokenUsage?
+                    let shouldThrowPreOutputStreamErrors = isOpenAIBackedProvider(providerID, config: config)
+                    var hasOutputStarted = false
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw: JSONValue
@@ -91,13 +118,38 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                             continuation.yield(.error(message: error.localizedDescription))
                             continue
                         }
-                        if request.includeRawChunks {
-                            continuation.yield(.raw(raw))
-                        }
                         if let streamError = openAICompatibleStreamError(from: raw) {
                             finishReason = "error"
-                            continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
+                            if shouldThrowPreOutputStreamErrors {
+                                let providerError = openAIProviderStreamError(from: streamError.rawValue)
+                                if !hasOutputStarted {
+                                    if let providerError {
+                                        throw openAIProviderStreamAPICallError(providerError, providerID: providerID)
+                                    }
+                                    throw AIError.apiCall(AIAPICallError(
+                                        provider: providerID,
+                                        statusCode: 500,
+                                        responseBody: streamError.message
+                                    ))
+                                }
+                                if request.includeRawChunks {
+                                    continuation.yield(.raw(raw))
+                                }
+                                if let providerError {
+                                    continuation.yield(.providerError(providerError))
+                                } else {
+                                    continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
+                                }
+                            } else {
+                                if request.includeRawChunks {
+                                    continuation.yield(.raw(raw))
+                                }
+                                continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
+                            }
                             continue
+                        }
+                        if request.includeRawChunks {
+                            continuation.yield(.raw(raw))
                         }
                         let suppressZeroCreatedTimestamp = isOpenAIBackedProvider(providerID, config: config)
                         if !didEmitResponseMetadata,
@@ -118,6 +170,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                         finishUsage = usage(from: raw) ?? finishUsage
                         let delta = choice?["delta"]
                         if let reasoning = delta?["reasoning_content"]?.stringValue ?? delta?["reasoning"]?.stringValue {
+                            if !reasoning.isEmpty { hasOutputStarted = true }
                             let id = activeReasoningID ?? "reasoning-0"
                             if activeReasoningID == nil {
                                 activeReasoningID = id
@@ -125,19 +178,36 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                             }
                             continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning))
                         }
-                        if let delta = delta?["content"]?.stringValue {
-                            if let reasoningID = activeReasoningID {
-                                continuation.yield(.reasoningEnd(id: reasoningID))
-                                activeReasoningID = nil
+                        for contentPart in openAICompatibleChatContentParts(delta?["content"]) {
+                            switch contentPart {
+                            case let .reasoning(reasoning):
+                                if !reasoning.isEmpty { hasOutputStarted = true }
+                                if let textID = activeTextID {
+                                    continuation.yield(.textEnd(id: textID))
+                                    activeTextID = nil
+                                }
+                                let id = activeReasoningID ?? "reasoning-0"
+                                if activeReasoningID == nil {
+                                    activeReasoningID = id
+                                    continuation.yield(.reasoningStart(id: id))
+                                }
+                                continuation.yield(.reasoningDeltaPart(id: id, delta: reasoning))
+                            case let .text(text):
+                                if !text.isEmpty { hasOutputStarted = true }
+                                if let reasoningID = activeReasoningID {
+                                    continuation.yield(.reasoningEnd(id: reasoningID))
+                                    activeReasoningID = nil
+                                }
+                                let id = activeTextID ?? "txt-0"
+                                if activeTextID == nil {
+                                    activeTextID = id
+                                    continuation.yield(.textStart(id: id))
+                                }
+                                continuation.yield(.textDeltaPart(id: id, delta: text))
                             }
-                            let id = activeTextID ?? "txt-0"
-                            if activeTextID == nil {
-                                activeTextID = id
-                                continuation.yield(.textStart(id: id))
-                            }
-                            continuation.yield(.textDeltaPart(id: id, delta: delta))
                         }
                         if let toolCallDeltas = delta?["tool_calls"]?.arrayValue {
+                            if !toolCallDeltas.isEmpty { hasOutputStarted = true }
                             if let reasoningID = activeReasoningID {
                                 continuation.yield(.reasoningEnd(id: reasoningID))
                                 activeReasoningID = nil
@@ -155,6 +225,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                                     continuation.yield(part)
                                 }
                             }
+                        }
+                        if delta?["annotations"]?.arrayValue?.isEmpty == false {
+                            hasOutputStarted = true
                         }
                         if let reason = choice?["finish_reason"]?.stringValue {
                             finishReason = openAICompatibleFinishReason(reason)
@@ -286,7 +359,7 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         let systemMessageMode = options.removeValue(forKey: "systemMessageMode")?.stringValue
             ?? options.removeValue(forKey: "system_message_mode")?.stringValue
             ?? (isReasoningModel ? "developer" : "system")
-        if openAICompatibleProviderRoot(providerID) == "openai",
+        if (openAICompatibleProviderRoot(providerID) == "openai" || usesGenericOpenAICompatibleProviderOptions),
            options["reasoning_effort"] == nil,
            let reasoning = request.reasoning,
            reasoning != "provider-default" {
@@ -420,12 +493,15 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                 "content": .string(message.combinedText)
             ]
             output["tool_calls"] = .array(toolCalls.map { call in
+                let arguments = isOpenAIBackedProvider(providerID)
+                    ? openAIChatSerializedToolCallArguments(call.arguments)
+                    : call.arguments
                 var toolCall: [String: JSONValue] = [
                     "id": .string(call.id),
                     "type": .string("function"),
                     "function": .object([
                         "name": .string(call.name),
-                        "arguments": .string(call.arguments)
+                        "arguments": .string(arguments)
                     ])
                 ]
                 let thoughtSignature = providerOptionsKey.flatMap { call.providerMetadata[$0]?["thoughtSignature"]?.stringValue }
@@ -514,6 +590,45 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             "role": .string(systemRole ?? message.role.rawValue),
             "content": .array(parts)
         ])
+    }
+}
+
+private func openAIChatSerializedToolCallArguments(_ arguments: String) -> String {
+    guard let parsed = try? decodeJSONBody(Data(arguments.utf8)),
+          parsed.objectValue != nil else {
+        return "{}"
+    }
+    return arguments
+}
+
+private enum OpenAICompatibleChatContentPart {
+    case text(String)
+    case reasoning(String)
+}
+
+/// OpenAI-compatible servers increasingly return chat `content` as an array.
+/// Keep the recognized text/thinking subset and ignore future part types, as
+/// the upstream provider does, instead of rejecting the whole stream chunk.
+private func openAICompatibleChatContentParts(_ value: JSONValue?) -> [OpenAICompatibleChatContentPart] {
+    guard let value, value != .null else { return [] }
+    if let text = value.stringValue {
+        return [.text(text)]
+    }
+    guard let parts = value.arrayValue else { return [] }
+    return parts.compactMap { part in
+        switch part["type"]?.stringValue {
+        case "text":
+            guard let text = part["text"]?.stringValue else { return nil }
+            return .text(text)
+        case "thinking":
+            let reasoning = part["thinking"]?.arrayValue?.compactMap { chunk -> String? in
+                guard chunk["type"]?.stringValue == "text" else { return nil }
+                return chunk["text"]?.stringValue
+            }.joined() ?? ""
+            return reasoning.isEmpty ? nil : .reasoning(reasoning)
+        default:
+            return nil
+        }
     }
 }
 

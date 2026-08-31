@@ -102,7 +102,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer groq-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/4.0.30")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/groq/4.0.35")
 }
 @Test func groqLanguageMapsMissingFinishReasonToOther() async throws {
     let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"gemma2-9b-it","choices":[{"index":0,"message":{"content":"ok"},"finish_reason":null}]}"#))
@@ -125,14 +125,26 @@ import Testing
     #expect(result.reasoning == "thinking only")
     #expect(result.finishReason == "stop")
 }
+
+@Test func groqUsageClampsTextTokensWhenReasoningExceedsCompletion() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"qwen/qwen3.6-27b","choices":[{"message":{"content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"completion_tokens_details":{"reasoning_tokens":8}}}"#))
+    let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
+
+    let result = try await provider.languageModel("qwen/qwen3.6-27b").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.usage?.outputTextTokens == 0)
+    #expect(result.usage?.outputReasoningTokens == 8)
+}
+
 @Test func groqLanguageMapsTopLevelReasoningLikeUpstream() async throws {
     func bodyAndWarnings(
         reasoning: String?,
+        modelID: String = "openai/gpt-oss-20b",
         providerOptions: [String: JSONValue] = [:]
     ) async throws -> ([String: JSONValue], [AIWarning]) {
         let transport = RecordingTransport(response: jsonResponse(#"{"id":"groq-1","model":"openai/gpt-oss-20b","choices":[{"message":{"content":"answer"},"finish_reason":"stop"}]}"#))
         let provider = try AIProviders.groq(settings: ProviderSettings(apiKey: "groq-key", transport: transport))
-        let model = try provider.languageModel("openai/gpt-oss-20b")
+        let model = try provider.languageModel(modelID)
 
         let result = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
@@ -170,7 +182,20 @@ import Testing
 
     let (noneBody, noneWarnings) = try await bodyAndWarnings(reasoning: "none")
     #expect(noneBody["reasoning_effort"] == nil)
-    #expect(noneWarnings.isEmpty)
+    #expect(noneWarnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "reasoning",
+            message: #"reasoning "none" is not supported by this model."#
+        )
+    ])
+
+    let (qwenNoneBody, qwenNoneWarnings) = try await bodyAndWarnings(
+        reasoning: "none",
+        modelID: "qwen/qwen3.6-27b"
+    )
+    #expect(qwenNoneBody["reasoning_effort"]?.stringValue == "none")
+    #expect(qwenNoneWarnings.isEmpty)
 
     let (providerDefaultBody, providerDefaultWarnings) = try await bodyAndWarnings(reasoning: "provider-default")
     #expect(providerDefaultBody["reasoning_effort"] == nil)

@@ -12,6 +12,7 @@ import Testing
         transport: transport
     ))
     let model = try provider.embeddingModel("amazon.titan-embed-text-v2:0")
+    #expect(model.maxEmbeddingsPerCall == 1)
 
     let result = try await model.embed(EmbeddingRequest(values: ["hello"], dimensions: 256))
 
@@ -122,6 +123,7 @@ import Testing
     }
 
     let cohere = try provider.embeddingModel("cohere.embed-english-v3")
+    #expect(cohere.maxEmbeddingsPerCall == 96)
     let values = (0..<97).map { "value-\($0)" }
     await #expect(throws: AITooManyEmbeddingValuesForCallError(
         provider: "amazon-bedrock",

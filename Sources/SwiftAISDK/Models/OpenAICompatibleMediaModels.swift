@@ -4,7 +4,10 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
     public let providerID: String
     public let modelID: String
     private let config: ModelHTTPConfig
-    private var maxEmbeddingsPerCall: Int { config.maxEmbeddingsPerCall ?? 2048 }
+    public var maxEmbeddingsPerCall: Int? { config.maxEmbeddingsPerCall ?? 2048 }
+    public var maxInputBytesPerCall: Int? {
+        isOpenAIBackedProvider(providerID, config: config) ? 300_000 : nil
+    }
 
     init(modelID: String, config: ModelHTTPConfig) {
         self.providerID = config.providerID
@@ -13,6 +16,7 @@ public final class OpenAICompatibleEmbeddingModel: EmbeddingModel, @unchecked Se
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
+        let maxEmbeddingsPerCall = maxEmbeddingsPerCall ?? 2048
         guard request.values.count <= maxEmbeddingsPerCall else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,

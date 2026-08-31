@@ -41,7 +41,7 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     let input = try #require(body["input"]?.arrayValue)
-    #expect(input.count == 2)
+    try #require(input.count == 2)
     #expect(input[0]["type"]?.stringValue == "tool_search_call")
     #expect(input[0]["id"]?.stringValue == "tsc_hosted_123")
     #expect(input[0]["execution"]?.stringValue == "server")
@@ -219,7 +219,7 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     let input = try #require(body["input"]?.arrayValue)
-    #expect(input.count == 2)
+    try #require(input.count == 2)
     #expect(input[0]["type"]?.stringValue == "item_reference")
     #expect(input[0]["id"]?.stringValue == "tsc_hosted_123")
     #expect(input[1]["type"]?.stringValue == "item_reference")
@@ -269,7 +269,7 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     let input = try #require(body["input"]?.arrayValue)
-    #expect(input.count == 2)
+    try #require(input.count == 2)
     #expect(input[0]["type"]?.stringValue == "tool_search_call")
     #expect(input[0]["id"]?.stringValue == "tsc_client_1")
     #expect(input[0]["execution"]?.stringValue == "client")

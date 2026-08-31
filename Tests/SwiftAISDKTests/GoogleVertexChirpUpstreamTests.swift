@@ -52,7 +52,7 @@ import Testing
     #expect(headers["authorization"] == "Bearer token")
     #expect(headers["custom-provider-header"] == "provider-value")
     #expect(headers["custom-request-header"] == "request-value")
-    #expect(headers["user-agent"] == "ai-sdk/google-vertex/5.0.61")
+    #expect(headers["user-agent"] == "ai-sdk/google-vertex/5.0.70")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body == [
         "input": ["text": "Hello from the AI SDK!"],

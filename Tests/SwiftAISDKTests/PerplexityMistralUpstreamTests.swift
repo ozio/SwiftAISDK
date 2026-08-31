@@ -37,6 +37,7 @@ import Testing
     let transport = RecordingTransport(response: jsonResponse(#"{"data":[{"embedding":"/wB/gA=="}]}"#))
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
     let model = try provider.embeddingModel("pplx-embed-v1-4b")
+    #expect(model.maxEmbeddingsPerCall == 512)
 
     let result = try await model.embed(EmbeddingRequest(
         values: ["hello"],

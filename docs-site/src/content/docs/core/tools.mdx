@@ -68,6 +68,13 @@ let transfer = AITool(
 
 Approval requests and responses are represented as typed result and stream parts. When you use signed approval replay, pass a `toolApprovalSecret` so approvals from persisted messages can be verified before a tool is executed. Invalid or tampered signatures fail with `AIInvalidToolApprovalSignatureError`.
 
+An approval policy can return `context.userApproval(reason: "...")` to preserve
+a human-readable justification on `AIToolApprovalRequest.reason` and in
+telemetry. Returning `.userApproval` remains the reason-free shorthand.
+If an approved persisted call no longer validates against the current tool
+schema, SwiftAISDK does not execute it; the model receives a tool-error result
+and can continue the turn safely.
+
 ## Streamed Tool Input
 
 Tools can observe streamed arguments before execution:

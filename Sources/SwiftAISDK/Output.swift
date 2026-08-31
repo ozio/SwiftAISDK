@@ -496,7 +496,8 @@ public enum Output {
 }
 
 private func shouldParseOutput(from result: TextGenerationResult) -> Bool {
-    !(result.finishReason == "tool-calls" && result.text.isEmpty)
+    result.finishReason == "stop"
+        || (result.finishReason != "tool-calls" && !result.text.isEmpty)
 }
 
 private func optionalOutputResult<Output: Sendable>(

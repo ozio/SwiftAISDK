@@ -182,6 +182,7 @@ public enum MCPOAuth {
         let grantType = "authorization_code"
         try validateGrantType(grantType, metadata: metadata)
         let tokenURL = metadata?.tokenEndpoint ?? (URL(string: "/token", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL)
+        try assertSafeMCPOAuthEndpoint(tokenURL)
         var parameters = [
             URLQueryItem(name: "grant_type", value: grantType),
             URLQueryItem(name: "code", value: authorizationCode),
@@ -215,6 +216,7 @@ public enum MCPOAuth {
         let grantType = "refresh_token"
         try validateGrantType(grantType, metadata: metadata)
         let tokenURL = metadata?.tokenEndpoint ?? (URL(string: "/token", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL)
+        try assertSafeMCPOAuthEndpoint(tokenURL)
         var parameters = [
             URLQueryItem(name: "grant_type", value: grantType),
             URLQueryItem(name: "refresh_token", value: refreshToken)
@@ -254,6 +256,7 @@ public enum MCPOAuth {
         } else {
             registrationURL = URL(string: "/register", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL
         }
+        try assertSafeMCPOAuthEndpoint(registrationURL)
         var registrationMetadata = clientMetadata.jsonValue.objectValue ?? [:]
         registrationMetadata["application_type"] = .string(
             (clientMetadata.applicationType ?? inferMCPOAuthApplicationType(clientMetadata.redirectURIs)).rawValue
@@ -263,7 +266,8 @@ public enum MCPOAuth {
             method: "POST",
             url: registrationURL,
             headers: ["Content-Type": "application/json"],
-            body: body
+            body: body,
+            followRedirects: false
         ))
         try throwOAuthServerErrorIfNeeded(response)
         return try MCPOAuthClientInformationFull(json: response.jsonValue())
@@ -315,6 +319,11 @@ func authInternal(
         authorizationServerURL: resolvedAuthorizationServerURL,
         metadata: metadata
     )
+    let selectedScope = selectedAuthorizationScope(
+        challengeScope: scope,
+        resourceMetadata: resourceMetadata,
+        clientScope: provider.clientMetadata.scope
+    )
 
     var clientInformation = try await provider.clientInformation()
     if let clientInformation, clientInformation.issuer != nil,
@@ -334,10 +343,12 @@ func authInternal(
         guard provider.supportsDynamicClientRegistration else {
             throw MCPClientError(message: "OAuth client information must be saveable for dynamic registration")
         }
+        var clientMetadata = provider.clientMetadata
+        clientMetadata.scope = selectedScope
         let fullInformation = try await MCPOAuth.registerClient(
             authorizationServerURL: resolvedAuthorizationServerURL,
             metadata: metadata,
-            clientMetadata: provider.clientMetadata,
+            clientMetadata: clientMetadata,
             transport: transport
         )
         let pinnedClientInformation = fullInformation.clientInformation.withAuthorizationServerInformation(currentAuthorizationServerInformation)
@@ -418,11 +429,7 @@ func authInternal(
         metadata: metadata,
         clientInformation: clientInformation,
         redirectURL: provider.redirectURL,
-        scope: selectedAuthorizationScope(
-            challengeScope: scope,
-            resourceMetadata: resourceMetadata,
-            clientScope: provider.clientMetadata.scope
-        ),
+        scope: selectedScope,
         state: state,
         resource: resource
     )
@@ -511,7 +518,8 @@ func inferMCPOAuthApplicationType(_ redirectURIs: [URL]) -> MCPOAuthApplicationT
     let everyRedirectIsNative = redirectURIs.allSatisfy { redirectURI in
         guard let scheme = redirectURI.scheme?.lowercased() else { return false }
         guard scheme == "http" || scheme == "https" else { return true }
-        let host = redirectURI.host?.lowercased() ?? ""
+        let rawHost = redirectURI.host?.lowercased() ?? ""
+        let host = rawHost.hasSuffix(".") ? String(rawHost.dropLast()) : rawHost
         return host == "localhost"
             || host.hasSuffix(".localhost")
             || host == "127.0.0.1"

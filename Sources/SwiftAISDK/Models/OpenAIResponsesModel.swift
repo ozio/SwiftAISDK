@@ -139,10 +139,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     }
                     var openResponsesHasToolCalls = false
                     var hasOutputStarted = false
+                    var encounteredStreamError = false
                     var fallbackFinishReason: String? = "other"
                     let shouldThrowPreOutputStreamErrors = isOpenAIBackedProvider(providerID, config: config)
                     var sourceCounter = 0
                     var pendingCompletedResponse: JSONValue?
+                    var pendingCompletedResponseType: String?
                     let openResponsesProviderOptionsName: String?
                     if case let .openResponses(providerOptionsName) = config.responsesRequestMode {
                         openResponsesProviderOptionsName = providerOptionsName
@@ -160,15 +162,30 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                             continuation.yield(.error(message: openAIResponsesChatCompletionsMismatchMessage, rawValue: raw))
                             continue
                         }
+                        if let validationMessage = openAIResponsesKnownStreamEventValidationMessage(raw) {
+                            encounteredStreamError = true
+                            fallbackFinishReason = "error"
+                            continuation.yield(.error(message: validationMessage, rawValue: raw))
+                            continue
+                        }
                         if raw["type"]?.stringValue == "error" {
                             if shouldThrowPreOutputStreamErrors && !hasOutputStarted {
                                 throw openAIResponsesStreamAPIError(raw, providerID: providerID)
                             }
+                            encounteredStreamError = true
                             fallbackFinishReason = "error"
-                            continuation.yield(.error(
-                                message: raw["message"]?.stringValue ?? raw["error"]?["message"]?.stringValue ?? "OpenAI Responses stream error.",
-                                rawValue: raw
-                            ))
+                            if let providerError = providerID == "xai.responses"
+                                ? xaiResponsesStreamProviderError(from: raw)
+                                : shouldThrowPreOutputStreamErrors
+                                    ? openAIProviderStreamError(from: raw)
+                                    : nil {
+                                continuation.yield(.providerError(providerError))
+                            } else {
+                                continuation.yield(.error(
+                                    message: raw["message"]?.stringValue ?? raw["error"]?["message"]?.stringValue ?? "OpenAI Responses stream error.",
+                                    rawValue: raw
+                                ))
+                            }
                             continue
                         }
                         let responsePayload = raw["response"] ?? raw
@@ -180,14 +197,23 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 continuation.yield(.reasoningEnd(id: reasoningID))
                             }
                             if let completedResponse = pendingCompletedResponse {
-                                let completedFinishReason = completedResponse["status"]?.stringValue == "failed" &&
-                                    completedResponse["incomplete_details"]?["reason"]?.stringValue == nil
-                                    ? "error"
-                                    : openResponsesStreamFinishReason(
-                                        response: completedResponse,
-                                        hasToolCalls: openResponsesHasToolCalls,
-                                        mode: config.responsesRequestMode
-                                    )
+                                let completedWasFailed = pendingCompletedResponseType == "response.failed"
+                                    || completedResponse["status"]?.stringValue == "failed"
+                                let completedFinishReason = completedWasFailed
+                                    ? completedResponse["incomplete_details"]?["reason"]?.stringValue == nil
+                                        ? "error"
+                                        : openResponsesStreamFinishReason(
+                                            response: completedResponse,
+                                            hasToolCalls: openResponsesHasToolCalls,
+                                            mode: config.responsesRequestMode
+                                        )
+                                    : encounteredStreamError
+                                        ? "error"
+                                        : openResponsesStreamFinishReason(
+                                            response: completedResponse,
+                                            hasToolCalls: openResponsesHasToolCalls,
+                                            mode: config.responsesRequestMode
+                                        )
                                 continuation.yield(.finishMetadata(
                                     reason: completedFinishReason,
                                     usage: tokenUsage(from: completedResponse),
@@ -203,6 +229,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 ))
                             }
                             pendingCompletedResponse = nil
+                            pendingCompletedResponseType = nil
                             providerMetadata = [:]
                             streamOutputLogprobs = []
                             textItemPhases = [:]
@@ -313,8 +340,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                            let logprobs = raw["logprobs"] {
                             streamOutputLogprobs.append(logprobs)
                         }
-                        if openResponsesProviderOptionsName == nil,
-                           let delta = raw["delta"]?.stringValue,
+                        if let delta = raw["delta"]?.stringValue,
                            raw["type"]?.stringValue == "response.reasoning_summary_text.delta" {
                             let eventItemID = raw["item_id"]?.stringValue ?? "reasoning-0"
                             let summaryIndex = raw["summary_index"]?.intValue ?? 0
@@ -483,15 +509,36 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         }
                         if raw["type"]?.stringValue == "response.completed" {
                             pendingCompletedResponse = raw["response"] ?? raw
+                            pendingCompletedResponseType = "response.completed"
                         } else if raw["type"]?.stringValue == "response.incomplete" {
                             let response = raw["response"] ?? raw
                             pendingCompletedResponse = response
+                            pendingCompletedResponseType = "response.incomplete"
                         } else if raw["type"]?.stringValue == "response.failed" {
                             let response = raw["response"] ?? raw
                             if shouldThrowPreOutputStreamErrors && !hasOutputStarted {
-                                throw openAIResponsesStreamFailedError(response, providerID: providerID)
+                                throw openAIResponsesStreamFailedError(raw, providerID: providerID)
+                            }
+                            if !encounteredStreamError {
+                                encounteredStreamError = true
+                                fallbackFinishReason = "error"
+                                if let providerError = providerID == "xai.responses"
+                                    ? xaiResponsesStreamProviderError(from: raw)
+                                    : shouldThrowPreOutputStreamErrors
+                                        ? openAIProviderStreamError(from: raw)
+                                        : nil {
+                                    continuation.yield(.providerError(providerError))
+                                } else {
+                                    continuation.yield(.error(
+                                        message: response["error"]?["message"]?.stringValue
+                                            ?? raw["error"]?["message"]?.stringValue
+                                            ?? "Responses stream failed.",
+                                        rawValue: raw
+                                    ))
+                                }
                             }
                             pendingCompletedResponse = response
+                            pendingCompletedResponseType = "response.failed"
                         }
                     }
                     for textID in activeTextPartIDs.sorted() {
@@ -504,14 +551,23 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         continuation.yield(eventPart)
                     }
                     if let response = pendingCompletedResponse {
-                        let finishReason = response["status"]?.stringValue == "failed" &&
-                            response["incomplete_details"]?["reason"]?.stringValue == nil
-                            ? "error"
-                            : openResponsesStreamFinishReason(
-                                response: response,
-                                hasToolCalls: openResponsesHasToolCalls,
-                                mode: config.responsesRequestMode
-                            )
+                        let completedWasFailed = pendingCompletedResponseType == "response.failed"
+                            || response["status"]?.stringValue == "failed"
+                        let finishReason = completedWasFailed
+                            ? response["incomplete_details"]?["reason"]?.stringValue == nil
+                                ? "error"
+                                : openResponsesStreamFinishReason(
+                                    response: response,
+                                    hasToolCalls: openResponsesHasToolCalls,
+                                    mode: config.responsesRequestMode
+                                )
+                            : encounteredStreamError
+                                ? "error"
+                                : openResponsesStreamFinishReason(
+                                    response: response,
+                                    hasToolCalls: openResponsesHasToolCalls,
+                                    mode: config.responsesRequestMode
+                                )
                         let finishUsage = tokenUsage(from: response)
                         continuation.yield(.finishMetadata(
                             reason: finishReason,
@@ -633,6 +689,15 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             guard object?["id"]?.stringValue == "openai.computer" else { return nil }
             return object?["name"]?.stringValue ?? name
         })
+        let declaredToolSearchToolName = request.tools.compactMap { name, schema -> String? in
+            let object = schema.objectValue
+            guard object?["id"]?.stringValue == "openai.tool_search" else { return nil }
+            return object?["name"]?.stringValue ?? name
+        }.first
+        let declaresRegularToolSearchFunction = openAIResponsesFunctionToolNames(from: request.tools)
+            .contains("tool_search")
+        let toolSearchToolName = declaredToolSearchToolName
+            ?? (declaresRegularToolSearchFunction ? nil : "tool_search")
         let useDeveloperRoleForSystem = isEffectiveReasoningModel
         let compactionTrigger = (options.removeValue(forKey: "compactionTrigger")
             ?? options.removeValue(forKey: "compaction_trigger"))?.boolValue == true
@@ -658,6 +723,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                 providerDefinedToolNames: providerDefinedToolNames,
                 shellToolNames: shellToolNames,
                 computerToolNames: computerToolNames,
+                toolSearchToolName: toolSearchToolName,
                 providerID: providerID,
                 useDeveloperRoleForSystem: useDeveloperRoleForSystem,
                 warnings: &warnings
@@ -773,4 +839,42 @@ let openAIResponsesChatCompletionsMismatchMessage =
 
 func openAIResponsesIsChatCompletionsStreamChunk(_ raw: JSONValue) -> Bool {
     raw["choices"]?.arrayValue != nil && raw["type"]?.stringValue == nil
+}
+
+func openAIResponsesKnownStreamEventValidationMessage(_ raw: JSONValue) -> String? {
+    guard let type = raw["type"]?.stringValue else { return nil }
+
+    let isMissingOutputIndex = raw["output_index"]?.intValue == nil
+    switch type {
+    case "response.function_call_arguments.delta":
+        guard raw["item_id"]?.stringValue != nil,
+              !isMissingOutputIndex,
+              raw["delta"]?.stringValue != nil else {
+            return "Known response chunk failed schema validation"
+        }
+    case "response.function_call_arguments.done":
+        guard raw["item_id"]?.stringValue != nil,
+              !isMissingOutputIndex,
+              raw["arguments"]?.stringValue != nil else {
+            return "Known response chunk failed schema validation"
+        }
+    case "response.output_item.added", "response.output_item.done":
+        guard let itemType = raw["item"]?["type"]?.stringValue else {
+            return "Known response chunk failed schema validation"
+        }
+        // Upstream deliberately treats unmodelled future item types as unknown
+        // events. Only validate the modeled function-call shape here.
+        guard itemType != "function_call" || (
+            !isMissingOutputIndex
+                && raw["item"]?["id"]?.stringValue != nil
+                && raw["item"]?["call_id"]?.stringValue != nil
+                && raw["item"]?["name"]?.stringValue != nil
+                && raw["item"]?["arguments"]?.stringValue != nil
+        ) else {
+            return "Known response chunk failed schema validation"
+        }
+    default:
+        break
+    }
+    return nil
 }

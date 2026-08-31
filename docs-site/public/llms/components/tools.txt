@@ -8,9 +8,9 @@ Source URL: /components/tools/
 | --- | --- |
 | Case | 34 |
 | Enumeration | 3 |
-| Initializer | 24 |
-| Instance Method | 3 |
-| Instance Property | 139 |
+| Initializer | 25 |
+| Instance Method | 4 |
+| Instance Property | 140 |
 | Structure | 24 |
 | Type Alias | 7 |
 | Type Method | 4 |
@@ -65,6 +65,7 @@ Source URL: /components/tools/
 | Initializer | `init(id:sourceType:url:title:mediaType:filename:providerMetadata:rawValue:)` | `init(id: String, sourceType: String, url: String? = nil, title: String? = nil, mediaType: String? = nil, filename: String? = nil, providerMetadata: [String : JSONValue] = [:], rawValue: JSONValue? = nil)` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(id:timestamp:modelID:headers:body:)` | `init(id: String? = nil, timestamp: Date? = nil, modelID: String? = nil, headers: [String : String] = [:], body: JSONValue? = nil)` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(id:toolName:arguments:toolCallID:isAutomatic:providerMetadata:)` | `init(id: String, toolName: String, arguments: String, toolCallID: String? = nil, isAutomatic: Bool = false, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
+| Initializer | `init(id:toolName:arguments:toolCallID:reason:isAutomatic:providerMetadata:)` | `init(id: String, toolName: String, arguments: String, toolCallID: String? = nil, reason: String? = nil, isAutomatic: Bool = false, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(index:content:text:reasoning:finishReason:usage:files:toolCalls:toolResults:toolApprovalRequests:toolApprovalResponses:sources:warnings:providerMetadata:responseMetadata:)` | `init(index: Int, content: [AIResultContentPart] = [], text: String, reasoning: String = "", finishReason: String? = nil, usage: TokenUsage? = nil, files: [AIStreamFile] = [], toolCalls: [AIToolCall] = [], toolResults: [AIToolResult] = [], toolApprovalRequests: [AIToolApprovalRequest] = [], toolApprovalResponses: [AIToolApprovalResponse] = [], sources: [AISource] = [], warnings: [AIWarning] = [], providerMetadata: [String : JSONValue] = [:], responseMetadata: AIResponseMetadata = AIResponseMetadata())` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(index:id:type:functionName:arguments:rawValue:)` | `init(index: Int? = nil, id: String? = nil, type: String? = nil, functionName: String? = nil, arguments: String? = nil, rawValue: JSONValue? = nil)` | [Sources/SwiftAISDK/StreamingToolCallTracker.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamingToolCallTracker.swift) |
 | Initializer | `init(model:request:executableTools:)` | `init(model: (any LanguageModel)? = nil, request: LanguageModelRequest? = nil, executableTools: [AITool]? = nil)` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
@@ -83,6 +84,7 @@ Source URL: /components/tools/
 | Instance Method | `flush()` | `mutating func flush() -> [LanguageStreamPart]` | [Sources/SwiftAISDK/StreamingToolCallTracker.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamingToolCallTracker.swift) |
 | Instance Method | `inputSchema(for:)` | `func inputSchema(for toolName: String) throws -> JSONValue` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Method | `processDelta(_:)` | `mutating func processDelta(_ delta: AIStreamingToolCallDelta) throws -> [LanguageStreamPart]` | [Sources/SwiftAISDK/StreamingToolCallTracker.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamingToolCallTracker.swift) |
+| Instance Method | `userApproval(reason:)` | `func userApproval(reason: String? = nil) -> AIToolApprovalStatus` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
@@ -171,6 +173,7 @@ Source URL: /components/tools/
 | Instance Property | `rawValue` | `var rawValue: JSONValue?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `rawValue` | `var rawValue: JSONValue?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `rawValue` | `var rawValue: JSONValue?` | [Sources/SwiftAISDK/StreamingToolCallTracker.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamingToolCallTracker.swift) |
+| Instance Property | `reason` | `var reason: String?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `reason` | `var reason: String?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `reasoning` | `var reasoning: String` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `refineArguments` | `var refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |

@@ -32,7 +32,7 @@ import Testing
     #expect(requests.allSatisfy { $0.url.absoluteString == "https://api.minimax.io/anthropic/v1/messages" })
     #expect(requests.allSatisfy { $0.headers["x-api-key"] == "env-key" })
     #expect(requests.allSatisfy { $0.headers["anthropic-version"] == "2023-06-01" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "ai-sdk/minimax/3.0.17" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "ai-sdk/minimax/3.0.22" })
 }
 
 @Test func miniMaxCustomConfigurationMatchesUpstreamHeaderPrecedence() async throws {
@@ -61,7 +61,7 @@ import Testing
     #expect(request.headers["x-api-key"] == "header-key")
     #expect(request.headers["anthropic-version"] == "custom-version")
     #expect(request.headers["x-custom"] == "custom-value")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/minimax/3.0.17")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/minimax/3.0.22")
 }
 
 @Test func miniMaxRequiresAPIKeyLikeUpstream() throws {
@@ -379,7 +379,7 @@ import Testing
     #expect(requests[0].headers["authorization"] == "Bearer video-key")
     #expect(requests[0].headers["x-api-key"] == nil)
     #expect(requests[0].headers["anthropic-version"] == nil)
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/minimax/3.0.17")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/minimax/3.0.22")
     #expect(requests[0].headers["x-request"] == "video")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "MiniMax-H3")
@@ -489,7 +489,7 @@ import Testing
     #expect(result.warnings.map(\.feature) == [
         "fps", "seed", "n", "generateAudio", "resolution", "inputReferences", "aspectRatio", "duration", "duration"
     ])
-    #expect(result.warnings[4].message == "Unrecognized resolution \"1080p\". MiniMax-H3 only supports \"2K\", so providerOptions.minimax.resolution (\"2K\") was used instead.")
+    #expect(result.warnings[4].message == "Unrecognized resolution \"1080p\". MiniMax-H3 supports \"2K\" or \"768P\", so providerOptions.minimax.resolution (\"2K\") was used instead.")
     #expect(result.warnings[5].message == "MiniMax-H3 cannot combine frame images with reference inputs. The references were ignored.")
     #expect(result.warnings[7].message == "MiniMax-H3 requires a whole number of seconds. The requested duration of 15.6 was rounded to 16.")
     #expect(result.warnings[8].message == "MiniMax-H3 supports at most 15 seconds. The requested duration of 15.6 was clamped to 15.")
@@ -505,6 +505,50 @@ import Testing
     #expect(body["content"]?[2]?["image_url"]?["url"]?.stringValue == "https://assets.example.com/last.jpg")
     #expect(result.providerMetadata["minimax"]?["resolvedInputs"]?["imageCount"]?.intValue == 2)
     #expect(result.providerMetadata["minimax"]?["resolvedInputs"]?["referenceVideoUrls"]?.arrayValue == [])
+}
+
+@Test func miniMaxVideoUsesModelAwareResolutionDurationAndReferenceRules() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"task_id":"task_h3"}"#),
+        jsonResponse(#"{"task":{"status":"succeeded","content":{"url":"https://cdn.example.com/h3.mp4"}}}"#),
+        jsonResponse(#"{"task_id":"task_h3_max"}"#),
+        jsonResponse(#"{"task":{"status":"succeeded","content":{"url":"https://cdn.example.com/h3-max.mp4"}}}"#)
+    ])
+    let provider = try AIProviders.miniMax(settings: MiniMaxProviderSettings(apiKey: "video-key", transport: transport))
+
+    let h3 = try await provider.video("MiniMax-H3").generateVideo(VideoGenerationRequest(
+        prompt: "H3",
+        durationSeconds: 3,
+        resolution: "1792x768",
+        providerOptions: ["minimax": ["pollIntervalMs": 1, "pollTimeoutMs": 1_000]]
+    ))
+    let h3Body = try decodeJSONBody(try #require((await transport.requests())[0].body))
+    #expect(h3Body["resolution"]?.stringValue == "768P")
+    #expect(h3Body["duration"]?.intValue == 4)
+    #expect(h3.warnings.contains { $0.feature == "duration" && $0.message?.contains("at least 4 seconds") == true })
+
+    let h3Max = try await provider.video("MiniMax-H3-Max").generateVideo(VideoGenerationRequest(
+        prompt: "H3 Max",
+        durationSeconds: 4,
+        inputReferences: [ImageInputFile(url: "https://assets.example.com/reference.png", mediaType: "image/png")],
+        resolution: "1120x480",
+        providerOptions: [
+            "minimax": [
+                "resolution": "2K",
+                "referenceAudioUrls": ["https://assets.example.com/reference.mp3"],
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ]
+        ]
+    ))
+    let h3MaxBody = try decodeJSONBody(try #require((await transport.requests())[2].body))
+    #expect(h3MaxBody["resolution"]?.stringValue == "480P")
+    #expect(h3MaxBody["duration"]?.intValue == 5)
+    #expect(h3MaxBody["content"]?.arrayValue?.count == 1)
+    #expect(h3Max.warnings.contains { $0.feature == "resolution" && $0.message?.contains("provider resolution \"2K\" was ignored") == true })
+    #expect(h3Max.warnings.contains { $0.feature == "inputReferences" && $0.message?.contains("does not support reference-to-video") == true })
+    #expect(h3Max.warnings.contains { $0.feature == "referenceAudioUrls" })
+    #expect(h3Max.warnings.contains { $0.feature == "duration" && $0.message?.contains("at least 5 seconds") == true })
 }
 
 @Test func miniMaxVideoRoutesAndCapsReferenceInputs() async throws {

@@ -30,6 +30,79 @@ import Testing
     #expect(content[3]["file_id"]?.stringValue == "file-api-deepseek")
 }
 
+@Test func deepSeekV4AppliesImageDetailAndFileDataOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-v4-flash-vision-exp")
+
+    _ = try await model.generate(LanguageModelRequest(messages: [
+        AIMessage(role: .user, content: [
+            .imageURL(
+                "https://example.com/image.webp",
+                providerMetadata: ["deepseek": ["imageDetail": "low"]]
+            ),
+            .file(
+                mimeType: "image/jpg",
+                data: Data([0, 1, 2, 3]),
+                filename: "sample.jpg",
+                providerMetadata: ["deepseek": ["fileData": true]]
+            )
+        ])
+    ]))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let content = try #require(body["messages"]?[0]?["content"]?.arrayValue)
+    #expect(content[0]["type"]?.stringValue == "image_url")
+    #expect(content[0]["image_url"]?["url"]?.stringValue == "https://example.com/image.webp")
+    #expect(content[0]["image_url"]?["detail"]?.stringValue == "low")
+    #expect(content[1]["type"]?.stringValue == "file")
+    #expect(content[1]["file_data"]?.stringValue == "data:image/jpeg;base64,AAECAw==")
+    #expect(content[1]["filename"]?.stringValue == "sample.jpg")
+}
+
+@Test func deepSeekV4RejectsInvalidImageOptionsFormatsAndLongURLsBeforeFetching() async throws {
+    let transport = RecordingTransport(response: jsonResponse("{}"))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
+    let model = try provider.languageModel("deepseek-v4-flash-vision-exp")
+
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .file(
+                    mimeType: "image/png",
+                    data: Data([0, 1, 2, 3]),
+                    providerMetadata: ["deepseek": ["fileData": true, "imageDetail": "high"]]
+                )
+            ])
+        ]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .imageURL(
+                    "https://example.com/image.png",
+                    providerMetadata: ["deepseek": ["fileData": true]]
+                )
+            ])
+        ]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .imageURL("https://example.com/\(String(repeating: "a", count: 8_192))")
+            ])
+        ]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await model.generate(LanguageModelRequest(messages: [
+            AIMessage(role: .user, content: [
+                .data(mimeType: "image/svg+xml", data: Data("<svg/>".utf8))
+            ])
+        ]))
+    }
+    #expect(await transport.requests().isEmpty)
+}
+
 @Test func deepSeekV4RejectsImageReferenceWithoutDeepSeekIdentifier() async throws {
     let transport = RecordingTransport(response: jsonResponse("{}"))
     let provider = try AIProviders.deepSeek(settings: ProviderSettings(apiKey: "deepseek-key", transport: transport))
@@ -75,6 +148,7 @@ import Testing
     #expect(result.mediaType == "image/png")
     #expect(result.warnings == [])
     #expect(result.providerMetadata["deepseek"]?["purpose"]?.stringValue == "user_data")
+    #expect(result.providerMetadata["deepseek"]?["object"]?.stringValue == "file")
     #expect(result.providerMetadata["deepseek"]?["bytes"]?.intValue == 1024)
     #expect(result.providerMetadata["deepseek"]?["createdAt"]?.intValue == 1_700_000_000)
     #expect(result.providerMetadata["deepseek"]?["expiresAt"]?.intValue == 1_700_003_600)
@@ -88,6 +162,56 @@ import Testing
     #expect(multipart.contains("name=\"purpose\"\r\n\r\nuser_data"))
     #expect(multipart.contains("name=\"expires_after[anchor]\"\r\n\r\ncreated_at"))
     #expect(multipart.contains("name=\"expires_after[seconds]\"\r\n\r\n3600"))
+}
+
+@Test func deepSeekFilesPreflightsImageFormatSizeAndUnicodeScalarFilename() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"file-api-valid"}"#))
+    let provider = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        transport: transport
+    ))
+    let files = provider.files()
+
+    _ = try await files.uploadFile(FileUploadRequest(
+        data: Data([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
+        mediaType: "application/octet-stream"
+    ))
+    #expect((await transport.requests()).count == 1)
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "data",
+        message: "DeepSeek file uploads support JPEG, PNG, GIF, and WebP images. Detected unsupported file content type \"application/pdf\"."
+    )) {
+        _ = try await files.uploadFile(FileUploadRequest(
+            data: Data([0x25, 0x50, 0x44, 0x46]),
+            mediaType: "image/png",
+            filename: "image.png"
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "data",
+        message: "DeepSeek file uploads must not exceed 64 MiB (67108864 bytes). Received 67108865 bytes."
+    )) {
+        _ = try await files.uploadFile(FileUploadRequest(
+            data: Data(count: 64 * 1_024 * 1_024 + 1),
+            mediaType: "image/png",
+            filename: "image.png"
+        ))
+    }
+    let tooManyScalars = String(repeating: "e\u{301}", count: 255) + "abc"
+    #expect(tooManyScalars.count < 512)
+    #expect(tooManyScalars.unicodeScalars.count == 513)
+    await #expect(throws: AIError.invalidArgument(
+        argument: "filename",
+        message: "DeepSeek filenames must not exceed 512 characters. Received 513 characters."
+    )) {
+        _ = try await files.uploadFile(FileUploadRequest(
+            data: Data([0x89, 0x50, 0x4E, 0x47]),
+            mediaType: "image/png",
+            filename: tooManyScalars
+        ))
+    }
+    #expect((await transport.requests()).count == 1)
 }
 
 @Test func deepSeekFilesValidatesExpiryRangeAndIntegerShape() async throws {
@@ -151,7 +275,7 @@ import Testing
     do {
         _ = try await provider.files().uploadFile(FileUploadRequest(
             data: Data([1]),
-            mediaType: "application/octet-stream"
+            mediaType: "image/png"
         ))
         Issue.record("Expected DeepSeek Files API error.")
     } catch let error as AIError {
@@ -161,5 +285,44 @@ import Testing
         #expect(apiError.responseBody == "File type is not supported")
         #expect(apiError.responseHeaders["x-request-id"] == "req-files-1")
         #expect(!apiError.isRetryable)
+    }
+}
+
+@Test func deepSeekFilesRejectsMisleadingOptionalResponseMetadataLikeUpstream() async throws {
+    let invalidFields: [(String, JSONValue)] = [
+        ("object", "not-a-file"),
+        ("object", 42),
+        ("filename", 42),
+        ("purpose", "assistants"),
+        ("purpose", 42),
+        ("bytes", -1),
+        ("bytes", 1.5),
+        ("created_at", -1),
+        ("created_at", 1.5),
+        ("expires_at", -1),
+        ("expires_at", 1.5)
+    ]
+
+    for (field, value) in invalidFields {
+        var response: [String: JSONValue] = ["id": "file-invalid"]
+        response[field] = value
+        let responseJSON = String(decoding: try encodeJSONBody(.object(response)), as: UTF8.self)
+        let transport = RecordingTransport(response: jsonResponse(responseJSON))
+        let provider = try AIProviders.deepSeek(settings: ProviderSettings(
+            apiKey: "deepseek-key",
+            transport: transport
+        ))
+
+        do {
+            _ = try await provider.files().uploadFile(FileUploadRequest(
+                data: Data([1, 2, 3]),
+                mediaType: "image/png"
+            ))
+            Issue.record("Expected invalid DeepSeek Files response for \(field)=\(value).")
+        } catch AIError.invalidResponse(let providerID, _) {
+            #expect(providerID == "deepseek.files")
+        } catch {
+            Issue.record("Expected AIError.invalidResponse for \(field), got \(error).")
+        }
     }
 }

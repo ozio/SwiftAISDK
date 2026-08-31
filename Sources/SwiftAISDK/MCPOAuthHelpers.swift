@@ -63,6 +63,35 @@ func checkResourceAllowed(requestedResource: URL, configuredResource: URL) -> Bo
     return requestedPath.hasPrefix(configuredPath)
 }
 
+func assertSafeMCPOAuthEndpoint(_ endpointURL: URL) throws {
+    let scheme = endpointURL.scheme?.lowercased()
+    let normalizedHost = (endpointURL.host ?? "")
+        .lowercased()
+        .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+
+    if (scheme == "http" || scheme == "https"),
+       normalizedHost == "localhost"
+        || normalizedHost.hasSuffix(".localhost")
+        || normalizedHost == "127.0.0.1"
+        || normalizedHost == "::1" {
+        return
+    }
+
+    do {
+        guard scheme == "http" || scheme == "https" else {
+            throw AIError.invalidArgument(
+                argument: "url",
+                message: "URL scheme must be http or https."
+            )
+        }
+        _ = try validateDownloadURL(endpointURL.absoluteString)
+    } catch {
+        throw MCPClientError(
+            message: "OAuth endpoint URL is not allowed: \(endpointURL.absoluteString)"
+        )
+    }
+}
+
 extension String {
     var trimmedTrailingSlashForOAuthDiscovery: String {
         var value = self == "/" ? "" : self

@@ -3,6 +3,7 @@ import Foundation
 public final class MistralEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID = "mistral.embedding"
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { 32 }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -11,11 +12,12 @@ public final class MistralEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        guard request.values.count <= 32 else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 32
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: 32,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }

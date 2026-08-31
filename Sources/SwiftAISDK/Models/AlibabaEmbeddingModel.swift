@@ -3,8 +3,8 @@ import Foundation
 public final class AlibabaEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID = "alibaba.embedding"
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { 10 }
     private let config: ModelHTTPConfig
-    private let maxEmbeddingsPerCall = 10
 
     init(modelID: String, config: ModelHTTPConfig) {
         self.modelID = modelID
@@ -12,11 +12,12 @@ public final class AlibabaEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        guard request.values.count <= maxEmbeddingsPerCall else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 10
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }

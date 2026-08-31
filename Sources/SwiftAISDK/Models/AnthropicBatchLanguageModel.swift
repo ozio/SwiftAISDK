@@ -39,6 +39,13 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
         var batchBetas = explicitBatchBetas
         var requests: [JSONValue] = []
         var warnings: [AIBatchWarning] = []
+        if options.webhookURL != nil {
+            warnings.append(AIBatchWarning(warning: AIWarning(
+                type: "unsupported",
+                feature: "webhookUrl",
+                message: "The Anthropic Message Batches API does not support completion webhooks."
+            )))
+        }
         requests.reserveCapacity(options.requests.count)
 
         for request in options.requests {
@@ -59,6 +66,21 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
                 modelID: modelID,
                 providerID: providerID
             )
+            if prepared.usesJSONToolResponseFormat {
+                throw AIError.invalidArgument(
+                    argument: "responseFormat",
+                    message: "Anthropic Message Batches cannot decode the JSON-tool structured-output fallback (request \"\(request.id)\") because batch results are retrieved independently of the start call. Use a model that supports native output_format structured outputs."
+                )
+            }
+            if let aliasedProviderTool = request.request.tools.first(where: { name, tool in
+                tool["type"]?.stringValue == "provider"
+                    && prepared.toolNameMapping.toProviderToolName(name) != name
+            }) {
+                throw AIError.invalidArgument(
+                    argument: "tools",
+                    message: "Anthropic Message Batches cannot restore the custom provider-tool name \"\(aliasedProviderTool.key)\" when results are retrieved independently of the start call (request \"\(request.id)\"). Use the provider's canonical tool name."
+                )
+            }
             var body = config.transformRequestBody?(prepared.body) ?? prepared.body
             body["stream"] = nil
             try validateAnthropicBatchBody(body, requestID: request.id)
@@ -123,9 +145,9 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
             )
         }
         guard let resultsURL = batch.resultsURL else {
-            throw AIError.invalidArgument(
-                argument: "batchID",
-                message: "Anthropic batch \"\(options.batchID)\" does not have a results URL."
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "Anthropic batch \"\(options.batchID)\" completed without batch output."
             )
         }
         var headers = prepareHeaders(options.headers, defaultHeaders: config.headers)
@@ -175,10 +197,12 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
 private struct AnthropicBatchResponse: Sendable {
     var id: String
     var processingStatus: String
-    var counts: (processing: Int, succeeded: Int, errored: Int, cancelled: Int, expired: Int)
+    var counts: [String: JSONValue]
     var createdAt: String
     var expiresAt: String
     var archivedAt: String?
+    var cancelInitiatedAt: String?
+    var endedAt: String?
     var resultsURL: String?
 }
 
@@ -187,14 +211,15 @@ private func parseAnthropicBatchResponse(_ value: JSONValue) throws -> Anthropic
           value["type"]?.stringValue == "message_batch",
           let processingStatus = value["processing_status"]?.stringValue,
           let rawCounts = value["request_counts"]?.objectValue,
-          let processing = anthropicBatchCount(rawCounts["processing"]),
-          let succeeded = anthropicBatchCount(rawCounts["succeeded"]),
-          let errored = anthropicBatchCount(rawCounts["errored"]),
-          let cancelled = anthropicBatchCount(rawCounts["canceled"]),
-          let expired = anthropicBatchCount(rawCounts["expired"]),
+          ["processing", "succeeded", "errored", "canceled", "expired"].allSatisfy({ key in
+              guard case let .number(number)? = rawCounts[key] else { return false }
+              return number.isFinite
+          }),
           let createdAt = value["created_at"]?.stringValue,
           let expiresAt = value["expires_at"]?.stringValue,
           isNullishString(value["archived_at"]),
+          isNullishString(value["cancel_initiated_at"]),
+          isNullishString(value["ended_at"]),
           isNullishString(value["results_url"]) else {
         throw AIError.invalidResponse(provider: "anthropic", message: "Invalid Message Batch response.")
     }
@@ -202,23 +227,14 @@ private func parseAnthropicBatchResponse(_ value: JSONValue) throws -> Anthropic
     return AnthropicBatchResponse(
         id: id,
         processingStatus: processingStatus,
-        counts: (processing, succeeded, errored, cancelled, expired),
+        counts: rawCounts,
         createdAt: createdAt,
         expiresAt: expiresAt,
         archivedAt: value["archived_at"]?.stringValue,
+        cancelInitiatedAt: value["cancel_initiated_at"]?.stringValue,
+        endedAt: value["ended_at"]?.stringValue,
         resultsURL: value["results_url"]?.stringValue
     )
-}
-
-private func anthropicBatchCount(_ value: JSONValue?) -> Int? {
-    guard let number = value?.doubleValue,
-          number.isFinite,
-          number.rounded(.towardZero) == number,
-          number >= Double(Int.min),
-          number <= Double(Int.max) else {
-        return nil
-    }
-    return Int(number)
 }
 
 private func isNullishString(_ value: JSONValue?) -> Bool {
@@ -227,21 +243,44 @@ private func isNullishString(_ value: JSONValue?) -> Bool {
 
 private func anthropicBatchStatus(_ batch: AnthropicBatchResponse) -> AIBatchStatus {
     let status: AIBatchLifecycleStatus = batch.processingStatus == "ended" ? .completed : .pending
-    let values = [batch.counts.processing, batch.counts.succeeded, batch.counts.errored, batch.counts.cancelled, batch.counts.expired]
-    let counts = values.allSatisfy { $0 >= 0 }
-        ? AIBatchRequestCounts(
-            total: values.reduce(0, +),
-            pending: batch.counts.processing,
-            completed: batch.counts.succeeded,
-            failed: batch.counts.errored + batch.counts.cancelled + batch.counts.expired
-        )
-        : nil
+    let processing = normalizedBatchJSONInteger(batch.counts["processing"])
+    let succeeded = normalizedBatchJSONInteger(batch.counts["succeeded"])
+    let errored = normalizedBatchJSONInteger(batch.counts["errored"])
+    let cancelled = normalizedBatchJSONInteger(batch.counts["canceled"])
+    let expired = normalizedBatchJSONInteger(batch.counts["expired"])
+    let failed: Int?
+    if let errored, let cancelled, let expired {
+        failed = checkedBatchSafeIntegerSum([errored, cancelled, expired])
+    } else {
+        failed = nil
+    }
+    let total: Int?
+    if let processing, let succeeded, let failed {
+        total = checkedBatchSafeIntegerSum([processing, succeeded, failed])
+    } else {
+        total = nil
+    }
+    let counts = normalizedBatchRequestCounts(
+        total: total,
+        pending: processing,
+        completed: succeeded,
+        failed: failed
+    )
     return AIBatchStatus(
         status: status,
         rawStatus: batch.processingStatus,
         requestCounts: counts,
         createdAt: batch.createdAt,
-        expiresAt: batch.expiresAt
+        expiresAt: batch.expiresAt,
+        providerMetadata: [
+            "anthropic": .object([
+                "archivedAt": batch.archivedAt.map(JSONValue.string) ?? .null,
+                "cancelInitiatedAt": batch.cancelInitiatedAt.map(JSONValue.string) ?? .null,
+                "endedAt": batch.endedAt.map(JSONValue.string) ?? .null,
+                "requestCounts": .object(batch.counts),
+                "resultsUrl": batch.resultsURL.map(JSONValue.string) ?? .null
+            ])
+        ]
     )
 }
 
@@ -367,10 +406,12 @@ private func parseAnthropicBatchResultLine(
         return nil
     }
     let raw = try secureJSONParse(text)
-    guard let id = raw["custom_id"]?.stringValue,
-          let result = raw["result"]?.objectValue,
-          let type = result["type"]?.stringValue else {
+    guard let id = raw["custom_id"]?.stringValue else {
         throw AIError.invalidResponse(provider: providerID, message: "Invalid Message Batch result line.")
+    }
+    guard let result = raw["result"]?.objectValue,
+          let type = result["type"]?.stringValue else {
+        return invalidAnthropicBatchResult(id: id)
     }
 
     switch type {
@@ -379,38 +420,30 @@ private func parseAnthropicBatchResultLine(
     case "expired":
         return .expired(id: id)
     case "errored":
-        guard let error = result["error"]?["error"],
+        guard let errorEnvelope = result["error"]?.objectValue,
+              errorEnvelope["type"]?.stringValue == "error",
+              isNullishString(errorEnvelope["request_id"]),
+              let error = errorEnvelope["error"]?.objectValue,
+              let type = error["type"]?.stringValue,
               let message = error["message"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "Invalid Message Batch error result.")
+            return invalidAnthropicBatchResult(id: id)
         }
-        let requestID = result["error"]?["request_id"]?.stringValue
-        return .failed(
+        let requestID = errorEnvelope["request_id"]?.stringValue
+        return AIBatchItemResult<TextGenerationResult>.failed(
             id: id,
-            error: AIBatchError(message: message, type: error["type"]?.stringValue),
+            error: AIBatchError(message: message, type: type),
             providerMetadata: requestID.map {
                 ["anthropic": .object(["requestId": .string($0)])]
             } ?? [:]
         )
     case "succeeded":
-        guard let message = result["message"], isValidAnthropicBatchMessage(message) else {
-            return .failed(
+        guard let rawMessage = result["message"],
+              let message = normalizedAnthropicBatchMessage(rawMessage) else {
+            return AIBatchItemResult<TextGenerationResult>.failed(
                 id: id,
                 error: AIBatchError(
                     message: "Anthropic returned an invalid Message batch result.",
                     code: "invalid_response"
-                )
-            )
-        }
-        let supportedTypes: Set<String> = ["text", "thinking", "redacted_thinking", "compaction", "fallback"]
-        if let unsupported = message["content"]?.arrayValue?.first(where: {
-            guard let type = $0["type"]?.stringValue else { return true }
-            return !supportedTypes.contains(type)
-        }), let unsupportedType = unsupported["type"]?.stringValue {
-            return .failed(
-                id: id,
-                error: AIBatchError(
-                    message: "Anthropic returned a \"\(unsupportedType)\" content block, but tool content is not supported in AI SDK text batches.",
-                    code: "unsupported_tool_content"
                 )
             )
         }
@@ -429,13 +462,65 @@ private func parseAnthropicBatchResultLine(
             reasoning: generated.reasoning,
             finishReason: anthropicFinishReason(message["stop_reason"]?.stringValue),
             usage: anthropicTokenUsage(from: message["usage"]),
+            toolCalls: generated.toolCalls,
+            toolResults: generated.toolResults,
+            sources: generated.sources,
             providerMetadata: anthropicProviderMetadata(from: message, providerID: providerID),
             rawValue: message,
             responseMetadata: responseMetadata
         ))
     default:
-        throw AIError.invalidResponse(provider: providerID, message: "Unknown Message Batch result type \"\(type)\".")
+        return invalidAnthropicBatchResult(id: id)
     }
+}
+
+private func invalidAnthropicBatchResult(
+    id: String
+) -> AIBatchItemResult<TextGenerationResult> {
+    .failed(
+        id: id,
+        error: AIBatchError(
+            message: "Anthropic returned an invalid Message batch result.",
+            code: "invalid_response"
+        )
+    )
+}
+
+private let knownAnthropicBatchContentTypes: Set<String> = [
+    "advisor_tool_result",
+    "bash_code_execution_tool_result",
+    "code_execution_tool_result",
+    "compaction",
+    "container_upload",
+    "fallback",
+    "mcp_tool_result",
+    "mcp_tool_use",
+    "redacted_thinking",
+    "server_tool_use",
+    "text",
+    "text_editor_code_execution_tool_result",
+    "thinking",
+    "tool_search_tool_result",
+    "tool_use",
+    "web_fetch_tool_result",
+    "web_search_tool_result"
+]
+
+private func normalizedAnthropicBatchMessage(_ message: JSONValue) -> JSONValue? {
+    guard var object = message.objectValue,
+          let rawContent = object["content"]?.arrayValue else {
+        return Optional<JSONValue>.none
+    }
+    var content: [JSONValue] = []
+    for part in rawContent {
+        guard let type = part["type"]?.stringValue else { return Optional<JSONValue>.none }
+        guard knownAnthropicBatchContentTypes.contains(type) else { continue }
+        guard isValidAnthropicBatchContentPart(part) else { return Optional<JSONValue>.none }
+        content.append(part)
+    }
+    object["content"] = .array(content)
+    let normalized = JSONValue.object(object)
+    return isValidAnthropicBatchMessage(normalized) ? normalized : Optional<JSONValue>.none
 }
 
 private func isValidAnthropicBatchMessage(_ message: JSONValue) -> Bool {
@@ -448,15 +533,19 @@ private func isValidAnthropicBatchMessage(_ message: JSONValue) -> Bool {
           isValidAnthropicBatchUsage(message["usage"]) else {
         return false
     }
-    return content.allSatisfy { part in
-        guard let type = part["type"]?.stringValue else { return false }
-        switch type {
+    return content.allSatisfy(isValidAnthropicBatchContentPart)
+}
+
+private func isValidAnthropicBatchContentPart(_ part: JSONValue) -> Bool {
+    guard let type = part["type"]?.stringValue else { return false }
+    switch type {
         case "text": return part["text"]?.stringValue != nil
         case "thinking":
             return part["thinking"]?.stringValue != nil && part["signature"]?.stringValue != nil
         case "redacted_thinking": return part["data"]?.stringValue != nil
         case "compaction": return part["content"]?.stringValue != nil
         case "fallback": return true
+        case "container_upload": return part["file_id"]?.stringValue != nil
         case "tool_use":
             return part["id"]?.stringValue != nil
                 && part["name"]?.stringValue != nil
@@ -479,23 +568,27 @@ private func isValidAnthropicBatchMessage(_ message: JSONValue) -> Bool {
              "tool_search_tool_result", "advisor_tool_result":
             return part["tool_use_id"]?.stringValue != nil && part["content"] != nil
         default: return false
-        }
     }
 }
 
 private func isValidAnthropicBatchUsage(_ value: JSONValue?) -> Bool {
     guard let usage = value?.objectValue,
-          usage["input_tokens"]?.doubleValue?.isFinite == true,
-          usage["output_tokens"]?.doubleValue?.isFinite == true else {
+          isFiniteAnthropicBatchNumber(usage["input_tokens"]),
+          isFiniteAnthropicBatchNumber(usage["output_tokens"]) else {
         return false
     }
     for key in ["cache_creation_input_tokens", "cache_read_input_tokens"] {
         if let tokenCount = usage[key], tokenCount != .null,
-           tokenCount.doubleValue?.isFinite != true {
+           !isFiniteAnthropicBatchNumber(tokenCount) {
             return false
         }
     }
     return true
+}
+
+private func isFiniteAnthropicBatchNumber(_ value: JSONValue?) -> Bool {
+    guard case let .number(number)? = value else { return false }
+    return number.isFinite
 }
 
 private func anthropicBatchPathEncode(_ value: String) -> String {

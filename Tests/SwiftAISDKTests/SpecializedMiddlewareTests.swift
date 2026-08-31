@@ -20,6 +20,9 @@ import Testing
         ))
     )
 
+    #expect(wrapped.maxEmbeddingsPerCall == 2)
+    #expect(wrapped.maxInputBytesPerCall == 8)
+
     _ = try await wrapped.embed(EmbeddingRequest(
         values: ["one"],
         providerOptions: [
@@ -218,6 +221,8 @@ private final class SpecializedLanguageModel: LanguageModel, @unchecked Sendable
 private final class SpecializedEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     let providerID = "specialized"
     let modelID = "embedding"
+    let maxEmbeddingsPerCall: Int? = 2
+    let maxInputBytesPerCall: Int? = 8
     var requests: [EmbeddingRequest] = []
 
     func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {

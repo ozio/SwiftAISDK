@@ -23,7 +23,11 @@ struct EmbeddingsExample {
 }
 ```
 
-For batches, pass all values at once. Use `chunkSize` when a provider has an input limit and the facade should split the batch while preserving result order.
+For batches, pass all values at once. The facade automatically honors the
+model's advertised per-request count and UTF-8 byte limits while preserving
+result order. OpenAI and Azure embeddings, for example, advertise a 300,000-byte
+input budget. Use `chunkSize` to request smaller chunks; it cannot override a
+stricter provider maximum.
 
 ```swift
 let result = try await model.embedMany(
@@ -35,6 +39,10 @@ for vector in result.embeddings {
     print(vector.count)
 }
 ```
+
+Count and byte limits are applied together in one pass. An individual value
+larger than the byte budget stays intact in its own request so the provider can
+return its native validation error instead of the SDK silently truncating it.
 
 ## Options
 

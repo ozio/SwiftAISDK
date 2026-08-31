@@ -221,15 +221,21 @@ import Testing
     let midStreamModel = try midStreamProvider.languageModel("claude-3-haiku-20240307")
 
     var textDeltas: [String] = []
-    var errors: [(String, JSONValue?)] = []
+    var errors: [AIStreamProviderError] = []
     var finishCount = 0
+    var finishReason: String?
     for try await part in midStreamModel.stream(LanguageModelRequest(messages: [.user("Hello")])) {
         switch part {
         case let .textDeltaPart(_, delta, _):
             textDeltas.append(delta)
-        case let .error(message, rawValue):
-            errors.append((message, rawValue))
-        case .finish, .finishMetadata:
+        case .error:
+            if let error = part.streamProviderError {
+                errors.append(error)
+            }
+        case let .finishMetadata(reason, _, _):
+            finishReason = reason
+            finishCount += 1
+        case .finish:
             finishCount += 1
         default:
             break
@@ -238,9 +244,12 @@ import Testing
 
     #expect(textDeltas == ["Hello"])
     #expect(errors.count == 1)
-    #expect(errors.first?.0 == "Overloaded")
-    #expect(errors.first?.1?["error"]?["type"]?.stringValue == "overloaded_error")
-    #expect(finishCount == 0)
+    #expect(errors.first?.message == "Overloaded")
+    #expect(errors.first?.type == "overloaded_error")
+    #expect(errors.first?.statusCode == 529)
+    #expect(errors.first?.isRetryable == true)
+    #expect(finishCount == 1)
+    #expect(finishReason == "error")
 }
 
 @Test func anthropicStreamIgnoresDuplicateStartForActiveMessageLikeUpstream() async throws {

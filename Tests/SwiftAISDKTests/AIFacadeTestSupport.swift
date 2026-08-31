@@ -305,11 +305,19 @@ final class FlakyStreamingLanguageModel: LanguageModel, @unchecked Sendable {
 final class MockEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     let providerID = "mock"
     let modelID = "mock-embedding"
+    let maxEmbeddingsPerCall: Int?
+    let maxInputBytesPerCall: Int?
     var requests: [EmbeddingRequest] = []
     private var results: [EmbeddingResult]
 
-    init(results: [EmbeddingResult]) {
+    init(
+        results: [EmbeddingResult],
+        maxEmbeddingsPerCall: Int? = nil,
+        maxInputBytesPerCall: Int? = nil
+    ) {
         self.results = results
+        self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
+        self.maxInputBytesPerCall = maxInputBytesPerCall
     }
 
     func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {

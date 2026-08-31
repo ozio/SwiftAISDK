@@ -80,7 +80,7 @@ func groqUsage(from usage: JSONValue?) -> TokenUsage? {
         totalTokens: usage["total_tokens"]?.intValue ?? promptTokens + completionTokens,
         inputTokensNoCache: promptTokens - (cacheReadTokens ?? 0),
         inputTokensCacheRead: cacheReadTokens,
-        outputTextTokens: reasoningTokens.map { completionTokens - $0 } ?? completionTokens,
+        outputTextTokens: reasoningTokens.map { max(0, completionTokens - $0) } ?? completionTokens,
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )

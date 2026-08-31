@@ -232,26 +232,33 @@ func openResponsesToolResultOutput(
     _ result: AIToolResult,
     providerID: String,
     jsonEncodeText: Bool = false,
+    promptCacheBreakpoint: JSONValue? = nil,
     warnings: inout [AIWarning]
 ) -> JSONValue {
+    func scalarOutput(_ text: String) -> JSONValue {
+        guard let promptCacheBreakpoint else { return .string(text) }
+        return .array([.object([
+            "type": .string("input_text"),
+            "text": .string(text),
+            "prompt_cache_breakpoint": promptCacheBreakpoint
+        ])])
+    }
+
     if let text = result.modelOutput?.stringValue ?? result.result.stringValue {
-        return openResponsesTextToolResultOutput(text, jsonEncodeText: jsonEncodeText)
+        let converted = jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text
+        return scalarOutput(converted)
     }
     if let object = (result.modelOutput ?? result.result).objectValue,
        let type = object["type"]?.stringValue {
         switch type {
         case "text", "error-text":
-            return openResponsesTextToolResultOutput(
-                object["value"]?.stringValue ?? "",
-                jsonEncodeText: jsonEncodeText
-            )
+            let text = object["value"]?.stringValue ?? ""
+            return scalarOutput(jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text)
         case "execution-denied":
-            return openResponsesTextToolResultOutput(
-                object["reason"]?.stringValue ?? "Tool call execution denied.",
-                jsonEncodeText: jsonEncodeText
-            )
+            let text = object["reason"]?.stringValue ?? "Tool call execution denied."
+            return scalarOutput(jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text)
         case "json", "error-json":
-            return .string(openAIResponsesJSONString(object["value"] ?? .object([:])) ?? "")
+            return scalarOutput(openAIResponsesJSONString(object["value"] ?? .object([:])) ?? "")
         case "content":
             let content = object["value"]?.arrayValue ?? []
             return .array(content.compactMap { item in
@@ -271,10 +278,17 @@ private func openResponsesTextToolResultOutput(_ text: String, jsonEncodeText: B
 func openResponsesToolResultContentPart(_ item: JSONValue, providerID: String, warnings: inout [AIWarning]) -> JSONValue? {
     switch item["type"]?.stringValue {
     case "text":
-        return .object([
+        var output: [String: JSONValue] = [
             "type": .string("input_text"),
             "text": item["text"] ?? .string("")
-        ])
+        ]
+        if let breakpoint = openResponsesToolResultContentPromptCacheBreakpoint(
+            item,
+            providerID: providerID
+        ) {
+            output["prompt_cache_breakpoint"] = breakpoint
+        }
+        return .object(output)
     case "image-data":
         var image: [String: JSONValue] = [
             "type": .string("input_image"),
@@ -305,6 +319,23 @@ func openResponsesToolResultContentPart(_ item: JSONValue, providerID: String, w
         warnings.append(AIWarning(type: "other", message: "unsupported tool content part type: \(item["type"]?.stringValue ?? "unknown")"))
         return nil
     }
+}
+
+private func openResponsesToolResultContentPromptCacheBreakpoint(
+    _ item: JSONValue,
+    providerID: String
+) -> JSONValue? {
+    let preferredNamespace = openAICompatibleProviderMetadataNamespace(providerID)
+    for containerName in ["providerOptions", "provider_options"] {
+        for namespace in [preferredNamespace, "openai"] {
+            let options = item[containerName]?[namespace]
+            if let breakpoint = options?["promptCacheBreakpoint"]
+                ?? options?["prompt_cache_breakpoint"] {
+                return breakpoint
+            }
+        }
+    }
+    return nil
 }
 
 private func openResponsesToolResultFilePart(

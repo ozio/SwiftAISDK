@@ -12,12 +12,12 @@ description: Public SwiftAISDK APIs for providers.
 | Enumeration | 4 |
 | Function | 13 |
 | Global Variable | 2 |
-| Initializer | 35 |
-| Instance Method | 205 |
-| Instance Property | 162 |
-| Structure | 20 |
+| Initializer | 36 |
+| Instance Method | 206 |
+| Instance Property | 170 |
+| Structure | 21 |
 | Type Alias | 2 |
-| Type Method | 69 |
+| Type Method | 70 |
 | Type Property | 3 |
 
 ## Public symbols
@@ -73,6 +73,7 @@ description: Public SwiftAISDK APIs for providers.
 | Initializer | `init(balance:totalUsed:)` | `init(balance: String, totalUsed: String)` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Initializer | `init(clientEmail:privateKey:privateKeyID:)` | `init(clientEmail: String, privateKey: String, privateKeyID: String? = nil)` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
 | Initializer | `init(id:name:modelType:provider:modelID:)` | `init(id: String, name: String? = nil, modelType: String? = nil, provider: String? = nil, modelID: String? = nil)` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
+| Initializer | `init(message:type:code:statusCode:isRetryable:data:)` | `init(message: String, type: String? = nil, code: JSONValue? = nil, statusCode: Int? = nil, isRetryable: Bool? = nil, data: JSONValue? = nil)` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Initializer | `init(model:expiresAfterSeconds:)` | `init(model: String, expiresAfterSeconds: Int? = nil)` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Initializer | `init(project:location:apiKey:accessToken:serviceAccount:baseURL:headers:transport:date:)` | `init(project: String? = nil, location: String? = nil, apiKey: String? = nil, accessToken: String? = nil, serviceAccount: GoogleServiceAccountCredentials? = nil, baseURL: String? = nil, headers: [String : String] = [:], transport: any AITransport = URLSessionTransport.shared, date: @escaping @Sendable () -> Date = Date.init)` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
 | Initializer | `init(provider:reference:)` | `init(provider: String, reference: AIProviderReference)` | [Sources/SwiftAISDK/ProviderReference.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/ProviderReference.swift) |
@@ -142,6 +143,7 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Method | `embeddingModel(_:)` | `func embeddingModel(_ modelID: String) throws -> any EmbeddingModel` | [Sources/SwiftAISDK/Providers/MiniMaxProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/MiniMaxProvider.swift) |
 | Instance Method | `embeddingModel(_:)` | `func embeddingModel(_ modelID: String) throws -> any EmbeddingModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `embeddingModel(_:)` | `func embeddingModel(_ modelID: String) throws -> any EmbeddingModel` | [Sources/SwiftAISDK/Providers/VercelProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/VercelProvider.swift) |
+| Instance Method | `embeddingModel(_:settings:)` | `func embeddingModel(_ modelID: String, settings: AmazonBedrockEmbeddingModelSettings) throws -> any EmbeddingModel` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Method | `embeddingModel()` | `func embeddingModel() throws -> any EmbeddingModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `files(_:)` | `func files(_ providerID: String) throws -> any AIFileClient` | [Sources/SwiftAISDK/Providers/CustomProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CustomProvider.swift) |
 | Instance Method | `files()` | `func files() -> any AIFileClient` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
@@ -330,12 +332,14 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Property | `cachedInputTokens` | `var cachedInputTokens: Int?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `cachedTokens` | `var cachedTokens: Int` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `clientEmail` | `var clientEmail: String` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
+| Instance Property | `code` | `var code: JSONValue?` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `completionTokens` | `var completionTokens: Int` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `createdAt` | `var createdAt: String` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `credentialProvider` | `var credentialProvider: (@Sendable () async throws -> AmazonBedrockCredentials)?` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Property | `credentialProvider` | `var credentialProvider: (@Sendable () async throws -> AnthropicAWSCredentials)?` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
 | Instance Property | `credentialType` | `var credentialType: String?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `credentialType` | `var credentialType: String?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
+| Instance Property | `data` | `var data: JSONValue?` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `date` | `var date: @Sendable () -> Date` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Property | `date` | `var date: @Sendable () -> Date` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
 | Instance Property | `date` | `var date: @Sendable () -> Date` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
@@ -343,6 +347,7 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Property | `day` | `var day: String?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/ProviderReference.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/ProviderReference.swift) |
 | Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/Providers/CustomProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CustomProvider.swift) |
+| Instance Property | `description` | `var description: String { get }` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `endDate` | `var endDate: String` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `environment` | `var environment: [String : String]?` | [Sources/SwiftAISDK/Providers/CartesiaProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CartesiaProvider.swift) |
 | Instance Property | `environment` | `var environment: [String : String]?` | [Sources/SwiftAISDK/Providers/KlingAIProviderSettings.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/KlingAIProviderSettings.swift) |
@@ -365,9 +370,11 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Property | `id` | `var id: String` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `inputTokens` | `var inputTokens: Int?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `isByok` | `var isByok: Bool` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
+| Instance Property | `isRetryable` | `var isRetryable: Bool` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `latency` | `var latency: Double` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `location` | `var location: String?` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
 | Instance Property | `marketCost` | `var marketCost: Double?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
+| Instance Property | `message` | `var message: String` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `model` | `var model: String?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `model` | `var model: String?` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `model` | `var model: String` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
@@ -423,7 +430,9 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Property | `sessionToken` | `var sessionToken: String?` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
 | Instance Property | `sessionToken` | `var sessionToken: String?` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
 | Instance Property | `startDate` | `var startDate: String` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
+| Instance Property | `statusCode` | `var statusCode: Int?` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `streamed` | `var streamed: Bool` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
+| Instance Property | `streamProviderError` | `var streamProviderError: AIStreamProviderError? { get }` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `supportedCapabilities` | `let supportedCapabilities: Set<ModelCapability>` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Property | `supportedCapabilities` | `let supportedCapabilities: Set<ModelCapability>` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Instance Property | `supportedCapabilities` | `let supportedCapabilities: Set<ModelCapability>` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
@@ -457,6 +466,7 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Property | `transport` | `var transport: any AITransport` | [Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleVertexProvider.swift) |
 | Instance Property | `transport` | `var transport: any AITransport` | [Sources/SwiftAISDK/Providers/KlingAIProviderSettings.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/KlingAIProviderSettings.swift) |
 | Instance Property | `transport` | `var transport: any AITransport` | [Sources/SwiftAISDK/Providers/MiniMaxProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/MiniMaxProvider.swift) |
+| Instance Property | `type` | `var type: String?` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Instance Property | `upstreamInferenceCost` | `var upstreamInferenceCost: Double` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Property | `upstreamPackage` | `var upstreamPackage: String` | [Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) |
 | Instance Property | `url` | `var url: String` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
@@ -469,6 +479,7 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Property | `workspaceID` | `var workspaceID: String?` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
 | Structure | `AINoSuchProviderReferenceError` | `struct AINoSuchProviderReferenceError` | [Sources/SwiftAISDK/ProviderReference.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/ProviderReference.swift) |
 | Structure | `AIProviderCapabilityRow` | `struct AIProviderCapabilityRow` | [Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) |
+| Structure | `AIStreamProviderError` | `struct AIStreamProviderError` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Structure | `AmazonBedrockCredentials` | `struct AmazonBedrockCredentials` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Structure | `AmazonBedrockProviderSettings` | `struct AmazonBedrockProviderSettings` | [Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AmazonBedrockProvider.swift) |
 | Structure | `AnthropicAWSCredentials` | `struct AnthropicAWSCredentials` | [Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicAWSProvider.swift) |
@@ -542,6 +553,7 @@ description: Public SwiftAISDK APIs for providers.
 | Type Method | `openResponses(name:url:settings:)` | `static func openResponses(name: String, url: String, settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `perplexity(settings:)` | `static func perplexity(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `prodia(settings:)` | `static func prodia(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
+| Type Method | `providerError(_:)` | `static func providerError(_ error: AIStreamProviderError) -> LanguageStreamPart` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |
 | Type Method | `providerRegistry(_:separator:languageModelMiddleware:imageModelMiddleware:)` | `static func providerRegistry(_ providers: [String : any AIProvider], separator: String = ":", languageModelMiddleware: [AILanguageModelMiddleware] = [], imageModelMiddleware: [AIImageModelMiddleware] = []) -> AIProviderRegistry` | [Sources/SwiftAISDK/Providers/CustomProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CustomProvider.swift) |
 | Type Method | `providerRegistry(_:separator:languageModelMiddleware:imageModelMiddleware:)` | `static func providerRegistry(_ providers: [String : any AIProvider], separator: String = ":", languageModelMiddleware: AILanguageModelMiddleware, imageModelMiddleware: [AIImageModelMiddleware] = []) -> AIProviderRegistry` | [Sources/SwiftAISDK/Providers/CustomProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CustomProvider.swift) |
 | Type Method | `providerRegistry(_:separator:languageModelMiddleware:imageModelMiddleware:)` | `static func providerRegistry(_ providers: [String : any AIProvider], separator: String = ":", languageModelMiddleware: [AILanguageModelMiddleware] = [], imageModelMiddleware: AIImageModelMiddleware) -> AIProviderRegistry` | [Sources/SwiftAISDK/Providers/CustomProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CustomProvider.swift) |

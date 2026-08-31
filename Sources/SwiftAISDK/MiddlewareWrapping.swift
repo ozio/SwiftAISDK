@@ -260,6 +260,8 @@ final class AIWrappedEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     private let middleware: AIEmbeddingModelMiddleware
     let providerID: String
     let modelID: String
+    var maxEmbeddingsPerCall: Int? { model.maxEmbeddingsPerCall }
+    var maxInputBytesPerCall: Int? { model.maxInputBytesPerCall }
 
     init(
         model: any EmbeddingModel,

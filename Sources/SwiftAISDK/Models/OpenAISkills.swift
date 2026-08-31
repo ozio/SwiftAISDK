@@ -120,9 +120,11 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
         guard let skillID, let version else {
             return (nil, nil)
         }
+        let encodedSkillID = anthropicSkillPathSegment(skillID)
+        let encodedVersion = anthropicSkillPathSegment(version)
         let response = try await config.transport.send(AIHTTPRequest(
             method: "GET",
-            url: try requireURL("\(withoutTrailingSlash(config.baseURL))/skills/\(skillID)/versions/\(version)"),
+            url: try requireURL("\(withoutTrailingSlash(config.baseURL))/skills/\(encodedSkillID)/versions/\(encodedVersion)"),
             headers: config.headers.mergingHeaders(headers),
             body: nil,
             abortSignal: abortSignal
@@ -132,6 +134,17 @@ public final class AnthropicSkillsClient: AISkillsClient, @unchecked Sendable {
         }
         let raw = try response.jsonValue()
         return (raw["name"]?.stringValue, raw["description"]?.stringValue)
+    }
+}
+
+private func anthropicSkillPathSegment(_ value: String) -> String {
+    var allowed = CharacterSet.alphanumerics
+    allowed.insert(charactersIn: "-_.~")
+    let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    switch encoded {
+    case ".": return "%252E"
+    case "..": return "%252E%252E"
+    default: return encoded
     }
 }
 

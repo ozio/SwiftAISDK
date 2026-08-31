@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.61"
+private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.68"
 
 public struct AmazonBedrockCredentials: Sendable {
     public var accessKeyID: String
@@ -81,6 +81,13 @@ public final class AmazonBedrockProvider: AIProvider, @unchecked Sendable {
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
         AmazonBedrockEmbeddingModel(modelID: modelID, config: runtimeConfig)
+    }
+
+    public func embeddingModel(
+        _ modelID: String,
+        settings: AmazonBedrockEmbeddingModelSettings
+    ) throws -> any EmbeddingModel {
+        AmazonBedrockEmbeddingModel(modelID: modelID, config: runtimeConfig, settings: settings)
     }
 
     public func imageModel(_ modelID: String) throws -> any ImageModel {

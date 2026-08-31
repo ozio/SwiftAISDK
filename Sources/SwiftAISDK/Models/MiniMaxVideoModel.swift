@@ -13,28 +13,46 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let responseTimestamp = Date()
         let options = try miniMaxVideoOptions(from: request)
-        var warnings = miniMaxVideoStandardWarnings(for: request)
+        var warnings = miniMaxVideoStandardWarnings(for: request, modelID: modelID)
+
+        let resolutionSettings = miniMaxResolutionSettings(for: modelID)
+        let supportedResolutionNames = resolutionSettings.supported.sorted().map { "\"\($0)\"" }.joined(separator: " or ")
 
         var resolution = options.resolution
+        if let providerResolution = resolution,
+           !resolutionSettings.supported.contains(providerResolution) {
+            warnings.append(miniMaxUnsupported(
+                "resolution",
+                "\(modelID) supports \(supportedResolutionNames). The provider resolution \"\(providerResolution)\" was ignored."
+            ))
+            resolution = nil
+        }
         if let requestedResolution = request.resolution {
             let mapped = miniMaxResolvedResolution(requestedResolution)
             if let providerResolution = resolution {
                 if mapped == nil {
                     warnings.append(miniMaxUnsupported(
                         "resolution",
-                        "Unrecognized resolution \"\(requestedResolution)\". MiniMax-H3 only supports \"2K\", so providerOptions.minimax.resolution (\"\(providerResolution)\") was used instead."
+                        "Unrecognized resolution \"\(requestedResolution)\". \(modelID) supports \(supportedResolutionNames), so providerOptions.minimax.resolution (\"\(providerResolution)\") was used instead."
+                    ))
+                } else if mapped != providerResolution {
+                    warnings.append(miniMaxUnsupported(
+                        "resolution",
+                        "The resolution \"\(requestedResolution)\" selects \(mapped!), but providerOptions.minimax.resolution (\"\(providerResolution)\") was used instead."
                     ))
                 }
-            } else if let mapped {
+            } else if let mapped, resolutionSettings.supported.contains(mapped) {
                 resolution = mapped
             } else {
                 warnings.append(miniMaxUnsupported(
                     "resolution",
-                    "Unrecognized resolution \"\(requestedResolution)\". MiniMax-H3 only supports \"2K\"."
+                    mapped == nil
+                        ? "Unrecognized resolution \"\(requestedResolution)\". \(modelID) supports \(supportedResolutionNames)."
+                        : "\(modelID) does not support the resolution \"\(mapped!)\". It supports \(supportedResolutionNames)."
                 ))
             }
         }
-        resolution = resolution ?? "2K"
+        resolution = resolution ?? resolutionSettings.defaultResolution
 
         var content: [JSONValue] = [
             .object(["type": .string("text"), "text": .string(request.prompt)])
@@ -50,8 +68,8 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             warnings.append(miniMaxUnsupported(
                 explicitFirstFrame == nil ? "image" : "frameImages",
                 mediaType == "video"
-                    ? "MiniMax-H3 does not accept a video as a frame image. The video was ignored."
-                    : "MiniMax-H3 only accepts an image as a frame image; the \"\(frame.mediaType ?? mediaType)\" file was ignored."
+                    ? "\(modelID) does not accept a video as a frame image. The video was ignored."
+                    : "\(modelID) only accepts an image as a frame image; the \"\(frame.mediaType ?? mediaType)\" file was ignored."
             ))
             firstFrame = nil
         }
@@ -60,22 +78,35 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             if firstFrame == nil {
                 warnings.append(miniMaxUnsupported(
                     "frameImages",
-                    "MiniMax-H3 requires a first_frame when a last_frame is provided. The last_frame was ignored."
+                    "\(modelID) requires a first_frame when a last_frame is provided. The last_frame was ignored."
                 ))
                 lastFrame = nil
             } else if let mediaType = miniMaxNonImageFrameMediaType(frame) {
                 warnings.append(miniMaxUnsupported(
                     "frameImages",
                     mediaType == "video"
-                        ? "MiniMax-H3 does not accept a video as a frame image. The last_frame video was ignored."
-                        : "MiniMax-H3 only accepts an image as a frame image; the \"\(frame.mediaType ?? mediaType)\" last_frame was ignored."
+                        ? "\(modelID) does not accept a video as a frame image. The last_frame video was ignored."
+                        : "\(modelID) only accepts an image as a frame image; the \"\(frame.mediaType ?? mediaType)\" last_frame was ignored."
                 ))
                 lastFrame = nil
             }
         }
 
         let usesFrameImages = firstFrame != nil || lastFrame != nil
-        let usesReferences = !request.inputReferences.isEmpty || !options.referenceAudioURLs.isEmpty
+        let supportsReferences = modelID != "MiniMax-H3-Max"
+        if !supportsReferences, !request.inputReferences.isEmpty {
+            warnings.append(miniMaxUnsupported(
+                "inputReferences",
+                "MiniMax-H3-Max does not support reference-to-video inputs. The references were ignored."
+            ))
+        }
+        if !supportsReferences, !options.referenceAudioURLs.isEmpty {
+            warnings.append(miniMaxUnsupported(
+                "referenceAudioUrls",
+                "MiniMax-H3-Max does not support reference audio. The audio was ignored."
+            ))
+        }
+        let usesReferences = supportsReferences && (!request.inputReferences.isEmpty || !options.referenceAudioURLs.isEmpty)
 
         if usesFrameImages {
             if let firstFrame {
@@ -89,7 +120,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             if usesReferences {
                 warnings.append(miniMaxUnsupported(
                     "inputReferences",
-                    "MiniMax-H3 cannot combine frame images with reference inputs. The references were ignored."
+                    "\(modelID) cannot combine frame images with reference inputs. The references were ignored."
                 ))
             }
         } else if usesReferences {
@@ -106,13 +137,13 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                     default:
                         warnings.append(miniMaxUnsupported(
                             "inputReferences",
-                            "MiniMax-H3 only accepts image and video references; the \"\(mediaType)\" reference was ignored. Pass reference audio via providerOptions.minimax.referenceAudioUrls."
+                            "\(modelID) only accepts image and video references; the \"\(mediaType)\" reference was ignored. Pass reference audio via providerOptions.minimax.referenceAudioUrls."
                         ))
                     }
                 } else {
                     warnings.append(miniMaxUnsupported(
                         "inputReferences",
-                        "MiniMax-H3 requires an explicit mediaType to route URL references as video or image. Pass { data: url, mediaType: \"video/mp4\" } for video references. The reference was treated as an image."
+                        "\(modelID) requires an explicit mediaType to route URL references as video or image. Pass { data: url, mediaType: \"video/mp4\" } for video references. The reference was treated as an image."
                     ))
                     referenceImages.append(file)
                 }
@@ -125,7 +156,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             if referenceImages.count > 9 {
                 warnings.append(miniMaxUnsupported(
                     "inputReferences",
-                    "MiniMax-H3 accepts at most 9 reference images. Extra images were ignored."
+                    "\(modelID) accepts at most 9 reference images. Extra images were ignored."
                 ))
             }
 
@@ -143,7 +174,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             if referenceVideos.count > 3 {
                 warnings.append(miniMaxUnsupported(
                     "inputReferences",
-                    "MiniMax-H3 accepts at most 3 reference videos. Extra videos were ignored."
+                    "\(modelID) accepts at most 3 reference videos. Extra videos were ignored."
                 ))
             }
 
@@ -151,7 +182,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                 if referenceImages.isEmpty && referenceVideos.isEmpty {
                     warnings.append(miniMaxUnsupported(
                         "referenceAudioUrls",
-                        "MiniMax-H3 reference audio must be paired with at least one reference image or video. The audio was ignored."
+                        "\(modelID) reference audio must be paired with at least one reference image or video. The audio was ignored."
                     ))
                 } else {
                     for url in options.referenceAudioURLs.prefix(3) {
@@ -164,7 +195,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                     if options.referenceAudioURLs.count > 3 {
                         warnings.append(miniMaxUnsupported(
                             "referenceAudioUrls",
-                            "MiniMax-H3 accepts at most 3 reference audios. Extra audios were ignored."
+                            "\(modelID) accepts at most 3 reference audios. Extra audios were ignored."
                         ))
                     }
                 }
@@ -180,8 +211,8 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                 warnings.append(miniMaxUnsupported(
                     "aspectRatio",
                     isTextToVideo
-                        ? "MiniMax-H3 does not support the aspect ratio \"\(aspectRatio)\". Using the default (16:9)."
-                        : "MiniMax-H3 does not support the aspect ratio \"\(aspectRatio)\". Using the provider default (adaptive)."
+                        ? "\(modelID) does not support the aspect ratio \"\(aspectRatio)\". Using the default (16:9)."
+                        : "\(modelID) does not support the aspect ratio \"\(aspectRatio)\". Using the provider default (adaptive)."
                 ))
                 if isTextToVideo {
                     ratio = "16:9"
@@ -191,14 +222,14 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
         if ratio == "adaptive", isTextToVideo {
             warnings.append(miniMaxUnsupported(
                 "aspectRatio",
-                "MiniMax-H3 text-to-video does not support the adaptive aspect ratio. Using the default (16:9)."
+                "\(modelID) text-to-video does not support the adaptive aspect ratio. Using the default (16:9)."
             ))
             ratio = "16:9"
         }
         if usesFrameImages, ratio != nil {
             warnings.append(miniMaxUnsupported(
                 "aspectRatio",
-                "MiniMax-H3 derives the aspect ratio from the frame image; the requested ratio was ignored."
+                "\(modelID) derives the aspect ratio from the frame image; the requested ratio was ignored."
             ))
             ratio = nil
         }
@@ -206,34 +237,35 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             ratio = "16:9"
         }
 
+        let minimumDuration = modelID == "MiniMax-H3" ? 4.0 : 5.0
         var duration = request.durationSeconds ?? 5
         if let requestedDuration = request.durationSeconds {
             if requestedDuration.rounded(.towardZero) != requestedDuration {
                 duration = floor(requestedDuration + 0.5)
                 warnings.append(miniMaxUnsupported(
                     "duration",
-                    "MiniMax-H3 requires a whole number of seconds. The requested duration of \(miniMaxFormatNumber(requestedDuration)) was rounded to \(miniMaxFormatNumber(duration))."
+                    "\(modelID) requires a whole number of seconds. The requested duration of \(miniMaxFormatNumber(requestedDuration)) was rounded to \(miniMaxFormatNumber(duration))."
                 ))
             }
             if duration > 15 {
                 warnings.append(miniMaxUnsupported(
                     "duration",
-                    "MiniMax-H3 supports at most 15 seconds. The requested duration of \(miniMaxFormatNumber(requestedDuration)) was clamped to 15."
+                    "\(modelID) supports at most 15 seconds. The requested duration of \(miniMaxFormatNumber(requestedDuration)) was clamped to 15."
                 ))
                 duration = 15
-            } else if duration < 5 {
+            } else if duration < minimumDuration {
                 warnings.append(miniMaxUnsupported(
                     "duration",
-                    "MiniMax-H3 requires at least 5 seconds. The requested duration of \(miniMaxFormatNumber(requestedDuration)) was clamped to 5."
+                    "\(modelID) requires at least \(miniMaxFormatNumber(minimumDuration)) seconds. The requested duration of \(miniMaxFormatNumber(requestedDuration)) was clamped to \(miniMaxFormatNumber(minimumDuration))."
                 ))
-                duration = 5
+                duration = minimumDuration
             }
         }
 
         var body: [String: JSONValue] = [
             "model": .string(modelID),
             "content": .array(content),
-            "resolution": .string(resolution ?? "2K"),
+            "resolution": .string(resolution ?? resolutionSettings.defaultResolution),
             "duration": .number(duration)
         ]
         if let ratio { body["ratio"] = .string(ratio) }
@@ -387,6 +419,22 @@ private let miniMaxVideoRatios: Set<String> = [
     "adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"
 ]
 
+private struct MiniMaxResolutionSettings {
+    var supported: Set<String>
+    var defaultResolution: String
+}
+
+private func miniMaxResolutionSettings(for modelID: String) -> MiniMaxResolutionSettings {
+    switch modelID {
+    case "MiniMax-H3":
+        return MiniMaxResolutionSettings(supported: ["768P", "2K"], defaultResolution: "2K")
+    case "MiniMax-H3-Max":
+        return MiniMaxResolutionSettings(supported: ["480P", "768P"], defaultResolution: "768P")
+    default:
+        return MiniMaxResolutionSettings(supported: ["480P", "768P", "2K"], defaultResolution: "2K")
+    }
+}
+
 private let miniMaxVideoOptionKeys: Set<String> = [
     "resolution", "ratio", "referenceAudioUrls", "aigcWatermark", "pollIntervalMs", "pollTimeoutMs"
 ]
@@ -412,7 +460,7 @@ private func miniMaxVideoOptions(from request: VideoGenerationRequest) throws ->
 
     let resolution = try miniMaxOptionalEnum(
         values["resolution"],
-        allowed: ["2K"],
+        allowed: ["480P", "768P", "2K"],
         argument: "providerOptions.minimax.resolution"
     )
     let ratio = try miniMaxOptionalEnum(
@@ -486,24 +534,24 @@ private func miniMaxPositiveIntegerMilliseconds(_ value: JSONValue?, defaultValu
     return number
 }
 
-private func miniMaxVideoStandardWarnings(for request: VideoGenerationRequest) -> [AIWarning] {
+private func miniMaxVideoStandardWarnings(for request: VideoGenerationRequest, modelID: String) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if request.fps != nil {
-        warnings.append(miniMaxUnsupported("fps", "MiniMax-H3 does not support a custom frame rate."))
+        warnings.append(miniMaxUnsupported("fps", "\(modelID) does not support a custom frame rate."))
     }
     if request.seed != nil {
-        warnings.append(miniMaxUnsupported("seed", "MiniMax-H3 does not support a seed."))
+        warnings.append(miniMaxUnsupported("seed", "\(modelID) does not support a seed."))
     }
     if let count = request.count, count > 1 {
         warnings.append(miniMaxUnsupported(
             "n",
-            "MiniMax-H3 generates a single video per call. Only 1 video will be generated."
+            "\(modelID) generates a single video per call. Only 1 video will be generated."
         ))
     }
     if request.generateAudio != nil {
         warnings.append(miniMaxUnsupported(
             "generateAudio",
-            "The MiniMax-H3 API does not expose an audio parameter. The generateAudio option was ignored."
+            "The \(modelID) API does not expose an audio parameter. The generateAudio option was ignored."
         ))
     }
     return warnings
@@ -514,8 +562,13 @@ private func miniMaxUnsupported(_ feature: String, _ message: String) -> AIWarni
 }
 
 private func miniMaxResolvedResolution(_ resolution: String) -> String? {
-    if resolution.uppercased() == "2K" { return "2K" }
+    let named = resolution.uppercased()
+    if ["480P", "768P", "2K"].contains(named) { return named }
     switch resolution {
+    case "480x480", "1120x480", "854x480", "640x480", "480x854", "480x640":
+        return "480P"
+    case "768x768", "1792x768", "1366x768", "1024x768", "768x1366", "768x1024":
+        return "768P"
     case "2048x2048", "2560x1080", "2560x1440", "2048x1536", "1440x2560", "1536x2048":
         return "2K"
     default:

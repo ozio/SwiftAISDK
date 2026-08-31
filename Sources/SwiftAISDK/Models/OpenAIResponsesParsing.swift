@@ -457,7 +457,7 @@ func openAIResponsesToolResult(from item: JSONValue, providerID: String, toolCal
         return AIToolResult(
             toolCallID: item["id"]?.stringValue ?? "web-search-call",
             toolName: toolNameAliases["web_search"] ?? "web_search",
-            result: openAIResponsesWebSearchResult(from: item["action"])
+            result: openAIResponsesWebSearchResult(from: item["action"], providerID: providerID)
         )
     case "computer_call":
         guard item["call_id"]?.stringValue == nil else { return nil }
@@ -594,27 +594,49 @@ private func openAIResponsesComputerActionForModel(_ action: JSONValue) -> JSONV
     return .object(object)
 }
 
-func openAIResponsesWebSearchResult(from action: JSONValue?) -> JSONValue {
+func openAIResponsesWebSearchResult(from action: JSONValue?, providerID: String = "openai.responses") -> JSONValue {
     guard let action, let type = action["type"]?.stringValue else { return .object([:]) }
     var mappedAction: [String: JSONValue]
     switch type {
     case "search":
         mappedAction = ["type": .string("search")]
-        if let query = action["query"] { mappedAction["query"] = query }
-        if let queries = action["queries"] { mappedAction["queries"] = queries }
+        if let query = action["query"], query != .null { mappedAction["query"] = query }
+        if let queries = action["queries"], queries != .null { mappedAction["queries"] = queries }
     case "open_page":
         mappedAction = ["type": .string("openPage")]
-        if let url = action["url"] { mappedAction["url"] = url }
+        if let url = action["url"], url != .null { mappedAction["url"] = url }
     case "find_in_page":
         mappedAction = ["type": .string("findInPage")]
-        if let url = action["url"] { mappedAction["url"] = url }
-        if let pattern = action["pattern"] { mappedAction["pattern"] = pattern }
+        if let url = action["url"], url != .null { mappedAction["url"] = url }
+        if let pattern = action["pattern"], pattern != .null { mappedAction["pattern"] = pattern }
     default:
         mappedAction = ["type": .string(type)]
     }
     var result: [String: JSONValue] = ["action": .object(mappedAction)]
-    if let sources = action["sources"] {
-        result["sources"] = sources
+    if let sources = action["sources"]?.arrayValue {
+        let mappedSources = sources.compactMap { source -> JSONValue? in
+            switch source["type"]?.stringValue {
+            case "url":
+                guard let url = source["url"]?.stringValue else { return nil }
+                var value: [String: JSONValue] = [
+                    "type": .string("url"),
+                    "url": .string(url)
+                ]
+                if providerID != "xai.responses", let title = source["title"]?.stringValue {
+                    value["title"] = .string(title)
+                }
+                return .object(value)
+            case "api":
+                guard providerID != "xai.responses" else { return nil }
+                guard let name = source["name"]?.stringValue else { return nil }
+                return .object(["type": .string("api"), "name": .string(name)])
+            default:
+                return nil
+            }
+        }
+        if !mappedSources.isEmpty {
+            result["sources"] = .array(mappedSources)
+        }
     }
     return .object(result)
 }
@@ -711,36 +733,20 @@ func openAIResponsesStreamEventStartsOutput(_ raw: JSONValue) -> Bool {
 }
 
 func openAIResponsesStreamAPIError(_ raw: JSONValue, providerID: String) -> AIError {
-    let error = raw["error"] ?? raw
-    let code = error["code"]?.stringValue ?? raw["code"]?.stringValue
-    let message = error["message"]?.stringValue ?? raw["message"]?.stringValue ?? "OpenAI Responses stream failed."
-    return .apiCall(
-        provider: providerID,
-        statusCode: openAIResponsesStreamErrorStatusCode(code),
-        body: message
-    )
-}
-
-func openAIResponsesStreamFailedError(_ response: JSONValue, providerID: String) -> AIError {
-    let error = response["error"] ?? response
-    let code = error["code"]?.stringValue
-    let message = error["message"]?.stringValue ?? "OpenAI Responses stream failed."
-    return .apiCall(
-        provider: providerID,
-        statusCode: openAIResponsesStreamErrorStatusCode(code),
-        body: message
-    )
-}
-
-private func openAIResponsesStreamErrorStatusCode(_ code: String?) -> Int {
-    switch code {
-    case "insufficient_quota", "rate_limit_exceeded":
-        return 429
-    case "server_error":
-        return 500
-    default:
-        return 400
+    if let providerError = openAIProviderStreamError(from: raw) {
+        return openAIProviderStreamAPICallError(providerError, providerID: providerID)
     }
+    return .apiCall(AIAPICallError(
+        provider: providerID,
+        statusCode: 500,
+        responseBody: raw["error"]?["message"]?.stringValue
+            ?? raw["message"]?.stringValue
+            ?? "OpenAI Responses stream failed."
+    ))
+}
+
+func openAIResponsesStreamFailedError(_ raw: JSONValue, providerID: String) -> AIError {
+    openAIResponsesStreamAPIError(raw, providerID: providerID)
 }
 
 func openAIResponsesFinishReason(status: String?, incompleteReason: String?, hasToolCalls: Bool = false) -> String? {

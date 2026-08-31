@@ -48,6 +48,11 @@ private func mcpOAuth2026ProtectedResourceResponse() -> AIHTTPResponse {
     )
     #expect(loopback["application_type"]?.stringValue == "native")
 
+    let trailingDotLoopback = try await mcpOAuth2026RegistrationBody(
+        redirectURL: "http://localhost./callback"
+    )
+    #expect(trailingDotLoopback["application_type"]?.stringValue == "native")
+
     let customScheme = try await mcpOAuth2026RegistrationBody(
         redirectURL: "swift-ai-sdk://oauth/callback"
     )

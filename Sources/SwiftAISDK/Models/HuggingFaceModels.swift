@@ -79,6 +79,12 @@ public final class HuggingFaceResponsesLanguageModel: LanguageModel, @unchecked 
                             continuation.yield(.raw(raw))
                         }
 
+                        if let providerError = huggingFaceStreamProviderError(from: raw) {
+                            finishReason = "error"
+                            continuation.yield(.providerError(providerError))
+                            continue
+                        }
+
                         switch raw["type"]?.stringValue {
                         case "response.created":
                             let metadataRaw = raw["response"] ?? raw
@@ -636,6 +642,42 @@ private func huggingFaceFinishReason(_ reason: String?) -> String? {
     default:
         return "other"
     }
+}
+
+private func huggingFaceStreamProviderError(from raw: JSONValue) -> AIStreamProviderError? {
+    guard let type = raw["type"]?.stringValue,
+          type == "error" || type == "response.failed" else {
+        return nil
+    }
+    let details = type == "response.failed"
+        ? raw["response"]?["error"]
+        : (raw["error"] ?? raw)
+    guard let message = details?["message"]?.stringValue else { return nil }
+    let code: JSONValue?
+    if details?["code"]?.stringValue != nil || details?["code"]?.doubleValue != nil {
+        code = details?["code"]
+    } else {
+        code = nil
+    }
+    let statusCode: Int?
+    if let numericCode = code?.intValue, (400...599).contains(numericCode) {
+        statusCode = numericCode
+    } else if let stringCode = code?.stringValue,
+              stringCode.count == 3,
+              stringCode.allSatisfy(\.isNumber),
+              let numericCode = Int(stringCode),
+              (400...599).contains(numericCode) {
+        statusCode = numericCode
+    } else {
+        statusCode = nil
+    }
+    return AIStreamProviderError(
+        message: message,
+        type: type,
+        code: code,
+        statusCode: statusCode,
+        data: raw
+    )
 }
 
 private func huggingFaceJSONString(_ value: JSONValue) -> String? {

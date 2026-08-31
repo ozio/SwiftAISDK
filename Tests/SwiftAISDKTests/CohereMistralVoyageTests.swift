@@ -29,6 +29,21 @@ import Testing
     #expect(body["max_tokens"]?.intValue == 12)
     #expect(body["documents"] == nil)
 }
+
+@Test func cohereLanguagePreservesCompleteRawUsageLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"generation_id":"gen-raw","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":10,"output_tokens":5,"future_nested":{"kept":true}},"billed_units":{"input_tokens":9,"output_tokens":4},"cached_tokens":3,"future_top_level":{"label":"kept"}}}"#))
+    let provider = try AIProviders.cohere(settings: ProviderSettings(apiKey: "cohere-key", transport: transport))
+
+    let result = try await provider.languageModel("command-a-03-2025").generate(LanguageModelRequest(messages: [.user("Hi")]))
+
+    #expect(result.usage?.inputTokens == 10)
+    #expect(result.usage?.outputTokens == 5)
+    #expect(result.usage?.rawValue?["billed_units"]?["input_tokens"]?.intValue == 9)
+    #expect(result.usage?.rawValue?["cached_tokens"]?.intValue == 3)
+    #expect(result.usage?.rawValue?["tokens"]?["future_nested"]?["kept"]?.boolValue == true)
+    #expect(result.usage?.rawValue?["future_top_level"]?["label"]?.stringValue == "kept")
+}
+
 @Test func cohereProviderAddsVersionedUserAgentSuffix() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"generation_id":"gen-1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":1,"output_tokens":1}}}
@@ -44,7 +59,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer cohere-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/4.0.29")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/cohere/4.0.35")
 }
 
 @Test func cohereLanguageMapsTopLevelReasoningLikeUpstreamV4() async throws {
@@ -448,6 +463,7 @@ import Testing
             ],
             "unused": ["type": "object"]
         ],
+        providerOptions: ["mistral": ["promptCacheKey": "shared-prefix-1"]],
         extraBody: [
             "safePrompt": true,
             "randomSeed": 7,
@@ -485,6 +501,8 @@ import Testing
     #expect(body["safe_prompt"]?.boolValue == true)
     #expect(body["random_seed"]?.intValue == 7)
     #expect(body["document_page_limit"]?.intValue == 2)
+    #expect(body["prompt_cache_key"]?.stringValue == "shared-prefix-1")
+    #expect(body["promptCacheKey"] == nil)
     #expect(body["top_k"] == nil)
     #expect(body["presence_penalty"]?.doubleValue == 0.1)
     #expect(body["frequency_penalty"]?.doubleValue == 0.2)
@@ -531,11 +549,11 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer mistral-key")
-    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/4.0.32")
+    #expect(request.headers["user-agent"] == "custom-client/1.0 ai-sdk/mistral/4.0.37")
 }
 @Test func mistralMissingFinishReasonMapsToOtherAndUsageCountsCache() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":null}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"num_cached_tokens":3}}
+    {"id":"cmpl-1","object":"chat.completion","model":"mistral-small-latest","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":null}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"num_cached_tokens":3,"prompt_audio_seconds":1.5,"completion_tokens_details":{"reasoning_tokens":1,"future":"kept"},"future_usage":{"nested":true}}}
     """))
     let provider = try AIProviders.mistral(settings: ProviderSettings(apiKey: "mistral-key", transport: transport))
     let model = try provider.languageModel("mistral-small-latest")
@@ -548,4 +566,24 @@ import Testing
     #expect(result.usage?.inputTokensCacheRead == 3)
     #expect(result.usage?.outputTextTokens == 2)
     #expect(result.usage?.rawValue?["num_cached_tokens"]?.intValue == 3)
+    #expect(result.usage?.rawValue?["prompt_audio_seconds"]?.doubleValue == 1.5)
+    #expect(result.usage?.rawValue?["completion_tokens_details"]?["future"]?.stringValue == "kept")
+    #expect(result.usage?.rawValue?["future_usage"]?["nested"]?.boolValue == true)
+}
+
+@Test func mistralPromptCacheKeyRequiresAString() async throws {
+    let provider = try AIProviders.mistral(settings: ProviderSettings(
+        apiKey: "mistral-key",
+        transport: RecordingTransport(response: jsonResponse("{}"))
+    ))
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.mistral.promptCacheKey",
+        message: "Mistral promptCacheKey must be a string."
+    )) {
+        _ = try await provider.languageModel("mistral-small-latest").generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["mistral": ["promptCacheKey": 7]]
+        ))
+    }
 }

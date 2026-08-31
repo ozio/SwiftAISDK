@@ -1,5 +1,82 @@
 import Foundation
 
+func deepSeekStreamProviderError(from raw: JSONValue) -> AIStreamProviderError? {
+    guard let error = raw["error"] else { return nil }
+    let type = error["type"]?.stringValue
+    let code = deepSeekStreamErrorCode(error["code"])
+    let metadata = deepSeekStreamErrorMetadata(type: type, code: code)
+    return AIStreamProviderError(
+        message: error["message"]?.stringValue ?? deepSeekJSONString(error) ?? "DeepSeek stream error.",
+        type: type,
+        code: code,
+        statusCode: metadata.statusCode,
+        isRetryable: metadata.isRetryable,
+        data: raw
+    )
+}
+
+private func deepSeekStreamErrorCode(_ value: JSONValue?) -> JSONValue? {
+    guard let value, value.stringValue != nil || value.doubleValue != nil else {
+        return nil
+    }
+    return value
+}
+
+private func deepSeekStreamErrorMetadata(
+    type: String?,
+    code: JSONValue?
+) -> (statusCode: Int?, isRetryable: Bool?) {
+    let codeString = code?.stringValue
+    if codeString == "insufficient_quota" || type == "insufficient_quota" {
+        return (429, false)
+    }
+    if let statusCode = deepSeekStreamHTTPStatusCode(code) {
+        return (statusCode, deepSeekStreamStatusIsRetryable(statusCode))
+    }
+    for discriminator in [codeString, type] {
+        switch discriminator {
+        case "rate_limit_exceeded", "rate_limit_error":
+            return (429, true)
+        case "server_error", "api_error", "internal_server_error":
+            return (500, true)
+        case "overloaded_error", "service_unavailable":
+            return (503, true)
+        case "timeout", "timeout_error":
+            return (504, true)
+        case "authentication_error", "invalid_api_key":
+            return (401, false)
+        case "permission_error":
+            return (403, false)
+        case "not_found_error", "model_not_found":
+            return (404, false)
+        case "bad_request", "context_length_exceeded", "invalid_request_error":
+            return (400, false)
+        default:
+            continue
+        }
+    }
+    return (nil, nil)
+}
+
+private func deepSeekStreamHTTPStatusCode(_ value: JSONValue?) -> Int? {
+    let statusCode: Int?
+    if let intValue = value?.intValue {
+        statusCode = intValue
+    } else if let stringValue = value?.stringValue,
+              stringValue.count == 3,
+              stringValue.allSatisfy(\.isNumber) {
+        statusCode = Int(stringValue)
+    } else {
+        statusCode = nil
+    }
+    guard let statusCode, 400...599 ~= statusCode else { return nil }
+    return statusCode
+}
+
+private func deepSeekStreamStatusIsRetryable(_ statusCode: Int) -> Bool {
+    statusCode == 408 || statusCode == 409 || statusCode == 429 || statusCode >= 500
+}
+
 public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
@@ -17,7 +94,11 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
             modelID: modelID,
             stream: false,
             supportsThinking: config.deepSeekSupportsThinking,
-            supportsStructuredOutputs: config.supportsStructuredOutputs
+            supportsStructuredOutputs: config.supportsStructuredOutputs,
+            supportsAssistantPrefixCompletion: config.baseURL.hasSuffix("/beta"),
+            supportsStrictToolCalls: config.baseURL.hasSuffix("/beta"),
+            supportsPenaltySampling: providerID.hasPrefix("azure."),
+            providerOptionsName: providerID.split(separator: ".").first.map(String.init) ?? "deepseek"
         )
         let response = try await config.sendJSONResponse(
             path: "/chat/completions",
@@ -55,7 +136,11 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
                         modelID: modelID,
                         stream: true,
                         supportsThinking: config.deepSeekSupportsThinking,
-                        supportsStructuredOutputs: config.supportsStructuredOutputs
+                        supportsStructuredOutputs: config.supportsStructuredOutputs,
+                        supportsAssistantPrefixCompletion: config.baseURL.hasSuffix("/beta"),
+                        supportsStrictToolCalls: config.baseURL.hasSuffix("/beta"),
+                        supportsPenaltySampling: providerID.hasPrefix("azure."),
+                        providerOptionsName: providerID.split(separator: ".").first.map(String.init) ?? "deepseek"
                     )
                     let httpRequest = try config.request(
                         path: "/chat/completions",
@@ -94,12 +179,9 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
-                        if let error = raw["error"] {
+                        if let providerError = deepSeekStreamProviderError(from: raw) {
                             finishReason = "error"
-                            continuation.yield(.error(
-                                message: error["message"]?.stringValue ?? deepSeekJSONString(error) ?? "DeepSeek stream error.",
-                                rawValue: error
-                            ))
+                            continuation.yield(.providerError(providerError))
                             continue
                         }
                         if !didEmitResponseMetadata {

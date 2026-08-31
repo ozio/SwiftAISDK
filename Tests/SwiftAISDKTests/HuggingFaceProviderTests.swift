@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://router.huggingface.co/v1/responses")
     #expect(request.headers["authorization"] == "Bearer hf-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/huggingface/2.0.35")
+    #expect(request.headers["user-agent"] == "ai-sdk/huggingface/2.0.41")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "openai/gpt-oss-120b")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -36,7 +36,7 @@ import Testing
     _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
     let request = try #require(await transport.requests().first)
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/huggingface/2.0.35")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/huggingface/2.0.41")
 }
 
 @Test func huggingFaceResponsesAliasAndUnsupportedFamiliesMatchProviderWrapper() async throws {
@@ -429,4 +429,45 @@ import Testing
     #expect(finishMetadata["huggingface"]?["responseId"]?.stringValue == "resp-hf-1")
     #expect(responseMetadata?.id == "resp-hf-1")
     #expect(responseMetadata?.modelID == "deepseek-ai/DeepSeek-V3-0324")
+}
+
+@Test func huggingFaceLanguageNormalizesErrorAndResponseFailedStreamEventsLikeUpstream() async throws {
+    let chunks = [
+        #"data:{"type":"error","error":{"message":"Rate limited","code":429}}"#,
+        #"data:{"type":"response.failed","response":{"error":{"message":"Model failed","code":"model_error"}}}"#,
+        #"data:{"type":"error","error":{"message":"Temporarily unavailable","code":"503"}}"#
+    ].map { Data(($0 + "\n\n").utf8) }
+    let transport = RecordingTransport(response: AIHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "text/event-stream"],
+        body: chunks.reduce(Data(), +)
+    ))
+    let provider = try AIProviders.huggingFace(settings: ProviderSettings(apiKey: "hf-key", transport: transport))
+    let model = try provider.languageModel("deepseek-ai/DeepSeek-V3-0324")
+
+    var errors: [AIStreamProviderError] = []
+    var finishReason: String?
+    for try await part in model.stream(LanguageModelRequest(messages: [.user("Hi")])) {
+        if let error = part.streamProviderError {
+            errors.append(error)
+        }
+        if case let .finishMetadata(reason, _, _) = part {
+            finishReason = reason
+        }
+    }
+
+    #expect(errors.count == 3)
+    #expect(errors[0].message == "Rate limited")
+    #expect(errors[0].type == "error")
+    #expect(errors[0].code == 429)
+    #expect(errors[0].statusCode == 429)
+    #expect(errors[0].isRetryable)
+    #expect(errors[1].message == "Model failed")
+    #expect(errors[1].type == "response.failed")
+    #expect(errors[1].code == "model_error")
+    #expect(errors[2].message == "Temporarily unavailable")
+    #expect(errors[2].code == "503")
+    #expect(errors[2].statusCode == 503)
+    #expect(errors[2].isRetryable)
+    #expect(finishReason == "error")
 }

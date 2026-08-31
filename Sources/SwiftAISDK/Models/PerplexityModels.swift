@@ -288,10 +288,10 @@ private func perplexityUsage(from raw: JSONValue) -> TokenUsage? {
     let reasoningTokens = usage["reasoning_tokens"]?.intValue ?? 0
     return TokenUsage(
         inputTokens: inputTokens,
-        outputTokens: outputTokens,
-        totalTokens: usage["total_tokens"]?.intValue ?? inputTokens + outputTokens,
+        outputTokens: outputTokens + reasoningTokens,
+        totalTokens: inputTokens + outputTokens + reasoningTokens,
         inputTokensNoCache: inputTokens,
-        outputTextTokens: outputTokens - reasoningTokens,
+        outputTextTokens: outputTokens,
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )

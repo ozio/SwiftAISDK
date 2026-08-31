@@ -3,6 +3,7 @@ import Foundation
 public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID = "voyage.embedding"
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { 128 }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -15,11 +16,12 @@ public final class VoyageEmbeddingModel: EmbeddingModel, @unchecked Sendable {
             extraBody: request.extraBody,
             providerOptions: request.providerOptions
         )
-        guard request.values.count <= 128 else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 128
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: 128,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }

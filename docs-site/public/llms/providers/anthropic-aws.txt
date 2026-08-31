@@ -18,7 +18,7 @@ Source URL: /providers/anthropic-aws/
 
 ## Notes
 
-Anthropic AWS mirrors upstream 2.0.33 request signing, regional endpoint handling, and the shared Anthropic Messages behavior represented by the Swift provider. JavaScript AWS credential-provider hooks remain runtime-specific.
+Anthropic AWS mirrors upstream 2.0.38 request signing, regional endpoint handling, and the shared Anthropic Messages behavior represented by the Swift provider. JavaScript AWS credential-provider hooks remain runtime-specific.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

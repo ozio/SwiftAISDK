@@ -119,7 +119,16 @@ public extension LanguageModel {
 public protocol EmbeddingModel: Sendable {
     var providerID: String { get }
     var modelID: String { get }
+    /// Maximum number of values the model accepts in one embedding call.
+    var maxEmbeddingsPerCall: Int? { get }
+    /// Maximum aggregate UTF-8 input bytes the model accepts in one embedding call.
+    var maxInputBytesPerCall: Int? { get }
     func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult
+}
+
+public extension EmbeddingModel {
+    var maxEmbeddingsPerCall: Int? { nil }
+    var maxInputBytesPerCall: Int? { nil }
 }
 
 public protocol ImageModel: Sendable {

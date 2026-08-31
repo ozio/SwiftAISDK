@@ -3,6 +3,7 @@ import Foundation
 public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { 100 }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -12,11 +13,12 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     }
 
     public func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult {
-        guard request.values.count <= 2048 else {
+        let embeddingLimit = maxEmbeddingsPerCall ?? 100
+        guard request.values.count <= embeddingLimit else {
             throw AITooManyEmbeddingValuesForCallError(
                 provider: providerID,
                 modelID: modelID,
-                maxEmbeddingsPerCall: 2048,
+                maxEmbeddingsPerCall: embeddingLimit,
                 values: request.values
             )
         }

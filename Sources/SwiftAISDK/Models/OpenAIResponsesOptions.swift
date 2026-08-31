@@ -137,6 +137,7 @@ func openAIResponsesInputMessageJSON(
     providerDefinedToolNames: Set<String> = [],
     shellToolNames: Set<String> = [],
     computerToolNames: Set<String> = [],
+    toolSearchToolName: String? = "tool_search",
     providerID: String = "openai",
     useDeveloperRoleForSystem: Bool = false,
     warnings: inout [AIWarning]
@@ -163,7 +164,7 @@ func openAIResponsesInputMessageJSON(
                 return items
             case let .toolResult(result):
                 guard !openAIResponsesShouldSkipToolResult(result) else { return [] }
-                if result.toolName == "tool_search" {
+                if result.toolName == toolSearchToolName {
                     return [.object(openAIResponsesToolSearchOutput(result, store: store, providerID: providerID))]
                 }
                 if result.toolName == "local_shell" {
@@ -186,7 +187,12 @@ func openAIResponsesInputMessageJSON(
                     return [.object([
                         "type": .string("custom_tool_call_output"),
                         "call_id": .string(result.toolCallID),
-                        "output": openResponsesToolResultOutput(result, providerID: providerID, warnings: &warnings)
+                        "output": openResponsesToolResultOutput(
+                            result,
+                            providerID: providerID,
+                            promptCacheBreakpoint: openAIResponsesScalarToolResultPromptCacheBreakpoint(result),
+                            warnings: &warnings
+                        )
                     ])]
                 }
                 var warnings: [AIWarning] = []
@@ -197,6 +203,7 @@ func openAIResponsesInputMessageJSON(
                         result,
                         providerID: providerID,
                         jsonEncodeText: outputSchemaToolNames.contains(result.toolName),
+                        promptCacheBreakpoint: openAIResponsesScalarToolResultPromptCacheBreakpoint(result),
                         warnings: &warnings
                     )
                 ]
@@ -246,7 +253,7 @@ func openAIResponsesInputMessageJSON(
                 if hasConversation, itemID != nil {
                     break
                 }
-                if call.name == "tool_search" {
+                if call.name == toolSearchToolName {
                     output.append(openAIResponsesToolSearchCallItem(call, store: store))
                     break
                 }
@@ -304,7 +311,7 @@ func openAIResponsesInputMessageJSON(
                 if openAIResponsesShouldSkipAssistantToolResult(result) {
                     break
                 }
-                if result.toolName == "tool_search" {
+                if result.toolName == toolSearchToolName {
                     output.append(.object(openAIResponsesToolSearchOutput(result, store: store, providerID: providerID)))
                     break
                 }
@@ -374,6 +381,21 @@ func openAIResponsesInputMessageJSON(
         "role": .string(role),
         "content": .string(message.combinedText)
     ])]
+}
+
+func openAIResponsesScalarToolResultPromptCacheBreakpoint(_ result: AIToolResult) -> JSONValue? {
+    let output = result.modelOutput ?? result.result
+    let outputOptions = output["providerOptions"]?["openai"]?.objectValue
+        ?? output["provider_options"]?["openai"]?.objectValue
+    if let breakpoint = outputOptions?["promptCacheBreakpoint"]
+        ?? outputOptions?["prompt_cache_breakpoint"] {
+        return breakpoint
+    }
+
+    let resultOptions = result.providerMetadata["openai"]?.objectValue
+        ?? result.providerMetadata
+    return resultOptions["promptCacheBreakpoint"]
+        ?? resultOptions["prompt_cache_breakpoint"]
 }
 
 func openAIResponsesSerializedToolCallArguments(_ arguments: String) -> String {

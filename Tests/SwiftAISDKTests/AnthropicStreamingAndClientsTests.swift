@@ -39,7 +39,7 @@ import Testing
     #expect(request.url.absoluteString == "https://api.anthropic.com/v1/files")
     #expect(request.headers["x-api-key"] == "claude-key")
     #expect(request.headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.41")
+    #expect(request.headers["user-agent"] == "ai-sdk/anthropic/4.0.46")
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"file\"; filename=\"data.pdf\""))
     #expect(bodyText.contains("Content-Type: application/pdf"))
@@ -115,7 +115,7 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://api.anthropic.com/v1/skills")
     #expect(requests[0].headers["x-api-key"] == "claude-key")
     #expect(requests[0].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/4.0.41")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic/4.0.46")
     #expect(requests[0].headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let bodyText = String(data: try #require(requests[0].body), encoding: .utf8) ?? ""
     #expect(bodyText.contains("name=\"display_title\""))
@@ -125,7 +125,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.anthropic.com/v1/skills/skill_01/versions/1772078378207930")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/4.0.41")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic/4.0.46")
 }
 
 @Test func anthropicSkillsOmitDisplayTitleWhenNotProvidedLikeUpstream() async throws {
@@ -150,6 +150,22 @@ import Testing
     let bodyText = String(data: try #require(request.body), encoding: .utf8) ?? ""
     #expect(!bodyText.contains("name=\"display_title\""))
     #expect(bodyText.contains("name=\"files[]\"; filename=\"index.ts\""))
+}
+
+@Test func anthropicSkillsEncodesUntrustedIDsAsSinglePathSegments() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"skill/../../admin","latest_version":"..","source":"custom"}"#),
+        jsonResponse(#"{"type":"skill_version","skill_id":"skill/../../admin","name":"safe"}"#)
+    ])
+    let provider = try AIProviders.anthropic(settings: ProviderSettings(apiKey: "claude-key", transport: transport))
+
+    _ = try await provider.skills().uploadSkill(SkillUploadRequest(files: [
+        SkillUploadFile(path: "SKILL.md", data: Data("safe".utf8))
+    ]))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[1].url.absoluteString == "https://api.anthropic.com/v1/skills/skill%2F..%2F..%2Fadmin/versions/%252E%252E")
 }
 
 @Test func anthropicAWSFilesAndSkillsUseUpstreamProviderIDs() async throws {
@@ -192,12 +208,12 @@ import Testing
     #expect(requests[0].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/files")
     #expect(requests[0].headers["x-api-key"] == "aws-api-key")
     #expect(requests[0].headers["anthropic-beta"] == "files-api-2025-04-14")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.33")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.38")
     #expect(requests[1].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills")
     #expect(requests[1].headers["anthropic-beta"] == "skills-2025-10-02")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.33")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.38")
     #expect(requests[2].url.absoluteString == "https://aws-external-anthropic.us-west-2.api.aws/v1/skills/skill_aws/versions/v1")
-    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.33")
+    #expect(requests[2].headers["user-agent"] == "ai-sdk/anthropic-aws/2.0.38")
 }
 
 @Test func anthropicLanguageStreamsMessagesEvents() async throws {

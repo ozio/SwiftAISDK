@@ -113,6 +113,10 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
             }
             var metadata: [String: JSONValue] = ["taskId": .string(taskID)]
             if let usage = raw["usage"], usage != .null { metadata["usage"] = usage }
+            if let lastFrameURL = raw["content"]?["last_frame_url"]?.stringValue,
+               !lastFrameURL.isEmpty {
+                metadata["lastFrameUrl"] = .string(lastFrameURL)
+            }
             return .completed(VideoGenerationResult(
                 urls: [videoURL],
                 operationID: taskID,

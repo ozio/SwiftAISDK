@@ -583,13 +583,14 @@ func cohereToolArguments(_ arguments: String) -> String {
 }
 
 func cohereTokenUsage(from raw: JSONValue) -> TokenUsage? {
-    guard let tokens = raw["usage"]?["tokens"] else { return nil }
+    guard let usage = raw["usage"], let tokens = usage["tokens"] else { return nil }
     return TokenUsage(
         inputTokens: tokens["input_tokens"]?.intValue,
         outputTokens: tokens["output_tokens"]?.intValue,
         totalTokens: (tokens["input_tokens"]?.intValue).flatMap { input in
             (tokens["output_tokens"]?.intValue).map { input + $0 }
-        }
+        },
+        rawValue: usage
     )
 }
 

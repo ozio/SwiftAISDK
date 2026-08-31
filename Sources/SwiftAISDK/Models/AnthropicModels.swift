@@ -296,12 +296,32 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
-                        if let streamError = anthropicStreamError(from: raw, provider: providerID, headers: response.headers) {
+                        if let providerError = anthropicStreamProviderError(from: raw) {
                             if didReceiveMessageStart {
-                                continuation.yield(.error(message: streamError.apiCallError?.responseBody ?? streamError.description, rawValue: raw))
+                                continuation.yield(.providerError(providerError))
+                                for part in contentBlocks.finishParts() {
+                                    continuation.yield(part)
+                                }
+                                for part in jsonToolText.finishParts() {
+                                    continuation.yield(part)
+                                }
+                                continuation.yield(.finishMetadata(
+                                    reason: "error",
+                                    usage: finishUsage,
+                                    providerMetadata: anthropicProviderMetadata(
+                                        usage: rawUsage,
+                                        stopSequence: stopSequence,
+                                        stopDetails: stopDetails,
+                                        container: container,
+                                        contextManagement: contextManagement,
+                                        providerID: providerID,
+                                        requestProviderOptions: request.providerOptions
+                                    )
+                                ))
                                 break
                             }
-                            throw streamError
+                            throw anthropicStreamError(from: raw, provider: providerID, headers: response.headers)
+                                ?? AIError.invalidResponse(provider: providerID, message: providerError.message)
                         }
                         switch raw["type"]?.stringValue {
                         case "message_start":
@@ -523,7 +543,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             body: body,
             betas: betas,
             warnings: warnings,
-            usesJSONToolResponseFormat: usesJSONToolResponseFormat
+            usesJSONToolResponseFormat: usesJSONToolResponseFormat,
+            toolNameMapping: toolNameMapping
         )
     }
 
@@ -1598,6 +1619,7 @@ struct AnthropicPreparedCall {
     var betas: [String]
     var warnings: [AIWarning]
     var usesJSONToolResponseFormat: Bool = false
+    var toolNameMapping: AIToolNameMapping = AIToolNameMapping()
 }
 
 private func anthropicSupportedHTTPURL(_ value: String) -> Bool {
@@ -1746,12 +1768,17 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                             if request.includeRawChunks {
                                 continuation.yield(.raw(raw))
                             }
-                            if let errorMessage = item.errorMessage {
-                                throw AIError.invalidResponse(provider: providerID, message: errorMessage)
+                            if let providerError = amazonBedrockStreamProviderError(from: item) {
+                                finishReason = "error"
+                                continuation.yield(.providerError(providerError))
+                                emitTerminal()
+                                return true
                             }
-                            if raw["type"]?.stringValue == "error" {
-                                let message = raw["error"]?["message"]?.stringValue ?? raw["message"]?.stringValue ?? "Bedrock Anthropic stream returned an error event."
-                                throw AIError.invalidResponse(provider: providerID, message: message)
+                            if let providerError = anthropicStreamProviderError(from: raw) {
+                                finishReason = "error"
+                                continuation.yield(.providerError(providerError))
+                                emitTerminal()
+                                return true
                             }
                             switch raw["type"]?.stringValue {
                             case "message_start":

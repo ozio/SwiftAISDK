@@ -128,8 +128,15 @@ public actor MCPClient {
     }
 
     public func tools() async throws -> [String: AITool] {
-        let definitions = try await listTools()
-        return toolsFromDefinitions(definitions)
+        var definitions = try await listTools()
+        var allTools = definitions.tools
+
+        while let nextCursor = definitions.nextCursor {
+            definitions = try await listTools(cursor: nextCursor)
+            allTools.append(contentsOf: definitions.tools)
+        }
+
+        return toolsFromDefinitions(MCPListToolsResult(tools: allTools))
     }
 
     public func toolsFromDefinitions(_ definitions: MCPListToolsResult) -> [String: AITool] {

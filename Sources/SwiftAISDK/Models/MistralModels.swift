@@ -172,6 +172,8 @@ public final class MistralLanguageModel: LanguageModel, @unchecked Sendable {
                 body["document_image_limit"] = value
             case "documentPageLimit":
                 body["document_page_limit"] = value
+            case "promptCacheKey":
+                body["prompt_cache_key"] = value
             case "parallelToolCalls":
                 if !preparedTools.tools.isEmpty { body["parallel_tool_calls"] = value }
             case "responseFormat", "structuredOutputs", "strictJsonSchema":

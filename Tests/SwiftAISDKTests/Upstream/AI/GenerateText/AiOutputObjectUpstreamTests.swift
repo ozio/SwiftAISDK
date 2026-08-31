@@ -188,3 +188,51 @@ import Testing
     ])
     #expect(model.requests.first?.responseFormat == .json(schema: schema))
 }
+
+@Test func aiGenerateTextOutputObjectParsesWhenFinishReasonIsMissingLikeUpstream() async throws {
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: #"{"value":"test-value"}"#,
+        content: [.text(#"{"value":"test-value"}"#)],
+        finishReason: nil,
+        rawValue: .object([:])
+    ))
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "prompt",
+        output: Output.object(schema: outputValueSchema(), as: OutputValue.self),
+        executableTools: []
+    )
+
+    #expect(result.output == OutputValue(value: "test-value"))
+}
+
+@Test func aiGenerateTextOutputObjectDoesNotParseMixedTextAndToolCallsLikeUpstream() async throws {
+    let toolCall = AIToolCall(id: "call-1", name: "testTool", arguments: #"{"value":"test"}"#)
+    let model = MockLanguageModel(result: TextGenerationResult(
+        text: "I will use the test tool.",
+        content: [.text("I will use the test tool."), .toolCall(toolCall)],
+        finishReason: "tool-calls",
+        toolCalls: [toolCall],
+        rawValue: .object([:])
+    ))
+    let tool = AITool(
+        name: "testTool",
+        parameters: [
+            "type": "object",
+            "properties": ["value": ["type": "string"]],
+            "required": ["value"]
+        ]
+    ) { _ in "tool result" }
+
+    let result = try await AI.generateText(
+        model: model,
+        prompt: "prompt",
+        output: Output.object(schema: outputValueSchema(), as: OutputValue.self),
+        executableTools: [tool],
+        maxSteps: 1
+    )
+
+    #expect(result.output == nil)
+    #expect(result.text == "I will use the test tool.")
+}

@@ -248,7 +248,7 @@ import Testing
     #expect(normalizeHeaders(streamRequests[0].headers)["operation-header"] == "operation")
 }
 
-@Test func openAIResponsesBatchV4RejectsPendingResultsAndReturnsEmptyTerminalStream() async throws {
+@Test func openAIResponsesBatchV4RejectsPendingResultsAndCompletedBatchWithoutOutput() async throws {
     let pendingTransport = OpenAIBatchScriptedTransport(sendResponses: [jsonResponse(openAIBatchMetadata(
         status: "in_progress",
         total: 2,
@@ -272,12 +272,14 @@ import Testing
         apiKey: "test-api-key",
         transport: terminalTransport
     ))
-    let stream = try await terminalProvider.batchLanguageModel("gpt-5.6").getBatchResults(
-        AIBatchOperationOptions(batchID: "batch_123")
-    )
-    var count = 0
-    for try await _ in stream { count += 1 }
-    #expect(count == 0)
+    await #expect(throws: AIError.invalidResponse(
+        provider: "openai.responses",
+        message: "OpenAI batch \"batch_123\" completed without batch output."
+    )) {
+        _ = try await terminalProvider.batchLanguageModel("gpt-5.6").getBatchResults(
+            AIBatchOperationOptions(batchID: "batch_123")
+        )
+    }
     #expect(await terminalTransport.streamRequests().isEmpty)
 }
 
@@ -316,10 +318,124 @@ import Testing
         return
     }
     #expect(id == "tool")
-    #expect(error.code == "unsupported_tool_call")
+    #expect(error.code == "unsupported_content")
     await #expect(throws: (any Error).self) {
         _ = try await iterator.next()
     }
+}
+
+@Test func openAIResponsesBatchV4KeepsInvalidAndUnsupportedItemsLocalAndPreservesReasoningMetadata() async throws {
+    let invalid = openAIBatchResultLine(
+        id: "invalid",
+        statusCode: 200,
+        body: ["output": 42]
+    )
+    let image = openAIBatchResultLine(
+        id: "image",
+        statusCode: 200,
+        body: [
+            "id": "resp_image",
+            "output": [[
+                "type": "image_generation_call",
+                "id": "image_123",
+                "result": "aW1hZ2U="
+            ]]
+        ]
+    )
+    let reasoning = openAIBatchResultLine(
+        id: "reasoning",
+        statusCode: 200,
+        body: [
+            "id": "resp_reasoning",
+            "created_at": 1_700_000_000,
+            "model": "gpt-5.6",
+            "output": [
+                [
+                    "type": "reasoning",
+                    "id": "reasoning_123",
+                    "encrypted_content": "encrypted-reasoning",
+                    "summary": [[
+                        "type": "summary_text",
+                        "text": "I should answer directly."
+                    ]]
+                ],
+                [
+                    "type": "message",
+                    "role": "assistant",
+                    "id": "message_123",
+                    "content": [[
+                        "type": "output_text",
+                        "text": "Paris",
+                        "annotations": [],
+                        "logprobs": [[
+                            "token": "Paris",
+                            "logprob": -0.1,
+                            "top_logprobs": []
+                        ]]
+                    ]]
+                ]
+            ],
+            "reasoning": ["context": "reasoning-context"],
+            "incomplete_details": nil,
+            "usage": [
+                "input_tokens": 1,
+                "output_tokens": 1,
+                "input_tokens_details": ["cached_tokens": 0],
+                "output_tokens_details": ["reasoning_tokens": 1]
+            ]
+        ]
+    )
+    let transport = OpenAIBatchScriptedTransport(
+        sendResponses: [jsonResponse(openAIBatchMetadata(
+            status: "completed",
+            outputFileID: "file-output",
+            total: 3,
+            completed: 3,
+            failed: 0
+        ))],
+        streamScripts: [OpenAIBatchStreamScript(chunks: [Data("\(invalid)\n\(image)\n\(reasoning)".utf8)])]
+    )
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-api-key", transport: transport))
+    let stream = try await provider.batchLanguageModel("gpt-5.6").getBatchResults(
+        AIBatchOperationOptions(batchID: "batch_123")
+    )
+    var items: [AIBatchItemResult<TextGenerationResult>] = []
+    for try await item in stream { items.append(item) }
+
+    #expect(items.count == 3)
+    guard case let .failed(invalidID, invalidError, _) = items[0] else {
+        Issue.record("Expected an item-local invalid response")
+        return
+    }
+    #expect(invalidID == "invalid")
+    #expect(invalidError == AIBatchError(
+        message: "OpenAI returned an invalid Responses batch result.",
+        code: "invalid_response"
+    ))
+    guard case let .failed(imageID, imageError, _) = items[1] else {
+        Issue.record("Expected an item-local unsupported response")
+        return
+    }
+    #expect(imageID == "image")
+    #expect(imageError == AIBatchError(
+        message: "OpenAI returned an unsupported \"image_generation_call\" output item in an AI SDK text batch.",
+        code: "unsupported_content"
+    ))
+    guard case let .succeeded(reasoningID, result) = items[2] else {
+        Issue.record("Expected the later reasoning result to succeed")
+        return
+    }
+    #expect(reasoningID == "reasoning")
+    #expect(result.text == "Paris")
+    guard case let .reasoning(text, metadata) = result.content[0] else {
+        Issue.record("Expected reasoning content")
+        return
+    }
+    #expect(text == "I should answer directly.")
+    #expect(metadata["openai"]?["itemId"]?.stringValue == "reasoning_123")
+    #expect(metadata["openai"]?["reasoningEncryptedContent"]?.stringValue == "encrypted-reasoning")
+    #expect(result.providerMetadata["openai"]?["reasoningContext"]?.stringValue == "reasoning-context")
+    #expect(result.providerMetadata["openai"]?["logprobs"]?[0]?[0]?["token"]?.stringValue == "Paris")
 }
 
 @Test func openAIResponsesBatchV4IsExposedOnlyByOpenAIResponsesFactorySurfaces() throws {

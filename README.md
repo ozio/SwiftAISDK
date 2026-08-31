@@ -98,9 +98,11 @@ counting the same provider delta twice.
 
 Each logical built-in model response has one terminal `finishMetadata` part.
 Custom models should follow the same contract; clean custom EOF without a
-terminal is preserved rather than assigned a guessed outcome. Provider
-error events remain visible as repeatable in-band `error` parts on the full
-stream; setup, HTTP, framing, and network failures throw. `toTextStream()`
+terminal is preserved rather than assigned a guessed outcome. Provider error
+events remain visible as repeatable in-band `error` parts on the full stream;
+`part.streamProviderError` exposes normalized type, code, HTTP-equivalent
+status, retryability, and raw payload through `AIStreamProviderError`. Setup,
+HTTP, framing, and network failures throw. `toTextStream()`
 intentionally emits only canonical text deltas and ignores in-band error parts,
 while still propagating thrown stream failures.
 
@@ -226,8 +228,8 @@ their normalized `AIAPICallError` through `GatewayError.cause`.
 ## Durable Batch And Video Operations
 
 Batch V4 exposes persistable text-batch references plus status and terminal
-result streams. Anthropic Messages Batch, OpenAI Responses Batch, and Gateway
-Batch V4 implement the shared adapter:
+result streams. Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses
+Batch, and Gateway Batch V4 implement the shared adapter:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -237,17 +239,27 @@ let started = try await AI.startTextBatch(
     requests: [TextBatchRequest(
         id: "summary-1",
         request: LanguageModelRequest(messages: [.user("Summarize this.")])
-    )]
+    )],
+    webhookURL: "https://example.com/batches/complete"
 )
 
 // OpenAI Responses uses the same facade:
 let openAI = try AIProviders.openAI()
 let openAIBatchModel = try openAI.batchLanguageModel("gpt-5.6")
 
+// xAI Responses also exposes the shared batch lifecycle:
+let xAI = try AIProviders.xAI()
+let xAIBatchModel = try xAI.batchLanguageModel("grok-4")
+
 // Gateway models use the same facade through their language-model adapter:
 let gateway = try AIProviders.gateway()
 let gatewayBatchModel = try gateway.languageModel("openai/gpt-5.6")
 ```
+
+Gateway forwards `webhookURL` as its native callback. Direct Anthropic,
+OpenAI, and xAI batch adapters return an unsupported warning so callers can
+fall back to polling without silently assuming webhook delivery. Batch results
+also retain ordered mixed `content` beside their convenience `text` projection.
 
 Async Video V4 keeps unary `generateVideo` source compatible while adding
 serializable start/status operations, core-owned polling/webhook waiting, and a

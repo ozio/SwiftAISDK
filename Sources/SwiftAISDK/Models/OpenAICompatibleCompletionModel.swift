@@ -51,9 +51,48 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                     var activeTextID: String?
                     var finishReason: String? = "other"
                     var finishUsage: TokenUsage?
+                    let shouldThrowPreOutputStreamErrors = isOpenAIBackedProvider(providerID, config: config)
+                    var hasOutputStarted = false
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
-                        let raw = try decodeJSONBody(Data(event.data.utf8))
+                        let raw: JSONValue
+                        do {
+                            raw = try decodeJSONBody(Data(event.data.utf8))
+                        } catch {
+                            finishReason = "error"
+                            continuation.yield(.error(message: error.localizedDescription))
+                            continue
+                        }
+                        if let streamError = openAICompatibleStreamError(from: raw) {
+                            finishReason = "error"
+                            if shouldThrowPreOutputStreamErrors {
+                                let providerError = openAIProviderStreamError(from: streamError.rawValue)
+                                if !hasOutputStarted {
+                                    if let providerError {
+                                        throw openAIProviderStreamAPICallError(providerError, providerID: providerID)
+                                    }
+                                    throw AIError.apiCall(AIAPICallError(
+                                        provider: providerID,
+                                        statusCode: 500,
+                                        responseBody: streamError.message
+                                    ))
+                                }
+                                if request.includeRawChunks {
+                                    continuation.yield(.raw(raw))
+                                }
+                                if let providerError {
+                                    continuation.yield(.providerError(providerError))
+                                } else {
+                                    continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
+                                }
+                            } else {
+                                if request.includeRawChunks {
+                                    continuation.yield(.raw(raw))
+                                }
+                                continuation.yield(.error(message: streamError.message, rawValue: streamError.rawValue))
+                            }
+                            continue
+                        }
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
@@ -63,6 +102,7 @@ public final class OpenAICompatibleCompletionModel: LanguageModel, @unchecked Se
                             into: &providerMetadata
                         )
                         if let delta = choice?["text"]?.stringValue {
+                            if !delta.isEmpty { hasOutputStarted = true }
                             let id = activeTextID ?? "txt-0"
                             if activeTextID == nil {
                                 activeTextID = id

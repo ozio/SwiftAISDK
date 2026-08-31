@@ -201,7 +201,7 @@ import Testing
     #expect(metadata["open-responses"]?["reasoningEncryptedContent"]?.stringValue == "opaque-provider-state")
 }
 
-@Test func openResponsesStreamIgnoresReasoningSummaryTextDeltasLikeUpstream() async throws {
+@Test func openResponsesStreamsReasoningSummaryTextDeltasLikeUpstream() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs-original","summary":[]}}
 
@@ -231,9 +231,9 @@ import Testing
     }
 
     #expect(starts == ["rs-original"])
-    #expect(deltas.count == 1)
-    #expect(deltas.first?.0 == "rs-original")
-    #expect(deltas.first?.1 == "private reasoning")
+    #expect(deltas.count == 2)
+    #expect(deltas.map(\.0) == ["rs-original", "rs-original"])
+    #expect(deltas.map(\.1) == ["safe summary", "private reasoning"])
     #expect(ends == ["rs-original"])
 }
 

@@ -11,7 +11,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.46")
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.52")
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -117,7 +117,7 @@ public enum AIProviders {
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
             ),
-            userAgentSuffix: "ai-sdk/openai-compatible/3.0.35",
+            userAgentSuffix: "ai-sdk/openai-compatible/3.0.41",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
@@ -231,7 +231,7 @@ public enum AIProviders {
             headers["Authorization"] = "Bearer \(apiKey)"
         }
         headers.merge(settings.headers) { _, custom in custom }
-        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.30")
+        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.36")
         let endpoint = try requireURL(url)
         let base = "\(endpoint.scheme ?? "https")://\(endpoint.host ?? "")"
         let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
@@ -372,5 +372,5 @@ private func perplexityHeaders(settings: ProviderSettings) throws -> [String: St
         throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
     }
     headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
-    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.31")
+    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.36")
 }

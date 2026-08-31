@@ -79,6 +79,11 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                         if request.includeRawChunks {
                             continuation.yield(.raw(raw))
                         }
+                        if let providerError = groqStreamProviderError(from: raw) {
+                            finishReason = "error"
+                            continuation.yield(.providerError(providerError))
+                            continue
+                        }
                         if !didEmitResponseMetadata {
                             didEmitResponseMetadata = true
                             continuation.yield(.responseMetadata(aiResponseMetadata(from: raw, response: responseHead, modelID: modelID)))

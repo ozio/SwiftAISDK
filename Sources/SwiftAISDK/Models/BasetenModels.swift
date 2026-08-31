@@ -3,6 +3,7 @@ import Foundation
 public final class BasetenEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID = "baseten.embedding"
     public let modelID: String
+    public var maxEmbeddingsPerCall: Int? { basetenHTTPBatchSize }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {

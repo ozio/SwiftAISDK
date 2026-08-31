@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published `@ai-sdk/fish-audio` package version mirrored by this port.
-public let fishAudioProviderVersion = "3.0.7"
+public let fishAudioProviderVersion = "3.0.12"
 
 /// Creates a Fish Audio provider using the same defaults as
 /// `createFishAudio` from `@ai-sdk/fish-audio`.

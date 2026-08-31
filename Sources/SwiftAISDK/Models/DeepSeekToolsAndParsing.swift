@@ -1,7 +1,22 @@
 import Foundation
 
-func deepSeekTools(from tools: [String: JSONValue]) -> DeepSeekPreparedTools {
+func deepSeekTools(from tools: [String: JSONValue], supportsStrictToolCalls: Bool = true) throws -> DeepSeekPreparedTools {
     var warnings: [AIWarning] = []
+    let functionTools = tools.filter { _, schema in
+        let object = schema.objectValue
+        return object?["type"]?.stringValue != "provider" && object?["id"]?.stringValue == nil
+    }
+    let strictValues = functionTools.compactMap { _, schema -> Bool? in
+        schema.objectValue?["strict"]?.boolValue
+    }
+    if strictValues.contains(true), !supportsStrictToolCalls {
+        throw AIError.invalidArgument(argument: "tools", message: "DeepSeek strict tool calls require a beta base URL ending in /beta.")
+    }
+    if supportsStrictToolCalls,
+       strictValues.contains(true),
+       strictValues.count != functionTools.count || strictValues.contains(false) {
+        throw AIError.invalidArgument(argument: "tools", message: "DeepSeek strict mode requires every function tool in the request to set strict true.")
+    }
     let values: [JSONValue] = tools.compactMap { name, schema in
         let object = schema.objectValue
         if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil {
@@ -105,7 +120,7 @@ func deepSeekUsage(from raw: JSONValue) -> TokenUsage? {
         inputTokensNoCache: inputTokens - cacheReadTokens,
         inputTokensCacheRead: cacheReadTokens,
         inputTokensCacheWrite: nil,
-        outputTextTokens: outputTokens - reasoningTokens,
+        outputTextTokens: max(0, outputTokens - reasoningTokens),
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )
@@ -170,6 +185,16 @@ func deepSeekProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
     if let miss = raw["usage"]?["prompt_cache_miss_tokens"] {
         metadata["promptCacheMissTokens"] = miss
     }
+    if let object = raw["object"], object != .null { metadata["responseObject"] = object }
+    if let choice = raw["choices"]?[0] {
+        if let index = choice["index"], index != .null { metadata["choiceIndex"] = index }
+        if let role = choice["message"]?["role"] ?? choice["delta"]?["role"], role != .null { metadata["messageRole"] = role }
+        if let logprobs = choice["logprobs"], logprobs != .null { metadata["logprobs"] = logprobs }
+        if let calls = choice["message"]?["tool_calls"]?.arrayValue {
+            metadata["toolCallTypes"] = .array(calls.compactMap { $0["type"] })
+        }
+    }
+    if let fingerprint = raw["system_fingerprint"], fingerprint != .null { metadata["systemFingerprint"] = fingerprint }
     guard !metadata.isEmpty else { return [:] }
     return ["deepseek": .object(metadata)]
 }
@@ -177,7 +202,18 @@ func deepSeekProviderMetadata(from raw: JSONValue) -> [String: JSONValue] {
 func deepSeekMergeProviderMetadata(_ source: [String: JSONValue], into target: inout [String: JSONValue]) {
     for (key, value) in source {
         if case let .object(existing) = target[key],
-           case let .object(incoming) = value {
+           case var .object(incoming) = value {
+            if case let .object(existingLogprobs) = existing["logprobs"],
+               case let .object(incomingLogprobs) = incoming["logprobs"] {
+                var mergedLogprobs = existingLogprobs.merging(incomingLogprobs) { _, new in new }
+                for logprobKey in ["content", "reasoning_content"] {
+                    if case let .array(existingValues) = existingLogprobs[logprobKey],
+                       case let .array(incomingValues) = incomingLogprobs[logprobKey] {
+                        mergedLogprobs[logprobKey] = .array(existingValues + incomingValues)
+                    }
+                }
+                incoming["logprobs"] = .object(mergedLogprobs)
+            }
             target[key] = .object(existing.merging(incoming) { _, new in new })
         } else {
             target[key] = value
