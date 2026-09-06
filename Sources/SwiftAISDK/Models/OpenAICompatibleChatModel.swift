@@ -206,8 +206,9 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
                                 continuation.yield(.textDeltaPart(id: id, delta: text))
                             }
                         }
-                        if let toolCallDeltas = delta?["tool_calls"]?.arrayValue {
-                            if !toolCallDeltas.isEmpty { hasOutputStarted = true }
+                        if let toolCallDeltas = delta?["tool_calls"]?.arrayValue,
+                           !toolCallDeltas.isEmpty {
+                            hasOutputStarted = true
                             if let reasoningID = activeReasoningID {
                                 continuation.yield(.reasoningEnd(id: reasoningID))
                                 activeReasoningID = nil
@@ -365,6 +366,17 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
            reasoning != "provider-default" {
             options["reasoning_effort"] = .string(reasoning)
         }
+        if unwrapOpenAIProviderOptions,
+           let supportedEfforts = capabilities.supportedReasoningEfforts,
+           let reasoningEffort = options["reasoning_effort"]?.stringValue,
+           !supportedEfforts.contains(reasoningEffort) {
+            options.removeValue(forKey: "reasoning_effort")
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "reasoningEffort",
+                message: "\(modelID) only supports the following reasoning efforts: \(supportedEfforts.joined(separator: ", "))"
+            ))
+        }
 
         let messages: [JSONValue]
         if openAICompatibleProviderRoot(providerID) == "moonshotai" {
@@ -408,6 +420,15 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             }
         }
         body.merge(options) { _, new in new }
+        if unwrapOpenAIProviderOptions,
+           capabilities.supportedReasoningEfforts != nil,
+           body.removeValue(forKey: "prompt_cache_retention") != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "promptCacheRetention",
+                message: "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead"
+            ))
+        }
         if isReasoningModel {
             let permitsSampling = body["reasoning_effort"]?.stringValue == "none"
                 && capabilities.supportsNonReasoningParameters

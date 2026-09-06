@@ -1,6 +1,6 @@
 # Provider matrix
 
-Source URL: /providers/
+Source URL: /SwiftAISDK/providers/
 
 This page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.
 

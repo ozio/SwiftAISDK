@@ -268,7 +268,7 @@ import Testing
             guard context.stepNumber == 1 else { return nil }
             var request = context.request
             request.messages.append(.user("prepared follow-up"))
-            request.toolChoice = ["type": "tool", "toolName": "lookup"]
+            request.toolChoice = "none"
             request.providerOptions["test"] = ["step": 2]
             return AIPrepareStepResult(request: request)
         }
@@ -277,7 +277,7 @@ import Testing
     #expect(result.text == "prepared answer")
     #expect(model.requests.count == 2)
     #expect(model.requests[1].messages.last == .user("prepared follow-up"))
-    #expect(model.requests[1].toolChoice?["toolName"]?.stringValue == "lookup")
+    #expect(model.requests[1].toolChoice?.stringValue == "none")
     #expect(model.requests[1].providerOptions["test"]?["step"]?.intValue == 2)
     #expect(await capture.stepNumbers() == [0, 1])
     #expect(await capture.stepCounts() == [0, 1])

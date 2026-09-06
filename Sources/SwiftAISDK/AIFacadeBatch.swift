@@ -1,10 +1,9 @@
 import Foundation
 
-private let aiBatchUserAgent = "ai/7.0.85"
+private let aiBatchUserAgent = "ai/7.0.93"
 
 extension AI {
-    /// Source-compatible overload retained from Batch V4 before completion
-    /// webhooks were added.
+    /// Source-compatible Batch V4 entry point retained from 1.5.x.
     public static func startTextBatch(
         model: any LanguageModel,
         requests: [TextBatchRequest],
@@ -17,6 +16,35 @@ extension AI {
         try await startTextBatch(
             model: model,
             requests: requests,
+            tools: [:],
+            toolChoice: nil,
+            providerOptions: providerOptions,
+            headers: headers,
+            idempotencyKey: idempotencyKey,
+            webhookURL: nil,
+            abortSignal: abortSignal,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+    }
+
+    /// Source-compatible overload retained from Batch V4 before completion
+    /// webhooks were added.
+    public static func startTextBatch(
+        model: any LanguageModel,
+        requests: [TextBatchRequest],
+        tools: [String: JSONValue] = [:],
+        toolChoice: JSONValue? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        idempotencyKey: String? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil
+    ) async throws -> StartTextBatchResult {
+        try await startTextBatch(
+            model: model,
+            requests: requests,
+            tools: tools,
+            toolChoice: toolChoice,
             providerOptions: providerOptions,
             headers: headers,
             idempotencyKey: idempotencyKey,
@@ -30,6 +58,8 @@ extension AI {
     public static func startTextBatch(
         model: any LanguageModel,
         requests: [TextBatchRequest],
+        tools: [String: JSONValue] = [:],
+        toolChoice: JSONValue? = nil,
         providerOptions: [String: JSONValue] = [:],
         headers: [String: String] = [:],
         idempotencyKey: String? = nil,
@@ -48,9 +78,16 @@ extension AI {
         var normalizedRequests: [AILanguageModelBatchRequest] = []
         normalizedRequests.reserveCapacity(requests.count)
         for request in requests {
+            var preparedRequest = try prepareLanguageModelCallOptions(request.request)
+            if !tools.isEmpty {
+                preparedRequest.tools = tools
+            }
+            if let toolChoice {
+                preparedRequest.toolChoice = toolChoice
+            }
             normalizedRequests.append(AILanguageModelBatchRequest(
                 id: request.id,
-                request: try prepareLanguageModelCallOptions(request.request)
+                request: preparedRequest
             ))
             try operationAbortSignal?.throwIfAborted()
         }
@@ -78,7 +115,33 @@ extension AI {
                 ),
                 status: result.status
             ),
-            warnings: result.warnings
+            warnings: result.warnings,
+            providerMetadata: result.providerMetadata
+        )
+    }
+
+    /// Source-compatible webhook entry point retained from 1.5.x.
+    public static func startTextBatch(
+        model: any LanguageModel,
+        requests: [TextBatchRequest],
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        idempotencyKey: String? = nil,
+        webhookURL: String? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil
+    ) async throws -> StartTextBatchResult {
+        try await startTextBatch(
+            model: model,
+            requests: requests,
+            tools: [:],
+            toolChoice: nil,
+            providerOptions: providerOptions,
+            headers: headers,
+            idempotencyKey: idempotencyKey,
+            webhookURL: webhookURL,
+            abortSignal: abortSignal,
+            timeoutNanoseconds: timeoutNanoseconds
         )
     }
 
@@ -162,7 +225,10 @@ extension AI {
                     for try await item in stream {
                         try Task.checkCancellation()
                         try operationAbortSignal?.throwIfAborted()
-                        continuation.yield(convertTextBatchItemResult(item))
+                        continuation.yield(convertTextBatchItemResult(
+                            item,
+                            providerID: model.providerID
+                        ))
                     }
                     continuation.finish()
                 } catch {
@@ -266,7 +332,8 @@ private func batchOperationAbortSignal(
 }
 
 private func convertTextBatchItemResult(
-    _ item: AIBatchItemResult<TextGenerationResult>
+    _ item: AIBatchItemResult<TextGenerationResult>,
+    providerID: String
 ) -> TextBatchItemResult {
     switch item {
     case let .succeeded(id, result):
@@ -284,7 +351,10 @@ private func convertTextBatchItemResult(
             }.joined(),
             content: result.content,
             finishReason: result.finishReason,
-            rawFinishReason: result.rawValue["stop_reason"]?.stringValue,
+            rawFinishReason: textBatchRawFinishReason(
+                from: result.rawValue,
+                providerID: providerID
+            ),
             usage: usage,
             response: response,
             providerMetadata: result.providerMetadata
@@ -296,4 +366,20 @@ private func convertTextBatchItemResult(
     case let .expired(id, error, providerMetadata):
         return .expired(id: id, error: error, providerMetadata: providerMetadata)
     }
+}
+
+private func textBatchRawFinishReason(
+    from rawValue: JSONValue,
+    providerID: String
+) -> String? {
+    if let stopReason = rawValue["stop_reason"]?.stringValue {
+        return stopReason
+    }
+    guard openAICompatibleProviderRoot(providerID) == "xai",
+          let choices = rawValue["choices"]?.arrayValue else {
+        return nil
+    }
+    return choices.reversed().first { choice in
+        choice["message"]?["role"]?.stringValue == "assistant"
+    }?["finish_reason"]?.stringValue
 }

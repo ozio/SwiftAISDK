@@ -167,6 +167,36 @@ import Testing
         #expect(error.message == "OAuth authorization server metadata issuer https://evil.example.com does not match expected issuer https://auth.example.com/tenant1")
     }
 }
+
+@Test func mcpOAuthIssuerAllowsTrailingSlashOnlyForOriginLikeUpstream() throws {
+    let baseMetadata: JSONValue = [
+        "authorization_endpoint": "https://auth.example.com/authorize",
+        "token_endpoint": "https://auth.example.com/token",
+        "response_types_supported": ["code"],
+        "code_challenge_methods_supported": ["S256"]
+    ]
+
+    var originMetadata = try #require(baseMetadata.objectValue)
+    originMetadata["issuer"] = "https://auth.example.com/"
+    let accepted = try MCPOAuthAuthorizationServerMetadata(
+        json: .object(originMetadata),
+        sourceURL: try requireURL("https://auth.example.com/.well-known/oauth-authorization-server"),
+        sourceType: .oauth,
+        expectedIssuer: "https://auth.example.com"
+    )
+    #expect(accepted.issuer == "https://auth.example.com/")
+
+    var tenantMetadata = try #require(baseMetadata.objectValue)
+    tenantMetadata["issuer"] = "https://auth.example.com/tenant1/"
+    #expect(throws: MCPClientError.self) {
+        _ = try MCPOAuthAuthorizationServerMetadata(
+            json: .object(tenantMetadata),
+            sourceURL: try requireURL("https://auth.example.com/.well-known/oauth-authorization-server/tenant1"),
+            sourceType: .oauth,
+            expectedIssuer: "https://auth.example.com/tenant1"
+        )
+    }
+}
 @Test func mcpOAuthAuthorizationServerDiscoveryRetriesWithoutProtocolHeaderAfterTransportError() async throws {
     let transport = FailingDiscoveryTransport(actions: [
         .fail,

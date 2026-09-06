@@ -33,6 +33,8 @@ Other public error types cover narrower workflows:
 - `AITypeValidationError` and `AIObjectGenerationError` for structured output parsing, schema validation, and decoding.
 - `AINoSuchToolError`, `AIInvalidToolInputError`, `AIToolCallRepairError`, `AIInvalidToolApprovalError`, `AIInvalidToolApprovalSignatureError`, and `AIToolCallNotFoundForApprovalError` for tool execution and approval flows.
 - `MCPClientError` for MCP protocol, transport, and server errors.
+- `AIToolChoiceViolationError` when a required or specifically named tool is
+  absent from a completed model response.
 
 ## HTTP Failures
 
@@ -76,6 +78,11 @@ do {
 
 Facade calls retry transient failures by default with `AIRetryPolicy.default`. Disable retries for deterministic tests or when the caller handles retries elsewhere.
 
+Image generation that completes without an image throws `AINoOutputError` with
+`kind == .image`. Its `calls` collection retains per-call warnings, usage,
+provider metadata, and response metadata for diagnosis even though the aggregate
+output is empty.
+
 ```swift
 let result = try await model.generateText(
     "Do not retry this request.",
@@ -106,7 +113,12 @@ client-side tool execution. When any configured deadline wins, the provider
 and tool abort signals carry the `TimeoutError` reason name. Typed `Output`
 streams use the same configuration.
 
-Streaming retries only happen before the first emitted part. Once the stream has yielded a part, later provider errors are surfaced through the stream instead of replaying already-delivered output.
+By default, streaming retries only happen before the first emitted part. Set
+`streamRetries` to a positive count to additionally retry retryable in-band
+provider error events after streaming has started. Text already delivered to
+the caller cannot be retracted, so a replacement attempt can repeat a prefix;
+thrown post-output transport or framing failures and non-retryable provider
+errors are still surfaced rather than retried.
 
 Language streams distinguish provider-reported error events from failures that stop the transport or parser:
 
@@ -115,7 +127,12 @@ Language streams distinguish provider-reported error events from failures that s
 - if a provider closes after an in-band error without its own terminal part, the facade supplies one `finishMetadata` with finish reason `error`;
 - `toTextStream()` intentionally skips in-band error parts, matching its text-only role, but still throws stream-stopping failures.
 
-An in-band error counts as an emitted part, so a model call is never retried after the caller could have observed one. Consumers that need provider error payloads should use the full `LanguageStreamPart` sequence rather than `toTextStream()`.
+With `streamRetries` absent or zero, an in-band error is exposed and the model
+call is not retried after the caller could have observed it. When post-start
+recovery is enabled, a qualifying retryable error and the failed attempt's tail
+are suppressed if a replacement attempt succeeds. Consumers that need exposed
+provider error payloads should use the full `LanguageStreamPart` sequence
+rather than `toTextStream()`.
 
 ```swift
 for try await part in model.streamText("Stream this.") {

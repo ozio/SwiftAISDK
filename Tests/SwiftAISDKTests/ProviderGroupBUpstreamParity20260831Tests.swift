@@ -422,7 +422,7 @@ private func providerGroupBParallelMetadata(index: Int, cacheBreakpoint: Bool = 
     }
     """#
     let transport = RecordingTransport(responses: [
-        jsonResponse(#"{"id":"file_123","filename":"batch.jsonl"}"#),
+        jsonResponse(#"{"id":"file_123","filename":"batch.jsonl","expires_at":1700172800}"#),
         jsonResponse(#"""
         {
           "batch_id":"batch_123",
@@ -467,12 +467,15 @@ private func providerGroupBParallelMetadata(index: Int, cacheBreakpoint: Bool = 
             AILanguageModelBatchRequest(id: "france", request: LanguageModelRequest(messages: [.user("Capital of France?")])),
             AILanguageModelBatchRequest(id: "germany", request: LanguageModelRequest(messages: [.user("Capital of Germany?")], topK: 10))
         ],
+        providerOptions: ["xai": ["inputFileExpiresAfter": 172_800]],
         webhookURL: "https://example.com/hook"
     ))
     #expect(started.batchID == "batch_123")
     #expect(started.status.status == .pending)
     #expect(started.warnings.contains { $0.requestID == nil && $0.warning.feature == "webhookUrl" })
     #expect(started.warnings.contains { $0.requestID == "germany" && $0.warning.feature == "topK" })
+    #expect(started.providerMetadata["xai"]?["inputFileId"]?.stringValue == "file_123")
+    #expect(started.providerMetadata["xai"]?["inputFileExpiresAt"]?.stringValue == "2023-11-16T22:13:20.000Z")
 
     let stream = try await model.getBatchResults(AIBatchOperationOptions(batchID: "batch_123"))
     var results: [AIBatchItemResult<TextGenerationResult>] = []
@@ -514,8 +517,102 @@ private func providerGroupBParallelMetadata(index: Int, cacheBreakpoint: Bool = 
     #expect(uploadBody.contains(#"name="file"; filename="batch.jsonl""#))
     #expect(uploadBody.contains(#""custom_id":"france""#))
     #expect(!uploadBody.contains(#"name="purpose""#))
+    let expiryField = try #require(uploadBody.range(of: #"name="expires_after""#)?.lowerBound)
+    let fileField = try #require(uploadBody.range(of: #"name="file""#)?.lowerBound)
+    #expect(expiryField < fileField)
     let createBody = try decodeJSONBody(try #require(requests[1].body))
     #expect(createBody == ["name": "ai-sdk-text-batch", "input_file_id": "file_123"])
+}
+
+@Test func providerGroupBXAIResponsesBatchRejectsInvalidInputFileExpiryBeforeUpload() async throws {
+    for invalid: JSONValue in [3_599, 3_600.5, 2_592_001, 1e100] {
+        let transport = RecordingTransport(responses: [])
+        let provider = try AIProviders.xAI(settings: ProviderSettings(
+            apiKey: "xai-key",
+            transport: transport
+        ))
+        let model = try #require(try provider.languageModel("grok-4.3") as? any BatchLanguageModel)
+
+        await #expect(throws: AIError.invalidArgument(
+            argument: "providerOptions.xai.inputFileExpiresAfter",
+            message: "inputFileExpiresAfter must be an integer from 3600 through 2592000."
+        )) {
+            _ = try await model.startBatch(AIBatchStartOptions(
+                requests: [AILanguageModelBatchRequest(
+                    id: "request",
+                    request: LanguageModelRequest(messages: [.user("Hello")])
+                )],
+                providerOptions: ["xai": ["inputFileExpiresAfter": invalid]]
+            ))
+        }
+        #expect(await transport.requests().isEmpty)
+    }
+}
+
+@Test func providerGroupBXAIResponsesBatchPreservesClientAndProviderToolTranscripts() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"batch_id":"batch_tools","state":{"num_requests":2,"num_pending":0,"num_success":2,"num_error":0,"num_cancelled":0}}"#),
+        jsonResponse(#"""
+        {
+          "results":[
+            {
+              "batch_request_id":"provider-tool",
+              "batch_result":{"response":{"chat_get_completion":{
+                "choices":[
+                  {"index":0,"message":{"role":"assistant","content":null,"reasoning_content":null,"tool_calls":[{"id":"web-search-1","type":"function","function":{"name":"web_search","arguments":"{\"query\":\"Vercel\"}"}}]},"finish_reason":""},
+                  {"index":1,"message":{"role":"tool","content":"Search results","reasoning_content":null,"tool_calls":[{"id":"web-search-1","type":"function","function":{"name":"web_search","arguments":"{\"query\":\"Vercel\"}"}}]},"finish_reason":""},
+                  {"index":2,"message":{"role":"assistant","content":"Final answer","reasoning_content":null,"tool_calls":null},"finish_reason":"stop"}
+                ],
+                "citations":["https://example.com/source"]
+              }}}
+            },
+            {
+              "batch_request_id":"client-tool",
+              "batch_result":{"response":{"chat_get_completion":{
+                "choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":null,"tool_calls":[{"id":"client-web-search-1","type":"function","function":{"name":"web_search","arguments":"{}"}}]},"finish_reason":"tool_calls"}]
+              }}}
+            }
+          ],
+          "pagination_token":null
+        }
+        """#)
+    ])
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try #require(try provider.languageModel("grok-4.3") as? any BatchLanguageModel)
+    let stream = try await model.getBatchResults(AIBatchOperationOptions(batchID: "batch_tools"))
+    var results: [AIBatchItemResult<TextGenerationResult>] = []
+    for try await result in stream { results.append(result) }
+
+    guard case let .succeeded(providerID, providerResult) = results[0] else {
+        Issue.record("Expected provider-executed tool transcript")
+        return
+    }
+    #expect(providerID == "provider-tool")
+    #expect(providerResult.text == "Final answer")
+    #expect(providerResult.finishReason == "stop")
+    guard case let .toolCall(providerCall) = providerResult.content[0],
+          case let .toolResult(providerToolResult) = providerResult.content[1],
+          case let .text(finalText, _) = providerResult.content[2] else {
+        Issue.record("Expected tool call, tool result, and final assistant text")
+        return
+    }
+    #expect(providerCall.id == "web-search-1")
+    #expect(providerCall.providerExecuted)
+    #expect(providerCall.dynamic)
+    #expect(providerToolResult.toolCallID == "web-search-1")
+    #expect(providerToolResult.result == "Search results")
+    #expect(providerToolResult.dynamic)
+    #expect(finalText == "Final answer")
+
+    guard case let .succeeded(clientID, clientResult) = results[1],
+          case let .toolCall(clientCall) = clientResult.content[0] else {
+        Issue.record("Expected client tool call")
+        return
+    }
+    #expect(clientID == "client-tool")
+    #expect(clientResult.finishReason == "tool-calls")
+    #expect(!clientCall.providerExecuted)
+    #expect(!clientCall.dynamic)
 }
 
 @Test func providerGroupBXAIResponsesBatchConvertsChatLevelErrorsPerItem() async throws {

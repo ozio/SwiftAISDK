@@ -136,7 +136,7 @@ func isVideoInputFile(_ file: ImageInputFile) -> Bool {
 }
 
 /// The result of one underlying image-model call.
-public struct ImageGenerationCall: Sendable {
+public struct ImageGenerationCall: Equatable, Sendable {
     public var urls: [String]
     public var base64Images: [String]
     public var warnings: [AIWarning]

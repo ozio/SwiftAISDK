@@ -298,7 +298,10 @@ func openAIResponsesToolCall(
     switch type {
     case "function_call":
         guard let name = item["name"]?.stringValue else { return nil }
-        var extra = item["namespace"].map { ["namespace": $0] } ?? [:]
+        var extra: [String: JSONValue] = [:]
+        if let namespace = item["namespace"], namespace != .null {
+            extra["namespace"] = namespace
+        }
         if var caller = item["caller"]?.objectValue {
             if let callerID = caller.removeValue(forKey: "caller_id") {
                 caller["callerId"] = callerID
@@ -367,7 +370,6 @@ func openAIResponsesToolCall(
             name: toolNameAliases["code_interpreter"] ?? "code_interpreter",
             arguments: openAIResponsesJSONString(.object(input)) ?? "{}",
             providerExecuted: true,
-            providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID),
             rawValue: item
         )
     case "tool_search_call":

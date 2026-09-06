@@ -2,6 +2,33 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func googleUpstreamPreservesArrayMinItemsAndMaxItemsInSchemaAndRequest() async throws {
+    let schema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "elements": [
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": ["type": "string"]
+            ]
+        ]
+    ]
+    #expect(try googleOpenAPISchema(from: schema, isRoot: true) == schema)
+
+    let transport = RecordingTransport(response: jsonResponse(
+        #"{"candidates":[{"content":{"parts":[{"text":"[]"}]},"finishReason":"STOP"}]}"#
+    ))
+    let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "key", transport: transport))
+    _ = try await provider.languageModel("gemini-3.8-flash").generate(LanguageModelRequest(
+        messages: [.user("Return items")],
+        responseFormat: .json(schema: schema)
+    ))
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["elements"]?["minItems"]?.intValue == 2)
+    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["elements"]?["maxItems"]?.intValue == 4)
+}
+
 @Test func googleUpstreamPrimitiveEnumsUseOpenAPIEnumEncoding() throws {
     let schema: JSONValue = [
         "type": "object",

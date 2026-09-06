@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.52")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.60")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-mini")
     #expect(body["messages"]?[1]?["content"]?.stringValue == "Hi")
@@ -243,6 +243,55 @@ import Testing
     #expect(body["safetyIdentifier"] == nil)
     #expect(body["textVerbosity"] == nil)
     #expect(body["openai"] == nil)
+}
+
+@Test func openAIChatDropsUnsupportedGPT6ReasoningEffortsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.chatModel("gpt-6-astra")
+
+    for reasoningEffort in ["none", "minimal"] {
+        let result = try await model.generate(LanguageModelRequest(
+            messages: [.user("Hi")],
+            providerOptions: ["openai": ["reasoningEffort": .string(reasoningEffort)]]
+        ))
+
+        let request = try #require((await transport.requests()).last)
+        let body = try decodeJSONBody(try #require(request.body))
+        #expect(body["reasoning_effort"] == nil)
+        #expect(result.warnings == [
+            AIWarning(
+                type: "unsupported",
+                feature: "reasoningEffort",
+                message: "gpt-6-astra only supports the following reasoning efforts: low, medium, high, xhigh, max"
+            )
+        ])
+    }
+}
+
+@Test func openAIChatDropsLegacyPromptCacheRetentionForGPT6LikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.chatModel("gpt-6-astra")
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        providerOptions: ["openai": [
+            "promptCacheRetention": "24h",
+            "promptCacheOptions": ["ttl": "30m"]
+        ]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["prompt_cache_retention"] == nil)
+    #expect(body["prompt_cache_options"]?["ttl"]?.stringValue == "30m")
+    #expect(result.warnings == [
+        AIWarning(
+            type: "unsupported",
+            feature: "promptCacheRetention",
+            message: "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead"
+        )
+    ])
 }
 
 @Test func openAIChatReasoningWarningsMatchUpstreamForGenerateAndStream() async throws {

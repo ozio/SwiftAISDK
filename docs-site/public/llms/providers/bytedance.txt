@@ -1,6 +1,6 @@
 # "bytedance"
 
-Source URL: /providers/bytedance/
+Source URL: /SwiftAISDK/providers/bytedance/
 
 ## Package
 
@@ -16,8 +16,8 @@ Source URL: /providers/bytedance/
 
 ## Notes
 
-ByteDance Seedance video models mirror upstream ByteDance 2.0.37: `ARK_API_KEY`, versioned user-agent suffix, current Dreamina/Seedance model IDs, prompt/image/frameImages/inputReferences mapping, standard unary generation plus public AsyncVideoModel start/status operations, provider options for watermark/camera/returnLastFrame/serviceTier/draft/reference media/polling, resolution mapping, warnings, polling/error metadata including returned last-frame URLs, and unsupported non-video families. Upstream image-token usage has no local analogue because this provider exposes video only.
+ByteDance Seedance video models mirror upstream ByteDance 2.0.39: `ARK_API_KEY`, versioned user-agent suffix, current Dreamina/Seedance model IDs, prompt/image/frameImages/inputReferences mapping, standard unary generation plus public AsyncVideoModel start/status operations, provider options for watermark/camera/returnLastFrame/serviceTier/draft/reference media/polling, resolution mapping, warnings, polling/error metadata including returned last-frame URLs, and unsupported non-video families. Upstream image-token usage has no local analogue because this provider exposes video only. Status polling now follows only validated redirects and never forwards credentials away from the configured origin.
 
-Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/SwiftAISDK/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
-Return to the [provider matrix](./).
+Return to the [provider matrix](/SwiftAISDK/providers/).

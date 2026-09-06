@@ -76,6 +76,44 @@ import Testing
     #expect(safeValidateUIMessages([message]).isValid)
 }
 
+@Test func aiValidateUIMessagesPreservesToolTitlesAndApprovalDescriptors() throws {
+    let descriptor: JSONValue = .object([
+        "action": .string("deleteAccount"),
+        "risk": .string("high")
+    ])
+    let toolCall = AIToolCall(
+        id: "call-1",
+        name: "deleteAccount",
+        arguments: #"{"userId":"user-123"}"#,
+        dynamic: true,
+        title: "Delete account"
+    )
+    let approval = AIToolApprovalRequest(
+        id: "approval-1",
+        toolName: toolCall.name,
+        arguments: toolCall.arguments,
+        toolCallID: toolCall.id,
+        descriptor: descriptor
+    )
+    let message = AIUIMessage.assistant(parts: [
+        .toolCall(toolCall),
+        .toolApprovalRequest(approval)
+    ])
+
+    let result = try validateUIMessages([message])
+
+    #expect(result == [message])
+    guard case let .toolCall(validatedCall) = result[0].parts[0],
+          case let .toolApprovalRequest(validatedApproval) = result[0].parts[1] else {
+        Issue.record("Expected validated tool call and approval request")
+        return
+    }
+    #expect(validatedCall.title == "Delete account")
+    #expect(validatedApproval.descriptor == descriptor)
+    #expect(contentPartTelemetryJSON(.toolApprovalRequest(validatedApproval))["descriptor"] == descriptor)
+    #expect(toolApprovalRequestTelemetryJSON(validatedApproval)["descriptor"] == descriptor)
+}
+
 @Test func aiValidateUIMessagesAcceptsSourceURLPartLikeUpstream() throws {
     let source = AISource(
         id: "1",

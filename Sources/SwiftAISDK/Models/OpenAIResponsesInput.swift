@@ -15,6 +15,7 @@ func openResponsesInput(
     from messages: [AIMessage],
     providerID: String,
     providerOptionsName: String? = nil,
+    strictResponseInput: Bool = false,
     toolNamespaces: [String: JSONValue] = [:]
 ) -> OpenResponsesPreparedInput {
     var input: [JSONValue] = []
@@ -39,13 +40,45 @@ func openResponsesInput(
 
             func flushAssistantContent() {
                 guard !assistantContent.isEmpty else { return }
-                var item: [String: JSONValue] = [
-                    "type": .string("message"),
-                    "role": .string("assistant"),
-                    "content": .array(assistantContent)
-                ]
-                if let assistantMessageID {
-                    item["id"] = .string(assistantMessageID)
+                let item: [String: JSONValue]
+                if strictResponseInput, assistantMessageID == nil {
+                    item = [
+                        "type": .string("message"),
+                        "role": .string("assistant"),
+                        "content": .string(assistantContent.compactMap {
+                            $0["text"]?.stringValue ?? $0["refusal"]?.stringValue
+                        }.joined())
+                    ]
+                } else if strictResponseInput, let assistantMessageID {
+                    item = [
+                        "id": .string(assistantMessageID),
+                        "type": .string("message"),
+                        "status": .string("completed"),
+                        "role": .string("assistant"),
+                        "content": .array(assistantContent.map { part in
+                            guard var object = part.objectValue,
+                                  object["type"]?.stringValue == "output_text" else {
+                                return part
+                            }
+                            if object["annotations"] == nil {
+                                object["annotations"] = .array([JSONValue]())
+                            }
+                            if object["logprobs"] == nil {
+                                object["logprobs"] = .array([JSONValue]())
+                            }
+                            return .object(object)
+                        })
+                    ]
+                } else {
+                    var output: [String: JSONValue] = [
+                        "type": .string("message"),
+                        "role": .string("assistant"),
+                        "content": .array(assistantContent)
+                    ]
+                    if let assistantMessageID {
+                        output["id"] = .string(assistantMessageID)
+                    }
+                    item = output
                 }
                 input.append(.object(item))
                 assistantContent = []

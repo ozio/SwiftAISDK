@@ -67,7 +67,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/text-embedding-005:predict")
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/5.0.70")
+    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/5.0.76")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["instances"]?[0]?["content"]?.stringValue == "hello")
     #expect(body["instances"]?[0]?["task_type"]?.stringValue == "RETRIEVAL_DOCUMENT")
@@ -161,7 +161,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://aiplatform.googleapis.com/v1beta1/projects/test-project/locations/global/publishers/google/models/gemini-2.5-flash-tts:generateContent")
     #expect(request.headers["Authorization"] == "Bearer token")
-    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/5.0.70")
+    #expect(request.headers["user-agent"] == "ai-sdk/google-vertex/5.0.76")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Say cheerfully: Hello there")
     #expect(body["generationConfig"]?["responseModalities"]?[0]?.stringValue == "AUDIO")
@@ -235,6 +235,72 @@ import Testing
     }
 }
 
+@Test func googleVertexInteractionsKeepsVideoAndProcessingPartsInUnaryAndStream() async throws {
+    let unaryTransport = RecordingTransport(response: jsonResponse("""
+    {"id":"vertex-interaction","status":"completed","steps":[{"type":"processing_call","id":"processing-1","signature":"call-signature"},{"type":"processing_result","call_id":"processing-1","signature":"result-signature"},{"type":"model_output","content":[{"type":"video","data":"BQYH"}]}]}
+    """))
+    let unaryProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "us-central1",
+        accessToken: "token",
+        transport: unaryTransport
+    ))
+    let unaryModel = try unaryProvider.interactionsModel("gemini-omni-flash-preview")
+    let result = try await unaryModel.generate(LanguageModelRequest(messages: [.user("Make video")]))
+
+    #expect(result.content.count == 3)
+    guard case let .custom(call, callMetadata) = result.content[0],
+          case let .custom(processingResult, resultMetadata) = result.content[1],
+          case let .file(video) = result.content[2] else {
+        Issue.record("Expected Vertex processing call/result and video content")
+        return
+    }
+    #expect(call["kind"]?.stringValue == "google.processing_call")
+    #expect(callMetadata["google"]?["processingId"]?.stringValue == "processing-1")
+    #expect(processingResult["kind"]?.stringValue == "google.processing_result")
+    #expect(resultMetadata["google"]?["processingCallId"]?.stringValue == "processing-1")
+    #expect(video.mediaType == "video/mp4")
+    #expect(video.data == Data([5, 6, 7]))
+
+    let streamTransport = RecordingTransport(response: sseResponse("""
+    data: {"interaction":{"id":"vertex-interaction","status":"in_progress"},"event_type":"interaction.created"}
+
+    data: {"index":0,"step":{"type":"processing_call","id":"processing-1"},"event_type":"step.start"}
+
+    data: {"index":0,"event_type":"step.stop"}
+
+    data: {"index":1,"step":{"type":"model_output"},"event_type":"step.start"}
+
+    data: {"index":1,"delta":{"type":"video","uri":"https://example.test/vertex.mp4"},"event_type":"step.delta"}
+
+    data: {"index":1,"event_type":"step.stop"}
+
+    data: {"interaction":{"id":"vertex-interaction","status":"completed"},"event_type":"interaction.completed"}
+
+    data: [DONE]
+    """))
+    let streamProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        project: "test-project",
+        location: "us-central1",
+        accessToken: "token",
+        transport: streamTransport
+    ))
+    let streamModel = try streamProvider.interactionsModel("gemini-omni-flash-preview")
+    var streamedCustomKinds: [String] = []
+    var streamedFiles: [AIStreamFile] = []
+    for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Make video")])) {
+        if case let .custom(value, _) = part,
+           let kind = value["kind"]?.stringValue {
+            streamedCustomKinds.append(kind)
+        }
+        if case let .file(file) = part { streamedFiles.append(file) }
+    }
+    #expect(streamedCustomKinds == ["google.processing_call"])
+    #expect(streamedFiles.count == 1)
+    #expect(streamedFiles[0].url == "https://example.test/vertex.mp4")
+    #expect(streamedFiles[0].providerMetadata["google"]?["interactionId"]?.stringValue == "vertex-interaction")
+}
+
 @Test func googleVertexTranscriptionUsesCloudSpeechRecognizeEndpoint() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"results":[{"alternatives":[{"transcript":"hello world","words":[{"word":"hello","startOffset":"0.100s","endOffset":"0.400s"},{"word":"world","startOffset":"0.500s","endOffset":"0.900s"}]}],"languageCode":"en-US"}],"metadata":{"totalBilledDuration":"1.200s"}}
@@ -293,7 +359,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "vertex-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/5.0.70")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google-vertex/5.0.76")
 }
 @Test func googleVertexImageAndVideoUsePredictEndpoints() async throws {
     let imageTransport = RecordingTransport(response: jsonResponse("""
@@ -543,6 +609,61 @@ import Testing
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "meta/llama-3.1-405b-instruct-maas")
     #expect(body["messages"]?[0]?["content"]?.stringValue == "Hi")
+}
+
+@Test func googleVertexMaaSDefaultsExactlyTwoLlama4ModelsAndPreservesOverridesAndTransforms() async throws {
+    let models = [
+        "meta/llama-4-maverick-17b-128e-instruct-maas",
+        "meta/llama-4-scout-17b-16e-instruct-maas"
+    ]
+    for modelID in models {
+        let transport = RecordingTransport(response: jsonResponse(
+            #"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#
+        ))
+        let provider = try AIProviders.googleVertexMaaS(
+            project: "test-project",
+            settings: ProviderSettings(
+                apiKey: "token",
+                transport: transport,
+                transformRequestBody: { body in
+                    var body = body
+                    body["caller_marker"] = true
+                    return body
+                }
+            )
+        )
+        _ = try await provider.languageModel(modelID).generate(LanguageModelRequest(messages: [.user("Hi")]))
+        let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+        #expect(body["max_tokens"]?.intValue == 8_192)
+        #expect(body["caller_marker"]?.boolValue == true)
+    }
+
+    let overrideTransport = RecordingTransport(response: jsonResponse(
+        #"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#
+    ))
+    let overrideProvider = try AIProviders.googleVertexMaaS(
+        project: "test-project",
+        settings: ProviderSettings(apiKey: "token", transport: overrideTransport)
+    )
+    _ = try await overrideProvider.languageModel(models[0]).generate(LanguageModelRequest(
+        messages: [.user("Hi")],
+        maxOutputTokens: 321
+    ))
+    let overrideBody = try decodeJSONBody(try #require((await overrideTransport.requests()).first?.body))
+    #expect(overrideBody["max_tokens"]?.intValue == 321)
+
+    let unrelatedTransport = RecordingTransport(response: jsonResponse(
+        #"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#
+    ))
+    let unrelatedProvider = try AIProviders.googleVertexMaaS(
+        project: "test-project",
+        settings: ProviderSettings(apiKey: "token", transport: unrelatedTransport)
+    )
+    _ = try await unrelatedProvider.languageModel("meta/llama-3.1-405b-instruct-maas").generate(
+        LanguageModelRequest(messages: [.user("Hi")])
+    )
+    let unrelatedBody = try decodeJSONBody(try #require((await unrelatedTransport.requests()).first?.body))
+    #expect(unrelatedBody["max_tokens"] == nil)
 }
 @Test func googleVertexXAIStripsReasoningEffort() async throws {
     let transport = RecordingTransport(response: jsonResponse("""

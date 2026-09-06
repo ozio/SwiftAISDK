@@ -44,6 +44,7 @@ export default defineConfig({
             { label: 'Batch text', slug: 'core/batch-text' },
             { label: 'Structured output', slug: 'core/structured-output' },
             { label: 'Tools', slug: 'core/tools' },
+            { label: 'Files', slug: 'core/files' },
             { label: 'Embeddings', slug: 'core/embeddings' },
             { label: 'Generate image', slug: 'core/generate-image' },
             { label: 'Transcribe audio', slug: 'core/transcribe' },

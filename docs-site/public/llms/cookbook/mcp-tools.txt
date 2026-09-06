@@ -1,6 +1,6 @@
 # MCP tools
 
-Source URL: /cookbook/mcp-tools/
+Source URL: /SwiftAISDK/cookbook/mcp-tools/
 
 Use MCP when tools live outside your process or are shared by multiple clients.
 
@@ -32,8 +32,21 @@ print(answer.text)
 
 For local processes, use `MCPStdioTransport`. For remote servers, use `MCPHTTPTransport`.
 
-SwiftAISDK tracks `@ai-sdk/mcp@2.0.36`. The current client absorbs its
+SwiftAISDK tracks `@ai-sdk/mcp@2.0.45`. The current client absorbs its
 protocol/HTTP transport and OAuth compatibility hardening behind the same
 `MCPClient.connect` workflow. Non-successful POST/SSE responses retain HTTP
 status, URL, and response-body diagnostics; existing tool-discovery code does
 not need a migration.
+
+Each discovered definition retains its complete raw `annotations` value and
+offers typed `MCPToolAnnotations` access to `title`, `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, and `openWorldHint`. These fields are
+untrusted hints for presentation and planning; do not use them as an
+authorization boundary. Malformed values for a known annotation field make
+`tools/list` fail instead of silently changing its meaning.
+
+Servers may return `structuredContent` without a text `content` array. The
+client serializes that value into canonical JSON text for the dynamic tool's
+model-facing result while preserving the structured value. OAuth discovery
+also treats an origin-only issuer with or without its trailing slash as the
+same issuer; path-bearing issuer URLs remain exact.

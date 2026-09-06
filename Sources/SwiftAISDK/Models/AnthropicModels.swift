@@ -565,6 +565,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             let toolChanges = message.role == .system
                 ? anthropicToolChanges(from: message.providerMetadata)
                 : []
+            let systemOptions = message.role == .system
+                ? anthropicSystemMessageOptions(from: message.providerMetadata)
+                : (clearAt: nil, effort: nil)
             if message.role == .system, !sawConversationMessage {
                 if !toolChanges.isEmpty, !warnedAboutInitialToolChanges {
                     warnings.append(AIWarning(
@@ -573,8 +576,14 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     ))
                     warnedAboutInitialToolChanges = true
                 }
+                if systemOptions.clearAt != nil || systemOptions.effort != nil {
+                    warnings.append(AIWarning(
+                        type: "other",
+                        message: "clearAt and effort on the initial system message are not supported by Anthropic. These options have been ignored."
+                    ))
+                }
                 let text = message.combinedText
-                if !text.isEmpty || toolChanges.isEmpty {
+                if !text.isEmpty || (toolChanges.isEmpty && systemOptions.clearAt == nil && systemOptions.effort == nil) {
                     var block: [String: JSONValue] = ["type": .string("text"), "text": .string(text)]
                     anthropicApplyCacheControl(
                         anthropicCacheControl(from: message.providerMetadata),
@@ -594,6 +603,14 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                 if !toolChanges.isEmpty, !betas.contains("mid-conversation-tool-changes-2026-07-01") {
                     betas.append("mid-conversation-tool-changes-2026-07-01")
                 }
+                if systemOptions.clearAt != nil,
+                   !betas.contains("mid-conversation-system-clear-at-2026-08-21") {
+                    betas.append("mid-conversation-system-clear-at-2026-08-21")
+                }
+                if systemOptions.effort != nil,
+                   !betas.contains("mid-conversation-effort-2026-08-01") {
+                    betas.append("mid-conversation-effort-2026-08-01")
+                }
             }
             var converted = try messageJSON(
                 message,
@@ -612,6 +629,13 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     toolChanges,
                     to: converted,
                     toolNameMapping: toolNameMapping
+                )
+            }
+            if message.role == .system,
+               systemOptions.clearAt != nil || systemOptions.effort != nil {
+                converted = anthropicApplyingSystemMessageOptions(
+                    systemOptions,
+                    to: converted
                 )
             }
             appendAnthropicMessage(
@@ -634,6 +658,44 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             }
             return (type: type, toolName: toolName)
         }
+    }
+
+    private static func anthropicSystemMessageOptions(
+        from providerMetadata: [String: JSONValue]
+    ) -> (clearAt: String?, effort: String?) {
+        let options = providerMetadata["anthropic"]
+        let clearAt = options?["clearAt"]?.stringValue == "next_user_message"
+            ? "next_user_message"
+            : nil
+        let effort = options?["effort"]?.stringValue.flatMap { value in
+            ["low", "medium", "high", "xhigh", "max"].contains(value)
+                ? value
+                : nil
+        }
+        return (clearAt, effort)
+    }
+
+    private static func anthropicApplyingSystemMessageOptions(
+        _ options: (clearAt: String?, effort: String?),
+        to message: JSONValue
+    ) -> JSONValue {
+        guard var object = message.objectValue else { return message }
+        if options.clearAt != nil || options.effort != nil {
+            var content = object["content"]?.arrayValue ?? []
+            content.removeAll {
+                $0["type"]?.stringValue == "text" && $0["text"]?.stringValue == ""
+            }
+            object["content"] = .array(content)
+        }
+        if let clearAt = options.clearAt {
+            object["clear_at"] = .string(clearAt)
+        }
+        if let effort = options.effort {
+            var outputConfig = object["output_config"]?.objectValue ?? [:]
+            outputConfig["effort"] = .string(effort)
+            object["output_config"] = .object(outputConfig)
+        }
+        return .object(object)
     }
 
     private static func anthropicAppendingToolChanges(

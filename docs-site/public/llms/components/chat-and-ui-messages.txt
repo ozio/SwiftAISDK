@@ -1,6 +1,6 @@
 # Chat and UI messages
 
-Source URL: /components/chat-and-ui-messages/
+Source URL: /SwiftAISDK/components/chat-and-ui-messages/
 
 ## Symbol counts
 

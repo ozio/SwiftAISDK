@@ -31,21 +31,25 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.54")
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.63")
         let baseURL = withoutTrailingSlash(basePrefix)
-        let useAzureOpenAIEndpoint = settings.baseURL.map(isAzureOpenAIBaseURL) ?? true
+        let baseURLInfo = try azureOpenAIBaseURLInfo(settings.baseURL)
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
         let config = ModelHTTPConfig(providerID: providerID, baseURL: baseURL, headers: headers, transport: transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody) { modelID, path in
             let urlString: String
             if useDeploymentBasedURLs {
                 urlString = "\(baseURL)/deployments/\(modelID)\(path)"
-            } else if useAzureOpenAIEndpoint {
-                urlString = "\(baseURL)/v1\(path)"
-            } else {
+            } else if !baseURLInfo.isAzureOpenAI || baseURLInfo.isVersioned {
                 urlString = "\(baseURL)\(path)"
+            } else {
+                urlString = "\(baseURL)/v1\(path)"
             }
             guard var components = URLComponents(string: urlString) else { throw AIError.invalidURL(urlString) }
-            if useAzureOpenAIEndpoint || useDeploymentBasedURLs {
+            if useDeploymentBasedURLs || (
+                baseURLInfo.isAzureOpenAI
+                    && !baseURLInfo.isVersioned
+                    && !baseURLInfo.isFoundryProject
+            ) {
                 components.queryItems = [URLQueryItem(name: "api-version", value: apiVersion)]
             }
             guard let url = components.url else { throw AIError.invalidURL(urlString) }
@@ -79,9 +83,38 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
 
 }
 
-private func isAzureOpenAIBaseURL(_ baseURL: String) -> Bool {
-    guard let host = URLComponents(string: baseURL)?.host else { return false }
-    return host.hasSuffix(".openai.azure.com")
+private struct AzureOpenAIBaseURLInfo {
+    var isAzureOpenAI: Bool
+    var isFoundryProject: Bool
+    var isVersioned: Bool
+}
+
+private func azureOpenAIBaseURLInfo(_ baseURL: String?) throws -> AzureOpenAIBaseURLInfo {
+    guard let baseURL else {
+        return AzureOpenAIBaseURLInfo(
+            isAzureOpenAI: true,
+            isFoundryProject: false,
+            isVersioned: false
+        )
+    }
+    guard let components = URLComponents(string: baseURL),
+          let hostname = components.host?.lowercased() else {
+        throw AIError.invalidURL(baseURL)
+    }
+    let isFoundryHost = hostname.hasSuffix(".services.ai.azure.com")
+    let isAzureOpenAI = hostname.hasSuffix(".openai.azure.com")
+        || isFoundryHost
+        || hostname.hasSuffix(".cognitiveservices.azure.com")
+    let pathname = components.path.replacingOccurrences(
+        of: #"/+$"#,
+        with: "",
+        options: .regularExpression
+    )
+    return AzureOpenAIBaseURLInfo(
+        isAzureOpenAI: isAzureOpenAI,
+        isFoundryProject: isFoundryHost && pathname.hasPrefix("/api/projects/"),
+        isVersioned: isAzureOpenAI && pathname.lowercased().hasSuffix("/openai/v1")
+    )
 }
 
 struct AzureOpenAITokenProviderTransport: AIStreamingTransport {

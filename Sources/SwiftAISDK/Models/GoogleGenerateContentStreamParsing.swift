@@ -62,6 +62,7 @@ struct GoogleGenerateContentStreamState {
     private var responseMetadata: AIResponseMetadata
     private let includeRawChunks: Bool
     private let warnings: [AIWarning]
+    private let toolNameMapping: AIToolNameMapping
     private var toolCalls = GoogleGenerateContentStreamingToolCalls()
     private var lastCodeExecutionToolCallID: String?
     private var lastServerToolCallID: String?
@@ -76,10 +77,17 @@ struct GoogleGenerateContentStreamState {
     private var currentReasoningID: String?
     private var blockCounter = 0
 
-    init(response: AIHTTPResponse, includeRawChunks: Bool, modelID: String?, warnings: [AIWarning]) {
+    init(
+        response: AIHTTPResponse,
+        includeRawChunks: Bool,
+        modelID: String?,
+        warnings: [AIWarning],
+        toolNameMapping: AIToolNameMapping = AIToolNameMapping()
+    ) {
         self.responseMetadata = aiResponseMetadata(response: response, modelID: modelID)
         self.includeRawChunks = includeRawChunks
         self.warnings = warnings
+        self.toolNameMapping = toolNameMapping
     }
 
     mutating func apply(_ raw: JSONValue) -> [LanguageStreamPart] {
@@ -116,13 +124,14 @@ struct GoogleGenerateContentStreamState {
                 let id = "google-code-execution-\(index)"
                 lastCodeExecutionToolCallID = id
                 sawToolCalls = true
-                parts.append(.toolInputStart(id: id, name: "code_execution", providerExecuted: true))
+                let toolName = toolNameMapping.toCustomToolName("code_execution")
+                parts.append(.toolInputStart(id: id, name: toolName, providerExecuted: true))
                 let input = googleGenerateContentArguments(executableCode)
                 parts.append(.toolInputDelta(id: id, delta: input))
                 parts.append(.toolInputEnd(id: id))
                 parts.append(.toolCall(AIToolCall(
                     id: id,
-                    name: "code_execution",
+                    name: toolName,
                     arguments: input,
                     providerExecuted: true,
                     rawValue: contentPart
@@ -133,7 +142,7 @@ struct GoogleGenerateContentStreamState {
                 let id = lastCodeExecutionToolCallID ?? "google-code-execution-result-\(index)"
                 parts.append(.toolResult(AIToolResult(
                     toolCallID: id,
-                    toolName: "code_execution",
+                    toolName: toolNameMapping.toCustomToolName("code_execution"),
                     result: googleCodeExecutionResultJSON(codeExecutionResult)
                 )))
                 continue

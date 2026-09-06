@@ -1,6 +1,6 @@
 # Embeddings
 
-Source URL: /core/embeddings/
+Source URL: /SwiftAISDK/core/embeddings/
 
 Use `embed` for a single text value and `embedMany` when you want one request to cover multiple inputs.
 
@@ -43,6 +43,9 @@ for vector in result.embeddings {
 Count and byte limits are applied together in one pass. An individual value
 larger than the byte budget stays intact in its own request so the provider can
 return its native validation error instead of the SDK silently truncating it.
+Every provider response must also contain exactly one vector for each input in
+that request. A mismatch is rejected before the facade merges chunked results,
+preventing silently shifted input/vector associations.
 
 ## Options
 

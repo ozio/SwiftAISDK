@@ -1,6 +1,6 @@
 # Introduction
 
-Source URL: /
+Source URL: /SwiftAISDK/
 
 # SwiftAISDK
 
@@ -15,6 +15,9 @@ Generate your first response with OpenAI or any registry-backed model.
 
 Tools
 Let a model call typed Swift functions and continue the conversation.
+
+Files
+Upload, inspect, stream, and delete provider-managed files.
 
 Providers
 See which upstream `@ai-sdk/*` providers and model families are covered.

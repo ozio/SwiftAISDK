@@ -7,7 +7,10 @@ func googleGenerateContentText(from raw: JSONValue) -> String? {
     return text
 }
 
-func googleGenerateContentToolCalls(from raw: JSONValue) -> [AIToolCall] {
+func googleGenerateContentToolCalls(
+    from raw: JSONValue,
+    toolNameMapping: AIToolNameMapping = AIToolNameMapping()
+) -> [AIToolCall] {
     var calls: [AIToolCall] = []
     let parts = raw["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? []
     for (index, part) in parts.enumerated() {
@@ -15,7 +18,7 @@ func googleGenerateContentToolCalls(from raw: JSONValue) -> [AIToolCall] {
            executableCode["code"]?.stringValue != nil {
             calls.append(AIToolCall(
                 id: "google-code-execution-\(index)",
-                name: "code_execution",
+                name: toolNameMapping.toCustomToolName("code_execution"),
                 arguments: googleGenerateContentArguments(executableCode),
                 providerExecuted: true,
                 rawValue: part
@@ -51,7 +54,10 @@ func googleGenerateContentToolCalls(from raw: JSONValue) -> [AIToolCall] {
     return calls
 }
 
-func googleGenerateContentToolResults(from raw: JSONValue) -> [AIToolResult] {
+func googleGenerateContentToolResults(
+    from raw: JSONValue,
+    toolNameMapping: AIToolNameMapping = AIToolNameMapping()
+) -> [AIToolResult] {
     var results: [AIToolResult] = []
     var lastCodeExecutionToolCallID: String?
     var lastServerToolCallID: String?
@@ -65,7 +71,7 @@ func googleGenerateContentToolResults(from raw: JSONValue) -> [AIToolResult] {
         if let codeExecutionResult = part["codeExecutionResult"] {
             results.append(AIToolResult(
                 toolCallID: lastCodeExecutionToolCallID ?? "google-code-execution-result-\(index)",
-                toolName: "code_execution",
+                toolName: toolNameMapping.toCustomToolName("code_execution"),
                 result: googleCodeExecutionResultJSON(codeExecutionResult)
             ))
             continue

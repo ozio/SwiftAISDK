@@ -5,18 +5,63 @@ public struct AIHTTPRequest: Sendable {
     public var url: URL
     public var headers: [String: String]
     public var body: Data?
+    /// Single-use request body consumed incrementally by streaming-capable
+    /// transports. It is mutually exclusive with `body`.
+    public var bodyStream: AsyncThrowingStream<Data, Error>?
     public var abortSignal: AIAbortSignal?
     public var maxResponseBytes: Int?
     public var followRedirects: Bool
+    private let bodyStreamCancellation: @Sendable () async -> Void
 
-    public init(method: String = "POST", url: URL, headers: [String: String] = [:], body: Data? = nil, abortSignal: AIAbortSignal? = nil, maxResponseBytes: Int? = nil, followRedirects: Bool = true) {
+    public init(
+        method: String = "POST",
+        url: URL,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        bodyStream: AsyncThrowingStream<Data, Error>? = nil,
+        cancelBodyStream: @escaping @Sendable () async -> Void = {},
+        abortSignal: AIAbortSignal? = nil,
+        maxResponseBytes: Int? = nil,
+        followRedirects: Bool = true
+    ) {
+        precondition(body == nil || bodyStream == nil, "AIHTTPRequest cannot contain both body and bodyStream.")
         self.method = method
         self.url = url
         self.headers = headers
         self.body = body
+        self.bodyStream = bodyStream
         self.abortSignal = abortSignal
         self.maxResponseBytes = maxResponseBytes
         self.followRedirects = followRedirects
+        self.bodyStreamCancellation = cancelBodyStream
+    }
+
+    /// Source-compatible initializer retained from before streamed request
+    /// bodies were supported.
+    public init(
+        method: String = "POST",
+        url: URL,
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        maxResponseBytes: Int? = nil,
+        followRedirects: Bool = true
+    ) {
+        self.init(
+            method: method,
+            url: url,
+            headers: headers,
+            body: body,
+            bodyStream: nil,
+            cancelBodyStream: {},
+            abortSignal: abortSignal,
+            maxResponseBytes: maxResponseBytes,
+            followRedirects: followRedirects
+        )
+    }
+
+    public func cancelRequestBody() async {
+        await bodyStreamCancellation()
     }
 }
 
@@ -70,18 +115,40 @@ public struct AIHTTPStreamResponse: Sendable {
     public var statusCode: Int
     public var headers: [String: String]
     public var body: AsyncThrowingStream<Data, Error>
+    /// Distinguishes a present zero-byte body from a transport response that
+    /// has no body object at all.
+    public var bodyAvailable: Bool
     private let bodyCancellation: @Sendable () -> Void
 
     public init(
         statusCode: Int,
         headers: [String: String] = [:],
         body: AsyncThrowingStream<Data, Error>,
+        bodyAvailable: Bool = true,
         cancelBody: @escaping @Sendable () -> Void = {}
     ) {
         self.statusCode = statusCode
         self.headers = headers
         self.body = body
+        self.bodyAvailable = bodyAvailable
         self.bodyCancellation = cancelBody
+    }
+
+    /// Source-compatible initializer retained from before transport responses
+    /// distinguished an absent body from a present empty body.
+    public init(
+        statusCode: Int,
+        headers: [String: String] = [:],
+        body: AsyncThrowingStream<Data, Error>,
+        cancelBody: @escaping @Sendable () -> Void = {}
+    ) {
+        self.init(
+            statusCode: statusCode,
+            headers: headers,
+            body: body,
+            bodyAvailable: true,
+            cancelBody: cancelBody
+        )
     }
 
     public func headerValue(_ name: String) -> String? {
@@ -100,6 +167,10 @@ public func readResponseWithSizeLimit(
     url: String,
     maxBytes: Int = AIDefaultMaxDownloadSize
 ) async throws -> Data {
+    // Match the provider-utils reader contract: whether the body is drained,
+    // rejected from Content-Length, exceeds the cumulative limit, or throws,
+    // release its producer deterministically.
+    defer { response.cancelBody() }
     let contentLength = response.headerValue("content-length").flatMap(parseContentLength)
     if let contentLength, contentLength > maxBytes {
         throw AIDownloadError(
@@ -143,6 +214,76 @@ func requireStreamingTransport(
     return streamingTransport
 }
 
+func getFromAPI(
+    url: URL,
+    transport: any AITransport,
+    headers: [String: String] = [:],
+    abortSignal: AIAbortSignal? = nil
+) async throws -> (request: AIHTTPRequest, response: AIHTTPResponse) {
+    let request = AIHTTPRequest(
+        method: "GET",
+        url: url,
+        headers: headers,
+        abortSignal: abortSignal,
+        followRedirects: false
+    )
+    return (request, try await transport.send(request))
+}
+
+func deleteFromAPI(
+    url: URL,
+    transport: any AITransport,
+    headers: [String: String] = [:],
+    abortSignal: AIAbortSignal? = nil
+) async throws -> (request: AIHTTPRequest, response: AIHTTPResponse) {
+    let request = AIHTTPRequest(
+        method: "DELETE",
+        url: url,
+        headers: headers,
+        abortSignal: abortSignal,
+        followRedirects: false
+    )
+    return (request, try await transport.send(request))
+}
+
+func getBinaryStreamFromAPI(
+    url: URL,
+    transport: any AITransport,
+    providerID: String,
+    headers: [String: String] = [:],
+    abortSignal: AIAbortSignal? = nil,
+    trustedOrigin: String? = nil,
+    credentialedOrigin: String? = nil
+) async throws -> (request: AIHTTPRequest, response: AIHTTPStreamResponse) {
+    let streamingTransport = try requireStreamingTransport(transport, providerID: providerID)
+    let (response, request) = try await streamDownloadURL(
+        url.absoluteString,
+        transport: streamingTransport,
+        headers: headers,
+        credentialedOrigin: credentialedOrigin,
+        trustedOrigin: trustedOrigin,
+        abortSignal: abortSignal,
+        maxBytes: AIDefaultMaxDownloadSize
+    )
+    guard response.bodyAvailable else {
+        response.cancelBody()
+        throw AIError.invalidResponse(provider: providerID, message: "File download response body is missing.")
+    }
+    guard (200..<300).contains(response.statusCode) else {
+        let body = try await readResponseWithSizeLimit(
+            response: response,
+            url: url.absoluteString
+        )
+        throw apiCallError(
+            provider: providerID,
+            statusCode: response.statusCode,
+            body: String(decoding: body, as: UTF8.self),
+            headers: response.headers
+        )
+    }
+    return (request, response)
+}
+
 public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendable {
     public static let shared = URLSessionTransport()
     private let session: URLSession
@@ -155,7 +296,12 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
         try request.abortSignal?.throwIfAborted()
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method
-        urlRequest.httpBody = request.body
+        let requestInputStream = request.bodyStream.map(AsyncSequenceInputStream.init)
+        if let requestInputStream {
+            urlRequest.httpBodyStream = requestInputStream
+        } else {
+            urlRequest.httpBody = request.body
+        }
         for (key, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
@@ -166,14 +312,19 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
         let maxResponseBytes = request.maxResponseBytes ?? AIDefaultMaxDownloadSize
         let operation: @Sendable () async throws -> AIHTTPResponse = {
             do {
+                requestInputStream?.open()
                 let (bytes, response) = try await self.session.bytes(for: preparedRequest, delegate: delegate)
-                return try await limitedHTTPResponse(
+                let result = try await limitedHTTPResponse(
                     bytes: bytes,
                     response: response,
                     request: request,
                     maxResponseBytes: maxResponseBytes
                 )
+                requestInputStream?.close()
+                return result
             } catch {
+                requestInputStream?.close()
+                await request.cancelRequestBody()
                 if let abortSignal = request.abortSignal, abortSignal.isAborted {
                     throw AIAbortError(reason: abortSignal.reason, reasonName: abortSignal.reasonName)
                 }
@@ -188,6 +339,13 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
     }
 
     public func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        guard request.bodyStream == nil else {
+            await request.cancelRequestBody()
+            throw AIError.invalidArgument(
+                argument: "request.bodyStream",
+                message: "Streaming response requests cannot also contain a streaming upload body."
+            )
+        }
         try request.abortSignal?.throwIfAborted()
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method
@@ -283,6 +441,155 @@ public final class URLSessionTransport: AIStreamingTransport, @unchecked Sendabl
             body: body,
             cancelBody: { bodyCancellation.cancel() }
         )
+    }
+}
+
+/// Blocking InputStream bridge used by URLSession to pull an async request body
+/// one chunk at a time. At most one source chunk is retained, so large file
+/// uploads are not accumulated in memory.
+private final class AsyncSequenceInputStream: InputStream, @unchecked Sendable {
+    private let source: AsyncThrowingStream<Data, Error>
+    private let condition = NSCondition()
+    private var iteratorBox: AsyncStreamIteratorBox?
+    private var pendingRead: Task<Void, Never>?
+    private var chunk = Data()
+    private var offset = 0
+    private var finished = false
+    private var closed = false
+    private var failure: Error?
+    private var status: Stream.Status = .notOpen
+
+    init(_ source: AsyncThrowingStream<Data, Error>) {
+        self.source = source
+        super.init(data: Data())
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func open() {
+        condition.lock()
+        if status == .notOpen { status = .open }
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    override func close() {
+        condition.lock()
+        guard !closed else {
+            condition.unlock()
+            return
+        }
+        closed = true
+        status = .closed
+        let pendingRead = pendingRead
+        self.pendingRead = nil
+        condition.broadcast()
+        condition.unlock()
+        pendingRead?.cancel()
+    }
+
+    override var streamStatus: Stream.Status {
+        condition.withLock { status }
+    }
+
+    override var streamError: Error? {
+        condition.withLock { failure }
+    }
+
+    override var hasBytesAvailable: Bool {
+        condition.withLock { !closed && (!chunk.isEmpty || !finished) }
+    }
+
+    override func read(_ buffer: UnsafeMutablePointer<UInt8>, maxLength len: Int) -> Int {
+        guard len > 0 else { return 0 }
+        condition.lock()
+        defer { condition.unlock() }
+
+        while true {
+            if offset < chunk.count {
+                let count = min(len, chunk.count - offset)
+                chunk.copyBytes(to: buffer, from: offset..<(offset + count))
+                offset += count
+                if offset == chunk.count {
+                    chunk = Data()
+                    offset = 0
+                }
+                return count
+            }
+            if failure != nil {
+                status = .error
+                return -1
+            }
+            if finished || closed {
+                if !closed { status = .atEnd }
+                return 0
+            }
+            startPendingReadLocked()
+            condition.wait()
+        }
+    }
+
+    private func startPendingReadLocked() {
+        guard pendingRead == nil, !finished, !closed else { return }
+        if iteratorBox == nil { iteratorBox = AsyncStreamIteratorBox(source) }
+        guard let iteratorBox else { return }
+        let completion = AsyncStreamReadCompletion(owner: self)
+        pendingRead = Task.detached { [iteratorBox, completion] in
+            do {
+                completion.finish(value: try await iteratorBox.next(), error: nil)
+            } catch {
+                completion.finish(value: nil, error: error)
+            }
+        }
+    }
+
+    fileprivate func completeRead(
+        value: Data?,
+        error: Error?
+    ) {
+        condition.lock()
+        defer {
+            condition.broadcast()
+            condition.unlock()
+        }
+        guard !closed else { return }
+        pendingRead = nil
+        if let error {
+            failure = error
+            return
+        }
+        guard let value else {
+            finished = true
+            return
+        }
+        chunk = value
+        offset = 0
+    }
+}
+
+private final class AsyncStreamReadCompletion: @unchecked Sendable {
+    private weak var owner: AsyncSequenceInputStream?
+
+    init(owner: AsyncSequenceInputStream) {
+        self.owner = owner
+    }
+
+    func finish(value: Data?, error: Error?) {
+        owner?.completeRead(value: value, error: error)
+    }
+}
+
+private final class AsyncStreamIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<Data, Error>.Iterator
+
+    init(_ source: AsyncThrowingStream<Data, Error>) {
+        iterator = source.makeAsyncIterator()
+    }
+
+    func next() async throws -> Data? {
+        try await iterator.next()
     }
 }
 
@@ -1059,119 +1366,4 @@ func tokenUsage(from raw: JSONValue) -> TokenUsage? {
         outputReasoningTokens: reasoningTokens,
         rawValue: usage
     )
-}
-
-struct MultipartFormData {
-    var boundary: String = "SwiftAISDK-\(UUID().uuidString)"
-    private var body = Data()
-
-    mutating func appendField(name: String, value: String) {
-        appendBoundary()
-        body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
-        body.append(Data(value.utf8))
-        body.append(Data("\r\n".utf8))
-    }
-
-    mutating func appendFile(name: String, fileName: String, mimeType: String, data: Data) {
-        appendBoundary()
-        body.append(Data("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(fileName)\"\r\n".utf8))
-        body.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
-        body.append(data)
-        body.append(Data("\r\n".utf8))
-    }
-
-    mutating func finalize() -> Data {
-        body.append(Data("--\(boundary)--\r\n".utf8))
-        return body
-    }
-
-    private mutating func appendBoundary() {
-        body.append(Data("--\(boundary)\r\n".utf8))
-    }
-}
-
-struct MultipartFormDataFile: Equatable, Sendable {
-    var fileName: String
-    var mimeType: String
-    var data: Data
-
-    init(fileName: String = "blob", mimeType: String = "application/octet-stream", data: Data) {
-        self.fileName = fileName
-        self.mimeType = mimeType
-        self.data = data
-    }
-}
-
-enum MultipartFormDataValue: Equatable, Sendable {
-    case string(String)
-    case number(Double)
-    case bool(Bool)
-    case file(MultipartFormDataFile)
-    case array([MultipartFormDataValue])
-    case null
-}
-
-func convertToMultipartFormData(
-    _ values: [String: MultipartFormDataValue?],
-    useArrayBrackets: Bool = true
-) -> MultipartFormData {
-    var form = MultipartFormData()
-
-    func append(name: String, value: MultipartFormDataValue) {
-        switch value {
-        case let .string(string):
-            form.appendField(name: name, value: string)
-        case let .number(number):
-            form.appendField(name: name, value: multipartNumberString(number))
-        case let .bool(bool):
-            form.appendField(name: name, value: String(bool))
-        case let .file(file):
-            form.appendFile(name: name, fileName: file.fileName, mimeType: file.mimeType, data: file.data)
-        case let .array(array):
-            guard !array.isEmpty else { return }
-            let fieldName = array.count == 1 || !useArrayBrackets ? name : "\(name)[]"
-            for item in array {
-                append(name: fieldName, value: item)
-            }
-        case .null:
-            return
-        }
-    }
-
-    for (name, value) in values {
-        guard let value else { continue }
-        append(name: name, value: value)
-    }
-
-    return form
-}
-
-func jsonScalarString(_ value: JSONValue) -> String? {
-    switch value {
-    case let .string(string):
-        return string
-    case let .number(number):
-        return multipartNumberString(number)
-    case let .bool(bool):
-        return String(bool)
-    case .null, .array, .object:
-        return nil
-    }
-}
-
-private func multipartNumberString(_ number: Double) -> String {
-    if let integer = Int(exactly: number) {
-        return String(integer)
-    }
-    guard number.isFinite,
-          number.rounded() == number,
-          abs(number) < 1e21 else {
-        return String(number)
-    }
-
-    let locale = Locale(identifier: "en_US_POSIX")
-    guard var decimal = Decimal(string: String(number), locale: locale) else {
-        return String(number)
-    }
-    return NSDecimalString(&decimal, locale)
 }

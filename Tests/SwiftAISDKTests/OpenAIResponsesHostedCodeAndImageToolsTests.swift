@@ -164,12 +164,13 @@ import Testing
         messages: [.user("Create an image.")],
         tools: [
             "image_generation": OpenAITools.imageGeneration(
+                action: "edit",
                 background: "opaque",
-                moderation: "auto",
+                moderation: "low",
                 outputCompression: 100,
                 outputFormat: "png",
                 quality: "high",
-                size: "1536x1024"
+                size: "1536x864"
             )
         ],
         extraBody: ["toolChoice": ["type": "tool", "toolName": "image_generation"]]
@@ -179,12 +180,13 @@ import Testing
     #expect(body["tool_choice"]?["type"]?.stringValue == "image_generation")
     let tool = try #require(body["tools"]?[0])
     #expect(tool["type"]?.stringValue == "image_generation")
+    #expect(tool["action"]?.stringValue == "edit")
     #expect(tool["background"]?.stringValue == "opaque")
-    #expect(tool["moderation"]?.stringValue == "auto")
+    #expect(tool["moderation"]?.stringValue == "low")
     #expect(tool["output_compression"]?.intValue == 100)
     #expect(tool["output_format"]?.stringValue == "png")
     #expect(tool["quality"]?.stringValue == "high")
-    #expect(tool["size"]?.stringValue == "1536x1024")
+    #expect(tool["size"]?.stringValue == "1536x864")
 }
 
 @Test func openAIResponsesSendsImageGenerationRequestBodyLikeUpstream() async throws {
@@ -272,4 +274,3 @@ import Testing
     #expect(text == "")
     #expect(textMetadata["openai"]?["itemId"]?.stringValue == "msg_0a33d15155cb126d0068c96c723ed88195b1405bc370bb8a65")
 }
-

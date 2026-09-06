@@ -41,6 +41,7 @@ public enum OpenAITools {
         ]).objectValue ?? [:])
     }
 
+    /// Source-compatible image-generation tool factory retained from 1.5.x.
     public static func imageGeneration(
         background: String? = nil,
         inputFidelity: String? = nil,
@@ -53,7 +54,36 @@ public enum OpenAITools {
         quality: String? = nil,
         size: String? = nil
     ) -> JSONValue {
+        imageGeneration(
+            action: nil,
+            background: background,
+            inputFidelity: inputFidelity,
+            inputImageMask: inputImageMask,
+            model: model,
+            moderation: moderation,
+            outputCompression: outputCompression,
+            outputFormat: outputFormat,
+            partialImages: partialImages,
+            quality: quality,
+            size: size
+        )
+    }
+
+    public static func imageGeneration(
+        action: String? = nil,
+        background: String? = nil,
+        inputFidelity: String? = nil,
+        inputImageMask: JSONValue? = nil,
+        model: String? = nil,
+        moderation: String? = nil,
+        outputCompression: Int? = nil,
+        outputFormat: String? = nil,
+        partialImages: Int? = nil,
+        quality: String? = nil,
+        size: String? = nil
+    ) -> JSONValue {
         providerTool(id: "openai.image_generation", name: "image_generation", args: JSONValue.object([
+            "action": action.map(JSONValue.string),
             "background": background.map(JSONValue.string),
             "inputFidelity": inputFidelity.map(JSONValue.string),
             "inputImageMask": inputImageMask,
@@ -237,6 +267,7 @@ public enum AzureOpenAITools {
         OpenAITools.fileSearch(vectorStoreIDs: vectorStoreIDs, maxNumResults: maxNumResults, ranking: ranking, filters: filters)
     }
 
+    /// Source-compatible image-generation tool factory retained from 1.5.x.
     public static func imageGeneration(
         background: String? = nil,
         inputFidelity: String? = nil,
@@ -249,7 +280,36 @@ public enum AzureOpenAITools {
         quality: String? = nil,
         size: String? = nil
     ) -> JSONValue {
+        imageGeneration(
+            action: nil,
+            background: background,
+            inputFidelity: inputFidelity,
+            inputImageMask: inputImageMask,
+            model: model,
+            moderation: moderation,
+            outputCompression: outputCompression,
+            outputFormat: outputFormat,
+            partialImages: partialImages,
+            quality: quality,
+            size: size
+        )
+    }
+
+    public static func imageGeneration(
+        action: String? = nil,
+        background: String? = nil,
+        inputFidelity: String? = nil,
+        inputImageMask: JSONValue? = nil,
+        model: String? = nil,
+        moderation: String? = nil,
+        outputCompression: Int? = nil,
+        outputFormat: String? = nil,
+        partialImages: Int? = nil,
+        quality: String? = nil,
+        size: String? = nil
+    ) -> JSONValue {
         OpenAITools.imageGeneration(
+            action: action,
             background: background,
             inputFidelity: inputFidelity,
             inputImageMask: inputImageMask,
@@ -293,6 +353,9 @@ public struct ProviderSettings: Sendable {
     public var includeUsage: Bool
     public var supportsStructuredOutputs: Bool
     public var maxEmbeddingsPerCall: Int?
+    /// Sends ID-less Open Responses assistant history as strict easy-input
+    /// messages instead of incomplete output items.
+    public var strictResponseInput: Bool
     public var transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
     public var name: String?
 
@@ -310,6 +373,7 @@ public struct ProviderSettings: Sendable {
         includeUsage: Bool = false,
         supportsStructuredOutputs: Bool = false,
         maxEmbeddingsPerCall: Int? = nil,
+        strictResponseInput: Bool = false,
         transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
         name: String? = nil
     ) {
@@ -326,8 +390,48 @@ public struct ProviderSettings: Sendable {
         self.includeUsage = includeUsage
         self.supportsStructuredOutputs = supportsStructuredOutputs
         self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
+        self.strictResponseInput = strictResponseInput
         self.transformRequestBody = transformRequestBody
         self.name = name
+    }
+
+    /// Source-compatible initializer retained from before strict Open
+    /// Responses assistant-history conversion became configurable.
+    public init(
+        apiKey: String? = nil,
+        authToken: String? = nil,
+        baseURL: String? = nil,
+        modelURL: String? = nil,
+        organization: String? = nil,
+        project: String? = nil,
+        headers: [String: String] = [:],
+        queryParams: [String: String] = [:],
+        environment: [String: String]? = nil,
+        transport: any AITransport = URLSessionTransport.shared,
+        includeUsage: Bool = false,
+        supportsStructuredOutputs: Bool = false,
+        maxEmbeddingsPerCall: Int? = nil,
+        transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
+        name: String? = nil
+    ) {
+        self.init(
+            apiKey: apiKey,
+            authToken: authToken,
+            baseURL: baseURL,
+            modelURL: modelURL,
+            organization: organization,
+            project: project,
+            headers: headers,
+            queryParams: queryParams,
+            environment: environment,
+            transport: transport,
+            includeUsage: includeUsage,
+            supportsStructuredOutputs: supportsStructuredOutputs,
+            maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            strictResponseInput: false,
+            transformRequestBody: transformRequestBody,
+            name: name
+        )
     }
 
     func environmentValue(_ names: [String]) -> String? {
@@ -353,6 +457,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var queryParams: [String: String]
     var supportsStructuredOutputs: Bool
     var maxEmbeddingsPerCall: Int?
+    var strictResponseInput: Bool
     var transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
     var responsesRequestMode: ResponsesRequestMode
     var openAIBackedProviderRoot: String?
@@ -371,6 +476,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         queryParams: [String: String] = [:],
         supportsStructuredOutputs: Bool = false,
         maxEmbeddingsPerCall: Int? = nil,
+        strictResponseInput: Bool = false,
         transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
         responsesRequestMode: ResponsesRequestMode = .openAICompatible,
         openAIBackedProviderRoot: String? = nil,
@@ -389,6 +495,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.queryParams = queryParams
         self.supportsStructuredOutputs = supportsStructuredOutputs
         self.maxEmbeddingsPerCall = maxEmbeddingsPerCall
+        self.strictResponseInput = strictResponseInput
         self.transformRequestBody = transformRequestBody
         self.responsesRequestMode = responsesRequestMode
         self.openAIBackedProviderRoot = openAIBackedProviderRoot

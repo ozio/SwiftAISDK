@@ -48,7 +48,8 @@ private let openAIResponsesReasoningModelIDsLikeUpstream = [
     "gpt-5.6-nano",
     "gpt-5.6-nano-2026-06-18",
     "gpt-5.6-pro",
-    "gpt-5.6-pro-2026-06-18"
+    "gpt-5.6-pro-2026-06-18",
+    "gpt-6-astra"
 ]
 
 private let openAIResponsesNonReasoningModelIDsLikeUpstream = [
@@ -231,6 +232,82 @@ private let openAIResponsesNonReasoningModelIDsLikeUpstream = [
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["service_tier"]?.stringValue == "fast")
     #expect(result.warnings.isEmpty)
+}
+
+@Test func openAIResponsesForwardsUltrafastServiceTierLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-ultrafast-tier","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+
+    let result = try await provider.languageModel("gpt-5.6-sol").generate(LanguageModelRequest(
+        messages: [.user("Hello")],
+        providerOptions: ["openai": ["serviceTier": "ultrafast"]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["service_tier"]?.stringValue == "ultrafast")
+    #expect(result.warnings.isEmpty)
+}
+
+@Test func openAIResponsesAppliesSupportedGPT6ReasoningConfigurationUpdate() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-gpt6-update","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+
+    let result = try await provider.languageModel("gpt-6-astra").generate(LanguageModelRequest(
+        messages: [.user("Hello")],
+        providerOptions: ["openai": [
+            "reasoningEffort": "low",
+            "reasoningEffortUpdate": "high"
+        ]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["input"]?[0]?["type"]?.stringValue == "configuration_update")
+    #expect(body["input"]?[0]?["reasoning"]?["effort"]?.stringValue == "high")
+    #expect(body["input"]?[1]?["role"]?.stringValue == "user")
+    #expect(body["reasoning"]?["effort"]?.stringValue == "low")
+    #expect(body["reasoningEffortUpdate"] == nil)
+    #expect(result.warnings.isEmpty)
+}
+
+@Test func openAIResponsesRejectsUnsupportedGPT6ReasoningEffortsAndOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-gpt6-options","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+
+    let result = try await provider.languageModel("gpt-6-astra").generate(LanguageModelRequest(
+        messages: [.user("Hello")],
+        temperature: 0.5,
+        topP: 0.7,
+        providerOptions: ["openai": [
+            "reasoningEffort": "none",
+            "reasoningEffortUpdate": "medium",
+            "reasoningMode": "pro",
+            "promptCacheRetention": "24h",
+            "logprobs": 5,
+            "include": ["message.output_text.logprobs"]
+        ]]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["reasoning"]?["effort"] == nil)
+    #expect(body["input"]?[0]?["type"]?.stringValue != "configuration_update")
+    #expect(body["prompt_cache_retention"] == nil)
+    #expect(body["top_logprobs"] == nil)
+    #expect(body["include"] == nil)
+    #expect(body["temperature"] == nil)
+    #expect(body["top_p"] == nil)
+    #expect(result.warnings.map(\.feature).contains("reasoningEffort"))
+    #expect(result.warnings.map(\.feature).contains("reasoningEffortUpdate"))
+    #expect(result.warnings.map(\.feature).contains("promptCacheRetention"))
+    #expect(result.warnings.map(\.feature).contains("logprobs"))
+}
+
+@Test func openAILanguageModelCapabilitiesRecognizeGPT6AndLaterLimits() {
+    let gpt6 = openAILanguageModelCapabilities("gpt-6-astra")
+    #expect(gpt6.isReasoningModel)
+    #expect(!gpt6.supportsNonReasoningParameters)
+    #expect(gpt6.supportsConfigurationUpdate)
+    #expect(gpt6.supportedReasoningEfforts == ["low", "medium", "high", "xhigh", "max"])
+    #expect(!openAILanguageModelCapabilities("gpt-5.6").supportsConfigurationUpdate)
 }
 
 @Test func openAIResponsesMapsResponseFormatLikeUpstream() async throws {

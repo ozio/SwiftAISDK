@@ -1,6 +1,6 @@
 # Media
 
-Source URL: /components/media/
+Source URL: /SwiftAISDK/components/media/
 
 ## Symbol counts
 
@@ -10,7 +10,7 @@ Source URL: /components/media/
 | Initializer | 8 |
 | Instance Property | 43 |
 | Structure | 6 |
-| Type Method | 13 |
+| Type Method | 16 |
 
 ## Public symbols
 
@@ -80,6 +80,8 @@ Source URL: /components/media/
 | Structure | `ImageGenerationRequest` | `struct ImageGenerationRequest` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Structure | `ImageGenerationResult` | `struct ImageGenerationResult` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Structure | `ImageInputFile` | `struct ImageInputFile` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
+| Type Method | `deleteFile(client:request:retryPolicy:telemetry:)` | `static func deleteFile(client: any AIFileClient, request: FileDeleteRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> FileDeleteResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
+| Type Method | `downloadFile(client:request:retryPolicy:telemetry:)` | `static func downloadFile(client: any AIFileClient, request: FileDownloadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> FileDownloadResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `embed(model:request:retryPolicy:telemetry:)` | `static func embed(model: any EmbeddingModel, request: EmbeddingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `embed(model:value:dimensions:providerOptions:extraBody:headers:abortSignal:retryPolicy:telemetry:)` | `static func embed(model: any EmbeddingModel, value: String, dimensions: Int? = nil, providerOptions: [String : JSONValue] = [:], extraBody: [String : JSONValue] = [:], headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `embedMany(model:values:dimensions:chunkSize:providerOptions:extraBody:headers:abortSignal:retryPolicy:telemetry:)` | `static func embedMany(model: any EmbeddingModel, values: [String], dimensions: Int? = nil, chunkSize: Int? = nil, providerOptions: [String : JSONValue] = [:], extraBody: [String : JSONValue] = [:], headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
@@ -88,6 +90,7 @@ Source URL: /components/media/
 | Type Method | `generateImage(model:request:retryPolicy:telemetry:)` | `static func generateImage(model: any ImageModel, request: ImageGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `generateSpeech(model:request:retryPolicy:telemetry:)` | `static func generateSpeech(model: any SpeechModel, request: SpeechRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> SpeechResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `generateVideo(model:request:retryPolicy:telemetry:poll:webhook:)` | `static func generateVideo(model: any VideoModel, request: VideoGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil, poll: VideoGenerationPollOptions? = nil, webhook: VideoGenerationWebhookFactory? = nil) async throws -> VideoGenerationResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
+| Type Method | `getFileMetadata(client:request:retryPolicy:telemetry:)` | `static func getFileMetadata(client: any AIFileClient, request: FileMetadataRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> FileMetadataResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `rerank(model:request:retryPolicy:telemetry:)` | `static func rerank(model: any RerankingModel, request: RerankingRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> RerankingResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `transcribe(model:request:retryPolicy:telemetry:)` | `static func transcribe(model: any TranscriptionModel, request: AudioTranscriptionRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |
 | Type Method | `transformAudio(model:request:retryPolicy:telemetry:)` | `static func transformAudio(model: any AudioTransformationModel, request: AudioTransformationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> AudioTransformationResult` | [Sources/SwiftAISDK/AIFacadeMedia.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIFacadeMedia.swift) |

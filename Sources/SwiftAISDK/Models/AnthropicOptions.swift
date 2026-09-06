@@ -164,6 +164,15 @@ func anthropicAutomaticBetas(from body: [String: JSONValue]) -> [String] {
     if body["speed"]?.stringValue == "fast" {
         add("fast-mode-2026-02-01")
     }
+
+    if body["thinking"]?["display"]?.stringValue == "updates" {
+        add("thinking-display-updates-2026-08-18")
+    }
+
+    if body["thinking"]?["block_binding"] != nil {
+        add("thinking-binding-controls-2026-08-01")
+    }
+
     if body["fallbacks"]?.stringValue == "default" {
         add("server-side-fallback-2026-07-01")
     } else if body["fallbacks"]?.arrayValue?.isEmpty == false {
@@ -223,6 +232,14 @@ func anthropicOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue
 func anthropicThinking(_ value: JSONValue) -> JSONValue {
     guard var object = value.objectValue else { return value }
     anthropicMoveKey("budgetTokens", to: "budget_tokens", in: &object)
+    if var blockBinding = object.removeValue(forKey: "blockBinding")?.objectValue {
+        anthropicMoveKey(
+            "prefixMismatchBehavior",
+            to: "prefix_mismatch_behavior",
+            in: &blockBinding
+        )
+        object["block_binding"] = .object(blockBinding)
+    }
     return .object(object)
 }
 
@@ -359,7 +376,10 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             isKnownModel: true
         )
     }
-    if modelID.contains("claude-sonnet-4-") {
+    if modelID.range(
+        of: #"claude-sonnet-4(?:-|@)"#,
+        options: .regularExpression
+    ) != nil {
         return AnthropicModelCapabilities(
             maxOutputTokens: 64_000,
             supportsStructuredOutput: false,
@@ -370,7 +390,10 @@ func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities
             isKnownModel: true
         )
     }
-    if modelID.contains("claude-opus-4-") {
+    if modelID.range(
+        of: #"claude-opus-4(?:-|@)"#,
+        options: .regularExpression
+    ) != nil {
         return AnthropicModelCapabilities(
             maxOutputTokens: 32_000,
             supportsStructuredOutput: false,

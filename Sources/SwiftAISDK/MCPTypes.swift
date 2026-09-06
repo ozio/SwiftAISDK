@@ -59,6 +59,52 @@ public struct MCPImplementation: Equatable, Hashable, Sendable {
     }
 }
 
+/// Behavioral hints reported by an MCP server for a tool.
+///
+/// Treat these values as untrusted unless the MCP server itself is trusted.
+public struct MCPToolAnnotations: Equatable, Hashable, Sendable {
+    public var title: String?
+    public var readOnlyHint: Bool?
+    public var destructiveHint: Bool?
+    public var idempotentHint: Bool?
+    public var openWorldHint: Bool?
+
+    public init(
+        title: String? = nil,
+        readOnlyHint: Bool? = nil,
+        destructiveHint: Bool? = nil,
+        idempotentHint: Bool? = nil,
+        openWorldHint: Bool? = nil
+    ) {
+        self.title = title
+        self.readOnlyHint = readOnlyHint
+        self.destructiveHint = destructiveHint
+        self.idempotentHint = idempotentHint
+        self.openWorldHint = openWorldHint
+    }
+
+    init?(json: JSONValue?) {
+        guard json?.objectValue != nil else { return nil }
+        self.init(
+            title: json?["title"]?.stringValue,
+            readOnlyHint: json?["readOnlyHint"]?.boolValue,
+            destructiveHint: json?["destructiveHint"]?.boolValue,
+            idempotentHint: json?["idempotentHint"]?.boolValue,
+            openWorldHint: json?["openWorldHint"]?.boolValue
+        )
+    }
+
+    public var jsonValue: JSONValue {
+        .object([
+            "title": title.map(JSONValue.string),
+            "readOnlyHint": readOnlyHint.map(JSONValue.bool),
+            "destructiveHint": destructiveHint.map(JSONValue.bool),
+            "idempotentHint": idempotentHint.map(JSONValue.bool),
+            "openWorldHint": openWorldHint.map(JSONValue.bool)
+        ])
+    }
+}
+
 public struct MCPToolDefinition: Equatable, Hashable, Sendable {
     public var name: String
     public var title: String?
@@ -67,6 +113,12 @@ public struct MCPToolDefinition: Equatable, Hashable, Sendable {
     public var outputSchema: JSONValue?
     public var annotations: JSONValue?
     public var metadata: JSONValue?
+
+    /// Typed access to the standard MCP behavioral annotations while
+    /// `annotations` retains the complete server-provided value.
+    public var toolAnnotations: MCPToolAnnotations? {
+        MCPToolAnnotations(json: annotations)
+    }
 
     public init(
         name: String,
@@ -90,16 +142,33 @@ public struct MCPToolDefinition: Equatable, Hashable, Sendable {
         guard let name = json["name"]?.stringValue else {
             throw MCPClientError(message: "Expected MCP tool definition with name.")
         }
+        let annotations = try validatedMCPToolAnnotations(json["annotations"])
         self.init(
             name: name,
             title: json["title"]?.stringValue,
             description: json["description"]?.stringValue,
             inputSchema: json["inputSchema"] ?? .object(["type": .string("object")]),
             outputSchema: json["outputSchema"],
-            annotations: json["annotations"],
+            annotations: annotations,
             metadata: json["_meta"]
         )
     }
+}
+
+private func validatedMCPToolAnnotations(_ value: JSONValue?) throws -> JSONValue? {
+    guard let value else { return nil }
+    guard let annotations = value.objectValue else {
+        throw MCPClientError(message: "Expected MCP tool annotations to be an object.")
+    }
+    if let title = annotations["title"], title.stringValue == nil {
+        throw MCPClientError(message: "Expected MCP tool annotation title to be a string.")
+    }
+    for key in ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] {
+        if let hint = annotations[key], hint.boolValue == nil {
+            throw MCPClientError(message: "Expected MCP tool annotation \(key) to be a boolean.")
+        }
+    }
+    return value
 }
 
 public struct MCPListToolsResult: Equatable, Hashable, Sendable {
@@ -176,17 +245,115 @@ public struct MCPCallToolResult: Equatable, Hashable, Sendable {
         ])
     }
 
-    init(json: JSONValue) {
+    init(json: JSONValue) throws {
+        guard var normalized = json.objectValue else {
+            throw MCPClientError(message: "Expected MCP tool result to be an object.")
+        }
+        if let metadata = normalized["_meta"], metadata.objectValue == nil {
+            throw MCPClientError(message: "Expected MCP tool result _meta to be an object.")
+        }
+        if let resultType = normalized["resultType"], resultType.stringValue == nil {
+            throw MCPClientError(message: "Expected MCP tool result resultType to be a string.")
+        }
+        if let isError = normalized["isError"], isError.boolValue == nil {
+            throw MCPClientError(message: "Expected MCP tool result isError to be a boolean.")
+        }
+
+        let structuredContent = json["structuredContent"]
+        let toolResult = json["toolResult"]
+        let content: [JSONValue]
+
+        if let contentValue = normalized["content"],
+           let explicitContent = contentValue.arrayValue {
+            try explicitContent.forEach(validateMCPToolResultContent)
+            content = explicitContent
+            if normalized["isError"] == nil {
+                normalized["isError"] = .bool(false)
+            }
+        } else if normalized["content"] != nil, toolResult == nil {
+            // The structured-content alternative requires content to be
+            // absent. A malformed content member must not silently select it.
+            throw MCPClientError(message: "Expected MCP tool result content to be an array.")
+        } else if let structuredContent {
+            guard let text = canonicalJSONText(structuredContent) else {
+                throw MCPClientError(message: "MCP structuredContent could not be serialized as JSON.")
+            }
+            content = [["type": "text", "text": .string(text)]]
+            normalized["content"] = .array(content)
+            if normalized["isError"] == nil {
+                normalized["isError"] = .bool(false)
+            }
+        } else if toolResult != nil {
+            content = []
+        } else {
+            throw MCPClientError(
+                message: "Expected MCP tool result with content, structuredContent, or toolResult."
+            )
+        }
+
         self.init(
-            content: json["content"]?.arrayValue ?? [],
-            structuredContent: json["structuredContent"],
-            toolResult: json["toolResult"],
+            content: content,
+            structuredContent: structuredContent,
+            toolResult: toolResult,
             isError: json["isError"]?.boolValue ?? false,
             metadata: json["_meta"],
             resultType: json["resultType"]?.stringValue,
-            rawValue: json
+            rawValue: .object(normalized)
         )
     }
+}
+
+private func validateMCPToolResultContent(_ content: JSONValue) throws {
+    guard let object = content.objectValue,
+          let type = object["type"]?.stringValue else {
+        throw MCPClientError(message: "Expected MCP tool result content with a string type.")
+    }
+
+    switch type {
+    case "text":
+        guard object["text"]?.stringValue != nil else {
+            throw malformedMCPToolResultContent(type)
+        }
+    case "image":
+        guard let data = object["data"]?.stringValue,
+              Data(base64Encoded: data) != nil,
+              object["mimeType"]?.stringValue != nil else {
+            throw malformedMCPToolResultContent(type)
+        }
+    case "resource":
+        guard let resource = object["resource"]?.objectValue,
+              resource["uri"]?.stringValue != nil,
+              mcpOptionalString(resource, "name"),
+              mcpOptionalString(resource, "title"),
+              mcpOptionalString(resource, "mimeType") else {
+            throw malformedMCPToolResultContent(type)
+        }
+        let hasTextContent = resource["text"]?.stringValue != nil
+        let hasBlobContent = resource["blob"]?.stringValue.flatMap { Data(base64Encoded: $0) } != nil
+        guard hasTextContent || hasBlobContent else {
+            throw malformedMCPToolResultContent(type)
+        }
+    case "resource_link":
+        guard object["uri"]?.stringValue != nil,
+              object["name"]?.stringValue != nil,
+              mcpOptionalString(object, "description"),
+              mcpOptionalString(object, "mimeType") else {
+            throw malformedMCPToolResultContent(type)
+        }
+    default:
+        // MCP is forward-compatible: content types unknown to this SDK are
+        // accepted as long as they carry a string discriminator.
+        return
+    }
+}
+
+private func mcpOptionalString(_ object: [String: JSONValue], _ key: String) -> Bool {
+    guard let value = object[key] else { return true }
+    return value.stringValue != nil
+}
+
+private func malformedMCPToolResultContent(_ type: String) -> MCPClientError {
+    MCPClientError(message: "Known MCP tool result content type \"\(type)\" does not match its schema.")
 }
 
 public struct MCPCompleteArgument: Equatable, Hashable, Sendable {

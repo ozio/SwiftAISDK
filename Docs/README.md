@@ -14,6 +14,8 @@ SwiftAISDK. User-facing guides live in `README.md` and `docs-site`.
 | Check provider capability coverage | `Docs/ProviderCapabilityMatrix.md` |
 | Check npm package baselines | `Docs/ProviderVersionLedger.md` |
 | Check core AI SDK parity | `Docs/CoreV6Parity.md` |
+| Review the latest package dispositions | `Docs/UpstreamPackageDiffAudit.md` |
+| Review the latest upstream test diff | `Docs/FreshUpstreamTestDiffAudit.md` |
 | Inspect upstream test inventory | `Docs/UpstreamTestInventory.md` |
 
 ## Document Roles
@@ -28,12 +30,14 @@ SwiftAISDK. User-facing guides live in `README.md` and `docs-site`.
   `AIProviderCapabilities`. Edit the Swift source first, then regenerate.
 - `ProviderVersionLedger.md` is the package-version ledger. It is not a task
   queue.
+- `UpstreamPackageDiffAudit.md` records the package-by-package disposition for
+  the latest npm drift pass, including portable, already-covered, and explicit
+  out-of-scope deltas.
 - `UpstreamTestInventory.md` is generated from the Vercel AI SDK monorepo and is
   intentionally large.
-- `FreshUpstreamTestDiffAudit.md` is a short working log for the latest
-  upstream test diff audit.
+- `FreshUpstreamTestDiffAudit.md` classifies the latest upstream executable and
+  declaration-test diffs separately.
 
 Historical provider-by-provider narratives and one-off checklist files have
 been folded into the status and agent guide. The durable evidence should live in
 tests, generated inventories, and the version/capability ledgers.
-

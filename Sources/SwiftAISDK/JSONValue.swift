@@ -58,7 +58,8 @@ public enum JSONValue: Codable, Equatable, Hashable, Sendable, ExpressibleByStri
     }
 
     public var intValue: Int? {
-        if case let .number(value) = self { Int(value) } else { nil }
+        guard case let .number(value) = self, value.isFinite else { return nil }
+        return Int(exactly: value.rounded(.towardZero))
     }
 
     public var doubleValue: Double? {

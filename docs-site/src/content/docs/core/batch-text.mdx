@@ -7,9 +7,9 @@ Use Batch V4 when a provider supports durable, asynchronous text generation.
 The returned `TextBatchReference` is persistable, so status and result reads can
 resume in another process without keeping the original request alive.
 
-Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses Batch, and
-Gateway Batch V4 implement the shared adapter. Choose a batch-capable model
-from any of these providers:
+Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses Batch, Google
+Generative AI Batch, and Gateway Batch V4 implement the shared adapter. Choose
+a batch-capable model from any of these providers:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -72,6 +72,26 @@ let started = try await AI.startTextBatch(
 )
 ```
 
+Google Generative AI selects inline requests for small batches and uploads a
+JSONL input file when the encoded request body crosses the inline limit:
+
+```swift
+let google = try AIProviders.google()
+let googleModel = google.batchLanguageModel("gemini-3.8-flash")
+
+let started = try await AI.startTextBatch(
+    model: googleModel,
+    requests: [
+        TextBatchRequest(
+            id: "summary-1",
+            request: LanguageModelRequest(messages: [
+                .user("Summarize the release notes.")
+            ])
+        )
+    ]
+)
+```
+
 Gateway language models also expose the shared batch facade:
 
 ```swift
@@ -95,10 +115,14 @@ Starting a batch is not retried automatically because it may create billable
 work. Status and results setup use the normal retry policy. A caller may pass a
 stable `idempotencyKey` when the provider or gateway honors one.
 
-Pass `webhookURL` to request a completion callback. Gateway forwards the URL as
-its native `callbackUrl`; direct Anthropic, OpenAI, and xAI adapters return an
-unsupported warning so the caller can fall back to status polling without
-silently assuming webhook delivery.
+`AI.startTextBatch` also accepts shared `tools` and `toolChoice` overlays. They
+are prepared with each request so batch providers receive the same function-tool
+content as unary generation.
+
+Pass `webhookURL` to request a completion callback. Gateway and Google forward
+the URL through their native callback fields; direct Anthropic, OpenAI, and xAI
+adapters return an unsupported warning so the caller can fall back to status
+polling without silently assuming webhook delivery.
 
 ## Results
 
@@ -116,6 +140,8 @@ for try await item in results {
     case let .succeeded(id, generation):
         print(id, generation.text)
         print(generation.content)
+        print(generation.rawFinishReason ?? "unknown")
+        print(generation.providerMetadata)
     case let .failed(id, error, _):
         print(id, error.message)
     case let .cancelled(id, _, _), let .expired(id, _, _):
@@ -127,4 +153,14 @@ for try await item in results {
 Stopping result consumption cancels the active provider stream. Batch
 references are validated against provider and model identity before status or
 result I/O, preventing accidental cross-model reads. Provider-native request
-counts are normalized before they reach the shared status type.
+counts are normalized before they reach the shared status type. Start results
+also expose `providerMetadata`; OpenAI, xAI, and file-backed Google batches use
+it for uploaded input-file identifiers and expiry timestamps. OpenAI rejects a
+malformed outer result envelope before yielding any item, Google requires every
+result row to carry a nonempty request key, and xAI preserves the final
+assistant choice's raw finish reason.
+
+Result `content` is authoritative and can contain text, reasoning, files,
+sources, tool calls, and tool results. The `text` property remains a convenience
+projection. Google merges empty-text thought signatures onto the associated
+reasoning or tool part so they survive later model-message replay.

@@ -52,7 +52,7 @@ private actor TokenStore {
     #expect(request.headers["api-key"] == "azure-key")
     #expect(request.headers["custom-provider-header"] == "provider")
     #expect(request.headers["Custom-Request-Header"] == "request")
-    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/4.0.54")
+    #expect(request.headers["user-agent"] == "my-app ai-sdk/azure/4.0.63")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-4.1-deployment")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -194,6 +194,57 @@ private actor TokenStore {
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://our-gateway.example.com/azure/chat/completions")
     #expect(request.headers["api-key"] == "azure-key")
+}
+
+@Test func azureRecognizesCompleteAndUnversionedV1BaseURLsLikeUpstream() async throws {
+    let cases: [(baseURL: String, expectedURL: String)] = [
+        (
+            "https://test-resource.openai.azure.com/openai/v1",
+            "https://test-resource.openai.azure.com/openai/v1/chat/completions"
+        ),
+        (
+            "https://test-resource.services.ai.azure.com/openai",
+            "https://test-resource.services.ai.azure.com/openai/v1/chat/completions?api-version=v1"
+        ),
+        (
+            "https://test-resource.services.ai.azure.com/openai/v1/",
+            "https://test-resource.services.ai.azure.com/openai/v1/chat/completions"
+        ),
+        (
+            "https://test-resource.cognitiveservices.azure.com/openai",
+            "https://test-resource.cognitiveservices.azure.com/openai/v1/chat/completions?api-version=v1"
+        ),
+        (
+            "https://test-resource.cognitiveservices.azure.com/openai/v1",
+            "https://test-resource.cognitiveservices.azure.com/openai/v1/chat/completions"
+        ),
+        (
+            "https://test-resource.services.ai.azure.com/api/projects/test-project/openai",
+            "https://test-resource.services.ai.azure.com/api/projects/test-project/openai/v1/chat/completions"
+        ),
+        (
+            "https://test-resource.services.ai.azure.com/api/projects/test-project/openai/v1",
+            "https://test-resource.services.ai.azure.com/api/projects/test-project/openai/v1/chat/completions"
+        )
+    ]
+
+    for testCase in cases {
+        let transport = RecordingTransport(response: jsonResponse(
+            #"{"choices":[{"message":{"content":"azure chat"},"finish_reason":"stop"}]}"#
+        ))
+        let provider = try AIProviders.azure(settings: ProviderSettings(
+            apiKey: "azure-key",
+            baseURL: testCase.baseURL,
+            transport: transport
+        ))
+
+        _ = try await provider.chat("test-deployment").generate(
+            LanguageModelRequest(messages: [.user("Hello")])
+        )
+
+        let request = try #require(await transport.requests().first)
+        #expect(request.url.absoluteString == testCase.expectedURL)
+    }
 }
 
 @Test func azureDeepSeekUsesChatCompletionsAndOmitsThinkingOptions() async throws {

@@ -17,7 +17,7 @@ description: Public SwiftAISDK APIs for structured output.
 | Instance Property | 160 |
 | Protocol | 1 |
 | Structure | 17 |
-| Type Method | 27 |
+| Type Method | 29 |
 | Type Property | 2 |
 
 ## Public symbols
@@ -291,6 +291,8 @@ description: Public SwiftAISDK APIs for structured output.
 | Structure | `AIParsePartialJSONResult` | `struct AIParsePartialJSONResult` | [Sources/SwiftAISDK/AIObjectPartialJSON.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/AIObjectPartialJSON.swift) |
 | Structure | `ObjectGenerationResult` | `struct ObjectGenerationResult<Object> where Object : Sendable` | [Sources/SwiftAISDK/CoreTextObjectResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTextObjectResults.swift) |
 | Structure | `TextGenerationResult` | `struct TextGenerationResult` | [Sources/SwiftAISDK/CoreTextObjectResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTextObjectResults.swift) |
+| Type Method | `array(element:minItems:maxItems:name:description:)` | `static func array<ElementSchema>(element: ElementSchema, minItems: Int? = nil, maxItems: Int? = nil, name: String? = nil, description: String? = nil) -> AIOutput<[ElementSchema.Output], [ElementSchema.Output]> where ElementSchema : AIObjectSchema` | [Sources/SwiftAISDK/Output.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Output.swift) |
+| Type Method | `array(element:minItems:maxItems:name:description:as:)` | `static func array<Element>(element: JSONValue, minItems: Int? = nil, maxItems: Int? = nil, name: String? = nil, description: String? = nil, as type: Element.Type = Element.self) -> AIOutput<[Element], [Element]> where Element : Decodable, Element : Sendable` | [Sources/SwiftAISDK/Output.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Output.swift) |
 | Type Method | `array(element:name:description:)` | `static func array<ElementSchema>(element: ElementSchema, name: String? = nil, description: String? = nil) -> AIOutput<[ElementSchema.Output], [ElementSchema.Output]> where ElementSchema : AIObjectSchema` | [Sources/SwiftAISDK/Output.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Output.swift) |
 | Type Method | `array(element:name:description:as:)` | `static func array<Element>(element: JSONValue, name: String? = nil, description: String? = nil, as type: Element.Type = Element.self) -> AIOutput<[Element], [Element]> where Element : Decodable, Element : Sendable` | [Sources/SwiftAISDK/Output.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Output.swift) |
 | Type Method | `choice(options:name:description:)` | `static func choice(options: [String], name: String? = nil, description: String? = nil) -> AIOutput<String, String>` | [Sources/SwiftAISDK/Output.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Output.swift) |

@@ -21,6 +21,11 @@ extension AI {
             responseMetadata: { $0.responseMetadata }
         ) {
             var result = try await model.embed(request)
+            try validateEmbeddingResultCount(
+                result.embeddings.count,
+                expectedCount: request.values.count,
+                providerID: model.providerID
+            )
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = AIRequestMetadata(body: embeddingRequestMetadataBody(request), headers: request.headers)
             }
@@ -110,6 +115,11 @@ extension AI {
                 let result = try await withRetry(policy: retryPolicy) {
                     try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal))
                 }
+                try validateEmbeddingResultCount(
+                    result.embeddings.count,
+                    expectedCount: chunk.count,
+                    providerID: model.providerID
+                )
                 embeddings.append(contentsOf: result.embeddings)
                 usage = sumTokenUsage(usage, result.usage)
                 rawValues.append(result.rawValue)
@@ -165,7 +175,11 @@ extension AI {
                 )]
             }
             guard !result.urls.isEmpty || !result.base64Images.isEmpty else {
-                throw AINoOutputError(kind: .image, responses: [result.responseMetadata])
+                throw AINoOutputError(
+                    kind: .image,
+                    responses: [result.responseMetadata],
+                    calls: result.calls
+                )
             }
             return result
         }
@@ -369,23 +383,143 @@ extension AI {
     }
 
     public static func uploadFile(client: any AIFileClient, request: FileUploadRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> FileUploadResult {
+        do {
+            return try await withTelemetry(
+                operationID: "ai.uploadFile",
+                providerID: client.providerID,
+                modelID: nil,
+                input: fileUploadFacadeTelemetryInput(request),
+                telemetry: telemetry,
+                // A file stream is single-use and cannot be replayed safely.
+                retryPolicy: request.fileData.isStream ? .none : retryPolicy,
+                abortSignal: request.abortSignal,
+                output: fileUploadFacadeTelemetryOutput,
+                usage: { _ in nil },
+                warnings: { $0.warnings },
+                providerMetadata: { $0.providerMetadata },
+                responseMetadata: { $0.responseMetadata }
+            ) {
+                var result = try await client.uploadFile(request)
+                if result.requestMetadata == AIRequestMetadata() {
+                    result.requestMetadata = AIRequestMetadata(
+                        body: fileUploadFacadeMetadataBody(request),
+                        headers: request.headers
+                    )
+                }
+                return result
+            }
+        } catch {
+            // The facade owns the same guarantee as upstream: every failed
+            // upload releases a single-use caller stream, even for custom
+            // clients that reject before reading it.
+            await request.fileData.cancelStream()
+            throw error
+        }
+    }
+
+    public static func getFileMetadata(
+        client: any AIFileClient,
+        request: FileMetadataRequest,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil
+    ) async throws -> FileMetadataResult {
         try await withTelemetry(
-            operationID: "ai.uploadFile",
+            operationID: "ai.getFileMetadata",
             providerID: client.providerID,
             modelID: nil,
-            input: fileUploadRequestTelemetryInput(request),
+            input: fileOperationTelemetryInput(
+                file: request.file,
+                providerOptions: request.providerOptions,
+                headers: request.headers
+            ),
             telemetry: telemetry,
             retryPolicy: retryPolicy,
             abortSignal: request.abortSignal,
-            output: fileUploadTelemetryOutput,
+            output: fileMetadataFacadeTelemetryOutput,
             usage: { _ in nil },
             warnings: { $0.warnings },
             providerMetadata: { $0.providerMetadata },
             responseMetadata: { $0.responseMetadata }
         ) {
-            var result = try await client.uploadFile(request)
+            var result = try await client.getFileMetadata(request)
             if result.requestMetadata == AIRequestMetadata() {
-                result.requestMetadata = AIRequestMetadata(body: fileUploadRequestMetadataBody(request), headers: request.headers)
+                result.requestMetadata = fileOperationRequestMetadata(
+                    file: request.file,
+                    providerOptions: request.providerOptions,
+                    headers: request.headers
+                )
+            }
+            return result
+        }
+    }
+
+    public static func downloadFile(
+        client: any AIFileClient,
+        request: FileDownloadRequest,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil
+    ) async throws -> FileDownloadResult {
+        try await withTelemetry(
+            operationID: "ai.downloadFile",
+            providerID: client.providerID,
+            modelID: nil,
+            input: fileOperationTelemetryInput(
+                file: request.file,
+                providerOptions: request.providerOptions,
+                headers: request.headers
+            ),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
+            output: fileDownloadFacadeTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
+            var result = try await client.downloadFile(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = fileOperationRequestMetadata(
+                    file: request.file,
+                    providerOptions: request.providerOptions,
+                    headers: request.headers
+                )
+            }
+            return result
+        }
+    }
+
+    public static func deleteFile(
+        client: any AIFileClient,
+        request: FileDeleteRequest,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil
+    ) async throws -> FileDeleteResult {
+        try await withTelemetry(
+            operationID: "ai.deleteFile",
+            providerID: client.providerID,
+            modelID: nil,
+            input: fileOperationTelemetryInput(
+                file: request.file,
+                providerOptions: request.providerOptions,
+                headers: request.headers
+            ),
+            telemetry: telemetry,
+            retryPolicy: retryPolicy,
+            abortSignal: request.abortSignal,
+            output: fileDeleteFacadeTelemetryOutput,
+            usage: { _ in nil },
+            warnings: { $0.warnings },
+            providerMetadata: { $0.providerMetadata },
+            responseMetadata: { $0.responseMetadata }
+        ) {
+            var result = try await client.deleteFile(request)
+            if result.requestMetadata == AIRequestMetadata() {
+                result.requestMetadata = fileOperationRequestMetadata(
+                    file: request.file,
+                    providerOptions: request.providerOptions,
+                    headers: request.headers
+                )
             }
             return result
         }
@@ -413,6 +547,105 @@ extension AI {
             return result
         }
     }
+}
+
+private func validateEmbeddingResultCount(
+    _ actualCount: Int,
+    expectedCount: Int,
+    providerID: String
+) throws {
+    guard actualCount == expectedCount else {
+        throw AIError.invalidResponse(
+            provider: providerID,
+            message: "Expected \(expectedCount) embeddings, but received \(actualCount)."
+        )
+    }
+}
+
+private func fileUploadFacadeTelemetryInput(_ request: FileUploadRequest) -> JSONValue {
+    var values = fileUploadFacadeMetadataValues(request)
+    if !request.headers.isEmpty {
+        values["headers"] = .object(request.headers.mapValues(JSONValue.string))
+    }
+    return .object(values)
+}
+
+private func fileUploadFacadeMetadataBody(_ request: FileUploadRequest) -> JSONValue {
+    .object(fileUploadFacadeMetadataValues(request))
+}
+
+private func fileUploadFacadeMetadataValues(_ request: FileUploadRequest) -> [String: JSONValue] {
+    var values: [String: JSONValue] = [
+        "mediaType": .string(request.mediaType),
+        "dataType": .string(request.fileData.isStream ? "stream" : "data")
+    ]
+    if let byteCount = request.fileData.byteCount {
+        values["byteLength"] = .number(Double(byteCount))
+    }
+    if let filename = request.filename { values["filename"] = .string(filename) }
+    if let purpose = request.purpose { values["purpose"] = .string(purpose) }
+    if let displayName = request.displayName { values["displayName"] = .string(displayName) }
+    if !request.providerOptions.isEmpty { values["providerOptions"] = .object(request.providerOptions) }
+    if !request.extraBody.isEmpty { values["extraBody"] = .object(request.extraBody) }
+    return values
+}
+
+private func fileOperationTelemetryInput(
+    file: [String: String],
+    providerOptions: [String: JSONValue],
+    headers: [String: String]
+) -> JSONValue {
+    .object([
+        "file": .object(file.mapValues(JSONValue.string)),
+        "providerOptions": providerOptions.isEmpty ? nil : .object(providerOptions),
+        "headers": headers.isEmpty ? nil : .object(headers.mapValues(JSONValue.string))
+    ])
+}
+
+private func fileOperationRequestMetadata(
+    file: [String: String],
+    providerOptions: [String: JSONValue],
+    headers: [String: String]
+) -> AIRequestMetadata {
+    AIRequestMetadata(body: .object([
+        "file": .object(file.mapValues(JSONValue.string)),
+        "providerOptions": providerOptions.isEmpty ? nil : .object(providerOptions)
+    ]), headers: headers)
+}
+
+private func fileUploadFacadeTelemetryOutput(_ result: FileUploadResult) -> JSONValue {
+    .object([
+        "providerReference": .object(result.providerReference.mapValues(JSONValue.string)),
+        "filename": result.filename.map(JSONValue.string),
+        "mediaType": result.mediaType.map(JSONValue.string),
+        "byteSize": result.byteSize.map { .number(Double($0)) },
+        "createdAt": result.createdAt.map { .number($0.timeIntervalSince1970) },
+        "expiresAt": result.expiresAt.map { .number($0.timeIntervalSince1970) },
+        "metadata": result.metadata.isEmpty ? nil : .object(result.metadata),
+        "rawValue": result.rawValue
+    ])
+}
+
+private func fileMetadataFacadeTelemetryOutput(_ result: FileMetadataResult) -> JSONValue {
+    .object([
+        "providerReference": .object(result.providerReference.mapValues(JSONValue.string)),
+        "filename": result.filename.map(JSONValue.string),
+        "mediaType": result.mediaType.map(JSONValue.string),
+        "byteSize": result.byteSize.map { .number(Double($0)) },
+        "createdAt": result.createdAt.map { .number($0.timeIntervalSince1970) },
+        "expiresAt": result.expiresAt.map { .number($0.timeIntervalSince1970) }
+    ])
+}
+
+private func fileDownloadFacadeTelemetryOutput(_ result: FileDownloadResult) -> JSONValue {
+    .object(["mediaType": result.mediaType.map(JSONValue.string)])
+}
+
+private func fileDeleteFacadeTelemetryOutput(_ result: FileDeleteResult) -> JSONValue {
+    .object([
+        "providerReference": .object(result.providerReference.mapValues(JSONValue.string)),
+        "deleted": .bool(result.deleted)
+    ])
 }
 
 private func embeddingValueChunks(

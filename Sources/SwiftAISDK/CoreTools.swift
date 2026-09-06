@@ -229,6 +229,9 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
     public var toolCallID: String?
     public var toolName: String
     public var arguments: String
+    /// Provider-computed information that UI clients can use when presenting
+    /// the approval request. The SDK preserves this value without interpreting it.
+    public var descriptor: JSONValue?
     /// Reason shown to the human approver for why this operation requires approval.
     public var reason: String?
     public var isAutomatic: Bool
@@ -239,6 +242,7 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
         toolName: String,
         arguments: String,
         toolCallID: String? = nil,
+        descriptor: JSONValue? = nil,
         reason: String? = nil,
         isAutomatic: Bool = false,
         providerMetadata: [String: JSONValue] = [:]
@@ -247,9 +251,33 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.arguments = arguments
+        self.descriptor = descriptor
         self.reason = reason
         self.isAutomatic = isAutomatic
         self.providerMetadata = providerMetadata
+    }
+
+    /// Source-compatible initializer retained from approval requests that
+    /// exposed a policy reason before provider descriptors were added.
+    public init(
+        id: String,
+        toolName: String,
+        arguments: String,
+        toolCallID: String? = nil,
+        reason: String? = nil,
+        isAutomatic: Bool = false,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.init(
+            id: id,
+            toolName: toolName,
+            arguments: arguments,
+            toolCallID: toolCallID,
+            descriptor: nil,
+            reason: reason,
+            isAutomatic: isAutomatic,
+            providerMetadata: providerMetadata
+        )
     }
 
     /// Source-compatible initializer retained from approval requests without a
@@ -267,6 +295,7 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
             toolName: toolName,
             arguments: arguments,
             toolCallID: toolCallID,
+            descriptor: nil,
             reason: nil,
             isAutomatic: isAutomatic,
             providerMetadata: providerMetadata

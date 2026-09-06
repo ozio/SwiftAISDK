@@ -1,5 +1,196 @@
 import Foundation
 
+struct GoogleInteractionsParsedOutput {
+    var content: [AIResultContentPart]
+    var text: String
+    var reasoning: String
+    var hasFunctionCall: Bool
+}
+
+func googleInteractionsParsedOutput(from raw: JSONValue) -> GoogleInteractionsParsedOutput {
+    let interactionID = raw["id"]?.stringValue
+    var content: [AIResultContentPart] = []
+    var text = ""
+    var reasoning = ""
+    var hasFunctionCall = false
+    var sourceCounter = 0
+    var emittedSourceKeys: Set<String> = []
+
+    for step in raw["steps"]?.arrayValue ?? [] {
+        switch step["type"]?.stringValue {
+        case "model_output":
+            for block in step["content"]?.arrayValue ?? [] {
+                switch block["type"]?.stringValue {
+                case "text":
+                    let value = block["text"]?.stringValue ?? ""
+                    text += value
+                    content.append(.text(
+                        value,
+                        providerMetadata: googleInteractionsPartProviderMetadata(interactionID: interactionID)
+                    ))
+                    content.append(contentsOf: googleInteractionsSources(
+                        fromAnnotations: block["annotations"]?.arrayValue,
+                        sourceCounter: &sourceCounter,
+                        emittedKeys: &emittedSourceKeys
+                    ).map(AIResultContentPart.source))
+                case "video", "image":
+                    guard let file = googleInteractionsOutputFile(from: block, interactionID: interactionID) else {
+                        continue
+                    }
+                    content.append(.file(file))
+                default:
+                    continue
+                }
+            }
+        case "thought":
+            let value = (step["summary"]?.arrayValue ?? []).compactMap { item in
+                item["type"]?.stringValue == "text" ? item["text"]?.stringValue : nil
+            }.joined(separator: "\n")
+            reasoning += value
+            content.append(.reasoning(
+                value,
+                providerMetadata: googleInteractionsPartProviderMetadata(
+                    interactionID: interactionID,
+                    signature: step["signature"]?.stringValue
+                )
+            ))
+        case "processing_call":
+            content.append(.custom(
+                .object(["kind": .string("google.processing_call")]),
+                providerMetadata: googleInteractionsPartProviderMetadata(
+                    interactionID: interactionID,
+                    signature: step["signature"]?.stringValue,
+                    processingID: step["id"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? generateId()
+                )
+            ))
+        case "processing_result":
+            content.append(.custom(
+                .object(["kind": .string("google.processing_result")]),
+                providerMetadata: googleInteractionsPartProviderMetadata(
+                    interactionID: interactionID,
+                    signature: step["signature"]?.stringValue,
+                    processingCallID: step["call_id"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? generateId()
+                )
+            ))
+        case "function_call":
+            guard let name = step["name"]?.stringValue else { continue }
+            hasFunctionCall = true
+            content.append(.toolCall(AIToolCall(
+                id: resolvedToolCallID(step["id"]?.stringValue, whenMissing: "tool-call-\(name)"),
+                name: name,
+                arguments: googleInteractionsArguments(step["arguments"]),
+                providerMetadata: googleInteractionsPartProviderMetadata(
+                    interactionID: interactionID,
+                    signature: step["signature"]?.stringValue
+                ),
+                rawValue: step
+            )))
+        default:
+            guard let type = step["type"]?.stringValue else { continue }
+            if googleInteractionsBuiltinToolCallTypes.contains(type) {
+                let name = googleInteractionsBuiltinToolName(type: type, explicitName: step["name"]?.stringValue)
+                content.append(.toolCall(AIToolCall(
+                    id: step["id"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? generateId(),
+                    name: name,
+                    arguments: googleInteractionsArguments(step["arguments"]),
+                    providerExecuted: true,
+                    rawValue: step
+                )))
+            } else if googleInteractionsBuiltinToolResultTypes.contains(type) {
+                let name = googleInteractionsBuiltinToolName(type: type, explicitName: step["name"]?.stringValue)
+                content.append(.toolResult(AIToolResult(
+                    toolCallID: step["call_id"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? generateId(),
+                    toolName: name,
+                    result: step["result"] ?? .null,
+                    isError: step["is_error"]?.boolValue ?? false,
+                    providerExecuted: true
+                )))
+                content.append(contentsOf: googleInteractionsBuiltinToolResultSources(
+                    from: step,
+                    sourceCounter: &sourceCounter,
+                    emittedKeys: &emittedSourceKeys
+                ).map(AIResultContentPart.source))
+            }
+        }
+    }
+
+    return GoogleInteractionsParsedOutput(
+        content: content,
+        text: text,
+        reasoning: reasoning,
+        hasFunctionCall: hasFunctionCall
+    )
+}
+
+let googleInteractionsBuiltinToolCallTypes: Set<String> = [
+    "google_search_call",
+    "code_execution_call",
+    "url_context_call",
+    "file_search_call",
+    "google_maps_call",
+    "mcp_server_tool_call"
+]
+
+let googleInteractionsBuiltinToolResultTypes: Set<String> = [
+    "google_search_result",
+    "code_execution_result",
+    "url_context_result",
+    "file_search_result",
+    "google_maps_result",
+    "mcp_server_tool_result"
+]
+
+func googleInteractionsBuiltinToolName(type: String, explicitName: String?) -> String {
+    if type == "mcp_server_tool_call" || type == "mcp_server_tool_result" {
+        return explicitName ?? "mcp_server_tool"
+    }
+    if type.hasSuffix("_call") {
+        return String(type.dropLast("_call".count))
+    }
+    if type.hasSuffix("_result") {
+        return String(type.dropLast("_result".count))
+    }
+    return explicitName ?? type
+}
+
+func googleInteractionsPartProviderMetadata(
+    interactionID: String?,
+    signature: String? = nil,
+    processingID: String? = nil,
+    processingCallID: String? = nil
+) -> [String: JSONValue] {
+    var google: [String: JSONValue] = [:]
+    if let interactionID { google["interactionId"] = .string(interactionID) }
+    if let signature { google["signature"] = .string(signature) }
+    if let processingID { google["processingId"] = .string(processingID) }
+    if let processingCallID { google["processingCallId"] = .string(processingCallID) }
+    return google.isEmpty ? [:] : ["google": .object(google)]
+}
+
+private func googleInteractionsOutputFile(from block: JSONValue, interactionID: String?) -> AIStreamFile? {
+    let type = block["type"]?.stringValue
+    let defaultMediaType = type == "video" ? "video/mp4" : "image/png"
+    let mediaType = block["mime_type"]?.stringValue ?? defaultMediaType
+    let metadata = googleInteractionsPartProviderMetadata(interactionID: interactionID)
+    if let base64 = block["data"]?.stringValue, !base64.isEmpty {
+        return AIStreamFile(
+            mediaType: mediaType,
+            data: Data(base64Encoded: base64),
+            providerMetadata: metadata,
+            rawValue: block
+        )
+    }
+    if let uri = block["uri"]?.stringValue, !uri.isEmpty {
+        return AIStreamFile(
+            mediaType: mediaType,
+            url: uri,
+            providerMetadata: metadata,
+            rawValue: block
+        )
+    }
+    return nil
+}
+
 func googleInteractionsText(from raw: JSONValue) -> String {
     (raw["steps"]?.arrayValue ?? []).compactMap { step in
         guard step["type"]?.stringValue == "model_output" else { return nil }
@@ -16,6 +207,17 @@ func googleInteractionsProviderMetadata(from raw: JSONValue) -> [String: JSONVal
     }
     if let serviceTier = raw["service_tier"] {
         google["serviceTier"] = serviceTier
+    }
+    var outputTokensByModality: [String: JSONValue] = [:]
+    for entry in raw["usage"]?["output_tokens_by_modality"]?.arrayValue ?? [] {
+        guard let modality = entry["modality"]?.stringValue,
+              let tokens = normalizedBatchJSONInteger(entry["tokens"]) else {
+            continue
+        }
+        outputTokensByModality[modality] = .number(Double(tokens))
+    }
+    if !outputTokensByModality.isEmpty {
+        google["outputTokensByModality"] = .object(outputTokensByModality)
     }
     guard !google.isEmpty else { return [:] }
     return ["google": .object(google)]

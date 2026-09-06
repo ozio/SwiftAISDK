@@ -52,17 +52,17 @@ import Testing
                         schema: ["type": "object", "properties": ["answer": ["type": "string"]]],
                         name: "answer"
                     ),
-                    tools: [
-                        "lookup": [
-                            "type": "object",
-                            "properties": ["query": ["type": "string"]]
-                        ]
-                    ],
-                    toolChoice: ["type": "tool", "toolName": "lookup"],
                     providerOptions: ["mock": ["perRequest": true]]
                 )
             )
         ],
+        tools: [
+            "lookup": [
+                "type": "object",
+                "properties": ["query": ["type": "string"]]
+            ]
+        ],
+        toolChoice: ["type": "tool", "toolName": "lookup"],
         providerOptions: ["mock": ["batch": true]],
         headers: ["x-test": "test-value"],
         idempotencyKey: "stable-create-key",
@@ -89,7 +89,7 @@ import Testing
     #expect(options.requests[0].request.toolChoice?["toolName"]?.stringValue == "lookup")
     #expect(options.providerOptions == ["mock": ["batch": true]])
     #expect(options.headers["x-test"] == "test-value")
-    #expect(options.headers["user-agent"] == "ai/7.0.85")
+    #expect(options.headers["user-agent"] == "ai/7.0.93")
     #expect(options.headers["idempotency-key"] == "stable-create-key")
     #expect(options.idempotencyKey == "stable-create-key")
     #expect(options.webhookURL == "https://example.com/batches/complete")
@@ -185,6 +185,52 @@ import Testing
     }
 }
 
+@Test func batchV4FacadePreservesXAILastAssistantRawFinishReason() async throws {
+    let model = BatchFacadeMockModel(providerID: "xai.responses")
+    model.resultItems = [
+        .succeeded(
+            id: "request-1",
+            result: TextGenerationResult(
+                text: "Final answer",
+                finishReason: "stop",
+                rawValue: [
+                    "choices": [
+                        [
+                            "message": ["role": "assistant"],
+                            "finish_reason": "tool_calls"
+                        ],
+                        [
+                            "message": ["role": "tool"],
+                            "finish_reason": nil
+                        ],
+                        [
+                            "message": ["role": "assistant"],
+                            "finish_reason": "stop"
+                        ]
+                    ]
+                ]
+            )
+        )
+    ]
+
+    let stream = try AI.getBatchResults(
+        model: model,
+        batch: TextBatchReference(
+            id: "batch-123",
+            providerID: model.providerID,
+            modelID: model.modelID
+        ),
+        retryPolicy: .none
+    )
+    var iterator = stream.makeAsyncIterator()
+    let item = try #require(try await iterator.next())
+    guard case let .succeeded(_, result) = item else {
+        Issue.record("Expected succeeded item")
+        return
+    }
+    #expect(result.rawFinishReason == "stop")
+}
+
 @Test func batchV4FacadePropagatesAnAlreadyAbortedSignalBeforeProviderWork() async throws {
     let model = BatchFacadeMockModel()
     let controller = AIAbortController()
@@ -203,7 +249,7 @@ import Testing
 }
 
 private final class BatchFacadeMockModel: BatchLanguageModel, @unchecked Sendable {
-    let providerID = "mock-provider"
+    let providerID: String
     let modelID = "mock-model-id"
     var startResult = AIBatchStartResult(
         batchID: "batch-123",
@@ -214,6 +260,10 @@ private final class BatchFacadeMockModel: BatchLanguageModel, @unchecked Sendabl
 
     private let lock = NSLock()
     private var startOptions: AIBatchStartOptions<AILanguageModelBatchRequest>?
+
+    init(providerID: String = "mock-provider") {
+        self.providerID = providerID
+    }
 
     func capturedStartOptions() -> AIBatchStartOptions<AILanguageModelBatchRequest>? {
         lock.withLock { startOptions }

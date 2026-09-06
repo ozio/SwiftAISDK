@@ -124,7 +124,7 @@ public actor MCPClient {
                 options: options
             )
         }
-        return MCPCallToolResult(json: result)
+        return try MCPCallToolResult(json: result)
     }
 
     public func tools() async throws -> [String: AITool] {
@@ -614,6 +614,9 @@ public actor MCPClient {
         }
         if let mcpMetadata = definition.metadata {
             metadata["_meta"] = mcpMetadata
+        }
+        if let annotations = definition.toolAnnotations {
+            metadata["annotations"] = annotations.jsonValue
         }
 
         return AITool.dynamic(

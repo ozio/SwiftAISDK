@@ -3,7 +3,7 @@
 SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK.
 It provides provider factories plus an `AI` facade for text, durable batches,
 structured output, embeddings, media, streaming and realtime audio, reranking,
-uploads, middleware, MCP tools, and typed tool execution.
+file operations, middleware, MCP tools, and typed tool execution.
 
 Licensed under the [Apache License 2.0](LICENSE). SwiftAISDK is an independent
 Swift port; references to Vercel AI SDK describe compatibility and provenance,
@@ -107,10 +107,26 @@ intentionally emits only canonical text deltas and ignores in-band error parts,
 while still propagating thrown stream failures.
 
 Facade calls retry transient failures by default with `maxRetries: 2`.
-Streaming retries only happen before the first emitted part, so already-delivered
-chunks are not duplicated. Stopping iteration or aborting the request cancels
-the upstream response body. Pass `retryPolicy: .none` or a custom
-`AIRetryPolicy` to tune retries, backoff, and timeout.
+Streaming keeps the conservative default: setup failures may retry, but an
+attempt is not replayed after its first public part unless `streamRetries` is
+set. A positive `streamRetries` value additionally retries retryable in-band
+provider errors after streaming has started. Tool-call, finish, usage, and
+provider-metadata state from the failed attempt is isolated from the next
+attempt, and a recovered provider-error part is not exposed. Text already
+yielded to the caller cannot be retracted and the replacement attempt may emit
+the same prefix again. Stopping iteration or aborting the request cancels the
+upstream response body. Pass `retryPolicy: .none` or a custom `AIRetryPolicy`
+to tune setup retries and backoff:
+
+```swift
+for try await part in AI.streamText(
+    model: model,
+    prompt: "Stream this.",
+    streamRetries: 1
+) {
+    print(part)
+}
+```
 
 For streaming stalls, `AIStreamTimeoutConfiguration` distinguishes the total
 operation deadline, each model-call step, the first semantic output, and the
@@ -135,6 +151,16 @@ for try await part in AI.streamText(
     print(part)
 }
 ```
+
+Embedding calls validate that each provider response contains one vector per
+requested value before results are merged. Image no-output failures expose the
+same per-call diagnostics as successful `ImageGenerationResult.calls` through
+`AINoOutputError.calls`.
+
+`AIChatSession.sendMessage(_:replacingMessageID:)` uses the supplied ID only to
+locate the old message; an explicit ID on the replacement becomes the new
+transcript ID. UI tool approvals retain their provider descriptor, and failed
+tool-result metadata is restored onto the associated model-facing tool call.
 
 ## Structured Output
 
@@ -180,6 +206,25 @@ let result = try await model.generateText(
 print(result.output.title)
 ```
 
+Array output can publish the same bounds in its JSON Schema and enforce them
+when the final value is decoded:
+
+```swift
+let result = try await model.generateText(
+    "Return two or three labels.",
+    output: Output.array(
+        element: ["type": "string"],
+        minItems: 2,
+        maxItems: 3,
+        as: String.self
+    )
+)
+```
+
+For source compatibility, invalid bound combinations are reported when the
+strategy executes, before model work begins, rather than by the nonthrowing
+`Output.array` constructor itself.
+
 Streaming and JSON strategies are also available through `streamObject`,
 `generateObjectArray`, `streamObjectArray`, `generateEnum`, `streamEnum`,
 `generateJSON`, and `streamJSON`.
@@ -212,6 +257,11 @@ let answer = try await model.generateText(
 Tools support argument refinement, JSON Schema validation, dynamic MCP-backed
 tools, approval hooks, and provider-defined helpers such as `OpenAITools`,
 `AnthropicTools`, `XAITools`, `GoogleTools`, and `GatewayTools`.
+When tool choice is `required` or names a specific tool, a response that does
+not contain the required call throws `AIToolChoiceViolationError` instead of
+being accepted as a successful text-only result. Approval requests can carry an
+opaque provider `descriptor` for presentation; treat it as untrusted display
+metadata.
 For OpenAI Responses, `OpenAITools.programmaticToolCalling(...)` enables
 programmatic tool orchestration; function schemas accept OpenAI
 `allowedCallers` and `outputSchema` provider options.
@@ -224,12 +274,16 @@ The older `computerUse(...)` helper remains available for the separate
 For xAI Responses, `XAITools.imageGeneration(action:)` exposes the hosted image
 tool with generated/streamed prompt and failure results. Gateway failures retain
 their normalized `AIAPICallError` through `GatewayError.cause`.
+`OpenAITools.imageGeneration(action:)` and
+`AzureOpenAITools.imageGeneration(action:)` expose the matching OpenAI action
+field.
 
 ## Durable Batch And Video Operations
 
 Batch V4 exposes persistable text-batch references plus status and terminal
 result streams. Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses
-Batch, and Gateway Batch V4 implement the shared adapter:
+Batch, Google Generative AI Batch, and Gateway Batch V4 implement the shared
+adapter:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -251,15 +305,23 @@ let openAIBatchModel = try openAI.batchLanguageModel("gpt-5.6")
 let xAI = try AIProviders.xAI()
 let xAIBatchModel = try xAI.batchLanguageModel("grok-4")
 
+// Google Generative AI uses the same persisted batch contract:
+let google = try AIProviders.google()
+let googleBatchModel = google.batchLanguageModel("gemini-3.8-flash")
+
 // Gateway models use the same facade through their language-model adapter:
 let gateway = try AIProviders.gateway()
 let gatewayBatchModel = try gateway.languageModel("openai/gpt-5.6")
 ```
 
-Gateway forwards `webhookURL` as its native callback. Direct Anthropic,
-OpenAI, and xAI batch adapters return an unsupported warning so callers can
-fall back to polling without silently assuming webhook delivery. Batch results
-also retain ordered mixed `content` beside their convenience `text` projection.
+Gateway and Google forward `webhookURL` through their native callback fields.
+Direct Anthropic, OpenAI, and xAI batch adapters return an unsupported warning
+so callers can fall back to polling without silently assuming webhook delivery.
+Batch results also retain ordered mixed `content` beside their convenience
+`text` projection, including tool calls and results. `AI.startTextBatch` accepts
+shared `tools` and `toolChoice` overlays. Start results preserve provider
+metadata such as an uploaded input-file ID and expiry, while each item retains
+provider metadata and the provider's raw finish reason.
 
 Async Video V4 keeps unary `generateVideo` source compatible while adding
 serializable start/status operations, core-owned polling/webhook waiting, and a
@@ -351,6 +413,58 @@ references; `try AIProviders.deepSeek().files()` exposes its `user_data` upload
 route. OpenAI-compatible chat accepts hosted video input through
 `AIContentPart.videoURL(...)` and preserves Gemini thought signatures under a
 custom provider namespace.
+
+### Files V4
+
+`AIFileClient` advertises `supportedFileOperations` and may implement upload,
+metadata lookup, streamed download, and deletion. OpenAI and xAI implement the
+complete contract; providers that remain upload-only reject unsupported
+operations before I/O.
+
+```swift
+let files = try AIProviders.openAI().files()
+let uploaded = try await AI.uploadFile(
+    client: files,
+    request: FileUploadRequest(
+        data: documentData,
+        mediaType: "application/pdf",
+        filename: "report.pdf",
+        purpose: "assistants"
+    )
+)
+
+let metadata = try await AI.getFileMetadata(
+    client: files,
+    request: FileMetadataRequest(file: uploaded.providerReference)
+)
+let download = try await AI.downloadFile(
+    client: files,
+    request: FileDownloadRequest(file: uploaded.providerReference)
+)
+let deleted = try await AI.deleteFile(
+    client: files,
+    request: FileDeleteRequest(file: uploaded.providerReference)
+)
+```
+
+`FileUploadRequest(stream:...)` avoids buffering a large upload. Its byte
+stream is single-use, is cancelled on failure, and disables automatic retry;
+buffered `Data` uploads keep the normal retry policy. Upload/metadata results
+expose byte size and creation/expiry timestamps when supplied by the provider.
+Download content is an `AsyncThrowingStream<Data, Error>`.
+
+Open Responses callers can set `ProviderSettings.strictResponseInput` so
+ID-less assistant history uses the provider's strict easy-input form. OpenAI
+also recognizes GPT-6 reasoning-update options, the `ultrafast` service tier,
+and `gpt-4o-transcribe-diarize` chunking/segment metadata through the existing
+provider-options surface.
+
+Google Interactions preserves assistant reasoning, built-in and function tool
+history, stateful compaction, provider file references, media resolution, and
+system-instruction precedence across generated and streamed calls. Video input
+and output plus processing calls/results retain their provider metadata. Google
+Batch validates every result key and preserves thought signatures even when the
+associated text delta is empty.
 
 Cartesia has dedicated speech and batch-transcription models:
 
@@ -489,16 +603,21 @@ let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMidd
 
 ## MCP
 
-`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.36`: initialize handshake,
+`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.45`: initialize handshake,
 tool discovery, dynamic `AITool` conversion, resources, prompts, elicitation,
 HTTP/SSE transport, stdio transport, and OAuth helpers.
 OAuth providers can implement `authorize(resourceMetadataURL:scope:)` to receive
 the scope advertised by `WWW-Authenticate` or Protected Resource Metadata; the
 existing `authorize(resourceMetadataURL:)` requirement remains source-compatible.
-The 2.0.36 behavior is absorbed in the protocol/HTTP transport and OAuth layers
-without changing the high-level `MCPClient` workflow. Non-successful POST/SSE
-responses preserve HTTP status, URL, and body details; upstream Windows command
-shim handling has no Swift process-transport analogue.
+The 2.0.45 behavior is absorbed in the protocol/HTTP transport and OAuth layers
+without changing the high-level `MCPClient` workflow. `MCPToolAnnotations`
+provides typed access to standard title/read-only/destructive/idempotent/open-
+world hints while the raw annotation object remains available; these are
+untrusted server hints, not authorization policy. Structured-only tool results
+are normalized into model-visible JSON text, malformed known annotations fail
+tool discovery, and origin-only OAuth issuer URLs normalize a trailing slash.
+Non-successful POST/SSE responses preserve HTTP status, URL, and body details;
+upstream Windows command-shim handling has no Swift process-transport analogue.
 
 ```swift
 let mcp = try await MCPClient.connect(

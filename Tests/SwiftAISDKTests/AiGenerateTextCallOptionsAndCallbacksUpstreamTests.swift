@@ -148,7 +148,7 @@ import Testing
         model: model,
         prompt: "test-input",
         executableTools: [tool],
-        maxSteps: 2,
+        maxSteps: 1,
         toolChoice: "required",
         abortSignal: abortController.signal
     )
@@ -162,4 +162,3 @@ import Testing
         )
     ])
 }
-

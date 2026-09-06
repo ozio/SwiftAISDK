@@ -282,7 +282,7 @@ private actor MCPTimeoutTestTransport: MCPTransport {
             "content": [
                 [
                     "type": "image",
-                    "data": "base64-image",
+                    "data": "aW1hZ2U=",
                     "mimeType": "image/png"
                 ],
                 [
@@ -303,11 +303,11 @@ private actor MCPTimeoutTestTransport: MCPTransport {
     #expect(modelOutput["value"]?[0]?["type"]?.stringValue == "file")
     #expect(modelOutput["value"]?[0]?["mediaType"]?.stringValue == "image/png")
     #expect(modelOutput["value"]?[0]?["data"]?["type"]?.stringValue == "data")
-    #expect(modelOutput["value"]?[0]?["data"]?["data"]?.stringValue == "base64-image")
+    #expect(modelOutput["value"]?[0]?["data"]?["data"]?.stringValue == "aW1hZ2U=")
     #expect(modelOutput["value"]?[1]?["type"]?.stringValue == "text")
     #expect(modelOutput["value"]?[1]?["text"]?.stringValue?.contains("\"custom\"") == true)
 }
-@Test func mcpToolModelOutputFallsBackToJSONForNonContentResults() async throws {
+@Test func mcpToolModelOutputNormalizesStructuredContentToText() async throws {
     let transport = MockMCPTransport(
         capabilities: fullMCPCapabilities(),
         toolResult: ["structuredContent": ["ok": true]]
@@ -319,8 +319,9 @@ private actor MCPTimeoutTestTransport: MCPTransport {
     let modelOutput = try await #require(tool.toModelOutput?(
         AIToolModelOutputContext(toolCallID: "call-1", input: ["query": "json"], output: result)
     ))
-    #expect(modelOutput["type"]?.stringValue == "json")
-    #expect(modelOutput["value"]?["structuredContent"]?["ok"]?.boolValue == true)
+    #expect(modelOutput["type"]?.stringValue == "content")
+    #expect(modelOutput["value"]?[0]?["type"]?.stringValue == "text")
+    #expect(modelOutput["value"]?[0]?["text"]?.stringValue == #"{"ok":true}"#)
 }
 
 @Test func mcpAppsHelpersMirrorUpstreamV2MetadataAndResources() throws {

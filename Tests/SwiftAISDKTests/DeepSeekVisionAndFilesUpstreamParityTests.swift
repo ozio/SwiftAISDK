@@ -326,3 +326,81 @@ import Testing
         }
     }
 }
+
+@Test func deepSeekFilesPreserveUploadOnlyContractAndCancelUnsupportedStreams() async throws {
+    let transport = RecordingTransport(responses: [])
+    let files = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        transport: transport
+    )).files()
+    let probe = DeepSeekFileStreamCancellationProbe()
+
+    #expect(files.supportedFileOperations == [.upload])
+    await #expect(throws: AIError.invalidArgument(
+        argument: "data",
+        message: "deepseek.files does not support streaming file upload."
+    )) {
+        _ = try await files.uploadFile(FileUploadRequest(
+            stream: AsyncThrowingStream { continuation in
+                continuation.onTermination = { _ in probe.record() }
+            },
+            mediaType: "image/png"
+        ))
+    }
+
+    #expect(await waitForDeepSeekFileStreamCancellation(probe))
+    #expect(await transport.requests().isEmpty)
+}
+
+@Test func deepSeekFilesForwardCallHeadersAndAbortSignal() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"file-forwarded"}"#))
+    let files = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        transport: transport
+    )).files()
+    let controller = AIAbortController()
+
+    _ = try await files.uploadFile(FileUploadRequest(
+        data: Data([0x89, 0x50, 0x4e, 0x47]),
+        mediaType: "image/png",
+        headers: ["X-Request-Test": "forwarded"],
+        abortSignal: controller.signal
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.headers["X-Request-Test"] == "forwarded")
+    #expect(request.abortSignal === controller.signal)
+
+    let abortedTransport = RecordingTransport(responses: [])
+    let abortedFiles = try AIProviders.deepSeek(settings: ProviderSettings(
+        apiKey: "deepseek-key",
+        transport: abortedTransport
+    )).files()
+    let abortedController = AIAbortController()
+    abortedController.abort(reason: "cancel upload", reasonName: "AbortError")
+    await #expect(throws: AIAbortError.self) {
+        _ = try await abortedFiles.uploadFile(FileUploadRequest(
+            data: Data([0x89, 0x50, 0x4e, 0x47]),
+            mediaType: "image/png",
+            abortSignal: abortedController.signal
+        ))
+    }
+    #expect(await abortedTransport.requests().isEmpty)
+}
+
+private final class DeepSeekFileStreamCancellationProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    var wasCancelled: Bool { lock.withLock { cancelled } }
+    func record() { lock.withLock { cancelled = true } }
+}
+
+private func waitForDeepSeekFileStreamCancellation(
+    _ probe: DeepSeekFileStreamCancellationProbe
+) async -> Bool {
+    for _ in 0..<100 {
+        if probe.wasCancelled { return true }
+        try? await Task.sleep(nanoseconds: 1_000_000)
+    }
+    return probe.wasCancelled
+}

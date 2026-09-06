@@ -1101,21 +1101,93 @@ func openAIIsReasoningModel(_ modelID: String) -> Bool {
 struct OpenAILanguageModelCapabilities {
     var isReasoningModel: Bool
     var supportsNonReasoningParameters: Bool
+    var supportsConfigurationUpdate: Bool
+    var supportedReasoningEfforts: [String]?
 }
 
 func openAILanguageModelCapabilities(_ modelID: String) -> OpenAILanguageModelCapabilities {
     let oSeriesVersion = openAIOSeriesVersion(modelID)
     let gptVersion = openAIGPTVersion(modelID)
     let isGPTChatModel = gptVersion?.minor == nil && (gptVersion?.variant?.hasPrefix("chat") ?? false)
+    let isGPT6OrLaterModel = gptVersion.map { $0.major >= 6 } ?? false
     let isReasoningModel = oSeriesVersion != nil
         || (gptVersion.map { $0.major >= 5 } == true && !isGPTChatModel)
     let supportsNonReasoningParameters = gptVersion.map {
-        $0.major > 5 || ($0.major == 5 && ($0.minor ?? 0) >= 1)
+        !isGPT6OrLaterModel && $0.major == 5 && ($0.minor ?? 0) >= 1
     } ?? false
     return OpenAILanguageModelCapabilities(
         isReasoningModel: isReasoningModel,
-        supportsNonReasoningParameters: supportsNonReasoningParameters
+        supportsNonReasoningParameters: supportsNonReasoningParameters,
+        supportsConfigurationUpdate: isGPT6OrLaterModel,
+        supportedReasoningEfforts: isGPT6OrLaterModel
+            ? ["low", "medium", "high", "xhigh", "max"]
+            : nil
     )
+}
+
+func openAIResponsesValidateReasoningEffort(
+    modelID: String,
+    options: inout [String: JSONValue],
+    warnings: inout [AIWarning]
+) {
+    let capabilities = openAILanguageModelCapabilities(modelID)
+    guard let supportedEfforts = capabilities.supportedReasoningEfforts,
+          var reasoning = options["reasoning"]?.objectValue,
+          let effort = reasoning["effort"]?.stringValue,
+          !supportedEfforts.contains(effort) else {
+        return
+    }
+
+    reasoning.removeValue(forKey: "effort")
+    if reasoning.isEmpty {
+        options.removeValue(forKey: "reasoning")
+    } else {
+        options["reasoning"] = .object(reasoning)
+    }
+    warnings.append(AIWarning(
+        type: "unsupported",
+        feature: "reasoningEffort",
+        message: "\(modelID) only supports the following reasoning efforts: \(supportedEfforts.joined(separator: ", "))"
+    ))
+}
+
+func openAIResponsesRemoveUnsupportedGPT6Options(
+    modelID: String,
+    stripsReasoningModelSampling: Bool,
+    options: inout [String: JSONValue],
+    warnings: inout [AIWarning]
+) {
+    let capabilities = openAILanguageModelCapabilities(modelID)
+    guard capabilities.supportsConfigurationUpdate else { return }
+
+    if options.removeValue(forKey: "prompt_cache_retention") != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "promptCacheRetention",
+            message: "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead"
+        ))
+    }
+
+    guard stripsReasoningModelSampling else { return }
+    let removedTopLogprobs = options.removeValue(forKey: "top_logprobs") != nil
+    var include = options["include"]?.arrayValue
+    let originalIncludeCount = include?.count ?? 0
+    include?.removeAll { $0.stringValue == "message.output_text.logprobs" }
+    let removedInclude = (include?.count ?? 0) != originalIncludeCount
+    if let include {
+        if include.isEmpty {
+            options.removeValue(forKey: "include")
+        } else {
+            options["include"] = .array(include)
+        }
+    }
+    if removedTopLogprobs || removedInclude {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "logprobs",
+            message: "logprobs is not supported for reasoning models"
+        ))
+    }
 }
 
 private func openAIOSeriesVersion(_ modelID: String) -> Int? {

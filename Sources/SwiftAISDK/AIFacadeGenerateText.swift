@@ -9,7 +9,7 @@ extension AI {
         includeResponseBody: Bool = false
     ) async throws -> TextGenerationResult {
         let request = try prepareLanguageModelCallOptions(request)
-        return try await withTelemetry(
+        let result = try await withTelemetry(
             operationID: "ai.generateText",
             providerID: model.providerID,
             modelID: model.modelID,
@@ -53,6 +53,13 @@ extension AI {
             }
             return result
         }
+        try validateEnforcedToolChoice(
+            request.toolChoice,
+            result: result,
+            providerID: model.providerID,
+            modelID: model.modelID
+        )
+        return result
     }
 
     public static func generateText(

@@ -80,12 +80,14 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                 throw AIError.invalidResponse(provider: providerID, message: "Video generation timed out after \(formatKlingAIMilliseconds(timeoutMilliseconds))ms")
             }
-            let response = try await config.transport.send(AIHTTPRequest(
-                method: "GET",
-                url: try requireURL("\(withoutTrailingSlash(config.baseURL))\(endpoint)/\(taskID)"),
+            let response = try await downloadURL(
+                "\(withoutTrailingSlash(config.baseURL))\(endpoint)/\(taskID)",
+                transport: config.transport,
                 headers: config.headers.mergingHeaders(headers),
-                abortSignal: abortSignal
-            ))
+                abortSignal: abortSignal,
+                trustedOrigin: config.baseURL,
+                credentialedOrigin: config.baseURL
+            )
             guard (200..<300).contains(response.statusCode) else {
                 throw klingAIHTTPStatusError(provider: providerID, response: response)
             }

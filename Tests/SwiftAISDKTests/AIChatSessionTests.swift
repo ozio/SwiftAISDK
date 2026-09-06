@@ -85,6 +85,27 @@ import Testing
 }
 
 @MainActor
+@Test func aiChatSessionUsesExplicitNewIDWhenReplacingUserMessage() async throws {
+    let transport = RecordingChatTransport()
+    let session = AIChatSession(
+        chatID: "chat-1",
+        transport: transport,
+        messages: [.user("Old", id: "user-1")],
+        generateMessageID: { "response-1" }
+    )
+
+    await session.sendMessage(
+        .user("Edited", id: "replacement-id"),
+        replacingMessageID: "user-1"
+    ).value
+
+    let request = try #require(transport.sendRequests.first)
+    #expect(request.messageID == "user-1")
+    #expect(request.messages.map(\.id) == ["replacement-id"])
+    #expect(session.messages.map(\.id) == ["replacement-id", "response-1"])
+}
+
+@MainActor
 @Test func aiChatSessionCanSubmitExistingTranscriptWithoutNewUserMessage() async throws {
     let transport = RecordingChatTransport()
     let session = AIChatSession(

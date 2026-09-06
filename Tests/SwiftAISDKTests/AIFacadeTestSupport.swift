@@ -409,13 +409,53 @@ final class MockRerankingModel: RerankingModel, @unchecked Sendable {
 final class MockFileClient: AIFileClient, @unchecked Sendable {
     let providerID = "mock.files"
     var requests: [FileUploadRequest] = []
+    var metadataRequests: [FileMetadataRequest] = []
+    var downloadRequests: [FileDownloadRequest] = []
+    var deleteRequests: [FileDeleteRequest] = []
     let result: FileUploadResult
+    let metadataResult: FileMetadataResult?
+    let downloadResult: FileDownloadResult?
+    let deleteResult: FileDeleteResult?
 
-    init(result: FileUploadResult) { self.result = result }
+    init(
+        result: FileUploadResult,
+        metadataResult: FileMetadataResult? = nil,
+        downloadResult: FileDownloadResult? = nil,
+        deleteResult: FileDeleteResult? = nil
+    ) {
+        self.result = result
+        self.metadataResult = metadataResult
+        self.downloadResult = downloadResult
+        self.deleteResult = deleteResult
+    }
 
     func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
         requests.append(request)
         return result
+    }
+
+    func getFileMetadata(_ request: FileMetadataRequest) async throws -> FileMetadataResult {
+        metadataRequests.append(request)
+        guard let metadataResult else {
+            throw AIError.invalidArgument(argument: "test", message: "No metadata result configured.")
+        }
+        return metadataResult
+    }
+
+    func downloadFile(_ request: FileDownloadRequest) async throws -> FileDownloadResult {
+        downloadRequests.append(request)
+        guard let downloadResult else {
+            throw AIError.invalidArgument(argument: "test", message: "No download result configured.")
+        }
+        return downloadResult
+    }
+
+    func deleteFile(_ request: FileDeleteRequest) async throws -> FileDeleteResult {
+        deleteRequests.append(request)
+        guard let deleteResult else {
+            throw AIError.invalidArgument(argument: "test", message: "No delete result configured.")
+        }
+        return deleteResult
     }
 }
 final class MockSkillsClient: AISkillsClient, @unchecked Sendable {

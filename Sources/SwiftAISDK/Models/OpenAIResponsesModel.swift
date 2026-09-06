@@ -648,6 +648,21 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if isOpenAIBacked {
             warnings.append(contentsOf: openAIResponsesOpenAIBackedWarnings(options: options))
         }
+        openAIResponsesValidateReasoningEffort(modelID: modelID, options: &options, warnings: &warnings)
+        let reasoningEffortUpdateValue = options.removeValue(forKey: "reasoningEffortUpdate")
+        let reasoningEffortUpdate: String?
+        if let reasoningEffortUpdateValue {
+            guard let value = reasoningEffortUpdateValue.stringValue,
+                  ["low", "medium", "high", "xhigh", "max"].contains(value) else {
+                throw AIError.invalidArgument(
+                    argument: "providerOptions.openai.reasoningEffortUpdate",
+                    message: "reasoningEffortUpdate must be low, medium, high, xhigh, or max."
+                )
+            }
+            reasoningEffortUpdate = value
+        } else {
+            reasoningEffortUpdate = nil
+        }
         openAIResponsesFinalizeReasoningOptions(isReasoningModel: isEffectiveReasoningModel, options: &options, warnings: &warnings)
         if isOpenAIBacked {
             openAIResponsesApplyAutomaticOptions(to: &options, tools: request.tools, isReasoningModel: isEffectiveReasoningModel)
@@ -656,6 +671,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             modelID: modelID,
             isReasoningModel: isEffectiveReasoningModel,
             options: options
+        )
+        openAIResponsesRemoveUnsupportedGPT6Options(
+            modelID: modelID,
+            stripsReasoningModelSampling: stripsReasoningModelSampling,
+            options: &options,
+            warnings: &warnings
         )
         if stripsReasoningModelSampling {
             if request.temperature != nil {
@@ -729,6 +750,27 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                 warnings: &warnings
             )
         }
+        if let reasoningEffortUpdate {
+            let capabilities = openAILanguageModelCapabilities(modelID)
+            let configurationUpdateIsSupported = capabilities.supportsConfigurationUpdate
+                && options["reasoning"]?["mode"]?.stringValue != "pro"
+                && options["context_management"] == nil
+                && options["truncation"]?.stringValue != "auto"
+            if configurationUpdateIsSupported {
+                input.insert(.object([
+                    "type": .string("configuration_update"),
+                    "reasoning": .object(["effort": .string(reasoningEffortUpdate)])
+                ]), at: 0)
+            } else {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "reasoningEffortUpdate",
+                    message: capabilities.supportsConfigurationUpdate
+                        ? "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
+                        : "reasoningEffortUpdate is only supported by GPT-6 and later models"
+                ))
+            }
+        }
         if compactionTrigger {
             input.append(.object(["type": .string("compaction_trigger")]))
         }
@@ -777,7 +819,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         let preparedInput = openResponsesInput(
             from: request.messages,
             providerID: providerID,
-            providerOptionsName: providerOptionsName
+            providerOptionsName: providerOptionsName,
+            strictResponseInput: config.strictResponseInput
         )
         let providerOptions = try openResponsesProviderOptions(providerOptions: request.providerOptions, providerOptionsName: providerOptionsName)
         var warnings = openResponsesWarnings(for: request, includePenaltyWarnings: false) + preparedInput.warnings

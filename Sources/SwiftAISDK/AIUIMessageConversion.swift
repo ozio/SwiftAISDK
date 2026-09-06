@@ -28,6 +28,15 @@ private func convertToModelMessage(_ message: AIUIMessage, path: String) throws 
     var content: [AIContentPart] = []
     var providerMetadata: [String: JSONValue] = [:]
     var systemText = ""
+    var failedResultMetadataByToolCallID: [String: [String: JSONValue]] = [:]
+    for part in message.parts {
+        guard case let .toolResult(result) = part,
+              result.isError,
+              !result.providerMetadata.isEmpty else {
+            continue
+        }
+        failedResultMetadataByToolCallID[result.toolCallID] = result.providerMetadata
+    }
 
     for (partIndex, part) in message.parts.enumerated() {
         let partPath = "\(path).parts[\(partIndex)]"
@@ -46,7 +55,12 @@ private func convertToModelMessage(_ message: AIUIMessage, path: String) throws 
         case let .file(file):
             try appendModelFile(file, path: partPath, content: &content)
         case let .toolCall(call):
-            content.append(.toolCall(call))
+            var resolvedCall = call
+            if resolvedCall.providerMetadata.isEmpty,
+               let resultMetadata = failedResultMetadataByToolCallID[call.id] {
+                resolvedCall.providerMetadata = resultMetadata
+            }
+            content.append(.toolCall(resolvedCall))
         case let .toolResult(result):
             content.append(.toolResult(result))
         case let .toolApprovalRequest(request):

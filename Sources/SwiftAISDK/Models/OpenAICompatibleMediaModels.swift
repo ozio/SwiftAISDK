@@ -386,7 +386,7 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
             form.appendField(name: "prompt", value: prompt)
             metadataBody["prompt"] = .string(prompt)
         }
-        let extraBody = isOpenAIBackedProvider(providerID, config: config) ? openAITranscriptionOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot, modelID: modelID) : request.extraBody
+        let extraBody = try isOpenAIBackedProvider(providerID, config: config) ? openAITranscriptionOptions(providerOptions: request.providerOptions, extraBody: request.extraBody, providerID: providerID, providerRoot: config.openAIBackedProviderRoot, modelID: modelID) : request.extraBody
         for (key, value) in extraBody {
             if case let .array(items) = value {
                 metadataBody[key] = value
@@ -418,12 +418,29 @@ public final class OpenAICompatibleTranscriptionModel: TranscriptionModel, @unch
             throw AIError.invalidResponse(provider: providerID, message: "No transcription text found.")
         }
         let segments = standardTranscriptionSegments(from: raw)
+        let diarizedSegments: [JSONValue] = raw["segments"]?.arrayValue?.compactMap { segment in
+            guard let speaker = segment["speaker"]?.stringValue,
+                  let text = segment["text"]?.stringValue,
+                  let start = segment["start"]?.doubleValue,
+                  let end = segment["end"]?.doubleValue else {
+                return nil
+            }
+            return .object([
+                "text": .string(text),
+                "startSecond": .number(start),
+                "endSecond": .number(end),
+                "speaker": .string(speaker)
+            ])
+        } ?? []
         return TranscriptionResult(
             text: text,
             rawValue: raw,
             segments: segments,
             language: openAITranscriptionLanguageCode(raw["language"]?.stringValue),
             durationInSeconds: raw["duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            providerMetadata: diarizedSegments.isEmpty
+                ? [:]
+                : ["openai": .object(["segments": .array(diarizedSegments)])],
             requestMetadata: AIRequestMetadata(body: .object(metadataBody), headers: request.headers),
             responseMetadata: openAICompatibleResponseMetadata(from: raw, response: response, modelID: modelID)
         )

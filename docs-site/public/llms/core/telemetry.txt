@@ -1,6 +1,6 @@
 # Telemetry
 
-Source URL: /core/telemetry/
+Source URL: /SwiftAISDK/core/telemetry/
 
 Use telemetry when you want structured events for observability, debugging, billing, or product analytics. Telemetry is opt-in: pass `Telemetry.Options` on a call, or register integrations globally and pass enabled telemetry options. Calls with `telemetry: nil` do not record events.
 
@@ -158,6 +158,12 @@ Execution wrappers compose in the order integrations are registered or passed on
 ## Streams
 
 Streaming telemetry records the start event before the stream emits parts and records a terminal event when the stream ends, fails, or is aborted. Stream failures surface through the `AsyncThrowingStream`, so collect telemetry and consume the stream in the same task boundary when you need correlated logs.
+
+When `streamRetries` recovers a retryable in-band provider error after output
+has started, telemetry emits a `retry` event with the incremented attempt,
+configured stream-retry maximum, and zero delay. Attempts remain under the same
+logical call ID; the ordinary `retryPolicy` continues to describe setup retry
+delays separately.
 
 ```swift
 do {

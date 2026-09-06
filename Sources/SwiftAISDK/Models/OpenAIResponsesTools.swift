@@ -202,7 +202,7 @@ func openAIResponsesProviderTool(
         return .object(tool)
     case "openai.image_generation":
         var tool: [String: JSONValue] = ["type": .string("image_generation")]
-        for key in ["background", "model", "moderation", "quality", "size"] {
+        for key in ["action", "background", "model", "moderation", "quality", "size"] {
             if let value = args[key] { tool[key] = value }
         }
         if let value = args["inputFidelity"] ?? args["input_fidelity"] { tool["input_fidelity"] = value }

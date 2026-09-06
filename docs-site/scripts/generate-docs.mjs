@@ -206,7 +206,7 @@ function generateProviders() {
     const note = row.notes ? `\n## Notes\n\n${row.notes}\n` : '';
     writeGenerated(
       join(contentRoot, `providers/${providerSlug(row.providerID)}.mdx`),
-      `---\ntitle: ${yamlString(row.providerID)}\ndescription: ${yamlString(`${row.providerID} provider capabilities and factories.`)}\n---\n\n## Package\n\n\`${row.upstreamPackage}\`\n\n## Factories\n\n${row.factories}\n\n## Capabilities\n\n${capabilityListText}\n${note}\nFactory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](../reference/generated/public-symbols/) when you need the exact initializer or factory declaration.\n\nReturn to the [provider matrix](./).\n`,
+      `---\ntitle: ${yamlString(row.providerID)}\ndescription: ${yamlString(`${row.providerID} provider capabilities and factories.`)}\n---\n\n## Package\n\n\`${row.upstreamPackage}\`\n\n## Factories\n\n${row.factories}\n\n## Capabilities\n\n${capabilityListText}\n${note}\nFactory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.\n\nReturn to the [provider matrix](/providers/).\n`,
     );
   }
 }
@@ -425,6 +425,18 @@ function stripFrontmatter(source) {
   return source.replace(/^---[\s\S]*?---\n/, '');
 }
 
+function qualifyRootRelativeMarkdownLinksForLLM(line) {
+  const base = normalizedDocsBase();
+  if (!base) return line;
+  return line.replace(
+    /\]\((\/(?!\/)[^)\s]+)([^)]*)\)/g,
+    (match, path, suffix) => {
+      if (path === base || path.startsWith(`${base}/`)) return match;
+      return `](${base}${path}${suffix})`;
+    },
+  );
+}
+
 function expandRawCodeImports(source, pagePath) {
   const imports = new Map();
   let expanded = source.replace(
@@ -457,7 +469,9 @@ function markdownForLLM(source, pagePath) {
         inCodeFence = !inCodeFence;
         return line.trimEnd();
       }
-      return inCodeFence ? line.trimEnd() : line.trim();
+      return inCodeFence
+        ? line.trimEnd()
+        : qualifyRootRelativeMarkdownLinksForLLM(line.trim());
     })
     .join('\n')
     .replace(/^\s+$/gm, '')

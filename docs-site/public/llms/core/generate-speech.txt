@@ -1,6 +1,6 @@
 # Generate speech
 
-Source URL: /core/generate-speech/
+Source URL: /SwiftAISDK/core/generate-speech/
 
 Use `generateSpeech` when a provider exposes text-to-speech.
 

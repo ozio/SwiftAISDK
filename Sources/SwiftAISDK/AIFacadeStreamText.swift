@@ -1,33 +1,35 @@
 import Foundation
 
 extension AI {
-    static func streamText(
+    static func streamTextParts(
         model: any LanguageModel,
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
         timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        streamRetries: Int? = nil,
         telemetry: Telemetry.Options? = nil,
         logWarnings: Bool
-    ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+    ) -> AsyncThrowingStream<StreamTextTelemetryPart, Error> {
         let preparedRequest: LanguageModelRequest
         do {
             preparedRequest = try prepareLanguageModelCallOptions(request)
         } catch {
-            return streamTextWithTelemetry(
+            return streamTextWithTelemetryParts(
                 makeStream: { failingPartStream(error) },
                 operationID: "ai.streamText",
                 providerID: model.providerID,
                 modelID: model.modelID,
                 input: languageRequestTelemetryInput(request),
                 retryPolicy: retryPolicy,
+                streamRetries: streamRetries,
                 telemetry: telemetry,
                 abortSignal: request.abortSignal,
                 logWarnings: logWarnings
             )
         }
         if let timeoutNanoseconds, timeoutNanoseconds <= 0 {
-            return streamTextWithTelemetry(
+            return streamTextWithTelemetryParts(
                 makeStream: {
                     failingPartStream(AIError.invalidArgument(
                         argument: "timeoutNanoseconds",
@@ -39,19 +41,21 @@ extension AI {
                 modelID: model.modelID,
                 input: languageRequestTelemetryInput(preparedRequest),
                 retryPolicy: retryPolicy,
+                streamRetries: streamRetries,
                 telemetry: telemetry,
                 abortSignal: preparedRequest.abortSignal,
                 logWarnings: logWarnings
             )
         }
         if let validationError = validateStreamTimeoutConfiguration(timeout) {
-            return streamTextWithTelemetry(
+            return streamTextWithTelemetryParts(
                 makeStream: { failingPartStream(validationError) },
                 operationID: "ai.streamText",
                 providerID: model.providerID,
                 modelID: model.modelID,
                 input: languageRequestTelemetryInput(preparedRequest),
                 retryPolicy: retryPolicy,
+                streamRetries: streamRetries,
                 telemetry: telemetry,
                 abortSignal: preparedRequest.abortSignal,
                 logWarnings: logWarnings
@@ -77,7 +81,7 @@ extension AI {
         )
         let operationRequest = requestWithTimeoutSignals
 
-        let retriedStream = streamTextWithTelemetry(
+        let retriedStream = streamTextWithTelemetryParts(
             makeStream: {
                 let attemptTimeoutController = retryPolicy.timeoutNanoseconds.map { _ in
                     AIAbortController()
@@ -113,6 +117,7 @@ extension AI {
             modelID: model.modelID,
             input: languageRequestTelemetryInput(operationRequest),
             retryPolicy: retryPolicy,
+            streamRetries: streamRetries,
             telemetry: telemetry,
             abortSignal: operationRequest.abortSignal,
             logWarnings: logWarnings
@@ -131,12 +136,37 @@ extension AI {
         )
     }
 
+    static func streamText(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        timeoutNanoseconds: UInt64? = nil,
+        timeout: AIStreamTimeoutConfiguration? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        streamRetries: Int? = nil,
+        telemetry: Telemetry.Options? = nil,
+        logWarnings: Bool
+    ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        publicLanguageStream(
+            streamTextParts(
+                model: model,
+                request: request,
+                timeoutNanoseconds: timeoutNanoseconds,
+                timeout: timeout,
+                retryPolicy: retryPolicy,
+                streamRetries: streamRetries,
+                telemetry: telemetry,
+                logWarnings: logWarnings
+            )
+        )
+    }
+
     public static func streamText(
         model: any LanguageModel,
         request: LanguageModelRequest,
         timeoutNanoseconds: UInt64? = nil,
         timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        streamRetries: Int? = nil,
         telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         streamText(
@@ -145,6 +175,7 @@ extension AI {
             timeoutNanoseconds: timeoutNanoseconds,
             timeout: timeout,
             retryPolicy: retryPolicy,
+            streamRetries: streamRetries,
             telemetry: telemetry,
             logWarnings: true
         )
@@ -162,6 +193,7 @@ extension AI {
         timeoutNanoseconds: UInt64? = nil,
         timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        streamRetries: Int? = nil,
         telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         guard !executableTools.isEmpty || prepareStep != nil else {
@@ -171,6 +203,7 @@ extension AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 timeout: timeout,
                 retryPolicy: retryPolicy,
+                streamRetries: streamRetries,
                 telemetry: telemetry
             )
         }
@@ -300,7 +333,7 @@ extension AI {
                         )
                         try stepDeadline.throwIfTimedOut()
                         let step = try await forwardLanguageStream(
-                            streamText(
+                            streamTextParts(
                                 model: stepModel,
                                 request: stepRequest,
                                 timeout: timeout.map {
@@ -309,7 +342,10 @@ extension AI {
                                         chunkNanoseconds: $0.chunkNanoseconds
                                     )
                                 },
-                                retryPolicy: retryPolicy
+                                retryPolicy: retryPolicy,
+                                streamRetries: streamRetries,
+                                telemetry: nil,
+                                logWarnings: true
                             ),
                             to: continuation,
                             toolsByName: toolsByName,
@@ -493,6 +529,7 @@ extension AI {
         timeoutNanoseconds: UInt64? = nil,
         timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        streamRetries: Int? = nil,
         telemetry: Telemetry.Options? = nil
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
         let request = LanguageModelRequest(
@@ -523,6 +560,7 @@ extension AI {
                 timeoutNanoseconds: timeoutNanoseconds,
                 timeout: timeout,
                 retryPolicy: retryPolicy,
+                streamRetries: streamRetries,
                 telemetry: telemetry
             )
         }
@@ -539,6 +577,7 @@ extension AI {
             timeoutNanoseconds: timeoutNanoseconds,
             timeout: timeout,
             retryPolicy: retryPolicy,
+            streamRetries: streamRetries,
             telemetry: telemetry
         )
     }
@@ -550,6 +589,7 @@ extension AI {
         timeoutNanoseconds: UInt64? = nil,
         timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        streamRetries: Int? = nil,
         telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -562,6 +602,12 @@ extension AI {
         }
         if let validationError = validateStreamTimeoutConfiguration(timeout) {
             return failingPartStream(validationError)
+        }
+        if let streamRetries, streamRetries < 0 {
+            return failingPartStream(AIError.invalidArgument(
+                argument: "streamRetries",
+                message: "streamRetries must be greater than or equal to zero."
+            ))
         }
 
         let totalTimeoutNanoseconds = minimumTimeoutNanoseconds(
@@ -583,15 +629,17 @@ extension AI {
             semanticTimeoutController?.signal
         )
         let operationRequest = requestWithTimeoutSignals
-        let outputStream = output.streamFromRequest(
-            model,
-            operationRequest,
-            nil,
-            retryPolicy,
-            telemetry,
-            jsonInstruction,
-            repairText
-        )
+        let outputStream = outputStreamWithRetries(streamRetries: streamRetries) {
+            output.streamFromRequest(
+                model,
+                operationRequest,
+                nil,
+                retryPolicy,
+                telemetry,
+                jsonInstruction,
+                repairText
+            )
+        }
         let semanticTimedStream = streamWithSemanticOutputTimeouts(
             outputStream,
             firstChunkNanoseconds: timeout?.firstChunkNanoseconds,
@@ -632,6 +680,7 @@ extension AI {
         timeoutNanoseconds: UInt64? = nil,
         timeout: AIStreamTimeoutConfiguration? = nil,
         retryPolicy: AIRetryPolicy = .default,
+        streamRetries: Int? = nil,
         telemetry: Telemetry.Options? = nil,
         jsonInstruction: AIJSONInstruction? = nil,
         repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
@@ -658,10 +707,77 @@ extension AI {
             timeoutNanoseconds: timeoutNanoseconds,
             timeout: timeout,
             retryPolicy: retryPolicy,
+            streamRetries: streamRetries,
             telemetry: telemetry,
             jsonInstruction: jsonInstruction,
             repairText: repairText
         )
     }
 
+}
+
+private func outputStreamWithRetries<FinalOutput: Sendable, PartialOutput: Sendable>(
+    streamRetries: Int?,
+    makeStream: @escaping @Sendable () -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error>
+) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
+    guard let streamRetries, streamRetries > 0 else {
+        return makeStream()
+    }
+
+    return AsyncThrowingStream { continuation in
+        let task = Task {
+            var retryCount = 0
+
+            do {
+                while true {
+                    var receivedPart = false
+                    var bufferedFailureTail: [AIOutputStreamPart<FinalOutput, PartialOutput>] = []
+                    var isBufferingFailureTail = false
+
+                    do {
+                        for try await part in makeStream() {
+                            try Task.checkCancellation()
+                            receivedPart = true
+                            if retryCount < streamRetries,
+                               isBufferingFailureTail || part.isRetryableProviderStreamError {
+                                isBufferingFailureTail = true
+                                bufferedFailureTail.append(part)
+                            } else {
+                                continuation.yield(part)
+                            }
+                        }
+
+                        for part in bufferedFailureTail {
+                            continuation.yield(part)
+                        }
+                        continuation.finish()
+                        return
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        guard receivedPart,
+                              !bufferedFailureTail.isEmpty,
+                              retryCount < streamRetries else {
+                            for part in bufferedFailureTail {
+                                continuation.yield(part)
+                            }
+                            throw error
+                        }
+                        retryCount += 1
+                    }
+                }
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+
+        continuation.onTermination = { _ in task.cancel() }
+    }
+}
+
+private extension AIOutputStreamPart {
+    var isRetryableProviderStreamError: Bool {
+        guard case let .raw(part) = self else { return false }
+        return part.streamProviderError?.isRetryable == true
+    }
 }

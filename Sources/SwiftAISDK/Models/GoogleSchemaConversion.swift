@@ -46,7 +46,7 @@ private func googleOpenAPISchema(
     }
 
     var result: [String: JSONValue] = [:]
-    for key in ["description", "required", "format", "minLength"] {
+    for key in ["description", "required", "format", "minLength", "minItems", "maxItems"] {
         if let value = object[key] {
             result[key] = value
         }

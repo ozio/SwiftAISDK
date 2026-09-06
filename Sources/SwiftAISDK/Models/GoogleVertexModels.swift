@@ -16,8 +16,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
         let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: prepared.body, headers: request.headers.mergingHeaders(prepared.headers), abortSignal: request.abortSignal)
         let raw = response.json
         let text = googleGenerateContentText(from: raw)
-        let toolCalls = googleGenerateContentToolCalls(from: raw)
-        let toolResults = googleGenerateContentToolResults(from: raw)
+        let toolCalls = googleGenerateContentToolCalls(from: raw, toolNameMapping: prepared.toolNameMapping)
+        let toolResults = googleGenerateContentToolResults(from: raw, toolNameMapping: prepared.toolNameMapping)
         guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No candidate text found in Vertex response.")
         }
@@ -54,7 +54,8 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
                         response: httpResponseHead(from: response, request: httpRequest),
                         includeRawChunks: request.includeRawChunks,
                         modelID: modelID,
-                        warnings: prepared.warnings
+                        warnings: prepared.warnings,
+                        toolNameMapping: prepared.toolNameMapping
                     )
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
@@ -347,16 +348,16 @@ public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchec
         let prepared = try googleInteractionsPreparedCall(for: request, modelID: modelID, agent: agent, stream: false)
         let raw = try await sendInteractions(body: .object(prepared.body), headers: request.headers, abortSignal: request.abortSignal)
         let final = try await resolvedInteraction(raw, requestHeaders: request.headers, abortSignal: request.abortSignal)
-        let text = googleInteractionsText(from: final)
-        let toolCalls = googleInteractionsToolCalls(from: final)
-        guard !text.isEmpty || !toolCalls.isEmpty else {
-            throw AIError.invalidResponse(provider: providerID, message: "No model_output text found in Google Vertex Interactions response.")
+        let output = googleInteractionsParsedOutput(from: final)
+        guard !output.content.isEmpty else {
+            throw AIError.invalidResponse(provider: providerID, message: "No supported output found in Google Vertex Interactions response.")
         }
         return TextGenerationResult(
-            text: text,
-            finishReason: googleInteractionsFinishReason(status: final["status"]?.stringValue, hasFunctionCall: googleInteractionsHasFunctionCall(final)),
+            text: output.text,
+            content: output.content,
+            reasoning: output.reasoning,
+            finishReason: googleInteractionsFinishReason(status: final["status"]?.stringValue, hasFunctionCall: output.hasFunctionCall),
             usage: googleInteractionsUsage(from: final),
-            toolCalls: toolCalls,
             sources: googleInteractionsSources(from: final),
             providerMetadata: googleInteractionsProviderMetadata(from: final),
             rawValue: final,
@@ -389,6 +390,7 @@ public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchec
                     var emittedSourceKeys: Set<String> = []
                     var didEmitFinish = false
                     var didReceiveStreamError = false
+                    var interactionID: String?
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -400,35 +402,58 @@ public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchec
                             continuation.yield(.providerError(providerError))
                             continue
                         }
-                        for source in googleInteractionsSources(from: raw, sourceCounter: &sourceCounter, emittedKeys: &emittedSourceKeys) {
-                            continuation.yield(.source(source))
+                        let eventType = raw["event_type"]?.stringValue
+                        let stepType = raw["step"]?["type"]?.stringValue
+                        let defersBuiltinResultSources = eventType == "step.start"
+                            && stepType.map { googleInteractionsBuiltinToolResultTypes.contains($0) } == true
+                        if !defersBuiltinResultSources {
+                            for source in googleInteractionsSources(from: raw, sourceCounter: &sourceCounter, emittedKeys: &emittedSourceKeys) {
+                                continuation.yield(.source(source))
+                            }
                         }
                         if let interaction = raw["interaction"] {
+                            interactionID = interaction["id"]?.stringValue ?? interactionID
                             let metadata = googleInteractionsProviderMetadata(from: interaction)
                             if !metadata.isEmpty {
                                 continuation.yield(.metadata(metadata))
                             }
                         }
-                        let eventType = raw["event_type"]?.stringValue
+                        if eventType == "step.start" {
+                            for part in content.start(raw["step"], index: raw["index"]?.intValue, interactionID: interactionID) {
+                                continuation.yield(part)
+                            }
+                        }
                         if eventType == "step.start", raw["step"]?["type"]?.stringValue == "function_call" {
                             hasFunctionCall = true
-                            for part in toolCalls.start(step: raw["step"], index: raw["index"]?.intValue) {
+                            for part in toolCalls.start(
+                                step: raw["step"],
+                                index: raw["index"]?.intValue,
+                                interactionID: interactionID
+                            ) {
                                 continuation.yield(part)
                             }
                         }
                         if eventType == "step.delta", let delta = raw["delta"] {
-                            for part in content.delta(delta, index: raw["index"]?.intValue) {
+                            for part in content.delta(delta, index: raw["index"]?.intValue, interactionID: interactionID) {
                                 continuation.yield(part)
                             }
                             if delta["type"]?.stringValue == "arguments_delta" {
                                 hasFunctionCall = true
-                                for part in toolCalls.delta(delta, index: raw["index"]?.intValue) {
+                                for part in toolCalls.delta(
+                                    delta,
+                                    index: raw["index"]?.intValue,
+                                    interactionID: interactionID
+                                ) {
                                     continuation.yield(part)
                                 }
                             }
                         }
                         if eventType == "step.stop" {
-                            for part in content.stop(index: raw["index"]?.intValue) {
+                            for part in content.stop(
+                                index: raw["index"]?.intValue,
+                                sourceCounter: &sourceCounter,
+                                emittedSourceKeys: &emittedSourceKeys
+                            ) {
                                 continuation.yield(part)
                             }
                             for part in toolCalls.stop(index: raw["index"]?.intValue) {
@@ -437,7 +462,10 @@ public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchec
                         }
                         if eventType == "interaction.completed" || eventType == "interaction.failed" || eventType == "interaction.incomplete" || eventType == "interaction.cancelled" {
                             let interaction = raw["interaction"] ?? raw
-                            for part in content.finishParts() {
+                            for part in content.finishParts(
+                                sourceCounter: &sourceCounter,
+                                emittedSourceKeys: &emittedSourceKeys
+                            ) {
                                 continuation.yield(part)
                             }
                             continuation.yield(.finishMetadata(
@@ -450,7 +478,10 @@ public final class GoogleVertexInteractionsLanguageModel: LanguageModel, @unchec
                         }
                     }
                     if didReceiveStreamError, !didEmitFinish {
-                        for part in content.finishParts() {
+                        for part in content.finishParts(
+                            sourceCounter: &sourceCounter,
+                            emittedSourceKeys: &emittedSourceKeys
+                        ) {
                             continuation.yield(part)
                         }
                         continuation.yield(.finishMetadata(
@@ -671,6 +702,7 @@ private struct GoogleVertexGenerateContentPreparedCall {
     var body: JSONValue
     var warnings: [AIWarning]
     var headers: [String: String]
+    var toolNameMapping: AIToolNameMapping
 }
 
 private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID: String, providerID: String, isStreaming: Bool = false) throws -> GoogleVertexGenerateContentPreparedCall {
@@ -715,7 +747,15 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
     }
     body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
     body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
-    return GoogleVertexGenerateContentPreparedCall(body: .object(body), warnings: warnings, headers: preparedOptions.headers)
+    return GoogleVertexGenerateContentPreparedCall(
+        body: .object(body),
+        warnings: warnings,
+        headers: preparedOptions.headers,
+        toolNameMapping: createToolNameMapping(
+            tools: request.tools,
+            providerToolNames: ["google.code_execution": "code_execution"]
+        )
+    )
 }
 
 private func googleVertexImageBody(for request: ImageGenerationRequest) throws -> [String: JSONValue] {

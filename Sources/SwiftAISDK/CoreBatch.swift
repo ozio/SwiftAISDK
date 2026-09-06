@@ -179,11 +179,35 @@ public struct AIBatchStartResult: Equatable, Sendable {
     public var batchID: String
     public var status: AIBatchStatus
     public var warnings: [AIBatchWarning]
+    /// Provider-specific metadata produced while creating the batch, such as
+    /// an uploaded JSONL input file identifier and expiry timestamp.
+    public var providerMetadata: [String: JSONValue]
 
-    public init(batchID: String, status: AIBatchStatus, warnings: [AIBatchWarning] = []) {
+    public init(
+        batchID: String,
+        status: AIBatchStatus,
+        warnings: [AIBatchWarning] = [],
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
         self.batchID = batchID
         self.status = status
         self.warnings = warnings
+        self.providerMetadata = providerMetadata
+    }
+
+    /// Source-compatible initializer retained from before batch-start
+    /// provider metadata was exposed.
+    public init(
+        batchID: String,
+        status: AIBatchStatus,
+        warnings: [AIBatchWarning] = []
+    ) {
+        self.init(
+            batchID: batchID,
+            status: status,
+            warnings: warnings,
+            providerMetadata: [:]
+        )
     }
 }
 
@@ -293,10 +317,29 @@ public struct TextBatchRequest: Sendable {
 public struct StartTextBatchResult: Equatable, Sendable {
     public var batch: TextBatch
     public var warnings: [AIBatchWarning]
+    public var providerMetadata: [String: JSONValue]
 
-    public init(batch: TextBatch, warnings: [AIBatchWarning] = []) {
+    public init(
+        batch: TextBatch,
+        warnings: [AIBatchWarning] = [],
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
         self.batch = batch
         self.warnings = warnings
+        self.providerMetadata = providerMetadata
+    }
+
+    /// Source-compatible initializer retained from before batch-start
+    /// provider metadata was exposed.
+    public init(
+        batch: TextBatch,
+        warnings: [AIBatchWarning] = []
+    ) {
+        self.init(
+            batch: batch,
+            warnings: warnings,
+            providerMetadata: [:]
+        )
     }
 }
 

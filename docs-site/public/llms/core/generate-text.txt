@@ -1,6 +1,6 @@
 # Generate text
 
-Source URL: /core/generate-text/
+Source URL: /SwiftAISDK/core/generate-text/
 
 Use `generateText` when you want a complete response before continuing your workflow.
 

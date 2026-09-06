@@ -26,4 +26,8 @@ Start by logging the generated text, then simplify the schema until the provider
 
 ## Streaming Stops Early
 
-Pass an explicit retry policy or timeout only after you know the provider stream works without them. Streaming retries happen only before the first emitted part, so an interrupted provider stream is surfaced rather than duplicated.
+Pass an explicit retry policy or timeout only after you know the provider stream
+works without them. By default, streaming retries happen only before the first
+emitted part. A positive `streamRetries` count can additionally retry retryable
+in-band provider errors after output has started, but already delivered text
+cannot be retracted and a replacement attempt can repeat a prefix.

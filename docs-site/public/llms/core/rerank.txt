@@ -1,6 +1,6 @@
 # Rerank
 
-Source URL: /core/rerank/
+Source URL: /SwiftAISDK/core/rerank/
 
 Use `rerank` when you already have candidate documents and want the model to score them for a query.
 

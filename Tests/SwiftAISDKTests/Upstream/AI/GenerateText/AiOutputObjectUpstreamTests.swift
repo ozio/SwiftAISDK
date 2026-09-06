@@ -147,6 +147,131 @@ import Testing
     #expect(output?.rawOutput == ["value": "Hello, world!"])
 }
 
+@Test func aiOutputObjectStreamRetriesExcludeFailedAttemptJSONLikeUpstream() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .textStart(id: "failed"),
+                .textDeltaPart(id: "failed", delta: #"{"value":"#),
+                .providerError(AIStreamProviderError(message: "provider error", statusCode: 500))
+            ],
+            [
+                .textStart(id: "recovered"),
+                .textDeltaPart(id: "recovered", delta: #"{"value":"ok"}"#),
+                .textEnd(id: "recovered"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+            ]
+        ]
+    )
+    var textDeltas: [String] = []
+    var output: AIOutputGenerationResult<OutputValue>?
+    var receivedProviderError = false
+
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "prompt",
+        output: Output.object(schema: outputValueSchema(), as: OutputValue.self),
+        retryPolicy: .none,
+        streamRetries: 1
+    ) {
+        switch part {
+        case let .textDelta(delta):
+            textDeltas.append(delta)
+        case let .output(result):
+            output = result
+        case let .raw(part):
+            receivedProviderError = receivedProviderError || part.streamProviderError != nil
+        default:
+            break
+        }
+    }
+
+    #expect(textDeltas == [#"{"value":"#, #"{"value":"ok"}"#])
+    #expect(output?.output == OutputValue(value: "ok"))
+    #expect(output?.text == #"{"value":"ok"}"#)
+    #expect(output?.rawOutput == ["value": "ok"])
+    #expect(!receivedProviderError)
+    #expect(model.streamRequests.count == 2)
+}
+
+@Test func aiOutputObjectStreamRetriesDoNotRetryNonRetryableProviderErrorsLikeUpstream() async throws {
+    let providerError = AIStreamProviderError(
+        message: "invalid request",
+        statusCode: 400,
+        isRetryable: false
+    )
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [.providerError(providerError)],
+            [
+                .textStart(id: "unused"),
+                .textDeltaPart(id: "unused", delta: #"{"value":"unused"}"#),
+                .textEnd(id: "unused"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+            ]
+        ]
+    )
+    var receivedProviderError = false
+
+    do {
+        for try await part in AI.streamText(
+            model: model,
+            prompt: "prompt",
+            output: Output.object(schema: outputValueSchema(), as: OutputValue.self),
+            retryPolicy: .none,
+            streamRetries: 1
+        ) {
+            if case let .raw(part) = part {
+                receivedProviderError = receivedProviderError || part.streamProviderError == providerError
+            }
+        }
+        Issue.record("Expected the non-retryable provider error to prevent structured output.")
+    } catch {
+        // The output stream must surface its terminal no-output failure without a second model call.
+    }
+
+    #expect(receivedProviderError)
+    #expect(model.streamRequests.count == 1)
+}
+
+@Test func aiOutputObjectStreamRetriesDoNotRetrySchemaValidationFailuresLikeUpstream() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .textStart(id: "invalid"),
+                .textDeltaPart(id: "invalid", delta: #"{"value":123}"#),
+                .textEnd(id: "invalid"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 2))
+            ],
+            [
+                .textStart(id: "unused"),
+                .textDeltaPart(id: "unused", delta: #"{"value":"unused"}"#),
+                .textEnd(id: "unused"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+            ]
+        ]
+    )
+
+    do {
+        for try await _ in AI.streamText(
+            model: model,
+            prompt: "prompt",
+            output: Output.object(schema: outputValueSchema(), as: OutputValue.self),
+            retryPolicy: .none,
+            streamRetries: 1
+        ) {}
+        Issue.record("Expected schema validation to fail without a stream retry.")
+    } catch let error as AIObjectGenerationError {
+        #expect(error.kind == .schemaValidation)
+        #expect(error.path == "$.value")
+    }
+
+    #expect(model.streamRequests.count == 1)
+}
+
 @Test func aiGenerateTextOutputObjectDoesNotParseToolCallFinishLikeUpstream() async throws {
     let toolCall = AIToolCall(id: "call-1", name: "testTool", arguments: #"{ "value": "test" }"#)
     let model = MockLanguageModel(result: TextGenerationResult(

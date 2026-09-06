@@ -113,6 +113,143 @@ import Testing
     #expect(!bodyText.contains("name=\"openai\""))
 }
 
+@Test func openAITranscriptionSupportsDiarizedResponsesAndDefaultsLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"Hello from Alice. Hello from Bob.","duration":3.2,"segments":[{"type":"transcript.text.segment","id":"seg-1","start":0,"end":1.5,"text":"Hello from Alice.","speaker":"A"},{"type":"transcript.text.segment","id":"seg-2","start":1.5,"end":3.2,"text":"Hello from Bob.","speaker":"B"}]}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+
+    let result = try await provider.transcriptionModel("gpt-4o-transcribe-diarize").transcribe(
+        AudioTranscriptionRequest(audio: Data("abc".utf8), mimeType: "audio/mpeg")
+    )
+
+    #expect(result.segments == [
+        TranscriptionSegment(text: "Hello from Alice.", startSecond: 0, endSecond: 1.5),
+        TranscriptionSegment(text: "Hello from Bob.", startSecond: 1.5, endSecond: 3.2)
+    ])
+    #expect(result.providerMetadata["openai"]?["segments"]?[0]?["speaker"]?.stringValue == "A")
+    let bodyText = String(data: try #require((await transport.requests()).first?.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains("name=\"response_format\""))
+    #expect(bodyText.contains("diarized_json"))
+    #expect(bodyText.contains("name=\"chunking_strategy\""))
+    #expect(bodyText.contains("auto"))
+}
+
+@Test func openAITranscriptionSerializesServerVADChunkingLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"done","segments":[]}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+
+    _ = try await provider.transcriptionModel("gpt-4o-transcribe-diarize").transcribe(
+        AudioTranscriptionRequest(
+            audio: Data("abc".utf8),
+            mimeType: "audio/mpeg",
+            providerOptions: ["openai": [
+                "chunkingStrategy": [
+                    "type": "server_vad",
+                    "threshold": 0.7,
+                    "prefixPaddingMs": 400,
+                    "silenceDurationMs": 300
+                ]
+            ]]
+        )
+    )
+
+    let bodyText = String(data: try #require((await transport.requests()).first?.body), encoding: .utf8) ?? ""
+    #expect(bodyText.contains(#"{"prefix_padding_ms":400,"silence_duration_ms":300,"threshold":0.7,"type":"server_vad"}"#))
+    #expect(bodyText.contains("name=\"response_format\""))
+    #expect(bodyText.contains("diarized_json"))
+    #expect(bodyText.contains("name=\"timestamp_granularities[]\""))
+}
+
+@Test func openAITranscriptionRejectsInvalidChunkingStrategiesLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"text":"done","segments":[]}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.transcriptionModel("gpt-4o-transcribe-diarize")
+    let invalidStrategies: [(JSONValue, AIError)] = [
+        (
+            .string("client_vad"),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy",
+                message: "OpenAI chunkingStrategy must be auto or a server_vad object."
+            )
+        ),
+        (
+            .object(["type": .string("semantic_vad")]),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy.type",
+                message: "OpenAI chunkingStrategy.type must be server_vad."
+            )
+        ),
+        (
+            .object(["type": .string("server_vad"), "threshold": .number(-0.1)]),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy.threshold",
+                message: "OpenAI chunkingStrategy.threshold must be a number between 0 and 1."
+            )
+        ),
+        (
+            .object(["type": .string("server_vad"), "threshold": .number(1.1)]),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy.threshold",
+                message: "OpenAI chunkingStrategy.threshold must be a number between 0 and 1."
+            )
+        ),
+        (
+            .object(["type": .string("server_vad"), "prefixPaddingMs": .number(-1)]),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy.prefixPaddingMs",
+                message: "OpenAI chunkingStrategy.prefixPaddingMs must be a nonnegative integer."
+            )
+        ),
+        (
+            .object(["type": .string("server_vad"), "prefixPaddingMs": .number(0.5)]),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy.prefixPaddingMs",
+                message: "OpenAI chunkingStrategy.prefixPaddingMs must be a nonnegative integer."
+            )
+        ),
+        (
+            .object(["type": .string("server_vad"), "silenceDurationMs": .number(-1)]),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy.silenceDurationMs",
+                message: "OpenAI chunkingStrategy.silenceDurationMs must be a nonnegative integer."
+            )
+        ),
+        (
+            .object(["type": .string("server_vad"), "silenceDurationMs": .number(0.5)]),
+            .invalidArgument(
+                argument: "providerOptions.openai.chunkingStrategy.silenceDurationMs",
+                message: "OpenAI chunkingStrategy.silenceDurationMs must be a nonnegative integer."
+            )
+        )
+    ]
+
+    for (chunkingStrategy, expectedError) in invalidStrategies {
+        await #expect(throws: expectedError) {
+            _ = try await model.transcribe(AudioTranscriptionRequest(
+                audio: Data("abc".utf8),
+                mimeType: "audio/mpeg",
+                providerOptions: ["openai": ["chunkingStrategy": chunkingStrategy]]
+            ))
+        }
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.openai.chunking_strategy.prefix_padding_ms",
+        message: "OpenAI chunkingStrategy.prefixPaddingMs must be a nonnegative integer."
+    )) {
+        _ = try await model.transcribe(AudioTranscriptionRequest(
+            audio: Data("abc".utf8),
+            mimeType: "audio/mpeg",
+            providerOptions: ["openai": [
+                "chunking_strategy": [
+                    "type": "server_vad",
+                    "prefix_padding_ms": -1
+                ]
+            ]]
+        ))
+    }
+
+    #expect(await transport.requests().isEmpty)
+}
+
 @Test func openAISpeechUsesDefaultVoiceAndResponseFormat() async throws {
     let audio = Data("mp3".utf8)
     let transport = RecordingTransport(response: AIHTTPResponse(statusCode: 200, headers: ["content-type": "audio/mpeg"], body: audio))
@@ -373,7 +510,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/images/edits")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.52")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.60")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = try #require(request.body)
     #expect(body.range(of: Data(#"name="model""#.utf8)) != nil)

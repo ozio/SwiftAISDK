@@ -24,7 +24,11 @@ public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
-        GoogleGenerativeLanguageModel(modelID: modelID, config: config)
+        GoogleBatchLanguageModel(modelID: modelID, config: config)
+    }
+
+    public func batchLanguageModel(_ modelID: String) -> any BatchLanguageModel {
+        GoogleBatchLanguageModel(modelID: modelID, config: config)
     }
 
     public func interactionsModel(_ modelID: String) -> any LanguageModel {

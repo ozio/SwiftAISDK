@@ -30,6 +30,7 @@ public final class XAIResponsesBatchLanguageModel: BatchLanguageModel, @unchecke
         _ options: AIBatchStartOptions<AILanguageModelBatchRequest>
     ) async throws -> AIBatchStartResult {
         try options.abortSignal?.throwIfAborted()
+        let inputFileExpiresAfter = try xaiBatchInputFileExpiresAfter(options.providerOptions)
 
         var jsonLines = Data()
         var warnings: [AIBatchWarning] = []
@@ -57,6 +58,10 @@ public final class XAIResponsesBatchLanguageModel: BatchLanguageModel, @unchecke
         }
 
         var form = MultipartFormData()
+        // xAI rejects uploads when expires_after is serialized after the file part.
+        if let inputFileExpiresAfter {
+            form.appendField(name: "expires_after", value: String(inputFileExpiresAfter))
+        }
         form.appendFile(
             name: "file",
             fileName: "batch.jsonl",
@@ -76,10 +81,10 @@ public final class XAIResponsesBatchLanguageModel: BatchLanguageModel, @unchecke
         guard (200..<300).contains(uploadResponse.statusCode) else {
             throw openAICompatibleHTTPStatusError(provider: providerID, response: uploadResponse)
         }
-        let upload = try uploadResponse.jsonValue()
-        guard let uploadedFileID = upload["id"]?.stringValue else {
-            throw AIError.invalidResponse(provider: providerID, message: "Invalid xAI Files upload response.")
-        }
+        let uploadedFile = try parseXAIUploadedBatchFile(
+            uploadResponse.jsonValue(),
+            providerID: providerID
+        )
 
         try options.abortSignal?.throwIfAborted()
         let createRequest = try config.request(
@@ -87,7 +92,7 @@ public final class XAIResponsesBatchLanguageModel: BatchLanguageModel, @unchecke
             modelID: modelID,
             body: [
                 "name": "ai-sdk-text-batch",
-                "input_file_id": .string(uploadedFileID)
+                "input_file_id": .string(uploadedFile.id)
             ],
             headers: headers,
             abortSignal: options.abortSignal
@@ -97,10 +102,17 @@ public final class XAIResponsesBatchLanguageModel: BatchLanguageModel, @unchecke
             throw openAICompatibleHTTPStatusError(provider: providerID, response: createResponse)
         }
         let batch = try parseXAIBatchResponse(createResponse.jsonValue(), providerID: providerID)
+        var inputFileMetadata: [String: JSONValue] = [
+            "inputFileId": .string(uploadedFile.id)
+        ]
+        if let expiresAt = uploadedFile.expiresAt.flatMap(xaiBatchISOTimestamp) {
+            inputFileMetadata["inputFileExpiresAt"] = .string(expiresAt)
+        }
         return AIBatchStartResult(
             batchID: batch.id,
             status: xaiBatchStatus(batch),
-            warnings: warnings
+            warnings: warnings,
+            providerMetadata: ["xai": .object(inputFileMetadata)]
         )
     }
 
@@ -191,6 +203,11 @@ private struct XAIBatchResponse: Sendable {
     var state: State?
 }
 
+private struct XAIUploadedBatchFile: Sendable {
+    var id: String
+    var expiresAt: Double?
+}
+
 private struct XAIBatchResult: Sendable {
     var id: String
     var chatResponse: JSONValue?
@@ -246,6 +263,24 @@ private func parseXAIBatchResponse(_ raw: JSONValue, providerID: String) throws 
         cancellationMessage: object["cancel_by_xai_message"]?.stringValue,
         state: state
     )
+}
+
+private func parseXAIUploadedBatchFile(
+    _ raw: JSONValue,
+    providerID: String
+) throws -> XAIUploadedBatchFile {
+    guard let object = raw.objectValue,
+          let id = object["id"]?.stringValue else {
+        throw AIError.invalidResponse(provider: providerID, message: "Invalid xAI Files upload response.")
+    }
+    if let expiresAt = object["expires_at"], expiresAt != .null,
+       expiresAt.doubleValue?.isFinite != true {
+        throw AIError.invalidResponse(
+            provider: providerID,
+            message: "xAI Files upload field expires_at must be a finite number."
+        )
+    }
+    return XAIUploadedBatchFile(id: id, expiresAt: object["expires_at"]?.doubleValue)
 }
 
 private func xaiBatchStatus(_ batch: XAIBatchResponse) -> AIBatchStatus {
@@ -381,30 +416,80 @@ private func convertXAIBatchResult(_ result: XAIBatchResult) -> AIBatchItemResul
             )
         )
     }
-    guard let choice = raw["choices"]?.arrayValue?.first,
-          let message = choice["message"]?.objectValue else {
+    guard let choices = raw["choices"]?.arrayValue,
+          !choices.isEmpty else {
         return xaiInvalidBatchResult(id: result.id)
     }
-    if message["tool_calls"]?.arrayValue?.isEmpty == false {
-        return .failed(
-            id: result.id,
-            error: AIBatchError(
-                message: "xAI returned \"tool_calls\" content, but tool content is not supported in AI SDK text batches.",
-                code: "unsupported_content"
-            )
-        )
-    }
 
-    let text = message["content"]?.stringValue ?? ""
-    let reasoning = message["reasoning_content"]?.stringValue ?? ""
     let sources = (raw["citations"]?.arrayValue ?? []).compactMap { citation -> AISource? in
         guard let url = citation.stringValue else { return nil }
         return AISource(id: url, sourceType: "url", url: url)
     }
+    let providerExecutedToolCallIDs = Set(choices.flatMap { choice -> [String] in
+        guard choice["message"]?["role"]?.stringValue == "tool" else { return [] }
+        return (choice["message"]?["tool_calls"]?.arrayValue ?? []).compactMap {
+            $0["id"]?.stringValue
+        }
+    })
     var content: [AIResultContentPart] = []
-    if !text.isEmpty { content.append(.text(text)) }
-    if !reasoning.isEmpty { content.append(.reasoning(reasoning)) }
+    var lastAssistantFinishReason: String?
+    for choice in choices {
+        guard let message = choice["message"]?.objectValue else {
+            return xaiInvalidBatchResult(id: result.id)
+        }
+        let toolCalls = message["tool_calls"]?.arrayValue ?? []
+        if message["role"]?.stringValue == "tool" {
+            if let resultContent = message["content"]?.stringValue {
+                for rawCall in toolCalls {
+                    guard let id = rawCall["id"]?.stringValue,
+                          let name = rawCall["function"]?["name"]?.stringValue else {
+                        return xaiInvalidBatchResult(id: result.id)
+                    }
+                    content.append(.toolResult(AIToolResult(
+                        toolCallID: id,
+                        toolName: name,
+                        result: .string(resultContent),
+                        dynamic: true
+                    )))
+                }
+            }
+            continue
+        }
+
+        lastAssistantFinishReason = choice["finish_reason"]?.stringValue
+        if let text = message["content"]?.stringValue, !text.isEmpty {
+            content.append(.text(text))
+        }
+        if let reasoning = message["reasoning_content"]?.stringValue, !reasoning.isEmpty {
+            content.append(.reasoning(reasoning))
+        }
+        for rawCall in toolCalls {
+            guard let id = rawCall["id"]?.stringValue,
+                  let name = rawCall["function"]?["name"]?.stringValue,
+                  let arguments = rawCall["function"]?["arguments"]?.stringValue else {
+                return xaiInvalidBatchResult(id: result.id)
+            }
+            let providerExecuted = providerExecutedToolCallIDs.contains(id)
+            content.append(.toolCall(AIToolCall(
+                id: id,
+                name: name,
+                arguments: arguments,
+                providerExecuted: providerExecuted,
+                dynamic: providerExecuted,
+                rawValue: rawCall
+            )))
+        }
+    }
     content.append(contentsOf: sources.map(AIResultContentPart.source))
+
+    let text = content.compactMap { part -> String? in
+        guard case let .text(text, _) = part else { return nil }
+        return text
+    }.joined()
+    let reasoning = content.compactMap { part -> String? in
+        guard case let .reasoning(text, _) = part else { return nil }
+        return text
+    }.joined()
 
     var metadata: [String: JSONValue] = [:]
     if let cost = raw["usage"]?["cost_in_usd_ticks"] {
@@ -418,7 +503,7 @@ private func convertXAIBatchResult(_ result: XAIBatchResult) -> AIBatchItemResul
         text: text,
         content: content,
         reasoning: reasoning,
-        finishReason: openAICompatibleFinishReason(choice["finish_reason"]?.stringValue),
+        finishReason: openAICompatibleFinishReason(lastAssistantFinishReason),
         usage: tokenUsage(from: raw) ?? TokenUsage(),
         sources: sources,
         providerMetadata: providerMetadata,
@@ -474,7 +559,8 @@ private func isValidXAIChatBatchChoice(_ value: JSONValue) -> Bool {
           isFiniteXAINumber(object["index"]),
           isNullishXAIString(object["finish_reason"]),
           let message = object["message"]?.objectValue,
-          message["role"]?.stringValue == "assistant",
+          let role = message["role"]?.stringValue,
+          ["assistant", "tool"].contains(role),
           isNullishXAIString(message["content"]),
           isNullishXAIString(message["reasoning_content"]) else {
         return false
@@ -549,8 +635,14 @@ private func xaiInvalidBatchResult(id: String) -> AIBatchItemResult<TextGenerati
 
 private func xaiBatchErrorCode(_ value: JSONValue?) -> String? {
     if let string = value?.stringValue { return string }
-    if let integer = value?.intValue { return String(integer) }
-    if let number = value?.doubleValue { return String(number) }
+    if let number = value?.doubleValue {
+        if number.isFinite,
+           number.rounded(.towardZero) == number,
+           (-Double(aiBatchMaximumSafeInteger)...Double(aiBatchMaximumSafeInteger)).contains(number) {
+            return String(Int(number))
+        }
+        return String(number)
+    }
     return nil
 }
 
@@ -564,6 +656,36 @@ private func xaiBatchDate(_ value: String?) -> Date? {
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+}
+
+private func xaiBatchInputFileExpiresAfter(
+    _ providerOptions: [String: JSONValue]
+) throws -> Int? {
+    guard let optionsValue = providerOptions["xai"], optionsValue != .null else { return nil }
+    guard let options = optionsValue.objectValue else {
+        throw AIError.invalidArgument(
+            argument: "providerOptions",
+            message: "xAI batch provider options must be an object."
+        )
+    }
+    guard let rawValue = options["inputFileExpiresAfter"] else { return nil }
+    guard let number = rawValue.doubleValue,
+          number.isFinite,
+          number.rounded(.towardZero) == number,
+          (3_600.0...2_592_000.0).contains(number) else {
+        throw AIError.invalidArgument(
+            argument: "providerOptions.xai.inputFileExpiresAfter",
+            message: "inputFileExpiresAfter must be an integer from 3600 through 2592000."
+        )
+    }
+    return Int(number)
+}
+
+private func xaiBatchISOTimestamp(_ seconds: Double) -> String? {
+    guard seconds.isFinite else { return nil }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date(timeIntervalSince1970: seconds))
 }
 
 private func xaiBatchHeaders(_ headers: [String: String], idempotencyKey: String?) -> [String: String] {

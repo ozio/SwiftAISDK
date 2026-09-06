@@ -1,10 +1,11 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-08-31
+Snapshot date: 2026-09-06
 
 This audit records the published npm tarball comparison used by the weekly
-SwiftAISDK upstream check. Every tracked package was packed at both the prior
-ledger version and the current npm `latest` version, then reviewed separately.
+SwiftAISDK upstream check. Every changed tracked package was packed at both the
+prior ledger version and the current npm `latest` version, then reviewed
+separately.
 
 Status meanings:
 
@@ -15,6 +16,91 @@ Status meanings:
   provider pass or a shared public Swift design.
 - `version-only`: published source behavior is unchanged apart from dependency,
   build, changelog, or version propagation.
+- `out-of-scope`: the changed package is a framework/product surface that this
+  provider-facing Swift package does not expose.
+- `current`: the tracked package has no published version drift.
+
+## 2026-09-06 Weekly Audit
+
+Fresh npm metadata, exact registry-prefix discovery, all 98 old/latest tarballs,
+and upstream `vercel/ai@efdfd6290d783864f00ebdf5a0aad8711f2eb2db`
+were audited. Of 50 tracked rows, 49 changed: 17 required and received portable
+Swift work, 31 were already covered or version/dependency-only, and React was
+out of scope. `@ai-sdk/vercel@3.0.30` remained current.
+
+| Package | Reference -> latest | Result |
+| --- | ---: | --- |
+| `ai` | `7.0.85 -> 7.0.93` | `ported` — adds bounded array output, embedding-count validation, image call diagnostics, required tool-choice enforcement, batch tools/content/metadata, isolated post-start stream recovery, and UI descriptor/message-ID behavior. Constructor-time throwing remains intentionally deferred for source compatibility; invalid array bounds fail before model work at execution. |
+| `@ai-sdk/provider` | `4.0.9 -> 4.0.10` | `ported` — Files V4 now exposes capability discovery, streamed upload/download, metadata, deletion, and typed size/date results while upload-only conformers retain defaults. |
+| `@ai-sdk/provider-utils` | `5.0.34 -> 5.0.36` | `ported` — adds validated DELETE, cancellation-safe streaming multipart upload, streamed binary responses, escaping, and redacted diagnostics; the Undici patch is JavaScript-only. |
+| `@ai-sdk/react` | `4.0.88 -> 4.0.96` | `out-of-scope` — browser `useObject` error wording and React dependencies do not change SwiftAISDK's native object/chat sessions. |
+| `@ai-sdk/alibaba` | `2.0.39 -> 2.0.41` | `covered` — package source is unchanged except version/dependency identity. |
+| `@ai-sdk/amazon-bedrock` | `5.0.68 -> 5.0.76` | `ported` — structured-output modes, Claude capability splits, sibling output configuration, citation text, document-name sanitization, and provider-executed tool-result replay are covered. |
+| `@ai-sdk/anthropic` | `4.0.46 -> 4.0.49` | `ported` — adds Fable/Vertex model recognition, mid-conversation clear/effort handling, adaptive display, binding-only thinking configuration, and current beta headers; JavaScript streaming upload input remains runtime-specific. |
+| `@ai-sdk/anthropic-aws` | `2.0.38 -> 2.0.41` | `ported` — the shared Anthropic 4.0.49 behavior is verified through the signed AWS path and its version identity is current. |
+| `@ai-sdk/assemblyai` | `3.0.34 -> 3.0.36` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/azure` | `4.0.54 -> 4.0.63` | `ported` — Foundry, Cognitive Services, Azure OpenAI, and `/v1` URL normalization now avoids duplicate path/query components and inherits the shared OpenAI additions. |
+| `@ai-sdk/baseten` | `2.1.19 -> 2.1.22` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/black-forest-labs` | `2.0.35 -> 2.0.37` | `covered` — package-local behavior is unchanged. |
+| `@ai-sdk/bytedance` | `2.0.37 -> 2.0.39` | `ported` — every video status redirect is validated before credentials or polling follow it. |
+| `@ai-sdk/cartesia` | `3.0.29 -> 3.0.31` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/cerebras` | `3.0.41 -> 3.0.44` | `covered` — dependency/version propagation only; forward-compatible model IDs remain intentional. |
+| `@ai-sdk/cohere` | `4.0.35 -> 4.0.37` | `covered` — package source is unchanged apart from shared versions. |
+| `@ai-sdk/deepgram` | `3.1.5 -> 3.1.7` | `covered` — source-identical dependency/version train. |
+| `@ai-sdk/deepinfra` | `3.0.41 -> 3.0.44` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/deepseek` | `3.0.37 -> 3.0.39` | `covered` — existing upload header/abort forwarding covers the portable change; its explicit stream-input rejection and upload-only contract remain. |
+| `@ai-sdk/elevenlabs` | `3.0.35 -> 3.0.37` | `covered` — package-local behavior is unchanged; the realtime STT gap is unaffected. |
+| `@ai-sdk/fal` | `3.0.35 -> 3.0.37` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/fish-audio` | `3.0.12 -> 3.0.14` | `covered` — source-identical dependency/version train. |
+| `@ai-sdk/fireworks` | `3.0.44 -> 3.0.47` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/gateway` | `4.0.69 -> 4.0.75` | `covered` — String model IDs already cover the new catalog and preserve the forward-compatible-ID decision. |
+| `@ai-sdk/gladia` | `3.0.34 -> 3.0.36` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/gmicloud` | `3.0.12 -> 3.0.15` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/google` | `4.0.58 -> 4.0.64` | `ported` — adds array-schema bounds/aliases, complete Interactions video and processing history/stream behavior, system-instruction and media-resolution mapping, Files propagation, and a durable Batch adapter with strict keys and thought-signature retention. |
+| `@ai-sdk/google-vertex` | `5.0.70 -> 5.0.76` | `ported` — MaaS Llama 4 defaults `max_tokens` to 8192 without overwriting caller input and inherits the verified Google/Anthropic/compatible changes. |
+| `@ai-sdk/groq` | `4.0.35 -> 4.0.37` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/huggingface` | `2.0.41 -> 2.0.44` | `covered` — package-local source is unchanged and consumes the shared compatible fix. |
+| `@ai-sdk/hume` | `3.0.34 -> 3.0.36` | `covered` — package-local behavior is unchanged. |
+| `@ai-sdk/klingai` | `4.0.36 -> 4.0.38` | `ported` — polling validates every redirect and forwards credentials only on the configured origin. |
+| `@ai-sdk/lmnt` | `3.0.34 -> 3.0.36` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/luma` | `3.0.35 -> 3.0.37` | `covered` — source-identical dependency/version train. |
+| `@ai-sdk/mcp` | `2.0.41 -> 2.0.45` | `ported` — typed/raw tool annotations, strict known-field validation, structured-only results, and origin-only OAuth issuer normalization are covered. |
+| `@ai-sdk/minimax` | `3.0.22 -> 3.0.25` | `ported` — status polling now uses validated redirect handling. |
+| `@ai-sdk/mistral` | `4.0.37 -> 4.0.39` | `covered` — package source/exports are unchanged apart from dependency identity. |
+| `@ai-sdk/moonshotai` | `3.0.43 -> 3.0.45` | `covered` — the increment is dependency/version-only; the previously documented V1/Kimi media/options/metadata delta remains deferred verbatim. |
+| `@ai-sdk/open-responses` | `2.0.36 -> 2.0.39` | `ported` — strict response input serializes ID-less assistant history as easy input while ID-bearing output remains completed; the extension codec registry remains deferred. |
+| `@ai-sdk/openai` | `4.0.52 -> 4.0.60` | `ported` — adds GPT-6 reasoning updates, ultrafast service tier, image/transcription options, complete Files V4, batch tool/input-file metadata, and strict outer-envelope result validation; Realtime/Workflow gaps remain. |
+| `@ai-sdk/openai-compatible` | `3.0.41 -> 3.0.44` | `ported` — an empty streamed `tool_calls` array no longer fragments a reasoning block before real text or tool output. |
+| `@ai-sdk/perplexity` | `4.0.36 -> 4.0.39` | `covered` — complete raw usage/cost fields were already retained. |
+| `@ai-sdk/prodia` | `2.0.35 -> 2.0.37` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/quiverai` | `2.0.34 -> 2.0.36` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/replicate` | `3.0.35 -> 3.0.37` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/revai` | `3.0.34 -> 3.0.36` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/togetherai` | `3.0.42 -> 3.0.45` | `covered` — it consumes the shared compatible reasoning fix; its prior structured-output limitation remains unchanged. |
+| `@ai-sdk/vercel` | `3.0.30 -> 3.0.30` | `current` — no registry or tarball drift. |
+| `@ai-sdk/voyage` | `2.0.34 -> 2.0.36` | `covered` — dependency/version propagation only. |
+| `@ai-sdk/xai` | `4.0.50 -> 4.0.54` | `ported` — complete Files V4 and batch tool/input-file metadata are covered, including expiry validation, safe IDs, stream cancellation, all choices, and final-assistant raw finish reasons. |
+
+### 2026-09-06 Audit Evidence
+
+- Exact prefix discovery returned 85 live `@ai-sdk/*` names. The tracked set is
+  50 rows; 36 names remain untracked product/framework/tooling packages.
+- No additional provider package appeared. `@ai-sdk/zai@3.0.6` remains the one
+  known unported model provider and still requires a separately authorized
+  vertical rather than automatic registry inclusion.
+- The 49 changed tracked rows were reconciled one-for-one with
+  `.unlazy/weekly-upstream-20260906/artifacts/audit-*.json` and
+  `/tmp/weekly-audit-decisions.tsv`. The four audit reports retain exact old/new
+  tarballs, upstream/local evidence, and all required behavior facets.
+- Upstream advanced 114 commits from
+  `e1bfe50427d09e65404cffea9f71a60a66af0f3e` to
+  `efdfd6290d783864f00ebdf5a0aad8711f2eb2db`. The executable inventory grows
+  from 849 to 864 paths; 114 executable paths changed (16 added, 97 modified,
+  one deleted), while 11 changed declaration-only `*.test-d.ts` paths remain
+  separately classified.
+- Focused/full Swift, API compatibility, generated documentation, Astro, final
+  whitespace, and zero-drift checks are release gates whose measured results
+  belong to the final integration evidence rather than this source audit.
 
 ## 2026-08-31 Weekly Audit
 

@@ -25,10 +25,19 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         var isJsonResponseFromTool = false
 
         for (index, block) in responseBlocks.enumerated() {
+            let textParts: [String]
             if let rawText = block["text"]?.stringValue {
-                let parsedText = jsonTextExtractor?.process(rawText) ?? rawText
-                text += parsedText
-                content.append(.text(parsedText))
+                textParts = [rawText]
+            } else {
+                textParts = block["citationsContent"]?["content"]?.arrayValue?
+                    .compactMap { $0["text"]?.stringValue } ?? []
+            }
+            if !textParts.isEmpty {
+                for rawText in textParts {
+                    let parsedText = jsonTextExtractor?.process(rawText) ?? rawText
+                    text += parsedText
+                    content.append(.text(parsedText))
+                }
                 continue
             }
 
@@ -71,9 +80,6 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             }
         }
 
-        guard !content.isEmpty else {
-            throw AIError.invalidResponse(provider: providerID, message: "No text content found in Bedrock Converse response.")
-        }
         return TextGenerationResult(
             text: text,
             content: content,
@@ -167,11 +173,33 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             reasoningConfig: providerOptions["reasoningConfig"]
         )
         let modelSupportsStructuredOutput = anthropicModelCapabilities(modelID).supportsStructuredOutput
+        let structuredOutputMode = providerOptions["structuredOutputMode"]?.stringValue
+            ?? request.providerOptions["anthropic"]?["structuredOutputMode"]?.stringValue
+            ?? request.extraBody["anthropic"]?["structuredOutputMode"]?.stringValue
+            ?? "auto"
+        providerOptions.removeValue(forKey: "structuredOutputMode")
+
+        if structuredOutputMode == "jsonTool",
+           var additionalModelRequestFields = providerOptions["additionalModelRequestFields"]?.objectValue,
+           var outputConfig = additionalModelRequestFields["output_config"]?.objectValue {
+            outputConfig.removeValue(forKey: "format")
+            if outputConfig.isEmpty {
+                additionalModelRequestFields.removeValue(forKey: "output_config")
+            } else {
+                additionalModelRequestFields["output_config"] = .object(outputConfig)
+            }
+            providerOptions["additionalModelRequestFields"] = .object(additionalModelRequestFields)
+        }
+
+        let modelSupportsNativeStructuredOutput = bedrockSupportsNativeStructuredOutput(modelID: modelID)
+            && (modelSupportsStructuredOutput || bedrockReasoningConfigEnabled(providerOptions["reasoningConfig"]))
         let useNativeStructuredOutput = responseJSONSchema != nil
             && isAnthropicModel
-            && bedrockSupportsNativeStructuredOutput(modelID: modelID)
-            && (modelSupportsStructuredOutput || bedrockReasoningConfigEnabled(providerOptions["reasoningConfig"]))
+            && (structuredOutputMode == "outputFormat"
+                || (structuredOutputMode == "auto" && modelSupportsNativeStructuredOutput))
         let usesJsonInstruction = responseJSONSchema != nil
+            && !useNativeStructuredOutput
+            && structuredOutputMode != "jsonTool"
             && isAnthropicModel
             && !bedrockSupportsStrictToolSpec(modelID: modelID)
             && !request.tools.isEmpty
@@ -222,7 +250,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 return blocks
             }
 
-        let messages = try messagesWithJSONInstruction
+        let convertedMessages = try messagesWithJSONInstruction
             .filter { $0.role != .system }
             .compactMap { message -> JSONValue? in
                 var content: [JSONValue] = []
@@ -297,10 +325,9 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             )
                         }
 
-                        documentCounter += 1
                         var document: [String: JSONValue] = [
                             "format": .string(documentFormat),
-                            "name": .string("document-\(documentCounter)"),
+                            "name": .string(bedrockDocumentName(nil, documentCounter: &documentCounter)),
                             "source": .object(["bytes": .string(data.base64EncodedString())])
                         ]
                         if enableDocumentCitations || bedrockDocumentCitationsEnabled(providerMetadata) {
@@ -346,10 +373,9 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                             )
                         }
 
-                        documentCounter += 1
                         var document: [String: JSONValue] = [
                             "format": .string(documentFormat),
-                            "name": .string(filename.map(stripFileExtension) ?? "document-\(documentCounter)"),
+                            "name": .string(bedrockDocumentName(filename, documentCounter: &documentCounter)),
                             "source": .object(["bytes": .string(data.base64EncodedString())])
                         ]
                         if enableDocumentCitations || bedrockDocumentCitationsEnabled(providerMetadata) {
@@ -418,6 +444,11 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 ])
             }
 
+        var messages: [JSONValue] = []
+        for message in convertedMessages {
+            bedrockAppendConvertedMessage(message, to: &messages)
+        }
+
         var body: [String: JSONValue] = ["messages": .array(messages)]
         if !system.isEmpty { body["system"] = .array(system) }
 
@@ -446,6 +477,87 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             usesJsonResponseTool: usesJsonResponseTool,
             usesJsonInstruction: usesJsonInstruction
         )
+    }
+}
+
+private func bedrockAppendConvertedMessage(
+    _ message: JSONValue,
+    to messages: inout [JSONValue]
+) {
+    guard message["role"]?.stringValue == "assistant",
+          let content = message["content"]?.arrayValue else {
+        bedrockAppendUserMessage(message, to: &messages)
+        return
+    }
+
+    var segmentRole: String?
+    var segment: [JSONValue] = []
+
+    for block in content {
+        let nextRole: String
+        if block["toolResult"] != nil {
+            nextRole = "user"
+        } else if block["cachePoint"] != nil {
+            nextRole = segmentRole ?? "assistant"
+        } else {
+            nextRole = "assistant"
+        }
+
+        if let currentRole = segmentRole, currentRole != nextRole {
+            bedrockAppendConvertedSegment(
+                role: currentRole,
+                content: segment,
+                to: &messages
+            )
+            segment.removeAll(keepingCapacity: true)
+        }
+        segmentRole = nextRole
+        segment.append(block)
+    }
+    if let segmentRole {
+        bedrockAppendConvertedSegment(
+            role: segmentRole,
+            content: segment,
+            to: &messages
+        )
+    }
+}
+
+private func bedrockAppendConvertedSegment(
+    role: String,
+    content: [JSONValue],
+    to messages: inout [JSONValue]
+) {
+    guard !content.isEmpty else { return }
+    let converted: JSONValue = .object([
+        "role": .string(role),
+        "content": .array(content)
+    ])
+    if role == "user" {
+        bedrockAppendUserMessage(converted, to: &messages)
+    } else if content.contains(where: { $0["cachePoint"] == nil }) {
+        messages.append(converted)
+    }
+}
+
+private func bedrockAppendUserMessage(
+    _ message: JSONValue,
+    to messages: inout [JSONValue]
+) {
+    guard message["role"]?.stringValue == "user",
+          let content = message["content"]?.arrayValue else {
+        messages.append(message)
+        return
+    }
+
+    if let lastIndex = messages.indices.last,
+       messages[lastIndex]["role"]?.stringValue == "user",
+       messages[lastIndex]["content"]?.arrayValue?.contains(where: { $0["toolResult"] != nil }) == true,
+       var previous = messages[lastIndex].objectValue {
+        previous["content"] = .array((previous["content"]?.arrayValue ?? []) + content)
+        messages[lastIndex] = .object(previous)
+    } else {
+        messages.append(message)
     }
 }
 

@@ -308,13 +308,39 @@ func forwardLanguageStream(
     repairToolCall: AIToolCallRepair? = nil,
     partIDReserver: LanguageStreamPartIDReserver? = nil
 ) async throws -> LanguageStreamToolStep {
+    try await forwardLanguageStream(
+        internalLanguageStream(stream),
+        to: continuation,
+        toolsByName: toolsByName,
+        request: request,
+        repairToolCall: repairToolCall,
+        partIDReserver: partIDReserver
+    )
+}
+
+func forwardLanguageStream(
+    _ stream: AsyncThrowingStream<StreamTextTelemetryPart, Error>,
+    to continuation: AsyncThrowingStream<LanguageStreamPart, Error>.Continuation,
+    toolsByName: [String: AITool] = [:],
+    request: LanguageModelRequest? = nil,
+    repairToolCall: AIToolCallRepair? = nil,
+    partIDReserver: LanguageStreamPartIDReserver? = nil
+) async throws -> LanguageStreamToolStep {
     var step = LanguageStreamToolStep()
     var inputToolNamesByID: [String: String] = [:]
     var toolCallsByID: [String: AIToolCall] = [:]
     var textPartIDs: [String: String] = [:]
     var reasoningPartIDs: [String: String] = [:]
-    for try await part in stream {
+    for try await event in stream {
         try Task.checkCancellation()
+        guard case let .part(part) = event else {
+            step = LanguageStreamToolStep()
+            inputToolNamesByID.removeAll()
+            toolCallsByID.removeAll()
+            textPartIDs.removeAll()
+            reasoningPartIDs.removeAll()
+            continue
+        }
         let forwardedPart: LanguageStreamPart
         let toolInput: JSONValue?
         let shouldInvokeInputAvailable: Bool

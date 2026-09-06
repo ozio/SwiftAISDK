@@ -1,6 +1,6 @@
 # Errors
 
-Source URL: /components/errors/
+Source URL: /SwiftAISDK/components/errors/
 
 ## Symbol counts
 
@@ -9,8 +9,8 @@ Source URL: /components/errors/
 | Case | 16 |
 | Enumeration | 2 |
 | Function | 1 |
-| Initializer | 14 |
-| Instance Property | 72 |
+| Initializer | 15 |
+| Instance Property | 73 |
 | Structure | 14 |
 | Type Method | 1 |
 | Type Property | 1 |
@@ -42,6 +42,7 @@ Source URL: /components/errors/
 | Initializer | `init(approvalID:toolCallID:reason:)` | `init(approvalID: String, toolCallID: String, reason: String)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(field:entityName:)` | `init(field: String, entityName: String)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(message:chunkType:chunkID:rawValue:validationIssues:)` | `init(message: String, chunkType: String? = nil, chunkID: String? = nil, rawValue: JSONValue? = nil, validationIssues: [AIUIMessageValidationIssue] = [])` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Initializer | `init(provider:kind:structuredOutputKind:responses:calls:message:)` | `init(provider: String? = nil, kind: AINoOutputKind = .output, structuredOutputKind: AIOutputKind? = nil, responses: [AIResponseMetadata] = [], calls: [ImageGenerationCall] = [], message: String? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(provider:kind:structuredOutputKind:responses:message:)` | `init(provider: String? = nil, kind: AINoOutputKind = .output, structuredOutputKind: AIOutputKind? = nil, responses: [AIResponseMetadata] = [], message: String? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(provider:modelID:maxEmbeddingsPerCall:values:)` | `init(provider: String, modelID: String, maxEmbeddingsPerCall: Int, values: [String])` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Initializer | `init(provider:url:requestBody:statusCode:responseHeaders:responseBody:isRetryable:)` | `init(provider: String, url: String? = nil, requestBody: JSONValue? = nil, statusCode: Int, responseHeaders: [String : String] = [:], responseBody: String, isRetryable: Bool? = nil)` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
@@ -57,6 +58,7 @@ Source URL: /components/errors/
 | Instance Property | `approvalID` | `var approvalID: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `approvalID` | `var approvalID: String` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `availableToolNames` | `var availableToolNames: [String]` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
+| Instance Property | `calls` | `var calls: [ImageGenerationCall]` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `cause` | `var cause: AIAPICallError?` | [Sources/SwiftAISDK/GatewayErrors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/GatewayErrors.swift) |
 | Instance Property | `chunkID` | `var chunkID: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |
 | Instance Property | `chunkType` | `var chunkType: String?` | [Sources/SwiftAISDK/Errors.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Errors.swift) |

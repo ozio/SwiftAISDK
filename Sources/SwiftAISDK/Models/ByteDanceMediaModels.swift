@@ -91,12 +91,14 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
                 message: "ByteDance video operation must contain a non-empty taskId."
             )
         }
-        let response = try await config.transport.send(AIHTTPRequest(
-            method: "GET",
-            url: try requireURL("\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)"),
+        let response = try await downloadURL(
+            "\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)",
+            transport: config.transport,
             headers: config.headers.mergingHeaders(operationRequest.headers),
-            abortSignal: operationRequest.abortSignal
-        ))
+            abortSignal: operationRequest.abortSignal,
+            trustedOrigin: config.baseURL,
+            credentialedOrigin: config.baseURL
+        )
         guard (200..<300).contains(response.statusCode) else {
             throw byteDanceHTTPStatusError(provider: providerID, response: response)
         }
@@ -144,12 +146,14 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
     private func pollByteDance(taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, timeoutMilliseconds: Double, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
-            let response = try await config.transport.send(AIHTTPRequest(
-                method: "GET",
-                url: try requireURL("\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)"),
+            let response = try await downloadURL(
+                "\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)",
+                transport: config.transport,
                 headers: config.headers.mergingHeaders(headers),
-                abortSignal: abortSignal
-            ))
+                abortSignal: abortSignal,
+                trustedOrigin: config.baseURL,
+                credentialedOrigin: config.baseURL
+            )
             guard (200..<300).contains(response.statusCode) else {
                 throw byteDanceHTTPStatusError(provider: providerID, response: response)
             }

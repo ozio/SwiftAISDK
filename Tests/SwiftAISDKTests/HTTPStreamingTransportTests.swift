@@ -90,6 +90,26 @@ import Testing
     #expect(await waitUntil { probe.didStop })
 }
 
+@Test func urlSessionTransportPullsStreamingRequestBodyInOrder() async throws {
+    let probe = URLProtocolBodyProbe()
+    StreamedRequestURLProtocol.probe = probe
+    defer { StreamedRequestURLProtocol.probe = nil }
+    let transport = makeURLProtocolTransport(StreamedRequestURLProtocol.self)
+    let body = AsyncThrowingStream<Data, Error> { continuation in
+        continuation.yield(Data("one".utf8))
+        continuation.yield(Data("-two".utf8))
+        continuation.finish()
+    }
+
+    let response = try await transport.send(AIHTTPRequest(
+        url: URL(string: "https://example.com/upload")!,
+        bodyStream: body
+    ))
+
+    #expect(response.statusCode == 200)
+    #expect(String(decoding: probe.body, as: UTF8.self) == "one-two")
+}
+
 @Test func urlSessionStreamingTransportSelectsRedirectPolicyDelegate() throws {
     #expect(urlSessionTaskDelegate(followRedirects: true) == nil)
     let delegate = try #require(
@@ -118,9 +138,174 @@ import Testing
     #expect(capture.request == nil)
 }
 
+@Test func deleteFromAPISendsDeleteWithHeadersAndAbortSignal() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"deleted":true}"#))
+    let controller = AIAbortController()
+    let result = try await deleteFromAPI(
+        url: URL(string: "https://api.example.com/files/file-1")!,
+        transport: transport,
+        headers: ["Authorization": "Bearer test"],
+        abortSignal: controller.signal
+    )
+
+    #expect(result.response.statusCode == 200)
+    let request = try #require(await transport.requests().first)
+    #expect(request.method == "DELETE")
+    #expect(request.headers["Authorization"] == "Bearer test")
+    #expect(request.abortSignal === controller.signal)
+    #expect(!request.followRedirects)
+}
+
+@Test func binaryStreamHelperPassesBodyThroughAndRejectsMissingBody() async throws {
+    let body = AsyncThrowingStream<Data, Error> { continuation in
+        continuation.yield(Data([1, 2, 3, 4]))
+        continuation.finish()
+    }
+    let transport = BinarySequenceTransport(responses: [AIHTTPStreamResponse(
+        statusCode: 200,
+        headers: ["content-type": "application/octet-stream"],
+        body: body
+    )])
+    let result = try await getBinaryStreamFromAPI(
+        url: URL(string: "https://api.example.com/files/file-1/content")!,
+        transport: transport,
+        providerID: "test.files",
+        trustedOrigin: "https://api.example.com",
+        credentialedOrigin: "https://api.example.com"
+    )
+    var bytes = Data()
+    for try await chunk in result.response.body { bytes.append(chunk) }
+    #expect(bytes == Data([1, 2, 3, 4]))
+
+    let cancellationProbe = BinaryBodyCancellationProbe()
+    let missing = BinarySequenceTransport(responses: [AIHTTPStreamResponse(
+        statusCode: 200,
+        body: AsyncThrowingStream { _ in },
+        bodyAvailable: false,
+        cancelBody: { cancellationProbe.record() }
+    )])
+    await #expect(throws: AIError.invalidResponse(
+        provider: "test.files",
+        message: "File download response body is missing."
+    )) {
+        _ = try await getBinaryStreamFromAPI(
+            url: URL(string: "https://api.example.com/files/file-1/content")!,
+            transport: missing,
+            providerID: "test.files",
+            trustedOrigin: "https://api.example.com"
+        )
+    }
+    #expect(cancellationProbe.wasCancelled)
+}
+
+@Test func readResponseWithSizeLimitAlwaysReleasesTheBodyProducer() async throws {
+    let contentLengthProbe = BinaryBodyCancellationProbe()
+    let contentLengthResponse = AIHTTPStreamResponse(
+        statusCode: 400,
+        headers: ["content-length": "5"],
+        body: AsyncThrowingStream { _ in },
+        cancelBody: { contentLengthProbe.record() }
+    )
+    await #expect(throws: AIDownloadError.self) {
+        _ = try await readResponseWithSizeLimit(
+            response: contentLengthResponse,
+            url: "https://example.com/error",
+            maxBytes: 4
+        )
+    }
+    #expect(contentLengthProbe.wasCancelled)
+
+    let drainedProbe = BinaryBodyCancellationProbe()
+    let drainedResponse = AIHTTPStreamResponse(
+        statusCode: 400,
+        body: AsyncThrowingStream { continuation in
+            continuation.yield(Data("error".utf8))
+            continuation.finish()
+        },
+        cancelBody: { drainedProbe.record() }
+    )
+    #expect(try await readResponseWithSizeLimit(
+        response: drainedResponse,
+        url: "https://example.com/error"
+    ) == Data("error".utf8))
+    #expect(drainedProbe.wasCancelled)
+}
+
+@Test func binaryStreamHelperFollowsSafeRedirectAndStripsCredentialsCrossOrigin() async throws {
+    let redirectProbe = BinaryBodyCancellationProbe()
+    let transport = BinarySequenceTransport(responses: [
+        AIHTTPStreamResponse(
+            statusCode: 302,
+            headers: ["location": "https://cdn.example.com/file-1"],
+            body: AsyncThrowingStream { _ in },
+            cancelBody: { redirectProbe.record() }
+        ),
+        AIHTTPStreamResponse(
+            statusCode: 200,
+            body: AsyncThrowingStream { continuation in
+                continuation.yield(Data("ok".utf8))
+                continuation.finish()
+            }
+        )
+    ])
+
+    _ = try await getBinaryStreamFromAPI(
+        url: URL(string: "https://api.example.com/files/file-1/content")!,
+        transport: transport,
+        providerID: "test.files",
+        headers: [
+            "authorization": "Bearer secret",
+            "x-custom": "private",
+            "user-agent": "test-agent"
+        ],
+        trustedOrigin: "https://api.example.com",
+        credentialedOrigin: "https://api.example.com"
+    )
+
+    let requests = await transport.recordedRequests()
+    #expect(requests.map(\.url.absoluteString) == [
+        "https://api.example.com/files/file-1/content",
+        "https://cdn.example.com/file-1"
+    ])
+    #expect(requests[0].headers["authorization"] == "Bearer secret")
+    #expect(requests[1].headers == ["user-agent": "test-agent"])
+    #expect(redirectProbe.wasCancelled)
+}
+
 private struct SendOnlyHTTPTransport: AITransport {
     func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
         AIHTTPResponse(statusCode: 200)
+    }
+}
+
+private actor BinarySequenceTransport: AIStreamingTransport {
+    private var responses: [AIHTTPStreamResponse]
+    private var requests: [AIHTTPRequest] = []
+
+    init(responses: [AIHTTPStreamResponse]) {
+        self.responses = responses
+    }
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        AIHTTPResponse(statusCode: 500)
+    }
+
+    func stream(_ request: AIHTTPRequest) async throws -> AIHTTPStreamResponse {
+        requests.append(request)
+        return responses.removeFirst()
+    }
+
+    func recordedRequests() -> [AIHTTPRequest] { requests }
+}
+
+private final class BinaryBodyCancellationProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var wasCancelled: Bool { lock.withLock { cancelled } }
+
+    func record() {
+        lock.withLock { cancelled = true }
     }
 }
 
@@ -186,6 +371,17 @@ private final class URLProtocolProbe: @unchecked Sendable {
 
 }
 
+private final class URLProtocolBodyProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedBody = Data()
+
+    var body: Data { lock.withLock { recordedBody } }
+
+    func record(_ data: Data) {
+        lock.withLock { recordedBody = data }
+    }
+}
+
 private final class RedirectCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var called = false
@@ -246,6 +442,39 @@ private final class SuccessfulStreamingURLProtocol: URLProtocol, @unchecked Send
 
     override func startLoading() {
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("ok".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class StreamedRequestURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var probe: URLProtocolBodyProbe?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        var data = Data()
+        if let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 16)
+            while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+        }
+        Self.probe?.record(data)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data("ok".utf8))
         client?.urlProtocolDidFinishLoading(self)

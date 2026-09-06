@@ -131,6 +131,12 @@ Execution wrappers compose in the order integrations are registered or passed on
 
 Streaming telemetry records the start event before the stream emits parts and records a terminal event when the stream ends, fails, or is aborted. Stream failures surface through the `AsyncThrowingStream`, so collect telemetry and consume the stream in the same task boundary when you need correlated logs.
 
+When `streamRetries` recovers a retryable in-band provider error after output
+has started, telemetry emits a `retry` event with the incremented attempt,
+configured stream-retry maximum, and zero delay. Attempts remain under the same
+logical call ID; the ordinary `retryPolicy` continues to describe setup retry
+delays separately.
+
 ```swift
 do {
     for try await part in model.streamText(

@@ -10,11 +10,11 @@ description: Public SwiftAISDK APIs for mcp.
 | Case | 16 |
 | Class | 3 |
 | Enumeration | 8 |
-| Initializer | 39 |
+| Initializer | 40 |
 | Instance Method | 67 |
-| Instance Property | 202 |
+| Instance Property | 209 |
 | Protocol | 3 |
-| Structure | 36 |
+| Structure | 37 |
 | Type Alias | 2 |
 | Type Method | 21 |
 | Type Property | 7 |
@@ -81,6 +81,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Initializer | `init(resourceURI:visibility:rawValue:)` | `init(resourceURI: String? = nil, visibility: [String]? = nil, rawValue: JSONValue = .object([:]))` | [Sources/SwiftAISDK/MCPApps.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPApps.swift) |
 | Initializer | `init(role:content:rawValue:)` | `init(role: String, content: JSONValue, rawValue: JSONValue? = nil)` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Initializer | `init(statusCode:code:message:uri:)` | `init(statusCode: Int? = nil, code: String? = nil, message: String, uri: String? = nil)` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
+| Initializer | `init(title:readOnlyHint:destructiveHint:idempotentHint:openWorldHint:)` | `init(title: String? = nil, readOnlyHint: Bool? = nil, destructiveHint: Bool? = nil, idempotentHint: Bool? = nil, openWorldHint: Bool? = nil)` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Initializer | `init(tools:nextCursor:metadata:resultType:rawValue:)` | `init(tools: [MCPToolDefinition], nextCursor: String? = nil, metadata: JSONValue? = nil, resultType: String? = nil, rawValue: JSONValue? = nil)` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Initializer | `init(uri:mimeType:html:metadata:)` | `init(uri: String, mimeType: String = MCPApps.appMIMEType, html: String, metadata: JSONValue? = nil)` | [Sources/SwiftAISDK/MCPApps.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPApps.swift) |
 | Initializer | `init(uri:name:title:description:mimeType:size:rawValue:)` | `init(uri: String, name: String, title: String? = nil, description: String? = nil, mimeType: String? = nil, size: Int? = nil, rawValue: JSONValue? = nil)` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
@@ -203,6 +204,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Property | `description` | `var description: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `description` | `var description: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `description` | `var description: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
+| Instance Property | `destructiveHint` | `var destructiveHint: Bool?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `env` | `var env: [String : String]` | [Sources/SwiftAISDK/MCPStdioTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPStdioTransport.swift) |
 | Instance Property | `expiresIn` | `var expiresIn: Int?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `grantTypes` | `var grantTypes: [String]` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
@@ -210,6 +212,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Property | `hasMore` | `var hasMore: Bool?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `headers` | `var headers: [String : String]` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `html` | `var html: String` | [Sources/SwiftAISDK/MCPApps.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPApps.swift) |
+| Instance Property | `idempotentHint` | `var idempotentHint: Bool?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `idToken` | `var idToken: String?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `initializeResult` | `var initializeResult: JSONValue { get }` | [Sources/SwiftAISDK/MCPClientActor.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPClientActor.swift) |
 | Instance Property | `inputSchema` | `var inputSchema: JSONValue` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
@@ -220,6 +223,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Property | `issuer` | `var issuer: String?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `issuer` | `var issuer: String?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `jsonValue` | `var jsonValue: JSONValue { get }` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
+| Instance Property | `jsonValue` | `var jsonValue: JSONValue { get }` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `jwks` | `var jwks: JSONValue?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `jwksURI` | `var jwksURI: URL?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `logoURI` | `var logoURI: URL?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
@@ -257,6 +261,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Property | `nextCursor` | `var nextCursor: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `nextCursor` | `var nextCursor: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `nextCursor` | `var nextCursor: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
+| Instance Property | `openWorldHint` | `var openWorldHint: Bool?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `outputSchema` | `var outputSchema: JSONValue?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `parameters` | `var parameters: [URLQueryItem]` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `policyURI` | `var policyURI: URL?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
@@ -284,6 +289,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Property | `rawValue` | `var rawValue: JSONValue` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `rawValue` | `var rawValue: JSONValue` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `rawValue` | `var rawValue: JSONValue` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
+| Instance Property | `readOnlyHint` | `var readOnlyHint: Bool?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `redirectURIs` | `var redirectURIs: [URL]` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `redirectURL` | `var redirectURL: URL { get }` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `refreshToken` | `var refreshToken: String?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
@@ -336,6 +342,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Property | `title` | `var title: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `title` | `var title: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `title` | `var title: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
+| Instance Property | `title` | `var title: String?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `tokenEndpoint` | `var tokenEndpoint: URL` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `tokenEndpoint` | `var tokenEndpoint: URL?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `tokenEndpoint` | `var tokenEndpoint: URL?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
@@ -344,6 +351,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Instance Property | `tokenEndpointAuthMethodsSupported` | `var tokenEndpointAuthMethodsSupported: [String]` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `tokenType` | `var tokenType: String` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Property | `tokenURL` | `var tokenURL: URL` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
+| Instance Property | `toolAnnotations` | `var toolAnnotations: MCPToolAnnotations? { get }` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `toolResult` | `var toolResult: JSONValue?` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `tools` | `var tools: [MCPToolDefinition]` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `tosURI` | `var tosURI: URL?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
@@ -396,6 +404,7 @@ description: Public SwiftAISDK APIs for mcp.
 | Structure | `MCPResourceContent` | `struct MCPResourceContent` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Structure | `MCPResourceTemplate` | `struct MCPResourceTemplate` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Structure | `MCPStdioConfig` | `struct MCPStdioConfig` | [Sources/SwiftAISDK/MCPStdioTransport.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPStdioTransport.swift) |
+| Structure | `MCPToolAnnotations` | `struct MCPToolAnnotations` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Structure | `MCPToolDefinition` | `struct MCPToolDefinition` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Type Alias | `MCPElicitationHandler` | `typealias MCPElicitationHandler = @Sendable (MCPElicitationRequest) async throws -> MCPElicitResult` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Type Alias | `MCPOAuthClientAuthenticationHandler` | `typealias MCPOAuthClientAuthenticationHandler = @Sendable (MCPOAuthClientAuthenticationRequest) async throws -> MCPOAuthClientAuthenticationRequest?` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |

@@ -220,6 +220,17 @@ import Testing
     }
 }
 
+@Test func xAIChatOmitsNullServiceTierFromProviderMetadata() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"service_tier":null,"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+
+    let result = try await provider.chat("grok-4.6").generate(
+        LanguageModelRequest(messages: [.user("Hi")])
+    )
+
+    #expect(result.providerMetadata["xai"]?["serviceTier"] == nil)
+}
+
 @Test func xAIChatOmitsStandardReasoningEffortForGrok420ReasoningModelsLikeUpstream() async throws {
     #expect(xaiSupportsReasoningEffort("grok-4.20-multi-agent"))
     #expect(xaiSupportsReasoningEffort("grok-4.20-multi-agent-0309"))

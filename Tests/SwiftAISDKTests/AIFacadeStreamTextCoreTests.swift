@@ -289,6 +289,281 @@ import Testing
     #expect(events[2].output?["text"]?.stringValue == "recovered")
 }
 
+@Test func aiStreamTextRetriesAfterOutputWithAttemptIsolationLikeUpstream() async throws {
+    let recorder = TelemetryRecorder()
+    let failedCall = AIToolCall(id: "call-shared", name: "lookup", arguments: #"{"value":"failed"}"#)
+    let successfulCall = AIToolCall(id: "call-shared", name: "lookup", arguments: #"{"value":"ok"}"#)
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .responseMetadata(AIResponseMetadata(id: "failed-response")),
+                .textStart(id: "failed-text"),
+                .textDeltaPart(id: "failed-text", delta: "partial "),
+                .toolInputStart(id: "call-shared", name: "lookup"),
+                .toolCall(failedCall),
+                .providerError(AIStreamProviderError(
+                    message: "provider error",
+                    statusCode: 500
+                ))
+            ],
+            [
+                .responseMetadata(AIResponseMetadata(id: "successful-response")),
+                .textStart(id: "successful-text"),
+                .textDeltaPart(id: "successful-text", delta: "recovered"),
+                .textEnd(id: "successful-text"),
+                .toolInputStart(id: "call-shared", name: "lookup"),
+                .toolInputEnd(id: "call-shared"),
+                .toolCall(successfulCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ]
+        ]
+    )
+
+    var parts: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Recover",
+        retryPolicy: .none,
+        streamRetries: 1,
+        telemetry: Telemetry.Options(integrations: [recorder])
+    ) {
+        parts.append(part)
+    }
+
+    #expect(model.streamRequests.count == 2)
+    #expect(parts.contains(.textDeltaPart(id: "failed-text", delta: "partial ")))
+    #expect(parts.contains(.textEnd(id: "failed-text")))
+    #expect(parts.contains(.textDeltaPart(id: "successful-text", delta: "recovered")))
+    #expect(!parts.contains(.toolCall(failedCall)))
+    #expect(parts.contains(.toolCall(successfulCall)))
+    #expect(!parts.contains(.error(message: "provider error")))
+
+    let events = await recorder.events()
+    #expect(events.map(\.kind) == [.start, .retry, .end])
+    #expect(events[2].output?["text"]?.stringValue == "recovered")
+    #expect(events[2].responseMetadata.id == "successful-response")
+}
+
+@Test func aiStreamTextDoesNotRetryNonRetryableProviderErrorsLikeUpstream() async throws {
+    let recorder = TelemetryRecorder()
+    let providerError = AIStreamProviderError(
+        message: "invalid request",
+        statusCode: 400,
+        isRetryable: false
+    )
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .textStart(id: "failed-text"),
+                .textDeltaPart(id: "failed-text", delta: "partial"),
+                .providerError(providerError)
+            ],
+            [
+                .textStart(id: "unused-text"),
+                .textDeltaPart(id: "unused-text", delta: "unused"),
+                .textEnd(id: "unused-text"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+            ]
+        ]
+    )
+
+    var parts: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Do not retry",
+        retryPolicy: .none,
+        streamRetries: 1,
+        telemetry: Telemetry.Options(integrations: [recorder])
+    ) {
+        parts.append(part)
+    }
+
+    #expect(model.streamRequests.count == 1)
+    #expect(parts.contains { $0.streamProviderError == providerError })
+    #expect(parts.contains(.finishMetadata(reason: "error", usage: nil, providerMetadata: [:])))
+    #expect(await recorder.events().map(\.kind) == [.start, .end])
+}
+
+@Test func aiStreamTextRetriesResetStepStateBeforeBuildingNextPromptLikeUpstream() async throws {
+    let toolCall = AIToolCall(id: "tool-call-1", name: "lookup", arguments: "{}")
+    let toolResult = AIToolResult(
+        toolCallID: toolCall.id,
+        toolName: toolCall.name,
+        result: "tool result"
+    )
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .textStart(id: "failed-text"),
+                .textDeltaPart(id: "failed-text", delta: "partial"),
+                .providerError(AIStreamProviderError(message: "provider error", statusCode: 500))
+            ],
+            [
+                .textStart(id: "recovered-text"),
+                .textDeltaPart(id: "recovered-text", delta: "recovered"),
+                .textEnd(id: "recovered-text"),
+                .toolCall(toolCall),
+                .finish(reason: "tool-calls", usage: TokenUsage(totalTokens: 3))
+            ],
+            [
+                .textStart(id: "final-text"),
+                .textDeltaPart(id: "final-text", delta: "done"),
+                .textEnd(id: "final-text"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+            ]
+        ]
+    )
+    let tool = AITool(
+        name: "lookup",
+        parameters: ["type": "object", "properties": [:]]
+    ) { _ in
+        "tool result"
+    }
+
+    var streamedText = ""
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Recover",
+        executableTools: [tool],
+        maxSteps: 2,
+        retryPolicy: .none,
+        streamRetries: 1
+    ) {
+        if case let .textDeltaPart(_, delta, _) = part {
+            streamedText += delta
+        }
+    }
+
+    #expect(streamedText == "partialrecovereddone")
+    #expect(model.streamRequests.count == 3)
+    #expect(model.streamRequests[2].messages == [
+        .user("Recover"),
+        AIMessage(role: .assistant, content: [
+            .text("recovered"),
+            .toolCall(toolCall)
+        ]),
+        AIMessage(role: .tool, content: [.toolResult(toolResult)])
+    ])
+}
+
+@Test func aiStreamTextRejectsNegativeStreamRetriesBeforeModelWork() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: []
+    )
+    do {
+        for try await _ in AI.streamText(
+            model: model,
+            prompt: "Invalid",
+            retryPolicy: .none,
+            streamRetries: -1
+        ) {}
+        Issue.record("Expected invalid streamRetries.")
+    } catch let error as AIError {
+        #expect(error == .invalidArgument(
+            argument: "streamRetries",
+            message: "streamRetries must be greater than or equal to zero."
+        ))
+    }
+    #expect(model.streamRequests.isEmpty)
+}
+
+@Test func aiStreamTextWithZeroStreamRetriesDoesNotBufferToolInput() async throws {
+    let toolInputObserved = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let releaseProvider = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let model = SuspendedToolInputLanguageModel(release: releaseProvider.stream)
+
+    let consumer = Task { () throws -> [LanguageStreamPart] in
+        var parts: [LanguageStreamPart] = []
+        for try await part in AI.streamText(
+            model: model,
+            prompt: "Do not buffer",
+            retryPolicy: .none,
+            streamRetries: 0
+        ) {
+            parts.append(part)
+            if case .toolInputStart = part {
+                toolInputObserved.continuation.yield(())
+                toolInputObserved.continuation.finish()
+            }
+        }
+        return parts
+    }
+
+    #expect(await streamSignalArrives(toolInputObserved.stream))
+    releaseProvider.continuation.yield(())
+    releaseProvider.continuation.finish()
+    let parts = try await consumer.value
+    #expect(parts.contains(.toolInputStart(id: "call-1", name: "lookup")))
+}
+
+@Test func aiStreamTextRetryRejectsRecoveredStreamWithoutOutputOrFinish() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [.providerError(AIStreamProviderError(message: "retry me", statusCode: 500))],
+            []
+        ]
+    )
+
+    do {
+        for try await _ in AI.streamText(
+            model: model,
+            prompt: "Recover",
+            retryPolicy: .none,
+            streamRetries: 1
+        ) {}
+        Issue.record("Expected the empty recovered stream to fail.")
+    } catch let error as AIError {
+        #expect(error == .invalidResponse(
+            provider: "mock",
+            message: "No output generated. The model stream ended without a finish chunk."
+        ))
+    }
+    #expect(model.streamRequests.count == 2)
+}
+
+@Test func aiStreamTextRetriesCloseEachFailedAttemptOnlyOnce() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .textStart(id: "failed-a"),
+                .textDeltaPart(id: "failed-a", delta: "a"),
+                .providerError(AIStreamProviderError(message: "retry a", statusCode: 500))
+            ],
+            [
+                .textStart(id: "failed-b"),
+                .textDeltaPart(id: "failed-b", delta: "b"),
+                .providerError(AIStreamProviderError(message: "retry b", statusCode: 500))
+            ],
+            [
+                .textStart(id: "ok"),
+                .textDeltaPart(id: "ok", delta: "done"),
+                .textEnd(id: "ok"),
+                .finish(reason: "stop", usage: nil)
+            ]
+        ]
+    )
+
+    var parts: [LanguageStreamPart] = []
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "Recover twice",
+        retryPolicy: .none,
+        streamRetries: 2
+    ) {
+        parts.append(part)
+    }
+
+    #expect(parts.filter { $0 == .textEnd(id: "failed-a") }.count == 1)
+    #expect(parts.filter { $0 == .textEnd(id: "failed-b") }.count == 1)
+    #expect(model.streamRequests.count == 3)
+}
+
 @Test func aiStreamTextThrowsAndRecordsTelemetryWhenProviderStreamFailsBeforeYieldingLikeUpstream() async throws {
     let recorder = TelemetryRecorder()
     let failure = AIError.apiCall(provider: "mock", statusCode: 500, body: "test error")
@@ -429,4 +704,54 @@ import Testing
     }
 
     #expect(model.streamRequests.isEmpty)
+}
+
+private final class SuspendedToolInputLanguageModel: LanguageModel, @unchecked Sendable {
+    let providerID = "mock"
+    let modelID = "suspended-tool-input"
+    private let release: AsyncStream<Void>
+
+    init(release: AsyncStream<Void>) {
+        self.release = release
+    }
+
+    func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
+        TextGenerationResult(text: "", rawValue: .object([:]))
+    }
+
+    func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+        let release = release
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                continuation.yield(.toolInputStart(id: "call-1", name: "lookup"))
+                var iterator = release.makeAsyncIterator()
+                _ = await iterator.next()
+                do {
+                    try Task.checkCancellation()
+                    continuation.yield(.toolInputEnd(id: "call-1"))
+                    continuation.yield(.finish(reason: "tool-calls", usage: nil))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
+private func streamSignalArrives(_ stream: AsyncStream<Void>) async -> Bool {
+    await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            var iterator = stream.makeAsyncIterator()
+            return await iterator.next() != nil
+        }
+        group.addTask {
+            try? await Task<Never, Never>.sleep(nanoseconds: 1_000_000_000)
+            return false
+        }
+        let result = await group.next() ?? false
+        group.cancelAll()
+        return result
+    }
 }

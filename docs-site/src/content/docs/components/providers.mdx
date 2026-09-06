@@ -13,7 +13,7 @@ description: Public SwiftAISDK APIs for providers.
 | Function | 13 |
 | Global Variable | 2 |
 | Initializer | 36 |
-| Instance Method | 206 |
+| Instance Method | 207 |
 | Instance Property | 170 |
 | Structure | 21 |
 | Type Alias | 2 |
@@ -103,6 +103,7 @@ description: Public SwiftAISDK APIs for providers.
 | Initializer | `init(token:url:expiresAt:)` | `init(token: String, url: String, expiresAt: Int? = nil)` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Method | `availableModels()` | `func availableModels() async throws -> [GatewayModelEntry]` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |
 | Instance Method | `batchLanguageModel(_:)` | `func batchLanguageModel(_ modelID: String) -> any BatchLanguageModel` | [Sources/SwiftAISDK/Providers/AnthropicProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicProvider.swift) |
+| Instance Method | `batchLanguageModel(_:)` | `func batchLanguageModel(_ modelID: String) -> any BatchLanguageModel` | [Sources/SwiftAISDK/Providers/GoogleGenerativeAIProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GoogleGenerativeAIProvider.swift) |
 | Instance Method | `batchLanguageModel(_:)` | `func batchLanguageModel(_ modelID: String) throws -> any BatchLanguageModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `callAsFunction(_:)` | `func callAsFunction(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/GMICloudProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GMICloudProvider.swift) |
 | Instance Method | `callAsFunction(_:)` | `func callAsFunction(_ modelID: String) -> GatewayTranscriptionModel` | [Sources/SwiftAISDK/Providers/GatewayProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/GatewayProvider.swift) |

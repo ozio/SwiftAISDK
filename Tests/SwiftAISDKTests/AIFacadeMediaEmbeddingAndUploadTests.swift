@@ -130,6 +130,33 @@ import Testing
     _ = try await AI.embedMany(model: oversizedModel, values: ["abcd", "e"])
     #expect(oversizedModel.requests.map(\.values) == [["abcd"], ["e"]])
 }
+
+@Test func aiEmbedManyRejectsProviderResultCountMismatchesLikeUpstream() async throws {
+    let singleCallModel = MockEmbeddingModel(results: [
+        EmbeddingResult(embeddings: [[1]], rawValue: ["call": 1])
+    ])
+    await #expect(throws: AIError.invalidResponse(
+        provider: "mock",
+        message: "Expected 2 embeddings, but received 1."
+    )) {
+        _ = try await AI.embedMany(model: singleCallModel, values: ["a", "b"])
+    }
+
+    let chunkedModel = MockEmbeddingModel(
+        results: [
+            EmbeddingResult(embeddings: [[1], [2]], rawValue: ["chunk": 1]),
+            EmbeddingResult(embeddings: [[3]], rawValue: ["chunk": 2])
+        ],
+        maxEmbeddingsPerCall: 2
+    )
+    await #expect(throws: AIError.invalidResponse(
+        provider: "mock",
+        message: "Expected 2 embeddings, but received 1."
+    )) {
+        _ = try await AI.embedMany(model: chunkedModel, values: ["a", "b", "c", "d"])
+    }
+}
+
 @Test func aiFacadeForwardsMediaRerankAndUploadRequests() async throws {
     let imageModel = MockImageModel(result: ImageGenerationResult(urls: ["https://example.com/image.png"], rawValue: .object([:])))
     let image = try await AI.generateImage(model: imageModel, prompt: "cat", size: "1024x1024", providerOptions: ["image": .object(["quality": .string("high")])])
@@ -200,17 +227,29 @@ import Testing
 }
 @Test func aiFacadeThrowsTypedNoGeneratedMediaErrors() async throws {
     let response = AIResponseMetadata(id: "response-1", modelID: "mock")
+    let failedCall = ImageGenerationCall(
+        urls: [],
+        warnings: [AIWarning(type: "other", message: "provider returned no images")],
+        providerMetadata: ["mock": ["requestID": "request-1"]],
+        responseMetadata: response
+    )
 
-    await #expect(throws: AINoOutputError(kind: .image, responses: [response])) {
+    do {
         _ = try await AI.generateImage(
             model: MockImageModel(result: ImageGenerationResult(
                 urls: [],
                 base64Images: [],
                 rawValue: .object([:]),
-                responseMetadata: response
+                responseMetadata: response,
+                calls: [failedCall]
             )),
             prompt: "empty"
         )
+        Issue.record("Expected image generation without images to fail")
+    } catch let error as AINoOutputError {
+        #expect(error.kind == .image)
+        #expect(error.responses == [response])
+        #expect(error.calls == [failedCall])
     }
 
     await #expect(throws: AINoOutputError(kind: .transcript, responses: [response])) {
@@ -312,4 +351,122 @@ import Testing
     #expect(skill.providerMetadata["mock-provider"]?["defaultVersion"]?.stringValue == "1")
     #expect(skill.warnings == [AIWarning(type: "unsupported", feature: "displayTitle")])
     #expect(skill.requestMetadata.body?["providerOptions"]?["mock-provider"]?["custom"]?.stringValue == "value")
+}
+
+@Test func aiFacadeForwardsAllFilesV4OperationsAndTypedResults() async throws {
+    let content = AsyncThrowingStream<Data, Error> { continuation in
+        continuation.yield(Data("contents".utf8))
+        continuation.finish()
+    }
+    let client = MockFileClient(
+        result: FileUploadResult(providerReference: ["mock": "file-1"], rawValue: .null),
+        metadataResult: FileMetadataResult(
+            providerReference: ["mock": "file-1"],
+            filename: "test.txt",
+            mediaType: "text/plain",
+            byteSize: 8,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            expiresAt: Date(timeIntervalSince1970: 1_700_003_600)
+        ),
+        downloadResult: FileDownloadResult(content: content, mediaType: "text/plain"),
+        deleteResult: FileDeleteResult(providerReference: ["mock": "file-1"], deleted: true)
+    )
+    let recorder = TelemetryRecorder()
+    let telemetry = Telemetry.Options(integrations: [recorder])
+    let headers = ["X-Test": "files-v4"]
+    let options: [String: JSONValue] = ["mock": ["region": "test"]]
+    let reference = ["mock": "file-1"]
+
+    let metadata = try await AI.getFileMetadata(
+        client: client,
+        request: FileMetadataRequest(
+            file: reference,
+            providerOptions: options,
+            headers: headers
+        ),
+        telemetry: telemetry
+    )
+    let download = try await AI.downloadFile(
+        client: client,
+        request: FileDownloadRequest(file: reference, providerOptions: options, headers: headers),
+        telemetry: telemetry
+    )
+    let deletion = try await AI.deleteFile(
+        client: client,
+        request: FileDeleteRequest(file: reference, providerOptions: options, headers: headers),
+        telemetry: telemetry
+    )
+
+    #expect(metadata.byteSize == 8)
+    #expect(metadata.createdAt == Date(timeIntervalSince1970: 1_700_000_000))
+    #expect(metadata.requestMetadata.body?["file"]?["mock"]?.stringValue == "file-1")
+    #expect(metadata.requestMetadata.headers == headers)
+    var downloaded = Data()
+    for try await chunk in download.content { downloaded.append(chunk) }
+    #expect(String(decoding: downloaded, as: UTF8.self) == "contents")
+    #expect(download.requestMetadata.body?["providerOptions"]?["mock"]?["region"]?.stringValue == "test")
+    #expect(deletion.deleted)
+    #expect(client.metadataRequests.first?.headers == headers)
+    #expect(client.downloadRequests.first?.providerOptions == options)
+    #expect(client.deleteRequests.first?.file == reference)
+
+    let operationIDs = await recorder.events().map(\.operationID)
+    #expect(operationIDs == [
+        "ai.getFileMetadata", "ai.getFileMetadata",
+        "ai.downloadFile", "ai.downloadFile",
+        "ai.deleteFile", "ai.deleteFile"
+    ])
+}
+
+@Test func aiFacadeTreatsUploadStreamsAsSingleUseAndDoesNotRetry() async throws {
+    let client = AlwaysFailingFileClient()
+    let recorder = TelemetryRecorder()
+    let cancellationProbe = FacadeUploadStreamProbe()
+    let stream = AsyncThrowingStream<Data, Error> { continuation in
+        continuation.onTermination = { _ in cancellationProbe.record() }
+    }
+
+    await #expect(throws: AIError.self) {
+        _ = try await AI.uploadFile(
+            client: client,
+            request: FileUploadRequest(stream: stream, mediaType: "text/plain"),
+            retryPolicy: AIRetryPolicy(maxRetries: 3),
+            telemetry: Telemetry.Options(integrations: [recorder])
+        )
+    }
+
+    #expect(client.attemptCount == 1)
+    #expect(await waitForFacadeUploadStreamCancellation(cancellationProbe))
+    let start = try #require((await recorder.events()).first)
+    #expect(start.input?["dataType"]?.stringValue == "stream")
+    #expect(start.input?["byteLength"] == nil)
+}
+
+private final class AlwaysFailingFileClient: AIFileClient, @unchecked Sendable {
+    let providerID = "failing.files"
+    private let lock = NSLock()
+    private var attempts = 0
+    var attemptCount: Int { lock.withLock { attempts } }
+
+    func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult {
+        lock.withLock { attempts += 1 }
+        throw AIError.apiCall(provider: providerID, statusCode: 500, body: "retryable")
+    }
+}
+
+private final class FacadeUploadStreamProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    var wasCancelled: Bool { lock.withLock { cancelled } }
+    func record() { lock.withLock { cancelled = true } }
+}
+
+private func waitForFacadeUploadStreamCancellation(
+    _ probe: FacadeUploadStreamProbe
+) async -> Bool {
+    for _ in 0..<100 {
+        if probe.wasCancelled { return true }
+        try? await Task.sleep(nanoseconds: 1_000_000)
+    }
+    return probe.wasCancelled
 }

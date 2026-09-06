@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-08-31
+Snapshot date: 2026-09-06
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.85`, `@ai-sdk/provider@4.0.9`,
-`@ai-sdk/provider-utils@5.0.34`, and `@ai-sdk/react@4.0.88`.
+snapshots, currently `ai@7.0.93`, `@ai-sdk/provider@4.0.10`,
+`@ai-sdk/provider-utils@5.0.36`, and `@ai-sdk/react@4.0.96`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.85 -> 7.0.93`
+- `@ai-sdk/provider@4.0.9 -> 4.0.10`
+- `@ai-sdk/provider-utils@5.0.34 -> 5.0.36`
+- `@ai-sdk/react@4.0.88 -> 4.0.96`
 - `ai@7.0.77 -> 7.0.85`
 - `@ai-sdk/provider@4.0.7 -> 4.0.9`
 - `@ai-sdk/provider-utils@5.0.29 -> 5.0.34`
@@ -61,6 +65,39 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.93` adds bounded `Output.array` schemas and final-count checks,
+  embedding result-count validation, image no-output call diagnostics, enforced
+  required/named tool choice, batch tool content and provider metadata,
+  attempt-isolated post-start stream recovery, and UI approval/message identity
+  preservation. `Output.array` remains source compatible and nonthrowing at
+  construction time; invalid bound combinations are rejected before model work
+  when the strategy executes.
+- `@ai-sdk/provider@4.0.10` expands `AIFileClient` from buffered upload to an
+  optional Files V4 contract with capability discovery, single-use streamed
+  upload, metadata, streamed download, deletion, and typed size/date results.
+  Existing upload-only clients remain source compatible through protocol
+  defaults.
+- `@ai-sdk/provider-utils@5.0.36` supplies the portable transport foundations:
+  validated DELETE, cancellation-safe ordered streaming multipart bodies,
+  streamed binary responses, multipart escaping, and redacted error
+  diagnostics. The Undici dependency patch remains JavaScript-specific.
+- `@ai-sdk/react@4.0.96` changes React/browser `useObject` error-state wording
+  and dependency baselines. SwiftAISDK retains its native object/chat sessions;
+  no runtime behavior is copied from that framework hook.
+- Structured object/array streams use the same isolated `streamRetries`
+  pipeline as raw text streams. Only observed retryable in-band provider error
+  chunks consume that budget; schema or decoding failures after a complete
+  response remain terminal and do not trigger another model request. Already
+  yielded text cannot be retracted and may repeat on the replacement attempt.
+- Batch V4 now carries facade-level tools/tool choice and start/result provider
+  metadata. Google is the fifth durable adapter, validates nonempty result keys,
+  preserves empty-text thought signatures, and supports inline or uploaded
+  JSONL requests. OpenAI validates the outer result envelope before yielding;
+  xAI retains the final assistant choice's raw finish reason.
+- UI conversion retains approval descriptors, restores failed-result provider
+  metadata to its associated tool call, and uses an explicitly supplied
+  replacement-message ID as the new transcript identity. Prior typed UI-tool
+  schema and automatic denied-chat submission gaps remain unchanged.
 - `ai@7.0.85`, `@ai-sdk/provider@4.0.9`, and
   `@ai-sdk/provider-utils@5.0.34` extend the Swift public core vertically:
   image results expose their underlying per-call outputs; embedding models can
@@ -369,7 +406,7 @@ Port decisions:
 | Upstream reference item | SwiftAISDK status | Current Swift evidence | Notes / next decision |
 | --- | --- | --- | --- |
 | `generateText` | `covered` | `AI.generateText`, `LanguageModelRequest`, `TextGenerationResult` | Supports prompt/request overloads, tools, multi-step loops, retries, telemetry, provider metadata, response metadata, raw chunks, and abort signals. Later tool-loop steps recheck cancellation before another model call and preserve the caller's abort reason. |
-| `streamText` | `covered` | `AI.streamText`, `LanguageStreamPart`, `AIStreamProviderError`, `AIStreamingTransport`, `AIStreamTimeoutConfiguration`, incremental SSE/EventStream and semantic-timeout regressions | Async sequence surface with provider parts delivered before HTTP EOF, one part-aware content lifecycle, one built-in terminal outcome per logical response, typed in-band provider failures, tools, approvals, retries-before-first-yield, telemetry, and total/per-step/first-semantic/inter-semantic deadlines. Total/step budgets include retry backoff, step deadlines span client tool execution, typed `Output` streams share the configuration, and timeout aborts propagate to provider/tool signals. |
+| `streamText` | `covered` | `AI.streamText`, `LanguageStreamPart`, `AIStreamProviderError`, `AIStreamingTransport`, `AIStreamTimeoutConfiguration`, incremental SSE/EventStream and semantic-timeout regressions | Async sequence surface with provider parts delivered before HTTP EOF, one part-aware content lifecycle, one built-in terminal outcome per logical response, typed in-band provider failures, tools, approvals, setup retries plus opt-in isolated post-start recovery for retryable in-band provider errors, telemetry, and total/per-step/first-semantic/inter-semantic deadlines. Total/step budgets include retry backoff, step deadlines span client tool execution, typed `Output` streams share the configuration, and timeout aborts propagate to provider/tool signals. |
 | `embed` | `covered` | `AI.embed`, `EmbeddingRequest`, `EmbeddingResult` | Single-value helper delegates through the embedding request shape. |
 | `embedMany` | `covered` | `AI.embedMany`, `EmbeddingModel.maxEmbeddingsPerCall`, `EmbeddingModel.maxInputBytesPerCall` | Splits once against the caller/model count limit and provider UTF-8 byte budget, keeps an individually oversized value intact, and aggregates usage/warnings/metadata in request order. |
 | `rerank` | `covered` | `AI.rerank`, `RerankingRequest`, `RerankingResult` | Native model family exists. |
@@ -388,7 +425,7 @@ Port decisions:
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
 | `dynamicTool` | `swift-native` | `AITool.dynamic`, MCP tool conversion | Behavior exists; naming differs. |
-| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, paginated tool discovery, tool-call retries, tool conversion, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.41`. OAuth scope reaches dynamic registration, and private credential endpoints are rejected without redirects. |
+| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, paginated tool discovery, tool-call retries, tool conversion, annotations, structured-only results, issuer normalization, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.45`. OAuth scope reaches dynamic registration, and private credential endpoints are rejected without redirects. |
 | `Experimental_StdioMCPTransport` | `covered` | `MCPStdioTransport` | Swift uses stable transport naming. |
 | `jsonSchema` | `swift-native` | `AIJSONSchema`, `JSONValue`, `parseJSON`, schema validator | Usable JSON Schema adapter exists; exact factory naming does not. |
 | `zodSchema` | `out of scope candidate` | none | Zod is TypeScript-specific. Could document `AIJSONSchema` as the Swift alternative. |

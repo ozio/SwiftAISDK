@@ -160,7 +160,7 @@ public final class AIChatSession: ObservableObject {
                 ))
             }
             userMessage = AIUIMessage(
-                id: replacingMessageID,
+                id: message.id,
                 role: message.role,
                 parts: message.parts,
                 metadata: message.metadata

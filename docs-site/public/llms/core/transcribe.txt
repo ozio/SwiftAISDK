@@ -1,6 +1,6 @@
 # Transcribe audio
 
-Source URL: /core/transcribe/
+Source URL: /SwiftAISDK/core/transcribe/
 
 Use `transcribe` when you have audio data and want normalized text back.
 
@@ -103,6 +103,10 @@ translation remain deferred.
 - `language` hints the expected language when the provider supports it.
 - `prompt` gives the model context for names, vocabulary, or formatting.
 - `providerOptions` carries provider-specific transcription settings.
+- OpenAI `chunkingStrategy` accepts `"auto"` or a `server_vad` object with an
+optional threshold and nonnegative prefix/silence padding. The
+`gpt-4o-transcribe-diarize` model defaults to automatic chunking and
+`diarized_json` output.
 - `inputAudioFormat` declares the raw encoding and sample rate for streaming models.
 - `extraBody`, `headers`, `abortSignal`, `retryPolicy`, and `telemetry` follow the shared facade behavior.
 
@@ -118,3 +122,8 @@ translation remain deferred.
 - `providerMetadata`
 - `requestMetadata`
 - `responseMetadata`
+
+For diarized OpenAI output, normalized text remains in the shared result while
+speaker-aware segments are retained under
+`providerMetadata["openai"]["segments"]` with text, start/end seconds, and
+speaker identity.

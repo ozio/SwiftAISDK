@@ -317,6 +317,135 @@ private final class MCP2026ErrorRecorder: @unchecked Sendable {
     try await client.close()
 }
 
+@Test func mcpToolAnnotationsAreTypedAndSurfacedAsProviderMetadata() async throws {
+    let definition: JSONValue = [
+        "name": "annotated-tool",
+        "description": "A tool with behavioral annotations",
+        "inputSchema": ["type": "object", "properties": [:]],
+        "annotations": [
+            "title": "Annotated Tool",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true,
+            "futureHint": "preserved"
+        ]
+    ]
+    let parsed = try MCPToolDefinition(json: definition)
+    #expect(parsed.toolAnnotations == MCPToolAnnotations(
+        title: "Annotated Tool",
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true
+    ))
+    #expect(parsed.annotations?["futureHint"]?.stringValue == "preserved")
+
+    let transport = MCP2026TestTransport(toolDefinitions: [definition])
+    let client = try await MCPClient.connect(transport: transport)
+    let tool = try await #require(client.tools()["annotated-tool"])
+    let annotations = try #require(tool.providerMetadata["mcp"]?["annotations"])
+
+    #expect(annotations == parsed.toolAnnotations?.jsonValue)
+    #expect(tool.providerMetadata["mcp"]?["title"]?.stringValue == "Annotated Tool")
+    try await client.close()
+}
+
+@Test func mcpToolsListRejectsMalformedKnownAnnotationFields() async throws {
+    let malformedAnnotations: [JSONValue] = [
+        "not-an-object",
+        ["title": 42],
+        ["readOnlyHint": "yes"],
+        ["destructiveHint": nil],
+        ["idempotentHint": 1],
+        ["openWorldHint": []]
+    ]
+
+    for annotations in malformedAnnotations {
+        let transport = MCP2026TestTransport(toolDefinitions: [[
+            "name": "malformed-annotations",
+            "inputSchema": ["type": "object"],
+            "annotations": annotations
+        ]])
+        let client = try await MCPClient.connect(transport: transport)
+        do {
+            _ = try await client.listTools()
+            Issue.record("Expected malformed MCP tool annotations to fail tools/list.")
+        } catch let error as MCPClientError {
+            #expect(error.message.contains("MCP tool annotation"))
+        }
+        try await client.close()
+    }
+}
+
+@Test func mcpStructuredOnlyToolResultsNormalizeEveryJSONKind() throws {
+    let values: [JSONValue] = [
+        ["value": 42],
+        [1, "two", false],
+        "result",
+        42,
+        true,
+        nil
+    ]
+
+    for value in values {
+        let result = try MCPCallToolResult(json: ["structuredContent": value])
+        let text = try #require(result.content.first?["text"]?.stringValue)
+        #expect(try decodeJSONBody(Data(text.utf8)) == value)
+        #expect(result.structuredContent == value)
+        #expect(result.isError == false)
+        #expect(result.rawValue["content"]?[0]?["type"]?.stringValue == "text")
+        #expect(result.rawValue["isError"]?.boolValue == false)
+    }
+
+    let error = try MCPCallToolResult(json: [
+        "structuredContent": ["code": "NOT_FOUND"],
+        "isError": true
+    ])
+    #expect(error.isError)
+    #expect(error.content.first?["text"]?.stringValue == #"{"code":"NOT_FOUND"}"#)
+
+    let existing = try MCPCallToolResult(json: [
+        "content": [["type": "text", "text": "Existing content"]],
+        "structuredContent": ["value": 42]
+    ])
+    #expect(existing.content.first?["text"]?.stringValue == "Existing content")
+
+    let legacy = try MCPCallToolResult(json: ["toolResult": ["value": 42]])
+    #expect(legacy.toolResult?["value"]?.intValue == 42)
+
+    #expect(throws: MCPClientError.self) {
+        _ = try MCPCallToolResult(json: [:])
+    }
+}
+
+@Test func mcpToolResultsValidateKnownContentAndAcceptFutureTypes() throws {
+    let future = try MCPCallToolResult(json: [
+        "content": [["type": "future_content", "payload": ["value": 42]]]
+    ])
+    #expect(future.content[0]["type"]?.stringValue == "future_content")
+    #expect(future.isError == false)
+    #expect(future.rawValue["isError"]?.boolValue == false)
+
+    for malformed: JSONValue in [
+        ["content": [["type": "text"]]],
+        ["content": [["type": "image", "data": "not-base64", "mimeType": "image/png"]]],
+        ["content": [["type": "resource", "resource": ["uri": "file:///note.txt"]]]],
+        ["content": [["type": "resource_link", "uri": "file:///note.txt"]]]
+    ] {
+        #expect(throws: MCPClientError.self) {
+            _ = try MCPCallToolResult(json: malformed)
+        }
+    }
+
+    #expect(throws: MCPClientError.self) {
+        _ = try MCPCallToolResult(json: [
+            "content": "malformed",
+            "structuredContent": ["value": 42]
+        ])
+    }
+}
+
 @Test func mcpHTTPHeaderBindingsRejectUnsafeSchemasAndEncodeValues() throws {
     let duplicateSchema: JSONValue = [
         "type": "object",

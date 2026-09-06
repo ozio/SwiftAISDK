@@ -3,91 +3,92 @@
 SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 
 ## LLM-readable pages
-- [Introduction](/llms/index.txt): Learn what SwiftAISDK is and where to start.
-- [Components](/llms/components.txt): Generated component map for SwiftAISDK public APIs.
-- [Audio](/llms/components/audio.txt): Public SwiftAISDK APIs for audio.
-- [Chat and UI messages](/llms/components/chat-and-ui-messages.txt): Public SwiftAISDK APIs for chat and ui messages.
-- [Core runtime](/llms/components/core-runtime.txt): Public SwiftAISDK APIs for core runtime.
-- [Errors](/llms/components/errors.txt): Public SwiftAISDK APIs for errors.
-- [MCP](/llms/components/mcp.txt): Public SwiftAISDK APIs for mcp.
-- [Media](/llms/components/media.txt): Public SwiftAISDK APIs for media.
-- [Middleware](/llms/components/middleware.txt): Public SwiftAISDK APIs for middleware.
-- [Provider models](/llms/components/provider-models.txt): Public SwiftAISDK APIs for provider models.
-- [Providers](/llms/components/providers.txt): Public SwiftAISDK APIs for providers.
-- [Structured output](/llms/components/structured-output.txt): Public SwiftAISDK APIs for structured output.
-- [Telemetry](/llms/components/telemetry.txt): Public SwiftAISDK APIs for telemetry.
-- [Tools](/llms/components/tools.txt): Public SwiftAISDK APIs for tools.
-- [Video and reranking](/llms/components/video-and-reranking.txt): Public SwiftAISDK APIs for video and reranking.
-- [MCP tools](/llms/cookbook/mcp-tools.txt): Discover MCP tools and pass them to a language model.
-- [Batch text](/llms/core/batch-text.txt): Start durable text batches and stream their terminal results.
-- [Dubbing](/llms/core/dubbing.txt): Create and inspect provider dubbing jobs.
-- [Embeddings](/llms/core/embeddings.txt): Convert text into vectors for search, clustering, and retrieval.
-- [Error handling](/llms/core/error-handling.txt): Handle validation, provider, retry, timeout, abort, and output errors.
-- [Generate audio](/llms/core/generate-audio.txt): Generate provider audio that is not speech.
-- [Generate image](/llms/core/generate-image.txt): Create or edit images with an image model.
-- [Generate speech](/llms/core/generate-speech.txt): Convert text into audio with a speech model.
-- [Generate text](/llms/core/generate-text.txt): Use a language model for one-shot text generation.
-- [Generate video](/llms/core/generate-video.txt): Create video clips with a video model.
-- [Realtime sessions](/llms/core/realtime.txt): Run bidirectional text, audio, and tool sessions over a provider Realtime V4 model.
-- [Rerank](/llms/core/rerank.txt): Score and reorder documents for a query.
-- [Stream text](/llms/core/stream-text.txt): Consume language model output as an async sequence.
-- [Structured output](/llms/core/structured-output.txt): Generate Decodable Swift values from JSON output.
-- [Telemetry](/llms/core/telemetry.txt): Record provider calls, retries, streams, tool execution, usage, and metadata.
-- [Tools](/llms/core/tools.txt): Let a language model call typed Swift tools.
-- [Transcribe audio](/llms/core/transcribe.txt): Convert audio bytes into text with a transcription model.
-- [Transform audio](/llms/core/transform-audio.txt): Transform existing audio through provider-native audio tools.
-- [Install](/llms/getting-started/install.txt): Add SwiftAISDK to a SwiftPM package and configure credentials.
-- [Quickstart](/llms/getting-started/quickstart.txt): Generate text with a provider and model.
-- [Provider matrix](/llms/providers.txt): Generated provider capability overview for SwiftAISDK.
-- ["alibaba"](/llms/providers/alibaba.txt): "alibaba provider capabilities and factories."
-- ["amazon-bedrock.anthropic"](/llms/providers/amazon-bedrock-anthropic.txt): "amazon-bedrock.anthropic provider capabilities and factories."
-- ["amazon-bedrock"](/llms/providers/amazon-bedrock.txt): "amazon-bedrock provider capabilities and factories."
-- ["anthropic-aws"](/llms/providers/anthropic-aws.txt): "anthropic-aws provider capabilities and factories."
-- ["anthropic"](/llms/providers/anthropic.txt): "anthropic provider capabilities and factories."
-- ["assemblyai"](/llms/providers/assemblyai.txt): "assemblyai provider capabilities and factories."
-- ["azure"](/llms/providers/azure.txt): "azure provider capabilities and factories."
-- ["baseten"](/llms/providers/baseten.txt): "baseten provider capabilities and factories."
-- ["bedrock-mantle"](/llms/providers/bedrock-mantle.txt): "bedrock-mantle provider capabilities and factories."
-- ["black-forest-labs"](/llms/providers/black-forest-labs.txt): "black-forest-labs provider capabilities and factories."
-- ["bytedance"](/llms/providers/bytedance.txt): "bytedance provider capabilities and factories."
-- ["cartesia"](/llms/providers/cartesia.txt): "cartesia provider capabilities and factories."
-- ["cerebras"](/llms/providers/cerebras.txt): "cerebras provider capabilities and factories."
-- ["cohere"](/llms/providers/cohere.txt): "cohere provider capabilities and factories."
-- ["deepgram"](/llms/providers/deepgram.txt): "deepgram provider capabilities and factories."
-- ["deepinfra"](/llms/providers/deepinfra.txt): "deepinfra provider capabilities and factories."
-- ["deepseek"](/llms/providers/deepseek.txt): "deepseek provider capabilities and factories."
-- ["elevenlabs"](/llms/providers/elevenlabs.txt): "elevenlabs provider capabilities and factories."
-- ["fal"](/llms/providers/fal.txt): "fal provider capabilities and factories."
-- ["fireworks"](/llms/providers/fireworks.txt): "fireworks provider capabilities and factories."
-- ["fish-audio"](/llms/providers/fish-audio.txt): "fish-audio provider capabilities and factories."
-- ["gateway"](/llms/providers/gateway.txt): "gateway provider capabilities and factories."
-- ["gladia"](/llms/providers/gladia.txt): "gladia provider capabilities and factories."
-- ["gmicloud"](/llms/providers/gmicloud.txt): "gmicloud provider capabilities and factories."
-- ["google.generative-ai"](/llms/providers/google-generative-ai.txt): "google.generative-ai provider capabilities and factories."
-- ["google.vertex"](/llms/providers/google-vertex.txt): "google.vertex provider capabilities and factories."
-- ["googleVertex.anthropic"](/llms/providers/googlevertex-anthropic.txt): "googleVertex.anthropic provider capabilities and factories."
-- ["googleVertex.maas"](/llms/providers/googlevertex-maas.txt): "googleVertex.maas provider capabilities and factories."
-- ["googleVertex.xai"](/llms/providers/googlevertex-xai.txt): "googleVertex.xai provider capabilities and factories."
-- ["groq"](/llms/providers/groq.txt): "groq provider capabilities and factories."
-- ["huggingface"](/llms/providers/huggingface.txt): "huggingface provider capabilities and factories."
-- ["hume"](/llms/providers/hume.txt): "hume provider capabilities and factories."
-- ["klingai"](/llms/providers/klingai.txt): "klingai provider capabilities and factories."
-- ["lmnt"](/llms/providers/lmnt.txt): "lmnt provider capabilities and factories."
-- ["luma"](/llms/providers/luma.txt): "luma provider capabilities and factories."
-- ["minimax"](/llms/providers/minimax.txt): "minimax provider capabilities and factories."
-- ["mistral"](/llms/providers/mistral.txt): "mistral provider capabilities and factories."
-- ["moonshotai"](/llms/providers/moonshotai.txt): "moonshotai provider capabilities and factories."
-- ["open-responses.responses"](/llms/providers/open-responses-responses.txt): "open-responses.responses provider capabilities and factories."
-- ["openai-compatible"](/llms/providers/openai-compatible.txt): "openai-compatible provider capabilities and factories."
-- ["openai"](/llms/providers/openai.txt): "openai provider capabilities and factories."
-- ["perplexity"](/llms/providers/perplexity.txt): "perplexity provider capabilities and factories."
-- ["prodia"](/llms/providers/prodia.txt): "prodia provider capabilities and factories."
-- ["quiverai"](/llms/providers/quiverai.txt): "quiverai provider capabilities and factories."
-- ["replicate"](/llms/providers/replicate.txt): "replicate provider capabilities and factories."
-- ["revai"](/llms/providers/revai.txt): "revai provider capabilities and factories."
-- ["togetherai"](/llms/providers/togetherai.txt): "togetherai provider capabilities and factories."
-- ["vercel"](/llms/providers/vercel.txt): "vercel provider capabilities and factories."
-- ["voyage"](/llms/providers/voyage.txt): "voyage provider capabilities and factories."
-- ["xai"](/llms/providers/xai.txt): "xai provider capabilities and factories."
-- [Public symbols](/llms/reference/generated/public-symbols.txt): Generated public SwiftAISDK symbol table.
-- [Troubleshooting](/llms/troubleshooting.txt): Diagnose common SwiftAISDK setup and runtime issues.
+- [Introduction](/SwiftAISDK/llms/index.txt): Learn what SwiftAISDK is and where to start.
+- [Components](/SwiftAISDK/llms/components.txt): Generated component map for SwiftAISDK public APIs.
+- [Audio](/SwiftAISDK/llms/components/audio.txt): Public SwiftAISDK APIs for audio.
+- [Chat and UI messages](/SwiftAISDK/llms/components/chat-and-ui-messages.txt): Public SwiftAISDK APIs for chat and ui messages.
+- [Core runtime](/SwiftAISDK/llms/components/core-runtime.txt): Public SwiftAISDK APIs for core runtime.
+- [Errors](/SwiftAISDK/llms/components/errors.txt): Public SwiftAISDK APIs for errors.
+- [MCP](/SwiftAISDK/llms/components/mcp.txt): Public SwiftAISDK APIs for mcp.
+- [Media](/SwiftAISDK/llms/components/media.txt): Public SwiftAISDK APIs for media.
+- [Middleware](/SwiftAISDK/llms/components/middleware.txt): Public SwiftAISDK APIs for middleware.
+- [Provider models](/SwiftAISDK/llms/components/provider-models.txt): Public SwiftAISDK APIs for provider models.
+- [Providers](/SwiftAISDK/llms/components/providers.txt): Public SwiftAISDK APIs for providers.
+- [Structured output](/SwiftAISDK/llms/components/structured-output.txt): Public SwiftAISDK APIs for structured output.
+- [Telemetry](/SwiftAISDK/llms/components/telemetry.txt): Public SwiftAISDK APIs for telemetry.
+- [Tools](/SwiftAISDK/llms/components/tools.txt): Public SwiftAISDK APIs for tools.
+- [Video and reranking](/SwiftAISDK/llms/components/video-and-reranking.txt): Public SwiftAISDK APIs for video and reranking.
+- [MCP tools](/SwiftAISDK/llms/cookbook/mcp-tools.txt): Discover MCP tools and pass them to a language model.
+- [Batch text](/SwiftAISDK/llms/core/batch-text.txt): Start durable text batches and stream their terminal results.
+- [Dubbing](/SwiftAISDK/llms/core/dubbing.txt): Create and inspect provider dubbing jobs.
+- [Embeddings](/SwiftAISDK/llms/core/embeddings.txt): Convert text into vectors for search, clustering, and retrieval.
+- [Error handling](/SwiftAISDK/llms/core/error-handling.txt): Handle validation, provider, retry, timeout, abort, and output errors.
+- [Files](/SwiftAISDK/llms/core/files.txt): Upload, inspect, stream, and delete provider-managed files.
+- [Generate audio](/SwiftAISDK/llms/core/generate-audio.txt): Generate provider audio that is not speech.
+- [Generate image](/SwiftAISDK/llms/core/generate-image.txt): Create or edit images with an image model.
+- [Generate speech](/SwiftAISDK/llms/core/generate-speech.txt): Convert text into audio with a speech model.
+- [Generate text](/SwiftAISDK/llms/core/generate-text.txt): Use a language model for one-shot text generation.
+- [Generate video](/SwiftAISDK/llms/core/generate-video.txt): Create video clips with a video model.
+- [Realtime sessions](/SwiftAISDK/llms/core/realtime.txt): Run bidirectional text, audio, and tool sessions over a provider Realtime V4 model.
+- [Rerank](/SwiftAISDK/llms/core/rerank.txt): Score and reorder documents for a query.
+- [Stream text](/SwiftAISDK/llms/core/stream-text.txt): Consume language model output as an async sequence.
+- [Structured output](/SwiftAISDK/llms/core/structured-output.txt): Generate Decodable Swift values from JSON output.
+- [Telemetry](/SwiftAISDK/llms/core/telemetry.txt): Record provider calls, retries, streams, tool execution, usage, and metadata.
+- [Tools](/SwiftAISDK/llms/core/tools.txt): Let a language model call typed Swift tools.
+- [Transcribe audio](/SwiftAISDK/llms/core/transcribe.txt): Convert audio bytes into text with a transcription model.
+- [Transform audio](/SwiftAISDK/llms/core/transform-audio.txt): Transform existing audio through provider-native audio tools.
+- [Install](/SwiftAISDK/llms/getting-started/install.txt): Add SwiftAISDK to a SwiftPM package and configure credentials.
+- [Quickstart](/SwiftAISDK/llms/getting-started/quickstart.txt): Generate text with a provider and model.
+- [Provider matrix](/SwiftAISDK/llms/providers.txt): Generated provider capability overview for SwiftAISDK.
+- ["alibaba"](/SwiftAISDK/llms/providers/alibaba.txt): "alibaba provider capabilities and factories."
+- ["amazon-bedrock.anthropic"](/SwiftAISDK/llms/providers/amazon-bedrock-anthropic.txt): "amazon-bedrock.anthropic provider capabilities and factories."
+- ["amazon-bedrock"](/SwiftAISDK/llms/providers/amazon-bedrock.txt): "amazon-bedrock provider capabilities and factories."
+- ["anthropic-aws"](/SwiftAISDK/llms/providers/anthropic-aws.txt): "anthropic-aws provider capabilities and factories."
+- ["anthropic"](/SwiftAISDK/llms/providers/anthropic.txt): "anthropic provider capabilities and factories."
+- ["assemblyai"](/SwiftAISDK/llms/providers/assemblyai.txt): "assemblyai provider capabilities and factories."
+- ["azure"](/SwiftAISDK/llms/providers/azure.txt): "azure provider capabilities and factories."
+- ["baseten"](/SwiftAISDK/llms/providers/baseten.txt): "baseten provider capabilities and factories."
+- ["bedrock-mantle"](/SwiftAISDK/llms/providers/bedrock-mantle.txt): "bedrock-mantle provider capabilities and factories."
+- ["black-forest-labs"](/SwiftAISDK/llms/providers/black-forest-labs.txt): "black-forest-labs provider capabilities and factories."
+- ["bytedance"](/SwiftAISDK/llms/providers/bytedance.txt): "bytedance provider capabilities and factories."
+- ["cartesia"](/SwiftAISDK/llms/providers/cartesia.txt): "cartesia provider capabilities and factories."
+- ["cerebras"](/SwiftAISDK/llms/providers/cerebras.txt): "cerebras provider capabilities and factories."
+- ["cohere"](/SwiftAISDK/llms/providers/cohere.txt): "cohere provider capabilities and factories."
+- ["deepgram"](/SwiftAISDK/llms/providers/deepgram.txt): "deepgram provider capabilities and factories."
+- ["deepinfra"](/SwiftAISDK/llms/providers/deepinfra.txt): "deepinfra provider capabilities and factories."
+- ["deepseek"](/SwiftAISDK/llms/providers/deepseek.txt): "deepseek provider capabilities and factories."
+- ["elevenlabs"](/SwiftAISDK/llms/providers/elevenlabs.txt): "elevenlabs provider capabilities and factories."
+- ["fal"](/SwiftAISDK/llms/providers/fal.txt): "fal provider capabilities and factories."
+- ["fireworks"](/SwiftAISDK/llms/providers/fireworks.txt): "fireworks provider capabilities and factories."
+- ["fish-audio"](/SwiftAISDK/llms/providers/fish-audio.txt): "fish-audio provider capabilities and factories."
+- ["gateway"](/SwiftAISDK/llms/providers/gateway.txt): "gateway provider capabilities and factories."
+- ["gladia"](/SwiftAISDK/llms/providers/gladia.txt): "gladia provider capabilities and factories."
+- ["gmicloud"](/SwiftAISDK/llms/providers/gmicloud.txt): "gmicloud provider capabilities and factories."
+- ["google.generative-ai"](/SwiftAISDK/llms/providers/google-generative-ai.txt): "google.generative-ai provider capabilities and factories."
+- ["google.vertex"](/SwiftAISDK/llms/providers/google-vertex.txt): "google.vertex provider capabilities and factories."
+- ["googleVertex.anthropic"](/SwiftAISDK/llms/providers/googlevertex-anthropic.txt): "googleVertex.anthropic provider capabilities and factories."
+- ["googleVertex.maas"](/SwiftAISDK/llms/providers/googlevertex-maas.txt): "googleVertex.maas provider capabilities and factories."
+- ["googleVertex.xai"](/SwiftAISDK/llms/providers/googlevertex-xai.txt): "googleVertex.xai provider capabilities and factories."
+- ["groq"](/SwiftAISDK/llms/providers/groq.txt): "groq provider capabilities and factories."
+- ["huggingface"](/SwiftAISDK/llms/providers/huggingface.txt): "huggingface provider capabilities and factories."
+- ["hume"](/SwiftAISDK/llms/providers/hume.txt): "hume provider capabilities and factories."
+- ["klingai"](/SwiftAISDK/llms/providers/klingai.txt): "klingai provider capabilities and factories."
+- ["lmnt"](/SwiftAISDK/llms/providers/lmnt.txt): "lmnt provider capabilities and factories."
+- ["luma"](/SwiftAISDK/llms/providers/luma.txt): "luma provider capabilities and factories."
+- ["minimax"](/SwiftAISDK/llms/providers/minimax.txt): "minimax provider capabilities and factories."
+- ["mistral"](/SwiftAISDK/llms/providers/mistral.txt): "mistral provider capabilities and factories."
+- ["moonshotai"](/SwiftAISDK/llms/providers/moonshotai.txt): "moonshotai provider capabilities and factories."
+- ["open-responses.responses"](/SwiftAISDK/llms/providers/open-responses-responses.txt): "open-responses.responses provider capabilities and factories."
+- ["openai-compatible"](/SwiftAISDK/llms/providers/openai-compatible.txt): "openai-compatible provider capabilities and factories."
+- ["openai"](/SwiftAISDK/llms/providers/openai.txt): "openai provider capabilities and factories."
+- ["perplexity"](/SwiftAISDK/llms/providers/perplexity.txt): "perplexity provider capabilities and factories."
+- ["prodia"](/SwiftAISDK/llms/providers/prodia.txt): "prodia provider capabilities and factories."
+- ["quiverai"](/SwiftAISDK/llms/providers/quiverai.txt): "quiverai provider capabilities and factories."
+- ["replicate"](/SwiftAISDK/llms/providers/replicate.txt): "replicate provider capabilities and factories."
+- ["revai"](/SwiftAISDK/llms/providers/revai.txt): "revai provider capabilities and factories."
+- ["togetherai"](/SwiftAISDK/llms/providers/togetherai.txt): "togetherai provider capabilities and factories."
+- ["vercel"](/SwiftAISDK/llms/providers/vercel.txt): "vercel provider capabilities and factories."
+- ["voyage"](/SwiftAISDK/llms/providers/voyage.txt): "voyage provider capabilities and factories."
+- ["xai"](/SwiftAISDK/llms/providers/xai.txt): "xai provider capabilities and factories."
+- [Public symbols](/SwiftAISDK/llms/reference/generated/public-symbols.txt): Generated public SwiftAISDK symbol table.
+- [Troubleshooting](/SwiftAISDK/llms/troubleshooting.txt): Diagnose common SwiftAISDK setup and runtime issues.

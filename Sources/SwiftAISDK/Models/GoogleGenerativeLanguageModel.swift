@@ -22,8 +22,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         )
         let raw = response.json
         let text = googleGenerateContentText(from: raw)
-        let toolCalls = googleGenerateContentToolCalls(from: raw)
-        let toolResults = googleGenerateContentToolResults(from: raw)
+        let toolCalls = googleGenerateContentToolCalls(from: raw, toolNameMapping: prepared.toolNameMapping)
+        let toolResults = googleGenerateContentToolResults(from: raw, toolNameMapping: prepared.toolNameMapping)
         guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No candidate text found in Google response.")
         }
@@ -61,7 +61,8 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
                         response: httpResponseHead(from: response, request: httpRequest),
                         includeRawChunks: request.includeRawChunks,
                         modelID: modelID,
-                        warnings: prepared.warnings
+                        warnings: prepared.warnings,
+                        toolNameMapping: prepared.toolNameMapping
                     )
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
@@ -82,7 +83,7 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
     }
 
-    private static func generateContentBody(for request: LanguageModelRequest, modelID: String, isStreaming: Bool = false) throws -> GoogleGenerateContentPreparedCall {
+    static func generateContentBody(for request: LanguageModelRequest, modelID: String, isStreaming: Bool = false) throws -> GoogleGenerateContentPreparedCall {
         let preparedOptions = googlePrepareGenerateContentOptions(
             from: request,
             modelID: modelID,
@@ -124,7 +125,15 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         }
         body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
         body.merge(googleExtraBodyWithoutToolChoice(options)) { _, new in new }
-        return GoogleGenerateContentPreparedCall(body: .object(body), warnings: warnings, headers: preparedOptions.headers)
+        return GoogleGenerateContentPreparedCall(
+            body: .object(body),
+            warnings: warnings,
+            headers: preparedOptions.headers,
+            toolNameMapping: createToolNameMapping(
+                tools: request.tools,
+                providerToolNames: ["google.code_execution": "code_execution"]
+            )
+        )
     }
 
 }
@@ -133,6 +142,7 @@ struct GoogleGenerateContentPreparedCall {
     var body: JSONValue
     var warnings: [AIWarning]
     var headers: [String: String]
+    var toolNameMapping: AIToolNameMapping
 }
 
 extension GoogleGenerativeLanguageModel {

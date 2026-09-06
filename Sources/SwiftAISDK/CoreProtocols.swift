@@ -190,7 +190,41 @@ public protocol RerankingModel: Sendable {
 
 public protocol AIFileClient: Sendable {
     var providerID: String { get }
+    var supportedFileOperations: Set<AIFileOperation> { get }
     func uploadFile(_ request: FileUploadRequest) async throws -> FileUploadResult
+    func getFileMetadata(_ request: FileMetadataRequest) async throws -> FileMetadataResult
+    func downloadFile(_ request: FileDownloadRequest) async throws -> FileDownloadResult
+    func deleteFile(_ request: FileDeleteRequest) async throws -> FileDeleteResult
+}
+
+public enum AIFileOperation: String, Hashable, Sendable {
+    case upload
+    case getMetadata
+    case download
+    case delete
+}
+
+public extension AIFileClient {
+    var supportedFileOperations: Set<AIFileOperation> { [.upload] }
+
+    func getFileMetadata(_ request: FileMetadataRequest) async throws -> FileMetadataResult {
+        throw unsupportedFileOperation("metadata retrieval")
+    }
+
+    func downloadFile(_ request: FileDownloadRequest) async throws -> FileDownloadResult {
+        throw unsupportedFileOperation("download")
+    }
+
+    func deleteFile(_ request: FileDeleteRequest) async throws -> FileDeleteResult {
+        throw unsupportedFileOperation("deletion")
+    }
+
+    private func unsupportedFileOperation(_ operation: String) -> AIError {
+        .invalidArgument(
+            argument: "client",
+            message: "The \(providerID) files client does not support file \(operation)."
+        )
+    }
 }
 
 public protocol AISkillsClient: Sendable {

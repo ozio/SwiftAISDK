@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-08-31`
-- Baseline upstream ref: `vercel/ai@9d9a73f1551f2243035491e9de5a2e00ebf9eb17`
-- Current upstream ref: `vercel/ai@e1bfe50427d09e65404cffea9f71a60a66af0f3e`
+- Date: `2026-09-06`
+- Baseline upstream ref: `vercel/ai@e1bfe50427d09e65404cffea9f71a60a66af0f3e`
+- Current upstream ref: `vercel/ai@efdfd6290d783864f00ebdf5a0aad8711f2eb2db`
 - Diff command:
 
   ```sh
   git -C <vercel-ai-checkout> diff --name-status \
-    9d9a73f1551f2243035491e9de5a2e00ebf9eb17..e1bfe50427d09e65404cffea9f71a60a66af0f3e \
+    e1bfe50427d09e65404cffea9f71a60a66af0f3e..efdfd6290d783864f00ebdf5a0aad8711f2eb2db \
     -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
        'packages/**/*.test.mts' 'packages/**/*.spec.ts' \
        'packages/**/*.spec.tsx' 'packages/**/*.spec.mts'
@@ -28,6 +28,64 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-09-06 Diff
+
+The generated executable inventory grows from 849 to 864 files while remaining
+at 80 package/example groups. The exact path comparison returns 114 changed
+executable tests/specs: 16 added, 97 modified, and one deleted. The sorted path
+set has SHA-256
+`52cf911cf24fac460118f94e3747404bc8e38e2a3a657f69fe14f409bb552684`.
+
+| Upstream test group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `packages/ai/**` | 16 | `ported/no-swift-action` | Core tests cover batch tool/input-file content, required tool choice, isolated in-band stream recovery, array bounds, embedding-count mismatch, image diagnostics, Files V4 results, text data URLs, abort compatibility, and UI descriptor/title/namespace/message-ID behavior. Browser transport details have no Swift runtime analogue. Invalid array bounds remain constructor-compatible but fail before model work when executed. |
+| `packages/amazon-bedrock/**` | 5 | `ported` | Structured-output modes and Claude capability splits, citation-enabled empty text, safe document names, and provider-executed tool-result replay have focused coverage. |
+| `packages/anthropic/**` | 3 | `ported/no-swift-action` | Fable/Vertex recognition and shared Files V4 result behavior are covered. JavaScript `ReadableStream` upload mechanics are represented by Swift's distinct single-use `AsyncThrowingStream` contract rather than copied. |
+| `packages/azure/**` | 1 | `ported` | Foundry/Cognitive/Azure `/v1` normalization and inherited complete Responses usage are covered. |
+| `packages/bytedance/**` | 1 | `ported` | Unsafe video-status redirects are rejected before following. |
+| `packages/deepseek/**` | 1 | `covered/no-swift-action` | Existing upload headers/abort behavior covers the portable change; OpenAI/xAI CRUD is not assigned to DeepSeek and JavaScript streaming input remains a distinct runtime boundary. |
+| `packages/google/**` | 8 | `ported` | Coverage includes Batch tools/input files and strict result keys, Files propagation, Interactions video and processing call/result generation/streaming/history, system-instruction precedence, provider references, media resolution, compaction, reasoning/signatures, code-execution naming, and array schema bounds. |
+| `packages/google-vertex/**` | 1 | `ported` | MaaS Llama 4 defaults `max_tokens` to 8192 without overwriting an explicit caller value. |
+| `packages/klingai/**` | 1 | `ported` | Unsafe video-status redirects are rejected and credentials remain origin-scoped. |
+| `packages/mcp/**` | 3 | `ported` | Typed/raw annotations with strict known-field validation, structured-only results, and origin-only issuer slash normalization are covered. |
+| `packages/minimax/**` | 1 | `ported` | Status polling uses the shared validated-redirect path. |
+| `packages/open-responses/**` | 1 | `ported` | Strict assistant-history conversion distinguishes ID-less easy input from ID-bearing completed output. |
+| `packages/openai-compatible/**` | 1 | `ported` | Empty `tool_calls` arrays no longer terminate or split an active reasoning stream. |
+| `packages/openai/**` | 8 | `ported/no-swift-action` | GPT-6 reasoning, ultrafast tier, diarized transcription, image options, complete Files V4, batch tools/input-file results, outer-envelope validation, and complete/null usage have focused coverage. JavaScript Workflow deserialization remains outside this package surface. |
+| `packages/perplexity/**` | 1 | `covered` | Existing raw usage retains new provider and cost fields without a runtime rewrite. |
+| `packages/provider-utils/**` | 4 | `ported/no-swift-action` | Tests cover inline text/base64/byte files, validated DELETE, ordered cancellation-safe multipart streaming, redacted diagnostics, and binary response streaming. Undici behavior is Node-specific. |
+| `packages/xai/**` | 2 | `ported` | Complete Files V4 and batch tools/input-file/expiry/final-finish behavior are covered. |
+| `packages/angular/**`; `packages/svelte/**` | 2 | `out-of-scope` | Framework object-error fallback state is not a provider-facing Swift surface. |
+| `packages/react/**` | 1 | `out-of-scope` | `useObject` browser error wording does not change SwiftAISDK's native session. |
+| `packages/harness*/**` | 42 | `out-of-scope` | Harness bridges, credentials, arbitrary inference headers, lifecycle callbacks, ACP host-tool transport, instruction/skill materialization, and adapter-specific sessions belong to separate agent products. |
+| `packages/policy-opa/**` | 2 | `out-of-scope` | OPA decision normalization and fail-closed approval policy belong to the separate policy runtime. |
+| `packages/workflow/**`; `packages/workflow-harness/**` | 9 | `out-of-scope` | Durable WorkflowAgent signing, callbacks, cancellation, tool context, serialization, and time-slice continuation require the unexposed JavaScript workflow product. |
+
+Coverage check: the grouped counts total exactly 114. The single deleted path
+remains represented, and no changed untracked product group is hidden by the
+provider audit.
+
+### Declaration-only changes
+
+The generator convention excludes `*.test-d.ts`, so these 11 changed paths are
+classified separately rather than added to the 114 executable count. Both
+trees still contain 90 declaration-only tests; the changed-path SHA-256 is
+`364d7352df6e01e97f89c0e10e55156174bddf4096f89a20f6b6e9f8eb3a1f9f`.
+
+| Declaration-only path | Status | Rationale |
+| --- | --- | --- |
+| `packages/ai/src/agent/tool-loop-agent.test-d.ts` | `out-of-scope` | Workflow/tool-loop agent type surface is not exposed. |
+| `packages/ai/src/batch/batch-types.test-d.ts` | `ported` | Shared Batch V4 tool content and provider metadata are reflected in public Swift types. |
+| `packages/ai/src/generate-text/generate-text.test-d.ts` | `ported` | Required tool choice, array bounds, and result shapes are represented with Swift-native typing. |
+| `packages/ai/src/generate-text/stream-text.test-d.ts` | `ported` | Raw and typed streams expose `streamRetries` through Swift overloads. |
+| `packages/ai/src/ui/ui-messages.test-d.ts` | `ported` | Approval descriptors, tool titles/metadata, and replacement IDs have typed Swift coverage. |
+| `packages/harness-acp/src/acp-harness.test-d.ts` | `out-of-scope` | ACP harness product types are untracked. |
+| `packages/harness-claude-code/src/claude-code-harness.test-d.ts` | `out-of-scope` | Claude Code harness product types are untracked. |
+| `packages/harness-cursor/src/cursor-harness.test-d.ts` | `out-of-scope` | Cursor harness product types are untracked. |
+| `packages/harness-grok-build/src/grok-build-harness.test-d.ts` | `out-of-scope` | Grok Build harness product types are untracked. |
+| `packages/harness/src/agent/harness-agent-settings.test-d.ts` | `out-of-scope` | Generic harness agent settings are outside the provider-facing library. |
+| `packages/workflow/src/workflow-agent.test-d.ts` | `out-of-scope` | Durable WorkflowAgent types are not exposed. |
 
 ## 2026-08-31 Diff
 

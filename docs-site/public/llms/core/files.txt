@@ -1,0 +1,83 @@
+# Files
+
+Source URL: /SwiftAISDK/core/files/
+
+Use a provider's `files()` client when a request needs a durable provider file
+reference rather than inline bytes. Every `AIFileClient` advertises
+`supportedFileOperations`, so applications can distinguish an upload-only
+provider from a complete Files V4 implementation before starting I/O.
+
+```swift
+let client = try AIProviders.openAI().files()
+print(client.supportedFileOperations)
+
+let uploaded = try await AI.uploadFile(
+    client: client,
+    request: FileUploadRequest(
+        data: documentData,
+        mediaType: "application/pdf",
+        filename: "report.pdf",
+        purpose: "assistants"
+    )
+)
+
+let reference = uploaded.providerReference
+let metadata = try await AI.getFileMetadata(
+    client: client,
+    request: FileMetadataRequest(file: reference)
+)
+let download = try await AI.downloadFile(
+    client: client,
+    request: FileDownloadRequest(file: reference)
+)
+
+for try await bytes in download.content {
+    consume(bytes)
+}
+
+let deletion = try await AI.deleteFile(
+    client: client,
+    request: FileDeleteRequest(file: reference)
+)
+```
+
+OpenAI and xAI implement upload, metadata, streamed download, and deletion.
+Other clients can remain upload-only; their default protocol implementations
+reject unsupported operations before network I/O.
+
+## Streaming Uploads
+
+Use `FileUploadRequest(stream:mediaType:filename:...)` to avoid buffering a
+large input in memory:
+
+```swift
+let uploaded = try await AI.uploadFile(
+    client: client,
+    request: FileUploadRequest(
+        stream: byteStream,
+        mediaType: "application/jsonl",
+        filename: "requests.jsonl",
+        purpose: "batch"
+    )
+)
+```
+
+A stream-backed upload is single-use. The facade disables automatic retry and
+cancels the producer when upload fails, including when a custom client rejects
+the request before reading it. Buffered `Data` uploads remain replayable and use
+the supplied `AIRetryPolicy`. Download setup can retry normally, but failures
+encountered while consuming the returned byte stream are delivered to that
+consumer rather than replaying already-read bytes.
+
+## Results and Provider Options
+
+Upload and metadata results include the provider reference, filename, media
+type, byte size, creation/expiry dates, warnings, raw response, request/response
+metadata, and provider metadata when available. Download returns an
+`AsyncThrowingStream<Data, Error>` plus its media type and metadata. Delete
+returns the provider reference and a typed `deleted` flag.
+
+Pass the exact `providerReference` returned by upload. File IDs are encoded as
+path components, including dot-segment-like IDs, rather than concatenated as raw
+URL paths. xAI's `expiresAfter` upload option accepts an integer from 3,600 to
+2,592,000 seconds. OpenAI preserves its provider-native expiry metadata.

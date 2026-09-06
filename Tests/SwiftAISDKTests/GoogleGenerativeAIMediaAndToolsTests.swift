@@ -2,6 +2,60 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func googleAndVertexPreserveCustomCodeExecutionAliasInUnaryAndStream() async throws {
+    let response = #"{"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print(1)"}},{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"1\\n"}},{"codeExecutionResult":{"outcome":"OUTCOME_FAILED","output":"boom\\n"}}]},"finishReason":"STOP"}]}"#
+    let streamResponse = "data: \(response)\n\n"
+    let tools: [String: JSONValue] = ["run_python": GoogleTools.codeExecution()]
+
+    let googleUnaryTransport = RecordingTransport(response: jsonResponse(response))
+    let googleProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "key", transport: googleUnaryTransport))
+    let googleUnary = try await googleProvider.languageModel("gemini-3.8-flash").generate(
+        LanguageModelRequest(messages: [.user("Run it")], tools: tools)
+    )
+    #expect(googleUnary.toolCalls.map(\.name) == ["run_python"])
+    #expect(googleUnary.toolResults.map(\.toolName) == ["run_python", "run_python"])
+
+    let googleStreamTransport = RecordingTransport(response: sseResponse(streamResponse))
+    let googleStreamProvider = try AIProviders.google(settings: ProviderSettings(apiKey: "key", transport: googleStreamTransport))
+    let googleStreamModel = try googleStreamProvider.languageModel("gemini-3.8-flash")
+    var googleStreamNames: [String] = []
+    for try await part in googleStreamModel.stream(
+        LanguageModelRequest(messages: [.user("Run it")], tools: tools)
+    ) {
+        if case let .toolCall(call) = part { googleStreamNames.append(call.name) }
+        if case let .toolResult(result) = part { googleStreamNames.append(result.toolName) }
+    }
+    #expect(googleStreamNames == ["run_python", "run_python", "run_python"])
+
+    let vertexUnaryTransport = RecordingTransport(response: jsonResponse(response))
+    let vertexProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        apiKey: "vertex-key",
+        baseURL: "https://vertex.example.com/v1beta1",
+        transport: vertexUnaryTransport
+    ))
+    let vertexUnary = try await vertexProvider.languageModel("gemini-3.8-flash").generate(
+        LanguageModelRequest(messages: [.user("Run it")], tools: tools)
+    )
+    #expect(vertexUnary.toolCalls.map(\.name) == ["run_python"])
+    #expect(vertexUnary.toolResults.map(\.toolName) == ["run_python", "run_python"])
+
+    let vertexStreamTransport = RecordingTransport(response: sseResponse(streamResponse))
+    let vertexStreamProvider = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
+        apiKey: "vertex-key",
+        baseURL: "https://vertex.example.com/v1beta1",
+        transport: vertexStreamTransport
+    ))
+    let vertexStreamModel = try vertexStreamProvider.languageModel("gemini-3.8-flash")
+    var vertexStreamNames: [String] = []
+    for try await part in vertexStreamModel.stream(
+        LanguageModelRequest(messages: [.user("Run it")], tools: tools)
+    ) {
+        if case let .toolCall(call) = part { vertexStreamNames.append(call.name) }
+        if case let .toolResult(result) = part { vertexStreamNames.append(result.toolName) }
+    }
+    #expect(vertexStreamNames == ["run_python", "run_python", "run_python"])
+}
+
 @Test func googleToolsHelpersMirrorProviderExecutedToolFactories() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"grounded"}]},"finishReason":"STOP"}]}
@@ -487,7 +541,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.58")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.64")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
     #expect(body["contents"]?[0]?["parts"]?[0]?["text"]?.stringValue == "Hello from SwiftAISDK!")

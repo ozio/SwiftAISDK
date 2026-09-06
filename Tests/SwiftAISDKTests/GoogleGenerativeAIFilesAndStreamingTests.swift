@@ -29,6 +29,37 @@ import Testing
     #expect(requests[1].headers["Content-Length"] == nil)
     #expect(requests[1].body == Data("video".utf8))
 }
+
+@Test func googleFilesThreadsPerCallHeadersAndAbortThroughStartUploadAndStatus() async throws {
+    let transport = RecordingTransport(responses: [
+        AIHTTPResponse(statusCode: 200, headers: ["x-goog-upload-url": "https://upload.example.com/session"], body: Data()),
+        jsonResponse(#"{"file":{"name":"files/abc","mimeType":"application/pdf","uri":"https://generativelanguage.googleapis.com/v1beta/files/abc","state":"PROCESSING"}}"#),
+        jsonResponse(#"{"name":"files/abc","mimeType":"application/pdf","uri":"https://generativelanguage.googleapis.com/v1beta/files/abc","state":"ACTIVE"}"#)
+    ])
+    let provider = try AIProviders.google(settings: ProviderSettings(
+        apiKey: "gemini-key",
+        headers: ["Provider-Header": "provider"],
+        transport: transport
+    ))
+    let controller = AIAbortController()
+
+    _ = try await provider.files().uploadFile(FileUploadRequest(
+        data: Data([1, 2, 3]),
+        mediaType: "application/pdf",
+        pollIntervalNanoseconds: 0,
+        headers: ["x-request-id": "req-1"],
+        abortSignal: controller.signal
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 3)
+    #expect(requests.allSatisfy { $0.abortSignal === controller.signal })
+    #expect(normalizeHeaders(requests[0].headers)["x-request-id"] == "req-1")
+    #expect(normalizeHeaders(requests[0].headers)["provider-header"] == "provider")
+    #expect(normalizeHeaders(requests[2].headers)["x-request-id"] == "req-1")
+    #expect(normalizeHeaders(requests[2].headers)["provider-header"] == "provider")
+    #expect(normalizeHeaders(requests[1].headers)["x-request-id"] == nil)
+}
 @Test func googleLanguageStreamsGenerateContentEvents() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"candidates":[{"content":{"parts":[{"text":"gem"}],"role":"model"},"index":0,"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://source.example.com","title":"Source Title"}}]}}]}

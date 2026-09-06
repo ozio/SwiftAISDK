@@ -45,6 +45,12 @@ let result = try await model.generateText(
 
 Each tool-loop result records `steps`, `toolCalls`, `toolResults`, approval parts, and `responseMessages` so you can inspect what happened or continue the conversation.
 
+Tool choice is enforced at the facade boundary. If `toolChoice` is `required`,
+or names a particular tool, and the provider completes without the required
+call, generation throws `AIToolChoiceViolationError`. The error retains the
+requested choice, provider/model identity, finish reason, and returned content
+for diagnostics.
+
 ## Approvals
 
 Use `needsApproval` on a tool when a specific tool call should pause for approval, or use a call-level approval policy when one central policy should evaluate every tool call.
@@ -74,6 +80,12 @@ telemetry. Returning `.userApproval` remains the reason-free shorthand.
 If an approved persisted call no longer validates against the current tool
 schema, SwiftAISDK does not execute it; the model receives a tool-error result
 and can continue the turn safely.
+
+`AIToolApprovalRequest.descriptor` retains opaque provider-computed display
+information through validation and telemetry. Treat it as untrusted UI metadata,
+not as authorization evidence. A failed tool result's provider metadata is also
+restored onto its associated model-facing call when a provider needs a namespace
+or replay identifier.
 
 ## Streamed Tool Input
 
@@ -144,6 +156,11 @@ namespaced, tool-search, and legacy `computerUse(...)` entries warn and are
 removed; an allow-list containing only unrepresentable entries is rejected.
 The current `computer` tool is distinct from the older `computer_use` wire
 shape.
+
+`OpenAITools.imageGeneration(action:)` and
+`AzureOpenAITools.imageGeneration(action:)` expose the current hosted image-tool
+action alongside background, fidelity, mask, model, output, quality, and size
+options.
 
 The generic Open Responses 2.0.28 provider intentionally does not gain this
 execution surface: provider-defined tools emit an unsupported warning and are

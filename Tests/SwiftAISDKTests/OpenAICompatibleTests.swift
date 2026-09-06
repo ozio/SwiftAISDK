@@ -45,7 +45,7 @@ import Testing
     #expect(requests.count == 4)
     #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer test-key" })
     #expect(requests.allSatisfy { $0.headers["x-client"] == "swift" })
-    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.41" })
+    #expect(requests.allSatisfy { $0.headers["user-agent"] == "CustomApp/1.0 ai-sdk/openai-compatible/3.0.44" })
 }
 
 @Test func openAICompatibleClampsOutputTextTokensWhenReasoningExceedsCompletionLikeUpstream() async throws {
@@ -177,6 +177,51 @@ import Testing
     let completionBody = try decodeJSONBody(try #require((await completionTransport.requests()).first?.body))
     #expect(completionBody["stream"] == true)
     #expect(completionBody["stream_options"]?["include_usage"]?.boolValue == true)
+}
+
+@Test func openAICompatibleEmptyToolCallDeltasKeepReasoningContinuous() async throws {
+    let transport = RecordingTransport(response: sseResponse("""
+    data: {"choices":[{"delta":{"reasoning_content":"one","tool_calls":[]}}]}
+
+    data: {"choices":[{"delta":{"reasoning_content":" two","tool_calls":[]}}]}
+
+    data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}
+
+    data: [DONE]
+
+    """))
+    let provider = try AIProviders.openAICompatible(
+        name: "test-provider",
+        baseURL: "https://api.example.com",
+        apiKey: "test-key",
+        transport: transport
+    )
+
+    var reasoningStarts = 0
+    var reasoningEnds = 0
+    var reasoning = ""
+    var text = ""
+    for try await part in try provider.chatModel("reasoning-model").stream(
+        LanguageModelRequest(messages: [.user("Think")])
+    ) {
+        switch part {
+        case .reasoningStart:
+            reasoningStarts += 1
+        case let .reasoningDeltaPart(_, delta, _):
+            reasoning += delta
+        case .reasoningEnd:
+            reasoningEnds += 1
+        case let .textDeltaPart(_, delta, _):
+            text += delta
+        default:
+            break
+        }
+    }
+
+    #expect(reasoningStarts == 1)
+    #expect(reasoningEnds == 1)
+    #expect(reasoning == "one two")
+    #expect(text == "answer")
 }
 
 @Test func openAICompatibleAppendsQueryParamsToModelURLs() async throws {

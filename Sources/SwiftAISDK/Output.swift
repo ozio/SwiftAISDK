@@ -207,7 +207,7 @@ public enum Output {
                 )
             },
             streamFromRequest: { model, request, timeoutNanoseconds, retryPolicy, telemetry, jsonInstruction, repairText in
-                mapObjectStreamToOutputStream(
+                return mapObjectStreamToOutputStream(
                     AI.streamObject(
                         model: model,
                         request: request,
@@ -267,8 +267,27 @@ public enum Output {
         )
     }
 
+    /// Source-compatible array output factory retained from 1.5.x.
     public static func array<Element: Decodable & Sendable>(
         element: JSONValue,
+        name: String? = nil,
+        description: String? = nil,
+        as type: Element.Type = Element.self
+    ) -> AIOutput<[Element], [Element]> {
+        array(
+            element: element,
+            minItems: nil,
+            maxItems: nil,
+            name: name,
+            description: description,
+            as: type
+        )
+    }
+
+    public static func array<Element: Decodable & Sendable>(
+        element: JSONValue,
+        minItems: Int? = nil,
+        maxItems: Int? = nil,
         name: String? = nil,
         description: String? = nil,
         as type: Element.Type = Element.self
@@ -279,23 +298,55 @@ public enum Output {
             name: name,
             description: description,
             generateFromRequest: { model, request, retryPolicy, telemetry, jsonInstruction, repairText in
-                try await AIOutputGenerationResult(
-                    objectResult: AI.generateObjectArray(
-                        model: model,
-                        request: request,
-                        as: Element.self,
+                try validateArrayOutputBoundsConfiguration(minItems: minItems, maxItems: maxItems)
+                let request = objectRequest(
+                    from: request,
+                    schema: arrayOutputSchema(
                         elementSchema: element,
-                        schemaName: name,
-                        schemaDescription: description,
-                        retryPolicy: retryPolicy,
-                        telemetry: telemetry,
-                        jsonInstruction: jsonInstruction,
-                        repairText: repairText
-                    )
+                        minItems: minItems,
+                        maxItems: maxItems
+                    ),
+                    schemaName: name,
+                    schemaDescription: description,
+                    jsonInstruction: jsonInstruction
                 )
+                let result = try await AI.generateObjectArray(
+                    model: model,
+                    request: request,
+                    as: Element.self,
+                    elementSchema: element,
+                    schemaName: name,
+                    schemaDescription: description,
+                    retryPolicy: retryPolicy,
+                    telemetry: telemetry,
+                    // Already injected above with the bounded wrapper schema.
+                    jsonInstruction: nil,
+                    repairText: repairText
+                )
+                try validateArrayOutputCount(result.object.count, minItems: minItems, maxItems: maxItems)
+                return AIOutputGenerationResult(objectResult: result)
             },
             streamFromRequest: { model, request, timeoutNanoseconds, retryPolicy, telemetry, jsonInstruction, repairText in
-                mapObjectStreamToOutputStream(
+                if let configurationError = arrayOutputBoundsConfigurationError(
+                    minItems: minItems,
+                    maxItems: maxItems
+                ) {
+                    return AsyncThrowingStream { continuation in
+                        continuation.finish(throwing: configurationError)
+                    }
+                }
+                let request = objectRequest(
+                    from: request,
+                    schema: arrayOutputSchema(
+                        elementSchema: element,
+                        minItems: minItems,
+                        maxItems: maxItems
+                    ),
+                    schemaName: name,
+                    schemaDescription: description,
+                    jsonInstruction: jsonInstruction
+                )
+                return mapObjectStreamToOutputStream(
                     AI.streamObjectArray(
                         model: model,
                         request: request,
@@ -306,17 +357,29 @@ public enum Output {
                         timeoutNanoseconds: timeoutNanoseconds,
                         retryPolicy: retryPolicy,
                         telemetry: telemetry,
-                        jsonInstruction: jsonInstruction,
+                        // Already injected above with the bounded wrapper schema.
+                        jsonInstruction: nil,
                         repairText: repairText
                     ),
                     outputKind: .array,
-                    partial: { $0 }
+                    partial: { $0 },
+                    validatePartial: { value in
+                        guard let maxItems, value.count > maxItems else { return nil }
+                        return arrayOutputCountError(count: value.count, minimum: nil, maximum: maxItems)
+                    },
+                    validateFinal: { value in
+                        arrayOutputCountError(count: value.count, minimum: minItems, maximum: maxItems)
+                    }
                 )
             },
             requestForOutput: { request, jsonInstruction in
                 objectRequest(
                     from: request,
-                    schema: arrayOutputSchema(elementSchema: element),
+                    schema: arrayOutputSchema(
+                        elementSchema: element,
+                        minItems: minItems,
+                        maxItems: maxItems
+                    ),
                     schemaName: name,
                     schemaDescription: description,
                     jsonInstruction: jsonInstruction
@@ -333,6 +396,8 @@ public enum Output {
                     repairText: repairText,
                     providerID: providerID
                 )
+                try validateArrayOutputBoundsConfiguration(minItems: minItems, maxItems: maxItems)
+                try validateArrayOutputCount(parsed.object.count, minItems: minItems, maxItems: maxItems)
                 return optionalOutputResult(
                     output: parsed.object,
                     rawOutput: parsed.rawObject,
@@ -343,13 +408,32 @@ public enum Output {
         )
     }
 
+    /// Source-compatible schema-backed array factory retained from 1.5.x.
     public static func array<ElementSchema: AIObjectSchema>(
         element: ElementSchema,
         name: String? = nil,
         description: String? = nil
     ) -> AIOutput<[ElementSchema.Output], [ElementSchema.Output]> {
         array(
+            element: element,
+            minItems: nil,
+            maxItems: nil,
+            name: name,
+            description: description
+        )
+    }
+
+    public static func array<ElementSchema: AIObjectSchema>(
+        element: ElementSchema,
+        minItems: Int? = nil,
+        maxItems: Int? = nil,
+        name: String? = nil,
+        description: String? = nil
+    ) -> AIOutput<[ElementSchema.Output], [ElementSchema.Output]> {
+        array(
             element: element.jsonSchema,
+            minItems: minItems,
+            maxItems: maxItems,
             name: name ?? element.name,
             description: description ?? element.description,
             as: ElementSchema.Output.self
@@ -674,10 +758,67 @@ private func mapLanguageStreamToOutputStream(
     }
 }
 
+private func arrayOutputBoundsConfigurationError(
+    minItems: Int?,
+    maxItems: Int?
+) -> AIError? {
+    if let minItems, minItems < 0 {
+        return .invalidArgument(argument: "minItems", message: "minItems must be greater than or equal to 0")
+    }
+    if let maxItems, maxItems < 0 {
+        return .invalidArgument(argument: "maxItems", message: "maxItems must be greater than or equal to 0")
+    }
+    if let minItems, let maxItems, minItems > maxItems {
+        return .invalidArgument(argument: "minItems", message: "minItems must be less than or equal to maxItems")
+    }
+    return nil
+}
+
+private func validateArrayOutputBoundsConfiguration(
+    minItems: Int?,
+    maxItems: Int?
+) throws {
+    if let error = arrayOutputBoundsConfigurationError(minItems: minItems, maxItems: maxItems) {
+        throw error
+    }
+}
+
+private func arrayOutputCountError(
+    count: Int,
+    minimum: Int?,
+    maximum: Int?
+) -> AIError? {
+    if let minimum, count < minimum {
+        return .invalidResponse(
+            provider: "ai.output.array",
+            message: "elements array must contain at least \(minimum) items"
+        )
+    }
+    if let maximum, count > maximum {
+        return .invalidResponse(
+            provider: "ai.output.array",
+            message: "elements array must contain at most \(maximum) items"
+        )
+    }
+    return nil
+}
+
+private func validateArrayOutputCount(
+    _ count: Int,
+    minItems: Int?,
+    maxItems: Int?
+) throws {
+    if let error = arrayOutputCountError(count: count, minimum: minItems, maximum: maxItems) {
+        throw error
+    }
+}
+
 private func mapObjectStreamToOutputStream<FinalOutput: Sendable, PartialOutput: Sendable>(
     _ stream: AsyncThrowingStream<ObjectStreamPart<FinalOutput>, Error>,
     outputKind: AIOutputKind? = nil,
-    partial transformPartial: (@Sendable (FinalOutput) -> PartialOutput)? = nil
+    partial transformPartial: (@Sendable (FinalOutput) -> PartialOutput)? = nil,
+    validatePartial: (@Sendable (FinalOutput) -> Error?)? = nil,
+    validateFinal: (@Sendable (FinalOutput) -> Error?)? = nil
 ) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
@@ -695,10 +836,16 @@ private func mapObjectStreamToOutputStream<FinalOutput: Sendable, PartialOutput:
                             continuation.yield(.raw(.raw(partial)))
                         }
                     case let .partial(partial):
+                        if let error = validatePartial?(partial) {
+                            throw error
+                        }
                         if let transformPartial {
                             continuation.yield(.partialOutput(transformPartial(partial)))
                         }
                     case let .object(result):
+                        if let error = validateFinal?(result.object) {
+                            throw error
+                        }
                         didYieldOutput = true
                         continuation.yield(.output(AIOutputGenerationResult(objectResult: result)))
                     case let .warning(warning):

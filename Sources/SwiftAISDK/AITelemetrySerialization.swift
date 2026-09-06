@@ -117,7 +117,13 @@ func contentPartTelemetryJSON(_ part: AIContentPart) -> JSONValue {
             "modelOutput": result.modelOutput
         ])
     case let .toolApprovalRequest(request):
-        return .object(["type": .string("tool-approval-request"), "id": .string(request.id), "toolName": .string(request.toolName), "arguments": .string(request.arguments)])
+        return .object([
+            "type": .string("tool-approval-request"),
+            "id": .string(request.id),
+            "toolName": .string(request.toolName),
+            "arguments": .string(request.arguments),
+            "descriptor": request.descriptor
+        ])
     case let .toolApprovalResponse(response):
         return .object(["type": .string("tool-approval-response"), "id": .string(response.id), "approved": .bool(response.approved)])
     }
@@ -442,6 +448,7 @@ func toolApprovalRequestTelemetryJSON(_ request: AIToolApprovalRequest) -> JSONV
         "toolCallID": request.toolCallID.map(JSONValue.string),
         "toolName": .string(request.toolName),
         "arguments": .string(request.arguments),
+        "descriptor": request.descriptor,
         "reason": request.reason.map(JSONValue.string),
         "isAutomatic": .bool(request.isAutomatic),
         "providerMetadata": request.providerMetadata.isEmpty ? nil : .object(request.providerMetadata)

@@ -189,3 +189,117 @@ import Testing
         ["content": "element 2"]
     ])
 }
+
+@Test func aiOutputArrayStreamRetriesExcludeFailedAttemptJSONLikeUpstream() async throws {
+    let model = MockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamSequences: [
+            [
+                .textStart(id: "failed"),
+                .textDeltaPart(id: "failed", delta: #"{"elements":[{"content":"failed"}"#),
+                .providerError(AIStreamProviderError(message: "provider error", statusCode: 500))
+            ],
+            [
+                .textStart(id: "recovered"),
+                .textDeltaPart(id: "recovered", delta: #"{"elements":[{"content":"ok"}]}"#),
+                .textEnd(id: "recovered"),
+                .finish(reason: "stop", usage: TokenUsage(totalTokens: 3))
+            ]
+        ]
+    )
+    var output: AIOutputGenerationResult<[OutputContent]>?
+    var receivedProviderError = false
+
+    for try await part in AI.streamText(
+        model: model,
+        prompt: "prompt",
+        output: Output.array(element: outputContentSchema(), as: OutputContent.self),
+        retryPolicy: .none,
+        streamRetries: 1
+    ) {
+        switch part {
+        case let .output(result):
+            output = result
+        case let .raw(part):
+            receivedProviderError = receivedProviderError || part.streamProviderError != nil
+        default:
+            break
+        }
+    }
+
+    #expect(output?.output == [OutputContent(content: "ok")])
+    #expect(output?.text.contains("failed") == false)
+    #expect(output?.rawOutput == [["content": "ok"]])
+    #expect(!receivedProviderError)
+    #expect(model.streamRequests.count == 2)
+}
+
+@Test func aiOutputArrayIncludesAndEnforcesConfiguredBoundsLikeUpstream() async throws {
+    let schema = arrayOutputSchema(
+        elementSchema: ["type": "string"],
+        minItems: 2,
+        maxItems: 3
+    )
+    #expect(schema["properties"]?["elements"]?["minItems"]?.intValue == 2)
+    #expect(schema["properties"]?["elements"]?["maxItems"]?.intValue == 3)
+
+    let validModel = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"elements":["a","b"]}"#,
+        rawValue: .object([:])
+    ))
+    let valid = try await AI.generateText(
+        model: validModel,
+        prompt: "Return two strings.",
+        output: Output.array(
+            element: ["type": "string"],
+            minItems: 2,
+            maxItems: 3,
+            as: String.self
+        )
+    )
+    #expect(valid.output == ["a", "b"])
+    #expect(validModel.requests.first?.responseFormat == .json(schema: schema))
+
+    let shortModel = ObjectFacadeMockLanguageModel(result: TextGenerationResult(
+        text: #"{"elements":["a"]}"#,
+        rawValue: .object([:])
+    ))
+    do {
+        _ = try await AI.generateText(
+            model: shortModel,
+            prompt: "Return strings.",
+            output: Output.array(element: ["type": "string"], minItems: 2, as: String.self)
+        )
+        Issue.record("Expected output below minItems to fail.")
+    } catch let error as AIError {
+        #expect(error.description.contains("at least 2 items"))
+    }
+}
+
+@Test func aiOutputArrayStopsBeforeStreamingPastMaxItemsLikeUpstream() async throws {
+    let model = ObjectFacadeMockLanguageModel(
+        result: TextGenerationResult(text: "", rawValue: .object([:])),
+        streamParts: [
+            .textStart(id: "1"),
+            .textDeltaPart(id: "1", delta: #"{"elements":["a","b","c"]}"#),
+            .textEnd(id: "1"),
+            .finish(reason: "stop", usage: nil)
+        ]
+    )
+    var partials: [[String]] = []
+    do {
+        for try await part in AI.streamText(
+            model: model,
+            prompt: "Return strings.",
+            output: Output.array(element: ["type": "string"], maxItems: 2, as: String.self)
+        ) {
+            if case let .partialOutput(partial) = part {
+                partials.append(partial)
+            }
+        }
+        Issue.record("Expected output above maxItems to fail.")
+    } catch let error as AIError {
+        #expect(error.description.contains("at most 2 items"))
+    }
+    #expect(partials.allSatisfy { $0.count <= 2 })
+}

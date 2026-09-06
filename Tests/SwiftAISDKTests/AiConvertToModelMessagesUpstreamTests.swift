@@ -2,6 +2,34 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func aiConvertToModelMessagesPreservesFailedToolResultMetadataOnCall() throws {
+    let namespaceMetadata: [String: JSONValue] = [
+        "openai": .object(["namespace": .string("widget_tools")])
+    ]
+    let message = AIUIMessage.assistant(parts: [
+        .toolCall(AIToolCall(
+            id: "call-1",
+            name: "createWidget",
+            arguments: "{}"
+        )),
+        .toolResult(AIToolResult(
+            toolCallID: "call-1",
+            toolName: "createWidget",
+            result: .string("Invalid input"),
+            isError: true,
+            providerMetadata: namespaceMetadata
+        ))
+    ])
+
+    let result = try convertToModelMessages([message])
+
+    guard case let .toolCall(toolCall) = result[0].content[0] else {
+        Issue.record("Expected tool call")
+        return
+    }
+    #expect(toolCall.providerMetadata == namespaceMetadata)
+}
+
 @Test func aiConvertToModelMessagesOmitsPreliminaryToolOutputWhenIgnoringIncompleteCallsLikeUpstream() throws {
     let toolCall = AIToolCall(
         id: "call-preliminary",

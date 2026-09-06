@@ -78,7 +78,8 @@ func openAICompatibleChatProviderMetadata(from raw: JSONValue, choice: JSONValue
     if let logprobs = choice?["logprobs"]?["content"] {
         metadata["logprobs"] = logprobs
     }
-    if openAICompatibleProviderRoot(providerID) == "xai", let serviceTier = raw["service_tier"] {
+    if openAICompatibleProviderRoot(providerID) == "xai",
+       let serviceTier = raw["service_tier"], serviceTier != .null {
         metadata["serviceTier"] = serviceTier
     }
     return openAICompatibleNamespacedProviderMetadata(metadata, providerID: providerID, namespace: namespace)
@@ -97,10 +98,10 @@ func openAIResponsesProviderMetadata(from raw: JSONValue, providerID: String) ->
     if let responseID = raw["id"] {
         metadata["responseId"] = responseID
     }
-    if let serviceTier = raw["service_tier"] {
+    if let serviceTier = raw["service_tier"], serviceTier != .null {
         metadata["serviceTier"] = serviceTier
     }
-    if let reasoningContext = raw["reasoning"]?["context"] {
+    if let reasoningContext = raw["reasoning"]?["context"], reasoningContext != .null {
         metadata["reasoningContext"] = reasoningContext
     }
     let logprobs = openAIResponsesOutputLogprobs(from: raw)

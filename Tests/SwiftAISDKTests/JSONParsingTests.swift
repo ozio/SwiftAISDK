@@ -2,6 +2,15 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func jsonValueIntValueTruncatesFiniteValuesAndRejectsUnrepresentableValues() {
+    #expect(JSONValue.number(3.75).intValue == 3)
+    #expect(JSONValue.number(-3.75).intValue == -3)
+    #expect(JSONValue.number(.infinity).intValue == nil)
+    #expect(JSONValue.number(-.infinity).intValue == nil)
+    #expect(JSONValue.number(.nan).intValue == nil)
+    #expect(JSONValue.number(.greatestFiniteMagnitude).intValue == nil)
+}
+
 @Test func secureJSONParseParsesJSONValuesAndRejectsPrototypePayloads() throws {
     #expect(try secureJSONParse(#"{"a":5,"b":6}"#) == ["a": 5, "b": 6])
     #expect(try secureJSONParse("null") == .null)

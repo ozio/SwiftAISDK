@@ -1,6 +1,6 @@
 # Generate image
 
-Source URL: /core/generate-image/
+Source URL: /SwiftAISDK/core/generate-image/
 
 Use `generateImage` when a provider exposes an image model. The Swift-native convenience accepts the prompt directly and builds an `ImageGenerationRequest` for you.
 
@@ -65,3 +65,8 @@ call-scoped images, warnings, usage, provider metadata, and response metadata.
 The aggregate URL/base64/usage fields remain convenient for callers that do not
 need per-request attribution. Use `calls` when cost or response metadata must
 remain associated with an individual provider call.
+
+If the provider completes without any URL or base64 image, `generateImage`
+throws `AINoOutputError`. For image failures its `calls` property preserves the
+same per-call warnings, usage, provider metadata, and response metadata, so an
+empty aggregate result does not discard diagnostic evidence.

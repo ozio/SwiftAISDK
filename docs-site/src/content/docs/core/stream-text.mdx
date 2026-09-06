@@ -25,7 +25,7 @@ The legacy `textDelta`, `reasoningDelta`, and `finish` enum cases remain availab
 
 Each logical built-in model response emits exactly one terminal `finishMetadata` part after its open content and tool-input blocks have been closed and its final usage and provider metadata are known. A protocol that can carry multiple logical responses on one connection, such as OpenAI Responses, emits one terminal part for each response. A multi-step tool loop likewise has one terminal part per model step. Custom models should emit the same terminal; clean custom EOF without one is preserved rather than assigned a guessed finish reason.
 
-The full stream forwards repeatable provider `error` parts as in-band events. Setup, HTTP, framing, and network failures terminate by throwing. If an in-band error closes a provider stream without a terminal event, the facade completes that step with a single `finishMetadata` whose reason is `error`. Once any part has been exposed, the facade does not retry the model call.
+The full stream forwards repeatable provider `error` parts as in-band events. Setup, HTTP, framing, and network failures terminate by throwing. If an in-band error closes a provider stream without a terminal event, the facade completes that step with a single `finishMetadata` whose reason is `error`. By default an attempt is not replayed once it has exposed a public part. Callers can opt into the narrower post-start recovery described below.
 
 Use `toTextStream()` when only text is needed. It emits canonical text deltas, ignores lifecycle, reasoning, tool, metadata, and in-band error parts, and still propagates thrown failures.
 
@@ -39,12 +39,29 @@ Tool input can arrive before the final tool call. Use `toolInputStart`, `toolInp
 
 ## Retry Behavior
 
-Facade calls retry transient failures by default. For streams, retries only happen before the first emitted part so already-delivered chunks are not duplicated. A non-success HTTP response is collected within the configured response-size limit and mapped to the provider's typed error before any lifecycle part is emitted; failures after the first part terminate that stream without replaying it.
+Facade calls retry transient setup failures according to `retryPolicy`. The default
+post-start behavior is still conservative: after the first public part, a stream
+failure ends that attempt.
+
+Set `streamRetries` to a positive count to recover from retryable in-band provider
+error events after streaming has started. The failed attempt's tool input, tool
+calls/results, finish, usage, and provider metadata do not become step state for
+the replacement attempt. When recovery succeeds, the provider error event and
+failed terminal state are suppressed. Text and reasoning already delivered to
+the caller cannot be retracted, so a replacement attempt can repeat a prefix;
+consumers that enable this option should reconcile visible text accordingly.
+
+Thrown transport/framing failures after public output, non-retryable provider
+errors, clean empty streams, and output-schema failures do not consume this
+post-start retry budget. `retryPolicy` continues to govern setup attempts and
+backoff independently.
 
 ```swift
-for try await part in model.streamText(
-    "Stream this carefully.",
-    options: LanguageGenerationOptions(retryPolicy: .none)
+for try await part in AI.streamText(
+    model: model,
+    prompt: "Stream this carefully.",
+    retryPolicy: .none,
+    streamRetries: 1
 ) {
     // Render parts.
 }

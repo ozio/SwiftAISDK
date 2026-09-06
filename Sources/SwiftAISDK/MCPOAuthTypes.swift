@@ -78,7 +78,7 @@ public struct MCPOAuthAuthorizationServerMetadata: Equatable, Sendable {
               let tokenEndpoint = json["token_endpoint"]?.stringValue.flatMap(URL.init(string:)) else {
             throw MCPClientError(message: "Expected OAuth authorization server metadata with issuer, authorization_endpoint, and token_endpoint.")
         }
-        if let expectedIssuer, issuer != expectedIssuer {
+        if let expectedIssuer, !mcpOAuthIssuer(issuer, matches: expectedIssuer) {
             throw MCPClientError(
                 message: "OAuth authorization server metadata issuer \(issuer) does not match expected issuer \(expectedIssuer)"
             )
@@ -103,6 +103,26 @@ public struct MCPOAuthAuthorizationServerMetadata: Equatable, Sendable {
             rawValue: json
         )
     }
+}
+
+private func mcpOAuthIssuer(_ issuer: String, matches expectedIssuer: String) -> Bool {
+    if issuer == expectedIssuer {
+        return true
+    }
+    guard let expectedURL = URL(string: expectedIssuer),
+          let scheme = expectedURL.scheme,
+          let host = expectedURL.host,
+          expectedURL.path.isEmpty || expectedURL.path == "/",
+          expectedURL.query == nil,
+          expectedURL.fragment == nil else {
+        return false
+    }
+
+    var origin = "\(scheme)://\(host)"
+    if let port = expectedURL.port {
+        origin += ":\(port)"
+    }
+    return expectedIssuer == origin && issuer == "\(origin)/"
 }
 
 public struct MCPOAuthTokens: Equatable, Sendable {

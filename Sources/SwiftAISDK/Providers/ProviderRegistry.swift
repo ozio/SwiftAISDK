@@ -11,7 +11,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.52")
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.60")
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -35,7 +35,12 @@ public enum AIProviders {
     }
 
     public static func googleVertexMaaS(project: String? = nil, location: String? = nil, settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
-        try OpenAICompatibleProvider(
+        var settings = settings
+        let callerTransform = settings.transformRequestBody
+        settings.transformRequestBody = { body in
+            googleVertexMaaSRequestBody(callerTransform?(body) ?? body)
+        }
+        return try OpenAICompatibleProvider(
             providerID: "googleVertex.maas",
             defaultBaseURL: googleVertexOpenAIBaseURL(project: project, location: location),
             authorization: .bearer(environmentVariables: ["GOOGLE_VERTEX_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN"]),
@@ -117,7 +122,7 @@ public enum AIProviders {
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
             ),
-            userAgentSuffix: "ai-sdk/openai-compatible/3.0.41",
+            userAgentSuffix: "ai-sdk/openai-compatible/3.0.44",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
@@ -231,10 +236,10 @@ public enum AIProviders {
             headers["Authorization"] = "Bearer \(apiKey)"
         }
         headers.merge(settings.headers) { _, custom in custom }
-        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.36")
+        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.39")
         let endpoint = try requireURL(url)
         let base = "\(endpoint.scheme ?? "https")://\(endpoint.host ?? "")"
-        let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
+        let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, strictResponseInput: settings.strictResponseInput, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
         return OpenAICompatibleProvider(providerID: "\(name).responses", supportedCapabilities: [.language], config: config)
     }
 
@@ -346,6 +351,22 @@ private func googleVertexOpenAIBaseURL(project: String?, location: String?) thro
     return "https://\(host)/v1/projects/\(project)/locations/\(location)/endpoints/openapi"
 }
 
+private let googleVertexMaaSMaxOutputTokensByModel: [String: Int] = [
+    "meta/llama-4-maverick-17b-128e-instruct-maas": 8_192,
+    "meta/llama-4-scout-17b-16e-instruct-maas": 8_192
+]
+
+private func googleVertexMaaSRequestBody(_ body: [String: JSONValue]) -> [String: JSONValue] {
+    guard body["max_tokens"] == nil,
+          let modelID = body["model"]?.stringValue,
+          let maxOutputTokens = googleVertexMaaSMaxOutputTokensByModel[modelID] else {
+        return body
+    }
+    var body = body
+    body["max_tokens"] = .number(Double(maxOutputTokens))
+    return body
+}
+
 private func googleVertexAnthropicBaseURL(project: String?, location: String?) throws -> String {
     guard let project = project ?? environmentValue(["GOOGLE_VERTEX_PROJECT"]) else {
         throw AIError.invalidURL("Google Vertex Anthropic mode requires project or GOOGLE_VERTEX_PROJECT.")
@@ -372,5 +393,5 @@ private func perplexityHeaders(settings: ProviderSettings) throws -> [String: St
         throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
     }
     headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
-    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.36")
+    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.39")
 }

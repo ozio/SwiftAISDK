@@ -131,6 +131,9 @@ public struct AINoOutputError: Error, Equatable, CustomStringConvertible, Sendab
     public var kind: AINoOutputKind
     public var structuredOutputKind: AIOutputKind?
     public var responses: [AIResponseMetadata]
+    /// Underlying image-model call diagnostics. This is empty for non-image
+    /// no-output failures.
+    public var calls: [ImageGenerationCall]
     public var message: String
 
     public init(
@@ -138,13 +141,34 @@ public struct AINoOutputError: Error, Equatable, CustomStringConvertible, Sendab
         kind: AINoOutputKind = .output,
         structuredOutputKind: AIOutputKind? = nil,
         responses: [AIResponseMetadata] = [],
+        calls: [ImageGenerationCall] = [],
         message: String? = nil
     ) {
         self.provider = provider
         self.kind = kind
         self.structuredOutputKind = structuredOutputKind
         self.responses = responses
+        self.calls = calls
         self.message = message ?? Self.defaultMessage(kind: kind, structuredOutputKind: structuredOutputKind)
+    }
+
+    /// Source-compatible initializer retained from before image-call
+    /// diagnostics were attached to no-output errors.
+    public init(
+        provider: String? = nil,
+        kind: AINoOutputKind = .output,
+        structuredOutputKind: AIOutputKind? = nil,
+        responses: [AIResponseMetadata] = [],
+        message: String? = nil
+    ) {
+        self.init(
+            provider: provider,
+            kind: kind,
+            structuredOutputKind: structuredOutputKind,
+            responses: responses,
+            calls: [],
+            message: message
+        )
     }
 
     public var description: String {

@@ -1,6 +1,6 @@
 # Structured output
 
-Source URL: /core/structured-output/
+Source URL: /SwiftAISDK/core/structured-output/
 
 Use structured output when your app needs a Swift value rather than free-form prose.
 
@@ -66,11 +66,26 @@ Use `generateObject` when you want the most direct Swift API. Use `Output` when 
 
 - `Output.text()` returns plain text through the same result wrapper used by the other strategies.
 - `Output.object(schema:as:)` validates JSON, decodes a `Decodable` Swift value, and keeps the raw output.
-- `Output.array(elementSchema:as:)` expects an `elements` envelope and returns decoded array elements.
+- `Output.array(element:minItems:maxItems:as:)` expects an `elements` envelope,
+publishes optional array bounds in the generated JSON Schema, and rejects a
+final result outside those bounds.
 - `Output.choice(choices:)` constrains output to one of the provided strings.
 - `Output.json()` returns schema-free `JSONValue`.
 
 All strategies preserve text, reasoning, usage, warnings, provider metadata, response metadata, and the underlying `TextGenerationResult`.
+
+```swift
+let labels = Output.array(
+    element: ["type": "string"],
+    minItems: 2,
+    maxItems: 4,
+    as: String.self
+)
+```
+
+For source compatibility, the constructor remains nonthrowing. A negative bound
+or `minItems > maxItems` is rejected when generation or streaming begins, before
+the model performs work.
 
 ## Streaming Output
 
@@ -82,6 +97,12 @@ All strategies preserve text, reasoning, usage, warnings, provider metadata, res
 - `source`, `warning`, `metadata`, `responseMetadata`, `finish`, and `raw` for surrounding stream state
 
 Partial object and array parsing uses the Swift partial JSON repair path, so incomplete trailing fragments can be ignored while already-complete fields or elements continue to stream.
+
+Typed object and array streams accept the same `streamRetries` option as raw
+`streamText`. A retryable in-band provider error can restart the whole typed
+output pipeline with failed-attempt parsing state isolated. JSON/schema/decoding
+failure after a complete provider response is not a provider-stream retry and
+does not consume this budget.
 
 ## Repair Hooks
 

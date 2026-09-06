@@ -4,7 +4,7 @@ import Testing
 
 @Test func openAIResponsesBatchV4CreatesPublishedMultipartAndPreparedJSONLRequests() async throws {
     let transport = OpenAIBatchScriptedTransport(sendResponses: [
-        jsonResponse(#"{"id":"file-input","object":"file","filename":"batch.jsonl","purpose":"batch"}"#),
+        jsonResponse(#"{"id":"file-input","object":"file","filename":"batch.jsonl","purpose":"batch","expires_at":1700172800}"#),
         jsonResponse(openAIBatchMetadata(
             status: "validating",
             total: 2,
@@ -34,6 +34,7 @@ import Testing
                 )
             )
         ],
+        providerOptions: ["openai": ["inputFileExpiresAfter": 3_600]],
         abortSignal: abortController.signal,
         headers: ["Operation-Header": "operation"]
     ))
@@ -49,6 +50,8 @@ import Testing
     ))
     #expect(result.status.createdAt == "2023-11-14T22:13:20.000Z")
     #expect(result.status.expiresAt == "2023-11-15T22:13:20.000Z")
+    #expect(result.providerMetadata["openai"]?["inputFileId"]?.stringValue == "file-input")
+    #expect(result.providerMetadata["openai"]?["inputFileExpiresAt"]?.stringValue == "2023-11-16T22:13:20.000Z")
     #expect(result.warnings.contains {
         $0.requestID == "compact"
             && $0.warning.type == "unsupported"
@@ -71,7 +74,7 @@ import Testing
     #expect(multipart.contains("Content-Type: application/jsonl"))
     #expect(multipart.contains("name=\"purpose\"\r\n\r\nbatch"))
     #expect(multipart.contains("name=\"expires_after[anchor]\"\r\n\r\ncreated_at"))
-    #expect(multipart.contains("name=\"expires_after[seconds]\"\r\n\r\n172800"))
+    #expect(multipart.contains("name=\"expires_after[seconds]\"\r\n\r\n3600"))
     let lines = try openAIBatchMultipartJSONLines(multipart)
     #expect(lines.count == 2)
     #expect(lines[0]["custom_id"]?.stringValue == "france")
@@ -139,6 +142,30 @@ import Testing
         message: "Invalid input file.",
         code: "invalid_request"
     ))
+}
+
+@Test func openAIResponsesBatchV4RejectsInvalidInputFileExpiryBeforeUpload() async throws {
+    for invalid: JSONValue in [3_599, 3_600.5, 2_592_001, 1e100] {
+        let transport = OpenAIBatchScriptedTransport(sendResponses: [])
+        let provider = try AIProviders.openAI(settings: ProviderSettings(
+            apiKey: "test-api-key",
+            transport: transport
+        ))
+
+        await #expect(throws: AIError.invalidArgument(
+            argument: "providerOptions.openai.inputFileExpiresAfter",
+            message: "inputFileExpiresAfter must be an integer from 3600 through 2592000."
+        )) {
+            _ = try await provider.batchLanguageModel("gpt-5.6").startBatch(AIBatchStartOptions(
+                requests: [AILanguageModelBatchRequest(
+                    id: "request",
+                    request: LanguageModelRequest(messages: [.user("Hello")])
+                )],
+                providerOptions: ["openai": ["inputFileExpiresAfter": invalid]]
+            ))
+        }
+        #expect(await transport.sendRequests().isEmpty)
+    }
 }
 
 @Test func openAIResponsesBatchV4IncrementallyParsesSuccessAndTerminalFailuresAcrossBothFiles() async throws {
@@ -283,7 +310,7 @@ import Testing
     #expect(await terminalTransport.streamRequests().isEmpty)
 }
 
-@Test func openAIResponsesBatchV4ConvertsToolCallsToItemFailuresAndMalformedJSONLToStreamErrors() async throws {
+@Test func openAIResponsesBatchV4ConvertsToolCallsAndMalformedJSONLToStreamErrors() async throws {
     let toolCallBody: JSONValue = [
         "id": "resp_tool",
         "created_at": 1_700_000_000,
@@ -297,7 +324,10 @@ import Testing
             "namespace": nil,
             "caller": nil
         ]],
-        "incomplete_details": nil
+        "incomplete_details": nil,
+        "usage": nil,
+        "service_tier": nil,
+        "reasoning": ["context": nil]
     ]
     let valid = openAIBatchResultLine(id: "tool", statusCode: 200, body: toolCallBody)
     let transport = OpenAIBatchScriptedTransport(
@@ -313,14 +343,176 @@ import Testing
     )
     var iterator = stream.makeAsyncIterator()
     let first = try #require(try await iterator.next())
-    guard case let .failed(id, error, _) = first else {
-        Issue.record("Expected tool-call item failure")
+    guard case let .succeeded(id, result) = first else {
+        Issue.record("Expected tool-call item success")
         return
     }
     #expect(id == "tool")
-    #expect(error.code == "unsupported_content")
+    #expect(result.finishReason == "tool-calls")
+    let firstContent = try #require(result.content.first)
+    guard case let .toolCall(call) = firstContent else {
+        Issue.record("Expected converted tool call")
+        return
+    }
+    #expect(call.id == "call-123")
+    #expect(call.name == "get_weather")
+    #expect(call.arguments == #"{"city":"Paris"}"#)
+    #expect(call.providerMetadata["openai"]?["itemId"]?.stringValue == "function-call")
+    #expect(call.providerMetadata["openai"]?["namespace"] == nil)
+    #expect(result.providerMetadata["openai"]?["serviceTier"] == nil)
+    #expect(result.providerMetadata["openai"]?["reasoningContext"] == nil)
     await #expect(throws: (any Error).self) {
         _ = try await iterator.next()
+    }
+}
+
+@Test func openAIResponsesBatchV4ConvertsSupportedProviderToolsLikeUpstream() async throws {
+    let body: JSONValue = [
+        "id": "resp_tools",
+        "model": "gpt-5.6",
+        "output": [
+            [
+                "type": "web_search_call",
+                "id": "web-1",
+                "status": "completed",
+                "action": ["type": "search", "query": "Paris weather"]
+            ],
+            [
+                "type": "file_search_call",
+                "id": "file-1",
+                "queries": ["weather"],
+                "results": nil
+            ],
+            [
+                "type": "code_interpreter_call",
+                "id": "code-1",
+                "code": "print(20)",
+                "container_id": "container-1",
+                "outputs": []
+            ]
+        ]
+    ]
+    let line = openAIBatchResultLine(id: "tools", statusCode: 200, body: body)
+    let transport = OpenAIBatchScriptedTransport(
+        sendResponses: [jsonResponse(openAIBatchMetadata(status: "completed", outputFileID: "file-output"))],
+        streamScripts: [OpenAIBatchStreamScript(chunks: [Data(line.utf8)])]
+    )
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-api-key", transport: transport))
+    let stream = try await provider.batchLanguageModel("gpt-5.6").getBatchResults(
+        AIBatchOperationOptions(batchID: "batch_123")
+    )
+    var items: [AIBatchItemResult<TextGenerationResult>] = []
+    for try await item in stream { items.append(item) }
+
+    guard case let .succeeded(_, result) = try #require(items.first) else {
+        Issue.record("Expected provider tool batch result")
+        return
+    }
+    #expect(result.content.count == 6)
+    let calls = result.content.compactMap { part -> AIToolCall? in
+        if case let .toolCall(call) = part { return call }
+        return nil
+    }
+    #expect(calls.map(\.name) == ["web_search", "file_search", "code_interpreter"])
+    #expect(calls.allSatisfy { $0.providerExecuted && $0.dynamic })
+    #expect(calls[2].providerMetadata.isEmpty)
+}
+
+@Test func openAIResponsesBatchV4RejectsMalformedOuterJSONLEnvelopesLikeUpstream() async throws {
+    let malformedLines = [
+        #"{"custom_id":"bad-response","response":{"body":{}},"error":null}"#,
+        #"{"custom_id":"bad-error","response":null,"error":{"code":42,"message":"failed"}}"#
+    ]
+
+    for line in malformedLines {
+        let transport = OpenAIBatchScriptedTransport(
+            sendResponses: [jsonResponse(openAIBatchMetadata(
+                status: "completed",
+                outputFileID: "file-output"
+            ))],
+            streamScripts: [OpenAIBatchStreamScript(chunks: [Data(line.utf8)])]
+        )
+        let provider = try AIProviders.openAI(settings: ProviderSettings(
+            apiKey: "test-api-key",
+            transport: transport
+        ))
+        let stream = try await provider.batchLanguageModel("gpt-5.6").getBatchResults(
+            AIBatchOperationOptions(batchID: "batch_123")
+        )
+        var iterator = stream.makeAsyncIterator()
+
+        await #expect(throws: (any Error).self) {
+            _ = try await iterator.next()
+        }
+    }
+}
+
+@Test func openAIResponsesBatchV4RejectsMalformedHostedToolOutputsPerItem() async throws {
+    let malformedBodies: [JSONValue] = [
+        ["output": [["type": "web_search_call", "id": "web-missing-status"]]],
+        ["output": [[
+            "type": "web_search_call",
+            "id": "web-bad-source",
+            "status": "completed",
+            "action": ["type": "search", "sources": [["type": "url", "url": 42]]]
+        ]]],
+        ["output": [[
+            "type": "file_search_call",
+            "id": "file-bad-result",
+            "queries": ["weather"],
+            "results": [[
+                "attributes": ["country": ["France"]],
+                "file_id": "file-1",
+                "filename": "weather.md",
+                "score": 0.9,
+                "text": "Sunny"
+            ]]
+        ]]],
+        ["output": [[
+            "type": "code_interpreter_call",
+            "id": "code-missing-outputs",
+            "code": nil,
+            "container_id": "container-1"
+        ]]],
+        ["output": [[
+            "type": "code_interpreter_call",
+            "id": "code-bad-output",
+            "code": "print(20)",
+            "container_id": "container-1",
+            "outputs": [["type": "logs", "logs": 20]]
+        ]]]
+    ]
+    let jsonLines = malformedBodies.enumerated().map { index, body in
+        openAIBatchResultLine(id: "malformed-\(index)", statusCode: 200, body: body)
+    }.joined(separator: "\n")
+    let transport = OpenAIBatchScriptedTransport(
+        sendResponses: [jsonResponse(openAIBatchMetadata(
+            status: "completed",
+            outputFileID: "file-output",
+            total: malformedBodies.count,
+            completed: malformedBodies.count,
+            failed: 0
+        ))],
+        streamScripts: [OpenAIBatchStreamScript(chunks: [Data(jsonLines.utf8)])]
+    )
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-api-key", transport: transport))
+    let stream = try await provider.batchLanguageModel("gpt-5.6").getBatchResults(
+        AIBatchOperationOptions(batchID: "batch_123")
+    )
+    var items: [AIBatchItemResult<TextGenerationResult>] = []
+    for try await item in stream { items.append(item) }
+
+    #expect(items.count == malformedBodies.count)
+    for (index, item) in items.enumerated() {
+        guard case let .failed(id, error, _) = item else {
+            Issue.record("Expected malformed hosted tool output to fail locally")
+            continue
+        }
+        #expect(id == "malformed-\(index)")
+        #expect(error == AIBatchError(
+            message: "OpenAI returned an invalid Responses batch result.",
+            code: "invalid_response"
+        ))
     }
 }
 

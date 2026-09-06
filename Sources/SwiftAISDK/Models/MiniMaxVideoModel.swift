@@ -360,12 +360,14 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                 )
             }
 
-            let response = try await config.transport.send(AIHTTPRequest(
-                method: "GET",
-                url: try requireURL("\(withoutTrailingSlash(config.baseURL))/v2/query/video_generation/\(taskID)"),
+            let response = try await downloadURL(
+                "\(withoutTrailingSlash(config.baseURL))/v2/query/video_generation/\(taskID)",
+                transport: config.transport,
                 headers: config.headers.mergingHeaders(normalizeHeaders(requestHeaders)),
-                abortSignal: abortSignal
-            ))
+                abortSignal: abortSignal,
+                trustedOrigin: config.baseURL,
+                credentialedOrigin: config.baseURL
+            )
             guard (200..<300).contains(response.statusCode) else {
                 throw miniMaxVideoHTTPStatusError(response: response)
             }

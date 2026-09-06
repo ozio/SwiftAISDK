@@ -306,7 +306,11 @@ func canonicalJSONText(_ value: JSONValue) -> String? {
     return String(data: data, encoding: .utf8)
 }
 
-func arrayOutputSchema(elementSchema: JSONValue) -> JSONValue {
+func arrayOutputSchema(
+    elementSchema: JSONValue,
+    minItems: Int? = nil,
+    maxItems: Int? = nil
+) -> JSONValue {
     let itemSchema: JSONValue
     var rootDefinitions: JSONValue?
     var rootDefs: JSONValue?
@@ -318,14 +322,21 @@ func arrayOutputSchema(elementSchema: JSONValue) -> JSONValue {
     } else {
         itemSchema = elementSchema
     }
+    var elementsSchema: [String: JSONValue] = [
+        "type": .string("array"),
+        "items": itemSchema
+    ]
+    if let minItems {
+        elementsSchema["minItems"] = .number(Double(minItems))
+    }
+    if let maxItems {
+        elementsSchema["maxItems"] = .number(Double(maxItems))
+    }
     var schema: [String: JSONValue] = [
         "$schema": .string("http://json-schema.org/draft-07/schema#"),
         "type": .string("object"),
         "properties": .object([
-            "elements": .object([
-                "type": .string("array"),
-                "items": itemSchema
-            ])
+            "elements": .object(elementsSchema)
         ]),
         "required": .array([.string("elements")]),
         "additionalProperties": .bool(false)

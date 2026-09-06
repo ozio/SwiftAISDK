@@ -17,16 +17,16 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
         let prepared = try googleInteractionsPreparedCall(for: request, modelID: modelID, agent: agent, stream: false)
         let raw = try await sendInteractions(body: .object(prepared.body), headers: request.headers, abortSignal: request.abortSignal)
         let final = try await resolvedInteraction(raw, requestHeaders: request.headers, abortSignal: request.abortSignal)
-        let text = googleInteractionsText(from: final)
-        let toolCalls = googleInteractionsToolCalls(from: final)
-        guard !text.isEmpty || !toolCalls.isEmpty else {
-            throw AIError.invalidResponse(provider: providerID, message: "No model_output text found in Google Interactions response.")
+        let output = googleInteractionsParsedOutput(from: final)
+        guard !output.content.isEmpty else {
+            throw AIError.invalidResponse(provider: providerID, message: "No supported output found in Google Interactions response.")
         }
         return TextGenerationResult(
-            text: text,
-            finishReason: googleInteractionsFinishReason(status: final["status"]?.stringValue, hasFunctionCall: googleInteractionsHasFunctionCall(final)),
+            text: output.text,
+            content: output.content,
+            reasoning: output.reasoning,
+            finishReason: googleInteractionsFinishReason(status: final["status"]?.stringValue, hasFunctionCall: output.hasFunctionCall),
             usage: googleInteractionsUsage(from: final),
-            toolCalls: toolCalls,
             sources: googleInteractionsSources(from: final),
             providerMetadata: googleInteractionsProviderMetadata(from: final),
             rawValue: final,
@@ -61,6 +61,7 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                     var emittedSourceKeys: Set<String> = []
                     var didEmitFinish = false
                     var didReceiveStreamError = false
+                    var interactionID: String?
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -72,36 +73,59 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                             continuation.yield(.providerError(providerError))
                             continue
                         }
-                        for source in googleInteractionsSources(from: raw, sourceCounter: &sourceCounter, emittedKeys: &emittedSourceKeys) {
-                            continuation.yield(.source(source))
-                        }
                         let eventType = raw["event_type"]?.stringValue
+                        let stepType = raw["step"]?["type"]?.stringValue
+                        let defersBuiltinResultSources = eventType == "step.start"
+                            && stepType.map { googleInteractionsBuiltinToolResultTypes.contains($0) } == true
+                        if !defersBuiltinResultSources {
+                            for source in googleInteractionsSources(from: raw, sourceCounter: &sourceCounter, emittedKeys: &emittedSourceKeys) {
+                                continuation.yield(.source(source))
+                            }
+                        }
                         if let interaction = raw["interaction"] {
+                            interactionID = interaction["id"]?.stringValue ?? interactionID
                             let metadata = googleInteractionsProviderMetadata(from: interaction)
                             if !metadata.isEmpty {
                                 continuation.yield(.metadata(metadata))
                             }
                         }
+                        if eventType == "step.start" {
+                            for part in content.start(raw["step"], index: raw["index"]?.intValue, interactionID: interactionID) {
+                                continuation.yield(part)
+                            }
+                        }
                         if eventType == "step.start",
                            raw["step"]?["type"]?.stringValue == "function_call" {
                             hasFunctionCall = true
-                            for part in toolCalls.start(step: raw["step"], index: raw["index"]?.intValue) {
+                            for part in toolCalls.start(
+                                step: raw["step"],
+                                index: raw["index"]?.intValue,
+                                interactionID: interactionID
+                            ) {
                                 continuation.yield(part)
                             }
                         }
                         if eventType == "step.delta", let delta = raw["delta"] {
-                            for part in content.delta(delta, index: raw["index"]?.intValue) {
+                            for part in content.delta(delta, index: raw["index"]?.intValue, interactionID: interactionID) {
                                 continuation.yield(part)
                             }
                             if delta["type"]?.stringValue == "arguments_delta" {
                                 hasFunctionCall = true
-                                for part in toolCalls.delta(delta, index: raw["index"]?.intValue) {
+                                for part in toolCalls.delta(
+                                    delta,
+                                    index: raw["index"]?.intValue,
+                                    interactionID: interactionID
+                                ) {
                                     continuation.yield(part)
                                 }
                             }
                         }
                         if eventType == "step.stop" {
-                            for part in content.stop(index: raw["index"]?.intValue) {
+                            for part in content.stop(
+                                index: raw["index"]?.intValue,
+                                sourceCounter: &sourceCounter,
+                                emittedSourceKeys: &emittedSourceKeys
+                            ) {
                                 continuation.yield(part)
                             }
                             for part in toolCalls.stop(index: raw["index"]?.intValue) {
@@ -110,7 +134,10 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                         }
                         if eventType == "interaction.completed" || eventType == "interaction.failed" || eventType == "interaction.incomplete" || eventType == "interaction.cancelled" {
                             let interaction = raw["interaction"] ?? raw
-                            for part in content.finishParts() {
+                            for part in content.finishParts(
+                                sourceCounter: &sourceCounter,
+                                emittedSourceKeys: &emittedSourceKeys
+                            ) {
                                 continuation.yield(part)
                             }
                             continuation.yield(.finishMetadata(
@@ -123,7 +150,10 @@ public final class GoogleInteractionsLanguageModel: LanguageModel, @unchecked Se
                         }
                     }
                     if didReceiveStreamError, !didEmitFinish {
-                        for part in content.finishParts() {
+                        for part in content.finishParts(
+                            sourceCounter: &sourceCounter,
+                            emittedSourceKeys: &emittedSourceKeys
+                        ) {
                             continuation.yield(part)
                         }
                         continuation.yield(.finishMetadata(

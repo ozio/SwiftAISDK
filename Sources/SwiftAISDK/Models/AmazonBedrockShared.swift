@@ -335,21 +335,35 @@ func bedrockPrepareTools(
 }
 
 func bedrockSupportsStrictToolSpec(modelID: String) -> Bool {
-    !bedrockAnthropicRejectsNewerSchemaFields(modelID: modelID)
+    !bedrockAnthropicMatches(
+        modelID: modelID,
+        models: bedrockAnthropicModelsWithoutStrictToolSupport
+    )
 }
 
 func bedrockSupportsNativeStructuredOutput(modelID: String) -> Bool {
-    !bedrockAnthropicRejectsNewerSchemaFields(modelID: modelID)
+    !bedrockAnthropicMatches(
+        modelID: modelID,
+        models: bedrockAnthropicModelsWithoutReliableNativeStructuredOutput
+    )
 }
 
-private func bedrockAnthropicRejectsNewerSchemaFields(modelID: String) -> Bool {
-    [
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-opus-5",
-        "claude-fable-5",
-        "claude-sonnet-5"
-    ].contains { modelID.contains($0) }
+private let bedrockAnthropicModelsWithoutStrictToolSupport = [
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-sonnet-5"
+]
+
+private let bedrockAnthropicModelsWithoutReliableNativeStructuredOutput =
+    bedrockAnthropicModelsWithoutStrictToolSupport + [
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5"
+    ]
+
+private func bedrockAnthropicMatches(modelID: String, models: [String]) -> Bool {
+    models.contains { modelID.contains($0) }
 }
 
 func bedrockSanitizeToolName(_ name: String) -> String {
@@ -359,6 +373,32 @@ func bedrockSanitizeToolName(_ name: String) -> String {
         options: .regularExpression
     )
     return sanitized.isEmpty ? "_" : sanitized
+}
+
+func bedrockSanitizeDocumentName(_ filename: String) -> String {
+    let collapsedWhitespace = stripFileExtension(filename).replacingOccurrences(
+        of: #"\s+"#,
+        with: " ",
+        options: .regularExpression
+    )
+    let allowedCharactersOnly = collapsedWhitespace.replacingOccurrences(
+        of: #"[^a-zA-Z0-9 ()\[\]-]"#,
+        with: "",
+        options: .regularExpression
+    )
+    let trimmed = allowedCharactersOnly.trimmingCharacters(in: .whitespacesAndNewlines)
+    return String(trimmed.prefix(200)).trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+func bedrockDocumentName(_ filename: String?, documentCounter: inout Int) -> String {
+    if let filename {
+        let sanitized = bedrockSanitizeDocumentName(filename)
+        if !sanitized.isEmpty {
+            return sanitized
+        }
+    }
+    documentCounter += 1
+    return "document-\(documentCounter)"
 }
 
 func bedrockUsesAnthropicProviderTools(tools: [String: JSONValue], modelID: String) -> Bool {
@@ -721,10 +761,12 @@ func bedrockToolResultContentPart(_ item: JSONValue, documentCounter: inout Int)
                 message: "Amazon Bedrock tool result content supports image MIME types \(bedrockSupportedImageMimeTypes.joined(separator: ", ")), video MIME types \(bedrockSupportedVideoMimeTypes.joined(separator: ", ")), or document MIME types \(bedrockSupportedDocumentMimeTypes.joined(separator: ", ")); got \(mediaType)."
             )
         }
-        documentCounter += 1
         var document: [String: JSONValue] = [
             "format": .string(documentFormat),
-            "name": .string(item["filename"]?.stringValue.map(stripFileExtension) ?? "document-\(documentCounter)"),
+            "name": .string(bedrockDocumentName(
+                item["filename"]?.stringValue,
+                documentCounter: &documentCounter
+            )),
             "source": .object(["bytes": .string(data)])
         ]
         if bedrockDocumentCitationsEnabled(item["providerMetadata"]?.objectValue ?? item.objectValue ?? [:]) {
