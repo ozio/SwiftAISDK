@@ -244,6 +244,95 @@ struct LanguageStreamToolStep {
     }
 }
 
+func validateEnforcedToolChoice(
+    _ toolChoice: JSONValue?,
+    step: LanguageStreamToolStep,
+    providerID: String,
+    modelID: String
+) throws {
+    let content = step.toolStep(
+        index: 0,
+        toolResults: [],
+        approvalRequests: [],
+        approvalResponses: []
+    ).content
+    try validateEnforcedToolChoice(
+        toolChoice,
+        result: TextGenerationResult(
+            text: step.text,
+            content: content,
+            reasoning: step.reasoning,
+            finishReason: step.finishReason,
+            usage: step.usage,
+            files: step.files,
+            toolCalls: step.toolCalls,
+            toolResults: step.streamedToolResults,
+            sources: step.sources,
+            providerMetadata: step.providerMetadata,
+            rawValue: .null,
+            warnings: step.warnings,
+            responseMetadata: step.responseMetadata
+        ),
+        providerID: providerID,
+        modelID: modelID
+    )
+}
+
+/// Validates semantic tool-choice requirements after the provider stream has
+/// completed. Keeping this outside the provider retry wrapper guarantees that
+/// a violation is surfaced once and is never retried as a transport failure.
+func validatedEnforcedToolChoiceStream(
+    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    toolChoice: JSONValue?,
+    providerID: String,
+    modelID: String
+) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+    let prepared = prepareToolChoice(toolChoice)
+    guard prepared["type"]?.stringValue == "required"
+        || prepared["type"]?.stringValue == "tool" else {
+        return stream
+    }
+    return AsyncThrowingStream { continuation in
+        let task = Task {
+            do {
+                var step = LanguageStreamToolStep()
+                var validatedAtTerminalPart = false
+                for try await part in stream {
+                    step.record(part)
+                    switch part {
+                    case .finish, .finishMetadata:
+                        // Validate before publishing the terminal part. Some
+                        // consumers treat that part as the semantic end of the
+                        // stream and do not request another iterator element.
+                        try validateEnforcedToolChoice(
+                            prepared,
+                            step: step,
+                            providerID: providerID,
+                            modelID: modelID
+                        )
+                        validatedAtTerminalPart = true
+                    default:
+                        break
+                    }
+                    continuation.yield(part)
+                }
+                if !validatedAtTerminalPart {
+                    try validateEnforcedToolChoice(
+                        prepared,
+                        step: step,
+                        providerID: providerID,
+                        modelID: modelID
+                    )
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { @Sendable _ in task.cancel() }
+    }
+}
+
 private func synthesizedOrderedContent(
     orderedContent: [AIResultContentPart],
     generatedApprovalRequests: [AIToolApprovalRequest],

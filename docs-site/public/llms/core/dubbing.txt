@@ -1,6 +1,6 @@
 # Dubbing
 
-Source URL: /SwiftAISDK/core/dubbing/
+Source URL: /core/dubbing/
 
 Dubbing is a provider-native job lifecycle rather than a simple model call. ElevenLabs exposes it through `provider.dubbing()`.
 

@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-09-06
+Snapshot date: 2026-09-13
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every changed tracked package was packed at both the
@@ -19,6 +19,89 @@ Status meanings:
 - `out-of-scope`: the changed package is a framework/product surface that this
   provider-facing Swift package does not expose.
 - `current`: the tracked package has no published version drift.
+
+## 2026-09-13 Weekly Audit
+
+Fresh npm metadata, all 96 old/latest tarballs for the 48 drifted rows, and
+upstream `vercel/ai@6c6c2210b9532a4c369615c044a16d595f3db117` were
+audited. Of 50 tracked rows, 22 required portable Swift work, one was already
+covered by shared behavior, 24 were package-local version/dependency-only,
+React was out of scope, and LMNT plus Vercel remained current.
+
+| Package | Reference -> latest | Result |
+| --- | ---: | --- |
+| `ai` | `7.0.93 -> 7.0.99` | `ported` — Provider-owned text/image Batch V4, image retry classification, streaming tool-choice enforcement, rerank validation, ToolOutputError UI typing, and video webhook ordering are ported; generic callback runtimeContext remains deferred. |
+| `@ai-sdk/provider` | `4.0.10 -> 4.0.14` | `ported` — Adds the provider-owned Batch V4 text/image request and result foundation, per-request model IDs, cancel/list, and image result retryability with legacy text-batch shims. |
+| `@ai-sdk/provider-utils` | `5.0.36 -> 5.0.40` | `ported` — Strict GIF87a/GIF89a and BMP signatures plus reusable redirect validation are ported; native Swift base64 already covers the JavaScript large-array fix. |
+| `@ai-sdk/react` | `4.0.96 -> 4.0.102` | `out-of-scope` — React useChat commit/Suspense stream ownership is outside the framework-neutral Swift session surface. |
+| `@ai-sdk/mcp` | `2.0.45 -> 2.0.49` | `ported` — OAuth discovery validates initial targets and every hop, scopes loopback trust, and rejects credential redirects. |
+| `@ai-sdk/openai` | `4.0.60 -> 4.0.66` | `ported` — Provider-owned text Batch V4 plus schema, async-tool, programmatic-denial, empty-choice, source-include, patch-finish, Foundry, and GPT Image 2.5 behavior are ported. |
+| `@ai-sdk/azure` | `4.0.63 -> 4.0.70` | `ported` — Foundry Responses input emits explicit message discriminators; remaining movement inherits the shared OpenAI work. |
+| `@ai-sdk/openai-compatible` | `3.0.44 -> 3.0.48` | `ported` — Empty chat choices now fail with the explicit structural response error. |
+| `@ai-sdk/open-responses` | `2.0.39 -> 2.0.44` | `ported` — Every user or tool-result image emits normalized auto, low, or high detail. |
+| `@ai-sdk/gateway` | `4.0.75 -> 4.0.80` | `ported` — Provider-owned text batching, image-request rejection, warning forwarding, and ordinary image retryability are ported. |
+| `@ai-sdk/xai` | `4.0.54 -> 4.0.58` | `ported` — Provider-owned mixed-model text/image batches add cancel/list while preserving the already-correct empty-tool-call reasoning behavior. |
+| `@ai-sdk/alibaba` | `2.0.41 -> 2.0.45` | `ported` — Empty tool-call arrays no longer split an active reasoning stream. |
+| `@ai-sdk/amazon-bedrock` | `5.0.76 -> 5.0.82` | `ported` — Endpoint resolution now follows explicit, service, global, then partition-aware defaults; Mantle suppresses only SDK-added unsupported web-search source includes. |
+| `@ai-sdk/anthropic` | `4.0.49 -> 4.0.53` | `ported` — Provider-owned text batches add per-request models, cancel/list, typed items, and input-transformations metadata. |
+| `@ai-sdk/anthropic-aws` | `2.0.41 -> 2.0.45` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/cerebras` | `3.0.44 -> 3.0.48` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/deepseek` | `3.0.39 -> 3.0.44` | `ported` — Current V4, flash, and pro aliases share reasoning rules; empty tool-call arrays do not close reasoning. |
+| `@ai-sdk/google` | `4.0.64 -> 4.0.69` | `ported` — Provider-owned mixed text/image batches add cancel/list and typed results; prompt blocks are terminal. |
+| `@ai-sdk/google-vertex` | `5.0.76 -> 5.0.81` | `ported` — Tool-result URLs are downloaded sequentially with a 7 MiB default limit, no provider credentials, validated redirects, and terminal prompt blocks. |
+| `@ai-sdk/groq` | `4.0.37 -> 4.0.41` | `ported` — Empty tool-call arrays no longer split an active reasoning stream. |
+| `@ai-sdk/huggingface` | `2.0.44 -> 2.0.48` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/mistral` | `4.0.39 -> 4.0.43` | `ported` — The current published reasoning-capable model set accepts reasoning effort without false warnings. |
+| `@ai-sdk/moonshotai` | `3.0.45 -> 3.0.49` | `covered` — The shared compatible parser already ignores empty tool-call arrays; provider-specific regression evidence was added. |
+| `@ai-sdk/perplexity` | `4.0.39 -> 4.0.43` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/togetherai` | `3.0.45 -> 3.0.49` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/assemblyai` | `3.0.36 -> 3.0.40` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/baseten` | `2.1.22 -> 2.1.26` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/black-forest-labs` | `2.0.37 -> 2.0.41` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/bytedance` | `2.0.39 -> 2.0.43` | `ported` — Explicit callback URLs win over raw options and expired video operations are terminal in async and unary paths. |
+| `@ai-sdk/cartesia` | `3.0.31 -> 3.0.35` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/cohere` | `4.0.37 -> 4.0.41` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/deepgram` | `3.1.7 -> 3.1.11` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/deepinfra` | `3.0.44 -> 3.0.48` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/elevenlabs` | `3.0.37 -> 3.0.41` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/fal` | `3.0.37 -> 3.0.41` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/fish-audio` | `3.0.14 -> 3.0.18` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/fireworks` | `3.0.47 -> 3.0.51` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/gmicloud` | `3.0.15 -> 3.0.19` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/gladia` | `3.0.36 -> 3.0.40` | `ported` — Expanded utterance fields are validated and the full result is exposed as providerMetadata.gladia. |
+| `@ai-sdk/hume` | `3.0.36 -> 3.0.40` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/klingai` | `4.0.38 -> 4.0.42` | `ported` — Async video start/status plus callback precedence are exposed across text, image, multi-image, and motion endpoints. |
+| `@ai-sdk/lmnt` | `3.0.36 -> 3.0.36` | `current` — Published package remains current; exact historical tag source/tests were used because LMNT is absent from upstream main. |
+| `@ai-sdk/luma` | `3.0.37 -> 3.0.41` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/minimax` | `3.0.25 -> 3.0.30` | `ported` — Async start/status preserves serializable resolved-input indices, encoded IDs, callback precedence, metadata, abort, and redirect safety. |
+| `@ai-sdk/prodia` | `2.0.37 -> 2.0.41` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/quiverai` | `2.0.36 -> 2.0.40` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/replicate` | `3.0.37 -> 3.0.41` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/revai` | `3.0.36 -> 3.0.40` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+| `@ai-sdk/vercel` | `3.0.30 -> 3.0.30` | `current` — Published package remains current; exact tarball source was checked, with nearest-tag tests noted because 3.0.30 has no tag. |
+| `@ai-sdk/voyage` | `2.0.36 -> 2.0.40` | `version-only` — Published declarations and package-local runtime behavior are unchanged apart from release identity and dependency propagation. |
+
+### 2026-09-13 Audit Evidence
+
+- Exact prefix discovery returned 86 live `@ai-sdk/*` names with canonical
+  SHA-256 `e524ccc183dc60e71b814728089cfbd7275e3ebf18ca8318c47233324798a5ed`.
+  The tracked set contains 50 rows, including unscoped `ai`; 37 scoped names
+  remain untracked.
+- `@ai-sdk/zai@3.0.10` remains the only untracked provider and still requires
+  a separately authorized full vertical. The newly appearing
+  `@ai-sdk/harness-github-copilot@1.0.4` is an agent adapter, not a model
+  provider, and is recorded separately as out of scope.
+- The executable upstream inventory grows from 864 to 881 paths. Between
+  `efdfd6290d783864f00ebdf5a0aad8711f2eb2db` and the current ref, 104
+  executable paths changed (19 added, 79 modified, two deleted, four renamed)
+  and 16 declaration-only paths changed. Exact group decisions and hashes are
+  in `Docs/FreshUpstreamTestDiffAudit.md`.
+- Published npm tarballs supplied versioned source and declarations. Matching
+  package tags supplied tests omitted from tarballs; LMNT and the untagged
+  Vercel 3.0.30 provenance exceptions are retained in their rows above.
+- Focused/full Swift, generated documentation, Astro, whitespace, version, and
+  registry checks are release gates whose measured results belong to final
+  integration evidence.
 
 ## 2026-09-06 Weekly Audit
 

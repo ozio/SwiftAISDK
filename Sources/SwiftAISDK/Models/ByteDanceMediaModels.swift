@@ -37,17 +37,22 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
         guard let url = raw["content"]?["video_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "No video URL in response")
         }
+        var providerMetadata: [String: JSONValue] = [
+            "taskId": .string(taskID)
+        ]
+        if let usage = raw["usage"], usage != .null {
+            providerMetadata["usage"] = usage
+        }
+        if let lastFrameURL = raw["content"]?["last_frame_url"]?.stringValue,
+           !lastFrameURL.isEmpty {
+            providerMetadata["lastFrameUrl"] = .string(lastFrameURL)
+        }
         return VideoGenerationResult(
             urls: [url],
             operationID: taskID,
             rawValue: raw,
             warnings: warnings,
-            providerMetadata: [
-                "bytedance": .object([
-                    "taskId": .string(taskID),
-                    "usage": raw["usage"]
-                ])
-            ],
+            providerMetadata: ["bytedance": .object(providerMetadata)],
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
@@ -60,10 +65,16 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
         let prepared = try byteDancePreparedVideoRequest(request, modelID: modelID)
         var warnings = prepared.warnings
         warnings.append(contentsOf: byteDanceDeprecatedPollWarnings(prepared.options))
+        var body = prepared.body
+        if let webhookURL = operationRequest.webhookURL {
+            // Raw provider options are merged while preparing the request. The
+            // explicit operation URL is applied last so it has V4 precedence.
+            body["callback_url"] = .string(webhookURL)
+        }
         let response = try await config.transport.send(config.request(
             path: "/contents/generations/tasks",
             modelID: modelID,
-            body: .object(prepared.body),
+            body: .object(body),
             headers: request.headers,
             abortSignal: request.abortSignal
         ))
@@ -92,7 +103,7 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
             )
         }
         let response = try await downloadURL(
-            "\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)",
+            "\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(byteDanceVideoPathSegment(taskID))",
             transport: config.transport,
             headers: config.headers.mergingHeaders(operationRequest.headers),
             abortSignal: operationRequest.abortSignal,
@@ -127,7 +138,7 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
                 providerMetadata: ["bytedance": .object(metadata)],
                 responseMetadata: responseMetadata
             ))
-        case "failed", "cancelled", "canceled":
+        case "failed", "expired", "cancelled", "canceled":
             let status = raw["status"]?.stringValue ?? "failed"
             let detail = raw["error"]?["message"]?.stringValue
                 ?? raw["error"]?["code"]?.stringValue
@@ -147,7 +158,7 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
         let started = DispatchTime.now().uptimeNanoseconds
         while true {
             let response = try await downloadURL(
-                "\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(taskID)",
+                "\(withoutTrailingSlash(config.baseURL))/contents/generations/tasks/\(byteDanceVideoPathSegment(taskID))",
                 transport: config.transport,
                 headers: config.headers.mergingHeaders(headers),
                 abortSignal: abortSignal,
@@ -162,7 +173,19 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
             case "succeeded":
                 return (raw, response)
             case "failed":
-                throw AIError.invalidResponse(provider: providerID, message: "Video generation failed: \(byteDanceJSONString(raw))")
+                throw AIError.invalidResponse(
+                    provider: providerID,
+                    message: "Video generation failed: \(byteDanceJSONString(raw))"
+                )
+            case "expired", "cancelled", "canceled":
+                let status = raw["status"]?.stringValue ?? "failed"
+                let detail = raw["error"]?["message"]?.stringValue
+                    ?? raw["error"]?["code"]?.stringValue
+                    ?? byteDanceJSONString(raw)
+                throw AIError.invalidResponse(
+                    provider: providerID,
+                    message: "Video generation \(status). Task ID: \(taskID). \(detail)"
+                )
             default:
                 if DispatchTime.now().uptimeNanoseconds - started > timeoutNanoseconds {
                     throw AIError.invalidResponse(provider: providerID, message: "Video generation timed out after \(formatByteDanceMilliseconds(timeoutMilliseconds))ms")
@@ -171,6 +194,11 @@ public final class ByteDanceVideoModel: AsyncVideoModel, @unchecked Sendable {
             }
         }
     }
+}
+
+private func byteDanceVideoPathSegment(_ value: String) -> String {
+    let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_~")
+    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
 }
 
 private func byteDancePreparedVideoRequest(

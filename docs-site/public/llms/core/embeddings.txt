@@ -1,6 +1,6 @@
 # Embeddings
 
-Source URL: /SwiftAISDK/core/embeddings/
+Source URL: /core/embeddings/
 
 Use `embed` for a single text value and `embedMany` when you want one request to cover multiple inputs.
 

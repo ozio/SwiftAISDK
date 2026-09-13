@@ -140,10 +140,12 @@ func openAIResponsesInputMessageJSON(
     toolSearchToolName: String? = "tool_search",
     providerID: String = "openai",
     useDeveloperRoleForSystem: Bool = false,
+    explicitMessageItemType: Bool = false,
+    programmaticToolCallIDs: Set<String> = [],
     warnings: inout [AIWarning]
 ) throws -> [JSONValue] {
     if message.role == .tool {
-        return message.content.flatMap { part -> [JSONValue] in
+        return try message.content.flatMap { part -> [JSONValue] in
             switch part {
             case let .toolApprovalResponse(response):
                 guard response.providerExecuted, processedApprovalIDs.insert(response.id).inserted else {
@@ -164,6 +166,14 @@ func openAIResponsesInputMessageJSON(
                 return items
             case let .toolResult(result):
                 guard !openAIResponsesShouldSkipToolResult(result) else { return [] }
+                if openAIResponsesIsExecutionDenied(result),
+                   programmaticToolCallIDs.contains(result.toolCallID)
+                    || openAIResponsesCaller(from: result.providerMetadata)?["type"]?.stringValue == "program" {
+                    throw AIError.invalidArgument(
+                        argument: "tool result",
+                        message: "OpenAI does not support execution-denied results for programmatic tool calls."
+                    )
+                }
                 if result.toolName == toolSearchToolName {
                     return [.object(openAIResponsesToolSearchOutput(result, store: store, providerID: providerID))]
                 }
@@ -218,12 +228,14 @@ func openAIResponsesInputMessageJSON(
     }
 
     if message.role == .user {
-        return [.object([
+        var item: [String: JSONValue] = [
             "role": .string("user"),
             "content": .array(try message.content.enumerated().compactMap {
                 try openAIResponsesInputContentPart($0, providerID: providerID)
             })
-        ])]
+        ]
+        if explicitMessageItemType { item["type"] = .string("message") }
+        return [.object(item)]
     }
 
     if message.role == .assistant {
@@ -235,7 +247,12 @@ func openAIResponsesInputMessageJSON(
                 if hasConversation, openAIResponsesItemID(from: providerMetadata) != nil {
                     break
                 }
-                output.append(openAIResponsesAssistantTextItem(text: text, providerMetadata: providerMetadata, store: store))
+                output.append(openAIResponsesAssistantTextItem(
+                    text: text,
+                    providerMetadata: providerMetadata,
+                    store: store,
+                    explicitMessageItemType: explicitMessageItemType
+                ))
             case let .reasoning(text, providerMetadata):
                 if (hasConversation || hasPreviousResponseID), openAIResponsesItemID(from: providerMetadata) != nil {
                     break
@@ -377,10 +394,12 @@ func openAIResponsesInputMessageJSON(
     }
 
     let role = message.role == .system && useDeveloperRoleForSystem ? "developer" : message.role.rawValue
-    return [.object([
+    var item: [String: JSONValue] = [
         "role": .string(role),
         "content": .string(message.combinedText)
-    ])]
+    ]
+    if explicitMessageItemType { item["type"] = .string("message") }
+    return [.object(item)]
 }
 
 func openAIResponsesScalarToolResultPromptCacheBreakpoint(_ result: AIToolResult) -> JSONValue? {
@@ -411,7 +430,12 @@ func openAIResponsesItemID(from providerMetadata: [String: JSONValue]) -> String
     return (openAIOptions["itemId"] ?? openAIOptions["item_id"])?.stringValue
 }
 
-func openAIResponsesAssistantTextItem(text: String, providerMetadata: [String: JSONValue], store: Bool) -> JSONValue {
+func openAIResponsesAssistantTextItem(
+    text: String,
+    providerMetadata: [String: JSONValue],
+    store: Bool,
+    explicitMessageItemType: Bool = false
+) -> JSONValue {
     let openAIOptions = openAIResponsesOpenAIOptions(from: providerMetadata)
     let itemID = openAIOptions["itemId"] ?? openAIOptions["item_id"]
     if store, let itemID {
@@ -425,6 +449,7 @@ func openAIResponsesAssistantTextItem(text: String, providerMetadata: [String: J
         "role": .string("assistant"),
         "content": .array([.object(["type": .string("output_text"), "text": .string(text)])])
     ]
+    if explicitMessageItemType { item["type"] = .string("message") }
     if let itemID {
         item["id"] = itemID
     }
@@ -533,6 +558,9 @@ func openAIResponsesFunctionCallItem(_ call: AIToolCall, toolNamespaces: [String
     }
     if let caller = openAIResponsesCaller(from: call.providerMetadata) {
         callObject["caller"] = caller
+    }
+    if let async = openAIResponsesOpenAIOptions(from: call.providerMetadata)["async"] {
+        callObject["async"] = async
     }
     return callObject
 }
@@ -816,6 +844,9 @@ func openAIResponsesCustomToolCallItem(_ call: AIToolCall) -> JSONValue {
     if let itemID {
         item["id"] = .string(itemID)
     }
+    if let async = openAIResponsesOpenAIOptions(from: call.providerMetadata)["async"] {
+        item["async"] = async
+    }
     return .object(item)
 }
 
@@ -868,6 +899,13 @@ func openAIResponsesCaller(from providerMetadata: [String: JSONValue]) -> JSONVa
 func openAIResponsesShouldSkipToolResult(_ result: AIToolResult) -> Bool {
     guard result.result["type"]?.stringValue == "execution-denied" else { return false }
     return result.providerMetadata["openai"]?["approvalId"]?.stringValue != nil
+}
+
+func openAIResponsesIsExecutionDenied(_ result: AIToolResult) -> Bool {
+    let output = result.modelOutput ?? result.result
+    if output["type"]?.stringValue == "execution-denied" { return true }
+    return output["type"]?.stringValue == "json"
+        && output["value"]?["type"]?.stringValue == "execution-denied"
 }
 
 func openAIResponsesShouldSkipAssistantToolResult(_ result: AIToolResult) -> Bool {
@@ -1057,7 +1095,12 @@ func openAIResponsesOpenAIBackedWarnings(options: [String: JSONValue]) -> [AIWar
     return warnings
 }
 
-func openAIResponsesApplyAutomaticOptions(to options: inout [String: JSONValue], tools: [String: JSONValue], isReasoningModel: Bool) {
+func openAIResponsesApplyAutomaticOptions(
+    to options: inout [String: JSONValue],
+    tools: [String: JSONValue],
+    isReasoningModel: Bool,
+    supportsWebSearchSourcesInclude: Bool = true
+) {
     if let logprobs = options.removeValue(forKey: "logprobs") {
         if let count = logprobs.intValue, logprobs.doubleValue == Double(count), count > 0 {
             options["top_logprobs"] = .number(Double(count))
@@ -1068,7 +1111,7 @@ func openAIResponsesApplyAutomaticOptions(to options: inout [String: JSONValue],
         }
     }
 
-    if tools.contains(where: { _, schema in
+    if supportsWebSearchSourcesInclude, tools.contains(where: { _, schema in
         let id = schema["id"]?.stringValue
         return id == "openai.web_search" || id == "openai.web_search_preview"
     }) {
@@ -1102,6 +1145,7 @@ struct OpenAILanguageModelCapabilities {
     var isReasoningModel: Bool
     var supportsNonReasoningParameters: Bool
     var supportsConfigurationUpdate: Bool
+    var supportsAsyncToolCalling: Bool
     var supportedReasoningEfforts: [String]?
 }
 
@@ -1119,6 +1163,7 @@ func openAILanguageModelCapabilities(_ modelID: String) -> OpenAILanguageModelCa
         isReasoningModel: isReasoningModel,
         supportsNonReasoningParameters: supportsNonReasoningParameters,
         supportsConfigurationUpdate: isGPT6OrLaterModel,
+        supportsAsyncToolCalling: isGPT6OrLaterModel,
         supportedReasoningEfforts: isGPT6OrLaterModel
             ? ["low", "medium", "high", "xhigh", "max"]
             : nil

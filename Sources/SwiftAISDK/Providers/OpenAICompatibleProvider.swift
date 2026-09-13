@@ -6,8 +6,11 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
     private let config: ModelHTTPConfig
     private let routesLikeOpenAI: Bool
     private let usesOpenAICompatibleSurfaceIDs: Bool
+    private let supportsProviderOwnedBatch: Bool
 
-    public init(
+    /// Source-compatible initializer retained from 1.6.0, before the
+    /// provider-owned Batch V4 capability became configurable.
+    public convenience init(
         providerID: String,
         defaultBaseURL: String,
         authorization: AuthorizationStyle,
@@ -17,10 +20,35 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         userAgentSuffix: String? = nil,
         usesOpenAICompatibleSurfaceIDs: Bool = false
     ) throws {
+        try self.init(
+            providerID: providerID,
+            defaultBaseURL: defaultBaseURL,
+            authorization: authorization,
+            supportedCapabilities: supportedCapabilities,
+            settings: settings,
+            routesLikeOpenAI: routesLikeOpenAI,
+            userAgentSuffix: userAgentSuffix,
+            usesOpenAICompatibleSurfaceIDs: usesOpenAICompatibleSurfaceIDs,
+            supportsProviderOwnedBatch: false
+        )
+    }
+
+    public init(
+        providerID: String,
+        defaultBaseURL: String,
+        authorization: AuthorizationStyle,
+        supportedCapabilities: Set<ModelCapability> = [.language],
+        settings: ProviderSettings = ProviderSettings(),
+        routesLikeOpenAI: Bool = false,
+        userAgentSuffix: String? = nil,
+        usesOpenAICompatibleSurfaceIDs: Bool = false,
+        supportsProviderOwnedBatch: Bool
+    ) throws {
         self.providerID = providerID
         self.supportedCapabilities = supportedCapabilities
         self.routesLikeOpenAI = routesLikeOpenAI
         self.usesOpenAICompatibleSurfaceIDs = usesOpenAICompatibleSurfaceIDs
+        self.supportsProviderOwnedBatch = supportsProviderOwnedBatch || providerID == "openai" || providerID == "xai"
         let headers = try Self.buildHeaders(providerID: providerID, authorization: authorization, settings: settings, userAgentSuffix: userAgentSuffix)
         let resolvedBaseURL = settings.baseURL ?? defaultBaseURL
         let deepInfraRoot = providerID == "deepinfra" ? deepInfraRootBaseURL(resolvedBaseURL) : nil
@@ -56,6 +84,7 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
         self.config = config
         self.routesLikeOpenAI = routesLikeOpenAI
         self.usesOpenAICompatibleSurfaceIDs = false
+        self.supportsProviderOwnedBatch = providerID == "openai" || providerID == "xai"
     }
 
     private func modelConfig(surface: String) -> ModelHTTPConfig {
@@ -237,7 +266,10 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
     }
 
     public func batchLanguageModel(_ modelID: String) throws -> any BatchLanguageModel {
-        guard routesLikeOpenAI || providerID == "openai" || providerID == "xai" else {
+        // Preserve the legacy model-owned Batch surface for custom providers
+        // that explicitly opt into OpenAI routing. The stricter capability
+        // flag below applies only to the new provider-owned Batch V4 factory.
+        guard routesLikeOpenAI || supportsProviderOwnedBatch else {
             throw AIError.invalidArgument(
                 argument: "providerID",
                 message: "Batch language models are only supported by the OpenAI Responses provider."
@@ -253,6 +285,22 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             modelID: modelID,
             config: modelConfig(surface: "responses")
         )
+    }
+
+    /// Provider-owned Batch V4 factory. OpenAI accepts text requests; xAI
+    /// additionally accepts image requests. The model-bound factory above is
+    /// retained as a source-compatible shim.
+    public func experimentalBatch() throws -> any AIBatchProvider {
+        guard supportsProviderOwnedBatch else {
+            throw AIError.invalidArgument(
+                argument: "providerID",
+                message: "Provider-owned batches are supported only by OpenAI and xAI providers."
+            )
+        }
+        if providerID == "xai" {
+            return XAIBatchProvider(config: modelConfig(surface: "responses"))
+        }
+        return OpenAIBatchProvider(config: modelConfig(surface: "responses"))
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
@@ -558,94 +606,94 @@ public final class OpenAICompatibleProvider: AIProvider, @unchecked Sendable {
             return withUserAgentSuffix(headers, userAgentSuffix)
         }
         if providerID == "anthropic" {
-            return withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.49")
+            return withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.53")
         }
         if providerID == "google.generative-ai" {
-            return withUserAgentSuffix(headers, "ai-sdk/google/4.0.64")
+            return withUserAgentSuffix(headers, "ai-sdk/google/4.0.69")
         }
         if providerID == "moonshotai" {
-            return withUserAgentSuffix(headers, "ai-sdk/moonshotai/3.0.45")
+            return withUserAgentSuffix(headers, "ai-sdk/moonshotai/3.0.49")
         }
         if providerID == "cerebras" {
-            return withUserAgentSuffix(headers, "ai-sdk/cerebras/3.0.44")
+            return withUserAgentSuffix(headers, "ai-sdk/cerebras/3.0.48")
         }
         if providerID == "deepseek" {
-            return withUserAgentSuffix(headers, "ai-sdk/deepseek/3.0.39")
+            return withUserAgentSuffix(headers, "ai-sdk/deepseek/3.0.44")
         }
         if providerID == "baseten" {
-            return withUserAgentSuffix(headers, "ai-sdk/baseten/2.1.22")
+            return withUserAgentSuffix(headers, "ai-sdk/baseten/2.1.26")
         }
         if providerID == "groq" {
-            return withUserAgentSuffix(headers, "ai-sdk/groq/4.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/groq/4.0.41")
         }
         if providerID == "mistral" {
-            return withUserAgentSuffix(headers, "ai-sdk/mistral/4.0.39")
+            return withUserAgentSuffix(headers, "ai-sdk/mistral/4.0.43")
         }
         if providerID == "cohere" {
-            return withUserAgentSuffix(headers, "ai-sdk/cohere/4.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/cohere/4.0.41")
         }
         if providerID == "elevenlabs" {
-            return withUserAgentSuffix(headers, "ai-sdk/elevenlabs/3.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/elevenlabs/3.0.41")
         }
         if providerID == "assemblyai" {
-            return withUserAgentSuffix(headers, "ai-sdk/assemblyai/3.0.36")
+            return withUserAgentSuffix(headers, "ai-sdk/assemblyai/3.0.40")
         }
         if providerID == "deepgram" {
-            return withUserAgentSuffix(headers, "ai-sdk/deepgram/3.1.7")
+            return withUserAgentSuffix(headers, "ai-sdk/deepgram/3.1.11")
         }
         if providerID == "lmnt" {
             return withUserAgentSuffix(headers, "ai-sdk/lmnt/3.0.36")
         }
         if providerID == "hume" {
-            return withUserAgentSuffix(headers, "ai-sdk/hume/3.0.36")
+            return withUserAgentSuffix(headers, "ai-sdk/hume/3.0.40")
         }
         if providerID == "revai" {
-            return withUserAgentSuffix(headers, "ai-sdk/revai/3.0.36")
+            return withUserAgentSuffix(headers, "ai-sdk/revai/3.0.40")
         }
         if providerID == "gladia" {
-            return withUserAgentSuffix(headers, "ai-sdk/gladia/3.0.36")
+            return withUserAgentSuffix(headers, "ai-sdk/gladia/3.0.40")
         }
         if providerID == "fal" {
-            return withUserAgentSuffix(headers, "ai-sdk/fal/3.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/fal/3.0.41")
         }
         if providerID == "bytedance" {
-            return withUserAgentSuffix(headers, "ai-sdk/bytedance/2.0.39")
+            return withUserAgentSuffix(headers, "ai-sdk/bytedance/2.0.43")
         }
         if providerID == "voyage" {
-            return withUserAgentSuffix(headers, "ai-sdk/voyage/2.0.36")
+            return withUserAgentSuffix(headers, "ai-sdk/voyage/2.0.40")
         }
         if providerID == "alibaba" {
-            return withUserAgentSuffix(headers, "ai-sdk/alibaba/2.0.41")
+            return withUserAgentSuffix(headers, "ai-sdk/alibaba/2.0.45")
         }
         if providerID == "luma" {
-            return withUserAgentSuffix(headers, "ai-sdk/luma/3.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/luma/3.0.41")
         }
         if providerID == "klingai" {
-            return withUserAgentSuffix(headers, "ai-sdk/klingai/4.0.38")
+            return withUserAgentSuffix(headers, "ai-sdk/klingai/4.0.42")
         }
         if providerID == "replicate" {
-            return withUserAgentSuffix(headers, "ai-sdk/replicate/3.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/replicate/3.0.41")
         }
         if providerID == "black-forest-labs" {
-            return withUserAgentSuffix(headers, "ai-sdk/black-forest-labs/2.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/black-forest-labs/2.0.41")
         }
         if providerID == "prodia" {
-            return withUserAgentSuffix(headers, "ai-sdk/prodia/2.0.37")
+            return withUserAgentSuffix(headers, "ai-sdk/prodia/2.0.41")
         }
         if providerID == "quiverai" {
-            return withUserAgentSuffix(headers, "ai-sdk/quiverai/2.0.36")
+            return withUserAgentSuffix(headers, "ai-sdk/quiverai/2.0.40")
         }
         if providerID == "togetherai" {
-            return withUserAgentSuffix(headers, "ai-sdk/togetherai/3.0.45")
+            return withUserAgentSuffix(headers, "ai-sdk/togetherai/3.0.49")
         }
         if providerID == "fireworks" {
-            return withUserAgentSuffix(headers, "ai-sdk/fireworks/3.0.47")
+            return withUserAgentSuffix(headers, "ai-sdk/fireworks/3.0.51")
         }
         if providerID == "deepinfra" {
-            return withUserAgentSuffix(headers, "ai-sdk/deepinfra/3.0.44")
+            return withUserAgentSuffix(headers, "ai-sdk/deepinfra/3.0.48")
         }
         if providerID == "xai" {
-            return withUserAgentSuffix(headers, "ai-sdk/xai/4.0.54")
+            return withUserAgentSuffix(headers, "ai-sdk/xai/4.0.58")
         }
         headers["user-agent"] = headers["user-agent"] ?? userAgent(providerID)
         return headers

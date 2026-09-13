@@ -1,6 +1,6 @@
 # Structured output
 
-Source URL: /SwiftAISDK/components/structured-output/
+Source URL: /components/structured-output/
 
 ## Symbol counts
 

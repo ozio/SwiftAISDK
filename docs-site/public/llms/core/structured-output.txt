@@ -1,6 +1,6 @@
 # Structured output
 
-Source URL: /SwiftAISDK/core/structured-output/
+Source URL: /core/structured-output/
 
 Use structured output when your app needs a Swift value rather than free-form prose.
 

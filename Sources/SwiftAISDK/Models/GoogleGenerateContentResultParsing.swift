@@ -182,3 +182,12 @@ func googleGenerateContentFinishReason(_ reason: String?, hasToolCalls: Bool) ->
         return "other"
     }
 }
+
+func googleGenerateContentFinishReason(from raw: JSONValue, hasToolCalls: Bool) -> String? {
+    let candidateFinishReason = raw["candidates"]?[0]?["finishReason"]?.stringValue
+    let promptBlockReason = raw["promptFeedback"]?["blockReason"]?.stringValue
+    if candidateFinishReason == nil, promptBlockReason != nil {
+        return "content-filter"
+    }
+    return googleGenerateContentFinishReason(candidateFinishReason ?? promptBlockReason, hasToolCalls: hasToolCalls)
+}

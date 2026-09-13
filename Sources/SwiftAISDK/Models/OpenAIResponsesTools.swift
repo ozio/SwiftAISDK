@@ -1,16 +1,22 @@
 import Foundation
 
-func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
+func openAIResponsesTools(
+    from tools: [String: JSONValue],
+    supportsAsyncToolCalling: Bool = true,
+    normalizeSchemas: Bool = true
+) throws -> (
     tools: [JSONValue],
     customToolNames: Set<String>,
     programmaticToolNames: Set<String>,
-    outputSchemaToolNames: Set<String>
+    outputSchemaToolNames: Set<String>,
+    warnings: [AIWarning]
 ) {
     var customToolNames: Set<String> = []
     var programmaticToolNames: Set<String> = []
     var outputSchemaToolNames: Set<String> = []
     var namespaceIndexes: [String: Int] = [:]
     var mapped: [JSONValue] = []
+    var warnings: [AIWarning] = []
     for (name, schema) in tools {
         let object = schema.objectValue
         let providerToolID = object?["id"]?.stringValue
@@ -19,6 +25,8 @@ func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
                 name: object?["name"]?.stringValue ?? name,
                 id: providerToolID ?? name,
                 args: object?["args"]?.objectValue ?? [:],
+                supportsAsyncToolCalling: supportsAsyncToolCalling,
+                warnings: &warnings,
                 customToolNames: &customToolNames,
                 programmaticToolNames: &programmaticToolNames
             ) {
@@ -47,17 +55,36 @@ func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
                 function["defer_loading"] = deferLoading
             }
             parameters = .object(parameterObject)
-            function["parameters"] = parameters
         }
+        if normalizeSchemas {
+            let normalizedParameters = try normalizeOpenAIJSONSchema(parameters)
+            parameters = normalizedParameters.schema
+            warnings.append(contentsOf: normalizedParameters.warnings)
+        }
+        function["parameters"] = parameters
         if let deferLoading = openAIOptions?["deferLoading"] ?? openAIOptions?["defer_loading"] {
             function["defer_loading"] = deferLoading
         }
         if let allowedCallers = openAIOptions?["allowedCallers"] ?? openAIOptions?["allowed_callers"] {
             function["allowed_callers"] = allowedCallers
         }
+        if let async = openAIResponsesAsyncToolOption(
+            openAIOptions?["async"],
+            supportsAsyncToolCalling: supportsAsyncToolCalling,
+            toolName: name,
+            warnings: &warnings
+        ) {
+            function["async"] = async
+        }
         if let outputSchema = openAIOptions?["outputSchema"] ?? openAIOptions?["output_schema"],
            outputSchema != .null {
-            function["output_schema"] = outputSchema
+            if normalizeSchemas {
+                let normalizedOutputSchema = try normalizeOpenAIJSONSchema(outputSchema)
+                function["output_schema"] = normalizedOutputSchema.schema
+                warnings.append(contentsOf: normalizedOutputSchema.warnings)
+            } else {
+                function["output_schema"] = outputSchema
+            }
             outputSchemaToolNames.insert(name)
         }
         if let namespace = openAIOptions?["namespace"]?.objectValue,
@@ -88,7 +115,7 @@ func openAIResponsesTools(from tools: [String: JSONValue]) throws -> (
             mapped.append(.object(function))
         }
     }
-    return (mapped, customToolNames, programmaticToolNames, outputSchemaToolNames)
+    return (mapped, customToolNames, programmaticToolNames, outputSchemaToolNames, warnings)
 }
 
 func openAIResponsesProviderToolNameAliases(from tools: [String: JSONValue]) -> [String: String] {
@@ -132,6 +159,8 @@ func openAIResponsesProviderTool(
     name: String,
     id: String,
     args: [String: JSONValue],
+    supportsAsyncToolCalling: Bool = true,
+    warnings: inout [AIWarning],
     customToolNames: inout Set<String>,
     programmaticToolNames: inout Set<String>
 ) throws -> JSONValue? {
@@ -232,6 +261,14 @@ func openAIResponsesProviderTool(
         var tool: [String: JSONValue] = ["type": .string("custom"), "name": .string(name)]
         if let description = args["description"] { tool["description"] = description }
         if let format = args["format"] { tool["format"] = format }
+        if let async = openAIResponsesAsyncToolOption(
+            args["async"],
+            supportsAsyncToolCalling: supportsAsyncToolCalling,
+            toolName: name,
+            warnings: &warnings
+        ) {
+            tool["async"] = async
+        }
         return .object(tool)
     case "openai.programmatic_tool_calling":
         programmaticToolNames.insert(name)
@@ -281,6 +318,88 @@ func openAIResponsesProviderTool(
     default:
         return nil
     }
+}
+
+func openAIResponsesAsyncToolOption(
+    _ value: JSONValue?,
+    supportsAsyncToolCalling: Bool,
+    toolName: String,
+    warnings: inout [AIWarning]
+) -> JSONValue? {
+    guard let value else { return nil }
+    if value.boolValue == true, !supportsAsyncToolCalling {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "async tool calling for \"\(toolName)\"",
+            message: "Async tool calling is only supported by GPT-6 and later models."
+        ))
+        return nil
+    }
+    return value
+}
+
+func normalizeOpenAIJSONSchema(_ schema: JSONValue) throws -> (schema: JSONValue, warnings: [AIWarning]) {
+    var removedPropertyNames = false
+
+    func normalizeDefinition(_ definition: JSONValue) throws -> JSONValue {
+        if definition.boolValue != nil { return definition }
+        return try normalizeSchema(definition)
+    }
+
+    func normalizeRecord(_ value: JSONValue) throws -> JSONValue {
+        guard let object = value.objectValue else { return value }
+        return .object(try object.mapValues(normalizeDefinition))
+    }
+
+    func normalizeSchema(_ value: JSONValue) throws -> JSONValue {
+        guard var object = value.objectValue else { return value }
+        if let propertyNames = object["propertyNames"] {
+            guard propertyNames.boolValue == nil,
+                  propertyNames.objectValue?["type"]?.stringValue == "string" else {
+                throw AIError.invalidArgument(
+                    argument: "JSON Schema propertyNames",
+                    message: "OpenAI does not support JSON Schema propertyNames that does not use a string schema."
+                )
+            }
+            removedPropertyNames = true
+            object.removeValue(forKey: "propertyNames")
+        }
+        for key in ["properties", "patternProperties", "definitions", "$defs"] {
+            if let nested = object[key] { object[key] = try normalizeRecord(nested) }
+        }
+        for key in ["additionalProperties", "additionalItems", "contains", "not", "if", "then", "else"] {
+            if let nested = object[key] { object[key] = try normalizeDefinition(nested) }
+        }
+        if let items = object["items"] {
+            if let values = items.arrayValue {
+                object["items"] = .array(try values.map(normalizeDefinition))
+            } else {
+                object["items"] = try normalizeDefinition(items)
+            }
+        }
+        for key in ["allOf", "anyOf", "oneOf"] {
+            if let values = object[key]?.arrayValue {
+                object[key] = .array(try values.map(normalizeDefinition))
+            }
+        }
+        if var dependencies = object["dependencies"]?.objectValue {
+            for (key, dependency) in dependencies where dependency.arrayValue == nil {
+                dependencies[key] = try normalizeDefinition(dependency)
+            }
+            object["dependencies"] = .object(dependencies)
+        }
+        return .object(object)
+    }
+
+    let normalized = try normalizeSchema(schema)
+    let warnings = removedPropertyNames
+        ? [AIWarning(
+            type: "compatibility",
+            feature: "JSON Schema propertyNames",
+            message: "OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints."
+        )]
+        : []
+    return (normalized, warnings)
 }
 
 func openAIResponsesToolChoice(

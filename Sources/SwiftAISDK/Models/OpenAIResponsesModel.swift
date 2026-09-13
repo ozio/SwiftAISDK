@@ -416,8 +416,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                         for eventPart in toolCallBuffers.apply(event: raw) {
                             if case let .toolCall(toolCall) = eventPart,
                                !toolCall.providerExecuted,
-                               toolCall.rawValue?["type"]?.stringValue != "local_shell_call",
-                               toolCall.rawValue?["type"]?.stringValue != "apply_patch_call" {
+                               toolCall.rawValue?["type"]?.stringValue != "local_shell_call" {
                                 openResponsesHasToolCalls = true
                             }
                             continuation.yield(eventPart)
@@ -665,7 +664,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         }
         openAIResponsesFinalizeReasoningOptions(isReasoningModel: isEffectiveReasoningModel, options: &options, warnings: &warnings)
         if isOpenAIBacked {
-            openAIResponsesApplyAutomaticOptions(to: &options, tools: request.tools, isReasoningModel: isEffectiveReasoningModel)
+            openAIResponsesApplyAutomaticOptions(
+                to: &options,
+                tools: request.tools,
+                isReasoningModel: isEffectiveReasoningModel,
+                supportsWebSearchSourcesInclude: config.supportsWebSearchSourcesInclude
+            )
         }
         let stripsReasoningModelSampling = openAIResponsesStripsSamplingSettings(
             modelID: modelID,
@@ -691,7 +695,12 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         let hasPreviousResponseID = options["previous_response_id"] != nil
         var processedApprovalIDs: Set<String> = []
         let toolNamespaces = openAIResponsesToolNamespaces(from: request.tools)
-        let preparedTools = try openAIResponsesTools(from: request.tools)
+        let preparedTools = try openAIResponsesTools(
+            from: request.tools,
+            supportsAsyncToolCalling: !isOpenAIBacked || openAILanguageModelCapabilities(modelID).supportsAsyncToolCalling,
+            normalizeSchemas: isOpenAIBacked
+        )
+        warnings.append(contentsOf: preparedTools.warnings)
         let providerDefinedToolNames = Set(request.tools.compactMap { name, schema -> String? in
             let object = schema.objectValue
             guard object?["type"]?.stringValue == "provider"
@@ -730,6 +739,15 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             outputSchemaToolNames: preparedTools.outputSchemaToolNames,
             warnings: &warnings
         )
+        let programmaticToolCallIDs = Set(preparedMessages.flatMap { message in
+            message.content.compactMap { part -> String? in
+                guard case let .toolCall(call) = part,
+                      openAIResponsesCaller(from: call.providerMetadata)?["type"]?.stringValue == "program" else {
+                    return nil
+                }
+                return call.id
+            }
+        })
         var input = try preparedMessages.flatMap {
             try openAIResponsesInputMessageJSON(
                 $0,
@@ -747,6 +765,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                 toolSearchToolName: toolSearchToolName,
                 providerID: providerID,
                 useDeveloperRoleForSystem: useDeveloperRoleForSystem,
+                explicitMessageItemType: config.explicitMessageItemType,
+                programmaticToolCallIDs: programmaticToolCallIDs,
                 warnings: &warnings
             )
         }
@@ -789,7 +809,16 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
             body["text"] = .object(text)
         }
         let strictJsonSchema = body.removeValue(forKey: "strictJsonSchema")
-        if let textFormat = openAIResponsesTextFormat(from: request.responseFormat, strictJsonSchema: strictJsonSchema) {
+        let normalizedResponseFormat: AIResponseFormat?
+        if isOpenAIBacked,
+           case let .json(schema?, name, description) = request.responseFormat {
+            let normalized = try normalizeOpenAIJSONSchema(schema)
+            normalizedResponseFormat = .json(schema: normalized.schema, name: name, description: description)
+            warnings.append(contentsOf: normalized.warnings)
+        } else {
+            normalizedResponseFormat = request.responseFormat
+        }
+        if let textFormat = openAIResponsesTextFormat(from: normalizedResponseFormat, strictJsonSchema: strictJsonSchema) {
             var text = body["text"]?.objectValue ?? [:]
             text["format"] = textFormat
             body["text"] = .object(text)

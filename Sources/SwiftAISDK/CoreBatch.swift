@@ -250,11 +250,22 @@ public enum AIBatchItemResult<Result: Sendable>: Sendable {
 
 public struct AILanguageModelBatchRequest: Sendable {
     public var id: String
+    /// Provider-specific model identifier for provider-owned Batch V4 calls.
+    /// `nil` is retained for the legacy model-owned compatibility surface.
+    public var modelID: String?
     public var request: LanguageModelRequest
 
-    public init(id: String, request: LanguageModelRequest) {
+    /// Creates a provider-owned batch request with an explicit model selection.
+    /// The default retains legacy factory-reference overload ranking.
+    public init(id: String, modelID: String? = nil, request: LanguageModelRequest) {
         self.id = id
+        self.modelID = modelID
         self.request = request
+    }
+
+    /// Creates a legacy model-owned batch request.
+    public init(id: String, request: LanguageModelRequest) {
+        self.init(id: id, modelID: nil, request: request)
     }
 }
 
@@ -306,10 +317,22 @@ public struct TextBatch: Equatable, Codable, Sendable {
 
 public struct TextBatchRequest: Sendable {
     public var id: String
+    /// Model selected for this request on the provider-owned Batch V4 surface.
+    /// The legacy `startTextBatch(model:requests:)` overload may leave it unset.
+    public var modelID: String?
     public var request: LanguageModelRequest
 
     public init(id: String, request: LanguageModelRequest) {
         self.id = id
+        self.modelID = nil
+        self.request = request
+    }
+
+    /// Creates a provider-owned text request. The optional default keeps an
+    /// uncontextualized reference to `TextBatchRequest.init` source-compatible.
+    public init(id: String, modelID: String? = nil, request: LanguageModelRequest) {
+        self.id = id
+        self.modelID = modelID
         self.request = request
     }
 }
@@ -405,5 +428,224 @@ public enum TextBatchItemResult: Sendable {
              let .expired(id, _, _):
             return id
         }
+    }
+}
+
+// MARK: - Provider-owned Batch V4
+
+/// One image-generation request in a provider-owned batch.
+public struct ImageBatchRequest: Sendable {
+    public var id: String
+    public var modelID: String
+    public var request: ImageGenerationRequest
+
+    public init(id: String, modelID: String, request: ImageGenerationRequest) {
+        self.id = id
+        self.modelID = modelID
+        self.request = request
+    }
+}
+
+/// A provider-owned Batch V4 request, discriminated by modality before any I/O.
+public enum AIBatchRequest: Sendable {
+    case text(TextBatchRequest)
+    case image(ImageBatchRequest)
+
+    public var id: String {
+        switch self {
+        case let .text(request): request.id
+        case let .image(request): request.id
+        }
+    }
+
+    public var modelID: String? {
+        switch self {
+        case let .text(request): request.modelID
+        case let .image(request): request.modelID
+        }
+    }
+}
+
+/// Persistable identity of a provider-owned Batch V4 operation.
+public struct AIBatchReference: Equatable, Hashable, Codable, Sendable {
+    public let version: Int
+    public var id: String
+    public var providerID: String
+
+    public init(version: Int = 2, id: String, providerID: String) {
+        self.version = version
+        self.id = id
+        self.providerID = providerID
+    }
+}
+
+/// A provider-owned batch together with its latest normalized status.
+public struct AIBatch: Equatable, Codable, Sendable {
+    public var reference: AIBatchReference
+    public var status: AIBatchStatus
+
+    public init(reference: AIBatchReference, status: AIBatchStatus) {
+        self.reference = reference
+        self.status = status
+    }
+}
+
+public struct StartBatchResult: Equatable, Sendable {
+    public var batch: AIBatch
+    public var warnings: [AIBatchWarning]
+    public var providerMetadata: [String: JSONValue]
+
+    public init(
+        batch: AIBatch,
+        warnings: [AIBatchWarning] = [],
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.batch = batch
+        self.warnings = warnings
+        self.providerMetadata = providerMetadata
+    }
+}
+
+public struct AIBatchCancelResult: Equatable, Sendable {
+    public var providerMetadata: [String: JSONValue]
+
+    public init(providerMetadata: [String: JSONValue] = [:]) {
+        self.providerMetadata = providerMetadata
+    }
+}
+
+public struct AIBatchListOptions: Sendable {
+    public var providerOptions: [String: JSONValue]
+    public var limit: Int?
+    public var cursor: String?
+    public var abortSignal: AIAbortSignal?
+    public var headers: [String: String]
+
+    public init(
+        providerOptions: [String: JSONValue] = [:],
+        limit: Int? = nil,
+        cursor: String? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        headers: [String: String] = [:]
+    ) {
+        self.providerOptions = providerOptions
+        self.limit = limit
+        self.cursor = cursor
+        self.abortSignal = abortSignal
+        self.headers = headers
+    }
+}
+
+public struct AIBatchListItem: Equatable, Sendable {
+    public var batchID: String
+    public var status: AIBatchStatus
+
+    public init(batchID: String, status: AIBatchStatus) {
+        self.batchID = batchID
+        self.status = status
+    }
+}
+
+public struct AIBatchListResult: Equatable, Sendable {
+    public var batches: [AIBatchListItem]
+    public var nextCursor: String?
+    public var providerMetadata: [String: JSONValue]
+
+    public init(
+        batches: [AIBatchListItem],
+        nextCursor: String? = nil,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.batches = batches
+        self.nextCursor = nextCursor
+        self.providerMetadata = providerMetadata
+    }
+}
+
+/// Low-level terminal result emitted by a provider-owned batch implementation.
+public enum AIBatchV4ItemResult: Sendable {
+    case text(AIBatchItemResult<TextGenerationResult>)
+    case image(AIBatchItemResult<ImageGenerationResult>)
+}
+
+/// Normalized successful image batch result.
+public struct ImageBatchGenerationResult: Sendable {
+    public var urls: [String]
+    public var base64Images: [String]
+    public var warnings: [AIWarning]
+    public var usage: TokenUsage?
+    public var response: AIResponseMetadata
+    public var providerMetadata: [String: JSONValue]
+
+    public init(
+        urls: [String],
+        base64Images: [String] = [],
+        warnings: [AIWarning] = [],
+        usage: TokenUsage? = nil,
+        response: AIResponseMetadata = AIResponseMetadata(),
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.urls = urls
+        self.base64Images = base64Images
+        self.warnings = warnings
+        self.usage = usage
+        self.response = response
+        self.providerMetadata = providerMetadata
+    }
+}
+
+public enum ImageBatchItemResult: Sendable {
+    case succeeded(id: String, result: ImageBatchGenerationResult)
+    case failed(id: String, error: AIBatchError, providerMetadata: [String: JSONValue] = [:])
+    case cancelled(id: String, error: AIBatchError? = nil, providerMetadata: [String: JSONValue] = [:])
+    case expired(id: String, error: AIBatchError? = nil, providerMetadata: [String: JSONValue] = [:])
+
+    public var id: String {
+        switch self {
+        case let .succeeded(id, _),
+             let .failed(id, _, _),
+             let .cancelled(id, _, _),
+             let .expired(id, _, _):
+            id
+        }
+    }
+}
+
+/// Normalized provider-owned result, preserving the text/image discriminator.
+public enum BatchItemResult: Sendable {
+    case text(TextBatchItemResult)
+    case image(ImageBatchItemResult)
+}
+
+/// Durable Batch V4 belongs to the provider, allowing each request to select
+/// its own model and modality.
+public protocol AIBatchProvider: Sendable {
+    var providerID: String { get }
+    var supportedURLs: [String: [AISupportedURLPattern]] { get }
+
+    func startBatch(_ options: AIBatchStartOptions<AIBatchRequest>) async throws -> AIBatchStartResult
+    func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus
+    func getBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error>
+    func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult
+    func listBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult
+}
+
+public extension AIBatchProvider {
+    var supportedURLs: [String: [AISupportedURLPattern]] { [:] }
+
+    func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        throw AIError.invalidArgument(
+            argument: "provider",
+            message: "The provider does not support batch cancellation."
+        )
+    }
+
+    func listBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        throw AIError.invalidArgument(
+            argument: "provider",
+            message: "The provider does not support listing batches."
+        )
     }
 }

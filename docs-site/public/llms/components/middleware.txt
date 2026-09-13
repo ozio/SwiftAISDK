@@ -1,6 +1,6 @@
 # Middleware
 
-Source URL: /SwiftAISDK/components/middleware/
+Source URL: /components/middleware/
 
 ## Symbol counts
 

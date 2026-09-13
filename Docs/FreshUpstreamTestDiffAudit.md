@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-09-06`
-- Baseline upstream ref: `vercel/ai@e1bfe50427d09e65404cffea9f71a60a66af0f3e`
-- Current upstream ref: `vercel/ai@efdfd6290d783864f00ebdf5a0aad8711f2eb2db`
+- Date: `2026-09-13`
+- Baseline upstream ref: `vercel/ai@efdfd6290d783864f00ebdf5a0aad8711f2eb2db`
+- Current upstream ref: `vercel/ai@6c6c2210b9532a4c369615c044a16d595f3db117`
 - Diff command:
 
   ```sh
   git -C <vercel-ai-checkout> diff --name-status \
-    e1bfe50427d09e65404cffea9f71a60a66af0f3e..efdfd6290d783864f00ebdf5a0aad8711f2eb2db \
+    efdfd6290d783864f00ebdf5a0aad8711f2eb2db..6c6c2210b9532a4c369615c044a16d595f3db117 \
     -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
        'packages/**/*.test.mts' 'packages/**/*.spec.ts' \
        'packages/**/*.spec.tsx' 'packages/**/*.spec.mts'
@@ -28,6 +28,69 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-09-13 Diff
+
+The generated executable inventory grows from 864 to 881 files. The exact
+path comparison returns 104 changed executable tests/specs: 19 added, 79
+modified, two deleted, and four renamed. The sorted `--name-status` output has
+SHA-256
+`b5700598b8846ea76ac7315d25f3ae8e3fbb246984022103401ac3eb64d430fe`.
+
+| Upstream test group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `packages/ai/**` | 10 | `ported/covered/deferred/no-swift-action` | Provider-owned text/image Batch V4, empty-image retry classification, streaming tool-choice enforcement, rerank-index validation, ToolOutputError UI typing, and video webhook rejection ordering have Swift coverage. Existing embedding-count and split-array behavior remains covered. Generic callback `runtimeContext` needs a separate public Swift design; JavaScript `atob` mechanics do not map to Swift. |
+| `packages/alibaba/**` | 1 | `ported` | Empty `tool_calls` deltas no longer split an active reasoning stream. |
+| `packages/amazon-bedrock/**` | 3 | `ported` | Runtime, Agent Runtime, and Anthropic endpoints share explicit/service/global/partition-aware resolution; Mantle omits unsupported web-search source includes. |
+| `packages/anthropic/**` | 2 | `ported` | Provider-owned text Batch V4, cancel/list, per-request models, input-transformation metadata, and binding-prefix behavior are covered. |
+| `packages/azure/**` | 1 | `ported` | Foundry Responses history emits explicit `type: message` discriminators. |
+| `packages/bytedance/**` | 1 | `ported` | Explicit webhook callbacks override raw options and expired operations are terminal. |
+| `packages/deepseek/**` | 3 | `ported` | DeepSeek V4 aliases and uninterrupted reasoning across empty tool-call arrays are covered. |
+| `packages/gateway/**` | 4 | `ported` | Provider-owned text batches, image-batch rejection, image retryability, and unary/stream warning forwarding are covered. |
+| `packages/gladia/**` | 1 | `ported` | Expanded utterance fields and the full `providerMetadata.gladia` result are preserved. |
+| `packages/google/**` | 4 | `ported` | Provider-owned mixed text/image Batch V4, cancel/list, typed results, bounded tool-result downloads, and terminal prompt blocks are covered. |
+| `packages/google-vertex/**` | 2 | `ported` | Tool-result URL downloads are sequential, bounded, credential-free, redirect-validated, and user URLs remain untouched; prompt blocks are terminal. |
+| `packages/groq/**` | 1 | `ported` | Empty `tool_calls` deltas no longer close reasoning. |
+| `packages/hume/**` | 1 | `covered/no-swift-action` | Upstream corrects a test metadata namespace typo; Swift already uses the Hume namespace. |
+| `packages/klingai/**` | 1 | `ported` | Async start/status and callback precedence cover all endpoint modes. |
+| `packages/lmnt/**` | 2 | `covered/no-swift-action` | The tests were deleted with LMNT's removal from upstream main; the exact current published package remains tracked and unchanged. |
+| `packages/mcp/**` | 1 | `ported` | OAuth discovery validates initial targets and every redirect, scopes loopback trust, and never redirects credential POSTs. |
+| `packages/minimax/**` | 1 | `ported` | Async start/status preserves safe operation state, callback precedence, encoded IDs, terminal outcomes, headers, aborts, and redirect safety. |
+| `packages/mistral/**` | 1 | `ported` | The complete current reasoning-capable model set accepts reasoning effort without false warnings. |
+| `packages/moonshotai/**` | 1 | `covered` | Its shared parser already ignores empty tool-call arrays; provider regression evidence prevents routing drift. |
+| `packages/open-responses/**` | 1 | `ported` | User and tool-result images default invalid or absent detail to `auto` while preserving `low` and `high`. |
+| `packages/openai/**` | 11 | `ported` | Provider-owned batches, recursive schema normalization, async/programmatic tools, explicit empty-choice errors, Foundry message items, image 2.5 options, source includes, and `apply_patch` finish handling are covered. |
+| `packages/openai-compatible/**` | 1 | `ported` | Empty chat choices fail with the explicit structural response error. |
+| `packages/provider-utils/**` | 3 | `ported/no-swift-action` | GIF/BMP signatures and validated redirects are covered; Swift's native `Data` base64 conversion already avoids the JavaScript spread limit. |
+| `packages/xai/**` | 2 | `ported/covered` | Provider-owned mixed-model text/image batching with cancel/list is covered; existing compatible parsing already preserves reasoning across empty tool calls. |
+| `packages/otel/**` | 2 | `covered/no-swift-action` | The OpenTelemetry JavaScript attribute adapter does not add a new contract to SwiftAISDK's typed telemetry surface. |
+| `packages/react/**` | 1 | `out-of-scope` | React commit/Suspense ownership behavior has no equivalent in the framework-neutral chat session. |
+| `packages/harness*/**` | 36 | `out-of-scope` | Harness authentication, subscription discovery, OS credential stores, session bridges, model resolution, and the new GitHub Copilot adapter belong to separate coding-agent products. |
+| `packages/workflow/**`; `packages/workflow-harness/**` | 6 | `out-of-scope` | Workflow slicing, stream iterators, compatibility, and harness output are not exposed by the provider-facing Swift library. |
+
+Coverage check: the grouped counts total exactly 104. The four renames and two
+deletions remain represented, and no untracked package group is hidden by the
+provider-only audit.
+
+### Declaration-only changes
+
+The inventory generator excludes `*.test-d.ts`, so these 16 changed paths are
+classified separately. Their sorted `--name-status` output has SHA-256
+`63e3eab57c4ed64f3b3a389ce336e8fa76a1126aebaa59f5cbf708793f2eedcc`.
+
+| Declaration-only path | Status | Rationale |
+| --- | --- | --- |
+| `packages/ai/src/batch/batch-types.test-d.ts` | `ported` | Provider-owned text/image request and result unions have public Swift counterparts. |
+| `packages/ai/src/embed/embed.test-d.ts`; `embed-many.test-d.ts`; `rerank/rerank.test-d.ts` | `deferred` | Upstream callback `runtimeContext` needs a deliberate Swift callback/telemetry API instead of an untyped transplant. |
+| `packages/ai/src/ui/ui-messages.test-d.ts`; `validate-ui-messages.test-d.ts` | `ported` | Tool output errors are represented by a stable UI part and validation guard. |
+| `packages/anthropic/src/anthropic-provider.test-d.ts` | `ported` | The provider-level batch factory is typed and no longer bound to one language model. |
+| `packages/deepseek/src/deepseek-provider.test-d.ts` | `covered` | Swift uses forward-compatible string model IDs; the runtime alias behavior is tested separately. |
+| `packages/gateway/src/gateway-provider.test-d.ts` | `ported` | The provider-level text-only batch factory and rejected image request are typed. |
+| `packages/google/src/google-provider.test-d.ts` | `ported` | The provider-level mixed text/image batch factory is typed. |
+| `packages/openai/src/openai-provider.test-d.ts` | `ported` | The provider-level batch and updated tools/options are public Swift surfaces. |
+| `packages/xai/src/xai-provider.test-d.ts` | `ported` | The provider-level text/image batch surface is public and supports per-request models. |
+| `packages/harness-github-copilot/src/github-copilot-harness.test-d.ts`; `packages/harness-pi/src/pi-harness.test-d.ts`; `packages/harness/src/agent/harness-agent-settings.test-d.ts` | `out-of-scope` | Agent harness types are outside this package. |
+| `packages/workflow-harness/src/run-harness-agent-output.test-d.ts` | `out-of-scope` | Workflow harness output typing is outside this package. |
 
 ## 2026-09-06 Diff
 

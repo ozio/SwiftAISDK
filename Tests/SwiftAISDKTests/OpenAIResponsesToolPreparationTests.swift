@@ -228,6 +228,21 @@ import Testing
     #expect(choiceBody["tool_choice"]?["name"]?.stringValue == "write_sql")
 }
 
+@Test func openAICustomToolRetainsTheVersion160FactorySignature() {
+    let factory: (String, String?, JSONValue?) -> JSONValue = OpenAITools.customTool
+    let tool = factory(
+        "write_sql",
+        "Write a SQL SELECT query.",
+        ["type": "grammar", "syntax": "regex", "definition": "SELECT .+"]
+    )
+
+    #expect(tool["id"]?.stringValue == "openai.custom")
+    #expect(tool["name"]?.stringValue == "write_sql")
+    #expect(tool["args"]?["description"]?.stringValue == "Write a SQL SELECT query.")
+    #expect(tool["args"]?["format"]?["syntax"]?.stringValue == "regex")
+    #expect(tool["args"]?["async"] == nil)
+}
+
 @Test func openAIResponsesPreparesApplyPatchLikeUpstream() async throws {
     let applyPatchBody = try await recordedOpenAIResponsesBody(tools: [
         "apply_patch": OpenAITools.applyPatch()

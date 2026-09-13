@@ -1,6 +1,6 @@
 # Generate audio
 
-Source URL: /SwiftAISDK/core/generate-audio/
+Source URL: /core/generate-audio/
 
 Use `generateAudio` for prompt-to-audio models that are not text-to-speech, such as ElevenLabs music and sound effects.
 

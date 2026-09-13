@@ -182,7 +182,10 @@ public enum MCPOAuth {
         let grantType = "authorization_code"
         try validateGrantType(grantType, metadata: metadata)
         let tokenURL = metadata?.tokenEndpoint ?? (URL(string: "/token", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL)
-        try assertSafeMCPOAuthEndpoint(tokenURL)
+        try assertSafeMCPOAuthEndpoint(
+            tokenURL,
+            trustedOrigin: trustedMCPOAuthCredentialOrigin(authorizationServerURL)
+        )
         var parameters = [
             URLQueryItem(name: "grant_type", value: grantType),
             URLQueryItem(name: "code", value: authorizationCode),
@@ -216,7 +219,10 @@ public enum MCPOAuth {
         let grantType = "refresh_token"
         try validateGrantType(grantType, metadata: metadata)
         let tokenURL = metadata?.tokenEndpoint ?? (URL(string: "/token", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL)
-        try assertSafeMCPOAuthEndpoint(tokenURL)
+        try assertSafeMCPOAuthEndpoint(
+            tokenURL,
+            trustedOrigin: trustedMCPOAuthCredentialOrigin(authorizationServerURL)
+        )
         var parameters = [
             URLQueryItem(name: "grant_type", value: grantType),
             URLQueryItem(name: "refresh_token", value: refreshToken)
@@ -256,7 +262,10 @@ public enum MCPOAuth {
         } else {
             registrationURL = URL(string: "/register", relativeTo: authorizationServerURL)?.absoluteURL ?? authorizationServerURL
         }
-        try assertSafeMCPOAuthEndpoint(registrationURL)
+        try assertSafeMCPOAuthEndpoint(
+            registrationURL,
+            trustedOrigin: trustedMCPOAuthCredentialOrigin(authorizationServerURL)
+        )
         var registrationMetadata = clientMetadata.jsonValue.objectValue ?? [:]
         registrationMetadata["application_type"] = .string(
             (clientMetadata.applicationType ?? inferMCPOAuthApplicationType(clientMetadata.redirectURIs)).rawValue
@@ -310,9 +319,30 @@ func authInternal(
         serverURL: serverURL,
         authorizationServerURL: resolvedAuthorizationServerURL
     )
+    let trustedAuthorizationOrigin: URL?
+    if isSameOrigin(
+        resolvedAuthorizationServerURL.absoluteString,
+        serverURL.absoluteString
+    ) {
+        trustedAuthorizationOrigin = serverURL
+    } else if isLoopbackMCPOAuthURL(serverURL),
+              isLoopbackMCPOAuthURL(resolvedAuthorizationServerURL) {
+        // Local development servers commonly advertise an authorization server
+        // on a different loopback port. Trust that advertised loopback origin,
+        // while keeping remote MCP server -> loopback authorization redirects
+        // behind the SSRF guard.
+        trustedAuthorizationOrigin = resolvedAuthorizationServerURL
+    } else {
+        trustedAuthorizationOrigin = nil
+    }
+    try assertSafeMCPOAuthEndpoint(
+        resolvedAuthorizationServerURL,
+        trustedOrigin: trustedAuthorizationOrigin
+    )
     let metadata = try await MCPOAuthDiscovery.discoverAuthorizationServerMetadata(
         authorizationServerURL: resolvedAuthorizationServerURL,
         protocolVersion: protocolVersion,
+        trustedOrigin: trustedAuthorizationOrigin,
         transport: transport
     )
     let currentAuthorizationServerInformation = mcpOAuthAuthorizationServerInformation(

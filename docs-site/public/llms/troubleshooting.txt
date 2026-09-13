@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Source URL: /SwiftAISDK/troubleshooting/
+Source URL: /troubleshooting/
 
 ## Missing API Key
 

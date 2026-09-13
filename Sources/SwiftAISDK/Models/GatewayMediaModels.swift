@@ -81,7 +81,8 @@ public final class GatewayImageModel: ImageModel, @unchecked Sendable {
             warnings: gatewayWarnings(from: raw["warnings"]),
             providerMetadata: gatewayProviderMetadata(raw["providerMetadata"] ?? raw["provider_metadata"]),
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID),
+            isRetryable: raw["isRetryable"]?.boolValue
         )
     }
 }

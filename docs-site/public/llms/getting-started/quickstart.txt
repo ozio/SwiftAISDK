@@ -1,6 +1,6 @@
 # Quickstart
 
-Source URL: /SwiftAISDK/getting-started/quickstart/
+Source URL: /getting-started/quickstart/
 
 Create a provider, choose a language model, and call `generateText` on the model.
 

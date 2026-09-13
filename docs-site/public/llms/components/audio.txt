@@ -1,6 +1,6 @@
 # Audio
 
-Source URL: /SwiftAISDK/components/audio/
+Source URL: /components/audio/
 
 ## Symbol counts
 

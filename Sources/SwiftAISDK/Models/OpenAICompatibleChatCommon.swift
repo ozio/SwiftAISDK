@@ -140,8 +140,12 @@ func openAICompatibleJSONString(_ value: JSONValue) -> String? {
     return String(data: data, encoding: .utf8)
 }
 
-func openAICompatibleChatTools(from tools: [String: JSONValue]) -> [JSONValue] {
-    tools.compactMap { name, schema in
+func openAICompatibleChatTools(
+    from tools: [String: JSONValue],
+    normalizeSchemas: Bool,
+    warnings: inout [AIWarning]
+) throws -> [JSONValue] {
+    try tools.compactMap { name, schema in
         let object = schema.objectValue
         if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue != nil {
             return nil
@@ -160,6 +164,11 @@ func openAICompatibleChatTools(from tools: [String: JSONValue]) -> [JSONValue] {
                 parameters = .object(parameterObject)
                 function["parameters"] = parameters
             }
+        }
+        if normalizeSchemas {
+            let normalized = try normalizeOpenAIJSONSchema(parameters)
+            function["parameters"] = normalized.schema
+            warnings.append(contentsOf: normalized.warnings)
         }
         return .object([
             "type": .string("function"),

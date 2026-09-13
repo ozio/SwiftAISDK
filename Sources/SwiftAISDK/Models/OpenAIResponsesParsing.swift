@@ -308,6 +308,9 @@ func openAIResponsesToolCall(
             }
             extra["caller"] = .object(caller)
         }
+        if let async = item["async"], async != .null {
+            extra["async"] = async
+        }
         return AIToolCall(
             id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "function-call",
             name: name,
@@ -334,11 +337,19 @@ func openAIResponsesToolCall(
     case "custom_tool_call":
         guard let name = item["name"]?.stringValue else { return nil }
         let input = item["input"].flatMap(openAIResponsesJSONString) ?? item["input"]?.stringValue ?? ""
+        var extra: [String: JSONValue] = [:]
+        if let async = item["async"], async != .null {
+            extra["async"] = async
+        }
         return AIToolCall(
             id: item["call_id"]?.stringValue ?? item["id"]?.stringValue ?? "custom-tool-call",
             name: name,
             arguments: input,
-            providerMetadata: openAIResponsesItemProviderMetadata(itemID: item["id"]?.stringValue, providerID: providerID),
+            providerMetadata: openAIResponsesItemProviderMetadata(
+                itemID: item["id"]?.stringValue,
+                providerID: providerID,
+                extra: extra
+            ),
             rawValue: item
         )
     case "web_search_call":

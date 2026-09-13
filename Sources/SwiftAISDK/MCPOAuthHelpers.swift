@@ -63,17 +63,12 @@ func checkResourceAllowed(requestedResource: URL, configuredResource: URL) -> Bo
     return requestedPath.hasPrefix(configuredPath)
 }
 
-func assertSafeMCPOAuthEndpoint(_ endpointURL: URL) throws {
+func assertSafeMCPOAuthEndpoint(_ endpointURL: URL, trustedOrigin: URL? = nil) throws {
     let scheme = endpointURL.scheme?.lowercased()
-    let normalizedHost = (endpointURL.host ?? "")
-        .lowercased()
-        .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-
-    if (scheme == "http" || scheme == "https"),
-       normalizedHost == "localhost"
-        || normalizedHost.hasSuffix(".localhost")
-        || normalizedHost == "127.0.0.1"
-        || normalizedHost == "::1" {
+    if let trustedOrigin,
+       isSameOrigin(endpointURL.absoluteString, trustedOrigin.absoluteString),
+       (scheme == "http" || scheme == "https"),
+       endpointURL.host?.isEmpty == false {
         return
     }
 
@@ -90,6 +85,22 @@ func assertSafeMCPOAuthEndpoint(_ endpointURL: URL) throws {
             message: "OAuth endpoint URL is not allowed: \(endpointURL.absoluteString)"
         )
     }
+}
+
+func isLoopbackMCPOAuthURL(_ url: URL) -> Bool {
+    guard let rawHost = url.host?.lowercased(), !rawHost.isEmpty else { return false }
+    let host = rawHost.hasSuffix(".") ? String(rawHost.dropLast()) : rawHost
+    if host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host == "[::1]" {
+        return true
+    }
+    let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+    return octets.count == 4
+        && octets.first == "127"
+        && octets.allSatisfy { UInt8($0) != nil }
+}
+
+func trustedMCPOAuthCredentialOrigin(_ authorizationServerURL: URL) -> URL? {
+    isLoopbackMCPOAuthURL(authorizationServerURL) ? authorizationServerURL : nil
 }
 
 extension String {

@@ -452,6 +452,12 @@ func failingPartStream<Part: Sendable>(_ error: Error) -> AsyncThrowingStream<Pa
 }
 
 func isRetryable(_ error: Error) -> Bool {
+    if error is AIRetryableEmptyImageResultError {
+        return true
+    }
+    if error is AITerminalEmptyImageResultError {
+        return false
+    }
     if let error = error as? AIError {
         if let apiError = error.apiCallError {
             return apiError.isRetryable

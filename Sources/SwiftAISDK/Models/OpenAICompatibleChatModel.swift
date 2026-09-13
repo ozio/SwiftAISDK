@@ -26,7 +26,13 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         }
         let response = (json: try httpResponse.jsonValue(), response: httpResponse)
         let raw = response.json
-        let choice = raw["choices"]?[0]
+        guard let choices = raw["choices"]?.arrayValue, !choices.isEmpty else {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "Response did not contain any choices."
+            )
+        }
+        let choice: JSONValue? = choices[0]
         let toolCalls = openAICompatibleChatToolCalls(
             from: choice?["message"]?["tool_calls"],
             providerMetadataNamespace: metadataNamespace
@@ -352,6 +358,15 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
            let responseFormat = openAICompatibleResponseFormatJSON(request.responseFormat) {
             extraBody["responseFormat"] = responseFormat
         }
+        if unwrapOpenAIProviderOptions,
+           var responseFormat = extraBody["responseFormat"]?.objectValue,
+           responseFormat["type"]?.stringValue == "json",
+           let schema = responseFormat["schema"] {
+            let normalized = try normalizeOpenAIJSONSchema(schema)
+            responseFormat["schema"] = normalized.schema
+            extraBody["responseFormat"] = .object(responseFormat)
+            warnings.append(contentsOf: normalized.warnings)
+        }
 
         var options = openAICompatibleChatOptions(from: extraBody, supportsStructuredOutputs: supportsStructuredOutputs)
         let capabilities = openAILanguageModelCapabilities(modelID)
@@ -412,7 +427,11 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         if let maxOutputTokens = request.maxOutputTokens { body["max_tokens"] = .number(Double(maxOutputTokens)) }
         if !request.stopSequences.isEmpty { body["stop"] = .array(request.stopSequences) }
         let toolChoiceInput = request.toolChoice ?? request.extraBody["toolChoice"]
-        let tools = openAICompatibleChatTools(from: request.tools)
+        let tools = try openAICompatibleChatTools(
+            from: request.tools,
+            normalizeSchemas: unwrapOpenAIProviderOptions,
+            warnings: &warnings
+        )
         if !tools.isEmpty {
             body["tools"] = .array(tools)
             if let toolChoice = openAICompatibleChatToolChoice(from: toolChoiceInput) {

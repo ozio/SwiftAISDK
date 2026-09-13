@@ -257,7 +257,8 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
         let images = parts.compactMap { part in
             part["inlineData"]?["data"]?.stringValue
         }
-        guard !images.isEmpty else {
+        let finishReason = googleGenerateContentFinishReason(from: raw, hasToolCalls: false)
+        guard !images.isEmpty || finishReason == "content-filter" else {
             throw AIError.invalidResponse(provider: providerID, message: "No Gemini image inlineData found.")
         }
         return ImageGenerationResult(
@@ -273,7 +274,8 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
                 return .object(object)
             },
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
-            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+            responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID),
+            isRetryable: finishReason == "content-filter" ? false : nil
         )
     }
 }

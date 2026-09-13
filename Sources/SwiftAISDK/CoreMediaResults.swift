@@ -170,6 +170,9 @@ public struct ImageGenerationResult: Sendable {
     public var providerMetadata: [String: JSONValue]
     public var requestMetadata: AIRequestMetadata
     public var responseMetadata: AIResponseMetadata
+    /// Provider classification for empty-image results. `false` makes an empty
+    /// result terminal; `true` and `nil` retain the SDK's retry behavior.
+    public var isRetryable: Bool?
     /// Per-call results, preserving response and provider metadata scopes.
     public var calls: [ImageGenerationCall]
 
@@ -182,6 +185,7 @@ public struct ImageGenerationResult: Sendable {
         providerMetadata: [String: JSONValue] = [:],
         requestMetadata: AIRequestMetadata = AIRequestMetadata(),
         responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+        isRetryable: Bool?,
         calls: [ImageGenerationCall] = []
     ) {
         self.urls = urls
@@ -192,7 +196,35 @@ public struct ImageGenerationResult: Sendable {
         self.providerMetadata = providerMetadata
         self.requestMetadata = requestMetadata
         self.responseMetadata = responseMetadata
+        self.isRetryable = isRetryable
         self.calls = calls
+    }
+
+    /// Source-compatible initializer retained for callers that provide per-call
+    /// results but do not classify empty results for retry.
+    public init(
+        urls: [String],
+        base64Images: [String] = [],
+        rawValue: JSONValue,
+        warnings: [AIWarning] = [],
+        usage: TokenUsage? = nil,
+        providerMetadata: [String: JSONValue] = [:],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
+        responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+        calls: [ImageGenerationCall] = []
+    ) {
+        self.init(
+            urls: urls,
+            base64Images: base64Images,
+            rawValue: rawValue,
+            warnings: warnings,
+            usage: usage,
+            providerMetadata: providerMetadata,
+            requestMetadata: requestMetadata,
+            responseMetadata: responseMetadata,
+            isRetryable: nil,
+            calls: calls
+        )
     }
 
     /// Source-compatible initializer retained from the aggregate-only image result.
@@ -215,6 +247,7 @@ public struct ImageGenerationResult: Sendable {
             providerMetadata: providerMetadata,
             requestMetadata: requestMetadata,
             responseMetadata: responseMetadata,
+            isRetryable: nil,
             calls: []
         )
     }

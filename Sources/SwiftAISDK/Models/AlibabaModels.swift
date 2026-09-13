@@ -127,7 +127,8 @@ public final class AlibabaLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                             continuation.yield(.textDeltaPart(id: "0", delta: delta))
                         }
-                        if let toolCallDeltas = choice["delta"]?["tool_calls"]?.arrayValue {
+                        if let toolCallDeltas = choice["delta"]?["tool_calls"]?.arrayValue,
+                           !toolCallDeltas.isEmpty {
                             if let reasoningID = activeReasoningID {
                                 continuation.yield(.reasoningEnd(id: reasoningID))
                                 activeReasoningID = nil

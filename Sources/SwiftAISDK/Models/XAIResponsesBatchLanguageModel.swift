@@ -211,6 +211,7 @@ private struct XAIUploadedBatchFile: Sendable {
 private struct XAIBatchResult: Sendable {
     var id: String
     var chatResponse: JSONValue?
+    var imageResponse: JSONValue?
     var errorCode: JSONValue?
     var errorMessage: String?
     var topLevelErrorMessage: String?
@@ -372,6 +373,7 @@ private func parseXAIBatchResultsPage(_ raw: JSONValue, providerID: String) thro
         return XAIBatchResult(
             id: id,
             chatResponse: response?["chat_get_completion"],
+            imageResponse: response?["image_generation"],
             errorCode: error?["code"],
             errorMessage: error?["message"]?.stringValue,
             topLevelErrorMessage: object["error_message"]?.stringValue,
@@ -379,6 +381,336 @@ private func parseXAIBatchResultsPage(_ raw: JSONValue, providerID: String) thro
         )
     }
     return XAIBatchResultsPage(results: results, paginationToken: raw["pagination_token"]?.stringValue)
+}
+
+/// Provider-owned xAI Batch V4 service. xAI accepts both text and image
+/// requests and intentionally permits different model IDs in the same batch.
+public final class XAIBatchProvider: AIBatchProvider, @unchecked Sendable {
+    public let providerID: String
+    public let supportedURLs: [String: [AISupportedURLPattern]] = [
+        "image/*": [AISupportedURLPattern { $0.hasPrefix("http://") || $0.hasPrefix("https://") }],
+        "application/pdf": [AISupportedURLPattern { $0.hasPrefix("http://") || $0.hasPrefix("https://") }],
+        "text/*": [AISupportedURLPattern { $0.hasPrefix("http://") || $0.hasPrefix("https://") }]
+    ]
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        let providerRoot = config.providerID.hasSuffix(".responses")
+            ? String(config.providerID.dropLast(".responses".count))
+            : config.providerID
+        self.providerID = "\(providerRoot).batch"
+        self.config = config
+    }
+
+    public func startBatch(
+        _ options: AIBatchStartOptions<AIBatchRequest>
+    ) async throws -> AIBatchStartResult {
+        try options.abortSignal?.throwIfAborted()
+        let inputFileExpiresAfter = try xaiBatchInputFileExpiresAfter(options.providerOptions)
+        var jsonLines = Data()
+        var warnings: [AIBatchWarning] = []
+        if options.webhookURL != nil {
+            warnings.append(AIBatchWarning(warning: AIWarning(
+                type: "unsupported",
+                feature: "webhookUrl",
+                message: "The xAI Batch API does not support per-batch webhook URLs."
+            )))
+        }
+
+        for request in options.requests {
+            try options.abortSignal?.throwIfAborted()
+            let id: String
+            let endpoint: String
+            let body: [String: JSONValue]
+            let requestWarnings: [AIWarning]
+            switch request {
+            case let .text(text):
+                guard let modelID = text.modelID, !modelID.isEmpty else {
+                    throw AIError.invalidArgument(
+                        argument: "requests",
+                        message: "xAI text batch request \"\(text.id)\" must specify a modelID."
+                    )
+                }
+                let languageModel = OpenAICompatibleResponsesModel(modelID: modelID, config: config)
+                let prepared = try languageModel.preparedBatchRequest(for: text.request)
+                id = text.id
+                endpoint = "/v1/responses"
+                body = prepared.body
+                requestWarnings = prepared.warnings
+            case let .image(image):
+                id = image.id
+                let prepared = try prepareXAIBatchImageRequest(image)
+                endpoint = prepared.endpoint
+                body = prepared.body
+                requestWarnings = prepared.warnings
+            }
+            let line: JSONValue = [
+                "custom_id": .string(id),
+                "method": "POST",
+                "url": .string(endpoint),
+                "body": .object(body)
+            ]
+            jsonLines.append(try encodeJSONBody(line))
+            jsonLines.append(0x0A)
+            warnings.append(contentsOf: requestWarnings.map {
+                AIBatchWarning(requestID: id, warning: $0)
+            })
+        }
+
+        var form = MultipartFormData()
+        if let inputFileExpiresAfter {
+            form.appendField(name: "expires_after", value: String(inputFileExpiresAfter))
+        }
+        form.appendFile(
+            name: "file",
+            fileName: "batch.jsonl",
+            mimeType: "application/jsonl",
+            data: jsonLines
+        )
+        let headers = xaiBatchHeaders(options.headers, idempotencyKey: options.idempotencyKey)
+        let uploadRequest = try config.rawRequest(
+            path: "/files",
+            modelID: "batch",
+            body: form.finalize(),
+            contentType: "multipart/form-data; boundary=\(form.boundary)",
+            headers: headers,
+            abortSignal: options.abortSignal
+        )
+        let uploadResponse = try await config.transport.send(uploadRequest)
+        guard (200..<300).contains(uploadResponse.statusCode) else {
+            throw openAICompatibleHTTPStatusError(provider: providerID, response: uploadResponse)
+        }
+        let uploadedFile = try parseXAIUploadedBatchFile(uploadResponse.jsonValue(), providerID: providerID)
+
+        let createRequest = try config.request(
+            path: "/batches",
+            modelID: "batch",
+            body: ["name": "ai-sdk-text-batch", "input_file_id": .string(uploadedFile.id)],
+            headers: headers,
+            abortSignal: options.abortSignal
+        )
+        let createResponse = try await config.transport.send(createRequest)
+        guard (200..<300).contains(createResponse.statusCode) else {
+            throw openAICompatibleHTTPStatusError(provider: providerID, response: createResponse)
+        }
+        let batch = try parseXAIBatchResponse(createResponse.jsonValue(), providerID: providerID)
+        var inputFileMetadata: [String: JSONValue] = ["inputFileId": .string(uploadedFile.id)]
+        if let expiresAt = uploadedFile.expiresAt.flatMap(xaiBatchISOTimestamp) {
+            inputFileMetadata["inputFileExpiresAt"] = .string(expiresAt)
+        }
+        return AIBatchStartResult(
+            batchID: batch.id,
+            status: xaiBatchStatus(batch),
+            warnings: warnings,
+            providerMetadata: ["xai": .object(inputFileMetadata)]
+        )
+    }
+
+    public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
+        xaiBatchStatus(try await retrieveBatch(options))
+    }
+
+    public func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try options.abortSignal?.throwIfAborted()
+        let request = try config.request(
+            path: "/batches/\(xaiBatchPathEncode(options.batchID)):cancel",
+            modelID: "batch",
+            body: .object([:]),
+            headers: options.headers,
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
+        }
+        _ = try parseXAIBatchResponse(response.jsonValue(), providerID: providerID)
+        return AIBatchCancelResult()
+    }
+
+    public func listBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        try options.abortSignal?.throwIfAborted()
+        var components = URLComponents(url: try config.url("batch", "/batches"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = []
+        if let limit = options.limit { queryItems.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let cursor = options.cursor { queryItems.append(URLQueryItem(name: "pagination_token", value: cursor)) }
+        components?.queryItems = queryItems.isEmpty ? nil : queryItems
+        guard let url = components?.url else { throw AIError.invalidURL("\(config.baseURL)/batches") }
+        let request = AIHTTPRequest(
+            method: "GET",
+            url: url,
+            headers: prepareHeaders(options.headers, defaultHeaders: config.headers),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        guard let values = raw["batches"]?.arrayValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Invalid xAI Batch list response.")
+        }
+        return AIBatchListResult(
+            batches: try values.map {
+                let batch = try parseXAIBatchResponse($0, providerID: providerID)
+                return AIBatchListItem(batchID: batch.id, status: xaiBatchStatus(batch))
+            },
+            nextCursor: raw["pagination_token"]?.stringValue
+        )
+    }
+
+    public func getBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        let batch = try await retrieveBatch(options)
+        guard xaiBatchStatus(batch).status != .pending else {
+            throw AIError.invalidArgument(
+                argument: "batchID",
+                message: "xAI batch \"\(options.batchID)\" is not complete."
+            )
+        }
+        let config = self.config
+        let providerID = self.providerID
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var paginationToken: String?
+                    repeat {
+                        var path = "/batches/\(xaiBatchPathEncode(options.batchID))/results?limit=1000"
+                        if let paginationToken {
+                            path += "&pagination_token=\(xaiBatchQueryEncode(paginationToken))"
+                        }
+                        let request = AIHTTPRequest(
+                            method: "GET",
+                            url: try config.url("batch", path),
+                            headers: prepareHeaders(options.headers, defaultHeaders: config.headers),
+                            abortSignal: options.abortSignal
+                        )
+                        let response = try await config.transport.send(request)
+                        guard (200..<300).contains(response.statusCode) else {
+                            throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
+                        }
+                        let page = try parseXAIBatchResultsPage(response.jsonValue(), providerID: providerID)
+                        for result in page.results {
+                            continuation.yield(convertXAIBatchV4Result(result))
+                        }
+                        paginationToken = page.paginationToken
+                    } while paginationToken != nil
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
+    private func retrieveBatch(_ options: AIBatchOperationOptions) async throws -> XAIBatchResponse {
+        try options.abortSignal?.throwIfAborted()
+        let request = AIHTTPRequest(
+            method: "GET",
+            url: try config.url("batch", "/batches/\(xaiBatchPathEncode(options.batchID))"),
+            headers: prepareHeaders(options.headers, defaultHeaders: config.headers),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
+        }
+        return try parseXAIBatchResponse(response.jsonValue(), providerID: providerID)
+    }
+
+    private func prepareXAIBatchImageRequest(
+        _ batchRequest: ImageBatchRequest
+    ) throws -> (endpoint: String, body: [String: JSONValue], warnings: [AIWarning]) {
+        let request = batchRequest.request
+        var warnings: [AIWarning] = []
+        if request.size != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "size",
+                message: "This model does not support the `size` option. Use `aspectRatio` instead."
+            ))
+        }
+        if request.seed != nil { warnings.append(AIWarning(type: "unsupported", feature: "seed")) }
+        if request.mask != nil { warnings.append(AIWarning(type: "unsupported", feature: "mask")) }
+        var body: [String: JSONValue] = [
+            "model": .string(batchRequest.modelID),
+            "prompt": .string(request.prompt),
+            "n": .number(Double(request.count ?? 1)),
+            "response_format": .string("b64_json")
+        ]
+        let options = request.providerOptions["xai"]?.objectValue ?? [:]
+        if let aspectRatio = request.aspectRatio.map(JSONValue.string)
+            ?? options["aspectRatio"] ?? options["aspect_ratio"] {
+            body["aspect_ratio"] = aspectRatio
+        }
+        for (wire, camel) in [
+            ("output_format", "outputFormat"),
+            ("sync_mode", "syncMode"),
+            ("resolution", "resolution"),
+            ("quality", "quality"),
+            ("user", "user")
+        ] {
+            if let value = options[camel] ?? options[wire] { body[wire] = value }
+        }
+        let images = try request.files.map(convertImageModelFileToDataURI)
+        if images.count == 1 {
+            body["image"] = .object(["url": .string(images[0]), "type": "image_url"])
+        } else if !images.isEmpty {
+            body["images"] = .array(images.map {
+                .object(["url": .string($0), "type": "image_url"])
+            })
+        }
+        return (
+            endpoint: images.isEmpty ? "/v1/images/generations" : "/v1/images/edits",
+            body: body,
+            warnings: warnings
+        )
+    }
+}
+
+private func convertXAIBatchV4Result(_ result: XAIBatchResult) -> AIBatchV4ItemResult {
+    if let image = result.imageResponse {
+        guard let data = image["data"]?.arrayValue else {
+            return .image(.failed(
+                id: result.id,
+                error: AIBatchError(message: "xAI returned an invalid image batch result.", code: "invalid_response")
+            ))
+        }
+        if data.contains(where: { $0["respect_moderation"]?.boolValue == false }) {
+            return .image(.failed(
+                id: result.id,
+                error: AIBatchError(message: "Image generation was blocked due to a content policy violation.")
+            ))
+        }
+        guard data.allSatisfy({ $0["url"]?.stringValue != nil || $0["b64_json"]?.stringValue != nil }) else {
+            return .image(.failed(
+                id: result.id,
+                error: AIBatchError(message: "xAI returned an image without data or a URL.", code: "invalid_response")
+            ))
+        }
+        var metadata: [String: JSONValue] = [
+            "images": .array(data.map { value in
+                var imageMetadata: [String: JSONValue] = [:]
+                if let revisedPrompt = value["revised_prompt"]?.stringValue {
+                    imageMetadata["revisedPrompt"] = .string(revisedPrompt)
+                }
+                return .object(imageMetadata)
+            })
+        ]
+        if let cost = image["usage"]?["cost_in_usd_ticks"] { metadata["costInUsdTicks"] = cost }
+        return .image(.succeeded(
+            id: result.id,
+            result: ImageGenerationResult(
+                urls: data.compactMap { $0["url"]?.stringValue },
+                base64Images: data.compactMap { $0["b64_json"]?.stringValue },
+                rawValue: image,
+                providerMetadata: ["xai": .object(metadata)],
+                responseMetadata: AIResponseMetadata(modelID: "")
+            )
+        ))
+    }
+    return .text(convertXAIBatchResult(result))
 }
 
 private func convertXAIBatchResult(_ result: XAIBatchResult) -> AIBatchItemResult<TextGenerationResult> {

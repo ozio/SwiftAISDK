@@ -1,6 +1,6 @@
 # Telemetry
 
-Source URL: /SwiftAISDK/components/telemetry/
+Source URL: /components/telemetry/
 
 ## Symbol counts
 

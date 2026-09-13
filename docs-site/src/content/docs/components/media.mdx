@@ -8,8 +8,8 @@ description: Public SwiftAISDK APIs for media.
 | Symbol kind | Count |
 | --- | --- |
 | Function | 7 |
-| Initializer | 8 |
-| Instance Property | 43 |
+| Initializer | 9 |
+| Instance Property | 44 |
 | Structure | 6 |
 | Type Method | 16 |
 
@@ -30,6 +30,7 @@ description: Public SwiftAISDK APIs for media.
 | Initializer | `init(url:mediaType:fileName:)` | `init(url: String, mediaType: String? = nil, fileName: String? = nil)` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Initializer | `init(urls:base64Images:rawValue:warnings:usage:providerMetadata:requestMetadata:responseMetadata:)` | `init(urls: [String], base64Images: [String] = [], rawValue: JSONValue, warnings: [AIWarning] = [], usage: TokenUsage? = nil, providerMetadata: [String : JSONValue] = [:], requestMetadata: AIRequestMetadata = AIRequestMetadata(), responseMetadata: AIResponseMetadata = AIResponseMetadata())` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Initializer | `init(urls:base64Images:rawValue:warnings:usage:providerMetadata:requestMetadata:responseMetadata:calls:)` | `init(urls: [String], base64Images: [String] = [], rawValue: JSONValue, warnings: [AIWarning] = [], usage: TokenUsage? = nil, providerMetadata: [String : JSONValue] = [:], requestMetadata: AIRequestMetadata = AIRequestMetadata(), responseMetadata: AIResponseMetadata = AIResponseMetadata(), calls: [ImageGenerationCall] = [])` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
+| Initializer | `init(urls:base64Images:rawValue:warnings:usage:providerMetadata:requestMetadata:responseMetadata:isRetryable:calls:)` | `init(urls: [String], base64Images: [String] = [], rawValue: JSONValue, warnings: [AIWarning] = [], usage: TokenUsage? = nil, providerMetadata: [String : JSONValue] = [:], requestMetadata: AIRequestMetadata = AIRequestMetadata(), responseMetadata: AIResponseMetadata = AIResponseMetadata(), isRetryable: Bool?, calls: [ImageGenerationCall] = [])` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Initializer | `init(urls:base64Images:warnings:usage:providerMetadata:responseMetadata:)` | `init(urls: [String], base64Images: [String] = [], warnings: [AIWarning] = [], usage: TokenUsage? = nil, providerMetadata: [String : JSONValue] = [:], responseMetadata: AIResponseMetadata = AIResponseMetadata())` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Initializer | `init(values:dimensions:providerOptions:extraBody:headers:abortSignal:)` | `init(values: [String], dimensions: Int? = nil, providerOptions: [String : JSONValue] = [:], extraBody: [String : JSONValue] = [:], headers: [String : String] = [:], abortSignal: AIAbortSignal? = nil)` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Instance Property | `abortSignal` | `var abortSignal: AIAbortSignal?` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
@@ -48,6 +49,7 @@ description: Public SwiftAISDK APIs for media.
 | Instance Property | `files` | `var files: [ImageInputFile]` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Instance Property | `headers` | `var headers: [String : String]` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Instance Property | `headers` | `var headers: [String : String]` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
+| Instance Property | `isRetryable` | `var isRetryable: Bool?` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Instance Property | `mask` | `var mask: ImageInputFile?` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Instance Property | `mediaType` | `var mediaType: String?` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |
 | Instance Property | `prompt` | `var prompt: String` | [Sources/SwiftAISDK/CoreMediaResults.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreMediaResults.swift) |

@@ -1,6 +1,6 @@
 # MCP
 
-Source URL: /SwiftAISDK/components/mcp/
+Source URL: /components/mcp/
 
 ## Symbol counts
 

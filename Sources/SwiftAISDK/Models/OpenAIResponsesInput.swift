@@ -30,7 +30,9 @@ func openResponsesInput(
             input.append(.object([
                 "type": .string("message"),
                 "role": .string("user"),
-                "content": .array(message.content.enumerated().compactMap(openResponsesInputContentPart))
+                "content": .array(message.content.enumerated().compactMap {
+                    openResponsesInputContentPart($0, providerOptionsName: providerOptionsName)
+                })
             ]))
         case .assistant:
             let metadataNamespace = providerOptionsName
@@ -176,7 +178,12 @@ func openResponsesInput(
                 input.append(.object([
                     "type": .string("function_call_output"),
                     "call_id": .string(result.toolCallID),
-                    "output": openResponsesToolResultOutput(result, providerID: providerID, warnings: &warnings)
+                    "output": openResponsesToolResultOutput(
+                        result,
+                        providerID: providerID,
+                        providerOptionsName: providerOptionsName,
+                        warnings: &warnings
+                    )
                 ]))
             }
         }
@@ -226,29 +233,44 @@ private func openResponsesOutputTextAnnotations(_ value: JSONValue?) -> [JSONVal
     }
 }
 
-func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContentPart]>.Element) -> JSONValue? {
+func openResponsesInputContentPart(
+    _ indexAndPart: EnumeratedSequence<[AIContentPart]>.Element,
+    providerOptionsName: String? = nil
+) -> JSONValue? {
     let (_, part) = indexAndPart
     switch part {
     case let .text(text, _):
         return .object(["type": .string("input_text"), "text": .string(text)])
     case let .reasoning(text, _):
         return .object(["type": .string("input_text"), "text": .string(text)])
-    case let .imageURL(url, _):
-        return .object(["type": .string("input_image"), "image_url": .string(url)])
-    case let .data(mimeType, data, _):
+    case let .imageURL(url, providerMetadata):
+        return .object([
+            "type": .string("input_image"),
+            "image_url": .string(url),
+            "detail": openResponsesImageDetail(fromProviderMetadata: providerMetadata, providerOptionsName: providerOptionsName)
+        ])
+    case let .data(mimeType, data, providerMetadata):
         let dataURL = "data:\(mimeType);base64,\(data.base64EncodedString())"
         if mimeType.lowercased().hasPrefix("image/") {
-            return .object(["type": .string("input_image"), "image_url": .string(dataURL)])
+            return .object([
+                "type": .string("input_image"),
+                "image_url": .string(dataURL),
+                "detail": openResponsesImageDetail(fromProviderMetadata: providerMetadata, providerOptionsName: providerOptionsName)
+            ])
         }
         return .object([
             "type": .string("input_file"),
             "filename": .string("data"),
             "file_data": .string(dataURL)
         ])
-    case let .file(mimeType, data, filename, _):
+    case let .file(mimeType, data, filename, providerMetadata):
         let dataURL = "data:\(mimeType);base64,\(data.base64EncodedString())"
         if mimeType.lowercased().hasPrefix("image/") {
-            return .object(["type": .string("input_image"), "image_url": .string(dataURL)])
+            return .object([
+                "type": .string("input_image"),
+                "image_url": .string(dataURL),
+                "detail": openResponsesImageDetail(fromProviderMetadata: providerMetadata, providerOptionsName: providerOptionsName)
+            ])
         }
         return .object([
             "type": .string("input_file"),
@@ -264,6 +286,7 @@ func openResponsesInputContentPart(_ indexAndPart: EnumeratedSequence<[AIContent
 func openResponsesToolResultOutput(
     _ result: AIToolResult,
     providerID: String,
+    providerOptionsName: String? = nil,
     jsonEncodeText: Bool = false,
     promptCacheBreakpoint: JSONValue? = nil,
     warnings: inout [AIWarning]
@@ -295,7 +318,12 @@ func openResponsesToolResultOutput(
         case "content":
             let content = object["value"]?.arrayValue ?? []
             return .array(content.compactMap { item in
-                openResponsesToolResultContentPart(item, providerID: providerID, warnings: &warnings)
+                openResponsesToolResultContentPart(
+                    item,
+                    providerID: providerID,
+                    providerOptionsName: providerOptionsName,
+                    warnings: &warnings
+                )
             })
         default:
             break
@@ -308,7 +336,12 @@ private func openResponsesTextToolResultOutput(_ text: String, jsonEncodeText: B
     .string(jsonEncodeText ? (openAIResponsesJSONString(.string(text)) ?? "\"\"") : text)
 }
 
-func openResponsesToolResultContentPart(_ item: JSONValue, providerID: String, warnings: inout [AIWarning]) -> JSONValue? {
+func openResponsesToolResultContentPart(
+    _ item: JSONValue,
+    providerID: String,
+    providerOptionsName: String? = nil,
+    warnings: inout [AIWarning]
+) -> JSONValue? {
     switch item["type"]?.stringValue {
     case "text":
         var output: [String: JSONValue] = [
@@ -327,18 +360,14 @@ func openResponsesToolResultContentPart(_ item: JSONValue, providerID: String, w
             "type": .string("input_image"),
             "image_url": .string("data:\(item["mediaType"]?.stringValue ?? "image/jpeg");base64,\(item["data"]?.stringValue ?? "")")
         ]
-        if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
-            image["detail"] = detail
-        }
+        image["detail"] = openResponsesImageDetail(from: item, providerID: providerID, providerOptionsName: providerOptionsName)
         return .object(image)
     case "image-url":
         var image: [String: JSONValue] = [
             "type": .string("input_image"),
             "image_url": item["url"] ?? .string("")
         ]
-        if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
-            image["detail"] = detail
-        }
+        image["detail"] = openResponsesImageDetail(from: item, providerID: providerID, providerOptionsName: providerOptionsName)
         return .object(image)
     case "file-data":
         return .object([
@@ -347,7 +376,12 @@ func openResponsesToolResultContentPart(_ item: JSONValue, providerID: String, w
             "file_data": .string("data:\(item["mediaType"]?.stringValue ?? "application/octet-stream");base64,\(item["data"]?.stringValue ?? "")")
         ])
     case "file":
-        return openResponsesToolResultFilePart(item, providerID: providerID, warnings: &warnings)
+        return openResponsesToolResultFilePart(
+            item,
+            providerID: providerID,
+            providerOptionsName: providerOptionsName,
+            warnings: &warnings
+        )
     default:
         warnings.append(AIWarning(type: "other", message: "unsupported tool content part type: \(item["type"]?.stringValue ?? "unknown")"))
         return nil
@@ -374,6 +408,7 @@ private func openResponsesToolResultContentPromptCacheBreakpoint(
 private func openResponsesToolResultFilePart(
     _ item: JSONValue,
     providerID: String,
+    providerOptionsName: String?,
     warnings: inout [AIWarning]
 ) -> JSONValue? {
     let mediaType = item["mediaType"]?.stringValue ?? "application/octet-stream"
@@ -387,9 +422,7 @@ private func openResponsesToolResultFilePart(
                 "type": .string("input_image"),
                 "image_url": .string("data:\(mediaType);base64,\(payload)")
             ]
-            if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
-                image["detail"] = detail
-            }
+            image["detail"] = openResponsesImageDetail(from: item, providerID: providerID, providerOptionsName: providerOptionsName)
             return .object(image)
         }
         return .object([
@@ -403,9 +436,7 @@ private func openResponsesToolResultFilePart(
                 "type": .string("input_image"),
                 "image_url": data?["url"] ?? .string("")
             ]
-            if let detail = openResponsesImageDetail(from: item, providerID: providerID) {
-                image["detail"] = detail
-            }
+            image["detail"] = openResponsesImageDetail(from: item, providerID: providerID, providerOptionsName: providerOptionsName)
             return .object(image)
         }
         return .object([
@@ -438,12 +469,42 @@ private func openResponsesToolResultFilePart(
     }
 }
 
-private func openResponsesImageDetail(from item: JSONValue, providerID: String) -> JSONValue? {
+private func openResponsesImageDetail(
+    from item: JSONValue,
+    providerID: String,
+    providerOptionsName: String? = nil
+) -> JSONValue? {
     let providerRoot = openAICompatibleProviderRoot(providerID)
-    return item["providerOptions"]?[providerRoot]?["imageDetail"]
+    let value = providerOptionsName.flatMap { item["providerOptions"]?[$0]?["imageDetail"] }
+        ?? item["providerOptions"]?[providerRoot]?["imageDetail"]
         ?? item["providerOptions"]?["openai"]?["imageDetail"]
+        ?? providerOptionsName.flatMap { item[$0]?["imageDetail"] }
         ?? item[providerRoot]?["imageDetail"]
         ?? item["openai"]?["imageDetail"]
+    let supportedDetails = providerOptionsName == nil
+        ? ["low", "high", "original", "auto"]
+        : ["low", "high", "auto"]
+    guard let detail = value?.stringValue,
+          supportedDetails.contains(detail) else {
+        return providerOptionsName == nil ? nil : .string("auto")
+    }
+    return .string(detail)
+}
+
+private func openResponsesImageDetail(
+    fromProviderMetadata providerMetadata: [String: JSONValue],
+    providerOptionsName: String?
+) -> JSONValue? {
+    let value = providerOptionsName.flatMap { providerMetadata[$0]?["imageDetail"] }
+        ?? providerMetadata["openai"]?["imageDetail"]
+    let supportedDetails = providerOptionsName == nil
+        ? ["low", "high", "original", "auto"]
+        : ["low", "high", "auto"]
+    guard let detail = value?.stringValue,
+          supportedDetails.contains(detail) else {
+        return providerOptionsName == nil ? nil : .string("auto")
+    }
+    return .string(detail)
 }
 
 private func openResponsesProviderReferenceID(_ value: JSONValue?, providerID: String) -> String? {

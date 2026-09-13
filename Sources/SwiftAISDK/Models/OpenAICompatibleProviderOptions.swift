@@ -301,7 +301,16 @@ func openAIImageHasDefaultResponseFormat(_ modelID: String) -> Bool {
 
 func openAIImageMaxImagesPerCall(_ modelID: String) -> Int {
     switch modelID {
-    case "dall-e-2", "gpt-image-1", "gpt-image-1-mini", "gpt-image-1.5", "gpt-image-2", "chatgpt-image-latest":
+    case "dall-e-2",
+         "gpt-image-1",
+         "gpt-image-1-mini",
+         "gpt-image-1.5",
+         "gpt-image-2",
+         "gpt-image-2.5-flare",
+         "gpt-image-2.5-flare-2026-09-08",
+         "gpt-image-2.5-sunburst",
+         "gpt-image-2.5-sunburst-2026-09-08",
+         "chatgpt-image-latest":
         return 10
     default:
         return modelID.hasPrefix("gpt-image-") ? 10 : 1

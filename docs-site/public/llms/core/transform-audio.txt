@@ -1,6 +1,6 @@
 # Transform audio
 
-Source URL: /SwiftAISDK/core/transform-audio/
+Source URL: /core/transform-audio/
 
 Use `transformAudio` when the provider takes existing media and returns changed audio.
 

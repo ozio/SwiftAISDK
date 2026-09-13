@@ -39,6 +39,20 @@ func prepareToolChoice(_ toolChoice: JSONValue?) -> JSONValue {
     if let string = toolChoice.stringValue {
         return ["type": .string(string)]
     }
+    if let type = toolChoice["type"]?.stringValue {
+        switch type {
+        case "auto", "none", "required":
+            return ["type": .string(type)]
+        case "tool":
+            var output: [String: JSONValue] = ["type": "tool"]
+            if let toolName = toolChoice["toolName"] ?? toolChoice["name"] {
+                output["toolName"] = toolName
+            }
+            return .object(output)
+        default:
+            return toolChoice
+        }
+    }
     var output: [String: JSONValue] = ["type": "tool"]
     if let toolName = toolChoice["toolName"] ?? toolChoice["name"] {
         output["toolName"] = toolName

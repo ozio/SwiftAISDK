@@ -21,7 +21,7 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
             }
             headers["x-api-key"] = headers["x-api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.49")
+        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.53")
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
         languageProviderID = settings.name ?? "anthropic.messages"
         skillsProviderID = anthropicSkillsProviderID(from: languageProviderID)
@@ -47,6 +47,15 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
 
     public func batchLanguageModel(_ modelID: String) -> any BatchLanguageModel {
         AnthropicBatchLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID))
+    }
+
+    /// Provider-owned Batch V4 service. The model-bound factory above remains
+    /// available as a source-compatible text-batch shim.
+    public func experimentalBatch() -> any AIBatchProvider {
+        AnthropicBatchProvider(
+            providerID: anthropicBatchProviderID(from: languageProviderID),
+            config: config.withProviderID(languageProviderID)
+        )
     }
 
     public func files() -> any AIFileClient {
@@ -93,6 +102,13 @@ private func anthropicSkillsProviderID(from languageProviderID: String) -> Strin
         return String(languageProviderID.dropLast(".messages".count)) + ".skills"
     }
     return languageProviderID + ".skills"
+}
+
+private func anthropicBatchProviderID(from languageProviderID: String) -> String {
+    if languageProviderID.hasSuffix(".messages") {
+        return String(languageProviderID.dropLast(".messages".count)) + ".batch"
+    }
+    return languageProviderID + ".batch"
 }
 
 private func anthropicNormalizedBaseURL(_ baseURL: String?) -> String {

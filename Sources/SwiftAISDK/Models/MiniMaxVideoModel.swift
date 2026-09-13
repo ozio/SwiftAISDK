@@ -1,8 +1,9 @@
 import Foundation
 
-public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
+public final class MiniMaxVideoModel: AsyncVideoModel, @unchecked Sendable {
     public let providerID = "minimax.video"
     public let modelID: String
+    public let maxVideosPerCall = 1
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -12,6 +13,195 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
         let responseTimestamp = Date()
+        let prepared = try prepareVideoRequest(request)
+        let submission = try await submitVideoGeneration(
+            prepared: prepared,
+            request: request,
+            webhookURL: nil
+        )
+        let final = try await poll(
+            taskID: submission.taskID,
+            requestHeaders: request.headers,
+            intervalNanoseconds: prepared.options.pollIntervalNanoseconds,
+            timeoutNanoseconds: prepared.options.pollTimeoutNanoseconds,
+            timeoutMilliseconds: prepared.options.pollTimeoutMilliseconds,
+            abortSignal: request.abortSignal
+        )
+        let resolvedInputs: JSONValue = .object([
+            "imageCount": .number(Double(prepared.resolvedInputs.imageCount)),
+            "referenceVideoUrls": .array(prepared.resolvedInputs.referenceVideoIndices.compactMap { index in
+                guard request.inputReferences.indices.contains(index),
+                      let url = request.inputReferences[index].url else { return nil }
+                return .string(url)
+            })
+        ])
+        return try completedVideoResult(
+            taskID: submission.taskID,
+            raw: final.raw,
+            response: final.response,
+            resolvedInputs: resolvedInputs,
+            warnings: prepared.warnings,
+            requestMetadata: videoGenerationRequestMetadata(request, body: .object(prepared.body)),
+            responseTimestamp: responseTimestamp
+        )
+    }
+
+    public func startVideoGeneration(
+        _ operationRequest: VideoGenerationOperationStartRequest
+    ) async throws -> VideoGenerationOperationStartResult {
+        let request = operationRequest.request
+        let prepared = try prepareVideoRequest(request)
+        let submission = try await submitVideoGeneration(
+            prepared: prepared,
+            request: request,
+            webhookURL: operationRequest.webhookURL
+        )
+        return VideoGenerationOperationStartResult(
+            operation: [
+                "taskId": .string(submission.taskID),
+                "resolvedInputs": prepared.resolvedInputs.jsonValue
+            ],
+            warnings: prepared.warnings,
+            responseMetadata: AIResponseMetadata(
+                timestamp: submission.timestamp,
+                modelID: modelID,
+                headers: submission.response.headers
+            )
+        )
+    }
+
+    public func videoGenerationStatus(
+        _ operationRequest: VideoGenerationOperationStatusRequest
+    ) async throws -> VideoGenerationOperationStatusResult {
+        let operation = try miniMaxVideoOperation(from: operationRequest.operation)
+        let response = try await downloadURL(
+            "\(withoutTrailingSlash(config.baseURL))/v2/query/video_generation/\(miniMaxVideoPathSegment(operation.taskID))",
+            transport: config.transport,
+            headers: config.headers.mergingHeaders(normalizeHeaders(operationRequest.headers)),
+            abortSignal: operationRequest.abortSignal,
+            trustedOrigin: config.baseURL,
+            credentialedOrigin: config.baseURL
+        )
+        guard (200..<300).contains(response.statusCode) else {
+            throw miniMaxVideoHTTPStatusError(response: response)
+        }
+        let raw = try response.jsonValue()
+        let task = try miniMaxValidatedVideoTask(from: raw)
+        let responseMetadata = AIResponseMetadata(
+            timestamp: Date(),
+            modelID: modelID,
+            headers: response.headers
+        )
+        switch task?["status"]?.stringValue {
+        case "succeeded":
+            return .completed(try completedVideoResult(
+                taskID: operation.taskID,
+                raw: raw,
+                response: response,
+                resolvedInputs: operation.resolvedInputs.jsonValue,
+                responseTimestamp: responseMetadata.timestamp
+            ))
+        case "failed":
+            let message = task?["error"]?["message"]?.stringValue.map { ": \($0)" } ?? ""
+            let code = miniMaxErrorCode(task?["error"]?["code"]).map { " (\($0))" } ?? ""
+            return .failed(
+                message: "MiniMax video generation failed\(message)\(code). Task ID: \(operation.taskID)",
+                responseMetadata: responseMetadata
+            )
+        case "cancelled":
+            return .failed(
+                message: "MiniMax video generation was cancelled. Task ID: \(operation.taskID)",
+                responseMetadata: responseMetadata
+            )
+        case "expired":
+            return .failed(
+                message: "MiniMax video generation request expired. Task ID: \(operation.taskID)",
+                responseMetadata: responseMetadata
+            )
+        default:
+            return .pending(responseMetadata: responseMetadata)
+        }
+    }
+
+    private func submitVideoGeneration(
+        prepared: MiniMaxPreparedVideoRequest,
+        request: VideoGenerationRequest,
+        webhookURL: String?
+    ) async throws -> (taskID: String, response: AIHTTPResponse, timestamp: Date) {
+        let timestamp = Date()
+        var body = prepared.body
+        if let webhookURL {
+            // Applied after the provider body so the direct V4 argument wins.
+            body["callback_url"] = .string(webhookURL)
+        }
+        let response = try await config.transport.send(config.request(
+            path: "/v2/video_generation",
+            modelID: modelID,
+            body: .object(body),
+            headers: normalizeHeaders(request.headers),
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(response.statusCode) else {
+            throw miniMaxVideoHTTPStatusError(response: response)
+        }
+        let raw = try response.jsonValue()
+        guard let taskID = raw["task_id"]?.stringValue, !taskID.isEmpty else {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "No task_id returned from the MiniMax API. Response: \(miniMaxJSONString(raw))"
+            )
+        }
+        return (taskID, response, timestamp)
+    }
+
+    private func completedVideoResult(
+        taskID: String,
+        raw: JSONValue,
+        response: AIHTTPResponse,
+        resolvedInputs: JSONValue,
+        warnings: [AIWarning] = [],
+        requestMetadata: AIRequestMetadata = AIRequestMetadata(),
+        responseTimestamp: Date? = nil
+    ) throws -> VideoGenerationResult {
+        let task = try miniMaxValidatedVideoTask(from: raw)
+        guard let url = task?["content"]?["url"]?.stringValue, !url.isEmpty else {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "MiniMax video generation completed but no video URL was returned. Task ID: \(taskID)"
+            )
+        }
+        var metadata: [String: JSONValue] = [
+            "taskId": .string(taskID),
+            "videoUrl": .string(url),
+            "resolvedInputs": resolvedInputs
+        ]
+        if let duration = task?["duration"] { metadata["duration"] = duration }
+        if let ratio = task?["ratio"] { metadata["ratio"] = ratio }
+        if let resolution = task?["resolution"] { metadata["resolution"] = resolution }
+        if let usage = task?["usage"]?.objectValue {
+            metadata["usage"] = .object([
+                "totalSeconds": usage["total_seconds"],
+                "inputSeconds": usage["input_seconds"],
+                "outputSeconds": usage["output_seconds"]
+            ])
+        }
+        return VideoGenerationResult(
+            urls: [url],
+            operationID: taskID,
+            mediaType: "video/mp4",
+            rawValue: raw,
+            warnings: warnings,
+            providerMetadata: ["minimax": .object(metadata)],
+            requestMetadata: requestMetadata,
+            responseMetadata: AIResponseMetadata(
+                timestamp: responseTimestamp ?? Date(),
+                modelID: modelID,
+                headers: response.headers
+            )
+        )
+    }
+
+    private func prepareVideoRequest(_ request: VideoGenerationRequest) throws -> MiniMaxPreparedVideoRequest {
         let options = try miniMaxVideoOptions(from: request)
         var warnings = miniMaxVideoStandardWarnings(for: request, modelID: modelID)
 
@@ -58,7 +248,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             .object(["type": .string("text"), "text": .string(request.prompt)])
         ]
         var sentImageCount = 0
-        var sentReferenceVideoURLs: [String] = []
+        var sentReferenceVideoIndices: [Int] = []
 
         let explicitFirstFrame = request.frameImages.first { $0.frameType == .firstFrame }?.image
         var firstFrame = explicitFirstFrame ?? request.image
@@ -125,15 +315,15 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             }
         } else if usesReferences {
             var referenceImages: [ImageInputFile] = []
-            var referenceVideos: [ImageInputFile] = []
+            var referenceVideos: [(index: Int, file: ImageInputFile)] = []
 
-            for file in request.inputReferences {
+            for (index, file) in request.inputReferences.enumerated() {
                 if let mediaType = file.mediaType {
                     switch topLevelMediaType(mediaType.lowercased()) {
                     case "image":
                         referenceImages.append(file)
                     case "video":
-                        referenceVideos.append(file)
+                        referenceVideos.append((index, file))
                     default:
                         warnings.append(miniMaxUnsupported(
                             "inputReferences",
@@ -160,7 +350,8 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                 ))
             }
 
-            for video in referenceVideos.prefix(3) {
+            for reference in referenceVideos.prefix(3) {
+                let video = reference.file
                 let url = try convertImageModelFileToDataURI(video)
                 content.append(.object([
                     "type": .string("video_url"),
@@ -168,7 +359,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
                     "role": .string("reference_video")
                 ]))
                 if video.url != nil {
-                    sentReferenceVideoURLs.append(url)
+                    sentReferenceVideoIndices.append(reference.index)
                 }
             }
             if referenceVideos.count > 3 {
@@ -272,72 +463,13 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
         if let aigcWatermark = options.aigcWatermark {
             body["aigc_watermark"] = .bool(aigcWatermark)
         }
-
-        let createResponse = try await config.transport.send(config.request(
-            path: "/v2/video_generation",
-            modelID: modelID,
-            body: .object(body),
-            headers: normalizeHeaders(request.headers),
-            abortSignal: request.abortSignal
-        ))
-        guard (200..<300).contains(createResponse.statusCode) else {
-            throw miniMaxVideoHTTPStatusError(response: createResponse)
-        }
-        let createJSON = try createResponse.jsonValue()
-        guard let taskID = createJSON["task_id"]?.stringValue, !taskID.isEmpty else {
-            throw AIError.invalidResponse(
-                provider: providerID,
-                message: "No task_id returned from the MiniMax API. Response: \(miniMaxJSONString(createJSON))"
-            )
-        }
-
-        let final = try await poll(
-            taskID: taskID,
-            requestHeaders: request.headers,
-            intervalNanoseconds: options.pollIntervalNanoseconds,
-            timeoutNanoseconds: options.pollTimeoutNanoseconds,
-            timeoutMilliseconds: options.pollTimeoutMilliseconds,
-            abortSignal: request.abortSignal
-        )
-        let task = final.raw["task"]
-        guard let url = task?["content"]?["url"]?.stringValue, !url.isEmpty else {
-            throw AIError.invalidResponse(
-                provider: providerID,
-                message: "MiniMax video generation completed but no video URL was returned. Task ID: \(taskID)"
-            )
-        }
-
-        var miniMaxMetadata: [String: JSONValue] = [
-            "taskId": .string(taskID),
-            "videoUrl": .string(url),
-            "resolvedInputs": .object([
-                "imageCount": .number(Double(sentImageCount)),
-                "referenceVideoUrls": .array(sentReferenceVideoURLs)
-            ])
-        ]
-        if let duration = task?["duration"] { miniMaxMetadata["duration"] = duration }
-        if let ratio = task?["ratio"] { miniMaxMetadata["ratio"] = ratio }
-        if let resolution = task?["resolution"] { miniMaxMetadata["resolution"] = resolution }
-        if let usage = task?["usage"]?.objectValue {
-            miniMaxMetadata["usage"] = .object([
-                "totalSeconds": usage["total_seconds"],
-                "inputSeconds": usage["input_seconds"],
-                "outputSeconds": usage["output_seconds"]
-            ])
-        }
-
-        return VideoGenerationResult(
-            urls: [url],
-            operationID: taskID,
-            mediaType: "video/mp4",
-            rawValue: final.raw,
+        return MiniMaxPreparedVideoRequest(
+            body: body,
             warnings: warnings,
-            providerMetadata: ["minimax": .object(miniMaxMetadata)],
-            requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
-            responseMetadata: AIResponseMetadata(
-                timestamp: responseTimestamp,
-                modelID: modelID,
-                headers: final.response.headers
+            options: options,
+            resolvedInputs: MiniMaxResolvedVideoInputs(
+                imageCount: sentImageCount,
+                referenceVideoIndices: sentReferenceVideoIndices
             )
         )
     }
@@ -361,7 +493,7 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             }
 
             let response = try await downloadURL(
-                "\(withoutTrailingSlash(config.baseURL))/v2/query/video_generation/\(taskID)",
+                "\(withoutTrailingSlash(config.baseURL))/v2/query/video_generation/\(miniMaxVideoPathSegment(taskID))",
                 transport: config.transport,
                 headers: config.headers.mergingHeaders(normalizeHeaders(requestHeaders)),
                 abortSignal: abortSignal,
@@ -398,6 +530,77 @@ public final class MiniMaxVideoModel: VideoModel, @unchecked Sendable {
             }
         }
     }
+}
+
+private struct MiniMaxPreparedVideoRequest {
+    var body: [String: JSONValue]
+    var warnings: [AIWarning]
+    var options: MiniMaxVideoOptions
+    var resolvedInputs: MiniMaxResolvedVideoInputs
+}
+
+private struct MiniMaxResolvedVideoInputs {
+    var imageCount: Int
+    var referenceVideoIndices: [Int]
+
+    var jsonValue: JSONValue {
+        .object([
+            "imageCount": .number(Double(imageCount)),
+            "referenceVideoIndices": .array(referenceVideoIndices.map { .number(Double($0)) })
+        ])
+    }
+}
+
+private struct MiniMaxVideoOperation {
+    var taskID: String
+    var resolvedInputs: MiniMaxResolvedVideoInputs
+}
+
+private func miniMaxVideoOperation(from value: JSONValue) throws -> MiniMaxVideoOperation {
+    guard let operation = value.objectValue,
+          let taskID = operation["taskId"]?.stringValue,
+          !taskID.isEmpty,
+          let resolved = operation["resolvedInputs"]?.objectValue,
+          let imageCountNumber = resolved["imageCount"]?.doubleValue,
+          imageCountNumber.isFinite,
+          imageCountNumber.rounded(.towardZero) == imageCountNumber,
+          imageCountNumber >= 0,
+          imageCountNumber <= 9,
+          let imageCount = Int(exactly: imageCountNumber),
+          let indexValues = resolved["referenceVideoIndices"]?.arrayValue,
+          indexValues.count <= 3 else {
+        throw AIError.invalidArgument(
+            argument: "operation",
+            message: "MiniMax video operation must contain taskId and bounded resolved input metadata."
+        )
+    }
+    var indices: [Int] = []
+    indices.reserveCapacity(indexValues.count)
+    for value in indexValues {
+        guard let number = value.doubleValue,
+              number.isFinite,
+              number.rounded(.towardZero) == number,
+              number >= 0,
+              let index = Int(exactly: number) else {
+            throw AIError.invalidArgument(
+                argument: "operation.resolvedInputs.referenceVideoIndices",
+                message: "MiniMax reference video indices must be non-negative integers."
+            )
+        }
+        indices.append(index)
+    }
+    return MiniMaxVideoOperation(
+        taskID: taskID,
+        resolvedInputs: MiniMaxResolvedVideoInputs(
+            imageCount: imageCount,
+            referenceVideoIndices: indices
+        )
+    )
+}
+
+private func miniMaxVideoPathSegment(_ value: String) -> String {
+    let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
+    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
 }
 
 private struct MiniMaxVideoOptions {

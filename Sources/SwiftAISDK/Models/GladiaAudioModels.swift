@@ -65,6 +65,7 @@ public final class GladiaTranscriptionModel: TranscriptionModel, @unchecked Send
             segments: segments,
             language: raw["result"]?["transcription"]?["languages"]?[0]?.stringValue,
             durationInSeconds: raw["result"]?["metadata"]?["audio_duration"]?.doubleValue ?? transcriptionDuration(from: segments),
+            providerMetadata: ["gladia": raw],
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
     }
@@ -115,6 +116,35 @@ private func validateGladiaTranscriptionResult(_ raw: JSONValue, providerID: Str
             utterance["text"]?.stringValue != nil
         else {
             throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+        }
+        if let speaker = utterance["speaker"],
+           speaker != .null,
+           speaker.stringValue == nil,
+           speaker.doubleValue == nil {
+            throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+        }
+        if let confidence = utterance["confidence"], confidence != .null, confidence.doubleValue == nil {
+            throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+        }
+        if let language = utterance["language"], language != .null, language.stringValue == nil {
+            throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+        }
+        if let words = utterance["words"], words != .null {
+            guard let words = words.arrayValue else {
+                throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+            }
+            for word in words {
+                guard
+                    word["word"]?.stringValue != nil,
+                    word["start"]?.doubleValue != nil,
+                    word["end"]?.doubleValue != nil
+                else {
+                    throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+                }
+                if let confidence = word["confidence"], confidence != .null, confidence.doubleValue == nil {
+                    throw AIError.invalidResponse(provider: providerID, message: "Gladia transcription result is invalid.")
+                }
+            }
         }
     }
 }

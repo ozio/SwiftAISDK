@@ -226,7 +226,7 @@ public enum GatewayTools {
 public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
-    private let config: ModelHTTPConfig
+    fileprivate let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
         self.providerID = config.providerID
@@ -251,6 +251,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
             toolCalls: toolCalls,
             sources: sources,
             rawValue: raw,
+            warnings: gatewayLanguageWarnings(from: raw["warnings"]),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -279,6 +280,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                     var finishReason: String? = "other"
                     var finishUsage: TokenUsage?
                     var finishProviderMetadata: [String: JSONValue] = [:]
+                    var emittedStreamStart = false
                     for try await event in serverSentEvents(from: response.body) {
                         if event.data == "[DONE]" { break }
                         let raw = try decodeJSONBody(Data(event.data.utf8))
@@ -286,6 +288,10 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
                             continuation.yield(.raw(raw))
                         }
                         let type = raw["type"]?.stringValue
+                        if type == "stream-start", !emittedStreamStart {
+                            emittedStreamStart = true
+                            continuation.yield(.streamStart(warnings: gatewayLanguageWarnings(from: raw["warnings"])))
+                        }
                         if request.includeRawChunks, type == "raw", let rawValue = raw["rawValue"] {
                             continuation.yield(.raw(rawValue))
                         }
@@ -418,7 +424,7 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
         }
     }
 
-    private func gatewayLanguageBody(for request: LanguageModelRequest) -> JSONValue {
+    fileprivate func gatewayLanguageBody(for request: LanguageModelRequest) -> JSONValue {
         var body: [String: JSONValue] = [
             "prompt": .array(request.messages.map { message in
                 .object([
@@ -503,7 +509,9 @@ public final class GatewayLanguageModel: LanguageModel, @unchecked Sendable {
         let tools = gatewayTools(from: request.tools)
         if !tools.isEmpty {
             body["tools"] = .array(tools)
-            if let toolChoice = gatewayToolChoice(from: request.extraBody["toolChoice"]) {
+            if let toolChoice = gatewayToolChoice(
+                from: request.toolChoice ?? request.extraBody["toolChoice"]
+            ) {
                 body["toolChoice"] = toolChoice
             }
         }
@@ -525,12 +533,24 @@ extension GatewayLanguageModel: BatchLanguageModel {
         _ options: AIBatchStartOptions<AILanguageModelBatchRequest>
     ) async throws -> AIBatchStartResult {
         try options.abortSignal?.throwIfAborted()
+        let requestModelIDs = Set(options.requests.map { $0.modelID ?? modelID })
+        guard requestModelIDs.count <= 1 else {
+            let values = Array(requestModelIDs).sorted()
+            throw AIError.invalidArgument(
+                argument: "requests",
+                message: "The AI Gateway Batch API requires all requests in a batch to use the same model. Found \"\(values[0])\" and \"\(values[1])\"."
+            )
+        }
         let forwardedProviderOptions = gatewayBatchProviderOptionsWithoutIdempotencyKey(options.providerOptions)
         var body: [String: JSONValue] = [
+            // Keep the model-bound compatibility field while also emitting
+            // the provider-owned per-request discriminator expected by V4.
             "modelId": .string(modelID),
             "requests": .array(options.requests.map { request in
                 .object([
                     "id": .string(request.id),
+                    "type": "text",
+                    "modelId": .string(request.modelID ?? modelID),
                     "options": gatewayLanguageBody(for: request.request)
                 ])
             })
@@ -614,6 +634,158 @@ extension GatewayLanguageModel: BatchLanguageModel {
                         abortSignal: options.abortSignal,
                         continuation: continuation
                     )
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                response.cancelBody()
+                task.cancel()
+            }
+        }
+    }
+}
+
+/// Provider-owned, text-only Gateway Batch V4 service.
+public final class GatewayBatchProvider: AIBatchProvider, @unchecked Sendable {
+    public let providerID: String
+    public let supportedURLs: [String: [AISupportedURLPattern]] = [
+        "*/*": [AISupportedURLPattern { _ in true }]
+    ]
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        self.providerID = "\(config.providerID).batch"
+        self.config = config
+    }
+
+    public func startBatch(
+        _ options: AIBatchStartOptions<AIBatchRequest>
+    ) async throws -> AIBatchStartResult {
+        var requests: [TextBatchRequest] = []
+        requests.reserveCapacity(options.requests.count)
+        for request in options.requests {
+            guard case let .text(text) = request else {
+                throw AIError.invalidArgument(
+                    argument: "requests",
+                    message: "The AI Gateway Batch API does not support batch requests with type \"image\"."
+                )
+            }
+            guard let modelID = text.modelID, !modelID.isEmpty else {
+                throw AIError.invalidArgument(
+                    argument: "requests",
+                    message: "Gateway text batch request \"\(text.id)\" must specify a modelID."
+                )
+            }
+            requests.append(text)
+        }
+        guard let modelID = requests.first?.modelID else {
+            throw AIError.invalidArgument(
+                argument: "requests",
+                message: "The AI Gateway Batch API requires at least one request."
+            )
+        }
+        if let different = requests.first(where: { $0.modelID != modelID })?.modelID {
+            throw AIError.invalidArgument(
+                argument: "requests",
+                message: "The AI Gateway Batch API requires all requests in a batch to use the same model. Found \"\(modelID)\" and \"\(different)\"."
+            )
+        }
+        let model = GatewayLanguageModel(modelID: modelID, config: config)
+        let forwardedOptions = gatewayBatchProviderOptionsWithoutIdempotencyKey(options.providerOptions)
+        var body: [String: JSONValue] = [
+            "requests": .array(requests.map { request in
+                .object([
+                    "id": .string(request.id),
+                    "type": "text",
+                    "modelId": .string(request.modelID ?? modelID),
+                    "options": model.gatewayLanguageBody(for: request.request)
+                ])
+            })
+        ]
+        if !forwardedOptions.isEmpty { body["providerOptions"] = .object(forwardedOptions) }
+        if let webhookURL = options.webhookURL { body["callbackUrl"] = .string(webhookURL) }
+        let request = try config.request(
+            path: "/batch/start",
+            modelID: modelID,
+            body: .object(body),
+            headers: gatewayBatchHeaders(
+                options.headers,
+                modelID: modelID,
+                explicitIdempotencyKey: options.idempotencyKey,
+                providerOptions: options.providerOptions
+            ),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        guard let batchID = raw["batchId"]?.stringValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Gateway batch start response is missing batchId.")
+        }
+        return AIBatchStartResult(
+            batchID: batchID,
+            status: try gatewayBatchStatus(from: raw, providerID: providerID),
+            warnings: gatewayBatchWarnings(from: raw["warnings"])
+        )
+    }
+
+    public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
+        try options.abortSignal?.throwIfAborted()
+        let request = try config.request(
+            path: "/batch/status",
+            modelID: "batch",
+            body: .object(["batchId": .string(options.batchID)]),
+            headers: options.headers,
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: providerID, response: response)
+        }
+        return try gatewayBatchStatus(from: response.jsonValue(), providerID: providerID)
+    }
+
+    public func getBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        try options.abortSignal?.throwIfAborted()
+        let request = try config.request(
+            path: "/batch/results",
+            modelID: "batch",
+            body: .object(["batchId": .string(options.batchID)]),
+            headers: options.headers,
+            abortSignal: options.abortSignal
+        )
+        let transport = try requireStreamingTransport(config.transport, providerID: providerID)
+        let response = try await transport.stream(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(
+                provider: providerID,
+                response: try await bufferedHTTPResponse(from: response, request: request)
+            )
+        }
+        let providerID = self.providerID
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var buffer = Data()
+                    for try await chunk in response.body {
+                        buffer.append(chunk)
+                        while let newline = buffer.firstIndex(of: 0x0A) {
+                            let line = Data(buffer[..<newline])
+                            buffer.removeSubrange(...newline)
+                            if let item = try gatewayBatchResultItem(from: line, providerID: providerID) {
+                                continuation.yield(.text(item))
+                            }
+                        }
+                    }
+                    if let item = try gatewayBatchResultItem(from: buffer, providerID: providerID) {
+                        continuation.yield(.text(item))
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -719,6 +891,10 @@ private func gatewayBatchWarnings(from value: JSONValue?) -> [AIBatchWarning] {
             warning: gatewayBatchWarning(from: item["warning"] ?? .null)
         )
     } ?? []
+}
+
+private func gatewayLanguageWarnings(from value: JSONValue?) -> [AIWarning] {
+    value?.arrayValue?.map(gatewayBatchWarning) ?? []
 }
 
 private func gatewayBatchWarning(from value: JSONValue) -> AIWarning {

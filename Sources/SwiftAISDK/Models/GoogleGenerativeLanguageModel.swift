@@ -24,12 +24,13 @@ public final class GoogleGenerativeLanguageModel: LanguageModel, @unchecked Send
         let text = googleGenerateContentText(from: raw)
         let toolCalls = googleGenerateContentToolCalls(from: raw, toolNameMapping: prepared.toolNameMapping)
         let toolResults = googleGenerateContentToolResults(from: raw, toolNameMapping: prepared.toolNameMapping)
-        guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty else {
+        let finishReason = googleGenerateContentFinishReason(from: raw, hasToolCalls: !toolCalls.isEmpty)
+        guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty || finishReason == "content-filter" else {
             throw AIError.invalidResponse(provider: providerID, message: "No candidate text found in Google response.")
         }
         return TextGenerationResult(
             text: text ?? "",
-            finishReason: googleGenerateContentFinishReason(raw["candidates"]?[0]?["finishReason"]?.stringValue, hasToolCalls: !toolCalls.isEmpty),
+            finishReason: finishReason,
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
             toolResults: toolResults,

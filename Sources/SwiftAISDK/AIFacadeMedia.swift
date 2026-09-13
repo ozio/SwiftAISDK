@@ -146,42 +146,53 @@ extension AI {
     }
 
     public static func generateImage(model: any ImageModel, request: ImageGenerationRequest, retryPolicy: AIRetryPolicy = .default, telemetry: Telemetry.Options? = nil) async throws -> ImageGenerationResult {
-        try await withTelemetry(
-            operationID: "ai.generateImage",
-            providerID: model.providerID,
-            modelID: model.modelID,
-            input: imageRequestTelemetryInput(request),
-            telemetry: telemetry,
-            retryPolicy: retryPolicy,
-            abortSignal: request.abortSignal,
-            output: imageTelemetryOutput,
-            usage: { $0.usage },
-            warnings: { $0.warnings },
-            providerMetadata: { $0.providerMetadata },
-            responseMetadata: { $0.responseMetadata }
-        ) {
-            var result = try await model.generateImage(request)
-            if result.requestMetadata == AIRequestMetadata() {
-                result.requestMetadata = imageGenerationRequestMetadata(request)
+        let attempts = ImageGenerationAttemptAccumulator()
+        do {
+            return try await withTelemetry(
+                operationID: "ai.generateImage",
+                providerID: model.providerID,
+                modelID: model.modelID,
+                input: imageRequestTelemetryInput(request),
+                telemetry: telemetry,
+                retryPolicy: retryPolicy,
+                abortSignal: request.abortSignal,
+                output: imageTelemetryOutput,
+                usage: { $0.usage },
+                warnings: { $0.warnings },
+                providerMetadata: { $0.providerMetadata },
+                responseMetadata: { $0.responseMetadata }
+            ) {
+                attempts.beginAttempt()
+                var result = try await model.generateImage(request)
+                if result.requestMetadata == AIRequestMetadata() {
+                    result.requestMetadata = imageGenerationRequestMetadata(request)
+                }
+                if result.calls.isEmpty {
+                    result.calls = [ImageGenerationCall(
+                        urls: result.urls,
+                        base64Images: result.base64Images,
+                        warnings: result.warnings,
+                        usage: result.usage,
+                        providerMetadata: result.providerMetadata,
+                        responseMetadata: result.responseMetadata
+                    )]
+                }
+                attempts.record(result)
+                guard !result.urls.isEmpty || !result.base64Images.isEmpty else {
+                    if result.isRetryable == false {
+                        throw AITerminalEmptyImageResultError()
+                    }
+                    throw AIRetryableEmptyImageResultError()
+                }
+                return attempts.merging(into: result)
             }
-            if result.calls.isEmpty {
-                result.calls = [ImageGenerationCall(
-                    urls: result.urls,
-                    base64Images: result.base64Images,
-                    warnings: result.warnings,
-                    usage: result.usage,
-                    providerMetadata: result.providerMetadata,
-                    responseMetadata: result.responseMetadata
-                )]
+        } catch let error as AINoOutputError {
+            throw error
+        } catch {
+            if attempts.lastAttemptWasEmpty {
+                throw attempts.noOutputError(providerID: model.providerID)
             }
-            guard !result.urls.isEmpty || !result.base64Images.isEmpty else {
-                throw AINoOutputError(
-                    kind: .image,
-                    responses: [result.responseMetadata],
-                    calls: result.calls
-                )
-            }
-            return result
+            throw error
         }
     }
 
@@ -375,6 +386,13 @@ extension AI {
             responseMetadata: { $0.responseMetadata }
         ) {
             var result = try await model.rerank(request)
+            let upperBound = request.documentsJSON.count
+            if let invalid = result.results.first(where: { $0.index < 0 || $0.index >= upperBound }) {
+                throw AIError.invalidResponse(
+                    provider: model.providerID,
+                    message: "Invalid ranking index \(invalid.index). Expected an integer between 0 and \(max(upperBound - 1, 0))."
+                )
+            }
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = AIRequestMetadata(body: rerankingRequestMetadataBody(request), headers: request.headers)
             }
@@ -545,6 +563,63 @@ extension AI {
                 result.requestMetadata = AIRequestMetadata(body: skillUploadRequestMetadataBody(request), headers: request.headers)
             }
             return result
+        }
+    }
+}
+
+struct AIRetryableEmptyImageResultError: Error, CustomStringConvertible, Sendable {
+    var description: String { "Image model returned no images (retryable)." }
+}
+
+struct AITerminalEmptyImageResultError: Error, CustomStringConvertible, Sendable {
+    var description: String { "Image model returned no images (not retryable)." }
+}
+
+private final class ImageGenerationAttemptAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedCalls: [ImageGenerationCall] = []
+    private var storedWarnings: [AIWarning] = []
+    private var storedUsage: TokenUsage?
+    private var storedProviderMetadata: [String: JSONValue] = [:]
+    private var storedLastAttemptWasEmpty = false
+
+    var lastAttemptWasEmpty: Bool {
+        lock.withLock { storedLastAttemptWasEmpty }
+    }
+
+    func beginAttempt() {
+        lock.withLock { storedLastAttemptWasEmpty = false }
+    }
+
+    func record(_ result: ImageGenerationResult) {
+        lock.withLock {
+            storedCalls.append(contentsOf: result.calls)
+            storedWarnings.append(contentsOf: result.warnings)
+            storedUsage = sumTokenUsage(storedUsage, result.usage)
+            storedProviderMetadata.merge(result.providerMetadata) { _, new in new }
+            storedLastAttemptWasEmpty = result.urls.isEmpty && result.base64Images.isEmpty
+        }
+    }
+
+    func merging(into result: ImageGenerationResult) -> ImageGenerationResult {
+        lock.withLock {
+            var output = result
+            output.calls = storedCalls
+            output.warnings = storedWarnings
+            output.usage = storedUsage
+            output.providerMetadata = storedProviderMetadata
+            return output
+        }
+    }
+
+    func noOutputError(providerID: String) -> AINoOutputError {
+        lock.withLock {
+            AINoOutputError(
+                provider: providerID,
+                kind: .image,
+                responses: storedCalls.map(\.responseMetadata),
+                calls: storedCalls
+            )
         }
     }
 }

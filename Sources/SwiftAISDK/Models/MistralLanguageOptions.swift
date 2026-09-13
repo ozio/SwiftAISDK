@@ -39,7 +39,23 @@ func mistralWarnings(for request: LanguageModelRequest, modelID: String) -> [AIW
 
 func mistralSupportsReasoningEffort(_ modelID: String) -> Bool {
     switch modelID {
-    case "mistral-small-latest", "mistral-small-2603", "mistral-medium-3", "mistral-medium-3.5":
+    case "glm-5-2",
+         "labs-leanstral-1-5",
+         "labs-leanstral-1-5-1",
+         "magistral-medium-latest",
+         "magistral-small-latest",
+         "mistral-medium",
+         "mistral-medium-2604",
+         "mistral-medium-3",
+         "mistral-medium-3-5",
+         "mistral-medium-3.5",
+         "mistral-medium-latest",
+         "mistral-small-2603",
+         "mistral-small-latest",
+         "mistral-vibe-cli-fast",
+         "mistral-vibe-cli-latest",
+         "mistral-vibe-cli-with-tools",
+         "zai-glm-5-2":
         return true
     default:
         return false

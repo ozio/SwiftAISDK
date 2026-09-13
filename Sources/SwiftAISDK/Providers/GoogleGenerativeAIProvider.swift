@@ -31,6 +31,12 @@ public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
         GoogleBatchLanguageModel(modelID: modelID, config: config)
     }
 
+    /// Provider-owned Batch V4 service. The model-bound factory above remains
+    /// available as a source-compatible text-batch shim.
+    public func experimentalBatch() -> any AIBatchProvider {
+        GoogleBatchProvider(config: config)
+    }
+
     public func interactionsModel(_ modelID: String) -> any LanguageModel {
         GoogleInteractionsLanguageModel(modelID: modelID, agent: nil, config: config)
     }

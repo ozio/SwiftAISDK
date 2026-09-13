@@ -1,6 +1,6 @@
 # Install
 
-Source URL: /SwiftAISDK/getting-started/install/
+Source URL: /getting-started/install/
 
 Add SwiftAISDK to your package manifest:
 

@@ -347,9 +347,26 @@ private func generateSingleVideoUsingOperations(
 
     var warnings: [AIWarning] = []
     var webhookRegistration: VideoGenerationWebhookRegistration?
+    var webhookReceiveTask: Task<VideoGenerationOperationWebhook, Error>?
+    var webhookReceiveAbortController: AIAbortController?
     if let webhook {
         if model.supportsVideoGenerationWebhooks {
             webhookRegistration = try await model.handleVideoGenerationWebhookOption(webhook)
+            if let webhookRegistration {
+                // Start and retain exactly one receiver before the provider's
+                // start call. Its failure is therefore observed even if it
+                // races with start, while start errors keep precedence because
+                // this task is awaited only after start succeeds.
+                let receiveAbortController = AIAbortController()
+                webhookReceiveAbortController = receiveAbortController
+                let receiveAbortSignal = mergeAbortSignals(
+                    request.abortSignal,
+                    receiveAbortController.signal
+                )
+                webhookReceiveTask = Task {
+                    try await webhookRegistration.receive(abortSignal: receiveAbortSignal)
+                }
+            }
         } else {
             warnings.append(AIWarning(
                 type: "unsupported",
@@ -357,6 +374,10 @@ private func generateSingleVideoUsingOperations(
                 message: "This model does not support webhooks. Falling back to polling."
             ))
         }
+    }
+    defer {
+        webhookReceiveAbortController?.abort(reason: "Video webhook receiver is no longer needed.")
+        webhookReceiveTask?.cancel()
     }
 
     var startRequest = request
@@ -380,9 +401,9 @@ private func generateSingleVideoUsingOperations(
     var providerMetadata = startResult.providerMetadata
     let started = DispatchTime.now().uptimeNanoseconds
 
-    if let webhookRegistration {
+    if let webhookReceiveTask {
         _ = try await waitForVideoGenerationWebhook(
-            webhookRegistration,
+            webhookReceiveTask,
             timeoutMilliseconds: options.timeoutMilliseconds,
             delay: options.delay,
             abortSignal: request.abortSignal
@@ -495,7 +516,7 @@ private func mergeVideoOperationProviderMetadata(
 }
 
 private func waitForVideoGenerationWebhook(
-    _ registration: VideoGenerationWebhookRegistration,
+    _ receiveTask: Task<VideoGenerationOperationWebhook, Error>,
     timeoutMilliseconds: Int,
     delay: @escaping VideoGenerationDelay,
     abortSignal: AIAbortSignal?
@@ -509,7 +530,8 @@ private func waitForVideoGenerationWebhook(
             let mergedSignal = mergeAbortSignals(abortSignal, timeoutController.signal)
             let worker = Task {
                 do {
-                    let notification = try await registration.receive(abortSignal: mergedSignal)
+                    try mergedSignal?.throwIfAborted()
+                    let notification = try await receiveTask.value
                     state.resolve(.success(notification))
                 } catch {
                     state.resolve(.failure(error))

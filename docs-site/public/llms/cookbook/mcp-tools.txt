@@ -1,6 +1,6 @@
 # MCP tools
 
-Source URL: /SwiftAISDK/cookbook/mcp-tools/
+Source URL: /cookbook/mcp-tools/
 
 Use MCP when tools live outside your process or are shared by multiple clients.
 

@@ -1,6 +1,6 @@
 # Generate image
 
-Source URL: /SwiftAISDK/core/generate-image/
+Source URL: /core/generate-image/
 
 Use `generateImage` when a provider exposes an image model. The Swift-native convenience accepts the prompt directly and builds an `ImageGenerationRequest` for you.
 

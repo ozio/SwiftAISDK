@@ -13,6 +13,16 @@ public struct GoogleServiceAccountCredentials: Sendable {
     }
 }
 
+public struct GoogleVertexToolResultDownloadSettings: Sendable, Equatable {
+    /// Maximum number of bytes downloaded for each remote tool-result file.
+    /// When omitted, Vertex uses a 7 MiB limit.
+    public var maxBytes: Int?
+
+    public init(maxBytes: Int? = nil) {
+        self.maxBytes = maxBytes
+    }
+}
+
 public struct GoogleVertexProviderSettings: Sendable {
     public var project: String?
     public var location: String?
@@ -20,10 +30,13 @@ public struct GoogleVertexProviderSettings: Sendable {
     public var accessToken: String?
     public var serviceAccount: GoogleServiceAccountCredentials?
     public var baseURL: String?
+    public var toolResultDownloads: GoogleVertexToolResultDownloadSettings?
     public var headers: [String: String]
     public var transport: any AITransport
     public var date: @Sendable () -> Date
 
+    /// Source-compatible initializer retained from 1.6.0, before bounded
+    /// remote tool-result downloads became configurable.
     public init(
         project: String? = nil,
         location: String? = nil,
@@ -35,12 +48,39 @@ public struct GoogleVertexProviderSettings: Sendable {
         transport: any AITransport = URLSessionTransport.shared,
         date: @escaping @Sendable () -> Date = Date.init
     ) {
+        self.init(
+            project: project,
+            location: location,
+            apiKey: apiKey,
+            accessToken: accessToken,
+            serviceAccount: serviceAccount,
+            baseURL: baseURL,
+            toolResultDownloads: nil,
+            headers: headers,
+            transport: transport,
+            date: date
+        )
+    }
+
+    public init(
+        project: String? = nil,
+        location: String? = nil,
+        apiKey: String? = nil,
+        accessToken: String? = nil,
+        serviceAccount: GoogleServiceAccountCredentials? = nil,
+        baseURL: String? = nil,
+        toolResultDownloads: GoogleVertexToolResultDownloadSettings?,
+        headers: [String: String] = [:],
+        transport: any AITransport = URLSessionTransport.shared,
+        date: @escaping @Sendable () -> Date = Date.init
+    ) {
         self.project = project
         self.location = location
         self.apiKey = apiKey
         self.accessToken = accessToken
         self.serviceAccount = serviceAccount
         self.baseURL = baseURL
+        self.toolResultDownloads = toolResultDownloads
         self.headers = headers
         self.transport = transport
         self.date = date
@@ -80,8 +120,18 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
             baseURL = "https://\(host)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         }
 
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.76")
-        config = GoogleVertexConfig(providerID: providerID, baseURL: baseURL, project: project, location: location, headers: headers, auth: auth, transport: settings.transport, date: settings.date)
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.81")
+        config = GoogleVertexConfig(
+            providerID: providerID,
+            baseURL: baseURL,
+            project: project,
+            location: location,
+            headers: headers,
+            auth: auth,
+            transport: settings.transport,
+            date: settings.date,
+            toolResultDownloadsMaxBytes: settings.toolResultDownloads?.maxBytes ?? 7 * 1024 * 1024
+        )
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
@@ -179,6 +229,7 @@ struct GoogleVertexConfig: @unchecked Sendable {
     var auth: GoogleVertexAuth
     var transport: any AITransport
     var date: @Sendable () -> Date
+    var toolResultDownloadsMaxBytes: Int
 
     var usesAPIKey: Bool {
         if case .apiKey = auth {
@@ -245,7 +296,8 @@ struct GoogleVertexConfig: @unchecked Sendable {
             headers: headers,
             auth: auth,
             transport: transport,
-            date: date
+            date: date,
+            toolResultDownloadsMaxBytes: toolResultDownloadsMaxBytes
         )
     }
 
@@ -258,7 +310,8 @@ struct GoogleVertexConfig: @unchecked Sendable {
             headers: headers,
             auth: auth,
             transport: transport,
-            date: date
+            date: date,
+            toolResultDownloadsMaxBytes: toolResultDownloadsMaxBytes
         )
     }
 }

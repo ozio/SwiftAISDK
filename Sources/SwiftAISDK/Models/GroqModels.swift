@@ -109,7 +109,8 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                             continuation.yield(.textDeltaPart(id: id, delta: delta))
                         }
-                        if let toolCallDeltas = raw["choices"]?[0]?["delta"]?["tool_calls"]?.arrayValue {
+                        if let toolCallDeltas = raw["choices"]?[0]?["delta"]?["tool_calls"]?.arrayValue,
+                           !toolCallDeltas.isEmpty {
                             if let reasoningID = activeReasoningID {
                                 continuation.yield(.reasoningEnd(id: reasoningID))
                                 activeReasoningID = nil

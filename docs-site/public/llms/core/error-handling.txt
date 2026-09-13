@@ -1,6 +1,6 @@
 # Error handling
 
-Source URL: /SwiftAISDK/core/error-handling/
+Source URL: /core/error-handling/
 
 Every facade call is `async throws`, and streams are `AsyncThrowingStream`s. Catch specific error types when you need structured fields, then fall back to `Error` for logging.
 

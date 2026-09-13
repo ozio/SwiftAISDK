@@ -1,6 +1,6 @@
 # Stream text
 
-Source URL: /SwiftAISDK/core/stream-text/
+Source URL: /core/stream-text/
 
 Use `streamText` when the UI or caller should receive partial output as it is generated.
 

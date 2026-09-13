@@ -280,48 +280,49 @@ field.
 
 ## Durable Batch And Video Operations
 
-Batch V4 exposes persistable text-batch references plus status and terminal
-result streams. Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses
-Batch, Google Generative AI Batch, and Gateway Batch V4 implement the shared
-adapter:
+Batch V4 is provider-owned: each request carries its model ID and modality,
+while the returned provider reference can be persisted and resumed in another
+process. Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses Batch,
+Google Generative AI Batch, and Gateway Batch V4 implement the shared surface:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
-let model = try anthropic.messages("claude-sonnet-4-5")
-let started = try await AI.startTextBatch(
-    model: model,
-    requests: [TextBatchRequest(
+let batch = anthropic.experimentalBatch()
+let started = try await AI.startBatch(
+    provider: batch,
+    requests: [.text(TextBatchRequest(
         id: "summary-1",
+        modelID: "claude-sonnet-4-5",
         request: LanguageModelRequest(messages: [.user("Summarize this.")])
-    )],
-    webhookURL: "https://example.com/batches/complete"
+    ))]
 )
 
-// OpenAI Responses uses the same facade:
-let openAI = try AIProviders.openAI()
-let openAIBatchModel = try openAI.batchLanguageModel("gpt-5.6")
+let status = try await AI.getBatchStatus(
+    provider: batch,
+    batch: started.batch.reference
+)
 
-// xAI Responses also exposes the shared batch lifecycle:
-let xAI = try AIProviders.xAI()
-let xAIBatchModel = try xAI.batchLanguageModel("grok-4")
-
-// Google Generative AI uses the same persisted batch contract:
-let google = try AIProviders.google()
-let googleBatchModel = google.batchLanguageModel("gemini-3.8-flash")
-
-// Gateway models use the same facade through their language-model adapter:
-let gateway = try AIProviders.gateway()
-let gatewayBatchModel = try gateway.languageModel("openai/gpt-5.6")
+for try await item in try AI.getBatchResults(
+    provider: batch,
+    batch: started.batch.reference
+) {
+    // Each text or image request reaches an independent terminal result.
+    print(item)
+}
 ```
 
+xAI and Google also accept `.image(ImageBatchRequest(...))`; xAI may mix models
+and modalities in one batch, while Google requires a common model endpoint.
+Anthropic accepts text requests with per-request model IDs. OpenAI and Gateway
+accept text only and require one common model. Inspect the batch provider's
+`supportedURLs` before deciding whether an input URL can be forwarded directly.
+
 Gateway and Google forward `webhookURL` through their native callback fields.
-Direct Anthropic, OpenAI, and xAI batch adapters return an unsupported warning
-so callers can fall back to polling without silently assuming webhook delivery.
-Batch results also retain ordered mixed `content` beside their convenience
-`text` projection, including tool calls and results. `AI.startTextBatch` accepts
-shared `tools` and `toolChoice` overlays. Start results preserve provider
-metadata such as an uploaded input-file ID and expiry, while each item retains
-provider metadata and the provider's raw finish reason.
+Direct Anthropic, OpenAI, and xAI batch adapters return an unsupported warning,
+so callers can poll without silently assuming webhook delivery. Starting a
+batch is not retried automatically because it may create billable work; status,
+listing, and result setup use the normal retry policy. The older model-owned
+`AI.startTextBatch(model:requests:)` API remains source compatible.
 
 Async Video V4 keeps unary `generateVideo` source compatible while adding
 serializable start/status operations, core-owned polling/webhook waiting, and a

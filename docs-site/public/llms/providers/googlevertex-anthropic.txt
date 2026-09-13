@@ -1,6 +1,6 @@
 # "googleVertex.anthropic"
 
-Source URL: /SwiftAISDK/providers/googlevertex-anthropic/
+Source URL: /providers/googlevertex-anthropic/
 
 ## Package
 
@@ -16,8 +16,8 @@ Source URL: /SwiftAISDK/providers/googlevertex-anthropic/
 
 ## Notes
 
-Vertex Anthropic mirrors upstream Google Vertex 5.0.76 and inherits the shared Anthropic 4.0.49 model recognition, system options, thinking behavior, and beta headers.
+Vertex Anthropic mirrors upstream Google Vertex 5.0.81 and inherits the shared Anthropic 4.0.49 model recognition, system options, thinking behavior, and beta headers.
 
-Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/SwiftAISDK/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
-Return to the [provider matrix](/SwiftAISDK/providers/).
+Return to the [provider matrix](/providers/).

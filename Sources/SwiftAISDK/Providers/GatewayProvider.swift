@@ -252,7 +252,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
         if normalizedHeaders["ai-gateway-auth-method"] == nil {
             settings.headers["ai-gateway-auth-method"] = auth.method
         }
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.75")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.80")
         config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v4/ai",
@@ -269,6 +269,12 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
         GatewayLanguageModel(modelID: modelID, config: config)
+    }
+
+    /// Provider-owned Batch V4 service. Gateway batches accept text requests
+    /// only and validate a single common model before the first network call.
+    public func experimentalBatch() -> any AIBatchProvider {
+        GatewayBatchProvider(config: config)
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {

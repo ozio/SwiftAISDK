@@ -1,6 +1,6 @@
 # "openai-compatible"
 
-Source URL: /SwiftAISDK/providers/openai-compatible/
+Source URL: /providers/openai-compatible/
 
 ## Package
 
@@ -19,8 +19,8 @@ Source URL: /SwiftAISDK/providers/openai-compatible/
 
 ## Notes
 
-Generic OpenAI-compatible factory mirrors upstream 3.0.44: caller supplies provider ID and base URL, custom headers/query params, versioned user-agent suffix, upstream surface IDs, chat/completion/embedding/image models, providerOptions namespace unwrapping with raw and camelCase keys, deprecated raw-key warnings, structured outputs, stream usage, hosted and data-URL video message input, image token usage, truncated-stream errors, nonempty Gemini thought signatures under custom provider namespaces, preservation of unknown raw usage fields including nested prompt and completion details, response/provider metadata, camelCase provider metadata namespace selection when camelCase providerOptions are used, extensible image provider options, provider-controlled image response formats instead of a forced `response_format`, non-negative text-token usage when reasoning counts exceed completion counts, and ID/index/latest streamed tool-call correlation. Current parity preserves ordered array-based text/thinking content, ignores unknown future content parts, and maps top-level reasoning disablement to `reasoning_effort: none`. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns. The 3.0.44 pass keeps streamed reasoning open across empty `tool_calls` arrays and closes it only when real text or tool output begins.
+Generic OpenAI-compatible factory mirrors upstream 3.0.48: caller supplies provider ID and base URL, custom headers/query params, versioned user-agent suffix, upstream surface IDs, chat/completion/embedding/image models, providerOptions namespace unwrapping with raw and camelCase keys, deprecated raw-key warnings, structured outputs, stream usage, hosted and data-URL video message input, image token usage, truncated-stream errors, nonempty Gemini thought signatures under custom provider namespaces, preservation of unknown raw usage fields including nested prompt and completion details, response/provider metadata, camelCase provider metadata namespace selection when camelCase providerOptions are used, extensible image provider options, provider-controlled image response formats instead of a forced `response_format`, non-negative text-token usage when reasoning counts exceed completion counts, and ID/index/latest streamed tool-call correlation. Current parity preserves ordered array-based text/thinking content, ignores unknown future content parts, and maps top-level reasoning disablement to `reasoning_effort: none`. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns. The 3.0.44 pass keeps streamed reasoning open across empty `tool_calls` arrays and closes it only when real text or tool output begins.
 
-Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/SwiftAISDK/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
-Return to the [provider matrix](/SwiftAISDK/providers/).
+Return to the [provider matrix](/providers/).

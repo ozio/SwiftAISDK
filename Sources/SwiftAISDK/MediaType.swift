@@ -6,11 +6,12 @@ private struct MediaTypeSignature: Sendable {
 }
 
 private let imageMediaTypeSignatures: [MediaTypeSignature] = [
-    MediaTypeSignature(mediaType: "image/gif", bytesPrefix: [0x47, 0x49, 0x46]),
+    MediaTypeSignature(mediaType: "image/gif", bytesPrefix: [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]),
+    MediaTypeSignature(mediaType: "image/gif", bytesPrefix: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
     MediaTypeSignature(mediaType: "image/png", bytesPrefix: [0x89, 0x50, 0x4E, 0x47]),
     MediaTypeSignature(mediaType: "image/jpeg", bytesPrefix: [0xFF, 0xD8]),
     MediaTypeSignature(mediaType: "image/webp", bytesPrefix: [0x52, 0x49, 0x46, 0x46, nil, nil, nil, nil, 0x57, 0x45, 0x42, 0x50]),
-    MediaTypeSignature(mediaType: "image/bmp", bytesPrefix: [0x42, 0x4D]),
+    MediaTypeSignature(mediaType: "image/bmp", bytesPrefix: [0x42, 0x4D, nil, nil, nil, nil, 0x00, 0x00, 0x00, 0x00]),
     MediaTypeSignature(mediaType: "image/tiff", bytesPrefix: [0x49, 0x49, 0x2A, 0x00]),
     MediaTypeSignature(mediaType: "image/tiff", bytesPrefix: [0x4D, 0x4D, 0x00, 0x2A]),
     MediaTypeSignature(mediaType: "image/avif", bytesPrefix: [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]),

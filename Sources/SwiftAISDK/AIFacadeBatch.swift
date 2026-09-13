@@ -1,8 +1,218 @@
 import Foundation
 
-private let aiBatchUserAgent = "ai/7.0.93"
+private let aiBatchUserAgent = "ai/7.0.99"
 
 extension AI {
+    /// Starts a provider-owned Batch V4 operation. Unlike the legacy text-only
+    /// overload, every request carries its own model identifier and modality.
+    public static func startBatch(
+        provider: any AIBatchProvider,
+        requests: [AIBatchRequest],
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        idempotencyKey: String? = nil,
+        webhookURL: String? = nil,
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil
+    ) async throws -> StartBatchResult {
+        try validateBatchRequests(requests)
+        let operationAbortSignal = try batchOperationAbortSignal(
+            abortSignal: abortSignal,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+        try operationAbortSignal?.throwIfAborted()
+
+        var normalized: [AIBatchRequest] = []
+        normalized.reserveCapacity(requests.count)
+        var toolsByName: [String: JSONValue] = [:]
+        for request in requests {
+            switch request {
+            case var .text(text):
+                guard let modelID = text.modelID, !modelID.isEmpty else {
+                    throw AIError.invalidArgument(
+                        argument: "requests",
+                        message: "text batch request \"\(text.id)\" must specify a modelID"
+                    )
+                }
+                text.modelID = modelID
+                text.request = try prepareLanguageModelCallOptions(text.request)
+                for (toolName, definition) in text.request.tools {
+                    if let previous = toolsByName[toolName], previous != definition {
+                        throw AIError.invalidArgument(
+                            argument: "requests",
+                            message: "tool \"\(toolName)\" must have the same definition in every batch request"
+                        )
+                    }
+                    toolsByName[toolName] = definition
+                }
+                normalized.append(.text(text))
+            case let .image(image):
+                guard !image.modelID.isEmpty else {
+                    throw AIError.invalidArgument(
+                        argument: "requests",
+                        message: "image batch request \"\(image.id)\" must specify a modelID"
+                    )
+                }
+                normalized.append(.image(image))
+            }
+            try operationAbortSignal?.throwIfAborted()
+        }
+
+        let result = try await provider.startBatch(AIBatchStartOptions(
+            requests: normalized,
+            providerOptions: providerOptions,
+            abortSignal: operationAbortSignal,
+            headers: batchOperationHeaders(headers, idempotencyKey: idempotencyKey),
+            idempotencyKey: idempotencyKey,
+            webhookURL: webhookURL
+        ))
+        let models = Dictionary(uniqueKeysWithValues: normalized.compactMap { request in
+            request.modelID.map { (request.id, $0) }
+        })
+        for warning in result.warnings {
+            await AIWarningLogging.logWarnings(
+                [warning.warning],
+                providerID: provider.providerID,
+                modelID: warning.requestID.flatMap { models[$0] }
+            )
+        }
+        return StartBatchResult(
+            batch: AIBatch(
+                reference: AIBatchReference(id: result.batchID, providerID: provider.providerID),
+                status: result.status
+            ),
+            warnings: result.warnings,
+            providerMetadata: result.providerMetadata
+        )
+    }
+
+    public static func cancelBatch(
+        provider: any AIBatchProvider,
+        batch: AIBatchReference,
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil
+    ) async throws -> AIBatchCancelResult {
+        try validateBatchReference(batch, provider: provider)
+        let signal = try batchOperationAbortSignal(
+            abortSignal: abortSignal,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+        return try await provider.cancelBatch(AIBatchOperationOptions(
+            batchID: batch.id,
+            providerOptions: providerOptions,
+            abortSignal: signal,
+            headers: batchOperationHeaders(headers, idempotencyKey: nil)
+        ))
+    }
+
+    public static func listBatches(
+        provider: any AIBatchProvider,
+        providerOptions: [String: JSONValue] = [:],
+        limit: Int? = nil,
+        cursor: String? = nil,
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default
+    ) async throws -> (batches: [AIBatch], nextCursor: String?, providerMetadata: [String: JSONValue]) {
+        if let limit, limit <= 0 {
+            throw AIError.invalidArgument(argument: "limit", message: "limit must be greater than zero")
+        }
+        let signal = try batchOperationAbortSignal(
+            abortSignal: abortSignal,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+        let result = try await withRetry(policy: retryPolicy, abortSignal: signal) {
+            try await provider.listBatches(AIBatchListOptions(
+                providerOptions: providerOptions,
+                limit: limit,
+                cursor: cursor,
+                abortSignal: signal,
+                headers: batchOperationHeaders(headers, idempotencyKey: nil)
+            ))
+        }
+        return (
+            batches: result.batches.map {
+                AIBatch(
+                    reference: AIBatchReference(id: $0.batchID, providerID: provider.providerID),
+                    status: $0.status
+                )
+            },
+            nextCursor: result.nextCursor,
+            providerMetadata: result.providerMetadata
+        )
+    }
+
+    public static func getBatchStatus(
+        provider: any AIBatchProvider,
+        batch: AIBatchReference,
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default
+    ) async throws -> AIBatchStatus {
+        try validateBatchReference(batch, provider: provider)
+        let signal = try batchOperationAbortSignal(
+            abortSignal: abortSignal,
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+        return try await withRetry(policy: retryPolicy, abortSignal: signal) {
+            try await provider.getBatchStatus(AIBatchOperationOptions(
+                batchID: batch.id,
+                providerOptions: providerOptions,
+                abortSignal: signal,
+                headers: batchOperationHeaders(headers, idempotencyKey: nil)
+            ))
+        }
+    }
+
+    public static func getBatchResults(
+        provider: any AIBatchProvider,
+        batch: AIBatchReference,
+        providerOptions: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default
+    ) throws -> AsyncThrowingStream<BatchItemResult, Error> {
+        try validateBatchReference(batch, provider: provider)
+        let streamAbortController = AIAbortController()
+        let signal = try batchOperationAbortSignal(
+            abortSignal: mergeAbortSignals(abortSignal, streamAbortController.signal),
+            timeoutNanoseconds: timeoutNanoseconds
+        )
+        let operationHeaders = batchOperationHeaders(headers, idempotencyKey: nil)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let stream = try await withRetry(policy: retryPolicy, abortSignal: signal) {
+                        try await provider.getBatchResults(AIBatchOperationOptions(
+                            batchID: batch.id,
+                            providerOptions: providerOptions,
+                            abortSignal: signal,
+                            headers: operationHeaders
+                        ))
+                    }
+                    for try await item in stream {
+                        try Task.checkCancellation()
+                        try signal?.throwIfAborted()
+                        continuation.yield(convertBatchItemResult(item, providerID: provider.providerID))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                streamAbortController.abort(reason: "Batch results stream was cancelled.")
+                task.cancel()
+            }
+        }
+    }
+
     /// Source-compatible Batch V4 entry point retained from 1.5.x.
     public static func startTextBatch(
         model: any LanguageModel,
@@ -260,6 +470,67 @@ extension AI {
             timeoutNanoseconds: timeoutNanoseconds,
             retryPolicy: retryPolicy
         )
+    }
+}
+
+private func validateBatchRequests(_ requests: [AIBatchRequest]) throws {
+    guard !requests.isEmpty else {
+        throw AIError.invalidArgument(argument: "requests", message: "requests must not be empty")
+    }
+    var ids = Set<String>()
+    for request in requests {
+        guard !request.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AIError.invalidArgument(argument: "requests", message: "request IDs must not be empty")
+        }
+        guard ids.insert(request.id).inserted else {
+            throw AIError.invalidArgument(
+                argument: "requests",
+                message: "request IDs must be unique; duplicate ID \"\(request.id)\""
+            )
+        }
+    }
+}
+
+private func validateBatchReference(_ batch: AIBatchReference, provider: any AIBatchProvider) throws {
+    guard batch.version == 2 else {
+        throw AIError.invalidArgument(argument: "batch", message: "batch must be a supported batch reference")
+    }
+    guard batch.providerID == provider.providerID else {
+        throw AIError.invalidArgument(
+            argument: "provider",
+            message: "provider \(provider.providerID) is not compatible with batch provider \(batch.providerID)"
+        )
+    }
+}
+
+private func convertBatchItemResult(
+    _ item: AIBatchV4ItemResult,
+    providerID: String
+) -> BatchItemResult {
+    switch item {
+    case let .text(result):
+        return .text(convertTextBatchItemResult(result, providerID: providerID))
+    case let .image(result):
+        switch result {
+        case let .succeeded(id, value):
+            return .image(.succeeded(
+                id: id,
+                result: ImageBatchGenerationResult(
+                    urls: value.urls,
+                    base64Images: value.base64Images,
+                    warnings: value.warnings,
+                    usage: value.usage,
+                    response: value.responseMetadata,
+                    providerMetadata: value.providerMetadata
+                )
+            ))
+        case let .failed(id, error, metadata):
+            return .image(.failed(id: id, error: error, providerMetadata: metadata))
+        case let .cancelled(id, error, metadata):
+            return .image(.cancelled(id: id, error: error, providerMetadata: metadata))
+        case let .expired(id, error, metadata):
+            return .image(.expired(id: id, error: error, providerMetadata: metadata))
+        }
     }
 }
 

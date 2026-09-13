@@ -1,6 +1,6 @@
 # Tools
 
-Source URL: /SwiftAISDK/components/tools/
+Source URL: /components/tools/
 
 ## Symbol counts
 

@@ -76,6 +76,22 @@ public enum AIUIMessagePart: Equatable, Hashable, Sendable {
     case raw(JSONValue)
 }
 
+/// Static Swift representation of a UI tool result whose execution failed.
+/// Swift models the upstream `output-error` state with `AIToolResult.isError`.
+public typealias AIUIToolOutputErrorPart = AIToolResult
+
+/// Returns true only for static or dynamic tool results marked as errors.
+public func isToolOutputErrorUIPart(_ part: AIUIMessagePart) -> Bool {
+    guard case let .toolResult(result) = part else { return false }
+    return result.isError
+}
+
+/// Typed extraction companion to ``isToolOutputErrorUIPart(_:)``.
+public func toolOutputErrorUIPart(_ part: AIUIMessagePart) -> AIUIToolOutputErrorPart? {
+    guard case let .toolResult(result) = part, result.isError else { return nil }
+    return result
+}
+
 public struct AIUIMessage: Equatable, Hashable, Sendable {
     public var id: String
     public var role: MessageRole

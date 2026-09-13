@@ -1,6 +1,6 @@
 # Generate video
 
-Source URL: /SwiftAISDK/core/generate-video/
+Source URL: /core/generate-video/
 
 Use `generateVideo` when a provider exposes text-to-video or image-to-video.
 

@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-09-06
+Snapshot date: 2026-09-13
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.93`, `@ai-sdk/provider@4.0.10`,
-`@ai-sdk/provider-utils@5.0.36`, and `@ai-sdk/react@4.0.96`.
+snapshots, currently `ai@7.0.99`, `@ai-sdk/provider@4.0.14`,
+`@ai-sdk/provider-utils@5.0.40`, and `@ai-sdk/react@4.0.102`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.93 -> 7.0.99`
+- `@ai-sdk/provider@4.0.10 -> 4.0.14`
+- `@ai-sdk/provider-utils@5.0.36 -> 5.0.40`
+- `@ai-sdk/react@4.0.96 -> 4.0.102`
 - `ai@7.0.85 -> 7.0.93`
 - `@ai-sdk/provider@4.0.9 -> 4.0.10`
 - `@ai-sdk/provider-utils@5.0.34 -> 5.0.36`
@@ -65,6 +69,47 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.99` and `@ai-sdk/provider@4.0.14` move Batch V4 ownership
+  from individual language models to a provider service. Swift's public batch
+  foundation accepts per-request model IDs and discriminated text/image
+  requests, returns typed text/image items, and exposes cancel/list alongside
+  start/status/results. Compatibility shims retain the previous model-bound
+  text-batch entry points.
+- The current provider-owned adapters preserve each upstream capability
+  boundary: Anthropic, OpenAI, and Gateway accept text requests; Google and xAI
+  accept text and image requests. Gateway rejects image batches and requires a
+  common model, Google requires one common endpoint model while retaining each
+  request's model identity, and xAI accepts mixed model IDs.
+- Image-model results retain the provider's optional retry classification.
+  Empty output is retried when unclassified or explicitly retryable and remains
+  terminal when a provider marks it non-retryable; all attempt calls remain
+  visible. Google and Vertex content-filter prompt blocks use the terminal
+  classification.
+- `streamText` enforces required and named tool choices after every model step,
+  including `prepareStep` overrides, with the same non-retryable violation used
+  by `generateText`. Reranking also rejects nonintegral, negative, or
+  out-of-range provider indexes before exposing a result.
+- UI message conversion represents a provider `ToolOutputError` as a stable
+  typed tool-output-error part. Video generation begins observing webhook
+  receiver rejection before starting provider work so the first start/receiver
+  failure is retained deterministically.
+- `@ai-sdk/provider-utils@5.0.40` tightens media sniffing to the complete
+  `GIF87a`/`GIF89a` headers and BMP signatures with zero reserved bytes. Swift's
+  native `Data` base64 encoder already handles large payloads without the
+  JavaScript array-spread limitation.
+- MCP OAuth metadata discovery applies the shared URL policy before its first
+  request and at every redirect, rejects private/link-local targets, permits
+  loopback only for a configured local MCP origin, and never follows token or
+  registration redirects carrying credentials.
+- Generic callback `runtimeContext` for embeddings and reranking remains
+  deferred until Swift has a typed callback-context and telemetry include-list
+  design. The JavaScript `getTextFromDataUrl` error-class change likewise does
+  not add a parallel public helper while Swift continues to expose its existing
+  `downloadURL`/`AIDownloadError` contract.
+- `@ai-sdk/react@4.0.102` changes `useChat` stream ownership around committed
+  ID replacement and React Suspense. SwiftAISDK has no React hook lifecycle, so
+  its framework-neutral `AIChatSession` receives no corresponding runtime
+  change.
 - `ai@7.0.93` adds bounded `Output.array` schemas and final-count checks,
   embedding result-count validation, image no-output call diagnostics, enforced
   required/named tool choice, batch tool content and provider metadata,

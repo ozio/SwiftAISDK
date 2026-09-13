@@ -1,6 +1,6 @@
 # Files
 
-Source URL: /SwiftAISDK/core/files/
+Source URL: /core/files/
 
 Use a provider's `files()` client when a request needs a durable provider file
 reference rather than inline bytes. Every `AIFileClient` advertises

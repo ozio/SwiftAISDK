@@ -1,6 +1,6 @@
 # Video and reranking
 
-Source URL: /SwiftAISDK/components/video-and-reranking/
+Source URL: /components/video-and-reranking/
 
 ## Symbol counts
 

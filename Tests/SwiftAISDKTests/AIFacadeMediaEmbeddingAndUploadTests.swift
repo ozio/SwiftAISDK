@@ -243,7 +243,8 @@ import Testing
                 responseMetadata: response,
                 calls: [failedCall]
             )),
-            prompt: "empty"
+            prompt: "empty",
+            retryPolicy: .none
         )
         Issue.record("Expected image generation without images to fail")
     } catch let error as AINoOutputError {

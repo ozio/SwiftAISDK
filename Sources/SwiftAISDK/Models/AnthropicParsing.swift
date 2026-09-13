@@ -430,6 +430,7 @@ func anthropicProviderMetadata(from raw: JSONValue, providerID: String, requestP
         stopDetails: anthropicStopDetailsMetadata(from: raw["stop_details"]) ?? .null,
         container: anthropicContainerMetadata(from: raw["container"]) ?? .null,
         contextManagement: anthropicContextManagementMetadata(from: raw["context_management"]) ?? .null,
+        inputTransformations: raw["input_transformations"] ?? .null,
         providerID: providerID,
         requestProviderOptions: requestProviderOptions
     )
@@ -441,6 +442,7 @@ func anthropicProviderMetadata(
     stopDetails: JSONValue = .null,
     container: JSONValue,
     contextManagement: JSONValue,
+    inputTransformations: JSONValue = .null,
     providerID: String,
     requestProviderOptions: [String: JSONValue] = [:]
 ) -> [String: JSONValue] {
@@ -453,6 +455,9 @@ func anthropicProviderMetadata(
     ]
     if stopDetails != .null {
         metadataObject["stopDetails"] = stopDetails
+    }
+    if inputTransformations != .null {
+        metadataObject["inputTransformations"] = inputTransformations
     }
     let metadata: JSONValue = .object(metadataObject)
     return Dictionary(uniqueKeysWithValues: anthropicProviderMetadataKeys(from: providerID, requestProviderOptions: requestProviderOptions).map {

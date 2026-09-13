@@ -31,6 +31,14 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
     ) async throws -> AIBatchStartResult {
         try options.abortSignal?.throwIfAborted()
 
+        let requestModelIDs = Set(options.requests.map { $0.modelID ?? modelID })
+        guard requestModelIDs.count <= 1 else {
+            throw AIError.invalidArgument(
+                argument: "requests",
+                message: "All OpenAI batch requests must use the same model."
+            )
+        }
+
         var jsonLines = Data()
         var warnings: [AIBatchWarning] = []
         if options.webhookURL != nil {
@@ -46,7 +54,11 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
         )
         for request in options.requests {
             try options.abortSignal?.throwIfAborted()
-            let prepared = try languageModel.preparedBatchRequest(for: request.request)
+            let requestModel = OpenAICompatibleResponsesModel(
+                modelID: request.modelID ?? modelID,
+                config: config
+            )
+            let prepared = try requestModel.preparedBatchRequest(for: request.request)
             let line: JSONValue = .object([
                 "custom_id": .string(request.id),
                 "method": .string("POST"),
@@ -205,6 +217,57 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
         }
     }
 
+    public func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try options.abortSignal?.throwIfAborted()
+        let request = try config.request(
+            path: "/batches/\(openAIBatchPathEncode(options.batchID))/cancel",
+            modelID: modelID,
+            body: .object([:]),
+            headers: options.headers,
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
+        }
+        _ = try parseOpenAIBatchResponse(response.jsonValue(), providerID: providerID)
+        return AIBatchCancelResult()
+    }
+
+    public func listBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        try options.abortSignal?.throwIfAborted()
+        var components = URLComponents(url: try config.url(modelID, "/batches"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = []
+        if let limit = options.limit { queryItems.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let cursor = options.cursor { queryItems.append(URLQueryItem(name: "after", value: cursor)) }
+        components?.queryItems = queryItems.isEmpty ? nil : queryItems
+        guard let url = components?.url else {
+            throw AIError.invalidURL("\(config.baseURL)/batches")
+        }
+        let request = AIHTTPRequest(
+            method: "GET",
+            url: url,
+            headers: prepareHeaders(options.headers, defaultHeaders: config.headers),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        guard let data = raw["data"]?.arrayValue else {
+            throw AIError.invalidResponse(provider: providerID, message: "Invalid OpenAI Batch list response.")
+        }
+        let batches = try data.map { value -> AIBatchListItem in
+            let batch = try parseOpenAIBatchResponse(value, providerID: providerID)
+            return AIBatchListItem(batchID: batch.id, status: openAIBatchStatus(batch))
+        }
+        let nextCursor = raw["has_more"]?.boolValue == true
+            ? raw["last_id"]?.stringValue
+            : nil
+        return AIBatchListResult(batches: batches, nextCursor: nextCursor)
+    }
+
     private func retrieveBatch(_ options: AIBatchOperationOptions) async throws -> OpenAIBatchResponse {
         try options.abortSignal?.throwIfAborted()
         let request = AIHTTPRequest(
@@ -218,6 +281,95 @@ public final class OpenAIResponsesBatchLanguageModel: BatchLanguageModel, @unche
             throw openAICompatibleHTTPStatusError(provider: providerID, response: response)
         }
         return try parseOpenAIBatchResponse(response.jsonValue(), providerID: providerID)
+    }
+}
+
+/// Provider-owned OpenAI Batch V4 service. It deliberately accepts text only;
+/// modality validation happens before upload or batch creation.
+public final class OpenAIBatchProvider: AIBatchProvider, @unchecked Sendable {
+    public let providerID: String
+    public let supportedURLs: [String: [AISupportedURLPattern]] = [
+        "image/*": [AISupportedURLPattern { $0.hasPrefix("http://") || $0.hasPrefix("https://") }],
+        "application/pdf": [AISupportedURLPattern { $0.hasPrefix("http://") || $0.hasPrefix("https://") }]
+    ]
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        let providerRoot = config.providerID.hasSuffix(".responses")
+            ? String(config.providerID.dropLast(".responses".count))
+            : config.providerID
+        self.providerID = "\(providerRoot).batch"
+        self.config = config
+    }
+
+    public func startBatch(
+        _ options: AIBatchStartOptions<AIBatchRequest>
+    ) async throws -> AIBatchStartResult {
+        var requests: [AILanguageModelBatchRequest] = []
+        requests.reserveCapacity(options.requests.count)
+        for request in options.requests {
+            guard case let .text(text) = request else {
+                throw AIError.invalidArgument(
+                    argument: "requests",
+                    message: "The OpenAI Batch API supports text requests only."
+                )
+            }
+            guard let modelID = text.modelID, !modelID.isEmpty else {
+                throw AIError.invalidArgument(
+                    argument: "requests",
+                    message: "OpenAI text batch request \"\(text.id)\" must specify a modelID."
+                )
+            }
+            requests.append(AILanguageModelBatchRequest(
+                id: text.id,
+                modelID: modelID,
+                request: text.request
+            ))
+        }
+        guard let modelID = requests.first?.modelID else {
+            throw AIError.invalidArgument(argument: "requests", message: "requests must not be empty")
+        }
+        return try await model(for: modelID).startBatch(AIBatchStartOptions(
+            requests: requests,
+            providerOptions: options.providerOptions,
+            abortSignal: options.abortSignal,
+            headers: options.headers,
+            idempotencyKey: options.idempotencyKey,
+            webhookURL: options.webhookURL
+        ))
+    }
+
+    public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
+        try await model(for: "batch").getBatchStatus(options)
+    }
+
+    public func getBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        let stream = try await model(for: "batch").getBatchResults(options)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await item in stream { continuation.yield(.text(item)) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
+    public func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try await model(for: "batch").cancelBatch(options)
+    }
+
+    public func listBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        try await model(for: "batch").listBatches(options)
+    }
+
+    private func model(for modelID: String) -> OpenAIResponsesBatchLanguageModel {
+        OpenAIResponsesBatchLanguageModel(modelID: modelID, config: config)
     }
 }
 

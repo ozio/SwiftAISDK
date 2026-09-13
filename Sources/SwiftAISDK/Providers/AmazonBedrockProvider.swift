@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.76"
+private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.82"
 
 public struct AmazonBedrockCredentials: Sendable {
     public var accessKeyID: String
@@ -66,8 +66,21 @@ public final class AmazonBedrockProvider: AIProvider, @unchecked Sendable {
 
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
-        let runtimeBaseURL = settings.baseURL ?? "https://bedrock-runtime.\(region).amazonaws.com"
-        let agentBaseURL = settings.baseURL ?? "https://bedrock-agent-runtime.\(region).amazonaws.com"
+        let globalEndpointURL = environmentValue(["AWS_ENDPOINT_URL"])
+        let runtimeBaseURL = resolveAmazonBedrockBaseURL(
+            baseURL: settings.baseURL,
+            serviceEndpointURL: environmentValue(["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"]),
+            globalEndpointURL: globalEndpointURL,
+            service: "bedrock-runtime",
+            getRegion: { region }
+        )
+        let agentBaseURL = resolveAmazonBedrockBaseURL(
+            baseURL: settings.baseURL,
+            serviceEndpointURL: environmentValue(["AWS_ENDPOINT_URL_BEDROCK_AGENT_RUNTIME"]),
+            globalEndpointURL: globalEndpointURL,
+            service: "bedrock-agent-runtime",
+            getRegion: { region }
+        )
         let auth = try bedrockAuth(settings: settings, providerID: providerID, fallbackToEnvironmentSessionTokenForExplicitKeys: false)
 
         let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
@@ -118,7 +131,13 @@ public final class AmazonBedrockAnthropicProvider: AIProvider, @unchecked Sendab
 
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
-        let runtimeBaseURL = settings.baseURL ?? "https://bedrock-runtime.\(region).amazonaws.com"
+        let runtimeBaseURL = resolveAmazonBedrockBaseURL(
+            baseURL: settings.baseURL,
+            serviceEndpointURL: environmentValue(["AWS_ENDPOINT_URL_BEDROCK_RUNTIME"]),
+            globalEndpointURL: environmentValue(["AWS_ENDPOINT_URL"]),
+            service: "bedrock-runtime",
+            getRegion: { region }
+        )
         let auth = try bedrockAuth(settings: settings, providerID: providerID)
 
         let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
@@ -188,7 +207,9 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
             providerID: "bedrock-mantle.responses",
             baseURL: baseURL,
             headers: headers,
-            transport: transport
+            transport: transport,
+            supportsWebSearchSourcesInclude: false,
+            openAIBackedProviderRoot: "openai"
         )
         chatProvider = OpenAICompatibleProvider(providerID: "bedrock-mantle.chat", supportedCapabilities: [.language], config: chatConfig)
         responsesProvider = OpenAICompatibleProvider(providerID: "bedrock-mantle.responses", supportedCapabilities: [.language], config: responsesConfig)
@@ -229,6 +250,38 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
     }
+}
+
+func resolveAmazonBedrockBaseURL(
+    baseURL: String?,
+    serviceEndpointURL: String?,
+    globalEndpointURL: String?,
+    service: String,
+    getRegion: () -> String
+) -> String {
+    if let override = baseURL ?? serviceEndpointURL ?? globalEndpointURL {
+        return withoutTrailingSlash(override)
+    }
+
+    let region = getRegion()
+    let dnsSuffix: String
+    switch region {
+    case let value where value.hasPrefix("cn-"):
+        dnsSuffix = "amazonaws.com.cn"
+    case let value where value.hasPrefix("us-iso-"):
+        dnsSuffix = "c2s.ic.gov"
+    case let value where value.hasPrefix("us-isob-"):
+        dnsSuffix = "sc2s.sgov.gov"
+    case let value where value.hasPrefix("eu-isoe-"):
+        dnsSuffix = "cloud.adc-e.uk"
+    case let value where value.hasPrefix("us-isof-"):
+        dnsSuffix = "csp.hci.ic.gov"
+    case let value where value.hasPrefix("eusc-"):
+        dnsSuffix = "amazonaws.eu"
+    default:
+        dnsSuffix = "amazonaws.com"
+    }
+    return withoutTrailingSlash("https://\(service).\(region).\(dnsSuffix)")
 }
 
 enum BedrockAuth: Sendable {

@@ -1,8 +1,9 @@
 import Foundation
 
-public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
+public final class KlingAIVideoModel: AsyncVideoModel, @unchecked Sendable {
     public let providerID = "klingai.video"
     public let modelID: String
+    public let maxVideosPerCall = 1
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -11,24 +12,11 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
     }
 
     public func generateVideo(_ request: VideoGenerationRequest) async throws -> VideoGenerationResult {
-        let mode = try klingMode(modelID)
-        let options = try klingAIProviderOptions(from: request)
-        var warnings = klingAIReferenceImageWarnings(for: request)
-        let referenceImages = klingAIReferenceImages(from: request)
-        let effectiveMode = mode == "i2v" && referenceImages != nil ? "mi2v" : mode
-        let endpoint = klingEndpoint(effectiveMode)
-        warnings.append(contentsOf: klingAIWarnings(for: request, mode: mode, effectiveMode: effectiveMode, options: options, referenceImages: referenceImages))
-        var body: [String: JSONValue] = [
-            "model_name": .string(klingAPIModelName(modelID, mode: effectiveMode))
-        ]
-        if !request.prompt.isEmpty { body["prompt"] = .string(request.prompt) }
-        if let aspectRatio = request.aspectRatio, effectiveMode == "t2v" || effectiveMode == "mi2v" {
-            body["aspect_ratio"] = .string(aspectRatio)
-        }
-        if let duration = request.durationSeconds, effectiveMode != "motion-control" {
-            body["duration"] = .string(formatDuration(duration))
-        }
-        body.merge(try klingAIOptions(from: options, mode: effectiveMode, request: request, referenceImages: referenceImages, warnings: &warnings)) { _, new in new }
+        let prepared = try prepareVideoRequest(request)
+        let endpoint = prepared.endpoint
+        let options = prepared.options
+        let warnings = prepared.warnings
+        let body = prepared.body
 
         let createResponse = try await config.transport.send(config.request(path: endpoint, modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal))
         guard (200..<300).contains(createResponse.statusCode) else {
@@ -52,10 +40,14 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
         guard !videos.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No videos in response. Response: \(raw)")
         }
-        let urls = videos.compactMap { $0["url"]?.stringValue }
-        guard !urls.isEmpty else {
+        let completedVideos = videos.filter {
+            guard let url = $0["url"]?.stringValue else { return false }
+            return !url.isEmpty
+        }
+        guard !completedVideos.isEmpty else {
             throw AIError.invalidResponse(provider: providerID, message: "No valid video URLs in response")
         }
+        let urls = completedVideos.compactMap { $0["url"]?.stringValue }
         return VideoGenerationResult(
             urls: urls,
             operationID: taskID,
@@ -65,12 +57,146 @@ public final class KlingAIVideoModel: VideoModel, @unchecked Sendable {
             providerMetadata: [
                 "klingai": .object([
                     "taskId": .string(taskID),
-                    "videos": .array(klingAIVideoMetadata(from: videos))
+                    "videos": .array(klingAIVideoMetadata(from: completedVideos))
                 ])
             ],
             requestMetadata: videoGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: finalResponse.response, modelID: modelID)
         )
+    }
+
+    public func startVideoGeneration(
+        _ operationRequest: VideoGenerationOperationStartRequest
+    ) async throws -> VideoGenerationOperationStartResult {
+        let request = operationRequest.request
+        let prepared = try prepareVideoRequest(request)
+        var body = prepared.body
+        if let webhookURL = operationRequest.webhookURL {
+            // Apply the explicit URL after raw provider options so the V4
+            // operation argument has deterministic precedence.
+            body["callback_url"] = .string(webhookURL)
+        }
+        let response = try await config.transport.send(config.request(
+            path: prepared.endpoint,
+            modelID: modelID,
+            body: .object(body),
+            headers: request.headers,
+            abortSignal: request.abortSignal
+        ))
+        guard (200..<300).contains(response.statusCode) else {
+            throw klingAIHTTPStatusError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        guard let taskID = raw["data"]?["task_id"]?.stringValue, !taskID.isEmpty else {
+            throw AIError.invalidResponse(provider: providerID, message: "No task_id returned from KlingAI API. Response: \(raw)")
+        }
+        return VideoGenerationOperationStartResult(
+            operation: [
+                "taskId": .string(taskID),
+                "endpointPath": .string(prepared.endpoint)
+            ],
+            warnings: prepared.warnings,
+            responseMetadata: aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        )
+    }
+
+    public func videoGenerationStatus(
+        _ operationRequest: VideoGenerationOperationStatusRequest
+    ) async throws -> VideoGenerationOperationStatusResult {
+        guard let operation = operationRequest.operation.objectValue,
+              let taskID = operation["taskId"]?.stringValue,
+              !taskID.isEmpty,
+              let endpoint = operation["endpointPath"]?.stringValue,
+              klingAIEndpointPaths.contains(endpoint) else {
+            throw AIError.invalidArgument(
+                argument: "operation",
+                message: "KlingAI video operation must contain a non-empty taskId and a supported endpointPath."
+            )
+        }
+        let response = try await downloadURL(
+            "\(withoutTrailingSlash(config.baseURL))\(endpoint)/\(klingAIPathSegment(taskID))",
+            transport: config.transport,
+            headers: config.headers.mergingHeaders(operationRequest.headers),
+            abortSignal: operationRequest.abortSignal,
+            trustedOrigin: config.baseURL,
+            credentialedOrigin: config.baseURL
+        )
+        guard (200..<300).contains(response.statusCode) else {
+            throw klingAIHTTPStatusError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        let responseMetadata = aiResponseMetadata(from: raw, response: response, modelID: modelID)
+        switch raw["data"]?["task_status"]?.stringValue {
+        case "succeed":
+            let videos = raw["data"]?["task_result"]?["videos"]?.arrayValue ?? []
+            guard !videos.isEmpty else {
+                throw AIError.invalidResponse(provider: providerID, message: "No videos in response. Response: \(raw)")
+            }
+            let completedVideos = videos.filter {
+                guard let url = $0["url"]?.stringValue else { return false }
+                return !url.isEmpty
+            }
+            guard !completedVideos.isEmpty else {
+                throw AIError.invalidResponse(provider: providerID, message: "No valid video URLs in response")
+            }
+            let urls = completedVideos.compactMap { $0["url"]?.stringValue }
+            return .completed(VideoGenerationResult(
+                urls: urls,
+                operationID: taskID,
+                mediaType: "video/mp4",
+                rawValue: raw,
+                providerMetadata: [
+                    "klingai": .object([
+                        "taskId": .string(taskID),
+                        "videos": .array(klingAIVideoMetadata(from: completedVideos))
+                    ])
+                ],
+                responseMetadata: responseMetadata
+            ))
+        case "failed":
+            return .failed(
+                message: "Video generation failed: \(raw["data"]?["task_status_msg"]?.stringValue ?? "Unknown error")",
+                responseMetadata: responseMetadata
+            )
+        default:
+            return .pending(responseMetadata: responseMetadata)
+        }
+    }
+
+    private func prepareVideoRequest(
+        _ request: VideoGenerationRequest
+    ) throws -> (endpoint: String, body: [String: JSONValue], warnings: [AIWarning], options: KlingAIResolvedOptions) {
+        let mode = try klingMode(modelID)
+        let options = try klingAIProviderOptions(from: request)
+        var warnings = klingAIReferenceImageWarnings(for: request)
+        let referenceImages = klingAIReferenceImages(from: request)
+        let effectiveMode = mode == "i2v" && referenceImages != nil ? "mi2v" : mode
+        let endpoint = klingEndpoint(effectiveMode)
+        warnings.append(contentsOf: klingAIWarnings(
+            for: request,
+            mode: mode,
+            effectiveMode: effectiveMode,
+            options: options,
+            referenceImages: referenceImages
+        ))
+        var body: [String: JSONValue] = [
+            "model_name": .string(klingAPIModelName(modelID, mode: effectiveMode))
+        ]
+        if !request.prompt.isEmpty { body["prompt"] = .string(request.prompt) }
+        if let aspectRatio = request.aspectRatio, effectiveMode == "t2v" || effectiveMode == "mi2v" {
+            body["aspect_ratio"] = .string(aspectRatio)
+        }
+        if let duration = request.durationSeconds, effectiveMode != "motion-control" {
+            body["duration"] = .string(formatDuration(duration))
+        }
+        body.merge(try klingAIOptions(
+            from: options,
+            mode: effectiveMode,
+            request: request,
+            referenceImages: referenceImages,
+            warnings: &warnings
+        )) { _, new in new }
+        return (endpoint, body, warnings, options)
     }
 
     private func pollKling(endpoint: String, taskID: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, timeoutMilliseconds: Double, abortSignal: AIAbortSignal?) async throws -> (raw: JSONValue, response: AIHTTPResponse) {
@@ -503,12 +629,17 @@ private func klingAIDynamicMasks(_ value: JSONValue) throws -> JSONValue {
 
 private func klingAIVideoMetadata(from videos: [JSONValue]) -> [JSONValue] {
     videos.map { video in
-        .object([
-            "id": video["id"]?.stringValue.map(JSONValue.string),
-            "url": video["url"]?.stringValue.map(JSONValue.string),
-            "watermarkUrl": video["watermark_url"]?.stringValue.map(JSONValue.string),
-            "duration": video["duration"]?.stringValue.map(JSONValue.string)
-        ])
+        var metadata: [String: JSONValue] = [
+            "id": .string(video["id"]?.stringValue ?? ""),
+            "url": .string(video["url"]?.stringValue ?? "")
+        ]
+        if let watermarkURL = video["watermark_url"]?.stringValue, !watermarkURL.isEmpty {
+            metadata["watermarkUrl"] = .string(watermarkURL)
+        }
+        if let duration = video["duration"]?.stringValue, !duration.isEmpty {
+            metadata["duration"] = .string(duration)
+        }
+        return .object(metadata)
     }
 }
 
@@ -658,6 +789,19 @@ private func klingEndpoint(_ mode: String) -> String {
     default:
         return "/v1/videos/text2video"
     }
+}
+
+private let klingAIEndpointPaths: Set<String> = [
+    "/v1/videos/text2video",
+    "/v1/videos/image2video",
+    "/v1/videos/multi-image2video",
+    "/v1/videos/motion-control"
+]
+
+private func klingAIPathSegment(_ value: String) -> String {
+    var allowed = CharacterSet.urlPathAllowed
+    allowed.remove(charactersIn: "/?#[]@!$&'()*+,;=")
+    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
 }
 
 private func klingAPIModelName(_ modelID: String, mode: String) -> String {

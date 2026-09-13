@@ -1,6 +1,6 @@
 # Introduction
 
-Source URL: /SwiftAISDK/
+Source URL: /
 
 # SwiftAISDK
 

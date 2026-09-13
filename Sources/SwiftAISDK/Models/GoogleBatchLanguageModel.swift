@@ -140,6 +140,129 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
         )
     }
 
+    func startProviderBatch(
+        _ options: AIBatchStartOptions<AIBatchRequest>
+    ) async throws -> AIBatchStartResult {
+        try options.abortSignal?.throwIfAborted()
+        let commonModelID = try googleProviderBatchModelID(options.requests)
+
+        let displayName = "ai-sdk-batch-\(UUID().uuidString.lowercased())"
+        var inlineRequests: [JSONValue] = []
+        let emptyInlineBody = googleBatchCreationBody(
+            displayName: displayName,
+            webhookURL: options.webhookURL,
+            inputConfig: .object(["requests": .object(["requests": .array([])])])
+        )
+        var inlineBytes = try encodeJSONBody(emptyInlineBody).count
+        var fileLines: [Data]?
+        var warnings: [AIBatchWarning] = []
+
+        for item in options.requests {
+            try options.abortSignal?.throwIfAborted()
+            let prepared: GoogleGenerateContentPreparedCall
+            switch item {
+            case let .text(text):
+                prepared = try GoogleGenerativeLanguageModel.generateContentBody(
+                    for: text.request,
+                    modelID: commonModelID
+                )
+            case let .image(image):
+                prepared = try googlePrepareImageBatchRequest(image.request, modelID: commonModelID)
+            }
+            let inlineRequest: JSONValue = .object([
+                "request": prepared.body,
+                "metadata": .object(["key": .string(item.id)])
+            ])
+            let inlineRequestBytes = try encodeJSONBody(inlineRequest).count
+
+            if fileLines == nil {
+                let separatorBytes = inlineRequests.isEmpty ? 0 : 1
+                if inlineBytes + inlineRequestBytes + separatorBytes < googleBatchInlineCreationMaxBytes {
+                    inlineRequests.append(inlineRequest)
+                    inlineBytes += inlineRequestBytes + separatorBytes
+                } else {
+                    fileLines = try inlineRequests.map { previous in
+                        try googleBatchJSONLine(.object([
+                            "key": previous["metadata"]?["key"] ?? .string(""),
+                            "request": previous["request"] ?? .object([:])
+                        ]))
+                    }
+                    inlineRequests.removeAll(keepingCapacity: false)
+                    fileLines?.append(try googleBatchJSONLine(.object([
+                        "key": .string(item.id),
+                        "request": prepared.body
+                    ])))
+                }
+            } else {
+                fileLines?.append(try googleBatchJSONLine(.object([
+                    "key": .string(item.id),
+                    "request": prepared.body
+                ])))
+            }
+
+            warnings.append(contentsOf: prepared.warnings.map {
+                AIBatchWarning(requestID: item.id, warning: $0)
+            })
+        }
+
+        let headers = googleBatchHeaders(options.headers, config: config)
+        if let fileLines {
+            let inputData = fileLines.reduce(into: Data()) { $0.append($1) }
+            guard inputData.count <= googleBatchInputFileMaxBytes else {
+                throw AIError.invalidArgument(
+                    argument: "requests",
+                    message: "Google batch input files must not exceed 2 GB."
+                )
+            }
+            let uploaded = try await uploadBatchInput(
+                inputData,
+                displayName: displayName,
+                headers: headers,
+                abortSignal: options.abortSignal
+            )
+            let body = googleBatchCreationBody(
+                displayName: displayName,
+                webhookURL: options.webhookURL,
+                inputConfig: .object(["fileName": .string(uploaded.name)])
+            )
+            let operation = try await sendJSON(
+                url: try googleBatchCreateURL(modelID: commonModelID),
+                body: body,
+                headers: headers,
+                abortSignal: options.abortSignal
+            )
+            var googleMetadata: [String: JSONValue] = ["inputFileId": .string(uploaded.name)]
+            if let expirationTime = uploaded.expirationTime {
+                googleMetadata["inputFileExpiresAt"] = .string(expirationTime)
+            }
+            return AIBatchStartResult(
+                batchID: try googleBatchOperationName(operation),
+                status: googleBatchStatus(operation),
+                warnings: warnings,
+                providerMetadata: ["google": .object(googleMetadata)]
+            )
+        }
+
+        let body = googleBatchCreationBody(
+            displayName: displayName,
+            webhookURL: options.webhookURL,
+            inputConfig: .object([
+                "requests": .object(["requests": .array(inlineRequests)])
+            ])
+        )
+        let operation = try await sendJSON(
+            url: try googleBatchCreateURL(modelID: commonModelID),
+            body: body,
+            headers: headers,
+            abortSignal: options.abortSignal
+        )
+        return AIBatchStartResult(
+            batchID: try googleBatchOperationName(operation),
+            status: googleBatchStatus(operation),
+            warnings: warnings
+        )
+    }
+
     public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
         googleBatchStatus(try await retrieveBatch(options))
     }
@@ -203,6 +326,139 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
             throw config.httpStatusError(try await bufferedHTTPResponse(from: response, request: request))
         }
         return googleBatchResultStream(body: response.body, abortSignal: options.abortSignal)
+    }
+
+    func getProviderBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        let operation = try await retrieveBatch(options)
+        let status = googleBatchStatus(operation)
+        guard status.status != .pending else {
+            throw AIError.invalidArgument(
+                argument: "batchID",
+                message: "Google batch \"\(options.batchID)\" is not complete."
+            )
+        }
+
+        if let inline = operation["metadata"]?["output"]?["inlinedResponses"]?["inlinedResponses"]?.arrayValue
+            ?? operation["response"]?["inlinedResponses"]?["inlinedResponses"]?.arrayValue {
+            let lines = try inline.map { item in
+                guard let key = item["metadata"]?["key"]?.stringValue,
+                      !key.isEmpty else {
+                    throw googleBatchInvalidResultKeyError(providerID: providerID)
+                }
+                return JSONValue.object([
+                    "key": .string(key),
+                    "response": item["response"] ?? .null,
+                    "error": item["error"] ?? .null
+                ])
+            }
+            return googleProviderBatchResultStream(lines: lines, abortSignal: options.abortSignal)
+        }
+
+        let responsesFile = operation["metadata"]?["output"]?["responsesFile"]?.stringValue
+            ?? operation["response"]?["responsesFile"]?.stringValue
+        guard let responsesFile else {
+            if status.status == .completed {
+                throw AIError.invalidResponse(
+                    provider: providerID,
+                    message: "Google batch \"\(options.batchID)\" completed without batch output."
+                )
+            }
+            return googleProviderBatchResultStream(lines: [], abortSignal: options.abortSignal)
+        }
+
+        let encodedFile = responsesFile
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map { googleBatchPathComponent(String($0)) }
+            .joined(separator: "/")
+        let outputURL = try requireURL(
+            "\(googleBatchBaseOrigin())/download/v1beta/\(encodedFile):download?alt=media"
+        )
+        let request = AIHTTPRequest(
+            method: "GET",
+            url: outputURL,
+            headers: googleBatchHeaders(options.headers, config: config),
+            abortSignal: options.abortSignal,
+            maxResponseBytes: googleBatchInputFileMaxBytes
+        )
+        let response = try await config.streamRequest(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw config.httpStatusError(try await bufferedHTTPResponse(from: response, request: request))
+        }
+        return googleProviderBatchResultStream(body: response.body, abortSignal: options.abortSignal)
+    }
+
+    func cancelProviderBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try options.abortSignal?.throwIfAborted()
+        let encodedBatchID = options.batchID
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map { googleBatchPathComponent(String($0)) }
+            .joined(separator: "/")
+        let value = try await sendJSON(
+            url: try requireURL("\(config.baseURL)/\(encodedBatchID):cancel"),
+            body: .object([:]),
+            headers: googleBatchHeaders(options.headers, config: config),
+            abortSignal: options.abortSignal
+        )
+        guard value.objectValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Invalid Google batch cancellation response.")
+        }
+        return AIBatchCancelResult()
+    }
+
+    func listProviderBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        try options.abortSignal?.throwIfAborted()
+        guard var components = URLComponents(string: "\(config.baseURL)/batches") else {
+            throw AIError.invalidArgument(argument: "url", message: "Invalid Google batches list URL.")
+        }
+        var queryItems = components.queryItems ?? []
+        if let limit = options.limit {
+            queryItems.append(URLQueryItem(name: "pageSize", value: String(limit)))
+        }
+        if let cursor = options.cursor {
+            queryItems.append(URLQueryItem(name: "pageToken", value: cursor))
+        }
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+        guard let url = components.url else {
+            throw AIError.invalidArgument(argument: "url", message: "Invalid Google batches list URL.")
+        }
+        let request = AIHTTPRequest(
+            method: "GET",
+            url: url,
+            headers: googleBatchHeaders(options.headers, config: config),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw config.httpStatusError(response)
+        }
+        let page = try response.jsonValue()
+        guard let object = page.objectValue,
+              object["nextPageToken"] == nil
+                || object["nextPageToken"] == .null
+                || object["nextPageToken"]?.stringValue != nil else {
+            throw AIError.invalidResponse(provider: providerID, message: "Invalid Google batches list response.")
+        }
+        let operations: [JSONValue]
+        if let rawOperations = object["operations"], rawOperations != .null {
+            guard let values = rawOperations.arrayValue else {
+                throw AIError.invalidResponse(provider: providerID, message: "Invalid Google batches list response.")
+            }
+            operations = values
+        } else {
+            operations = []
+        }
+        let batches = try operations.map { operation in
+            AIBatchListItem(
+                batchID: try googleBatchOperationName(operation),
+                status: googleBatchStatus(operation)
+            )
+        }
+        return AIBatchListResult(
+            batches: batches,
+            nextCursor: object["nextPageToken"]?.stringValue
+        )
     }
 
     private func retrieveBatch(_ options: AIBatchOperationOptions) async throws -> JSONValue {
@@ -299,8 +555,9 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
         return try response.jsonValue()
     }
 
-    private func googleBatchCreateURL() throws -> URL {
-        let modelPath = modelID.contains("/") ? modelID : "models/\(modelID)"
+    private func googleBatchCreateURL(modelID requestedModelID: String? = nil) throws -> URL {
+        let selectedModelID = requestedModelID ?? modelID
+        let modelPath = selectedModelID.contains("/") ? selectedModelID : "models/\(selectedModelID)"
         return try requireURL("\(config.baseURL)/\(modelPath):batchGenerateContent")
     }
 
@@ -370,10 +627,251 @@ public final class GoogleBatchLanguageModel: BatchLanguageModel, @unchecked Send
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
+
+    private func googleProviderBatchResultStream(
+        lines: [JSONValue],
+        abortSignal: AIAbortSignal?
+    ) -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for line in lines {
+                        try Task.checkCancellation()
+                        try abortSignal?.throwIfAborted()
+                        continuation.yield(try googleProviderBatchItemResult(line, providerID: providerID))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
+    private func googleProviderBatchResultStream(
+        body: AsyncThrowingStream<Data, Error>,
+        abortSignal: AIAbortSignal?
+    ) -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var buffer = Data()
+                    for try await chunk in body {
+                        try Task.checkCancellation()
+                        try abortSignal?.throwIfAborted()
+                        buffer.append(chunk)
+                        while let newline = buffer.firstIndex(of: 0x0a) {
+                            var line = Data(buffer[..<newline])
+                            buffer.removeSubrange(...newline)
+                            if line.last == 0x0d { line.removeLast() }
+                            if googleBatchHasNonWhitespace(line) {
+                                continuation.yield(try googleProviderBatchItemResult(
+                                    decodeJSONBody(line),
+                                    providerID: providerID
+                                ))
+                            }
+                        }
+                    }
+                    if buffer.last == 0x0d { buffer.removeLast() }
+                    if googleBatchHasNonWhitespace(buffer) {
+                        continuation.yield(try googleProviderBatchItemResult(
+                            decodeJSONBody(buffer),
+                            providerID: providerID
+                        ))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+}
+
+/// Provider-owned Google Batch V4 service. Text and image requests may share a
+/// batch only when every item selects the model embedded in the endpoint.
+public final class GoogleBatchProvider: AIBatchProvider, @unchecked Sendable {
+    public let providerID: String
+    public let supportedURLs: [String: [AISupportedURLPattern]]
+    private let config: ModelHTTPConfig
+
+    init(config: ModelHTTPConfig) {
+        self.providerID = googleBatchProviderID(from: config.providerID)
+        self.supportedURLs = googleBatchSupportedURLs(baseURL: config.baseURL)
+        self.config = config
+    }
+
+    public func startBatch(
+        _ options: AIBatchStartOptions<AIBatchRequest>
+    ) async throws -> AIBatchStartResult {
+        try await model.startProviderBatch(options)
+    }
+
+    public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
+        try await model.getBatchStatus(options)
+    }
+
+    public func getBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        try await model.getProviderBatchResults(options)
+    }
+
+    public func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try await model.cancelProviderBatch(options)
+    }
+
+    public func listBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        try await model.listProviderBatches(options)
+    }
+
+    private var model: GoogleBatchLanguageModel {
+        GoogleBatchLanguageModel(modelID: "batch", config: config)
+    }
 }
 
 private let googleBatchInputFileMaxBytes = 2 * 1024 * 1024 * 1024
 private let googleBatchInlineCreationMaxBytes = 20_000_000
+
+private func googleBatchProviderID(from providerID: String) -> String {
+    if providerID.hasSuffix(".generative-ai") {
+        return String(providerID.dropLast(".generative-ai".count)) + ".batch"
+    }
+    return providerID + ".batch"
+}
+
+private func googleBatchSupportedURLs(baseURL: String) -> [String: [AISupportedURLPattern]] {
+    let defaultFilesPrefix = "https://generativelanguage.googleapis.com/v1beta/files/"
+    let configuredFilesPrefix = "\(withoutTrailingSlash(baseURL).lowercased())/files/"
+    return [
+        "*": [
+            AISupportedURLPattern { value in
+                let value = value.lowercased()
+                return value.hasPrefix(defaultFilesPrefix) || value.hasPrefix(configuredFilesPrefix)
+            },
+            AISupportedURLPattern(googleBatchSupportedYouTubeURL)
+        ]
+    ]
+}
+
+private func googleBatchSupportedYouTubeURL(_ value: String) -> Bool {
+    value.range(
+        of: #"^https://(?:www\.)?youtube\.com/watch\?v=[A-Za-z0-9_-]+(?:&[A-Za-z0-9_=&.\-]*)?$"#,
+        options: .regularExpression
+    ) != nil || value.range(
+        of: #"^https://youtu\.be/[A-Za-z0-9_-]+(?:\?[A-Za-z0-9_=&.\-]*)?$"#,
+        options: .regularExpression
+    ) != nil
+}
+
+private func googleProviderBatchModelID(_ requests: [AIBatchRequest]) throws -> String {
+    guard let first = requests.first else {
+        throw AIError.invalidArgument(
+            argument: "requests",
+            message: "Google batches require at least one request."
+        )
+    }
+    guard let modelID = first.modelID, !modelID.isEmpty else {
+        throw AIError.invalidArgument(
+            argument: "requests",
+            message: "Google batch request \"\(first.id)\" must specify a modelID."
+        )
+    }
+    for request in requests {
+        guard let requestModelID = request.modelID, !requestModelID.isEmpty else {
+            throw AIError.invalidArgument(
+                argument: "requests",
+                message: "Google batch request \"\(request.id)\" must specify a modelID."
+            )
+        }
+        guard requestModelID == modelID else {
+            throw AIError.invalidArgument(
+                argument: "requests",
+                message: "Google batches require every request to use the same model because the model is part of the batch endpoint."
+            )
+        }
+    }
+    return modelID
+}
+
+private func googlePrepareImageBatchRequest(
+    _ request: ImageGenerationRequest,
+    modelID: String
+) throws -> GoogleGenerateContentPreparedCall {
+    if request.mask != nil {
+        throw AIError.invalidArgument(
+            argument: "mask",
+            message: "Google batches do not support mask-based image editing."
+        )
+    }
+    if let count = request.count, count > 1 {
+        throw AIError.invalidArgument(
+            argument: "count",
+            message: "Google batches do not support multiple images per request."
+        )
+    }
+
+    var warnings: [AIWarning] = []
+    if request.size != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "size",
+            message: "This model does not support the `size` option. Use `aspectRatio` instead."
+        ))
+    }
+
+    let options = googleImageProviderOptions(from: request)
+    var body = try GoogleGenerativeLanguageModel.imageGenerationContentBody(
+        prompt: request.prompt,
+        aspectRatio: nil,
+        files: request.files
+    )
+    var generationConfig = body["generationConfig"]?.objectValue ?? [:]
+    googleApplyProviderGenerationOptions(options, to: &generationConfig)
+    generationConfig["responseModalities"] = .array(["IMAGE"])
+    var imageConfig = options["imageConfig"]?.objectValue ?? [:]
+    if let aspectRatio = request.aspectRatio {
+        imageConfig["aspectRatio"] = .string(aspectRatio)
+    }
+    if !imageConfig.isEmpty {
+        generationConfig["imageConfig"] = .object(imageConfig)
+    }
+    if let seed = request.seed {
+        generationConfig["seed"] = .number(Double(seed))
+    }
+    body["generationConfig"] = .object(generationConfig)
+    body.merge(googleTopLevelGenerateContentOptions(options)) { _, new in new }
+    body.merge(googleExtraBodyWithoutToolChoice(options).filter { $0.key != "googleSearch" }) { _, new in new }
+
+    if let googleSearch = options["googleSearch"] {
+        let preparedTools = try googlePrepareTools(
+            from: [
+                "google.google_search": GoogleTools.googleSearch(
+                    searchTypes: googleSearch["searchTypes"],
+                    timeRangeFilter: googleSearch["timeRangeFilter"]
+                )
+            ],
+            toolChoice: nil,
+            modelID: modelID,
+            isVertexProvider: false
+        )
+        if let preparedTools, !preparedTools.tools.isEmpty {
+            body["tools"] = .array(preparedTools.tools)
+        }
+        if let preparedTools {
+            warnings.append(contentsOf: preparedTools.warnings)
+        }
+    }
+
+    return GoogleGenerateContentPreparedCall(
+        body: .object(body),
+        warnings: warnings,
+        headers: [:],
+        toolNameMapping: createToolNameMapping(tools: [:], providerToolNames: [:])
+    )
+}
 
 private func googleBatchCreationBody(
     displayName: String,
@@ -668,6 +1166,60 @@ private func googleBatchItemResult(
             providerMetadata: googleGenerateContentProviderMetadata(from: response),
             rawValue: response,
             responseMetadata: AIResponseMetadata(id: response["responseId"]?.stringValue)
+        )
+    )
+}
+
+private func googleProviderBatchItemResult(
+    _ line: JSONValue,
+    providerID: String
+) throws -> AIBatchV4ItemResult {
+    guard line.objectValue != nil,
+          let id = line["key"]?.stringValue,
+          !id.isEmpty else {
+        throw googleBatchInvalidResultKeyError(providerID: providerID)
+    }
+    if let response = line["response"],
+       response != .null,
+       let imageResult = googleProviderBatchImageResult(response) {
+        return .image(.succeeded(id: id, result: imageResult))
+    }
+    return .text(try googleBatchItemResult(line, providerID: providerID))
+}
+
+private func googleProviderBatchImageResult(_ response: JSONValue) -> ImageGenerationResult? {
+    // GenerateContent normalization is defined in terms of the first candidate.
+    // Thought-bearing inline data becomes a reasoning-file, not an image result.
+    let images: [String] = (response["candidates"]?[0]?["content"]?["parts"]?.arrayValue ?? [])
+        .compactMap { part -> String? in
+            guard part["thought"]?.boolValue != true,
+                  let inlineData = part["inlineData"]?.objectValue,
+                  let mediaType = inlineData["mimeType"]?.stringValue,
+                  mediaType.lowercased().hasPrefix("image/"),
+                  let data = inlineData["data"]?.stringValue else {
+                return nil
+            }
+            return data
+        }
+    guard !images.isEmpty else { return nil }
+
+    let imageMetadata: [String: JSONValue] = [
+        "google": .object(["images": .array(images.map { _ in JSONValue.object([:]) })])
+    ]
+    return ImageGenerationResult(
+        urls: [],
+        base64Images: images,
+        rawValue: response,
+        warnings: [],
+        usage: googleGenerateContentUsage(from: response),
+        providerMetadata: googleBatchMergedProviderMetadata(
+            googleGenerateContentProviderMetadata(from: response),
+            imageMetadata
+        ),
+        responseMetadata: AIResponseMetadata(
+            id: response["responseId"]?.stringValue,
+            timestamp: Date(),
+            modelID: response["modelVersion"]?.stringValue
         )
     )
 }

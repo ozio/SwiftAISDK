@@ -12,18 +12,24 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
-        let prepared = try googleGenerateContentBody(request, modelID: modelID, providerID: providerID)
+        let resolvedRequest = try await googleVertexRequestByDownloadingToolResultFiles(
+            request,
+            transport: config.transport,
+            maxBytes: config.toolResultDownloadsMaxBytes
+        )
+        let prepared = try googleGenerateContentBody(resolvedRequest, modelID: modelID, providerID: providerID)
         let response = try await config.sendJSONResponse(path: "/models/\(modelID):generateContent", body: prepared.body, headers: request.headers.mergingHeaders(prepared.headers), abortSignal: request.abortSignal)
         let raw = response.json
         let text = googleGenerateContentText(from: raw)
         let toolCalls = googleGenerateContentToolCalls(from: raw, toolNameMapping: prepared.toolNameMapping)
         let toolResults = googleGenerateContentToolResults(from: raw, toolNameMapping: prepared.toolNameMapping)
-        guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty else {
+        let finishReason = googleGenerateContentFinishReason(from: raw, hasToolCalls: !toolCalls.isEmpty)
+        guard text != nil || !toolCalls.isEmpty || !toolResults.isEmpty || finishReason == "content-filter" else {
             throw AIError.invalidResponse(provider: providerID, message: "No candidate text found in Vertex response.")
         }
         return TextGenerationResult(
             text: text ?? "",
-            finishReason: googleGenerateContentFinishReason(raw["candidates"]?[0]?["finishReason"]?.stringValue, hasToolCalls: !toolCalls.isEmpty),
+            finishReason: finishReason,
             usage: googleGenerateContentUsage(from: raw),
             toolCalls: toolCalls,
             toolResults: toolResults,
@@ -39,7 +45,12 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let prepared = try googleGenerateContentBody(request, modelID: modelID, providerID: providerID, isStreaming: true)
+                    let resolvedRequest = try await googleVertexRequestByDownloadingToolResultFiles(
+                        request,
+                        transport: config.transport,
+                        maxBytes: config.toolResultDownloadsMaxBytes
+                    )
+                    let prepared = try googleGenerateContentBody(resolvedRequest, modelID: modelID, providerID: providerID, isStreaming: true)
                     let httpRequest = try await config.request(
                         path: "/models/\(modelID):streamGenerateContent?alt=sse",
                         body: prepared.body,
@@ -75,6 +86,117 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
+}
+
+func googleVertexRequestByDownloadingToolResultFiles(
+    _ request: LanguageModelRequest,
+    transport: any AITransport,
+    maxBytes: Int
+) async throws -> LanguageModelRequest {
+    var resolvedRequest = request
+    var resolvedMessages: [AIMessage] = []
+    resolvedMessages.reserveCapacity(request.messages.count)
+
+    for message in request.messages {
+        guard message.role == .assistant || message.role == .tool else {
+            resolvedMessages.append(message)
+            continue
+        }
+
+        var resolvedContent: [AIContentPart] = []
+        resolvedContent.reserveCapacity(message.content.count)
+        for part in message.content {
+            guard case var .toolResult(result) = part else {
+                resolvedContent.append(part)
+                continue
+            }
+
+            if let modelOutput = result.modelOutput {
+                result.modelOutput = try await googleVertexDownloadedToolResultOutput(
+                    modelOutput,
+                    transport: transport,
+                    abortSignal: request.abortSignal,
+                    maxBytes: maxBytes
+                )
+            } else {
+                result.result = try await googleVertexDownloadedToolResultOutput(
+                    result.result,
+                    transport: transport,
+                    abortSignal: request.abortSignal,
+                    maxBytes: maxBytes
+                )
+            }
+            resolvedContent.append(.toolResult(result))
+        }
+
+        var resolvedMessage = message
+        resolvedMessage.content = resolvedContent
+        resolvedMessages.append(resolvedMessage)
+    }
+
+    resolvedRequest.messages = resolvedMessages
+    return resolvedRequest
+}
+
+func googleVertexDownloadedToolResultOutput(
+    _ output: JSONValue,
+    transport: any AITransport,
+    abortSignal: AIAbortSignal?,
+    maxBytes: Int
+) async throws -> JSONValue {
+    guard output["type"]?.stringValue == "content",
+          let content = output["value"]?.arrayValue else {
+        return output
+    }
+
+    var resolvedContent: [JSONValue] = []
+    resolvedContent.reserveCapacity(content.count)
+    for part in content {
+        guard part["type"]?.stringValue == "file",
+              part["data"]?["type"]?.stringValue == "url",
+              let url = part["data"]?["url"]?.stringValue else {
+            resolvedContent.append(part)
+            continue
+        }
+
+        let response = try await downloadURL(
+            url,
+            transport: transport,
+            abortSignal: abortSignal,
+            maxBytes: maxBytes
+        )
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: "google.vertex", response: response)
+        }
+        guard response.body.count <= maxBytes else {
+            throw AIDownloadError(
+                url: url,
+                message: "Download of \(url) exceeded maximum size of \(maxBytes) bytes."
+            )
+        }
+
+        let declaredMediaType = part["mediaType"]?.stringValue ?? "application/octet-stream"
+        let responseMediaType = response.headerValue("content-type")?
+            .split(separator: ";", maxSplits: 1)
+            .first
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+        let mediaType = detectMediaType(data: response.body, topLevelType: "image")
+            ?? (!isFullMediaType(declaredMediaType) ? responseMediaType : nil)
+            ?? declaredMediaType
+
+        var resolvedPart = part.objectValue ?? [:]
+        resolvedPart["data"] = .object([
+            "type": .string("data"),
+            "data": .string(response.body.base64EncodedString())
+        ])
+        resolvedPart["mediaType"] = .string(mediaType)
+        resolvedContent.append(.object(resolvedPart))
+    }
+
+    var resolvedOutput = output.objectValue ?? [:]
+    resolvedOutput["value"] = .array(resolvedContent)
+    return .object(resolvedOutput)
 }
 
 public final class GoogleVertexEmbeddingModel: EmbeddingModel, @unchecked Sendable {
@@ -561,7 +683,8 @@ public final class GoogleVertexImageModel: ImageModel, @unchecked Sendable {
                 base64Images: images,
                 rawValue: languageResult.rawValue,
                 requestMetadata: imageGenerationRequestMetadata(request),
-                responseMetadata: languageResult.responseMetadata
+                responseMetadata: languageResult.responseMetadata,
+                isRetryable: languageResult.finishReason == "content-filter" ? false : nil
             )
         }
 

@@ -1,6 +1,6 @@
 # Realtime sessions
 
-Source URL: /SwiftAISDK/core/realtime/
+Source URL: /core/realtime/
 
 `AIRealtimeModelV4` is the provider-neutral model contract for ephemeral client
 secrets, WebSocket configuration, session options, normalized server events,

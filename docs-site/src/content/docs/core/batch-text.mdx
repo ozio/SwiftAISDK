@@ -1,123 +1,119 @@
 ---
-title: Batch text
-description: Start durable text batches and stream their terminal results.
+title: Durable batches
+description: Run provider-owned text and image batches and resume their lifecycle.
 ---
 
-Use Batch V4 when a provider supports durable, asynchronous text generation.
-The returned `TextBatchReference` is persistable, so status and result reads can
-resume in another process without keeping the original request alive.
+Use Batch V4 for durable, asynchronous generation. The batch belongs to the
+provider rather than one model: every request supplies its model ID and its text
+or image modality. The returned `AIBatchReference` is persistable, so another
+process can resume status and result reads without keeping the start request
+alive.
 
 Anthropic Messages Batch, OpenAI Responses Batch, xAI Responses Batch, Google
-Generative AI Batch, and Gateway Batch V4 implement the shared adapter. Choose
-a batch-capable model from any of these providers:
+Generative AI Batch, and Gateway Batch implement the shared provider surface:
 
 ```swift
 let anthropic = try AIProviders.anthropic()
-let model = try anthropic.messages("claude-sonnet-4-5")
+let batch = anthropic.experimentalBatch()
 
-let started = try await AI.startTextBatch(
-    model: model,
+let started = try await AI.startBatch(
+    provider: batch,
     requests: [
-        TextBatchRequest(
+        .text(TextBatchRequest(
             id: "summary-1",
+            modelID: "claude-sonnet-4-5",
             request: LanguageModelRequest(messages: [
                 .user("Summarize the release notes.")
             ])
-        )
+        ))
     ]
 )
 
 // Persist started.batch.reference if another process will resume the batch.
 let status = try await AI.getBatchStatus(
-    model: model,
+    provider: batch,
     batch: started.batch.reference
 )
 ```
 
-OpenAI Responses uses the same facade and reference/result types:
+The provider factory determines the wire adapter:
 
 ```swift
 let openAI = try AIProviders.openAI()
-let openAIModel = try openAI.batchLanguageModel("gpt-5.6")
+let openAIBatch = try openAI.experimentalBatch()
 
-let started = try await AI.startTextBatch(
-    model: openAIModel,
-    requests: [
-        TextBatchRequest(
-            id: "summary-1",
-            request: LanguageModelRequest(messages: [
-                .user("Summarize the release notes.")
-            ])
-        )
-    ]
-)
-```
-
-xAI Responses exposes the same durable batch lifecycle:
-
-```swift
 let xAI = try AIProviders.xAI()
-let xAIModel = try xAI.batchLanguageModel("grok-4")
+let xAIBatch = try xAI.experimentalBatch()
 
-let started = try await AI.startTextBatch(
-    model: xAIModel,
-    requests: [
-        TextBatchRequest(
-            id: "summary-1",
-            request: LanguageModelRequest(messages: [
-                .user("Summarize the release notes.")
-            ])
-        )
-    ]
-)
-```
-
-Google Generative AI selects inline requests for small batches and uploads a
-JSONL input file when the encoded request body crosses the inline limit:
-
-```swift
 let google = try AIProviders.google()
-let googleModel = google.batchLanguageModel("gemini-3.8-flash")
+let googleBatch = google.experimentalBatch()
 
-let started = try await AI.startTextBatch(
-    model: googleModel,
-    requests: [
-        TextBatchRequest(
-            id: "summary-1",
-            request: LanguageModelRequest(messages: [
-                .user("Summarize the release notes.")
-            ])
-        )
-    ]
-)
+let gateway = try AIProviders.gateway()
+let gatewayBatch = gateway.experimentalBatch()
 ```
 
-Gateway language models also expose the shared batch facade:
+Each provider validates its supported request set before network I/O:
+
+- Anthropic: text, with independent model IDs per request.
+- OpenAI: text, with one common model per batch.
+- xAI: text and image, including mixed models and modalities.
+- Google Generative AI: text and image, with one common model endpoint.
+- Gateway: text, with one common model per batch.
+
+Use `provider.supportedURLs` with `isURLSupported(...)` to decide whether a
+remote input can be forwarded directly. Convert unsupported remote inputs to
+the request type's inline data form before starting the batch.
+
+## Mixed text and image requests
+
+xAI accepts a mixed provider-owned batch:
 
 ```swift
-let gateway = try AIProviders.gateway()
-let gatewayModel = try gateway.languageModel("openai/gpt-5.6")
-
-let started = try await AI.startTextBatch(
-    model: gatewayModel,
+let started = try await AI.startBatch(
+    provider: xAIBatch,
     requests: [
-        TextBatchRequest(
+        .text(TextBatchRequest(
             id: "summary-1",
+            modelID: "grok-4",
             request: LanguageModelRequest(messages: [
                 .user("Summarize the release notes.")
             ])
-        )
+        )),
+        .image(ImageBatchRequest(
+            id: "cover-1",
+            modelID: "grok-imagine-image",
+            request: ImageGenerationRequest(prompt: "A minimal release cover")
+        ))
     ]
 )
 ```
 
-Starting a batch is not retried automatically because it may create billable
-work. Status and results setup use the normal retry policy. A caller may pass a
-stable `idempotencyKey` when the provider or gateway honors one.
+Google also supports text and image requests, but all items in one batch must
+select the same model. It sends small payloads inline and uses the resumable
+file-upload flow once the encoded body reaches the provider limit.
 
-`AI.startTextBatch` also accepts shared `tools` and `toolChoice` overlays. They
-are prepared with each request so batch providers receive the same function-tool
-content as unary generation.
+## Lifecycle
+
+Starting is intentionally not retried because it may create billable work. Pass
+a stable `idempotencyKey` when the provider or gateway honors one. Status,
+listing, and result setup use the normal retry policy:
+
+```swift
+let status = try await AI.getBatchStatus(
+    provider: batch,
+    batch: started.batch.reference
+)
+
+let page = try await AI.listBatches(
+    provider: batch,
+    limit: 20
+)
+
+_ = try await AI.cancelBatch(
+    provider: batch,
+    batch: started.batch.reference
+)
+```
 
 Pass `webhookURL` to request a completion callback. Gateway and Google forward
 the URL through their native callback fields; direct Anthropic, OpenAI, and xAI
@@ -131,36 +127,53 @@ cancelled, or expired request does not terminate results for the other IDs:
 
 ```swift
 let results = try AI.getBatchResults(
-    model: model,
+    provider: batch,
     batch: started.batch.reference
 )
 
 for try await item in results {
     switch item {
-    case let .succeeded(id, generation):
-        print(id, generation.text)
-        print(generation.content)
-        print(generation.rawFinishReason ?? "unknown")
-        print(generation.providerMetadata)
-    case let .failed(id, error, _):
+    case let .text(.succeeded(id, generation)):
+        print(id, generation.text, generation.content)
+    case let .image(.succeeded(id, generation)):
+        print(id, generation.urls, generation.base64Images.count)
+    case let .text(.failed(id, error, _)),
+         let .image(.failed(id, error, _)):
         print(id, error.message)
-    case let .cancelled(id, _, _), let .expired(id, _, _):
-        print(id, "did not complete")
+    default:
+        print(item)
     }
 }
 ```
 
 Stopping result consumption cancels the active provider stream. Batch
-references are validated against provider and model identity before status or
-result I/O, preventing accidental cross-model reads. Provider-native request
-counts are normalized before they reach the shared status type. Start results
-also expose `providerMetadata`; OpenAI, xAI, and file-backed Google batches use
-it for uploaded input-file identifiers and expiry timestamps. OpenAI rejects a
-malformed outer result envelope before yielding any item, Google requires every
-result row to carry a nonempty request key, and xAI preserves the final
-assistant choice's raw finish reason.
+references are validated against provider identity before status or result I/O,
+preventing accidental cross-provider reads. Provider-native request counts are
+normalized before they reach the shared status type. Start and terminal results
+retain provider metadata such as uploaded file identifiers, expiry timestamps,
+and raw finish reasons. A failed, cancelled, or expired item does not terminate
+the other results.
 
 Result `content` is authoritative and can contain text, reasoning, files,
 sources, tool calls, and tool results. The `text` property remains a convenience
 projection. Google merges empty-text thought signatures onto the associated
 reasoning or tool part so they survive later model-message replay.
+
+## Legacy text-only API
+
+The model-owned API remains source compatible for existing callers:
+
+```swift
+let model = try anthropic.messages("claude-sonnet-4-5")
+let started = try await AI.startTextBatch(
+    model: model,
+    requests: [TextBatchRequest(
+        id: "summary-1",
+        request: LanguageModelRequest(messages: [.user("Summarize this.")])
+    )]
+)
+```
+
+This compatibility surface remains text only. New integrations should prefer
+`experimentalBatch()` plus `AI.startBatch(provider:requests:)` so model identity
+and modality live on each request and the provider owns the full lifecycle.

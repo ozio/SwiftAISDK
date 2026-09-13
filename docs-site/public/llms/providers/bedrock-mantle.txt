@@ -1,6 +1,6 @@
 # "bedrock-mantle"
 
-Source URL: /SwiftAISDK/providers/bedrock-mantle/
+Source URL: /providers/bedrock-mantle/
 
 ## Package
 
@@ -16,8 +16,8 @@ Source URL: /SwiftAISDK/providers/bedrock-mantle/
 
 ## Notes
 
-Bedrock Mantle mirrors upstream 5.0.76 chat and responses surfaces with Bedrock Mantle hostnames, SigV4 or bearer auth, OpenAI-compatible request builders, versioned user-agent suffix, and provider metadata. JavaScript module-format exports are not applicable in Swift.
+Bedrock Mantle mirrors upstream 5.0.82 chat and responses surfaces with Bedrock Mantle hostnames, SigV4 or bearer auth, OpenAI-compatible request builders, versioned user-agent suffix, and provider metadata. JavaScript module-format exports are not applicable in Swift.
 
-Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/SwiftAISDK/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
-Return to the [provider matrix](/SwiftAISDK/providers/).
+Return to the [provider matrix](/providers/).

@@ -2,6 +2,21 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+@Test func batchRequestsRetainUnambiguousVersion160InitializerReferences() {
+    let languageFactory = AILanguageModelBatchRequest.init
+    let textFactory = TextBatchRequest.init
+    let request = LanguageModelRequest(messages: [.user("legacy")])
+    let languageRequest = languageFactory("request-1", request)
+    let textRequest = textFactory("request-2", request)
+
+    #expect(languageRequest.id == "request-1")
+    #expect(languageRequest.modelID == nil)
+    #expect(languageRequest.request.messages == [.user("legacy")])
+    #expect(textRequest.id == "request-2")
+    #expect(textRequest.modelID == nil)
+    #expect(textRequest.request.messages == [.user("legacy")])
+}
+
 @Test func batchRequestCountNormalizerAcceptsOnlyConsistentNonnegativeSafeIntegers() {
     let maximum = aiBatchMaximumSafeInteger
 
@@ -89,7 +104,7 @@ import Testing
     #expect(options.requests[0].request.toolChoice?["toolName"]?.stringValue == "lookup")
     #expect(options.providerOptions == ["mock": ["batch": true]])
     #expect(options.headers["x-test"] == "test-value")
-    #expect(options.headers["user-agent"] == "ai/7.0.93")
+    #expect(options.headers["user-agent"] == "ai/7.0.99")
     #expect(options.headers["idempotency-key"] == "stable-create-key")
     #expect(options.idempotencyKey == "stable-create-key")
     #expect(options.webhookURL == "https://example.com/batches/complete")

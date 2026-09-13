@@ -107,7 +107,7 @@ func deepSeekPreparedCall(
     }
     let thinkingEnabled = supportsThinking
         && body["thinking"]?["type"]?.stringValue != "disabled"
-        && (body["thinking"] != nil || modelID == "deepseek-reasoner" || modelID.contains("deepseek-v4"))
+        && (body["thinking"] != nil || modelID == "deepseek-reasoner" || deepSeekIsV4Model(modelID))
     if thinkingEnabled {
         if body.removeValue(forKey: "temperature") != nil {
             samplingWarnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "temperature has no effect when DeepSeek thinking is enabled."))
@@ -138,7 +138,7 @@ func deepSeekMessages(
 ) throws -> DeepSeekPreparedMessages {
     var output: [JSONValue] = []
     var warnings: [AIWarning] = []
-    let isDeepSeekV4 = modelID.contains("deepseek-v4")
+    let isDeepSeekV4 = deepSeekIsV4Model(modelID)
     let lastUserMessageIndex = messages.lastIndex { $0.role == .user } ?? -1
 
     if responseFormat?["type"]?.stringValue == "json" {
@@ -306,6 +306,12 @@ func deepSeekMessages(
     }
 
     return DeepSeekPreparedMessages(messages: output, warnings: warnings)
+}
+
+func deepSeekIsV4Model(_ modelID: String) -> Bool {
+    modelID.contains("deepseek-v4")
+        || modelID.hasPrefix("deepseek-flash")
+        || modelID.hasPrefix("deepseek-pro")
 }
 
 private func deepSeekMessageOptions(

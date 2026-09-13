@@ -12,13 +12,19 @@ public struct MCPOAuthDiscovery {
             wellKnownName: "oauth-protected-resource",
             includePath: true
         )
-        var response = try await discoveryGETWithHeaderRetry(url: discoveryURL, protocolVersion: protocolVersion, transport: transport)
+        var response = try await discoveryGETWithHeaderRetry(
+            url: discoveryURL,
+            protocolVersion: protocolVersion,
+            trustedOrigin: serverURL,
+            transport: transport
+        )
 
         if resourceMetadataURL == nil,
            shouldFallbackToRoot(response: response, originalURL: serverURL) {
             response = try await discoveryGETWithHeaderRetry(
                 url: mcpWellKnownURL(for: serverURL, wellKnownName: "oauth-protected-resource", includePath: false),
                 protocolVersion: protocolVersion,
+                trustedOrigin: serverURL,
                 transport: transport
             )
         }
@@ -58,10 +64,26 @@ public struct MCPOAuthDiscovery {
         protocolVersion: String = MCPClient.latestProtocolVersion,
         transport: any AITransport = URLSessionTransport.shared
     ) async throws -> MCPOAuthAuthorizationServerMetadata? {
+        try await discoverAuthorizationServerMetadata(
+            authorizationServerURL: authorizationServerURL,
+            protocolVersion: protocolVersion,
+            trustedOrigin: trustedMCPOAuthCredentialOrigin(authorizationServerURL),
+            transport: transport
+        )
+    }
+
+    static func discoverAuthorizationServerMetadata(
+        authorizationServerURL: URL,
+        protocolVersion: String,
+        trustedOrigin: URL?,
+        transport: any AITransport
+    ) async throws -> MCPOAuthAuthorizationServerMetadata? {
+        try assertSafeMCPOAuthEndpoint(authorizationServerURL, trustedOrigin: trustedOrigin)
         for discoveryURL in mcpAuthorizationServerDiscoveryURLs(authorizationServerURL) {
             guard let response = try await discoveryGETWithHeaderRetry(
                 url: discoveryURL.url,
                 protocolVersion: protocolVersion,
+                trustedOrigin: trustedOrigin,
                 transport: transport
             ) else {
                 continue
@@ -108,24 +130,62 @@ struct MCPOAuthDiscoveryURL {
     var expectedIssuer: String
 }
 
-func discoveryGET(url: URL, protocolVersion: String, transport: any AITransport) async throws -> AIHTTPResponse {
-    try await transport.send(AIHTTPRequest(
-        method: "GET",
-        url: url,
-        headers: protocolVersion.isEmpty ? [:] : ["MCP-Protocol-Version": protocolVersion]
-    ))
+func discoveryGET(
+    url: URL,
+    protocolVersion: String,
+    trustedOrigin: URL?,
+    transport: any AITransport
+) async throws -> AIHTTPResponse {
+    var currentURL = url
+    let redirectStatuses: Set<Int> = [301, 302, 303, 307, 308]
+    for _ in 0...10 {
+        try assertSafeMCPOAuthEndpoint(currentURL, trustedOrigin: trustedOrigin)
+        let response = try await transport.send(AIHTTPRequest(
+            method: "GET",
+            url: currentURL,
+            headers: protocolVersion.isEmpty ? [:] : ["MCP-Protocol-Version": protocolVersion],
+            followRedirects: false
+        ))
+        if redirectStatuses.contains(response.statusCode),
+           let location = response.headerValue("location"),
+           let nextURL = URL(string: location, relativeTo: currentURL)?.absoluteURL {
+            try assertSafeMCPOAuthEndpoint(nextURL, trustedOrigin: trustedOrigin)
+            currentURL = nextURL
+            continue
+        }
+        if let finalURL = response.url, finalURL != currentURL {
+            try assertSafeMCPOAuthEndpoint(finalURL, trustedOrigin: trustedOrigin)
+        }
+        return response
+    }
+    throw MCPClientError(message: "Too many OAuth discovery redirects (max 10).")
 }
 
 func discoveryGETWithHeaderRetry(
     url: URL,
     protocolVersion: String,
+    trustedOrigin: URL?,
     transport: any AITransport
 ) async throws -> AIHTTPResponse? {
     do {
-        return try await discoveryGET(url: url, protocolVersion: protocolVersion, transport: transport)
+        return try await discoveryGET(
+            url: url,
+            protocolVersion: protocolVersion,
+            trustedOrigin: trustedOrigin,
+            transport: transport
+        )
+    } catch let error as MCPClientError {
+        throw error
     } catch {
         do {
-            return try await discoveryGET(url: url, protocolVersion: "", transport: transport)
+            return try await discoveryGET(
+                url: url,
+                protocolVersion: "",
+                trustedOrigin: trustedOrigin,
+                transport: transport
+            )
+        } catch let error as MCPClientError {
+            throw error
         } catch {
             return nil
         }

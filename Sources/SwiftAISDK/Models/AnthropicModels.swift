@@ -287,6 +287,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var stopDetails: JSONValue = .null
                     var container: JSONValue = .null
                     var contextManagement: JSONValue = .null
+                    var inputTransformations: JSONValue = .null
                     var didReceiveMessageStart = false
                     var isMessageOpen = false
                     var activeMessageID: String?
@@ -314,6 +315,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                         stopDetails: stopDetails,
                                         container: container,
                                         contextManagement: contextManagement,
+                                        inputTransformations: inputTransformations,
                                         providerID: providerID,
                                         requestProviderOptions: request.providerOptions
                                     )
@@ -348,6 +350,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                             if let value = anthropicContainerMetadata(from: raw["message"]?["container"]) {
                                 container = value
                             }
+                            if let value = raw["message"]?["input_transformations"], value != .null {
+                                inputTransformations = value
+                            }
                             if let reason = raw["message"]?["stop_reason"]?.stringValue {
                                 finishReason = anthropicFinishReason(reason, toolCallCount: realToolCallCount)
                             }
@@ -364,6 +369,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                             }
                             if let value = anthropicContextManagementMetadata(from: raw["context_management"]) {
                                 contextManagement = value
+                            }
+                            if let value = raw["input_transformations"], value != .null {
+                                inputTransformations = value
                             }
                         case "message_stop":
                             isMessageOpen = false
@@ -405,6 +413,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                     stopDetails: stopDetails,
                                     container: container,
                                     contextManagement: contextManagement,
+                                    inputTransformations: inputTransformations,
                                     providerID: providerID,
                                     requestProviderOptions: request.providerOptions
                                 )
@@ -1789,6 +1798,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     var stopDetails: JSONValue = .null
                     var container: JSONValue = .null
                     var contextManagement: JSONValue = .null
+                    var inputTransformations: JSONValue = .null
                     var didEmitTerminal = false
 
                     func emitTerminal() {
@@ -1808,6 +1818,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 stopDetails: stopDetails,
                                 container: container,
                                 contextManagement: contextManagement,
+                                inputTransformations: inputTransformations,
                                 providerID: providerID,
                                 requestProviderOptions: request.providerOptions
                             )
@@ -1851,6 +1862,9 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 if let value = anthropicContainerMetadata(from: raw["message"]?["container"]) {
                                     container = value
                                 }
+                                if let value = raw["message"]?["input_transformations"], value != .null {
+                                    inputTransformations = value
+                                }
                                 if let reason = raw["message"]?["stop_reason"]?.stringValue {
                                     finishReason = anthropicFinishReason(reason, toolCallCount: realToolCallCount)
                                 }
@@ -1867,6 +1881,9 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 }
                                 if let value = anthropicContextManagementMetadata(from: raw["context_management"]) {
                                     contextManagement = value
+                                }
+                                if let value = raw["input_transformations"], value != .null {
+                                    inputTransformations = value
                                 }
                             default:
                                 break

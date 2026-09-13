@@ -50,6 +50,7 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
 
         for request in options.requests {
             try options.abortSignal?.throwIfAborted()
+            let requestModelID = request.modelID.flatMap { $0.isEmpty ? nil : $0 } ?? modelID
             let explicitRequestBetas = try anthropicExplicitRequestBetas(
                 from: request.request,
                 providerID: providerID
@@ -57,13 +58,13 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
             guard explicitRequestBetas.isEmpty else {
                 throw AIError.invalidArgument(
                     argument: "providerOptions.anthropic.anthropicBeta",
-                    message: "Anthropic Message Batches do not support per-request betas (request \"\(request.id)\"). Set providerOptions.anthropic.anthropicBeta on startTextBatch instead."
+                    message: "Anthropic Message Batches do not support per-request betas (request \"\(request.id)\"). Set providerOptions.anthropic.anthropicBeta on startBatch instead."
                 )
             }
 
             let prepared = try AnthropicLanguageModel.body(
                 for: request.request,
-                modelID: modelID,
+                modelID: requestModelID,
                 providerID: providerID
             )
             if prepared.usesJSONToolResponseFormat {
@@ -126,6 +127,67 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
 
     public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
         anthropicBatchStatus(try await retrieveBatch(options))
+    }
+
+    func cancelProviderBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try options.abortSignal?.throwIfAborted()
+        let encodedBatchID = anthropicBatchPathEncode(options.batchID)
+        let request = try config.request(
+            path: "/messages/batches/\(encodedBatchID)/cancel",
+            modelID: modelID,
+            body: .object([:]),
+            headers: options.headers,
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw anthropicHTTPStatusError(provider: providerID, response: response)
+        }
+        _ = try parseAnthropicBatchResponse(response.jsonValue())
+        return AIBatchCancelResult()
+    }
+
+    func listProviderBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        try options.abortSignal?.throwIfAborted()
+        let baseURL = try config.url(modelID, "/messages/batches")
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            throw AIError.invalidArgument(argument: "url", message: "Invalid Anthropic Message Batches list URL.")
+        }
+        var queryItems = components.queryItems ?? []
+        if let limit = options.limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        if let cursor = options.cursor {
+            queryItems.append(URLQueryItem(name: "after_id", value: cursor))
+        }
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+        guard let url = components.url else {
+            throw AIError.invalidArgument(argument: "url", message: "Invalid Anthropic Message Batches list URL.")
+        }
+        let request = AIHTTPRequest(
+            method: "GET",
+            url: url,
+            headers: prepareHeaders(options.headers, defaultHeaders: config.headers),
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw anthropicHTTPStatusError(provider: providerID, response: response)
+        }
+        let page = try response.jsonValue()
+        guard let data = page["data"]?.arrayValue,
+              let hasMore = page["has_more"]?.boolValue,
+              isNullishString(page["last_id"]) else {
+            throw AIError.invalidResponse(provider: providerID, message: "Invalid Message Batch list response.")
+        }
+        let batches = try data.map { raw -> AIBatchListItem in
+            let batch = try parseAnthropicBatchResponse(raw)
+            return AIBatchListItem(batchID: batch.id, status: anthropicBatchStatus(batch))
+        }
+        return AIBatchListResult(
+            batches: batches,
+            nextCursor: hasMore ? page["last_id"]?.stringValue : nil
+        )
     }
 
     public func getBatchResults(
@@ -191,6 +253,87 @@ public final class AnthropicBatchLanguageModel: BatchLanguageModel, @unchecked S
             throw anthropicHTTPStatusError(provider: providerID, response: response)
         }
         return try parseAnthropicBatchResponse(response.jsonValue())
+    }
+}
+
+/// Provider-owned Anthropic Batch V4 service. Message batches accept text
+/// requests only, while every request retains its own model identifier.
+public final class AnthropicBatchProvider: AIBatchProvider, @unchecked Sendable {
+    public let providerID: String
+    public let supportedURLs: [String: [AISupportedURLPattern]]
+    private let config: ModelHTTPConfig
+
+    init(providerID: String, config: ModelHTTPConfig) {
+        self.providerID = providerID
+        self.supportedURLs = AnthropicLanguageModel(modelID: "batch", config: config).supportedURLs
+        self.config = config
+    }
+
+    public func startBatch(
+        _ options: AIBatchStartOptions<AIBatchRequest>
+    ) async throws -> AIBatchStartResult {
+        var requests: [AILanguageModelBatchRequest] = []
+        requests.reserveCapacity(options.requests.count)
+        for request in options.requests {
+            guard case let .text(text) = request else {
+                throw AIError.invalidArgument(
+                    argument: "requests",
+                    message: "The Anthropic Message Batches API does not support batch requests with type \"image\"."
+                )
+            }
+            guard let modelID = text.modelID, !modelID.isEmpty else {
+                throw AIError.invalidArgument(
+                    argument: "requests",
+                    message: "Anthropic text batch request \"\(text.id)\" must specify a modelID."
+                )
+            }
+            requests.append(AILanguageModelBatchRequest(
+                id: text.id,
+                modelID: modelID,
+                request: text.request
+            ))
+        }
+        return try await model(for: requests.first?.modelID ?? "batch").startBatch(AIBatchStartOptions(
+            requests: requests,
+            providerOptions: options.providerOptions,
+            abortSignal: options.abortSignal,
+            headers: options.headers,
+            idempotencyKey: options.idempotencyKey,
+            webhookURL: options.webhookURL
+        ))
+    }
+
+    public func getBatchStatus(_ options: AIBatchOperationOptions) async throws -> AIBatchStatus {
+        try await model(for: "batch").getBatchStatus(options)
+    }
+
+    public func getBatchResults(
+        _ options: AIBatchOperationOptions
+    ) async throws -> AsyncThrowingStream<AIBatchV4ItemResult, Error> {
+        let stream = try await model(for: "batch").getBatchResults(options)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await item in stream { continuation.yield(.text(item)) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
+    public func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try await model(for: "batch").cancelProviderBatch(options)
+    }
+
+    public func listBatches(_ options: AIBatchListOptions) async throws -> AIBatchListResult {
+        try await model(for: "batch").listProviderBatches(options)
+    }
+
+    private func model(for modelID: String) -> AnthropicBatchLanguageModel {
+        AnthropicBatchLanguageModel(modelID: modelID, config: config)
     }
 }
 
@@ -285,7 +428,7 @@ private func anthropicBatchStatus(_ batch: AnthropicBatchResponse) -> AIBatchSta
 }
 
 private func validateAnthropicBatchRequestIDs(_ requests: [AILanguageModelBatchRequest]) throws {
-    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+    let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
     var ids = Set<String>()
     for request in requests {
         let isValid = (1...64).contains(request.id.utf8.count)

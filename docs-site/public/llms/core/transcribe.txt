@@ -1,6 +1,6 @@
 # Transcribe audio
 
-Source URL: /SwiftAISDK/core/transcribe/
+Source URL: /core/transcribe/
 
 Use `transcribe` when you have audio data and want normalized text back.
 

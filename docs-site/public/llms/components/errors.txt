@@ -1,6 +1,6 @@
 # Errors
 
-Source URL: /SwiftAISDK/components/errors/
+Source URL: /components/errors/
 
 ## Symbol counts
 

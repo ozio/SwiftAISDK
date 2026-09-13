@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-09-06
+Snapshot date: 2026-09-13
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -52,11 +52,11 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package versions were checked against npm registry metadata
-on 2026-09-06. The packages changed by this weekly pass were reviewed from
+on 2026-09-13. The packages changed by this weekly pass were reviewed from
 their exact published tarballs; per-package decisions are recorded in
 `Docs/UpstreamPackageDiffAudit.md`. The current upstream inventory contains
-864 executable test/spec paths in 80 groups. The fresh diff audit separately
-classifies all 114 changed executable paths and all 11 changed declaration
+881 executable test/spec paths in 80 groups. The fresh diff audit separately
+classifies all 104 changed executable paths and all 16 changed declaration
 test (`test-d`) paths.
 
 ## Provider State
@@ -65,10 +65,48 @@ The 46 tracked provider/product rows in `Docs/ProviderVersionLedger.md` have
 Swift evidence in implementation files and focused tests: 45 model-provider
 package rows are represented in `Docs/ProviderCapabilityMatrix.md`, and MCP is
 tracked separately as a product package without a model-capability row. Exact
-registry discovery finds 46 model providers because `@ai-sdk/zai@3.0.6` is now
-published; Z.AI remains the one explicit unported provider rather than being
+registry discovery finds `@ai-sdk/zai@3.0.10` as the only untracked provider;
+Z.AI remains an explicit unported provider rather than being
 silently added without a complete vertical. The current pass audited every
 published package delta and records deferred architectural work below.
+
+The 2026-09-13 weekly pass audits all 50 tracked core and provider/product
+rows: 48 published deltas plus the current `@ai-sdk/lmnt@3.0.36` and
+`@ai-sdk/vercel@3.0.30` rows. Twenty-two package deltas contain portable Swift
+behavior, one is already covered by the shared runtime, 24 are package-local
+version/dependency propagation, and React remains out of scope.
+
+Core work migrates Batch V4 from a language-model-owned text-only protocol to
+a provider-owned text/image service with per-request model IDs, typed results,
+cancel/list operations, and compatibility shims. Anthropic, OpenAI, and
+Gateway expose text batches; Google and xAI expose text and image batches with
+their distinct model restrictions. Image retryability, stream tool-choice
+enforcement, rerank-index validation, ToolOutputError UI parts, video webhook
+failure ordering, and strict GIF/BMP signatures are also current. MCP OAuth
+discovery validates initial and redirected URLs, rejects unsafe private and
+link-local targets, scopes loopback trust to configured local servers, and
+does not redirect credential POSTs.
+
+Provider work preserves OpenAI recursive schema compatibility, async tools,
+programmatic denial, Foundry message discriminators, explicit empty-choice
+errors, image 2.5 controls, web-search include capabilities, and patch-tool
+finish reasons. Gateway warning forwarding and image retryability are current;
+xAI supports mixed-model text/image batches. Bedrock endpoint resolution now
+matches AWS environment precedence and partition suffixes, while Vertex
+performs bounded credential-free tool-result downloads. Alibaba, DeepSeek,
+Groq, and Moonshot retain reasoning across empty tool-call arrays; DeepSeek and
+Mistral recognize current model families. Anthropic preserves input
+transformations. ByteDance, KlingAI, and MiniMax align async video callback and
+status lifecycles, and Gladia exposes expanded utterances plus provider
+metadata.
+
+The generic upstream callback `runtimeContext` for embeddings/reranking remains
+deferred pending a typed Swift callback/telemetry design. Swift also keeps its
+existing `downloadURL`/`AIDownloadError` contract instead of adding a second
+public helper solely to mirror JavaScript `getTextFromDataUrl`. Exact registry
+discovery now finds 86 live `@ai-sdk/*` names; 37 are untracked. Z.AI is the
+only untracked provider, while the newly added
+`@ai-sdk/harness-github-copilot` package is an out-of-scope agent adapter.
 
 The 2026-09-06 weekly pass audits all 50 tracked core and provider/product
 rows: 49 published deltas and the still-current `@ai-sdk/vercel@3.0.30` row.
@@ -201,10 +239,9 @@ defines one built-in terminal outcome per logical response. Cross-surface regres
 cover text and reasoning collection, structured output, UI reduction, tool
 loops, in-band errors, thrown failures, and provider terminal behavior.
 
-Exact registry-prefix discovery on 2026-09-06 finds 85 live `@ai-sdk/*`
-packages and 46 model providers. Swift represents 45 of the 46 providers; the
-`@ai-sdk/zai@3.0.6` package is the remaining provider gap. Of the 36
-untracked scoped packages, the other 35 are framework adapters,
+Exact registry-prefix discovery on 2026-09-13 finds 86 live `@ai-sdk/*`
+packages. Swift represents every provider-classified package except
+`@ai-sdk/zai@3.0.10`. Of the 37 untracked scoped packages, the other 36 are framework adapters,
 harness/sandbox/workflow products, UI bindings, telemetry or development
 tooling rather than provider model packages; they need separate product
 decisions and shared runtime foundations instead of automatic provider ports.

@@ -1,6 +1,6 @@
 # Tools
 
-Source URL: /SwiftAISDK/core/tools/
+Source URL: /core/tools/
 
 Tools let a model ask your Swift code to do discrete work, then continue with the tool result.
 

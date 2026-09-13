@@ -1,6 +1,6 @@
 # "gmicloud"
 
-Source URL: /SwiftAISDK/providers/gmicloud/
+Source URL: /providers/gmicloud/
 
 ## Package
 
@@ -16,8 +16,8 @@ Source URL: /SwiftAISDK/providers/gmicloud/
 
 ## Notes
 
-GMI Cloud chat mirrors upstream 3.0.15: `GMI_CLOUD_APIKEY`, bearer auth, custom base URL and headers, versioned user-agent suffix, callable/language/chat aliases, forward-compatible string model IDs, OpenAI-compatible chat streaming, usage enabled by default with unknown usage fields preserved, and nested JSON `error.details` unwrapping for actionable backend diagnostics. Embedding and image families remain unsupported.
+GMI Cloud chat mirrors upstream 3.0.19: `GMI_CLOUD_APIKEY`, bearer auth, custom base URL and headers, versioned user-agent suffix, callable/language/chat aliases, forward-compatible string model IDs, OpenAI-compatible chat streaming, usage enabled by default with unknown usage fields preserved, and nested JSON `error.details` unwrapping for actionable backend diagnostics. Embedding and image families remain unsupported.
 
-Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/SwiftAISDK/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 
-Return to the [provider matrix](/SwiftAISDK/providers/).
+Return to the [provider matrix](/providers/).

@@ -5,10 +5,25 @@ public enum OpenAITools {
         providerTool(id: "openai.apply_patch", name: "apply_patch")
     }
 
-    public static func customTool(name: String, description: String? = nil, format: JSONValue? = nil) -> JSONValue {
+    /// Source-compatible custom-tool factory retained from 1.6.0.
+    public static func customTool(
+        name: String,
+        description: String? = nil,
+        format: JSONValue? = nil
+    ) -> JSONValue {
+        customTool(name: name, description: description, format: format, async: nil)
+    }
+
+    public static func customTool(
+        name: String,
+        description: String? = nil,
+        format: JSONValue? = nil,
+        async: Bool?
+    ) -> JSONValue {
         providerTool(id: "openai.custom", name: name, args: JSONValue.object([
             "description": description.map(JSONValue.string),
-            "format": format
+            "format": format,
+            "async": async.map(JSONValue.bool)
         ]).objectValue ?? [:])
     }
 
@@ -460,6 +475,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var strictResponseInput: Bool
     var transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
     var responsesRequestMode: ResponsesRequestMode
+    var supportsWebSearchSourcesInclude: Bool
+    var explicitMessageItemType: Bool
     var openAIBackedProviderRoot: String?
     var usesGenericOpenAICompatibleProviderOptions: Bool
     var deepSeekSupportsThinking: Bool
@@ -479,6 +496,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         strictResponseInput: Bool = false,
         transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
         responsesRequestMode: ResponsesRequestMode = .openAICompatible,
+        supportsWebSearchSourcesInclude: Bool = true,
+        explicitMessageItemType: Bool = false,
         openAIBackedProviderRoot: String? = nil,
         usesGenericOpenAICompatibleProviderOptions: Bool = false,
         deepSeekSupportsThinking: Bool = true,
@@ -498,6 +517,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.strictResponseInput = strictResponseInput
         self.transformRequestBody = transformRequestBody
         self.responsesRequestMode = responsesRequestMode
+        self.supportsWebSearchSourcesInclude = supportsWebSearchSourcesInclude
+        self.explicitMessageItemType = explicitMessageItemType
         self.openAIBackedProviderRoot = openAIBackedProviderRoot
         self.usesGenericOpenAICompatibleProviderOptions = usesGenericOpenAICompatibleProviderOptions
         self.deepSeekSupportsThinking = deepSeekSupportsThinking
@@ -572,6 +593,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
+            explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: deepSeekSupportsThinking,
@@ -593,6 +616,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
+            explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: supportsThinking,
@@ -614,6 +639,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
+            explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: deepSeekSupportsThinking,
@@ -635,9 +662,17 @@ struct ModelHTTPConfig: @unchecked Sendable {
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
+            explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             failedResponseHandling: failedResponseHandling
         )
+    }
+
+    func withSupportsWebSearchSourcesInclude(_ supportsInclude: Bool) -> ModelHTTPConfig {
+        var copy = self
+        copy.supportsWebSearchSourcesInclude = supportsInclude
+        return copy
     }
 }

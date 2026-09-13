@@ -105,8 +105,14 @@ extension AI {
                     chunkNanoseconds: timeout?.chunkNanoseconds,
                     abortController: semanticTimeoutController
                 )
-                return streamWithTimeout(
+                let toolChoiceValidatedStream = validatedEnforcedToolChoiceStream(
                     outputTimedStream,
+                    toolChoice: attemptRequest.toolChoice,
+                    providerID: model.providerID,
+                    modelID: model.modelID
+                )
+                return streamWithTimeout(
+                    toolChoiceValidatedStream,
                     timeoutNanoseconds: retryPolicy.timeoutNanoseconds,
                     abortController: attemptTimeoutController,
                     timeoutLabel: "Retry attempt"
@@ -146,7 +152,8 @@ extension AI {
         telemetry: Telemetry.Options? = nil,
         logWarnings: Bool
     ) -> AsyncThrowingStream<LanguageStreamPart, Error> {
-        publicLanguageStream(
+        validatedEnforcedToolChoiceStream(
+            publicLanguageStream(
             streamTextParts(
                 model: model,
                 request: request,
@@ -157,6 +164,10 @@ extension AI {
                 telemetry: telemetry,
                 logWarnings: logWarnings
             )
+            ),
+            toolChoice: request.toolChoice,
+            providerID: model.providerID,
+            modelID: model.modelID
         )
     }
 
@@ -354,6 +365,12 @@ extension AI {
                             partIDReserver: partIDReserver
                         )
                         try stepDeadline.throwIfTimedOut()
+                        try validateEnforcedToolChoice(
+                            stepRequest.toolChoice,
+                            step: step,
+                            providerID: stepModel.providerID,
+                            modelID: stepModel.modelID
+                        )
                         let executableCalls = step.toolCalls.filter { !$0.providerExecuted }
                         let providerExecutedToolCallIDs = Set(step.toolCalls.filter(\.providerExecuted).map(\.id))
                         pendingProviderExecutedToolCallIDs.formUnion(providerExecutedToolCallIDs)
