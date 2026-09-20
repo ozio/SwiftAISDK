@@ -32,6 +32,12 @@ Status meanings:
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
 
+Follow-up on 2026-09-20: the user subsequently authorized complete ports of
+`@ai-sdk/typesafe-ai@3.0.4` and `@ai-sdk/zai@3.0.15`. Their provider runtime,
+translated tests, registry/capability rows, and public docs are now present.
+The `deferred` rows below remain the historical disposition of the weekly
+audit before that separately authorized follow-up.
+
 ## 2026-09-20 Diff
 
 The generated executable inventory grows from 881 to 919 files and from 80 to

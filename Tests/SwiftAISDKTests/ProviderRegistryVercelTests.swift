@@ -49,6 +49,8 @@ import Testing
     _ = try AIProviders.azure(resourceName: "resource", settings: settings)
     _ = try AIProviders.gateway(settings: settings)
     _ = try AIProviders.openResponses(name: "open-responses", url: "https://example.com/responses", settings: settings)
+    _ = AIProviders.typeSafeAI(settings: settings)
+    _ = AIProviders.zai(settings: settings)
 }
 
 @Test func providerRegistryExposesCanonicalFactoryNames() throws {
@@ -73,6 +75,8 @@ import Testing
     #expect(try AIProviders.quiverAI(settings: settings).providerID == "quiverai")
     #expect(try AIProviders.cartesia(settings: CartesiaProviderSettings(apiKey: "key", environment: [:], transport: transport)).providerID == "cartesia")
     #expect(try AIProviders.azure(resourceName: "resource", settings: settings).providerID == "azure")
+    #expect(AIProviders.typeSafeAI(settings: settings).providerID == "typesafe")
+    #expect(AIProviders.zai(settings: settings).providerID == "zai")
 }
 
 @Test func providerFactoryAliasesMirrorUpstreamNames() throws {

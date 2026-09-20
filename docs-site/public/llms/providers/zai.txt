@@ -1,0 +1,23 @@
+# "zai"
+
+Source URL: /providers/zai/
+
+## Package
+
+`@ai-sdk/zai`
+
+## Factories
+
+`AIProviders.zai`
+
+## Capabilities
+
+- Language
+
+## Notes
+
+Z.AI mirrors upstream 3.0.15: lazy `ZAI_API_KEY` bearer authentication, custom base URL and headers, callable/language/chat aliases plus the default `zai` provider, `zai.chat` provider IDs, versioned user-agent suffix, current and forward-compatible GLM model IDs, HTTP(S) image/video inputs, validated `providerOptions.zai` sampling/thinking/reasoning/tool-stream/request/user controls, published unsupported-option and tool-choice warnings, exact request transforms, ordered text/reasoning/tool content including null-content terminal responses, cache-aware usage, transformed request and provider metadata, raw streaming chunks, incremental tool arguments, special finish-reason mappings, abort propagation, and flat or nested Z.AI errors. Embedding and image-generation families are unsupported. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript inference, and workflow serialization helpers are JS-only upstream concerns.
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](/providers/).

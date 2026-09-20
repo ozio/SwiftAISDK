@@ -64,18 +64,23 @@ test (`test-d`) paths.
 
 ## Provider State
 
-The 2026-09-20 weekly pass audits all 50 tracked core and provider/product
-rows: 18 are `ported`, two are `covered` by shared behavior, and 27 are
-`version-only` package-local dependency or identity synchronization.
+The 2026-09-20 weekly pass audited the 50 previously tracked core and
+provider/product rows: 18 were `ported`, two were `covered` by shared behavior,
+and 27 were `version-only` package-local dependency or identity synchronization.
 `@ai-sdk/react` remains out of scope, while LMNT and Vercel were already
-current.
+current. A separately authorized same-day follow-up ports
+`@ai-sdk/typesafe-ai@3.0.4` and `@ai-sdk/zai@3.0.15`, bringing the version
+inventory to 52 tracked packages: 48 provider rows in the version ledger and
+four core snapshots in the core parity ledger.
 
-Exact registry-prefix discovery finds 87 live `@ai-sdk/*` names and 38
-untracked scoped packages. Two of those are unported providers:
-`@ai-sdk/zai@3.0.15` and the newly published evaluation-only
-`@ai-sdk/typesafe-ai@3.0.4`. They remain explicit future verticals rather than
-being silently added without complete runtime, test, capability, and
-documentation coverage.
+Exact registry-prefix discovery finds 87 live `@ai-sdk/*` names. The ledger
+now tracks both provider packages discovered by that audit, leaving 36
+untracked scoped packages and no known unported model-provider package. The
+remaining untracked names are framework adapters, harness/workflow products,
+UI bindings, telemetry, schemas, development tooling, or empty reservation
+packages. In particular, provider-like `@ai-sdk/spacexai@0.0.0` is not a
+model-provider release: its registry artifact contains one 46-byte file and no
+description, public API, or implementation to port.
 
 Core work adds the Evaluation V4 facade and provider adapters; dynamic local
 and provider tool callers across generate, stream, and agent orchestration;
@@ -101,8 +106,9 @@ documented compatibility shim for the removed upstream chat surface.
 
 Deliberate deferred boundaries are browser WebRTC and its client-permission
 startup options, provider-backed Responses delegation, non-Live OpenAI
-Realtime models, Google Realtime 3.8, the unported Z.AI and Typesafe AI
-providers, and JavaScript-only Node/React runtime behavior.
+Realtime models, Google Realtime 3.8, and JavaScript-only Node/React runtime
+behavior. Z.AI and TypeSafe AI are now complete provider verticals; their
+JavaScript workflow serialization helpers remain runtime-specific.
 
 The 2026-09-13 weekly pass audits all 50 tracked core and provider/product
 rows: 48 published deltas plus the current `@ai-sdk/lmnt@3.0.36` and
@@ -198,9 +204,9 @@ parsed stream-end output, and active UI parts were already covered. Typed
 UI-tool schema conversion, automatic denied-chat submission/outcomes,
 byte-array approval secrets, true image request splitting/per-call metadata,
 and cost aggregation across split Gateway calls remain broader core/media
-gaps. `@ai-sdk/zai` needs its own factory, auth/base URL, chat options,
-warnings/errors, media conversion, registry/capability row, and focused tests
-before it can be represented.
+gaps. The Z.AI vertical that this historical pass identified was completed in
+the 2026-09-20 follow-up with factory/auth, options, errors, media conversion,
+registry/capability evidence, and focused tests.
 
 The 2026-08-24 weekly pass advances 45 provider/product baselines plus `ai`,
 `@ai-sdk/provider-utils`, and `@ai-sdk/react`; `@ai-sdk/provider` and
@@ -273,12 +279,13 @@ defines one built-in terminal outcome per logical response. Cross-surface regres
 cover text and reasoning collection, structured output, UI reduction, tool
 loops, in-band errors, thrown failures, and provider terminal behavior.
 
-Exact registry-prefix discovery on 2026-09-13 finds 86 live `@ai-sdk/*`
-packages. Swift represents every provider-classified package except
-`@ai-sdk/zai@3.0.10`. Of the 37 untracked scoped packages, the other 36 are framework adapters,
-harness/sandbox/workflow products, UI bindings, telemetry or development
-tooling rather than provider model packages; they need separate product
-decisions and shared runtime foundations instead of automatic provider ports.
+Exact registry-prefix discovery on 2026-09-13 found 86 live `@ai-sdk/*`
+packages and identified `@ai-sdk/zai@3.0.10` as the sole provider gap at that
+time. Z.AI was subsequently ported at 3.0.15 on 2026-09-20. The other untracked
+scoped packages were framework adapters, harness/sandbox/workflow products, UI
+bindings, telemetry, or development tooling rather than provider model
+packages; they need separate product decisions and shared runtime foundations
+instead of automatic provider ports.
 
 Do not reopen a provider just because it might have drifted. Reopen it only when
 one of these is true:
@@ -297,8 +304,6 @@ one of these is true:
 | --- | --- | --- |
 | P0 | Completion evidence can drift as npm packages and upstream tests change. | Before release, rerun package discovery, regenerate upstream inventory, compare ledgers, run full `swift test`, and record the audit. |
 | P0 | Live verification is representative, not exhaustive. | Add opt-in live smoke only for distinct transport families or concrete production risks. Keep it disabled by default. |
-| P1 | `@ai-sdk/zai@3.0.15` is a published provider and is not represented in Swift. | Port one complete Z.AI language vertical: factory/auth/base URL, current chat options and warnings, structured errors, media conversion, registry/capability evidence, focused tests, and public docs. |
-| P1 | `@ai-sdk/typesafe-ai@3.0.4` is a newly published evaluation-only provider and is not represented in Swift. | Reuse the completed Evaluation V4 contract to port the Typesafe AI factory/auth/base URL, Choice/Score/Boolean request and answer mapping, rounding/confidence/usage metadata, validation/errors, registry evidence, tests, and docs as one vertical. |
 | P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
 | P1 | xAI realtime and OpenAI Live server WebSocket are represented, but browser WebRTC/client permissions, provider-backed Responses delegation, non-Live OpenAI Realtime, Google Realtime 3.8, ElevenLabs realtime STT, and streaming translation remain deferred. | Extend `AIRealtimeModelV4` one complete transport/provider vertical at a time; do not advertise browser or delegation modes until their native lifecycle is implemented and tested. |
 | P1 | Batch V4 has Anthropic, OpenAI Responses, Gateway, Google, and xAI adapters. Async Video V4 has Black Forest Labs, Fal, ByteDance, and Gateway adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |

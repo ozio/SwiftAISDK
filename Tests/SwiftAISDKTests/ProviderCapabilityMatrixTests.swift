@@ -54,9 +54,11 @@ import Testing
         "@ai-sdk/replicate",
         "@ai-sdk/revai",
         "@ai-sdk/togetherai",
+        "@ai-sdk/typesafe-ai",
         "@ai-sdk/vercel",
         "@ai-sdk/voyage",
-        "@ai-sdk/xai"
+        "@ai-sdk/xai",
+        "@ai-sdk/zai"
     ]
 
     let actualPackages = Set(AIProviderCapabilities.all.map(\.upstreamPackage))
@@ -135,4 +137,16 @@ import Testing
     let gmiCloudRow = try #require(AIProviderCapabilities.row(providerID: "gmicloud"))
     #expect(gmiCloudRow.supportedCapabilities == gmiCloud.supportedCapabilities)
     #expect(gmiCloudRow.supports(.language))
+
+    let typeSafeAI = AIProviders.typeSafeAI(settings: ProviderSettings(environment: [:]))
+    let typeSafeAIRow = try #require(AIProviderCapabilities.row(providerID: "typesafe"))
+    #expect(typeSafeAIRow.supportedCapabilities == typeSafeAI.supportedCapabilities)
+    #expect(typeSafeAIRow.supports(.evaluation))
+    #expect(!typeSafeAIRow.supports(.language))
+
+    let zai = AIProviders.zai(settings: ProviderSettings(apiKey: "zai-key"))
+    let zaiRow = try #require(AIProviderCapabilities.row(providerID: "zai"))
+    #expect(zaiRow.supportedCapabilities == zai.supportedCapabilities)
+    #expect(zaiRow.supports(.language))
+    #expect(!zaiRow.supports(.embedding))
 }

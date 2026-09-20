@@ -20,6 +20,25 @@ Status meanings:
   provider-facing Swift package does not expose.
 - `current`: the tracked package has no published version drift.
 
+## 2026-09-20 Authorized Provider Follow-up
+
+After the weekly audit identified two provider gaps, the user separately
+authorized both complete vertical ports. The tracked inventory now contains
+52 packages: 48 provider rows in the version ledger and four core snapshots in
+the core parity ledger. The same exact registry-prefix set of 87 packages leaves 36
+untracked scoped names with no known unported model provider.
+The provider-like `@ai-sdk/spacexai@0.0.0` name remains an unclassified empty
+reservation rather than a port candidate: registry metadata reports one
+46-byte file and no description, public API, or implementation.
+
+| Package | Baseline | Result |
+| --- | ---: | --- |
+| `@ai-sdk/typesafe-ai` | `3.0.4` | `ported` — Adds the native Evaluation V4 `/systemone` provider with lazy auth, Choice/Score/Boolean conversion, limits, warnings, confidence/usage/rounding metadata, structured errors, registry/capability coverage, and translated upstream tests. |
+| `@ai-sdk/zai` | `3.0.15` | `ported` — Adds the GLM chat provider with lazy auth, published options and request transforms, tool-choice warnings, image/video URL input, generated and streamed reasoning/tool/usage handling, finish mappings, structured errors, registry/capability coverage, and translated upstream tests. |
+
+JavaScript workflow serialization and TypeScript-only inference remain
+runtime/package concerns rather than missing Swift provider behavior.
+
 ## 2026-09-20 Weekly Audit
 
 Fresh npm metadata, all 96 old/latest tarballs for the 48 drifted rows, and

@@ -8,12 +8,12 @@ description: Public SwiftAISDK APIs for provider models.
 | Symbol kind | Count |
 | --- | --- |
 | Case | 10 |
-| Class | 120 |
+| Class | 122 |
 | Enumeration | 13 |
 | Function | 3 |
 | Initializer | 9 |
-| Instance Method | 213 |
-| Instance Property | 312 |
+| Instance Method | 216 |
+| Instance Property | 319 |
 | Structure | 6 |
 | Type Alias | 3 |
 | Type Method | 90 |
@@ -142,6 +142,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `RevAITranscriptionModel` | `final class RevAITranscriptionModel` | [Sources/SwiftAISDK/Models/RevAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/RevAIAudioModels.swift) |
 | Class | `TogetherAIImageModel` | `final class TogetherAIImageModel` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Class | `TogetherAIRerankingModel` | `final class TogetherAIRerankingModel` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
+| Class | `TypeSafeAIEvaluationModel` | `final class TypeSafeAIEvaluationModel` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Class | `VoyageEmbeddingModel` | `final class VoyageEmbeddingModel` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Class | `VoyageRerankingModel` | `final class VoyageRerankingModel` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Class | `XAIBatchProvider` | `final class XAIBatchProvider` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
@@ -152,6 +153,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Class | `XAISpeechModel` | `final class XAISpeechModel` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Class | `XAITranscriptionModel` | `final class XAITranscriptionModel` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Class | `XAIVideoModel` | `final class XAIVideoModel` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
+| Class | `ZAILanguageModel` | `final class ZAILanguageModel` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
 | Enumeration | `AmazonBedrockChatModelFamily` | `enum AmazonBedrockChatModelFamily` | [Sources/SwiftAISDK/Models/AmazonBedrockModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockModels.swift) |
 | Enumeration | `AmazonBedrockEmbeddingModelFamily` | `enum AmazonBedrockEmbeddingModelFamily` | [Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockEmbeddingModel.swift) |
 | Enumeration | `AnthropicTools` | `enum AnthropicTools` | [Sources/SwiftAISDK/Models/AnthropicModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicModels.swift) |
@@ -193,6 +195,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `doCreateClientSecret(_:)` | `func doCreateClientSecret(_ options: AIRealtimeClientSecretOptions = .init()) async throws -> AIRealtimeClientSecretResult` | [Sources/SwiftAISDK/Models/XAIRealtimeModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIRealtimeModel.swift) |
 | Instance Method | `doEvaluate(_:)` | `func doEvaluate(_ options: AIEvaluationModelV4CallOptions) async throws -> AIEvaluationModelV4Result` | [Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift) |
 | Instance Method | `doEvaluate(_:)` | `func doEvaluate(_ options: AIEvaluationModelV4CallOptions) async throws -> AIEvaluationModelV4Result` | [Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift) |
+| Instance Method | `doEvaluate(_:)` | `func doEvaluate(_ options: AIEvaluationModelV4CallOptions) async throws -> AIEvaluationModelV4Result` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Instance Method | `downloadFile(_:)` | `func downloadFile(_ request: FileDownloadRequest) async throws -> FileDownloadResult` | [Sources/SwiftAISDK/Models/FileClients.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FileClients.swift) |
 | Instance Method | `downloadFile(_:)` | `func downloadFile(_ request: FileDownloadRequest) async throws -> FileDownloadResult` | [Sources/SwiftAISDK/Models/FileClients.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FileClients.swift) |
 | Instance Method | `embed(_:)` | `func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult` | [Sources/SwiftAISDK/Models/AlibabaEmbeddingModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AlibabaEmbeddingModel.swift) |
@@ -230,6 +233,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `generate(_:)` | `func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult` | [Sources/SwiftAISDK/Models/PerplexityModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityModels.swift) |
 | Instance Method | `generate(_:)` | `func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
 | Instance Method | `generate(_:)` | `func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
+| Instance Method | `generate(_:)` | `func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
 | Instance Method | `generateAudio(_:)` | `func generateAudio(_ request: AudioGenerationRequest) async throws -> AudioGenerationResult` | [Sources/SwiftAISDK/Models/ElevenLabsExtendedAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ElevenLabsExtendedAudioModels.swift) |
 | Instance Method | `generateAudio(_:)` | `func generateAudio(_ request: AudioGenerationRequest) async throws -> AudioGenerationResult` | [Sources/SwiftAISDK/Models/ElevenLabsExtendedAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ElevenLabsExtendedAudioModels.swift) |
 | Instance Method | `generateImage(_:)` | `func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult` | [Sources/SwiftAISDK/Models/AmazonBedrockImageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockImageModel.swift) |
@@ -361,6 +365,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/PerplexityModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/PerplexityModels.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/ProdiaMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ProdiaMediaModels.swift) |
 | Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
+| Instance Method | `stream(_:)` | `func stream(_ request: LanguageModelRequest) -> AsyncThrowingStream<LanguageStreamPart, Error>` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AssemblyAIAudioModels.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/CartesiaTranscriptionModel.swift) |
 | Instance Method | `transcribe(_:)` | `func transcribe(_ request: AudioTranscriptionRequest) async throws -> TranscriptionResult` | [Sources/SwiftAISDK/Models/DeepgramAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/DeepgramAudioModels.swift) |
@@ -539,6 +544,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/RevAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/RevAIAudioModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
@@ -547,6 +553,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/XAIRealtimeModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIRealtimeModel.swift) |
 | Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
+| Instance Property | `modelID` | `let modelID: String` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
 | Instance Property | `modelURL` | `var modelURL: String?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `name` | `var name: String?` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `nodeIDs` | `var nodeIDs: [String]` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
@@ -663,6 +670,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/RevAIAudioModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/RevAIAudioModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TogetherAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TogetherAIModels.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/VoyageModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/VoyageModels.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/XAIModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIModels.swift) |
@@ -672,18 +680,21 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/XAIRealtimeModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIRealtimeModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
 | Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
+| Instance Property | `providerID` | `let providerID: String` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
 | Instance Property | `publishedAfter` | `var publishedAfter: String?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `publishedBefore` | `var publishedBefore: String?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `queryParams` | `var queryParams: [String : String]` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `snippetMaxCharacters` | `var snippetMaxCharacters: Int?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `specificationVersion` | `let specificationVersion: String` | [Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift) |
 | Instance Property | `specificationVersion` | `let specificationVersion: String` | [Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift) |
+| Instance Property | `specificationVersion` | `let specificationVersion: String` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Instance Property | `strict` | `var strict: Bool?` | [Sources/SwiftAISDK/Models/GatewayModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayModels.swift) |
 | Instance Property | `strictResponseInput` | `var strictResponseInput: Bool` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `supportedFileOperations` | `var supportedFileOperations: Set<AIFileOperation> { get }` | [Sources/SwiftAISDK/Models/FileClients.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FileClients.swift) |
 | Instance Property | `supportedFileOperations` | `let supportedFileOperations: Set<AIFileOperation>` | [Sources/SwiftAISDK/Models/FileClients.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FileClients.swift) |
 | Instance Property | `supportedQuestionTypes` | `let supportedQuestionTypes: [AIEvaluationQuestionType]` | [Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/EvaluationLanguageModel.swift) |
 | Instance Property | `supportedQuestionTypes` | `let supportedQuestionTypes: [AIEvaluationQuestionType]` | [Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/GatewayEvaluationModel.swift) |
+| Instance Property | `supportedQuestionTypes` | `let supportedQuestionTypes: [AIEvaluationQuestionType]` | [Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/TypesafeAIEvaluationModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AmazonBedrockLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/AnthropicBatchLanguageModel.swift) |
@@ -694,6 +705,7 @@ description: Public SwiftAISDK APIs for provider models.
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/OpenAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAIResponsesBatchLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
 | Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/XAIResponsesBatchLanguageModel.swift) |
+| Instance Property | `supportedURLs` | `let supportedURLs: [String : [AISupportedURLPattern]]` | [Sources/SwiftAISDK/Models/ZAILanguageModel.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/ZAILanguageModel.swift) |
 | Instance Property | `supportsStructuredOutputs` | `var supportsStructuredOutputs: Bool` | [Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/OpenAICompatibleConfig.swift) |
 | Instance Property | `supportsUnaryVideoGeneration` | `let supportsUnaryVideoGeneration: Bool` | [Sources/SwiftAISDK/Models/FalMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalMediaModels.swift) |
 | Instance Property | `supportsVideoGenerationWebhooks` | `let supportsVideoGenerationWebhooks: Bool` | [Sources/SwiftAISDK/Models/FalMediaModels.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Models/FalMediaModels.swift) |

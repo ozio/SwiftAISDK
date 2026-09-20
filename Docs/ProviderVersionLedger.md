@@ -59,6 +59,8 @@ source and behavior review.
 | `@ai-sdk/replicate` | `3.0.46` | `AIProviders.replicate`, `ReplicateImageModel`, `ReplicateVideoModel`, `ReplicateProviderTests.swift` |
 | `@ai-sdk/revai` | `3.0.45` | `AIProviders.revAI`, `RevAITranscriptionModel`, `RevAIProviderTests.swift` |
 | `@ai-sdk/togetherai` | `3.0.54` | `AIProviders.togetherAI`, `TogetherAIImageModel`, `TogetherAIRerankingModel`, `TogetherAIProviderTests.swift` |
+| `@ai-sdk/typesafe-ai` | `3.0.4` | `AIProviders.typeSafeAI`, `TypeSafeAIProvider`, `TypeSafeAIEvaluationModel`, `TypesafeAIProviderTests.swift` |
 | `@ai-sdk/vercel` | `3.0.30` | `AIProviders.vercel`, `VercelProvider`, `ProviderRegistryVercelTests.swift` |
 | `@ai-sdk/voyage` | `2.0.45` | `AIProviders.voyage`, `VoyageEmbeddingModel`, `VoyageRerankingModel`, `VoyageProviderOptionSchemaTests.swift` |
 | `@ai-sdk/xai` | `5.0.4` | `AIProviders.xAI`, `XAIResponses.swift`, `XAIResponsesBatchLanguageModel.swift`, `XAITools`, `XAIImageModel`, `XAIVideoModel`, `XAIProviderTests.swift`, `ProviderGroupBUpstreamParity20260831Tests.swift` |
+| `@ai-sdk/zai` | `3.0.15` | `AIProviders.zai`, `ZAIProvider`, `ZAILanguageModel`, `ZAIProviderTests.swift` |

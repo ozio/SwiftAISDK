@@ -1,0 +1,24 @@
+---
+title: "typesafe"
+description: "typesafe provider capabilities and factories."
+---
+
+## Package
+
+`@ai-sdk/typesafe-ai`
+
+## Factories
+
+`AIProviders.typeSafeAI`
+
+## Capabilities
+
+- Evaluation
+
+## Notes
+
+TypeSafe AI mirrors upstream 3.0.4 as an Evaluation V4-only provider: exact `createTypeSafeAi`/`typeSafeAi` exports plus Swift acronym-cased aliases, lazy `TYPESAFE_AI_API_KEY` bearer authentication, custom base URL and headers, versioned user-agent suffix, `/systemone` Choice/Score/Boolean evaluation with Boolean-to-`noul` mapping, published 255-choice and 10-score limits, unsupported provider-option warnings, two-decimal rounding, optional usage, confidence metadata, response model/header/body preservation, abort forwarding, and structured error-envelope precedence with retryability. Language, embedding, image, and other model families are unsupported. ProviderV4 type names, ESM-only packaging, Node 22 engines, TypeScript branded IDs, and workflow serialization helpers are JS-only upstream concerns.
+
+Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
+
+Return to the [provider matrix](/providers/).

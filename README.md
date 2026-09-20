@@ -42,7 +42,7 @@ print(result.text)
 
 Provider factories read their upstream-style environment variables by default,
 for example `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`,
-and `GEMINI_API_KEY`. Provider-specific defaults live in the corresponding
+`GEMINI_API_KEY`, `TYPESAFE_AI_API_KEY`, and `ZAI_API_KEY`. Provider-specific defaults live in the corresponding
 factory in `Sources/SwiftAISDK/Providers/ProviderRegistry.swift`. You can also
 pass credentials explicitly:
 
@@ -541,7 +541,8 @@ Swift lifecycle.
 
 `AI.experimentalEvaluate` evaluates Choice, Score, and Boolean questions over
 one shared JSON state. OpenAI, Anthropic, and Google adapt their structured
-language models; Gateway can call a native Evaluation V4 model directly.
+language models; Gateway and TypeSafe AI can call native Evaluation V4 models
+directly.
 
 ```swift
 let anthropic = try AIProviders.anthropic()
@@ -575,6 +576,17 @@ let result = try await AI.experimentalEvaluate(
 Answers keep the caller's question IDs and preserve provider usage, warnings,
 metadata, response headers/body, and declared rounding. Model IDs can also be
 resolved through `AIProviderRegistry` or `customProvider`.
+
+TypeSafe AI uses its native System One evaluator:
+
+```swift
+let typeSafe = AIProviders.typeSafeAI()
+let evaluator = try typeSafe.evaluationModel("jev-latest")
+```
+
+Z.AI exposes its GLM chat surface through `AIProviders.zai()` with
+`providerOptions.zai` controls for sampling, thinking, reasoning effort, tool
+streaming, and request/user identifiers.
 
 ## Realtime Sessions
 

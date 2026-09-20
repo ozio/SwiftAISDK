@@ -13,8 +13,8 @@ SwiftAISDK groups public APIs into component areas so you can browse exact types
 | [MCP](mcp/) | 413 |
 | [Media](media/) | 82 |
 | [Middleware](middleware/) | 101 |
-| [Provider models](provider-models/) | 779 |
-| [Providers](providers/) | 576 |
+| [Provider models](provider-models/) | 791 |
+| [Providers](providers/) | 615 |
 | [Structured output](structured-output/) | 298 |
 | [Telemetry](telemetry/) | 65 |
 | [Tools](tools/) | 265 |

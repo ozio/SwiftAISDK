@@ -88,8 +88,10 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - ["replicate"](/llms/providers/replicate.txt): "replicate provider capabilities and factories."
 - ["revai"](/llms/providers/revai.txt): "revai provider capabilities and factories."
 - ["togetherai"](/llms/providers/togetherai.txt): "togetherai provider capabilities and factories."
+- ["typesafe"](/llms/providers/typesafe.txt): "typesafe provider capabilities and factories."
 - ["vercel"](/llms/providers/vercel.txt): "vercel provider capabilities and factories."
 - ["voyage"](/llms/providers/voyage.txt): "voyage provider capabilities and factories."
 - ["xai"](/llms/providers/xai.txt): "xai provider capabilities and factories."
+- ["zai"](/llms/providers/zai.txt): "zai provider capabilities and factories."
 - [Public symbols](/llms/reference/generated/public-symbols.txt): Generated public SwiftAISDK symbol table.
 - [Troubleshooting](/llms/troubleshooting.txt): Diagnose common SwiftAISDK setup and runtime issues.

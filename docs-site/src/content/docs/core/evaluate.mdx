@@ -4,6 +4,10 @@ description: Evaluate shared JSON state with typed Choice, Score, and Boolean qu
 ---
 
 `AI.experimentalEvaluate` is the provider-neutral Evaluation Model V4 facade.
+TypeSafe AI exposes its native `/systemone` evaluator through
+`AIProviders.typeSafeAI().evaluationModel("jev-latest")`; OpenAI, Anthropic,
+and Google adapt language models, while Gateway exposes its native evaluation
+endpoint.
 It sends one shared JSON state and a keyed question map, validates provider
 support and every returned answer, retries transient failures, and preserves
 usage, warnings, rounding, provider metadata, and response metadata.

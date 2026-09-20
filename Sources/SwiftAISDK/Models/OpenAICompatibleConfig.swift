@@ -480,6 +480,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var openAIBackedProviderRoot: String?
     var usesGenericOpenAICompatibleProviderOptions: Bool
     var deepSeekSupportsThinking: Bool
+    var allowsEmptyTextResponse: Bool
     var failedResponseHandling: ModelHTTPFailedResponseHandling
     var url: @Sendable (String, String) throws -> URL
 
@@ -501,6 +502,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         openAIBackedProviderRoot: String? = nil,
         usesGenericOpenAICompatibleProviderOptions: Bool = false,
         deepSeekSupportsThinking: Bool = true,
+        allowsEmptyTextResponse: Bool = false,
         failedResponseHandling: ModelHTTPFailedResponseHandling = .raw,
         url: (@Sendable (String, String) throws -> URL)? = nil
     ) {
@@ -522,6 +524,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.openAIBackedProviderRoot = openAIBackedProviderRoot
         self.usesGenericOpenAICompatibleProviderOptions = usesGenericOpenAICompatibleProviderOptions
         self.deepSeekSupportsThinking = deepSeekSupportsThinking
+        self.allowsEmptyTextResponse = allowsEmptyTextResponse
         self.failedResponseHandling = failedResponseHandling
         self.url = url ?? { _, path in
             try openAICompatibleURL("\(normalizedBaseURL)\(path)", queryParams: queryParams)
@@ -598,6 +601,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: deepSeekSupportsThinking,
+            allowsEmptyTextResponse: allowsEmptyTextResponse,
             failedResponseHandling: failedResponseHandling,
             url: url
         )
@@ -621,6 +625,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: supportsThinking,
+            allowsEmptyTextResponse: allowsEmptyTextResponse,
             failedResponseHandling: failedResponseHandling,
             url: url
         )
@@ -644,6 +649,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: deepSeekSupportsThinking,
+            allowsEmptyTextResponse: allowsEmptyTextResponse,
             failedResponseHandling: failedResponseHandling,
             url: url
         )
@@ -666,6 +672,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
             explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
+            deepSeekSupportsThinking: deepSeekSupportsThinking,
+            allowsEmptyTextResponse: allowsEmptyTextResponse,
             failedResponseHandling: failedResponseHandling
         )
     }

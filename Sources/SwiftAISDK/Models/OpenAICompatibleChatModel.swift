@@ -33,6 +33,13 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             )
         }
         let choice: JSONValue? = choices[0]
+        if config.allowsEmptyTextResponse,
+           !isValidNullableChatMessage(choice?["message"]) {
+            throw AIError.invalidResponse(
+                provider: providerID,
+                message: "Chat completion choice did not contain a valid assistant message."
+            )
+        }
         let toolCalls = openAICompatibleChatToolCalls(
             from: choice?["message"]?["tool_calls"],
             providerMetadataNamespace: metadataNamespace
@@ -62,12 +69,15 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         }
         orderedContent.append(contentsOf: toolCalls.map(AIResultContentPart.toolCall))
         let contentValue = choice?["message"]?["content"]
+        let legacyText = config.allowsEmptyTextResponse
+            ? nil
+            : choice?["text"]?.stringValue
+                ?? raw["output_text"]?.stringValue
+                ?? raw["text"]?.stringValue
         let text = contentValue?.stringValue
             ?? (contentValue?.arrayValue != nil ? contentText : nil)
-            ?? choice?["text"]?.stringValue
-            ?? raw["output_text"]?.stringValue
-            ?? raw["text"]?.stringValue
-        guard let text = text ?? (toolCalls.isEmpty ? nil : "") else {
+            ?? legacyText
+        guard let text = text ?? (toolCalls.isEmpty && !config.allowsEmptyTextResponse ? nil : "") else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in chat completion response.")
         }
         return TextGenerationResult(
@@ -630,6 +640,24 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             "role": .string(systemRole ?? message.role.rawValue),
             "content": .array(parts)
         ])
+    }
+}
+
+private func isValidNullableChatMessage(_ value: JSONValue?) -> Bool {
+    guard let message = value?.objectValue else { return false }
+
+    if let role = message["role"], role != .null, role.stringValue != "assistant" {
+        return false
+    }
+
+    guard let content = message["content"] else { return true }
+    switch content {
+    case .null, .string:
+        return true
+    case let .array(parts):
+        return parts.allSatisfy { $0.objectValue?["type"]?.stringValue != nil }
+    case .bool, .number, .object:
+        return false
     }
 }
 

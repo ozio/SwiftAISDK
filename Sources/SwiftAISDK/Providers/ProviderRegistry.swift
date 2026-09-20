@@ -196,6 +196,14 @@ public enum AIProviders {
         try GMICloudProvider(settings: settings)
     }
 
+    public static func typeSafeAI(settings: ProviderSettings = ProviderSettings()) -> TypeSafeAIProvider {
+        createTypeSafeAI(settings: settings)
+    }
+
+    public static func zai(settings: ZAIProviderSettings = ZAIProviderSettings()) -> ZAIProvider {
+        createZai(settings: settings)
+    }
+
     public static func deepInfra(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         try OpenAICompatibleProvider(providerID: "deepinfra", defaultBaseURL: "https://api.deepinfra.com/v1", authorization: .bearer(environmentVariables: ["DEEPINFRA_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image], settings: settings)
     }
