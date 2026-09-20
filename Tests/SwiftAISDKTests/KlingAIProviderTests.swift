@@ -637,23 +637,20 @@ import Testing
     let provider = try AIProviders.klingAI(settings: ProviderSettings(apiKey: "kling-token", transport: transport))
     let model = try provider.videoModel("kling-v2.6-t2v")
 
-    let task = Task {
-        try await model.generateVideo(VideoGenerationRequest(
-            prompt: "delayed poll",
-            providerOptions: ["klingai": .object([
-                "mode": .string("std"),
-                "pollIntervalMs": .number(100),
-                "pollTimeoutMs": .number(1_000)
-            ])]
-        ))
-    }
+    let started = DispatchTime.now().uptimeNanoseconds
+    let result = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "delayed poll",
+        providerOptions: ["klingai": .object([
+            "mode": .string("std"),
+            "pollIntervalMs": .number(100),
+            "pollTimeoutMs": .number(1_000)
+        ])]
+    ))
+    let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - started
 
-    try await Task.sleep(nanoseconds: 20_000_000)
-    #expect((await transport.requests()).count == 1)
-
-    let result = try await task.value
     #expect(result.urls == ["https://kling.example.com/delayed.mp4"])
     #expect((await transport.requests()).count == 2)
+    #expect(elapsedNanoseconds >= 80_000_000)
 }
 
 @Test func klingAIRejectsUnknownModelsAndMissingMotionOptions() async throws {
