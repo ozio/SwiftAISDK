@@ -150,7 +150,7 @@ import Testing
         instructions: "Answer"
     ))
     try await session.cancelResponse()
-    await session.cancel(reason: "client-finished")
+    await session.close(code: 1000, reason: "client-finished")
 
     let sent = try webSocket.connection.sentJSONMessages()
     #expect(sent.dropFirst() == [
@@ -210,6 +210,61 @@ import Testing
     } catch let error as AIRealtimeSessionError {
         #expect(error == .closed)
     }
+}
+
+@Test func realtimeV4ReleasedSurfaceRemainsNonthrowingThroughExistential() throws {
+    let model: any AIRealtimeModelV4 = RealtimeFoundationTestModel()
+    let socket = model.getWebSocketConfig(
+        token: "released-token",
+        url: "wss://example.test/released"
+    )
+    #expect(socket.url == "wss://example.test/released")
+
+    let configuration = AIRealtimeSessionConfiguration(
+        instructions: "Released API"
+    )
+    let session = model.buildSessionConfig(configuration)
+    #expect(session["instructions"]?.stringValue == "Released API")
+    #expect(try model.getValidatedWebSocketConfig(
+        token: "released-token",
+        url: "wss://example.test/released"
+    ) == socket)
+    #expect(try model.buildValidatedSessionConfig(configuration) == session)
+
+    let update = AIRealtimeClientEvent.sessionUpdate(configuration)
+    guard case let .sessionUpdate(recoveredConfiguration) = update else {
+        Issue.record("Expected the released unary sessionUpdate case")
+        return
+    }
+    #expect(recoveredConfiguration == configuration)
+
+    let append = AIRealtimeClientEvent.inputAudioAppend(audio: "AAAA")
+    guard case let .inputAudioAppend(audio) = append else {
+        Issue.record("Expected the released unary inputAudioAppend case")
+        return
+    }
+    #expect(audio == "AAAA")
+
+    let raw: JSONValue = ["type": "error"]
+    let error = AIRealtimeServerEvent.error(
+        message: "released",
+        code: "released-code",
+        raw: raw
+    )
+    guard case let .error(message, code, recoveredRaw) = error else {
+        Issue.record("Expected the released three-value error case")
+        return
+    }
+    #expect(message == "released")
+    #expect(code == "released-code")
+    #expect(recoveredRaw == raw)
+
+    let errors: Set<AIRealtimeSessionError> = [
+        .closed,
+        .connectionEndedBeforeOpening,
+        .unexpectedClosure(.init(code: 1006, reason: "abnormal"))
+    ]
+    #expect(errors.count == 3)
 }
 
 final class RealtimeFoundationTestModel:
@@ -280,12 +335,20 @@ final class RealtimeFoundationTestModel:
         _ event: AIRealtimeClientEvent
     ) async throws -> AIRealtimeWireMessage? {
         switch event {
-        case let .sessionUpdate(config):
+        case let .sessionUpdate(config),
+             let .sessionUpdateWithEventID(config, _):
             return .json([
                 "type": "session.update",
                 "session": buildSessionConfig(config)
             ])
-        case let .inputAudioAppend(audio):
+        case .sessionStart,
+             .sessionClose,
+             .inputAudioMute,
+             .inputAudioUnmute,
+             .contextAppend:
+            return nil
+        case let .inputAudioAppend(audio),
+             let .inputAudioAppendWithEventID(audio, _):
             return .json([
                 "type": "input_audio_buffer.append",
                 "audio": .string(audio)

@@ -184,3 +184,169 @@ import Testing
 
     try await transport.close()
 }
+
+@Test(arguments: [WeeklyMCP401Timing.simultaneous, .afterSave])
+func mcpHTTPTransportSharesOneRefreshForConcurrentAndLateStale401s(
+    _ timing: WeeklyMCP401Timing
+) async throws {
+    let bothOldRequestsStarted = WeeklyMCPAsyncLatch()
+    let refreshSaved = WeeklyMCPAsyncLatch()
+    let http = WeeklyMCP401RaceTransport(
+        timing: timing,
+        bothOldRequestsStarted: bothOldRequestsStarted,
+        refreshSaved: refreshSaved
+    )
+    let auth = WeeklyMCPRaceOAuthProvider(
+        timing: timing,
+        refreshSaved: refreshSaved
+    )
+    let transport = try MCPHTTPTransport(
+        url: "https://mcp.example.com/rpc",
+        transport: http,
+        authProvider: auth
+    )
+
+    async let first = transport.request([
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "resources/list"
+    ])
+    async let second = transport.request([
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "resources/list"
+    ])
+    let firstResult = try await first
+    let secondResult = try await second
+
+    #expect(firstResult["result"]?["ok"]?.boolValue == true)
+    #expect(secondResult["result"]?["ok"]?.boolValue == true)
+    #expect(await auth.authorizationCount() == 1)
+    #expect(await auth.invalidationCount() == 1)
+    #expect(await http.oldTokenRequestCount() == 2)
+    #expect(await http.refreshedTokenRequestCount() == 2)
+}
+
+enum WeeklyMCP401Timing: Sendable {
+    case simultaneous
+    case afterSave
+}
+
+private actor WeeklyMCPAsyncLatch {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
+}
+
+private actor WeeklyMCPRaceOAuthProvider: MCPOAuthProvider {
+    private let timing: WeeklyMCP401Timing
+    private let refreshSaved: WeeklyMCPAsyncLatch
+    private var token: String? = "access-old"
+    private var authorizations = 0
+    private var invalidations = 0
+
+    init(timing: WeeklyMCP401Timing, refreshSaved: WeeklyMCPAsyncLatch) {
+        self.timing = timing
+        self.refreshSaved = refreshSaved
+    }
+
+    func accessToken() -> String? {
+        token
+    }
+
+    func authorize(resourceMetadataURL: URL?) async throws -> Bool {
+        authorizations += 1
+        if timing == .simultaneous {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        token = "access-new"
+        await refreshSaved.open()
+        return true
+    }
+
+    func invalidateCredentials(_ scope: MCPOAuthCredentialScope) {
+        invalidations += 1
+        if scope == .all || scope == .tokens {
+            token = nil
+        }
+    }
+
+    func authorizationCount() -> Int { authorizations }
+    func invalidationCount() -> Int { invalidations }
+}
+
+private actor WeeklyMCP401RaceTransport: AITransport {
+    private let timing: WeeklyMCP401Timing
+    private let bothOldRequestsStarted: WeeklyMCPAsyncLatch
+    private let refreshSaved: WeeklyMCPAsyncLatch
+    private var oldRequests = 0
+    private var refreshedRequests = 0
+
+    init(
+        timing: WeeklyMCP401Timing,
+        bothOldRequestsStarted: WeeklyMCPAsyncLatch,
+        refreshSaved: WeeklyMCPAsyncLatch
+    ) {
+        self.timing = timing
+        self.bothOldRequestsStarted = bothOldRequestsStarted
+        self.refreshSaved = refreshSaved
+    }
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        let authorization = request.headers.first {
+            $0.key.caseInsensitiveCompare("authorization") == .orderedSame
+        }?.value
+
+        if authorization == "Bearer access-old" {
+            oldRequests += 1
+            let requestNumber = oldRequests
+            if oldRequests == 2 {
+                await bothOldRequestsStarted.open()
+            }
+            switch timing {
+            case .simultaneous:
+                await bothOldRequestsStarted.wait()
+            case .afterSave where requestNumber == 1:
+                await bothOldRequestsStarted.wait()
+            case .afterSave:
+                await refreshSaved.wait()
+            }
+            return AIHTTPResponse(statusCode: 401)
+        }
+
+        guard authorization == "Bearer access-new" else {
+            return AIHTTPResponse(statusCode: 401)
+        }
+        refreshedRequests += 1
+        let requestJSON = try JSONDecoder().decode(JSONValue.self, from: request.body ?? Data())
+        let responseJSON: JSONValue = [
+            "jsonrpc": "2.0",
+            "id": requestJSON["id"] ?? .null,
+            "result": ["ok": true]
+        ]
+        return AIHTTPResponse(
+            statusCode: 200,
+            headers: ["content-type": "application/json"],
+            body: try JSONEncoder().encode(responseJSON)
+        )
+    }
+
+    func oldTokenRequestCount() -> Int { oldRequests }
+    func refreshedTokenRequestCount() -> Int { refreshedRequests }
+}

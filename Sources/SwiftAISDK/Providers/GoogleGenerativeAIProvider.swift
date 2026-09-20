@@ -1,11 +1,12 @@
 import Foundation
 
-public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
-    public let providerID = "google.generative-ai"
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .speech, .video]
+public final class GoogleGenerativeAIProvider: AIProvider, AIEvaluationProvider, @unchecked Sendable {
+    public let providerID: String
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .speech, .video, .evaluation]
     private let config: ModelHTTPConfig
 
     public init(settings: ProviderSettings = ProviderSettings()) throws {
+        providerID = settings.name ?? "google.generative-ai"
         let headers = try OpenAICompatibleProvider.buildHeaders(
             providerID: providerID,
             authorization: .apiKeyHeader(name: "x-goog-api-key", environmentVariables: ["GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"]),
@@ -29,6 +30,14 @@ public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
 
     public func batchLanguageModel(_ modelID: String) -> any BatchLanguageModel {
         GoogleBatchLanguageModel(modelID: modelID, config: config)
+    }
+
+    /// Creates an experimental Choice/Score/Boolean evaluation model using Gemini.
+    public func evaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
+        EvaluationLanguageModel(
+            model: GoogleBatchLanguageModel(modelID: modelID, config: config),
+            providerID: googleEvaluationProviderID(from: providerID)
+        )
     }
 
     /// Provider-owned Batch V4 service. The model-bound factory above remains
@@ -72,4 +81,11 @@ public final class GoogleGenerativeAIProvider: AIProvider, @unchecked Sendable {
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
     }
+}
+
+private func googleEvaluationProviderID(from languageProviderID: String) -> String {
+    if languageProviderID.hasSuffix(".generative-ai") {
+        return String(languageProviderID.dropLast(".generative-ai".count)) + ".evaluation"
+    }
+    return languageProviderID + ".evaluation"
 }

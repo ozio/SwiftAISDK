@@ -417,6 +417,8 @@ func forwardLanguageStream(
 ) async throws -> LanguageStreamToolStep {
     var step = LanguageStreamToolStep()
     var inputToolNamesByID: [String: String] = [:]
+    var validatedToolContextIDs: Set<String> = []
+    var validatedToolContextsByID: [String: JSONValue] = [:]
     var toolCallsByID: [String: AIToolCall] = [:]
     var textPartIDs: [String: String] = [:]
     var reasoningPartIDs: [String: String] = [:]
@@ -425,6 +427,8 @@ func forwardLanguageStream(
         guard case let .part(part) = event else {
             step = LanguageStreamToolStep()
             inputToolNamesByID.removeAll()
+            validatedToolContextIDs.removeAll()
+            validatedToolContextsByID.removeAll()
             toolCallsByID.removeAll()
             textPartIDs.removeAll()
             reasoningPartIDs.removeAll()
@@ -463,36 +467,98 @@ func forwardLanguageStream(
         switch forwardedPart {
         case let .toolInputStart(id, name, _, _, _, _):
             inputToolNamesByID[id] = name
-            await toolsByName[name]?.onInputStart?(AIToolInputStartContext(
+            guard let tool = toolsByName[name], let callback = tool.onInputStart else { break }
+            let toolContext = try validatedStreamingToolContext(
+                toolCallID: id,
+                toolName: name,
+                tool: tool,
+                request: request,
+                validatedIDs: &validatedToolContextIDs,
+                cachedContexts: &validatedToolContextsByID
+            )
+            await callback(AIToolInputStartContext(
                 toolCallID: id,
                 messages: request?.messages ?? [],
                 abortSignal: request?.abortSignal,
-                toolContext: request?.toolContexts[name]
+                toolContext: toolContext
             ))
         case let .toolInputDelta(id, delta, _):
-            guard let name = inputToolNamesByID[id] else { break }
-            await toolsByName[name]?.onInputDelta?(AIToolInputDeltaContext(
+            guard let name = inputToolNamesByID[id],
+                  let tool = toolsByName[name],
+                  let callback = tool.onInputDelta else { break }
+            let toolContext = try validatedStreamingToolContext(
+                toolCallID: id,
+                toolName: name,
+                tool: tool,
+                request: request,
+                validatedIDs: &validatedToolContextIDs,
+                cachedContexts: &validatedToolContextsByID
+            )
+            await callback(AIToolInputDeltaContext(
                 toolCallID: id,
                 inputTextDelta: delta,
                 messages: request?.messages ?? [],
                 abortSignal: request?.abortSignal,
-                toolContext: request?.toolContexts[name]
+                toolContext: toolContext
             ))
         case let .toolCall(call):
             toolCallsByID[call.id] = call
-            guard shouldInvokeInputAvailable else { break }
-            await toolsByName[call.name]?.onInputAvailable?(AIToolInputAvailableContext(
+            let name = inputToolNamesByID[call.id] ?? call.name
+            defer {
+                inputToolNamesByID[call.id] = nil
+                validatedToolContextIDs.remove(call.id)
+                validatedToolContextsByID[call.id] = nil
+            }
+            guard shouldInvokeInputAvailable,
+                  let tool = toolsByName[name],
+                  let callback = tool.onInputAvailable else { break }
+            let toolContext = try validatedStreamingToolContext(
+                toolCallID: call.id,
+                toolName: name,
+                tool: tool,
+                request: request,
+                validatedIDs: &validatedToolContextIDs,
+                cachedContexts: &validatedToolContextsByID
+            )
+            await callback(AIToolInputAvailableContext(
                 toolCallID: call.id,
                 input: try toolInput ?? toolArguments(from: call),
                 messages: request?.messages ?? [],
                 abortSignal: request?.abortSignal,
-                toolContext: request?.toolContexts[call.name]
+                toolContext: toolContext
             ))
         default:
             break
         }
     }
     return step
+}
+
+private func validatedStreamingToolContext(
+    toolCallID: String,
+    toolName: String,
+    tool: AITool,
+    request: LanguageModelRequest?,
+    validatedIDs: inout Set<String>,
+    cachedContexts: inout [String: JSONValue]
+) throws -> JSONValue? {
+    if validatedIDs.contains(toolCallID) {
+        return cachedContexts[toolCallID]
+    }
+
+    let context: JSONValue?
+    if let rawContext = request?.toolContexts[toolName] {
+        context = try validateToolContext(
+            toolName: toolName,
+            context: rawContext,
+            contextSchema: tool.contextSchema
+        )
+    } else {
+        context = nil
+    }
+    validatedIDs.insert(toolCallID)
+    cachedContexts[toolCallID] = context
+    return context
 }
 
 private func remapLanguageStreamPartID(

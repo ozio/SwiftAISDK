@@ -23,6 +23,7 @@ SwiftAISDK is a SwiftPM port of the provider-facing Vercel AI SDK.
 - [Dubbing](/llms/core/dubbing.txt): Create and inspect provider dubbing jobs.
 - [Embeddings](/llms/core/embeddings.txt): Convert text into vectors for search, clustering, and retrieval.
 - [Error handling](/llms/core/error-handling.txt): Handle validation, provider, retry, timeout, abort, and output errors.
+- [Evaluation](/llms/core/evaluate.txt): Evaluate shared JSON state with typed Choice, Score, and Boolean questions.
 - [Files](/llms/core/files.txt): Upload, inspect, stream, and delete provider-managed files.
 - [Generate audio](/llms/core/generate-audio.txt): Generate provider audio that is not speech.
 - [Generate image](/llms/core/generate-image.txt): Create or edit images with an image model.

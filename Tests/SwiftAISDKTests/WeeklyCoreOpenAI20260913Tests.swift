@@ -28,7 +28,7 @@ struct WeeklyCoreOpenAI20260913Tests {
         #expect(started.batch.reference.providerID == provider.providerID)
         #expect(await provider.startedModalities() == ["text", "image"])
         #expect(await provider.startHeaders()["idempotency-key"] == "stable-key")
-        #expect(await provider.startHeaders()["user-agent"]?.contains("ai/7.0.99") == true)
+        #expect(await provider.startHeaders()["user-agent"]?.contains("ai/7.0.107") == true)
 
         _ = try await AI.cancelBatch(provider: provider, batch: started.batch.reference)
         let listed = try await AI.listBatches(

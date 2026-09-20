@@ -1,6 +1,6 @@
 import Foundation
 
-private let aiBatchUserAgent = "ai/7.0.99"
+private let aiBatchUserAgent = "ai/7.0.107"
 
 extension AI {
     /// Starts a provider-owned Batch V4 operation. Unlike the legacy text-only

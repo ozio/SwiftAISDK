@@ -1,5 +1,35 @@
 import Foundation
 
+func googleResponseJSONSchema(_ schema: JSONValue) -> JSONValue {
+    guard var object = schema.objectValue else { return schema }
+
+    if let constant = object.removeValue(forKey: "const") {
+        object["enum"] = .array([constant])
+    }
+    if let properties = object["properties"]?.objectValue {
+        object["properties"] = .object(properties.mapValues(googleResponseJSONSchema))
+    }
+    if let items = object["items"] {
+        if let itemSchemas = items.arrayValue {
+            object["items"] = .array(itemSchemas.map(googleResponseJSONSchema))
+        } else {
+            object["items"] = googleResponseJSONSchema(items)
+        }
+    }
+    if let additionalProperties = object["additionalProperties"], additionalProperties.boolValue == nil {
+        object["additionalProperties"] = googleResponseJSONSchema(additionalProperties)
+    }
+    for key in ["anyOf", "oneOf"] {
+        if let alternatives = object[key]?.arrayValue {
+            object[key] = .array(alternatives.map(googleResponseJSONSchema))
+        }
+    }
+    if let definitions = object["$defs"]?.objectValue {
+        object["$defs"] = .object(definitions.mapValues(googleResponseJSONSchema))
+    }
+    return .object(object)
+}
+
 func googleOpenAPISchema(from schema: JSONValue, isRoot: Bool) throws -> JSONValue? {
     let rootObject = schema.objectValue
     return try googleOpenAPISchema(

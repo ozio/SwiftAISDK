@@ -39,6 +39,14 @@ public enum AIDefaultProvider {
         return try AIProviders.gateway()
     }
 
+    public static func resolveEvaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
+        let provider = try resolved()
+        guard let evaluationProvider = provider as? any AIEvaluationProvider else {
+            throw AIEvaluationModelResolutionError.defaultProviderUnsupported(modelID: modelID)
+        }
+        return try validateEvaluationModelVersion(evaluationProvider.evaluationModel(modelID))
+    }
+
     public static func withProvider<Result>(
         _ provider: any AIProvider,
         operation: () throws -> Result
@@ -81,7 +89,7 @@ public enum AIProviderRegistryError: Error, Equatable, CustomStringConvertible, 
     }
 }
 
-public final class AIProviderRegistry: AIProvider, @unchecked Sendable {
+public final class AIProviderRegistry: AIProvider, AIEvaluationProvider, @unchecked Sendable {
     public let providerID: String
     public let supportedCapabilities: Set<ModelCapability>
 
@@ -148,6 +156,17 @@ public final class AIProviderRegistry: AIProvider, @unchecked Sendable {
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         let (providerID, routedModelID) = try split(modelID, modelType: "rerankingModel")
         return try provider(providerID, modelType: "rerankingModel").rerankingModel(routedModelID)
+    }
+
+    public func evaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
+        let (providerID, routedModelID) = try split(modelID, modelType: "evaluationModel")
+        let provider = try provider(providerID, modelType: "evaluationModel")
+        guard let evaluationProvider = provider as? any AIEvaluationProvider else {
+            throw AIEvaluationModelResolutionError.noSuchModel(modelID: modelID)
+        }
+        return try validateEvaluationModelVersion(
+            evaluationProvider.evaluationModel(routedModelID)
+        )
     }
 
     public func files(_ providerID: String) throws -> any AIFileClient {
@@ -270,7 +289,7 @@ public func experimentalCreateProviderRegistry(
     )
 }
 
-public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecked Sendable {
+public final class AICustomProvider: AIFileProvider, AISkillsProvider, AIEvaluationProvider, @unchecked Sendable {
     public let providerID: String
     public let supportedCapabilities: Set<ModelCapability>
 
@@ -281,6 +300,7 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecke
     private let speechModels: [String: any SpeechModel]
     private let videoModels: [String: any VideoModel]
     private let rerankingModels: [String: any RerankingModel]
+    private let evaluationModels: [String: AIEvaluationModelReference]
     private let filesClient: (any AIFileClient)?
     private let skillsClient: (any AISkillsClient)?
     private let fallbackProvider: (any AIProvider)?
@@ -294,6 +314,7 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecke
         speechModels: [String: any SpeechModel] = [:],
         videoModels: [String: any VideoModel] = [:],
         rerankingModels: [String: any RerankingModel] = [:],
+        evaluationModels: [String: AIEvaluationModelReference] = [:],
         files: (any AIFileClient)? = nil,
         skills: (any AISkillsClient)? = nil,
         fallbackProvider: (any AIProvider)? = nil
@@ -306,6 +327,7 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecke
         self.speechModels = speechModels
         self.videoModels = videoModels
         self.rerankingModels = rerankingModels
+        self.evaluationModels = evaluationModels
         self.filesClient = files
         self.skillsClient = skills
         self.fallbackProvider = fallbackProvider
@@ -318,7 +340,68 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecke
         if !speechModels.isEmpty { capabilities.insert(.speech) }
         if !videoModels.isEmpty { capabilities.insert(.video) }
         if !rerankingModels.isEmpty { capabilities.insert(.reranking) }
+        if !evaluationModels.isEmpty { capabilities.insert(.evaluation) }
         self.supportedCapabilities = capabilities
+    }
+
+    /// Source-compatible initializer retained from SwiftAISDK 1.7.0.
+    public convenience init(
+        providerID: String = "custom",
+        languageModels: [String: any LanguageModel] = [:],
+        embeddingModels: [String: any EmbeddingModel] = [:],
+        imageModels: [String: any ImageModel] = [:],
+        transcriptionModels: [String: any TranscriptionModel] = [:],
+        speechModels: [String: any SpeechModel] = [:],
+        videoModels: [String: any VideoModel] = [:],
+        rerankingModels: [String: any RerankingModel] = [:],
+        files: (any AIFileClient)? = nil,
+        skills: (any AISkillsClient)? = nil,
+        fallbackProvider: (any AIProvider)? = nil
+    ) {
+        self.init(
+            providerID: providerID,
+            languageModels: languageModels,
+            embeddingModels: embeddingModels,
+            imageModels: imageModels,
+            transcriptionModels: transcriptionModels,
+            speechModels: speechModels,
+            videoModels: videoModels,
+            rerankingModels: rerankingModels,
+            evaluationModels: [String: AIEvaluationModelReference](),
+            files: files,
+            skills: skills,
+            fallbackProvider: fallbackProvider
+        )
+    }
+
+    public convenience init(
+        providerID: String = "custom",
+        languageModels: [String: any LanguageModel] = [:],
+        embeddingModels: [String: any EmbeddingModel] = [:],
+        imageModels: [String: any ImageModel] = [:],
+        transcriptionModels: [String: any TranscriptionModel] = [:],
+        speechModels: [String: any SpeechModel] = [:],
+        videoModels: [String: any VideoModel] = [:],
+        rerankingModels: [String: any RerankingModel] = [:],
+        evaluationModels: [String: any AIEvaluationModelV4],
+        files: (any AIFileClient)? = nil,
+        skills: (any AISkillsClient)? = nil,
+        fallbackProvider: (any AIProvider)? = nil
+    ) {
+        self.init(
+            providerID: providerID,
+            languageModels: languageModels,
+            embeddingModels: embeddingModels,
+            imageModels: imageModels,
+            transcriptionModels: transcriptionModels,
+            speechModels: speechModels,
+            videoModels: videoModels,
+            rerankingModels: rerankingModels,
+            evaluationModels: evaluationModels.mapValues { .model($0) },
+            files: files,
+            skills: skills,
+            fallbackProvider: fallbackProvider
+        )
     }
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
@@ -391,6 +474,16 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecke
         throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
     }
 
+    public func evaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
+        if let reference = evaluationModels[modelID] {
+            return try resolveEvaluationModel(reference)
+        }
+        if let fallback = fallbackProvider as? any AIEvaluationProvider {
+            return try validateEvaluationModelVersion(fallback.evaluationModel(modelID))
+        }
+        throw AIEvaluationModelResolutionError.noSuchModel(modelID: modelID)
+    }
+
     public func files() throws -> any AIFileClient {
         if let filesClient {
             return filesClient
@@ -412,6 +505,7 @@ public final class AICustomProvider: AIFileProvider, AISkillsProvider, @unchecke
     }
 }
 
+/// Source-compatible factory retained from SwiftAISDK 1.7.0.
 public func customProvider(
     providerID: String = "custom",
     languageModels: [String: any LanguageModel] = [:],
@@ -425,6 +519,36 @@ public func customProvider(
     skills: (any AISkillsClient)? = nil,
     fallbackProvider: (any AIProvider)? = nil
 ) -> AICustomProvider {
+    customProvider(
+        providerID: providerID,
+        languageModels: languageModels,
+        embeddingModels: embeddingModels,
+        imageModels: imageModels,
+        transcriptionModels: transcriptionModels,
+        speechModels: speechModels,
+        videoModels: videoModels,
+        rerankingModels: rerankingModels,
+        evaluationModels: [String: AIEvaluationModelReference](),
+        files: files,
+        skills: skills,
+        fallbackProvider: fallbackProvider
+    )
+}
+
+public func customProvider(
+    providerID: String = "custom",
+    languageModels: [String: any LanguageModel] = [:],
+    embeddingModels: [String: any EmbeddingModel] = [:],
+    imageModels: [String: any ImageModel] = [:],
+    transcriptionModels: [String: any TranscriptionModel] = [:],
+    speechModels: [String: any SpeechModel] = [:],
+    videoModels: [String: any VideoModel] = [:],
+    rerankingModels: [String: any RerankingModel] = [:],
+    evaluationModels: [String: AIEvaluationModelReference] = [:],
+    files: (any AIFileClient)? = nil,
+    skills: (any AISkillsClient)? = nil,
+    fallbackProvider: (any AIProvider)? = nil
+) -> AICustomProvider {
     AICustomProvider(
         providerID: providerID,
         languageModels: languageModels,
@@ -434,6 +558,37 @@ public func customProvider(
         speechModels: speechModels,
         videoModels: videoModels,
         rerankingModels: rerankingModels,
+        evaluationModels: evaluationModels,
+        files: files,
+        skills: skills,
+        fallbackProvider: fallbackProvider
+    )
+}
+
+public func customProvider(
+    providerID: String = "custom",
+    languageModels: [String: any LanguageModel] = [:],
+    embeddingModels: [String: any EmbeddingModel] = [:],
+    imageModels: [String: any ImageModel] = [:],
+    transcriptionModels: [String: any TranscriptionModel] = [:],
+    speechModels: [String: any SpeechModel] = [:],
+    videoModels: [String: any VideoModel] = [:],
+    rerankingModels: [String: any RerankingModel] = [:],
+    evaluationModels: [String: any AIEvaluationModelV4],
+    files: (any AIFileClient)? = nil,
+    skills: (any AISkillsClient)? = nil,
+    fallbackProvider: (any AIProvider)? = nil
+) -> AICustomProvider {
+    AICustomProvider(
+        providerID: providerID,
+        languageModels: languageModels,
+        embeddingModels: embeddingModels,
+        imageModels: imageModels,
+        transcriptionModels: transcriptionModels,
+        speechModels: speechModels,
+        videoModels: videoModels,
+        rerankingModels: rerankingModels,
+        evaluationModels: evaluationModels,
         files: files,
         skills: skills,
         fallbackProvider: fallbackProvider
@@ -441,6 +596,7 @@ public func customProvider(
 }
 
 extension AIProviders {
+    /// Source-compatible factory retained from SwiftAISDK 1.7.0.
     public static func customProvider(
         providerID: String = "custom",
         languageModels: [String: any LanguageModel] = [:],
@@ -454,6 +610,36 @@ extension AIProviders {
         skills: (any AISkillsClient)? = nil,
         fallbackProvider: (any AIProvider)? = nil
     ) -> AICustomProvider {
+        customProvider(
+            providerID: providerID,
+            languageModels: languageModels,
+            embeddingModels: embeddingModels,
+            imageModels: imageModels,
+            transcriptionModels: transcriptionModels,
+            speechModels: speechModels,
+            videoModels: videoModels,
+            rerankingModels: rerankingModels,
+            evaluationModels: [String: AIEvaluationModelReference](),
+            files: files,
+            skills: skills,
+            fallbackProvider: fallbackProvider
+        )
+    }
+
+    public static func customProvider(
+        providerID: String = "custom",
+        languageModels: [String: any LanguageModel] = [:],
+        embeddingModels: [String: any EmbeddingModel] = [:],
+        imageModels: [String: any ImageModel] = [:],
+        transcriptionModels: [String: any TranscriptionModel] = [:],
+        speechModels: [String: any SpeechModel] = [:],
+        videoModels: [String: any VideoModel] = [:],
+        rerankingModels: [String: any RerankingModel] = [:],
+        evaluationModels: [String: AIEvaluationModelReference] = [:],
+        files: (any AIFileClient)? = nil,
+        skills: (any AISkillsClient)? = nil,
+        fallbackProvider: (any AIProvider)? = nil
+    ) -> AICustomProvider {
         AICustomProvider(
             providerID: providerID,
             languageModels: languageModels,
@@ -463,6 +649,37 @@ extension AIProviders {
             speechModels: speechModels,
             videoModels: videoModels,
             rerankingModels: rerankingModels,
+            evaluationModels: evaluationModels,
+            files: files,
+            skills: skills,
+            fallbackProvider: fallbackProvider
+        )
+    }
+
+    public static func customProvider(
+        providerID: String = "custom",
+        languageModels: [String: any LanguageModel] = [:],
+        embeddingModels: [String: any EmbeddingModel] = [:],
+        imageModels: [String: any ImageModel] = [:],
+        transcriptionModels: [String: any TranscriptionModel] = [:],
+        speechModels: [String: any SpeechModel] = [:],
+        videoModels: [String: any VideoModel] = [:],
+        rerankingModels: [String: any RerankingModel] = [:],
+        evaluationModels: [String: any AIEvaluationModelV4],
+        files: (any AIFileClient)? = nil,
+        skills: (any AISkillsClient)? = nil,
+        fallbackProvider: (any AIProvider)? = nil
+    ) -> AICustomProvider {
+        AICustomProvider(
+            providerID: providerID,
+            languageModels: languageModels,
+            embeddingModels: embeddingModels,
+            imageModels: imageModels,
+            transcriptionModels: transcriptionModels,
+            speechModels: speechModels,
+            videoModels: videoModels,
+            rerankingModels: rerankingModels,
+            evaluationModels: evaluationModels,
             files: files,
             skills: skills,
             fallbackProvider: fallbackProvider

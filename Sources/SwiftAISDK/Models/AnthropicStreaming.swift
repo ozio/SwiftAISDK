@@ -5,6 +5,7 @@ struct AnthropicToolCallBuffer {
     var name: String
     var arguments: String
     var providerExecuted: Bool
+    var dynamic: Bool
     var providerMetadata: [String: JSONValue]
     var rawValue: JSONValue
     var firstDelta: Bool = true
@@ -201,9 +202,11 @@ struct AnthropicStreamingProviderToolResults {
     private var mcpToolNames: [String: String] = [:]
     private var mcpToolMetadata: [String: [String: JSONValue]] = [:]
     private let providerID: String
+    private let toolNameMapping: AIToolNameMapping
 
-    init(providerID: String) {
+    init(providerID: String, toolNameMapping: AIToolNameMapping = AIToolNameMapping()) {
         self.providerID = providerID
+        self.toolNameMapping = toolNameMapping
     }
 
     mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
@@ -217,7 +220,8 @@ struct AnthropicStreamingProviderToolResults {
             providerID: providerID,
             serverToolNames: serverToolNames,
             mcpToolNames: mcpToolNames,
-            mcpToolMetadata: mcpToolMetadata
+            mcpToolMetadata: mcpToolMetadata,
+            toolNameMapping: toolNameMapping
         ).map { [.toolResult($0)] } ?? []
     }
 
@@ -248,9 +252,34 @@ struct AnthropicStreamingProviderToolResults {
 struct AnthropicStreamingToolCalls {
     private var buffers: [Int: AnthropicToolCallBuffer] = [:]
     private let providerID: String
+    private let toolNameMapping: AIToolNameMapping
+    private let markCodeExecutionDynamic: Bool
 
-    init(providerID: String) {
+    init(
+        providerID: String,
+        toolNameMapping: AIToolNameMapping = AIToolNameMapping(),
+        markCodeExecutionDynamic: Bool = false
+    ) {
         self.providerID = providerID
+        self.toolNameMapping = toolNameMapping
+        self.markCodeExecutionDynamic = markCodeExecutionDynamic
+    }
+
+    mutating func apply(messageStartContent value: JSONValue?) -> [LanguageStreamPart] {
+        guard let blocks = value?.arrayValue else { return [] }
+        var parts: [LanguageStreamPart] = []
+        for (index, block) in blocks.enumerated() where block["type"]?.stringValue == "tool_use" {
+            parts += apply(event: .object([
+                "type": .string("content_block_start"),
+                "index": .number(Double(index)),
+                "content_block": block
+            ]))
+            parts += apply(event: .object([
+                "type": .string("content_block_stop"),
+                "index": .number(Double(index))
+            ]))
+        }
+        return parts
     }
 
     mutating func apply(event raw: JSONValue) -> [LanguageStreamPart] {
@@ -258,25 +287,41 @@ struct AnthropicStreamingToolCalls {
         case "content_block_start":
             guard let index = raw["index"]?.intValue,
                   let block = raw["content_block"],
-                  let toolCall = anthropicToolCall(from: block, providerID: providerID) else {
+                  var toolCall = anthropicToolCall(
+                    from: block,
+                    providerID: providerID,
+                    toolNameMapping: toolNameMapping
+                  ) else {
                 return []
             }
-            let initialArguments = toolCall.arguments == "{}" ? "" : toolCall.arguments
+            if markCodeExecutionDynamic,
+               block["type"]?.stringValue == "server_tool_use",
+               block["name"]?.stringValue.map(anthropicCustomToolName(forProviderToolName:)) == "code_execution" {
+                toolCall.dynamic = true
+            }
+            let providerToolInputType = anthropicProviderToolInputType(from: block)
+            let hasEmptyProviderToolInput = providerToolInputType != nil
+                && block["input"]?.objectValue?.isEmpty == true
+            let initialArguments = hasEmptyProviderToolInput
+                ? ""
+                : (toolCall.arguments == "{}" ? "" : toolCall.arguments)
             buffers[index] = AnthropicToolCallBuffer(
                 id: toolCall.id,
                 name: toolCall.name,
                 arguments: initialArguments,
                 providerExecuted: toolCall.providerExecuted,
+                dynamic: toolCall.dynamic,
                 providerMetadata: toolCall.providerMetadata,
                 rawValue: block,
                 firstDelta: initialArguments.isEmpty,
-                providerToolInputType: anthropicProviderToolInputType(from: block)
+                providerToolInputType: providerToolInputType
             )
             var parts: [LanguageStreamPart] = [
                 .toolInputStart(
                     id: toolCall.id,
                     name: toolCall.name,
                     providerExecuted: toolCall.providerExecuted,
+                    dynamic: toolCall.dynamic,
                     providerMetadata: toolCall.providerMetadata
                 )
             ]
@@ -314,6 +359,7 @@ struct AnthropicStreamingToolCalls {
                     name: buffer.name,
                     arguments: buffer.arguments.isEmpty ? "{}" : buffer.arguments,
                     providerExecuted: buffer.providerExecuted,
+                    dynamic: buffer.dynamic,
                     providerMetadata: buffer.providerMetadata,
                     rawValue: buffer.rawValue
                 ))

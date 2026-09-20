@@ -82,11 +82,10 @@ func googleApplyResponseFormat(_ responseFormat: JSONValue?, options: [String: J
     guard responseFormat?["type"]?.stringValue == "json" else { return }
     generationConfig["responseMimeType"] = .string("application/json")
     guard options["structuredOutputs"]?.boolValue != false,
-          let schema = responseFormat?["schema"],
-          let openAPISchema = try googleOpenAPISchema(from: schema, isRoot: true) else {
+          let schema = responseFormat?["schema"] else {
         return
     }
-    generationConfig["responseSchema"] = openAPISchema
+    generationConfig["responseJsonSchema"] = googleResponseJSONSchema(schema)
 }
 
 func googleApplyStandardGenerationSettings(_ request: LanguageModelRequest, to generationConfig: inout [String: JSONValue]) {

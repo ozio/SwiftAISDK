@@ -104,7 +104,7 @@ import Testing
     #expect(options.requests[0].request.toolChoice?["toolName"]?.stringValue == "lookup")
     #expect(options.providerOptions == ["mock": ["batch": true]])
     #expect(options.headers["x-test"] == "test-value")
-    #expect(options.headers["user-agent"] == "ai/7.0.99")
+    #expect(options.headers["user-agent"] == "ai/7.0.107")
     #expect(options.headers["idempotency-key"] == "stable-create-key")
     #expect(options.idempotencyKey == "stable-create-key")
     #expect(options.webhookURL == "https://example.com/batches/complete")

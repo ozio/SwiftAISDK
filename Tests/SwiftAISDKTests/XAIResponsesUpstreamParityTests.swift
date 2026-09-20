@@ -233,3 +233,38 @@ import Testing
     #expect(result.result == "Image generation failed (status: failed).")
     #expect(result.isError)
 }
+
+@Test func xAI5ResponsesPreservesAdditionalPropertiesFalseInToolSchemas() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.xAI(settings: ProviderSettings(apiKey: "xai-key", transport: transport))
+    let model = try provider.responses("grok-4.3")
+
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("What is the weather?")],
+        tools: [
+            "weather": [
+                "type": "object",
+                "properties": [
+                    "location": ["type": "string"],
+                    "units": [
+                        "type": "object",
+                        "properties": ["temperature": ["type": "string"]],
+                        "additionalProperties": false
+                    ]
+                ],
+                "required": ["location"],
+                "additionalProperties": false
+            ]
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let functionTool = try #require(body["tools"]?.arrayValue?.first)
+    let parameters = try #require(functionTool["parameters"])
+    #expect(functionTool["type"]?.stringValue == "function")
+    #expect(functionTool["name"]?.stringValue == "weather")
+    #expect(parameters["additionalProperties"]?.boolValue == false)
+    #expect(
+        parameters["properties"]?["units"]?["additionalProperties"]?.boolValue == false
+    )
+}

@@ -135,11 +135,21 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
         form.appendField(name: "model", value: modelID)
         form.appendField(name: "prompt", value: request.prompt)
         for file in request.files {
-            let resolved = try await openAICompatibleResolveImageFile(file, providerID: providerID, transport: config.transport)
+            let resolved = try await openAICompatibleResolveImageFile(
+                file,
+                providerID: providerID,
+                transport: config.transport,
+                abortSignal: request.abortSignal
+            )
             form.appendFile(name: "image", fileName: resolved.fileName, mimeType: resolved.mediaType, data: resolved.data)
         }
         if let mask = request.mask {
-            let resolved = try await openAICompatibleResolveImageFile(mask, providerID: providerID, transport: config.transport)
+            let resolved = try await openAICompatibleResolveImageFile(
+                mask,
+                providerID: providerID,
+                transport: config.transport,
+                abortSignal: request.abortSignal
+            )
             form.appendFile(name: "mask", fileName: resolved.fileName, mimeType: resolved.mediaType, data: resolved.data)
         }
         if let count = request.count {
@@ -175,7 +185,8 @@ public final class OpenAICompatibleImageModel: ImageModel, @unchecked Sendable {
                 modelID: modelID,
                 body: form.finalize(),
                 contentType: "multipart/form-data; boundary=\(form.boundary)",
-                headers: request.headers
+                headers: request.headers,
+                abortSignal: request.abortSignal
             )
         )
         guard (200..<300).contains(response.statusCode) else {
@@ -272,7 +283,12 @@ struct OpenAICompatibleResolvedImageFile {
     var fileName: String
 }
 
-func openAICompatibleResolveImageFile(_ file: ImageInputFile, providerID: String, transport: AITransport) async throws -> OpenAICompatibleResolvedImageFile {
+func openAICompatibleResolveImageFile(
+    _ file: ImageInputFile,
+    providerID: String,
+    transport: AITransport,
+    abortSignal: AIAbortSignal? = nil
+) async throws -> OpenAICompatibleResolvedImageFile {
     if let data = file.data {
         let mediaType = file.mediaType ?? "application/octet-stream"
         return OpenAICompatibleResolvedImageFile(data: data, mediaType: mediaType, fileName: file.fileName ?? openAICompatibleDefaultFileName(mediaType: mediaType))
@@ -281,7 +297,11 @@ func openAICompatibleResolveImageFile(_ file: ImageInputFile, providerID: String
     guard let url = file.url else {
         throw AIError.invalidResponse(provider: providerID, message: "Image file must contain data or a URL.")
     }
-    let response = try await downloadURL(url, transport: transport)
+    let response = try await downloadURL(
+        url,
+        transport: transport,
+        abortSignal: abortSignal
+    )
     guard (200..<300).contains(response.statusCode) else {
         throw apiCallError(provider: providerID, response: response)
     }

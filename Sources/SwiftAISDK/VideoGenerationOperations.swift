@@ -424,15 +424,37 @@ private func generateSingleVideoUsingOperations(
             }
         }
 
-        let status = try await withRetry(
-            policy: retryPolicy,
-            abortSignal: request.abortSignal
-        ) {
-            try await model.videoGenerationStatus(VideoGenerationOperationStatusRequest(
-                operation: startResult.operation,
-                headers: request.headers,
+        let status: VideoGenerationOperationStatusResult
+        if webhookRegistration != nil {
+            status = try await withRetry(
+                policy: retryPolicy,
                 abortSignal: request.abortSignal
-            ))
+            ) {
+                try await model.videoGenerationStatus(VideoGenerationOperationStatusRequest(
+                    operation: startResult.operation,
+                    headers: request.headers,
+                    abortSignal: request.abortSignal
+                ))
+            }
+        } else {
+            let elapsedMilliseconds = videoOperationElapsedMilliseconds(since: started)
+            guard elapsedMilliseconds < options.timeoutMilliseconds else {
+                throw VideoGenerationOperationError.timedOut(milliseconds: options.timeoutMilliseconds)
+            }
+            let remainingMilliseconds = options.timeoutMilliseconds - elapsedMilliseconds
+            status = try await runVideoOperationBeforeDeadline(
+                remainingMilliseconds: remainingMilliseconds,
+                totalTimeoutMilliseconds: options.timeoutMilliseconds,
+                abortSignal: request.abortSignal
+            ) { effectiveSignal in
+                try await withRetry(policy: retryPolicy, abortSignal: effectiveSignal) {
+                    try await model.videoGenerationStatus(VideoGenerationOperationStatusRequest(
+                        operation: startResult.operation,
+                        headers: request.headers,
+                        abortSignal: effectiveSignal
+                    ))
+                }
+            }
         }
 
         switch status {
@@ -650,6 +672,145 @@ private final class VideoGenerationWebhookWaitState: @unchecked Sendable {
         timeoutController?.abort()
         worker?.cancel()
         timeoutTask?.cancel()
+        abortRegistration?.cancel()
+        continuation.resume(with: result)
+    }
+}
+
+private func runVideoOperationBeforeDeadline<Value: Sendable>(
+    remainingMilliseconds: Int,
+    totalTimeoutMilliseconds: Int,
+    abortSignal: AIAbortSignal?,
+    operation: @escaping @Sendable (AIAbortSignal?) async throws -> Value
+) async throws -> Value {
+    guard remainingMilliseconds > 0 else {
+        throw VideoGenerationOperationError.timedOut(milliseconds: totalTimeoutMilliseconds)
+    }
+
+    let timeoutController = AIAbortController()
+    let effectiveSignal = mergeAbortSignals(abortSignal, timeoutController.signal)
+    let state = VideoGenerationDeadlineState<Value>()
+
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            state.install(continuation)
+
+            let timeoutTask = Task {
+                let milliseconds = UInt64(remainingMilliseconds)
+                let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+                do {
+                    try await Task.sleep(nanoseconds: overflow ? UInt64.max : nanoseconds)
+                } catch {
+                    return
+                }
+                timeoutController.abort(
+                    reason: VideoGenerationOperationError.timedOut(milliseconds: totalTimeoutMilliseconds).description,
+                    reasonName: "TimeoutError"
+                )
+                state.resolve(.failure(
+                    VideoGenerationOperationError.timedOut(milliseconds: totalTimeoutMilliseconds)
+                ))
+            }
+
+            let operationTask = Task {
+                do {
+                    try effectiveSignal?.throwIfAborted()
+                    let value = try await operation(effectiveSignal)
+                    if timeoutController.signal.isAborted {
+                        state.resolve(.failure(
+                            VideoGenerationOperationError.timedOut(milliseconds: totalTimeoutMilliseconds)
+                        ))
+                    } else {
+                        state.resolve(.success(value))
+                    }
+                } catch {
+                    if timeoutController.signal.isAborted {
+                        state.resolve(.failure(
+                            VideoGenerationOperationError.timedOut(milliseconds: totalTimeoutMilliseconds)
+                        ))
+                    } else {
+                        state.resolve(.failure(error))
+                    }
+                }
+            }
+
+            let abortRegistration = abortSignal?.addAbortHandler { reason in
+                state.resolve(.failure(AIAbortError(
+                    reason: reason,
+                    reasonName: abortSignal?.reasonName
+                )))
+            }
+            state.setTasks(
+                timeoutTask: timeoutTask,
+                operationTask: operationTask,
+                abortRegistration: abortRegistration
+            )
+        }
+    } onCancel: {
+        state.resolve(.failure(CancellationError()))
+    }
+}
+
+private final class VideoGenerationDeadlineState<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var pendingResult: Result<Value, Error>?
+    private var timeoutTask: Task<Void, Never>?
+    private var operationTask: Task<Void, Never>?
+    private var abortRegistration: AIAbortHandlerRegistration?
+    private var resolved = false
+
+    func install(_ continuation: CheckedContinuation<Value, Error>) {
+        lock.lock()
+        if let pendingResult {
+            self.pendingResult = nil
+            resolved = true
+            lock.unlock()
+            continuation.resume(with: pendingResult)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func setTasks(
+        timeoutTask: Task<Void, Never>,
+        operationTask: Task<Void, Never>,
+        abortRegistration: AIAbortHandlerRegistration?
+    ) {
+        lock.lock()
+        guard !resolved else {
+            lock.unlock()
+            timeoutTask.cancel()
+            operationTask.cancel()
+            abortRegistration?.cancel()
+            return
+        }
+        self.timeoutTask = timeoutTask
+        self.operationTask = operationTask
+        self.abortRegistration = abortRegistration
+        lock.unlock()
+    }
+
+    func resolve(_ result: Result<Value, Error>) {
+        lock.lock()
+        guard !resolved else { lock.unlock(); return }
+        guard let continuation else {
+            pendingResult = result
+            lock.unlock()
+            return
+        }
+        resolved = true
+        self.continuation = nil
+        let timeoutTask = self.timeoutTask
+        let operationTask = self.operationTask
+        let abortRegistration = self.abortRegistration
+        self.timeoutTask = nil
+        self.operationTask = nil
+        self.abortRegistration = nil
+        lock.unlock()
+        timeoutTask?.cancel()
+        operationTask?.cancel()
         abortRegistration?.cancel()
         continuation.resume(with: result)
     }

@@ -447,12 +447,9 @@ func openAIResponsesAssistantTextItem(
 
     var item: [String: JSONValue] = [
         "role": .string("assistant"),
-        "content": .array([.object(["type": .string("output_text"), "text": .string(text)])])
+        "content": .string(text)
     ]
     if explicitMessageItemType { item["type"] = .string("message") }
-    if let itemID {
-        item["id"] = itemID
-    }
     if let phase = openAIOptions["phase"] {
         item["phase"] = phase
     }

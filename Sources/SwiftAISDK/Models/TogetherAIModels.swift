@@ -11,8 +11,17 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
-        let options = try togetherAIProviderOptions(from: request)
+        var options = try togetherAIProviderOptions(from: request)
         var warnings: [AIWarning] = []
+        let isGeminiImageModel = modelID == "google/gemini-3-pro-image"
+        if isGeminiImageModel {
+            options.removeValue(forKey: "steps")
+            options.removeValue(forKey: "guidance")
+            options.removeValue(forKey: "negative_prompt")
+            options.removeValue(forKey: "negativePrompt")
+            options.removeValue(forKey: "disable_safety_checker")
+            options.removeValue(forKey: "disableSafetyChecker")
+        }
         if request.mask != nil {
             throw AIError.invalidResponse(
                 provider: providerID,
@@ -40,8 +49,14 @@ public final class TogetherAIImageModel: ImageModel, @unchecked Sendable {
         if let count = request.count, count > 1 {
             body["n"] = .number(Double(count))
         }
-        if let seed = request.seed {
+        if let seed = request.seed, !isGeminiImageModel {
             body["seed"] = .number(Double(seed))
+        } else if request.seed != nil {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "seed",
+                message: "The google/gemini-3-pro-image model does not support the `seed` option."
+            ))
         }
         if let size = request.size {
             let dimensions = size.split(separator: "x", omittingEmptySubsequences: false)

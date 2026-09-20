@@ -408,7 +408,7 @@ func streamFromBedrockResponse(
             url: requestURL.absoluteString,
             maxBytes: maxResponseBytes ?? AIDefaultMaxDownloadSize
         )
-        throw apiCallError(provider: providerID, response: AIHTTPResponse(
+        throw bedrockHTTPStatusError(provider: providerID, response: AIHTTPResponse(
             statusCode: response.statusCode,
             headers: response.headers,
             body: body,

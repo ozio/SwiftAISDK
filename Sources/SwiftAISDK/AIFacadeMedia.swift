@@ -248,6 +248,12 @@ extension AI {
             guard !result.audio.isEmpty else {
                 throw AINoOutputError(kind: .speech, responses: [result.responseMetadata])
             }
+            result.contentType = resolvedSpeechMediaType(
+                audio: result.audio,
+                responseHeaders: result.responseMetadata.headers,
+                outputFormat: request.format,
+                providerContentType: result.contentType
+            )
             return result
         }
     }
@@ -787,4 +793,42 @@ func normalizeVideoGenerationRequest(_ request: VideoGenerationRequest) -> (requ
     }
 
     return (normalized, warnings)
+}
+
+private func resolvedSpeechMediaType(
+    audio: Data,
+    responseHeaders: [String: String],
+    outputFormat: String?,
+    providerContentType: String?
+) -> String {
+    if let detected = detectMediaType(data: audio, topLevelType: "audio") {
+        return detected
+    }
+
+    if let header = responseHeaders.first(where: {
+        $0.key.caseInsensitiveCompare("content-type") == .orderedSame
+    })?.value {
+        let mediaType = header.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if mediaType.hasPrefix("audio/") && mediaType.count > "audio/".count {
+            return mediaType
+        }
+    }
+
+    let normalizedOutputFormat = outputFormat?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalizedOutputFormat == "pcm" || normalizedOutputFormat == "audio/pcm" {
+        return "audio/pcm"
+    }
+
+    if let providerContentType {
+        let mediaType = providerContentType.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if mediaType.hasPrefix("audio/") && mediaType.count > "audio/".count {
+            return mediaType
+        }
+    }
+
+    return "audio/mp3"
 }

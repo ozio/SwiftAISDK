@@ -74,6 +74,51 @@ import Testing
     #expect(detectMediaType(base64: mp3WithID3.base64EncodedString(), topLevelType: "audio") == "audio/mpeg")
 }
 
+@Test func detectMediaTypeAcceptsVariableAVIFAndHEICFtypBoxSizes() {
+    for boxSize: UInt8 in [0x1C, 0x20] {
+        let avif = Data([
+            0x00, 0x00, 0x00, boxSize,
+            0x66, 0x74, 0x79, 0x70,
+            0x61, 0x76, 0x69, 0x66
+        ])
+        let heic = Data([
+            0x00, 0x00, 0x00, boxSize,
+            0x66, 0x74, 0x79, 0x70,
+            0x68, 0x65, 0x69, 0x63
+        ])
+
+        #expect(detectMediaType(data: avif, topLevelType: "image") == "image/avif")
+        #expect(detectMediaType(base64: avif.base64EncodedString()) == "image/avif")
+        #expect(detectMediaType(data: heic, topLevelType: "image") == "image/heic")
+        #expect(detectMediaType(base64: heic.base64EncodedString()) == "image/heic")
+    }
+}
+
+@Test func detectMediaTypeRecognizesAACADTSSignaturesIncludingAfterID3() {
+    let adtsHeaders: [[UInt8]] = [
+        [0xFF, 0xF0],
+        [0xFF, 0xF1],
+        [0xFF, 0xF8],
+        [0xFF, 0xF9]
+    ]
+
+    for header in adtsHeaders {
+        let aac = Data(header + [0x50, 0x40])
+        #expect(detectMediaType(data: aac, topLevelType: "audio") == "audio/aac")
+        #expect(detectMediaType(base64: aac.base64EncodedString(), topLevelType: "audio") == "audio/aac")
+    }
+
+    let id3TaggedAAC = Data([
+        0x49, 0x44, 0x33,
+        0x04, 0x00,
+        0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0xFF, 0xF1, 0x50, 0x40
+    ])
+    #expect(detectMediaType(data: id3TaggedAAC, topLevelType: "audio") == "audio/aac")
+    #expect(detectMediaType(base64: id3TaggedAAC.base64EncodedString(), topLevelType: "audio") == "audio/aac")
+}
+
 @Test func detectMediaTypeBoundsID3ScanningLikeUpstream() {
     let maximumTag = id3TaggedMP3(tagBodySize: 128 * 1024)
     let oversizedTag = id3TaggedMP3(tagBodySize: 128 * 1024 + 1)

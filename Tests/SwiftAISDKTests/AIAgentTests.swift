@@ -59,6 +59,52 @@ import Testing
     #expect(request.abortSignal === abortController.signal)
 }
 
+@Test func toolLoopAgentRoutesDynamicToolsThroughLocalCallerForGenerate() async throws {
+    let routed = agentRoutedLocalCallerTools()
+    let model = AgentRecordingLanguageModel(result: TextGenerationResult(
+        text: "done",
+        finishReason: "stop",
+        rawValue: .object([:])
+    ))
+    let legacyAgent = AIToolLoopAgent(model: model)
+    let agent = AIToolLoopAgent(
+        model: model,
+        executableTools: routed.tools,
+        toolCallers: routed.routing,
+        maxSteps: 1,
+        retryPolicy: .none
+    )
+
+    _ = try await agent.generate(prompt: "weather")
+
+    #expect(legacyAgent.toolCallers.isEmpty)
+    #expect(agent.toolCallers == routed.routing)
+    let request = try #require(model.generateRequests.first)
+    #expect(request.tools.keys.sorted() == ["code"])
+    #expect(request.messages == [.user("weather"), .user("catalog:weather")])
+}
+
+@Test func toolLoopAgentRoutesDynamicToolsThroughLocalCallerForStream() async throws {
+    let routed = agentRoutedLocalCallerTools()
+    let model = AgentRecordingLanguageModel(streamParts: [
+        .streamStart(warnings: []),
+        .finish(reason: "stop", usage: TokenUsage(totalTokens: 1))
+    ])
+    let agent = AIToolLoopAgent(
+        model: model,
+        executableTools: routed.tools,
+        toolCallers: routed.routing,
+        maxSteps: 1,
+        retryPolicy: .none
+    )
+
+    for try await _ in agent.stream(prompt: "weather") {}
+
+    let request = try #require(model.streamRequests.first)
+    #expect(request.tools.keys.sorted() == ["code"])
+    #expect(request.messages == [.user("weather"), .user("catalog:weather")])
+}
+
 @Test func toolLoopAgentAppliesGenerateTimeoutLikeUpstream() async throws {
     let model = SlowLanguageModel(delayNanoseconds: 80_000_000)
     let agent = AIToolLoopAgent(model: model, retryPolicy: .none)
@@ -205,6 +251,36 @@ import Testing
     #expect(finalMessage.text == "Hello")
     #expect(finalMessage.metadata["finishReason"]?.stringValue == "stop")
     #expect(finalMessage.metadata["usage"]?["totalTokens"]?.intValue == 5)
+}
+
+private func agentRoutedLocalCallerTools() -> (tools: [AITool], routing: AIToolCallerRouting) {
+    let caller = experimentalToolCaller(
+        AITool.dynamic(
+            name: "code",
+            parameters: ["type": "object", "properties": [:]],
+            execute: { _ in "unbound" }
+        ),
+        definition: .local(
+            bind: { tools in
+                AITool.dynamic(
+                    name: "code",
+                    description: "bound:\(tools.keys.sorted().joined(separator: ","))",
+                    parameters: ["type": "object", "properties": [:]],
+                    execute: { _ in .array(tools.keys.sorted().map(JSONValue.string)) }
+                )
+            },
+            prepareModelMessage: { tools in
+                "catalog:\(tools.keys.sorted().joined(separator: ","))"
+            }
+        )
+    )
+    let dynamicTool = AITool.dynamic(
+        name: "weather",
+        description: "Weather lookup",
+        parameters: ["type": "object", "properties": [:]],
+        execute: { _ in "sunny" }
+    )
+    return ([caller, dynamicTool], ["weather": ["code"]])
 }
 
 private final class AgentRecordingLanguageModel: LanguageModel, @unchecked Sendable {

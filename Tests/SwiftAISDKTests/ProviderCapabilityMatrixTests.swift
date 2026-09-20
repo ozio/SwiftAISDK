@@ -79,6 +79,7 @@ import Testing
 
     let anthropicRow = try #require(AIProviderCapabilities.row(providerID: "anthropic"))
     #expect(anthropicRow.supports(.language))
+    #expect(anthropicRow.supports(.evaluation))
     #expect(!anthropicRow.supports(.embedding))
     #expect(anthropicRow.supportsFileUpload)
     #expect(anthropicRow.supportsSkillUpload)
@@ -99,9 +100,15 @@ import Testing
     let gateway = try AIProviders.gateway(settings: ProviderSettings(apiKey: "gateway-key"))
     let gatewayRow = try #require(AIProviderCapabilities.row(providerID: "gateway"))
     #expect(gatewayRow.supportedCapabilities == gateway.supportedCapabilities)
+    #expect(gatewayRow.supports(.evaluation))
     #expect(!gatewayRow.supports(.audioGeneration))
     #expect(!gatewayRow.supports(.audioTransformation))
     #expect(!gatewayRow.supports(.dubbing))
+
+    let google = try AIProviders.google(settings: ProviderSettings(apiKey: "google-key"))
+    let googleRow = try #require(AIProviderCapabilities.row(providerID: "google.generative-ai"))
+    #expect(googleRow.supportedCapabilities == google.supportedCapabilities)
+    #expect(googleRow.supports(.evaluation))
 
     let cartesia = try AIProviders.cartesia(settings: CartesiaProviderSettings(
         apiKey: "cartesia-key",

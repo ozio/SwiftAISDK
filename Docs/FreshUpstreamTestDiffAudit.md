@@ -6,17 +6,20 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-09-13`
-- Baseline upstream ref: `vercel/ai@efdfd6290d783864f00ebdf5a0aad8711f2eb2db`
-- Current upstream ref: `vercel/ai@6c6c2210b9532a4c369615c044a16d595f3db117`
+- Date: `2026-09-20`
+- Baseline upstream ref: `vercel/ai@6c6c2210b9532a4c369615c044a16d595f3db117`
+- Current upstream ref: `vercel/ai@20dd00abba618d5a516e0fee40ccd3e18a2bd1fb`
 - Diff command:
 
   ```sh
   git -C <vercel-ai-checkout> diff --name-status \
-    efdfd6290d783864f00ebdf5a0aad8711f2eb2db..6c6c2210b9532a4c369615c044a16d595f3db117 \
+    6c6c2210b9532a4c369615c044a16d595f3db117..20dd00abba618d5a516e0fee40ccd3e18a2bd1fb \
     -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
        'packages/**/*.test.mts' 'packages/**/*.spec.ts' \
-       'packages/**/*.spec.tsx' 'packages/**/*.spec.mts'
+       'packages/**/*.spec.tsx' 'packages/**/*.spec.mts' \
+       'examples/**/*.test.ts' 'examples/**/*.test.tsx' \
+       'examples/**/*.test.mts' 'examples/**/*.spec.ts' \
+       'examples/**/*.spec.tsx' 'examples/**/*.spec.mts'
   ```
 
 Status meanings:
@@ -28,6 +31,74 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-09-20 Diff
+
+The generated executable inventory grows from 881 to 919 files and from 80 to
+81 groups. The exact path comparison returns 137 changed executable
+tests/specs: 43 added, 89 modified, and five deleted. The sorted
+`--name-status` output has SHA-256
+`23681b8ea4064220506a72415c5bf091efafe83827576dd1b0d54e2c3c7ff45a`.
+
+| Upstream test group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `examples/ai-functions/**` | 2 | `covered/no-swift-action` | The xAI example fixture is covered by provider tests; the Next.js Live relay connection is application plumbing, while its portable server-WebSocket contract is covered by the OpenAI Live adapter. |
+| `packages/ai/**` | 46 | `ported/covered/deferred/no-swift-action` | Evaluation V4, tool discovery, prompt conversion, metadata, telemetry, transport parsing, extraction, UI/session, abort, and server-side continuous-realtime changes are represented by focused Swift core tests. Browser-only transport, JavaScript stream/DOM mechanics, Node cookie/DNS behavior, and framework-owned UI surfaces remain outside the native Swift runtime; broader typed UI-tool/autosubmit behavior remains explicit where no safe public Swift contract exists. |
+| `packages/alibaba/**` | 3 | `ported` | `preserveThinking`, model-aware defaults, and replay of assistant reasoning history have exact request regressions. |
+| `packages/amazon-bedrock/**` | 5 | `ported` | Opaque Anthropic family handling, recursive strict schemas, current warnings/bindings, and failed streaming-response propagation are covered. |
+| `packages/anthropic/**` | 3 | `ported` | The 20260318 web tools, deferred lifecycle, execution normalization, custom aliases, and the Messages-backed Evaluation adapter have focused fixtures. |
+| `packages/azure/**` | 1 | `ported/covered` | Azure inherits the corrected shared OpenAI Responses assistant-input conversion and retains its provider-specific request identity. |
+| `packages/black-forest-labs/**` | 2 | `ported` | Wall-clock polling aborts hung image requests and preserves terminal/error metadata. |
+| `packages/bytedance/**` | 1 | `ported` | Combined start/reference inputs now emit the exact `reference_image` role. |
+| `packages/code-mode/**` | 3 | `out-of-scope` | The JavaScript code-mode tool-search product is not exposed by the provider-facing SwiftPM library. |
+| `packages/deepseek/**` | 1 | `ported` | Empty choices now produce the exact structural response failure. |
+| `packages/fireworks/**` | 1 | `ported` | Image polling uses a wall-clock deadline that can abort a hung request. |
+| `packages/gateway/**` | 3 | `ported` | Native Evaluation V4 request/response/error mapping, model-catalog discovery, headers, aborts, and provider metadata are covered. |
+| `packages/google/**` | 8 | `ported/deferred` | Lossless JSON Schema conversion, block reasons, accumulated stream metadata/usage, image count behavior, and the Gemini-backed Evaluation adapter are ported. Google Realtime and shared multi-call image batching remain separate public-runtime gaps. |
+| `packages/google-vertex/**` | 2 | `covered/deferred` | Shared Google schema/model behavior is inherited; the published one-image limit still requires a provider-neutral `maxImagesPerCall` batching contract rather than a Vertex-only rewrite. |
+| `packages/harness-claude-code/**` | 1 | `out-of-scope` | Claude Code harness lifecycle belongs to the separate agent/harness product. |
+| `packages/harness-opencode/**` | 3 | `out-of-scope` | OpenCode harness configuration and process/session behavior are not provider-model surfaces. |
+| `packages/harness-pi/**` | 1 | `out-of-scope` | Pi harness integration is outside this SwiftPM provider library. |
+| `packages/langchain/**` | 2 | `out-of-scope` | LangChain adapter behavior is framework integration, not a Swift provider contract. |
+| `packages/mcp/**` | 2 | `ported` | Stored OAuth server metadata and concurrent authorization refresh/coalescing have focused Swift regressions. |
+| `packages/openai/**` | 8 | `ported/deferred` | Responses assistant-input/reference and image abort fixes, the Evaluation adapter, and the portable server-WebSocket OpenAI Live mapping are covered. Browser WebRTC remains deliberately deferred. |
+| `packages/openai-compatible/**` | 1 | `covered` | The changed stream behavior is already supplied by the shared compatible chat implementation and its focused regression. |
+| `packages/otel/**` | 1 | `no-swift-action` | The JavaScript OpenTelemetry adapter fixture does not add a new typed Swift telemetry contract. |
+| `packages/provider-utils/**` | 8 | `ported/no-swift-action` | AVIF/HEIC/AAC signatures and the shared Evaluation language adapter are ported. Undici, DOMException, and other JavaScript runtime mechanics do not map to Foundation networking. |
+| `packages/quiverai/**` | 3 | `ported` | Arrow 2/Telos generation, animation, editing, vectorization, references, credits, metadata, and revised limits have focused provider tests. |
+| `packages/react/**` | 8 | `out-of-scope` | React realtime/hooks/reducer ownership is not transplanted into `AIChatSession`; portable core behavior is covered separately. |
+| `packages/replicate/**` | 1 | `ported` | Image predictions continue polling after synchronous wait expiry with trusted-origin and terminal-output validation. |
+| `packages/togetherai/**` | 1 | `ported` | Gemini image requests omit unsupported diffusion fields and warn on seed while preserving supported options. |
+| `packages/typesafe-ai/**` | 2 | `deferred` | `@ai-sdk/typesafe-ai` is a newly discovered Evaluation-only provider; it is proposal-only in this run and needs its own factory, auth/request/error vertical, tests, registry row, and docs. |
+| `packages/vue/**` | 2 | `out-of-scope` | Vue chat/store behavior is a framework adapter rather than a native Swift provider surface. |
+| `packages/workflow/**` | 3 | `out-of-scope` | Durable JavaScript workflow orchestration is not exposed by SwiftAISDK. |
+| `packages/xai/**` | 9 | `ported` | Responses schema/batch behavior is aligned to xAI 5 while the existing chat entry point remains a documented legacy source-compatible Swift shim instead of an unrequested breaking removal; new code should use Responses. |
+
+Coverage check: the grouped counts total exactly 137. All five deleted paths,
+the new provider, and every changed untracked product group remain visible.
+
+### Declaration-only changes
+
+The inventory generator excludes `*.test-d.ts`, so these 18 changed paths are
+classified separately. Their sorted `--name-status` output has SHA-256
+`1b23803a9f97d726964256a1258df13faa0b003a7f1973263b9d8ed6a4909eb4`.
+
+| Declaration-only path or group | Paths | Status | Rationale |
+| --- | ---: | --- | --- |
+| `examples/ai-functions/**` | 1 | `no-swift-action` | Deprecated TypeScript option aliases do not change Swift source compatibility. |
+| `packages/ai/src/evaluate/**`; `registry/evaluation-model`; `registry/provider-registry` | 3 | `ported` | Evaluation model references, registry resolution, errors, and provider routing are public Swift types with focused tests. |
+| `packages/ai/src/tool-search/**` | 1 | `ported` | Dynamic tool discovery is represented through the portable Swift tool-caller contract. |
+| `packages/ai/src/ui/**` | 2 | `ported/deferred` | Portable error/message representation is covered; browser/framework-only UI ownership remains outside the native session. |
+| `packages/alibaba/**` | 1 | `ported` | The new `preserveThinking` provider option has a typed Swift counterpart. |
+| `packages/anthropic/**` | 1 | `ported` | The 20260318 hosted-tool options and aliases are represented by Swift provider tools/options. |
+| `packages/openai/src/live/**`; `packages/openai/src/realtime/**` | 3 | `ported/deferred` | Server-WebSocket OpenAI Live and the provider-neutral continuous contract are ported; browser WebRTC factory typing remains deferred. |
+| `packages/provider/**` | 2 | `ported` | JSON values and continuous Realtime V4 events have native Swift public contracts. |
+| `packages/quiverai/**` | 1 | `ported` | Arrow 2/Telos option families are exposed through Swift provider options. |
+| `packages/react/**`; `packages/vue/**` | 2 | `out-of-scope` | Framework hook types are not SwiftAISDK provider surfaces. |
+| `packages/xai/**` | 1 | `ported` | xAI 5 provider types are reflected while chat remains a legacy source-compatible shim; new code should use Responses. |
+
+Coverage check: the declaration groups total exactly 18 and include every
+added or modified declaration-test path.
 
 ## 2026-09-13 Diff
 

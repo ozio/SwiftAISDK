@@ -4,7 +4,7 @@ import Testing
 
 @Test func replicateAndFalMediaCarryResponseMetadata() async throws {
     let replicateImageTransport = RecordingTransport(responses: [
-        jsonResponse(#"{"id":"pred-image","status":"succeeded","output":["https://replicate.example.com/image.png"]}"#, headers: ["replicate-header": "image"]),
+        jsonResponse(#"{"id":"pred-image","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-image"}}"#, headers: ["replicate-header": "image"]),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
     ])
     let replicateImageProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: replicateImageTransport))

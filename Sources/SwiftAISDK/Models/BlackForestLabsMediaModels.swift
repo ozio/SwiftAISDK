@@ -68,27 +68,60 @@ public final class BlackForestLabsImageModel: ImageModel, @unchecked Sendable {
 
     private func pollBFL(url: String, id: String, headers: [String: String], intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64, abortSignal: AIAbortSignal?) async throws -> JSONValue {
         let pollURL = appendQueryItemIfMissing(url: url, name: "id", value: id)
-        let maxPollAttempts = bflMaxPollAttempts(intervalNanoseconds: intervalNanoseconds, timeoutNanoseconds: timeoutNanoseconds)
-        for attempt in 0..<maxPollAttempts {
-            let pollHeaders = blackForestLabsTrustedHeaders(for: pollURL, baseURL: config.baseURL, headers: config.headers.mergingHeaders(headers))
-            let response = try await downloadURL(pollURL, transport: config.transport, headers: pollHeaders, abortSignal: abortSignal)
-            guard (200..<300).contains(response.statusCode) else {
-                throw blackForestLabsHTTPStatusError(provider: providerID, response: response)
+        let timeoutController = AIAbortController()
+        let timeoutMilliseconds = Int(min(timeoutNanoseconds / 1_000_000, UInt64(Int.max)))
+        let timeoutTask = setAbortTimeout(
+            abortController: timeoutController,
+            label: "Black Forest Labs image polling",
+            timeoutMilliseconds: timeoutMilliseconds
+        )
+        defer { timeoutTask?.cancel() }
+        let pollingAbortSignal = mergeAbortSignals(abortSignal, timeoutController.signal) ?? timeoutController.signal
+        let requestAbortSignal = abortSignal ?? timeoutController.signal
+
+        do {
+            while true {
+                let pollHeaders = blackForestLabsTrustedHeaders(for: pollURL, baseURL: config.baseURL, headers: config.headers.mergingHeaders(headers))
+                let response = try await raceAbortSignal(pollingAbortSignal) {
+                    try await self.downloadPollResponse(
+                        pollURL,
+                        headers: pollHeaders,
+                        abortSignal: requestAbortSignal
+                    )
+                }
+                guard (200..<300).contains(response.statusCode) else {
+                    throw blackForestLabsHTTPStatusError(provider: providerID, response: response)
+                }
+                let raw = try response.jsonValue()
+                let status = raw["status"]?.stringValue ?? raw["state"]?.stringValue
+                guard let status else {
+                    throw AIError.invalidResponse(provider: providerID, message: "Missing status in Black Forest Labs poll response")
+                }
+                if status == "Ready" { return raw }
+                if status == "Error" || status == "Failed" {
+                    throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation failed.")
+                }
+                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: pollingAbortSignal)
             }
-            let raw = try response.jsonValue()
-            let status = raw["status"]?.stringValue ?? raw["state"]?.stringValue
-            guard let status else {
-                throw AIError.invalidResponse(provider: providerID, message: "Missing status in Black Forest Labs poll response")
+        } catch {
+            if timeoutController.signal.isAborted {
+                throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation timed out.")
             }
-            if status == "Ready" { return raw }
-            if status == "Error" || status == "Failed" {
-                throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation failed.")
-            }
-            if attempt < maxPollAttempts - 1 {
-                try await sleepWithAbortSignal(nanoseconds: intervalNanoseconds, abortSignal: abortSignal)
-            }
+            throw error
         }
-        throw AIError.invalidResponse(provider: providerID, message: "Black Forest Labs generation timed out.")
+    }
+
+    private func downloadPollResponse(
+        _ url: String,
+        headers: [String: String],
+        abortSignal: AIAbortSignal
+    ) async throws -> AIHTTPResponse {
+        try await downloadURL(
+            url,
+            transport: config.transport,
+            headers: headers,
+            abortSignal: abortSignal
+        )
     }
 }
 
@@ -384,10 +417,4 @@ private func bflPollInterval(_ extraBody: [String: JSONValue]) -> UInt64 {
 private func bflPollTimeout(_ extraBody: [String: JSONValue]) -> UInt64 {
     let milliseconds = extraBody["pollTimeoutMillis"]?.intValue ?? 60_000
     return UInt64(max(milliseconds, 1)) * 1_000_000
-}
-
-private func bflMaxPollAttempts(intervalNanoseconds: UInt64, timeoutNanoseconds: UInt64) -> Int {
-    let interval = max(intervalNanoseconds, 1)
-    let attempts = (timeoutNanoseconds + interval - 1) / interval
-    return max(Int(attempts), 1)
 }

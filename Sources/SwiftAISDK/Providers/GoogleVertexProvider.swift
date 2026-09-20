@@ -120,7 +120,7 @@ public final class GoogleVertexProvider: AIProvider, @unchecked Sendable {
             baseURL = "https://\(host)/v1beta1/projects/\(project)/locations/\(location)/publishers/google"
         }
 
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.81")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/google-vertex/5.0.88")
         config = GoogleVertexConfig(
             providerID: providerID,
             baseURL: baseURL,

@@ -61,6 +61,7 @@ public struct AIToolLoopAgent: AIAgent {
     public var model: any LanguageModel
     public var instructions: String?
     public var executableTools: [AITool]
+    public var toolCallers: AIToolCallerRouting
     public var maxSteps: Int
     public var stopWhen: [AIStopCondition]
     public var allowSystemInMessages: Bool
@@ -92,6 +93,7 @@ public struct AIToolLoopAgent: AIAgent {
         self.model = model
         self.instructions = instructions
         self.executableTools = executableTools
+        self.toolCallers = [:]
         self.maxSteps = maxSteps
         self.stopWhen = stopWhen
         self.allowSystemInMessages = allowSystemInMessages
@@ -104,6 +106,42 @@ public struct AIToolLoopAgent: AIAgent {
         self.telemetry = telemetry
     }
 
+    public init(
+        id: String? = nil,
+        model: any LanguageModel,
+        instructions: String? = nil,
+        executableTools: [AITool],
+        toolCallers: AIToolCallerRouting,
+        maxSteps: Int = 20,
+        stopWhen: [AIStopCondition] = [],
+        allowSystemInMessages: Bool = false,
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
+        timeoutNanoseconds: UInt64? = nil,
+        streamTimeout: AIStreamTimeoutConfiguration? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil
+    ) {
+        self.init(
+            id: id,
+            model: model,
+            instructions: instructions,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            stopWhen: stopWhen,
+            allowSystemInMessages: allowSystemInMessages,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            requestOptions: requestOptions,
+            timeoutNanoseconds: timeoutNanoseconds,
+            streamTimeout: streamTimeout,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry
+        )
+        self.toolCallers = toolCallers
+    }
+
     public func generate(prompt: String, options: AIAgentCallOptions = AIAgentCallOptions()) async throws -> TextGenerationResult {
         try await generate(messages: [.user(prompt)], options: options)
     }
@@ -114,6 +152,7 @@ public struct AIToolLoopAgent: AIAgent {
             request: try request(messages: messages, options: options),
             executableTools: executableTools,
             maxSteps: maxSteps,
+            toolCallers: toolCallers,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
@@ -140,6 +179,7 @@ public struct AIToolLoopAgent: AIAgent {
             maxSteps: maxSteps,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
+            toolCallers: toolCallers,
             toolApproval: toolApproval,
             timeoutNanoseconds: options.timeoutNanoseconds ?? timeoutNanoseconds,
             timeout: options.streamTimeout

@@ -12,6 +12,7 @@ public enum ModelCapability: String, Hashable, Codable, CaseIterable, Sendable {
     case dubbing
     case video
     case reranking
+    case evaluation
 }
 
 public enum MessageRole: String, Codable, Hashable, Sendable {

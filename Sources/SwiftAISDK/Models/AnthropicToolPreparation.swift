@@ -139,11 +139,17 @@ func anthropicPrepareTools(
         case "anthropic.web_fetch_20260209":
             addBeta("code-execution-web-tools-2026-02-09")
             prepared.tools.append(anthropicWebTool(type: "web_fetch_20260209", name: "web_fetch", args: args, includeFetchFields: true))
+        case "anthropic.web_fetch_20260318":
+            try anthropicValidateWebTool20260318ResponseInclusion(args["responseInclusion"], toolName: name)
+            prepared.tools.append(anthropicWebTool(type: "web_fetch_20260318", name: "web_fetch", args: args, includeFetchFields: true))
         case "anthropic.web_search_20250305":
             prepared.tools.append(anthropicWebTool(type: "web_search_20250305", name: "web_search", args: args, includeFetchFields: false))
         case "anthropic.web_search_20260209":
             addBeta("code-execution-web-tools-2026-02-09")
             prepared.tools.append(anthropicWebTool(type: "web_search_20260209", name: "web_search", args: args, includeFetchFields: false))
+        case "anthropic.web_search_20260318":
+            try anthropicValidateWebTool20260318ResponseInclusion(args["responseInclusion"], toolName: name)
+            prepared.tools.append(anthropicWebTool(type: "web_search_20260318", name: "web_search", args: args, includeFetchFields: false))
         case "anthropic.tool_search_regex_20251119":
             prepared.tools.append(.object(["type": "tool_search_tool_regex_20251119", "name": "tool_search_tool_regex"]))
         case "anthropic.tool_search_bm25_20251119":
@@ -206,10 +212,39 @@ func anthropicWebTool(type: String, name: String, args: [String: JSONValue], inc
     if includeFetchFields {
         tool["citations"] = args["citations"]
         tool["max_content_tokens"] = args["maxContentTokens"]
+        tool["use_cache"] = args["useCache"]
     } else {
         tool["user_location"] = args["userLocation"]
     }
+    tool["response_inclusion"] = args["responseInclusion"]
     return .object(tool.compactMapValues { $0 })
+}
+
+func anthropicValidateWebTool20260318ResponseInclusion(_ value: JSONValue?, toolName: String) throws {
+    guard let value else { return }
+    guard let responseInclusion = value.stringValue,
+          responseInclusion == "full" || responseInclusion == "excluded" else {
+        throw AIError.invalidArgument(
+            argument: "tools.\(toolName).args.responseInclusion",
+            message: "Anthropic responseInclusion must be \"full\" or \"excluded\"."
+        )
+    }
+}
+
+func anthropicHasDynamicFilteringWebToolWithoutCodeExecution(_ tools: [JSONValue]) -> Bool {
+    var hasDynamicFilteringWebTool = false
+    var hasCodeExecutionTool = false
+    for tool in tools {
+        switch tool["type"]?.stringValue {
+        case "web_fetch_20260209", "web_fetch_20260318", "web_search_20260209", "web_search_20260318":
+            hasDynamicFilteringWebTool = true
+        case "code_execution_20250522", "code_execution_20250825", "code_execution_20260120":
+            hasCodeExecutionTool = true
+        default:
+            break
+        }
+    }
+    return hasDynamicFilteringWebTool && !hasCodeExecutionTool
 }
 
 func anthropicToolChoice(from value: JSONValue?, disableParallelToolUse: Bool?) -> (value: JSONValue?, omitTools: Bool) {

@@ -181,6 +181,73 @@ public struct AIRealtimeWebSocketConfiguration: Equatable, Sendable {
     }
 }
 
+public enum AIRealtimeConversationMode: String, Equatable, Sendable {
+    case continuous
+    case turnBased = "turn-based"
+}
+
+public enum AIRealtimeTransportKind: String, Equatable, Sendable {
+    case webSocket = "websocket"
+    case webRTC = "webrtc"
+}
+
+public enum AIRealtimeConnectionKind: String, Equatable, Sendable {
+    case clientSecretWebSocket = "client-secret-websocket"
+    case serverWebSocket = "server-websocket"
+    case webRTC = "webrtc"
+}
+
+public enum AIRealtimeStartupMode: String, Equatable, Sendable {
+    case sessionStart = "session-start"
+    case sessionUpdate = "session-update"
+}
+
+public enum AIRealtimeFinalizationMode: String, Equatable, Sendable {
+    case sessionClose = "session-close"
+    case transportClose = "transport-close"
+}
+
+/// Conversation and transport behavior declared by a realtime V4 model.
+public struct AIRealtimeModelCapabilities: Equatable, Sendable {
+    public var conversation: AIRealtimeConversationMode
+    public var transports: [AIRealtimeTransportKind]
+    public var connections: [AIRealtimeConnectionKind]?
+    public var startup: AIRealtimeStartupMode?
+    public var finalization: AIRealtimeFinalizationMode?
+
+    public init(
+        conversation: AIRealtimeConversationMode,
+        transports: [AIRealtimeTransportKind],
+        connections: [AIRealtimeConnectionKind]? = nil,
+        startup: AIRealtimeStartupMode? = nil,
+        finalization: AIRealtimeFinalizationMode? = nil
+    ) {
+        self.conversation = conversation
+        self.transports = transports
+        self.connections = connections
+        self.startup = startup
+        self.finalization = finalization
+    }
+}
+
+public enum AIRealtimeDelegationMode: String, Equatable, Sendable {
+    case client
+    case provider
+}
+
+public enum AIRealtimeTranscriptSpeaker: String, Equatable, Sendable {
+    case user
+    case assistant
+}
+
+public struct AIRealtimeSessionUsage: Equatable, Sendable {
+    public var seconds: Double
+
+    public init(seconds: Double) {
+        self.seconds = seconds
+    }
+}
+
 public enum AIRealtimeConversationItem: Equatable, Sendable {
     case textMessage(text: String)
     case audioMessage(audio: String)
@@ -206,7 +273,25 @@ public struct AIRealtimeResponseOptions: Equatable, Sendable {
 /// Provider-neutral events sent from a realtime client to a V4 model.
 public enum AIRealtimeClientEvent: Equatable, Sendable {
     case sessionUpdate(AIRealtimeSessionConfiguration)
+    case sessionUpdateWithEventID(
+        AIRealtimeSessionConfiguration,
+        eventID: String
+    )
+    case sessionStart(
+        AIRealtimeSessionConfiguration,
+        eventID: String? = nil
+    )
+    case sessionClose(eventID: String? = nil)
+    case inputAudioMute(eventID: String? = nil)
+    case inputAudioUnmute(eventID: String? = nil)
+    case contextAppend(
+        content: String,
+        delegationID: String?,
+        eventID: String? = nil,
+        providerOptions: [String: JSONValue]? = nil
+    )
     case inputAudioAppend(audio: String)
+    case inputAudioAppendWithEventID(audio: String, eventID: String)
     case inputAudioCommit
     case inputAudioClear
     case conversationItemCreate(AIRealtimeConversationItem)
@@ -228,6 +313,42 @@ public enum AIRealtimeWireMessage: Equatable, Sendable {
 
 /// Normalized events emitted by a realtime V4 model.
 public enum AIRealtimeServerEvent: Equatable, Sendable {
+    case sessionStarted(
+        sessionID: String,
+        delegationMode: AIRealtimeDelegationMode?,
+        raw: JSONValue
+    )
+    case sessionClosed(
+        sessionID: String?,
+        usage: AIRealtimeSessionUsage,
+        reason: String,
+        raw: JSONValue
+    )
+    case sessionUsage(
+        usage: AIRealtimeSessionUsage,
+        contextWindowUsageRatio: Double?,
+        raw: JSONValue
+    )
+    case audioChunk(delta: String, raw: JSONValue)
+    case transcriptFragment(
+        speaker: AIRealtimeTranscriptSpeaker,
+        delta: String,
+        startMilliseconds: Double,
+        endMilliseconds: Double,
+        raw: JSONValue
+    )
+    case delegationCreated(
+        delegationID: String,
+        target: AIRealtimeDelegationMode?,
+        offsetMilliseconds: Double?,
+        responseID: String?,
+        raw: JSONValue
+    )
+    case commandAcknowledged(
+        command: String,
+        clientEventID: String?,
+        raw: JSONValue
+    )
     case sessionCreated(sessionID: String?, raw: JSONValue)
     case sessionUpdated(raw: JSONValue)
     case speechStarted(itemID: String?, raw: JSONValue)
@@ -316,14 +437,37 @@ public enum AIRealtimeServerEvent: Equatable, Sendable {
         raw: JSONValue
     )
     case error(message: String, code: String?, raw: JSONValue)
+    case correlatedError(
+        message: String,
+        code: String?,
+        clientEventID: String,
+        raw: JSONValue
+    )
     case custom(rawType: String, raw: JSONValue)
 }
+
+/// Optional throwing validation hooks for models whose configuration cannot be
+/// represented safely by the released nonthrowing V4 requirements.
+public protocol AIRealtimeModelV4ValidationHooks: Sendable {
+    func getValidatedWebSocketConfig(token: String, url: String) throws
+        -> AIRealtimeWebSocketConfiguration
+    func buildValidatedSessionConfig(
+        _ config: AIRealtimeSessionConfiguration
+    ) throws -> JSONValue
+}
+
+public typealias AIRealtimeServerEventParser =
+    @Sendable (JSONValue) -> [AIRealtimeServerEvent]
 
 /// Provider V4 contract for bidirectional audio/text realtime models.
 public protocol AIRealtimeModelV4: Sendable {
     var specificationVersion: String { get }
     var providerID: String { get }
     var modelID: String { get }
+    var capabilities: AIRealtimeModelCapabilities? { get }
+
+    func getServerWebSocketConfig() throws
+        -> AIRealtimeWebSocketConfiguration
 
     func doCreateClientSecret(
         _ options: AIRealtimeClientSecretOptions
@@ -335,6 +479,8 @@ public protocol AIRealtimeModelV4: Sendable {
     ) -> AIRealtimeWebSocketConfiguration
 
     func parseServerEvent(_ raw: JSONValue) -> [AIRealtimeServerEvent]
+
+    func createServerEventParser() -> AIRealtimeServerEventParser
 
     func serializeClientEvent(
         _ event: AIRealtimeClientEvent
@@ -352,6 +498,24 @@ public protocol AIRealtimeModelV4: Sendable {
 public extension AIRealtimeModelV4 {
     var specificationVersion: String { "v4" }
     var provider: String { providerID }
+    var capabilities: AIRealtimeModelCapabilities? { nil }
+
+    func getServerWebSocketConfig() throws
+        -> AIRealtimeWebSocketConfiguration {
+        throw AIError.invalidArgument(
+            argument: "model",
+            message: "The realtime model does not support server WebSocket connections."
+        )
+    }
+
+    func doCreateClientSecret(
+        _ options: AIRealtimeClientSecretOptions
+    ) async throws -> AIRealtimeClientSecretResult {
+        throw AIError.invalidArgument(
+            argument: "model",
+            message: "The realtime model does not support client-secret WebSocket connections."
+        )
+    }
 
     func createClientSecret(
         _ options: AIRealtimeClientSecretOptions = .init()
@@ -361,6 +525,32 @@ public extension AIRealtimeModelV4 {
 
     func parseServerEvent(_ raw: JSONValue) -> [AIRealtimeServerEvent] {
         [.custom(rawType: raw["type"]?.stringValue ?? "", raw: raw)]
+    }
+
+    func createServerEventParser() -> AIRealtimeServerEventParser {
+        { [self] raw in parseServerEvent(raw) }
+    }
+
+    func getValidatedWebSocketConfig(
+        token: String,
+        url: String
+    ) throws -> AIRealtimeWebSocketConfiguration {
+        if let hooks = self as? any AIRealtimeModelV4ValidationHooks {
+            return try hooks.getValidatedWebSocketConfig(
+                token: token,
+                url: url
+            )
+        }
+        return getWebSocketConfig(token: token, url: url)
+    }
+
+    func buildValidatedSessionConfig(
+        _ config: AIRealtimeSessionConfiguration
+    ) throws -> JSONValue {
+        if let hooks = self as? any AIRealtimeModelV4ValidationHooks {
+            return try hooks.buildValidatedSessionConfig(config)
+        }
+        return buildSessionConfig(config)
     }
 
     func getHealthCheckResponse(

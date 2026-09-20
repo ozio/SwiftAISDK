@@ -272,13 +272,25 @@ public final class XAIRealtimeModel: AIRealtimeModelV4, @unchecked Sendable {
     ) async throws -> AIRealtimeWireMessage? {
         let raw: JSONValue?
         switch event {
-        case let .sessionUpdate(configuration):
+        case let .sessionUpdate(configuration),
+             let .sessionUpdateWithEventID(configuration, _):
             raw = .object([
                 "type": .string("session.update"),
                 "session": buildSessionConfig(configuration)
             ])
 
-        case let .inputAudioAppend(audio):
+        case .sessionStart,
+             .sessionClose,
+             .inputAudioMute,
+             .inputAudioUnmute,
+             .contextAppend:
+            throw AIError.invalidArgument(
+                argument: "event",
+                message: "xAI realtime does not support continuous-session commands."
+            )
+
+        case let .inputAudioAppend(audio),
+             let .inputAudioAppendWithEventID(audio, _):
             raw = .object([
                 "type": .string("input_audio_buffer.append"),
                 "audio": .string(audio)

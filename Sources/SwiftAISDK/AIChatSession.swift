@@ -431,6 +431,12 @@ public final class AIChatSession: ObservableObject {
 
     private func triggerAutomaticSendIfNeeded(options: AIChatSessionRequestOptions) {
         guard !isRunning, sendAutomaticallyWhen?(messages) == true else { return }
+        guard messages.last?.parts.contains(where: { part in
+            guard case let .toolResult(result) = part else { return false }
+            return result.preliminary
+        }) != true else {
+            return
+        }
         guard let lastMessageID = messages.last?.id else { return }
         let responseID = generateMessageID()
         messages.append(.assistant(id: responseID))

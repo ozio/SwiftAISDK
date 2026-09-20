@@ -420,7 +420,7 @@ private func xaiResponsesTools(from tools: [String: JSONValue], toolChoice: JSON
             continue
         }
 
-        var parameters = xaiRemoveAdditionalPropertiesFalse(schema)
+        var parameters = schema
         var function: [String: JSONValue] = [
             "type": .string("function"),
             "name": .string(name),
@@ -502,24 +502,6 @@ private func xaiResponsesTextFormat(from responseFormat: AIResponseFormat?) -> J
         format["description"] = .string(description)
     }
     return .object(format)
-}
-
-private func xaiRemoveAdditionalPropertiesFalse(_ value: JSONValue) -> JSONValue {
-    switch value {
-    case let .object(object):
-        var mapped: [String: JSONValue] = [:]
-        for (key, nested) in object {
-            if key == "additionalProperties", nested.boolValue == false {
-                continue
-            }
-            mapped[key] = xaiRemoveAdditionalPropertiesFalse(nested)
-        }
-        return .object(mapped)
-    case let .array(array):
-        return .array(array.map(xaiRemoveAdditionalPropertiesFalse))
-    default:
-        return value
-    }
 }
 
 private func xaiResponsesSnakeCasedKey(_ key: String) -> String {

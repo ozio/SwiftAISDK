@@ -418,3 +418,72 @@ import Testing
     #expect(form["client_assertion"] == "provider-token")
     #expect(form["client_secret"] == nil)
 }
+
+@Test func mcpOAuthCallbackUsesStoredAuthorizationServerWhenResourceRediscoveryFails() async throws {
+    let authorizationServerURL = try requireURL("https://login.example.com/tenant/v2.0")
+    let tokenEndpoint = try requireURL("https://login.example.com/tenant/oauth2/v2.0/token")
+    let storedInformation = MCPOAuthAuthorizationServerInformation(
+        authorizationServerURL: authorizationServerURL,
+        tokenEndpoint: tokenEndpoint,
+        issuer: authorizationServerURL.absoluteString
+    )
+    let provider = TestOAuthClientProvider(
+        clientInformation: MCPOAuthClientInformation(
+            clientID: "test-client",
+            issuer: authorizationServerURL.absoluteString,
+            authorizationServerURL: authorizationServerURL,
+            tokenEndpoint: tokenEndpoint
+        ),
+        authorizationServerInformation: storedInformation,
+        codeVerifier: "test-verifier"
+    )
+    let transport = RecordingTransport(responses: [
+        AIHTTPResponse(statusCode: 401),
+        AIHTTPResponse(statusCode: 401),
+        AIHTTPResponse(statusCode: 404),
+        AIHTTPResponse(statusCode: 404),
+        AIHTTPResponse(statusCode: 404),
+        jsonResponse("""
+        {
+          "issuer": "https://login.example.com/tenant/v2.0",
+          "authorization_endpoint": "https://login.example.com/tenant/oauth2/v2.0/authorize",
+          "token_endpoint": "https://login.example.com/tenant/oauth2/v2.0/token",
+          "response_types_supported": ["code"],
+          "code_challenge_methods_supported": ["S256"]
+        }
+        """),
+        jsonResponse("""
+        {
+          "access_token": "access123",
+          "token_type": "Bearer"
+        }
+        """)
+    ])
+
+    let result = try await MCPOAuth.auth(
+        provider: provider,
+        serverURL: "https://mcp.example.com/mcp",
+        authorizationCode: "auth-code-123",
+        transport: transport
+    )
+
+    #expect(result == .authorized)
+    #expect(await provider.savedTokens()?.accessToken == "access123")
+    #expect(await provider.savedTokens()?.authorizationServerURL == authorizationServerURL)
+    #expect(await provider.savedTokens()?.tokenEndpoint == tokenEndpoint)
+
+    let requests = await transport.requests()
+    #expect(requests.map { $0.url.absoluteString } == [
+        "https://mcp.example.com/.well-known/oauth-protected-resource/mcp",
+        "https://mcp.example.com/.well-known/oauth-protected-resource",
+        "https://login.example.com/.well-known/oauth-authorization-server/tenant/v2.0",
+        "https://login.example.com/.well-known/oauth-authorization-server",
+        "https://login.example.com/.well-known/openid-configuration/tenant/v2.0",
+        "https://login.example.com/tenant/v2.0/.well-known/openid-configuration",
+        "https://login.example.com/tenant/oauth2/v2.0/token"
+    ])
+    let tokenRequest = try #require(requests.last)
+    let form = try formItems(tokenRequest)
+    #expect(form["code"] == "auth-code-123")
+    #expect(form["code_verifier"] == "test-verifier")
+}

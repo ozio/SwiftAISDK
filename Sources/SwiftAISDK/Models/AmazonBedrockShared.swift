@@ -231,25 +231,38 @@ func bedrockPrepareTools(
     from tools: [String: JSONValue],
     toolChoice: JSONValue?,
     modelID: String,
+    modelFamily: AmazonBedrockChatModelFamily? = nil,
+    reasoningConfig: JSONValue? = nil,
     disableParallelToolUse: Bool = false
 ) -> BedrockPreparedTools {
     guard !tools.isEmpty else {
         return BedrockPreparedTools(toolConfig: nil, warnings: [])
     }
 
-    let isAnthropicModel = modelID.contains("anthropic.")
+    let isAnthropicModel = bedrockIsAnthropicModel(
+        modelID: modelID,
+        modelFamily: modelFamily,
+        reasoningConfig: reasoningConfig
+    )
     var warnings: [AIWarning] = []
     var bedrockTools: [JSONValue] = []
+    var supportedTools: [String: JSONValue] = [:]
     let forcedToolName = bedrockForcedToolName(from: toolChoice)
 
     for (name, schema) in tools {
         if schema["type"]?.stringValue == "provider" {
             let id = schema["id"]?.stringValue ?? name
-            if id == "anthropic.web_search_20250305" {
+            let unsupportedWebTools: Set<String> = [
+                "anthropic.web_search_20250305",
+                "anthropic.web_search_20260318",
+                "anthropic.web_fetch_20260318"
+            ]
+            if unsupportedWebTools.contains(id) {
+                let feature = String(id.dropFirst("anthropic.".count))
                 warnings.append(AIWarning(
                     type: "unsupported",
-                    feature: "web_search_20250305 tool",
-                    message: "The web_search_20250305 tool is not supported on Amazon Bedrock."
+                    feature: "\(feature) tool",
+                    message: "The \(feature) tool is not supported on Amazon Bedrock."
                 ))
                 continue
             }
@@ -260,6 +273,7 @@ func bedrockPrepareTools(
                         "inputSchema": .object(["json": anthropicToolSchema])
                     ])
                 ]))
+                supportedTools[name] = schema
             } else {
                 warnings.append(AIWarning(type: "unsupported", feature: "tool \(id)"))
             }
@@ -279,17 +293,24 @@ func bedrockPrepareTools(
             toolSpec["description"] = .string(description)
         }
         if let strict = schema["strict"], strict != .null {
-            if bedrockSupportsStrictToolSpec(modelID: modelID) {
-                toolSpec["strict"] = strict
-            } else {
+            if !bedrockSupportsStrictToolSpec(modelID: modelID) {
                 warnings.append(AIWarning(
                     type: "unsupported",
                     feature: "strict",
                     message: "Tool '\(name)' has strict: \(bedrockJSONString(strict) ?? "false"), but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored."
                 ))
+            } else if strict.boolValue == true, !bedrockStrictToolSchemaCompatible(schema) {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "strict",
+                    message: "Tool '\(name)' has strict: true, but Amazon Bedrock requires every object in a strict tool schema to set additionalProperties: false. The strict property will be ignored."
+                ))
+            } else {
+                toolSpec["strict"] = strict
             }
         }
         bedrockTools.append(.object(["toolSpec": .object(toolSpec)]))
+        supportedTools[name] = schema
     }
 
     guard !bedrockTools.isEmpty else {
@@ -298,7 +319,12 @@ func bedrockPrepareTools(
 
     var toolConfig: [String: JSONValue] = ["tools": .array(bedrockTools)]
     var additionalModelRequestFields: [String: JSONValue]?
-    let usesAnthropicProviderTools = bedrockUsesAnthropicProviderTools(tools: tools, modelID: modelID)
+    let usesAnthropicProviderTools = bedrockUsesAnthropicProviderTools(
+        tools: supportedTools,
+        modelID: modelID,
+        modelFamily: modelFamily,
+        reasoningConfig: reasoningConfig
+    )
     let toolChoiceType = toolChoice?.stringValue ?? toolChoice?["type"]?.stringValue
     if isAnthropicModel,
        !usesAnthropicProviderTools,
@@ -332,6 +358,52 @@ func bedrockPrepareTools(
         additionalModelRequestFields: additionalModelRequestFields,
         warnings: warnings
     )
+}
+
+func bedrockStrictToolSchemaCompatible(_ schema: JSONValue) -> Bool {
+    if schema.boolValue != nil { return true }
+    guard let object = schema.objectValue else { return true }
+
+    let objectType = object["type"]?.stringValue == "object"
+        || object["type"]?.arrayValue?.contains(where: { $0.stringValue == "object" }) == true
+    if objectType, object["additionalProperties"]?.boolValue != false {
+        return false
+    }
+
+    for key in ["properties", "patternProperties", "definitions", "$defs"] {
+        if let schemas = object[key]?.objectValue,
+           schemas.values.contains(where: { !bedrockStrictToolSchemaCompatible($0) }) {
+            return false
+        }
+    }
+
+    if let dependencies = object["dependencies"]?.objectValue {
+        for dependency in dependencies.values where dependency.arrayValue == nil {
+            if !bedrockStrictToolSchemaCompatible(dependency) { return false }
+        }
+    }
+
+    for key in ["propertyNames", "contains", "not", "if", "then", "else"] {
+        if let nested = object[key], !bedrockStrictToolSchemaCompatible(nested) {
+            return false
+        }
+    }
+
+    if let items = object["items"] {
+        if let itemSchemas = items.arrayValue {
+            if itemSchemas.contains(where: { !bedrockStrictToolSchemaCompatible($0) }) { return false }
+        } else if !bedrockStrictToolSchemaCompatible(items) {
+            return false
+        }
+    }
+
+    for key in ["anyOf", "allOf", "oneOf"] {
+        if let alternatives = object[key]?.arrayValue,
+           alternatives.contains(where: { !bedrockStrictToolSchemaCompatible($0) }) {
+            return false
+        }
+    }
+    return true
 }
 
 func bedrockSupportsStrictToolSpec(modelID: String) -> Bool {
@@ -401,8 +473,17 @@ func bedrockDocumentName(_ filename: String?, documentCounter: inout Int) -> Str
     return "document-\(documentCounter)"
 }
 
-func bedrockUsesAnthropicProviderTools(tools: [String: JSONValue], modelID: String) -> Bool {
-    modelID.contains("anthropic.") && tools.values.contains { $0["type"]?.stringValue == "provider" }
+func bedrockUsesAnthropicProviderTools(
+    tools: [String: JSONValue],
+    modelID: String,
+    modelFamily: AmazonBedrockChatModelFamily? = nil,
+    reasoningConfig: JSONValue? = nil
+) -> Bool {
+    bedrockIsAnthropicModel(
+        modelID: modelID,
+        modelFamily: modelFamily,
+        reasoningConfig: reasoningConfig
+    ) && tools.values.contains { $0["type"]?.stringValue == "provider" }
 }
 
 func bedrockForcedToolName(from toolChoice: JSONValue?) -> String? {
@@ -452,6 +533,7 @@ func bedrockAnthropicProviderToolInputSchema(_ tool: JSONValue) -> JSONValue? {
 func bedrockApplyReasoningConfig(
     _ value: JSONValue?,
     modelID: String,
+    modelFamily: AmazonBedrockChatModelFamily? = nil,
     inferenceConfig: inout [String: JSONValue],
     providerOptions: inout [String: JSONValue],
     warnings: inout [AIWarning]
@@ -466,7 +548,11 @@ func bedrockApplyReasoningConfig(
     let budgetTokens = reasoningConfig["budgetTokens"]?.intValue
     let maxReasoningEffort = reasoningConfig["maxReasoningEffort"]?.stringValue
     let display = reasoningConfig["display"]?.stringValue
-    let isAnthropicModel = bedrockIsAnthropicModel(modelID: modelID, reasoningConfig: value)
+    let isAnthropicModel = bedrockIsAnthropicModel(
+        modelID: modelID,
+        modelFamily: modelFamily,
+        reasoningConfig: value
+    )
     let openAIModelID = bedrockOpenAIModelID(modelID)
     let isOpenAIModel = openAIModelID != nil
     let isOpenAIGptOssModel = openAIModelID?.hasPrefix("openai.gpt-oss-") == true
@@ -539,6 +625,7 @@ func bedrockApplyReasoningConfig(
 func bedrockApplyTopLevelReasoning(
     _ reasoning: String?,
     modelID: String,
+    modelFamily: AmazonBedrockChatModelFamily? = nil,
     maxOutputTokens: Int?,
     providerOptions: inout [String: JSONValue],
     warnings: inout [AIWarning]
@@ -547,6 +634,7 @@ func bedrockApplyTopLevelReasoning(
     let existing = providerOptions["reasoningConfig"]?.objectValue ?? [:]
     let isAnthropicModel = bedrockIsAnthropicModel(
         modelID: modelID,
+        modelFamily: modelFamily,
         reasoningConfig: providerOptions["reasoningConfig"]
     )
     var reasoningConfig: [String: JSONValue]
@@ -591,8 +679,13 @@ func bedrockApplyTopLevelReasoning(
     }
 }
 
-func bedrockIsAnthropicModel(modelID: String, reasoningConfig: JSONValue?) -> Bool {
-    modelID.contains("anthropic")
+func bedrockIsAnthropicModel(
+    modelID: String,
+    modelFamily: AmazonBedrockChatModelFamily? = nil,
+    reasoningConfig: JSONValue?
+) -> Bool {
+    modelFamily == .anthropic
+        || modelID.contains("anthropic")
         || (modelID.contains(":application-inference-profile/")
             && reasoningConfig?["budgetTokens"]?.intValue != nil)
 }

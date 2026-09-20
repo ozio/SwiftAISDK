@@ -364,7 +364,7 @@ Source URL: /components/mcp/
 | Instance Property | `value` | `var value: String` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `values` | `var values: [String]` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Property | `version` | `var version: String` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
-| Instance Property | `visibility` | `var visibility: [MCPAppToolMeta.Visibility]?` | [Sources/SwiftAISDK/MCPApps.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPApps.swift) |
+| Instance Property | `visibility` | `var visibility: [Visibility]?` | [Sources/SwiftAISDK/MCPApps.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPApps.swift) |
 | Protocol | `MCPOAuthClientProvider` | `protocol MCPOAuthClientProvider : Sendable` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Protocol | `MCPOAuthProvider` | `protocol MCPOAuthProvider : Sendable` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Protocol | `MCPTransport` | `protocol MCPTransport : Sendable` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |

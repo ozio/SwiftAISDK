@@ -70,9 +70,14 @@ public func simulateStreamingMiddleware() -> AILanguageModelMiddleware {
                         id += 1
                     }
 
+                    let textProviderMetadata = result.content.reduce(into: [String: JSONValue]()) { metadata, part in
+                        guard case let .text(_, partMetadata) = part else { return }
+                        metadata.merge(partMetadata) { _, new in new }
+                    }
+
                     if !result.text.isEmpty {
                         let partID = String(id)
-                        continuation.yield(.textStart(id: partID))
+                        continuation.yield(.textStart(id: partID, providerMetadata: textProviderMetadata))
                         continuation.yield(.textDeltaPart(id: partID, delta: result.text))
                         continuation.yield(.textEnd(id: partID))
                         id += 1

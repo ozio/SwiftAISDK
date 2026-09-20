@@ -32,11 +32,15 @@ print(answer.text)
 
 For local processes, use `MCPStdioTransport`. For remote servers, use `MCPHTTPTransport`.
 
-SwiftAISDK tracks `@ai-sdk/mcp@2.0.45`. The current client absorbs its
+SwiftAISDK tracks `@ai-sdk/mcp@2.0.54`. The current client absorbs its
 protocol/HTTP transport and OAuth compatibility hardening behind the same
 `MCPClient.connect` workflow. Non-successful POST/SSE responses retain HTTP
 status, URL, and response-body diagnostics; existing tool-discovery code does
 not need a migration.
+
+OAuth retries reuse a stored authorization-server choice when discovery is
+temporarily unavailable, and concurrent requests that observe the same stale
+token coalesce behind one refresh before they retry.
 
 Each discovered definition retains its complete raw `annotations` value and
 offers typed `MCPToolAnnotations` access to `title`, `readOnlyHint`,

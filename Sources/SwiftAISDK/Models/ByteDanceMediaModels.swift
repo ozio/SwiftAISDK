@@ -277,10 +277,13 @@ private func byteDanceContent(from request: VideoGenerationRequest, options: Byt
         content.append(.object(["type": .string("text"), "text": .string(request.prompt)]))
     }
     let lastFrameImage = try byteDanceLastFrameImageURL(from: request, known: known)
+    let referenceImageURLs = try byteDanceReferenceImageURLs(from: request, known: known)
     if let image = try byteDanceStartImageURL(from: request, known: known) {
         var imageContent: [String: JSONValue] = ["type": .string("image_url"), "image_url": .object(["url": .string(image)])]
         if lastFrameImage != nil {
             imageContent["role"] = .string("first_frame")
+        } else if !referenceImageURLs.isEmpty {
+            imageContent["role"] = .string("reference_image")
         }
         content.append(.object(imageContent))
     }
@@ -291,7 +294,7 @@ private func byteDanceContent(from request: VideoGenerationRequest, options: Byt
             "role": .string("last_frame")
         ]))
     }
-    for imageURL in try byteDanceReferenceImageURLs(from: request, known: known) {
+    for imageURL in referenceImageURLs {
         content.append(.object([
             "type": .string("image_url"),
             "image_url": .object(["url": .string(imageURL)]),

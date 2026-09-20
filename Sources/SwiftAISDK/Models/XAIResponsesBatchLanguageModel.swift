@@ -210,7 +210,7 @@ private struct XAIUploadedBatchFile: Sendable {
 
 private struct XAIBatchResult: Sendable {
     var id: String
-    var chatResponse: JSONValue?
+    var textResponse: JSONValue?
     var imageResponse: JSONValue?
     var errorCode: JSONValue?
     var errorMessage: String?
@@ -372,7 +372,7 @@ private func parseXAIBatchResultsPage(_ raw: JSONValue, providerID: String) thro
         }
         return XAIBatchResult(
             id: id,
-            chatResponse: response?["chat_get_completion"],
+            textResponse: response?["chat_get_completion"],
             imageResponse: response?["image_generation"],
             errorCode: error?["code"],
             errorMessage: error?["message"]?.stringValue,
@@ -733,10 +733,10 @@ private func convertXAIBatchResult(_ result: XAIBatchResult) -> AIBatchItemResul
         }
         return .failed(id: result.id, error: error)
     }
-    guard let raw = result.chatResponse else {
+    guard let raw = result.textResponse else {
         return xaiInvalidBatchResult(id: result.id)
     }
-    guard isValidXAIChatBatchResponse(raw) else {
+    guard isValidXAIBatchTextResponse(raw) else {
         return xaiInvalidBatchResult(id: result.id)
     }
     if let message = raw["error"]?.stringValue {
@@ -836,7 +836,7 @@ private func convertXAIBatchResult(_ result: XAIBatchResult) -> AIBatchItemResul
         content: content,
         reasoning: reasoning,
         finishReason: openAICompatibleFinishReason(lastAssistantFinishReason),
-        usage: tokenUsage(from: raw) ?? TokenUsage(),
+        usage: xaiBatchTextUsage(from: raw) ?? TokenUsage(),
         sources: sources,
         providerMetadata: providerMetadata,
         rawValue: raw,
@@ -849,7 +849,10 @@ private func convertXAIBatchResult(_ result: XAIBatchResult) -> AIBatchItemResul
     return .succeeded(id: result.id, result: generation)
 }
 
-private func isValidXAIChatBatchResponse(_ raw: JSONValue) -> Bool {
+// xAI batch results retain a Chat Completions wire envelope even though xAI 5
+// removed its Chat language-model surface. Keep this schema and conversion
+// local so Batch does not depend on the legacy Swift compatibility shim.
+private func isValidXAIBatchTextResponse(_ raw: JSONValue) -> Bool {
     guard let object = raw.objectValue,
           isNullishXAIString(object["id"]),
           isNullishXAINumber(object["created"]),
@@ -864,7 +867,7 @@ private func isValidXAIChatBatchResponse(_ raw: JSONValue) -> Bool {
         return false
     }
     if let usage = object["usage"], usage != .null,
-       !isValidXAIChatBatchUsage(usage) {
+       !isValidXAIBatchTextUsage(usage) {
         return false
     }
     if let citations = object["citations"], citations != .null {
@@ -879,14 +882,14 @@ private func isValidXAIChatBatchResponse(_ raw: JSONValue) -> Bool {
     }
     if let choices = object["choices"], choices != .null {
         guard let values = choices.arrayValue,
-              values.allSatisfy(isValidXAIChatBatchChoice) else {
+              values.allSatisfy(isValidXAIBatchTextChoice) else {
             return false
         }
     }
     return true
 }
 
-private func isValidXAIChatBatchChoice(_ value: JSONValue) -> Bool {
+private func isValidXAIBatchTextChoice(_ value: JSONValue) -> Bool {
     guard let object = value.objectValue,
           isFiniteXAINumber(object["index"]),
           isNullishXAIString(object["finish_reason"]),
@@ -915,7 +918,7 @@ private func isValidXAIChatBatchChoice(_ value: JSONValue) -> Bool {
     return true
 }
 
-private func isValidXAIChatBatchUsage(_ value: JSONValue) -> Bool {
+private func isValidXAIBatchTextUsage(_ value: JSONValue) -> Bool {
     guard let object = value.objectValue,
           isFiniteXAINumber(object["prompt_tokens"]),
           isFiniteXAINumber(object["completion_tokens"]),
@@ -936,6 +939,32 @@ private func isValidXAIChatBatchUsage(_ value: JSONValue) -> Bool {
         }
     }
     return true
+}
+
+private func xaiBatchTextUsage(from raw: JSONValue) -> TokenUsage? {
+    guard let usage = raw["usage"] else { return nil }
+    let inputTokens = usage["prompt_tokens"]?.intValue ?? 0
+    let outputTextTokens = usage["completion_tokens"]?.intValue ?? 0
+    let cacheReadTokens = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue ?? 0
+    let reasoningTokens = usage["completion_tokens_details"]?["reasoning_tokens"]?.intValue ?? 0
+    let promptTokensIncludesCached = cacheReadTokens <= inputTokens
+    let totalInputTokens = promptTokensIncludesCached
+        ? inputTokens
+        : inputTokens + cacheReadTokens
+    let inputNoCacheTokens = promptTokensIncludesCached
+        ? inputTokens - cacheReadTokens
+        : inputTokens
+    let outputTokens = outputTextTokens + reasoningTokens
+    return TokenUsage(
+        inputTokens: totalInputTokens,
+        outputTokens: outputTokens,
+        totalTokens: totalInputTokens + outputTokens,
+        inputTokensNoCache: inputNoCacheTokens,
+        inputTokensCacheRead: cacheReadTokens,
+        outputTextTokens: outputTextTokens,
+        outputReasoningTokens: reasoningTokens,
+        rawValue: usage
+    )
 }
 
 private func isFiniteXAINumber(_ value: JSONValue?) -> Bool {

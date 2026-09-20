@@ -59,6 +59,7 @@ func alibabaNormalizeOptions(_ output: inout [String: JSONValue]) {
     alibabaMoveKey("presencePenalty", to: "presence_penalty", in: &output)
     alibabaMoveKey("enableThinking", to: "enable_thinking", in: &output)
     alibabaMoveKey("thinkingBudget", to: "thinking_budget", in: &output)
+    alibabaMoveKey("preserveThinking", to: "preserve_thinking", in: &output)
     alibabaMoveKey("parallelToolCalls", to: "parallel_tool_calls", in: &output)
 }
 
@@ -76,6 +77,11 @@ func alibabaValidateLanguageProviderOptions(_ options: [String: JSONValue]) thro
                 throw AIError.invalidArgument(argument: "providerOptions.alibaba.thinkingBudget", message: "Alibaba thinkingBudget must be a positive number.")
             }
             output[key] = .number(number)
+        case "preserveThinking":
+            guard let bool = value.boolValue else {
+                throw AIError.invalidArgument(argument: "providerOptions.alibaba.preserveThinking", message: "Alibaba preserveThinking must be a boolean.")
+            }
+            output[key] = .bool(bool)
         case "parallelToolCalls":
             guard let bool = value.boolValue else {
                 throw AIError.invalidArgument(argument: "providerOptions.alibaba.parallelToolCalls", message: "Alibaba parallelToolCalls must be a boolean.")

@@ -42,7 +42,7 @@ struct QuiverAIProviderTests {
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.quiver.ai/v1/svgs/generations")
     #expect(request.headers["authorization"] == "Bearer quiver-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/2.0.40")
+    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/2.0.45")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "arrow-1")
     #expect(body["prompt"]?.stringValue == "Draw a square icon.")
@@ -71,7 +71,7 @@ struct QuiverAIProviderTests {
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer quiver-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/quiverai/2.0.40")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/quiverai/2.0.45")
 }
 
 @Test func quiverAIReadsEnvironmentSettingsLikeUpstream() async throws {
@@ -111,7 +111,9 @@ struct QuiverAIProviderTests {
         let transport = RecordingTransport(responses: [
             quiverAIResponse(svg: "<svg>1</svg>", id: "svg-arrow-1"),
             quiverAIResponse(svg: "<svg>2</svg>", id: "svg-arrow-1-1"),
-            quiverAIResponse(svg: "<svg>3</svg>", id: "svg-arrow-1-1-max")
+            quiverAIResponse(svg: "<svg>3</svg>", id: "svg-arrow-1-1-max"),
+            quiverAIResponse(svg: "<svg>4</svg>", id: "svg-arrow-2"),
+            quiverAIResponse(svg: "<svg>5</svg>", id: "svg-arrow-2-telos")
         ])
         let provider = try AIProviders.quiverAI(settings: ProviderSettings(
             apiKey: "explicit-quiver-key",
@@ -120,7 +122,7 @@ struct QuiverAIProviderTests {
             transport: transport
         ))
 
-        for modelID in ["arrow-1", "arrow-1.1", "arrow-1.1-max"] {
+        for modelID in ["arrow-1", "arrow-1.1", "arrow-1.1-max", "arrow-2", "arrow-2-telos"] {
             let imageModel = try provider.imageModel(modelID)
             #expect(imageModel.providerID == "quiverai.image")
             #expect(imageModel.modelID == modelID)
@@ -132,12 +134,14 @@ struct QuiverAIProviderTests {
         #expect(requests.map(\.url.absoluteString) == [
             "https://override.quiver.ai/v1/svgs/generations",
             "https://override.quiver.ai/v1/svgs/generations",
+            "https://override.quiver.ai/v1/svgs/generations",
+            "https://override.quiver.ai/v1/svgs/generations",
             "https://override.quiver.ai/v1/svgs/generations"
         ])
         #expect(requests.allSatisfy { $0.headers["authorization"] == "Bearer explicit-quiver-key" })
         #expect(requests.allSatisfy { $0.headers["x-quiverai-test"] == "1" })
         let bodies = try requests.map { try decodeJSONBody(try #require($0.body)) }
-        #expect(bodies.map { $0["model"]?.stringValue } == ["arrow-1", "arrow-1.1", "arrow-1.1-max"])
+        #expect(bodies.map { $0["model"]?.stringValue } == ["arrow-1", "arrow-1.1", "arrow-1.1-max", "arrow-2", "arrow-2-telos"])
     }
 }
 
@@ -395,6 +399,14 @@ struct QuiverAIProviderTests {
     } catch let error as AIError {
         #expect(String(describing: error).contains("supports up to 4 reference images"))
     }
+
+    let arrow2Provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-arrow2-references"))))
+    let arrow2Model = try arrow2Provider.imageModel("arrow-2")
+    let sixteenReferences = (0..<16).map { ImageInputFile(url: "https://example.com/arrow2-reference-\($0).png") }
+    _ = try await arrow2Model.generateImage(ImageGenerationRequest(prompt: "Draw", files: sixteenReferences))
+    await #expect(throws: AIError.self) {
+        _ = try await arrow2Model.generateImage(ImageGenerationRequest(prompt: "Draw", files: sixteenReferences + [sixteenReferences[0]]))
+    }
 }
 
 @Test func quiverAIFailsFastForInvalidOperationInputs() async throws {
@@ -431,6 +443,219 @@ struct QuiverAIProviderTests {
     } catch let error as AIError {
         #expect(String(describing: error).contains("accepts a single input image"))
     }
+}
+
+@Test func quiverAIArrow2ForwardsGenerationAndVectorizationOptionsLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        quiverAIResponse(svg: "<svg/>", id: "arrow2-generate", usage: true),
+        quiverAIResponse(svg: "<svg/>", id: "arrow2-vectorize", usage: true)
+    ])
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
+    let model = try provider.imageModel("arrow-2")
+    let arrow2Options: JSONValue = .object([
+        "reasoningEffort": "high",
+        "attributes": .object([
+            "viewBox": .object(["minX": -10, "minY": 0, "width": 100, "height": 50])
+        ]),
+        "maxOutputTokens": 65_536
+    ])
+
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "Draw a mark.",
+        count: 1,
+        files: [ImageInputFile(url: "https://example.com/reference.png")],
+        providerOptions: ["quiverai": arrow2Options]
+    ))
+    _ = try await model.generateImage(ImageGenerationRequest(
+        prompt: "",
+        count: 1,
+        files: [ImageInputFile(url: "https://example.com/reference.png")],
+        providerOptions: [
+            "quiverai": .object(try #require(arrow2Options.objectValue).merging(["operation": "vectorize"]) { _, new in new })
+        ]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.map(\.url.absoluteString) == [
+        "https://api.quiver.ai/v1/svgs/generations",
+        "https://api.quiver.ai/v1/svgs/vectorizations"
+    ])
+    let bodies = try requests.map { try decodeJSONBody(try #require($0.body)) }
+    for body in bodies {
+        #expect(body["reasoning_effort"]?.stringValue == "high")
+        #expect(body["attributes"]?["viewBox"]?["minX"]?.intValue == -10)
+        #expect(body["attributes"]?["viewBox"]?["width"]?.intValue == 100)
+        #expect(body["max_output_tokens"]?.intValue == 65_536)
+        #expect(body["stream"]?.boolValue == false)
+    }
+    #expect(bodies[0]["n"]?.intValue == 1)
+    #expect(bodies[1]["n"] == nil)
+}
+
+@Test func quiverAIAnimatesSVGAndPreservesTimingMetadataLikeUpstream() async throws {
+    let sourceSVG = #"<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>"#
+    let animatedSVG = #"<svg><circle><animate dur="1200ms"/></circle></svg>"#
+    let response = jsonResponse("""
+    {"id":"svg-animation-1","created":1713374520,"data":[{"svg":"\(animatedSVG.replacingOccurrences(of: "\"", with: "\\\""))","mime_type":"image/svg+xml","loop_period_ms":1200,"opening_animation_ms":null}],"usage":{"total_tokens":24,"input_tokens":13,"output_tokens":11}}
+    """)
+    let transport = RecordingTransport(response: response)
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
+
+    let result = try await provider.imageModel("arrow-2").generateImage(ImageGenerationRequest(
+        prompt: "",
+        count: 1,
+        files: [ImageInputFile(data: Data(sourceSVG.utf8), mediaType: "image/svg+xml")],
+        providerOptions: ["quiverai": ["operation": "animate"]]
+    ))
+
+    #expect(String(data: Data(base64Encoded: try #require(result.base64Images.first)) ?? Data(), encoding: .utf8) == animatedSVG)
+    #expect(result.providerMetadata["quiverai"]?["images"]?[0]?["loopPeriodMs"]?.intValue == 1200)
+    #expect(result.providerMetadata["quiverai"]?["images"]?[0]?["openingAnimationMs"] == .null)
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.quiver.ai/v1/svgs/animations")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body == .object([
+        "model": "arrow-2",
+        "svg_source": .object(["base64": .string(Data(sourceSVG.utf8).base64EncodedString())]),
+        "stream": false
+    ]))
+}
+
+@Test func quiverAIAnimationForwardsURLInstructionAndSupportedOptions() async throws {
+    let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "svg-animation-options"))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
+
+    _ = try await provider.imageModel("arrow-2-telos").generateImage(ImageGenerationRequest(
+        prompt: "Make the circle pulse gently.",
+        files: [ImageInputFile(url: "https://example.com/source.svg")],
+        providerOptions: [
+            "quiverai": .object([
+                "operation": "animate",
+                "temperature": 0.4,
+                "maxOutputTokens": 4096,
+                "reasoningEffort": "medium"
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body == .object([
+        "model": "arrow-2-telos",
+        "svg_source": .object(["url": "https://example.com/source.svg"]),
+        "prompt": "Make the circle pulse gently.",
+        "temperature": 0.4,
+        "max_output_tokens": 4096,
+        "reasoning_effort": "medium",
+        "stream": false
+    ]))
+}
+
+@Test func quiverAIArrow2EditsSVGWithReferencesAndSettingsLikeUpstream() async throws {
+    let sourceSVG = #"<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>"#
+    let referenceSVG = #"<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>"#
+    let binaryReference = try prepareQuiverAIImageReference(Data(referenceSVG.utf8))
+    let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg><rect fill=\"blue\"/></svg>", id: "svg-edit-1", usage: true))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
+
+    _ = try await provider.imageModel("arrow-2").generateImage(ImageGenerationRequest(
+        prompt: "Change the rectangle fill to blue.",
+        count: 1,
+        files: [ImageInputFile(data: Data(sourceSVG.utf8), mediaType: "image/svg+xml")],
+        providerOptions: [
+            "quiverai": .object([
+                "operation": "edit",
+                "referenceImages": .array([
+                    QuiverAIImageReference.url("https://example.com/reference.png").jsonValue,
+                    binaryReference.jsonValue
+                ]),
+                "maxReviewSteps": 2,
+                "reasoningEffort": "high",
+                "maxOutputTokens": 4096,
+                "orchestratorMaxOutputTokens": 2048,
+                "shallowMaxOutputTokens": 1024,
+                "temperature": 0.3
+            ])
+        ]
+    ))
+
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.quiver.ai/v1/svgs/edits")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["svg_source"]?["base64"]?.stringValue == Data(sourceSVG.utf8).base64EncodedString())
+    #expect(body["reference_images"]?[0]?["url"]?.stringValue == "https://example.com/reference.png")
+    #expect(body["reference_images"]?[1]?["base64"]?.stringValue == Data(referenceSVG.utf8).base64EncodedString())
+    #expect(body["max_review_steps"]?.intValue == 2)
+    #expect(body["reasoning_effort"]?.stringValue == "high")
+    #expect(body["settings"]?["max_output_tokens"]?.intValue == 4096)
+    #expect(body["settings"]?["orchestrator_max_output_tokens"]?.intValue == 2048)
+    #expect(body["settings"]?["shallow_max_output_tokens"]?.intValue == 1024)
+    #expect(body["settings"]?["temperature"]?.doubleValue == 0.3)
+}
+
+@Test func prepareQuiverAIImageReferenceMatchesUpstreamInputsAndValidation() throws {
+    let svg = #"<svg xmlns="http://www.w3.org/2000/svg"/>"#
+    let svgData = Data(svg.utf8)
+    let svgBase64 = svgData.base64EncodedString()
+
+    #expect(try prepareQuiverAIImageReference(URL(string: "https://example.com/reference.svg")!) == .url("https://example.com/reference.svg"))
+    #expect(try prepareQuiverAIImageReference("http://example.com/reference.png") == .url("http://example.com/reference.png"))
+    #expect(try prepareQuiverAIImageReference(svgData) == .base64(svgBase64))
+    #expect(try prepareQuiverAIImageReference(svgBase64) == .base64(svgBase64))
+    #expect(try prepareQuiverAIImageReference("data:image/svg+xml;base64,\(svgBase64)") == .base64(svgBase64))
+    #expect(throws: AIError.self) { _ = try prepareQuiverAIImageReference("ftp://example.com/reference.png") }
+    #expect(throws: AIError.self) { _ = try prepareQuiverAIImageReference("not base64!") }
+    #expect(throws: AIError.self) { _ = try prepareQuiverAIImageReference("data:image/bmp;base64,Qk0=") }
+    #expect(throws: AIError.self) { _ = try prepareQuiverAIImageReference(Data([1, 2, 3])) }
+}
+
+@Test func quiverAIPreservesFixedCreditsWithoutUsageLikeUpstream() async throws {
+    for credits in [0, 20] {
+        let transport = RecordingTransport(response: jsonResponse("""
+        {"id":"svg-credit","created":1713374400,"data":[{"svg":"<svg/>","mime_type":"image/svg+xml"}],"credits":\(credits)}
+        """))
+        let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
+        let result = try await provider.imageModel("arrow-1.1").generateImage(ImageGenerationRequest(prompt: "Draw"))
+        #expect(result.usage == nil)
+        #expect(result.providerMetadata["quiverai"]?["credits"]?.intValue == credits)
+    }
+}
+
+@Test func quiverAIArrow2ValidationsFailBeforeNetworkingLikeUpstream() async throws {
+    let transport = RecordingTransport(response: quiverAIResponse(svg: "<svg/>", id: "unused"))
+    let provider = try AIProviders.quiverAI(settings: ProviderSettings(apiKey: "quiver-key", baseURL: "https://api.quiver.ai/v1", transport: transport))
+
+    await #expect(throws: AIError.self) {
+        _ = try await provider.imageModel("arrow-2").generateImage(ImageGenerationRequest(prompt: "Draw", providerOptions: ["quiverai": ["maxOutputTokens": 65_537]]))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await provider.imageModel("arrow-1.1").generateImage(ImageGenerationRequest(
+            prompt: "",
+            files: [ImageInputFile(url: "https://example.com/source.svg")],
+            providerOptions: ["quiverai": ["operation": "animate"]]
+        ))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await provider.imageModel("arrow-2").generateImage(ImageGenerationRequest(
+            prompt: "   ",
+            files: [ImageInputFile(url: "https://example.com/source.svg")],
+            providerOptions: ["quiverai": ["operation": "animate"]]
+        ))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await provider.imageModel("arrow-2").generateImage(ImageGenerationRequest(
+            prompt: "Make it blue.",
+            files: [ImageInputFile(data: Data("<svg><g></svg>".utf8), mediaType: "image/svg+xml")],
+            providerOptions: ["quiverai": ["operation": "edit"]]
+        ))
+    }
+    await #expect(throws: AIError.self) {
+        _ = try await provider.imageModel("arrow-2").generateImage(ImageGenerationRequest(
+            prompt: "Make it blue.",
+            files: [ImageInputFile(url: "https://example.com/source.svg")],
+            providerOptions: ["quiverai": ["operation": "edit", "maxReviewSteps": 6]]
+        ))
+    }
+    #expect(await transport.requests().isEmpty)
 }
 
 }

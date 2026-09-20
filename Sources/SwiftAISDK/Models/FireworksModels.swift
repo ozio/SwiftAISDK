@@ -4,10 +4,19 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
     public let providerID = "fireworks.image"
     public let modelID: String
     private let config: ModelHTTPConfig
+    private let pollIntervalMillis: Int
+    private let pollTimeoutMillis: Int
 
-    init(modelID: String, config: ModelHTTPConfig) {
+    init(
+        modelID: String,
+        config: ModelHTTPConfig,
+        pollIntervalMillis: Int = 500,
+        pollTimeoutMillis: Int = 120_000
+    ) {
         self.modelID = modelID
         self.config = config
+        self.pollIntervalMillis = pollIntervalMillis
+        self.pollTimeoutMillis = pollTimeoutMillis
     }
 
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
@@ -95,36 +104,52 @@ public final class FireworksImageModel: ImageModel, @unchecked Sendable {
     }
 
     private func pollAsyncImage(requestID: String, headers requestHeaders: [String: String], abortSignal: AIAbortSignal?) async throws -> String {
-        let started = DispatchTime.now().uptimeNanoseconds
-        while true {
-            let response = try await config.transport.send(AIHTTPRequest(
-                method: "POST",
-                url: try requireURL("\(withoutTrailingSlash(config.baseURL))/workflows/\(modelID)/get_result"),
-                headers: config.headers
-                    .mergingHeaders(requestHeaders)
-                    .mergingHeaders(["content-type": "application/json"]),
-                body: try encodeJSONBody(.object(["id": .string(requestID)])),
-                abortSignal: abortSignal
-            ))
-            guard (200..<300).contains(response.statusCode) else {
-                throw apiCallError(provider: providerID, response: response)
-            }
-            let raw = try response.jsonValue()
-            switch raw["status"]?.stringValue {
-            case "Ready":
-                guard let sample = raw["result"]?["sample"]?.stringValue else {
-                    throw AIError.invalidResponse(provider: providerID, message: "Fireworks poll response is Ready but missing result.sample.")
+        let timeoutController = AIAbortController()
+        let timeoutTask = setAbortTimeout(
+            abortController: timeoutController,
+            label: "Fireworks image polling",
+            timeoutMilliseconds: pollTimeoutMillis
+        )
+        defer { timeoutTask?.cancel() }
+        let pollingAbortSignal = mergeAbortSignals(abortSignal, timeoutController.signal) ?? timeoutController.signal
+        let requestAbortSignal = abortSignal ?? timeoutController.signal
+
+        do {
+            while true {
+                let pollRequest = AIHTTPRequest(
+                    method: "POST",
+                    url: try requireURL("\(withoutTrailingSlash(config.baseURL))/workflows/\(modelID)/get_result"),
+                    headers: config.headers
+                        .mergingHeaders(requestHeaders)
+                        .mergingHeaders(["content-type": "application/json"]),
+                    body: try encodeJSONBody(.object(["id": .string(requestID)])),
+                    abortSignal: requestAbortSignal
+                )
+                let response = try await raceAbortSignal(pollingAbortSignal) {
+                    try await self.config.transport.send(pollRequest)
                 }
-                return sample
-            case "Error", "Failed":
-                let status = raw["status"]?.stringValue ?? "unknown"
-                throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation failed with status: \(status)")
-            default:
-                if DispatchTime.now().uptimeNanoseconds - started > 120_000_000_000 {
-                    throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation timed out after 120000ms")
+                guard (200..<300).contains(response.statusCode) else {
+                    throw apiCallError(provider: providerID, response: response)
                 }
-                try await sleepWithAbortSignal(nanoseconds: 500_000_000, abortSignal: abortSignal)
+                let raw = try response.jsonValue()
+                switch raw["status"]?.stringValue {
+                case "Ready":
+                    guard let sample = raw["result"]?["sample"]?.stringValue else {
+                        throw AIError.invalidResponse(provider: providerID, message: "Fireworks poll response is Ready but missing result.sample.")
+                    }
+                    return sample
+                case "Error", "Failed":
+                    let status = raw["status"]?.stringValue ?? "unknown"
+                    throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation failed with status: \(status)")
+                default:
+                    try await delay(pollIntervalMillis, abortSignal: pollingAbortSignal)
+                }
             }
+        } catch {
+            if timeoutController.signal.isAborted {
+                throw AIError.invalidResponse(provider: providerID, message: "Fireworks image generation timed out after \(pollTimeoutMillis)ms")
+            }
+            throw error
         }
     }
 }

@@ -215,9 +215,9 @@ public struct GatewayTranscriptionFactory: Sendable {
     }
 }
 
-public final class GatewayProvider: AIProvider, @unchecked Sendable {
+public final class GatewayProvider: AIProvider, AIEvaluationProvider, @unchecked Sendable {
     public let providerID = "gateway"
-    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .speech, .video, .reranking]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .embedding, .image, .transcription, .speech, .video, .reranking, .evaluation]
     private let config: ModelHTTPConfig
     private let webSocketTransport: any AIDuplexWebSocketTransport
 
@@ -252,7 +252,7 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
         if normalizedHeaders["ai-gateway-auth-method"] == nil {
             settings.headers["ai-gateway-auth-method"] = auth.method
         }
-        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.80")
+        let headers = withUserAgentSuffix(settings.headers, "ai-sdk/gateway/4.0.87")
         config = ModelHTTPConfig(
             providerID: providerID,
             baseURL: settings.baseURL ?? "https://ai-gateway.vercel.sh/v4/ai",
@@ -331,6 +331,14 @@ public final class GatewayProvider: AIProvider, @unchecked Sendable {
 
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         GatewayRerankingModel(modelID: modelID, config: config)
+    }
+
+    public func evaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
+        GatewayEvaluationModel(modelID: modelID, config: config)
+    }
+
+    public func evaluation(_ modelID: String) throws -> any AIEvaluationModelV4 {
+        try evaluationModel(modelID)
     }
 
     public func availableModels() async throws -> [GatewayModelEntry] {

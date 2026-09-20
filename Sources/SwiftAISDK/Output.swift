@@ -93,6 +93,8 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
         _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
     ) async throws -> AIOutputGenerationResult<FinalOutput?>
 
+    internal var partialOutputFromText: @Sendable (_ text: String) -> PartialOutput?
+
     internal init(
         kind: AIOutputKind,
         schema: JSONValue? = nil,
@@ -123,7 +125,8 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
             _ result: TextGenerationResult,
             _ providerID: String,
             _ repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
-        ) async throws -> AIOutputGenerationResult<FinalOutput?>
+        ) async throws -> AIOutputGenerationResult<FinalOutput?>,
+        partialOutputFromText: @escaping @Sendable (_ text: String) -> PartialOutput? = { _ in nil }
     ) {
         self.kind = kind
         self.schema = schema
@@ -133,6 +136,7 @@ public struct AIOutput<FinalOutput: Sendable, PartialOutput: Sendable>: Sendable
         self.streamFromRequest = streamFromRequest
         self.requestForOutput = requestForOutput
         self.optionalResultFromTextResult = optionalResultFromTextResult
+        self.partialOutputFromText = partialOutputFromText
     }
 }
 
@@ -175,7 +179,8 @@ public enum Output {
                     return optionalOutputResult(output: nil, rawOutput: .null, textResult: result)
                 }
                 return optionalOutputResult(output: result.text, rawOutput: .string(result.text), textResult: result)
-            }
+            },
+            partialOutputFromText: { .some($0) }
         )
     }
 
@@ -250,7 +255,8 @@ public enum Output {
                     text: parsed.text,
                     textResult: result
                 )
-            }
+            },
+            partialOutputFromText: { partialObject(from: $0) }
         )
     }
 
@@ -404,6 +410,10 @@ public enum Output {
                     text: parsed.text,
                     textResult: result
                 )
+            },
+            partialOutputFromText: { text in
+                guard let partial = arrayPartialElements(from: text) else { return nil }
+                return typedPartialArray(Element.self, from: partial)
             }
         )
     }
@@ -507,6 +517,10 @@ public enum Output {
                     text: parsed.text,
                     textResult: result
                 )
+            },
+            partialOutputFromText: { text in
+                guard let value = partialObject(from: text)?["result"]?.stringValue else { return nil }
+                return enumPartialObjectValue(value, values: options)
             }
         )
     }
@@ -546,8 +560,7 @@ public enum Output {
                         jsonInstruction: jsonInstruction,
                         repairText: repairText
                     ),
-                    outputKind: .json,
-                    partial: { $0 }
+                    outputKind: .json
                 )
             },
             requestForOutput: { request, jsonInstruction in
@@ -574,9 +587,34 @@ public enum Output {
                     text: parsed.text,
                     textResult: result
                 )
-            }
+            },
+            partialOutputFromText: { partialObject(from: $0) }
         )
     }
+}
+
+func structuredOutputTextResult(_ result: TextGenerationResult) -> TextGenerationResult {
+    guard let finalStep = result.finalStep else { return result }
+    return TextGenerationResult(
+        text: finalStep.text,
+        content: finalStep.content,
+        reasoning: finalStep.reasoning,
+        finishReason: finalStep.finishReason,
+        usage: finalStep.usage,
+        files: finalStep.files,
+        toolCalls: finalStep.toolCalls,
+        toolResults: finalStep.toolResults,
+        toolApprovalRequests: finalStep.toolApprovalRequests,
+        toolApprovalResponses: finalStep.toolApprovalResponses,
+        steps: result.steps,
+        sources: finalStep.sources,
+        responseMessages: result.responseMessages,
+        providerMetadata: finalStep.providerMetadata,
+        rawValue: result.rawValue,
+        warnings: finalStep.warnings,
+        requestMetadata: result.requestMetadata,
+        responseMetadata: finalStep.responseMetadata
+    )
 }
 
 private func shouldParseOutput(from result: TextGenerationResult) -> Bool {
@@ -754,6 +792,122 @@ private func mapLanguageStreamToOutputStream(
             }
         }
 
+        continuation.onTermination = { _ in task.cancel() }
+    }
+}
+
+func mapStructuredLanguageStreamToOutputStream<FinalOutput: Sendable, PartialOutput: Sendable>(
+    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    output: AIOutput<FinalOutput, PartialOutput>,
+    providerID: String,
+    repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)?
+) -> AsyncThrowingStream<AIOutputStreamPart<FinalOutput, PartialOutput>, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            var step = LanguageStreamToolStep()
+            var rawValues: [JSONValue] = []
+            var lastPublishedText: String?
+
+            func publishPartialIfAvailable() {
+                guard step.text != lastPublishedText,
+                      let partial = output.partialOutputFromText(step.text) else {
+                    return
+                }
+                lastPublishedText = step.text
+                continuation.yield(.partialOutput(partial))
+            }
+
+            do {
+                for try await part in stream {
+                    try Task.checkCancellation()
+                    switch part {
+                    case let .streamStart(warnings):
+                        step = LanguageStreamToolStep()
+                        rawValues.removeAll(keepingCapacity: true)
+                        lastPublishedText = nil
+                        step.record(part)
+                        for warning in warnings {
+                            continuation.yield(.warning(warning))
+                        }
+                    case let .textDelta(delta):
+                        step.record(part)
+                        continuation.yield(.textDelta(delta))
+                        publishPartialIfAvailable()
+                    case let .textDeltaPart(_, delta, _):
+                        step.record(part)
+                        continuation.yield(.textDelta(delta))
+                        publishPartialIfAvailable()
+                    case let .source(source):
+                        step.record(part)
+                        continuation.yield(.source(source))
+                    case let .metadata(metadata):
+                        step.record(part)
+                        continuation.yield(.metadata(metadata))
+                    case let .responseMetadata(metadata):
+                        step.record(part)
+                        continuation.yield(.responseMetadata(metadata))
+                    case let .raw(raw):
+                        step.record(part)
+                        rawValues.append(raw)
+                        continuation.yield(.raw(part))
+                    case .finish, .finishMetadata:
+                        step.record(part)
+                    default:
+                        step.record(part)
+                        continuation.yield(.raw(part))
+                    }
+                }
+
+                let finalStep = step.toolStep(
+                    index: 0,
+                    toolResults: [],
+                    approvalRequests: [],
+                    approvalResponses: []
+                )
+                let textResult = TextGenerationResult(
+                    text: finalStep.text,
+                    content: finalStep.content,
+                    reasoning: finalStep.reasoning,
+                    finishReason: finalStep.finishReason,
+                    usage: finalStep.usage,
+                    files: finalStep.files,
+                    toolCalls: finalStep.toolCalls,
+                    toolResults: finalStep.toolResults,
+                    toolApprovalRequests: finalStep.toolApprovalRequests,
+                    toolApprovalResponses: finalStep.toolApprovalResponses,
+                    steps: [finalStep],
+                    sources: finalStep.sources,
+                    providerMetadata: finalStep.providerMetadata,
+                    rawValue: rawValues.isEmpty ? .string(finalStep.text) : .array(rawValues),
+                    warnings: finalStep.warnings,
+                    responseMetadata: finalStep.responseMetadata
+                )
+                let optional = try await output.optionalResultFromTextResult(
+                    textResult,
+                    providerID,
+                    repairText
+                )
+                guard let finalOutput = optional.output else {
+                    throw AINoOutputError(structuredOutputKind: output.kind)
+                }
+                continuation.yield(.output(AIOutputGenerationResult(
+                    output: finalOutput,
+                    text: optional.text,
+                    rawOutput: optional.rawOutput,
+                    reasoning: optional.reasoning,
+                    finishReason: optional.finishReason,
+                    usage: optional.usage,
+                    warnings: optional.warnings,
+                    providerMetadata: optional.providerMetadata,
+                    responseMetadata: optional.responseMetadata,
+                    textResult: optional.textResult
+                )))
+                continuation.yield(.finish(reason: finalStep.finishReason, usage: finalStep.usage))
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
         continuation.onTermination = { _ in task.cancel() }
     }
 }

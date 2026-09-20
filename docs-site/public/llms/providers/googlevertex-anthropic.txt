@@ -16,7 +16,7 @@ Source URL: /providers/googlevertex-anthropic/
 
 ## Notes
 
-Vertex Anthropic mirrors upstream Google Vertex 5.0.81 and inherits the shared Anthropic 4.0.49 model recognition, system options, thinking behavior, and beta headers.
+Vertex Anthropic mirrors upstream Google Vertex 5.0.88 and inherits the shared Anthropic 4.0.49 model recognition, system options, thinking behavior, and beta headers.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

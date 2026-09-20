@@ -27,7 +27,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/chat/completions")
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.51")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.56")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["thinking"]?["type"]?.stringValue == "enabled")
     #expect(body["thinking"]?["budget_tokens"]?.intValue == 2048)
@@ -121,7 +121,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image")
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.51")
+    #expect(request.headers["user-agent"] == "ai-sdk/fireworks/3.0.56")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["prompt"]?.stringValue == "cat")
     #expect(body["samples"]?.intValue == 1)
@@ -151,7 +151,7 @@ import Testing
     #expect(requests.count == 3)
     #expect(requests[0].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro")
     #expect(requests[0].headers["authorization"] == "Bearer fireworks-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/fireworks/3.0.51")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/fireworks/3.0.56")
     let submitBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(submitBody["prompt"]?.stringValue == "cat")
     #expect(submitBody["samples"]?.intValue == 2)
@@ -159,7 +159,7 @@ import Testing
     #expect(submitBody["height"]?.stringValue == "768")
     #expect(requests[1].url.absoluteString == "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro/get_result")
     #expect(requests[1].headers["authorization"] == "Bearer fireworks-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/fireworks/3.0.51")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/fireworks/3.0.56")
     let pollBody = try decodeJSONBody(try #require(requests[1].body))
     #expect(pollBody["id"]?.stringValue == "fw-1")
     #expect(requests[2].method == "GET")
@@ -181,7 +181,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer fireworks-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/fireworks/3.0.51")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/fireworks/3.0.56")
 }
 
 @Test func fireworksImageMapsProviderOptionsAndInputImage() async throws {
@@ -289,6 +289,60 @@ import Testing
     }
 }
 
+@Test func fireworksImageDeadlineAbortsHungPollLikeUpstream() async throws {
+    let transport = FireworksHungPollTransport()
+    let model = FireworksImageModel(
+        modelID: "accounts/fireworks/models/flux-kontext-pro",
+        config: ModelHTTPConfig(
+            providerID: "fireworks",
+            baseURL: "https://api.async-example.com",
+            headers: ["authorization": "Bearer fireworks-key"],
+            transport: transport
+        ),
+        pollIntervalMillis: 10,
+        pollTimeoutMillis: 25
+    )
+
+    await #expect(throws: AIError.invalidResponse(provider: "fireworks.image", message: "Fireworks image generation timed out after 25ms")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+
+    let requests = await transport.requests()
+    #expect(requests.count == 2)
+    #expect(requests[0].url.absoluteString == "https://api.async-example.com/workflows/accounts/fireworks/models/flux-kontext-pro")
+    #expect(requests[1].url.absoluteString == "https://api.async-example.com/workflows/accounts/fireworks/models/flux-kontext-pro/get_result")
+    #expect(await transport.observedPollSignal()?.isAborted == true)
+}
+
+@Test func fireworksImagePreservesCallerAbortDuringHungPoll() async throws {
+    let transport = FireworksHungPollTransport()
+    let model = FireworksImageModel(
+        modelID: "accounts/fireworks/models/flux-kontext-pro",
+        config: ModelHTTPConfig(
+            providerID: "fireworks",
+            baseURL: "https://api.async-example.com",
+            headers: ["authorization": "Bearer fireworks-key"],
+            transport: transport
+        ),
+        pollIntervalMillis: 10,
+        pollTimeoutMillis: 1_000
+    )
+    let controller = AIAbortController()
+    let generation = Task {
+        try await model.generateImage(ImageGenerationRequest(prompt: "cat", abortSignal: controller.signal))
+    }
+    await transport.waitUntilPollStarted()
+    controller.abort(reason: "caller stopped generation", reasonName: "AbortError")
+
+    do {
+        _ = try await generation.value
+        Issue.record("Expected caller abort")
+    } catch let error as AIAbortError {
+        #expect(error.reason == "caller stopped generation")
+        #expect(error.reasonName == "AbortError")
+    }
+}
+
 @Test func fireworksParsesStringAndObjectErrorEnvelopes() async throws {
     let objectTransport = RecordingTransport(response: AIHTTPResponse(
         statusCode: 404,
@@ -384,5 +438,36 @@ import Testing
         _ = try await stringEmbeddingProvider.embeddingModel("nomic-ai/nomic-embed-text-v1.5").embed(
             EmbeddingRequest(values: ["Hi"])
         )
+    }
+}
+
+private actor FireworksHungPollTransport: AITransport {
+    private var recordedRequests: [AIHTTPRequest] = []
+    private var pollSignal: AIAbortSignal?
+    private var pollWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func requests() -> [AIHTTPRequest] { recordedRequests }
+    func observedPollSignal() -> AIAbortSignal? { pollSignal }
+
+    func waitUntilPollStarted() async {
+        if pollSignal != nil { return }
+        await withCheckedContinuation { pollWaiters.append($0) }
+    }
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        recordedRequests.append(request)
+        if recordedRequests.count == 1 {
+            return jsonResponse(#"{"request_id":"test-request-123"}"#)
+        }
+
+        pollSignal = request.abortSignal
+        let waiters = pollWaiters
+        pollWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        guard let pollSignal else {
+            throw AIError.invalidResponse(provider: "fireworks.image", message: "Expected poll abort signal")
+        }
+        _ = await pollSignal.waitUntilAborted()
+        throw AIAbortError(reason: pollSignal.reason, reasonName: pollSignal.reasonName)
     }
 }

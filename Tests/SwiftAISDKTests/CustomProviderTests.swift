@@ -2,6 +2,20 @@ import Foundation
 import Testing
 @testable import SwiftAISDK
 
+private typealias SwiftAISDK170CustomProviderFactory = (
+    String,
+    [String: any LanguageModel],
+    [String: any EmbeddingModel],
+    [String: any ImageModel],
+    [String: any TranscriptionModel],
+    [String: any SpeechModel],
+    [String: any VideoModel],
+    [String: any RerankingModel],
+    (any AIFileClient)?,
+    (any AISkillsClient)?,
+    (any AIProvider)?
+) -> AICustomProvider
+
 @Test func providerRegistryRoutesCombinedModelIDsToRegisteredProviders() throws {
     let appProvider = customProvider(
         providerID: "app",
@@ -157,6 +171,49 @@ import Testing
     #expect(skillResult.providerReference["skill"] == "custom-skill")
 }
 
+@Test func customProviderRetainsSwiftAISDK170FactorySignatures() throws {
+    let initializer: SwiftAISDK170CustomProviderFactory = AICustomProvider.init
+    let globalFactory: SwiftAISDK170CustomProviderFactory = customProvider
+    let namespacedFactory: SwiftAISDK170CustomProviderFactory = AIProviders.customProvider
+
+    func makeProvider(
+        _ factory: SwiftAISDK170CustomProviderFactory,
+        providerID: String,
+        modelID: String
+    ) -> AICustomProvider {
+        factory(
+            providerID,
+            ["chat": CustomLanguageModel(modelID: modelID)],
+            [:],
+            [:],
+            [:],
+            [:],
+            [:],
+            [:],
+            nil,
+            nil,
+            nil
+        )
+    }
+
+    let providers = [
+        makeProvider(initializer, providerID: "legacy-init", modelID: "init-model"),
+        makeProvider(globalFactory, providerID: "legacy-global", modelID: "global-model"),
+        makeProvider(namespacedFactory, providerID: "legacy-namespaced", modelID: "namespaced-model")
+    ]
+
+    #expect(providers.map(\.providerID) == ["legacy-init", "legacy-global", "legacy-namespaced"])
+    #expect((try providers[0].languageModel("chat") as? CustomLanguageModel)?.modelID == "init-model")
+    #expect((try providers[1].languageModel("chat") as? CustomLanguageModel)?.modelID == "global-model")
+    #expect((try providers[2].languageModel("chat") as? CustomLanguageModel)?.modelID == "namespaced-model")
+    for provider in providers {
+        #expect(!provider.supportedCapabilities.contains(.evaluation))
+        #expect(throws: AIEvaluationModelResolutionError.noSuchModel(modelID: "missing")) {
+            _ = try provider.evaluationModel("missing")
+        }
+    }
+}
+
 @Test func customProviderUsesFallbackProviderForMissingModelsAndClients() async throws {
     let fallback = CustomFallbackProvider(
         language: CustomLanguageModel(modelID: "fallback-language"),
@@ -231,6 +288,93 @@ import Testing
     }
     #expect(throws: AIError.unsupportedModel(provider: "app", capability: .reranking, modelID: "missing")) {
         _ = try provider.rerankingModel("missing")
+    }
+}
+
+@Suite("CustomProviderEvaluationTests", .serialized)
+struct CustomProviderEvaluationTests {
+    @Test func customProviderResolvesDirectAndDefaultProviderEvaluationAliases() throws {
+        let model = CustomEvaluationModel(modelID: "evaluation")
+        let defaultProvider = customProvider(
+            evaluationModels: ["remote": .model(model)]
+        )
+        let provider = customProvider(
+            evaluationModels: [
+                "direct": .model(model),
+                "alias": .modelID("remote")
+            ]
+        )
+        let directModelProvider = customProvider(
+            evaluationModels: ["plain": model]
+        )
+
+        #expect((try provider.evaluationModel("direct") as? CustomEvaluationModel) === model)
+        #expect((try directModelProvider.evaluationModel("plain") as? CustomEvaluationModel) === model)
+        let resolved = try AIDefaultProvider.withProvider(defaultProvider) {
+            try provider.evaluationModel("alias") as? CustomEvaluationModel
+        }
+        #expect(resolved === model)
+    }
+
+    @Test func customProviderUsesEvaluationFallbackAndReportsMissingModels() throws {
+        let model = CustomEvaluationModel(modelID: "fallback")
+        let fallback = customProvider(evaluationModels: ["route": .model(model)])
+        let provider = customProvider(fallbackProvider: fallback)
+
+        #expect((try provider.evaluationModel("route") as? CustomEvaluationModel) === model)
+        #expect(throws: AIEvaluationModelResolutionError.noSuchModel(modelID: "missing")) {
+            _ = try provider.evaluationModel("missing")
+        }
+    }
+
+    @Test func registryRoutesEvaluationModelsWithNestedIDsAndKeepsStableProviderSeparate() throws {
+        let model = CustomEvaluationModel(modelID: "model:version")
+        let provider = customProvider(
+            evaluationModels: ["model:version": .model(model)]
+        )
+        let registry = createProviderRegistry(["app": provider])
+        let stableProvider: any AIProvider = registry
+
+        #expect(stableProvider.providerID == "provider-registry")
+        #expect((try registry.evaluationModel("app:model:version") as? CustomEvaluationModel) === model)
+        #expect((stableProvider as? any AIEvaluationProvider) != nil)
+        #expect(throws: AIProviderRegistryError.invalidModelID(
+            modelID: "model",
+            modelType: "evaluationModel",
+            separator: ":"
+        )) {
+            _ = try registry.evaluationModel("model")
+        }
+        #expect(throws: AIProviderRegistryError.noSuchProvider(
+            providerID: "missing",
+            modelType: "evaluationModel",
+            availableProviders: ["app"]
+        )) {
+            _ = try registry.evaluationModel("missing:model")
+        }
+    }
+
+    @Test func registryRejectsProvidersWithoutStructuralEvaluationSupport() throws {
+        let registry = createProviderRegistry(["app": RegistryLanguageOnlyProvider()])
+
+        #expect(throws: AIEvaluationModelResolutionError.noSuchModel(modelID: "app:model")) {
+            _ = try registry.evaluationModel("app:model")
+        }
+    }
+
+    @Test func providerWrapperPreservesFileAndSkillClients() throws {
+        let files = CustomFileClient(providerID: "wrapped.files")
+        let skills = CustomSkillsClient(providerID: "wrapped.skills")
+        let provider = customProvider(files: files, skills: skills)
+        let wrapped = wrapProvider(
+            provider,
+            languageModelMiddleware: [AILanguageModelMiddleware]()
+        )
+
+        let fileProvider = try #require(wrapped as? any AIFileProvider)
+        let skillProvider = try #require(wrapped as? any AISkillsProvider)
+        #expect((try fileProvider.files()).providerID == "wrapped.files")
+        #expect((try skillProvider.skills()).providerID == "wrapped.skills")
     }
 }
 
@@ -367,6 +511,20 @@ private final class CustomLanguageModel: LanguageModel, @unchecked Sendable {
 
     func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         TextGenerationResult(text: modelID, rawValue: .object([:]))
+    }
+}
+
+private final class CustomEvaluationModel: AIEvaluationModelV4, @unchecked Sendable {
+    let providerID = "custom.evaluation"
+    let modelID: String
+    let supportedQuestionTypes = AIEvaluationQuestionType.allCases
+
+    init(modelID: String) {
+        self.modelID = modelID
+    }
+
+    func doEvaluate(_ options: AIEvaluationModelV4CallOptions) async throws -> AIEvaluationModelV4Result {
+        AIEvaluationModelV4Result(answers: [:], warnings: [])
     }
 }
 

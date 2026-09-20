@@ -246,9 +246,9 @@ import Testing
         tools: ["code": AnthropicTools.codeExecution_20260120()]
     )) {
         switch part {
-        case let .toolCall(call) where call.name == "code_execution":
+        case let .toolCall(call) where call.name == "code":
             toolCalls.append(call)
-        case let .toolResult(result) where result.toolName == "code_execution":
+        case let .toolResult(result) where result.toolName == "code":
             toolResults.append(result)
         case let .textDeltaPart(_, delta, _):
             text += delta
@@ -364,7 +364,7 @@ import Testing
     }
 
     let skillReadToolCall = try #require(toolCalls.first {
-        $0.name == "code_execution" && $0.arguments.contains("/skills/pptx/SKILL.md")
+        $0.name == "anthropic.code_execution_20250825" && $0.arguments.contains("/skills/pptx/SKILL.md")
     })
     #expect(skillReadToolCall.providerExecuted == true)
     #expect(skillReadToolCall.arguments == #"{"type":"text_editor_code_execution","command": "view", "path": "/skills/pptx/SKILL.md"}"#)

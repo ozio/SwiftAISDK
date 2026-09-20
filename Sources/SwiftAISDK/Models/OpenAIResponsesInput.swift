@@ -448,11 +448,30 @@ private func openResponsesToolResultFilePart(
             warnings.append(AIWarning(type: "other", message: "unsupported tool content part type: file with missing provider reference"))
             return nil
         }
-        return .object([
-            "type": .string("input_file"),
-            "filename": filename,
-            "file_id": .string(fileID)
-        ])
+        var reference: [String: JSONValue]
+        if mediaType.lowercased().hasPrefix("image/") {
+            reference = [
+                "type": .string("input_image"),
+                "file_id": .string(fileID)
+            ]
+            reference["detail"] = openResponsesImageDetail(
+                from: item,
+                providerID: providerID,
+                providerOptionsName: providerOptionsName
+            )
+        } else {
+            reference = [
+                "type": .string("input_file"),
+                "file_id": .string(fileID)
+            ]
+        }
+        if let breakpoint = openResponsesToolResultContentPromptCacheBreakpoint(
+            item,
+            providerID: providerID
+        ) {
+            reference["prompt_cache_breakpoint"] = breakpoint
+        }
+        return .object(reference)
     case "text":
         let text = data?["text"]?.stringValue ?? ""
         return .object([

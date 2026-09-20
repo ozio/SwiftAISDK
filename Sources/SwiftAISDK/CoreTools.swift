@@ -2,6 +2,8 @@ import Foundation
 
 public struct AIToolStep: Sendable {
     public var index: Int
+    public var providerID: String?
+    public var modelID: String?
     public var content: [AIResultContentPart]
     public var text: String
     public var reasoning: String
@@ -19,6 +21,8 @@ public struct AIToolStep: Sendable {
 
     public init(
         index: Int,
+        providerID: String? = nil,
+        modelID: String? = nil,
         content: [AIResultContentPart] = [],
         text: String,
         reasoning: String = "",
@@ -35,6 +39,8 @@ public struct AIToolStep: Sendable {
         responseMetadata: AIResponseMetadata = AIResponseMetadata()
     ) {
         self.index = index
+        self.providerID = providerID
+        self.modelID = modelID
         self.content = content
         self.text = text
         self.reasoning = reasoning
@@ -49,6 +55,45 @@ public struct AIToolStep: Sendable {
         self.warnings = warnings
         self.providerMetadata = providerMetadata
         self.responseMetadata = responseMetadata
+    }
+
+    /// Preserves the initializer released in 1.7.0 before step model identity was added.
+    public init(
+        index: Int,
+        content: [AIResultContentPart] = [],
+        text: String,
+        reasoning: String = "",
+        finishReason: String? = nil,
+        usage: TokenUsage? = nil,
+        files: [AIStreamFile] = [],
+        toolCalls: [AIToolCall] = [],
+        toolResults: [AIToolResult] = [],
+        toolApprovalRequests: [AIToolApprovalRequest] = [],
+        toolApprovalResponses: [AIToolApprovalResponse] = [],
+        sources: [AISource] = [],
+        warnings: [AIWarning] = [],
+        providerMetadata: [String: JSONValue] = [:],
+        responseMetadata: AIResponseMetadata = AIResponseMetadata()
+    ) {
+        self.init(
+            index: index,
+            providerID: nil,
+            modelID: nil,
+            content: content,
+            text: text,
+            reasoning: reasoning,
+            finishReason: finishReason,
+            usage: usage,
+            files: files,
+            toolCalls: toolCalls,
+            toolResults: toolResults,
+            toolApprovalRequests: toolApprovalRequests,
+            toolApprovalResponses: toolApprovalResponses,
+            sources: sources,
+            warnings: warnings,
+            providerMetadata: providerMetadata,
+            responseMetadata: responseMetadata
+        )
     }
 }
 
@@ -541,6 +586,22 @@ public struct AIToolModelOutputContext: Sendable {
     }
 }
 
+
+public let AIDirectToolCallerName = "AI_SDK_DIRECT_TOOL_CALL"
+
+public enum AIToolCallerDefinition: Sendable {
+    case local(
+        bind: @Sendable (_ tools: [String: AITool]) -> AITool,
+        prepareModelMessage: (@Sendable (_ tools: [String: AITool]) -> String?)? = nil
+    )
+    case provider(
+        prepareProviderOptions: @Sendable (
+            _ providerOptions: [String: JSONValue]
+        ) -> [String: JSONValue]
+    )
+}
+
+public typealias AIToolCallerRouting = [String: [String]]
 public struct AITool: Sendable {
     public var name: String
     public var description: String?
@@ -552,6 +613,9 @@ public struct AITool: Sendable {
     public var inputExamples: [JSONValue]
     public var contextSchema: JSONValue?
     public var needsApproval: AIToolNeedsApproval?
+    public var deferLoading: Bool
+    public var toolCaller: AIToolCallerDefinition?
+    var toolSearchMarker: Bool
     public var onInputStart: AIToolInputStartCallback?
     public var onInputDelta: AIToolInputDeltaCallback?
     public var onInputAvailable: AIToolInputAvailableCallback?
@@ -571,6 +635,8 @@ public struct AITool: Sendable {
         inputExamples: [JSONValue] = [],
         contextSchema: JSONValue? = nil,
         needsApproval: AIToolNeedsApproval? = nil,
+        deferLoading: Bool = false,
+        toolCaller: AIToolCallerDefinition? = nil,
         onInputStart: AIToolInputStartCallback? = nil,
         onInputDelta: AIToolInputDeltaCallback? = nil,
         onInputAvailable: AIToolInputAvailableCallback? = nil,
@@ -590,6 +656,9 @@ public struct AITool: Sendable {
         self.contextSchema = contextSchema
         self.needsApproval = needsApproval
         self.onInputStart = onInputStart
+        self.deferLoading = deferLoading
+        self.toolCaller = toolCaller
+        self.toolSearchMarker = false
         self.onInputDelta = onInputDelta
         self.onInputAvailable = onInputAvailable
         self.refineArguments = refineArguments
@@ -598,6 +667,49 @@ public struct AITool: Sendable {
         self.executeWithContext = executeWithContext ?? { arguments, _ in
             try await execute(arguments)
         }
+    }
+
+    /// Preserves the initializer released in 1.7.0 before deferred tool callers were added.
+    public init(
+        name: String,
+        description: String? = nil,
+        parameters: JSONValue,
+        dynamic: Bool = false,
+        providerMetadata: [String: JSONValue] = [:],
+        providerOptions: [String: JSONValue] = [:],
+        strict: Bool? = nil,
+        inputExamples: [JSONValue] = [],
+        contextSchema: JSONValue? = nil,
+        needsApproval: AIToolNeedsApproval? = nil,
+        onInputStart: AIToolInputStartCallback? = nil,
+        onInputDelta: AIToolInputDeltaCallback? = nil,
+        onInputAvailable: AIToolInputAvailableCallback? = nil,
+        refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
+        toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
+        executeWithContext: (@Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue)? = nil,
+        execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
+    ) {
+        self.init(
+            name: name,
+            description: description,
+            parameters: parameters,
+            dynamic: dynamic,
+            providerMetadata: providerMetadata,
+            providerOptions: providerOptions,
+            strict: strict,
+            inputExamples: inputExamples,
+            contextSchema: contextSchema,
+            needsApproval: needsApproval,
+            deferLoading: false,
+            toolCaller: nil,
+            onInputStart: onInputStart,
+            onInputDelta: onInputDelta,
+            onInputAvailable: onInputAvailable,
+            refineArguments: refineArguments,
+            toModelOutput: toModelOutput,
+            executeWithContext: executeWithContext,
+            execute: execute
+        )
     }
 
     public static func dynamic(
@@ -611,6 +723,8 @@ public struct AITool: Sendable {
         contextSchema: JSONValue? = nil,
         needsApproval: AIToolNeedsApproval? = nil,
         onInputStart: AIToolInputStartCallback? = nil,
+        deferLoading: Bool = false,
+        toolCaller: AIToolCallerDefinition? = nil,
         onInputDelta: AIToolInputDeltaCallback? = nil,
         onInputAvailable: AIToolInputAvailableCallback? = nil,
         refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
@@ -629,7 +743,50 @@ public struct AITool: Sendable {
             inputExamples: inputExamples,
             contextSchema: contextSchema,
             needsApproval: needsApproval,
+            deferLoading: deferLoading,
+            toolCaller: toolCaller,
             onInputStart: onInputStart,
+            onInputDelta: onInputDelta,
+            onInputAvailable: onInputAvailable,
+            refineArguments: refineArguments,
+            toModelOutput: toModelOutput,
+            executeWithContext: executeWithContext,
+            execute: execute
+        )
+    }
+
+    /// Preserves the dynamic-tool factory released in 1.7.0.
+    public static func dynamic(
+        name: String,
+        description: String? = nil,
+        parameters: JSONValue,
+        providerMetadata: [String: JSONValue] = [:],
+        providerOptions: [String: JSONValue] = [:],
+        strict: Bool? = nil,
+        inputExamples: [JSONValue] = [],
+        contextSchema: JSONValue? = nil,
+        needsApproval: AIToolNeedsApproval? = nil,
+        onInputStart: AIToolInputStartCallback? = nil,
+        onInputDelta: AIToolInputDeltaCallback? = nil,
+        onInputAvailable: AIToolInputAvailableCallback? = nil,
+        refineArguments: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
+        toModelOutput: (@Sendable (AIToolModelOutputContext) async throws -> JSONValue)? = nil,
+        executeWithContext: (@Sendable (JSONValue, AIToolExecutionContext) async throws -> JSONValue)? = nil,
+        execute: @escaping @Sendable (JSONValue) async throws -> JSONValue
+    ) -> AITool {
+        dynamic(
+            name: name,
+            description: description,
+            parameters: parameters,
+            providerMetadata: providerMetadata,
+            providerOptions: providerOptions,
+            strict: strict,
+            inputExamples: inputExamples,
+            contextSchema: contextSchema,
+            needsApproval: needsApproval,
+            onInputStart: onInputStart,
+            deferLoading: false,
+            toolCaller: nil,
             onInputDelta: onInputDelta,
             onInputAvailable: onInputAvailable,
             refineArguments: refineArguments,
@@ -655,6 +812,41 @@ public struct AITool: Sendable {
         }
         return .object(object)
     }
+}
+
+public func experimentalToolCaller(
+    _ tool: AITool,
+    definition: AIToolCallerDefinition
+) -> AITool {
+    var tool = tool
+    tool.toolCaller = definition
+    return tool
+}
+
+public func toolSearch(name: String = "toolSearch") -> AITool {
+    var tool = AITool(
+        name: name,
+        description: "Search for tools by keywords in their names and descriptions. Returns up to five matching tools. Matches become available on the next model step, after this execution finishes. Wait for their tool definitions before calling the discovered tools. If no tools match, try different keywords.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "query": .object([
+                    "type": .string("string"),
+                    "minLength": .number(1)
+                ])
+            ]),
+            "required": .array([.string("query")]),
+            "additionalProperties": .bool(false)
+        ]),
+        execute: { _ in
+            throw AIError.invalidArgument(
+                argument: "toolSearch",
+                message: "toolSearch must be bound by an AI SDK generation."
+            )
+        }
+    )
+    tool.toolSearchMarker = true
+    return tool
 }
 
 public struct AIStreamFile: Equatable, Hashable, Sendable {

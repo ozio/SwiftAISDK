@@ -177,11 +177,11 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["generationConfig"]?["responseMimeType"]?.stringValue == "application/json")
-    #expect(body["generationConfig"]?["responseSchema"]?["type"]?.stringValue == "object")
-    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["answer"]?["type"]?.stringValue == "string")
-    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["count"]?["type"]?.stringValue == "integer")
-    #expect(body["generationConfig"]?["responseSchema"]?["required"]?[0]?.stringValue == "answer")
-    #expect(body["generationConfig"]?["responseSchema"]?["additionalProperties"] == nil)
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["type"]?.stringValue == "object")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["properties"]?["answer"]?["type"]?.stringValue == "string")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["properties"]?["count"]?["type"]?.stringValue == "integer")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["required"]?[0]?.stringValue == "answer")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["additionalProperties"]?.boolValue == false)
     #expect(body["responseFormat"] == nil)
 }
 @Test func googleVertexLanguageMapsPayGoProviderOptionsAndReasoningOverride() async throws {

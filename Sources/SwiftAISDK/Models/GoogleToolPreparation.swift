@@ -105,7 +105,7 @@ func googleResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? 
 }
 
 func googleFunctionDeclarations(from tools: [String: JSONValue]) throws -> [JSONValue] {
-    try tools.compactMap { name, schema in
+    tools.compactMap { name, schema in
         let object = schema.objectValue
         if object?["type"]?.stringValue == "provider" || object?["id"]?.stringValue?.hasPrefix("google.") == true {
             return nil
@@ -115,9 +115,7 @@ func googleFunctionDeclarations(from tools: [String: JSONValue]) throws -> [JSON
             "name": .string(name),
             "description": .string(object?["description"]?.stringValue ?? "")
         ]
-        if let parameters = try googleOpenAPISchema(from: schema, isRoot: true) {
-            declaration["parameters"] = parameters
-        }
+        declaration["parametersJsonSchema"] = schema
         return .object(declaration)
     }
 }

@@ -162,6 +162,7 @@ public struct DirectAIChatTransport: AIChatTransport {
     public var model: any LanguageModel
     public var executableTools: [AITool]
     public var maxSteps: Int
+    public var toolCallers: AIToolCallerRouting
     public var stopWhen: [AIStopCondition]
     public var prepareStep: AIPrepareStep?
     public var toolApproval: AIToolApproval?
@@ -178,6 +179,7 @@ public struct DirectAIChatTransport: AIChatTransport {
         model: any LanguageModel,
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
+        toolCallers: AIToolCallerRouting = [:],
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
@@ -193,6 +195,7 @@ public struct DirectAIChatTransport: AIChatTransport {
         self.model = model
         self.executableTools = executableTools
         self.maxSteps = maxSteps
+        self.toolCallers = toolCallers
         self.stopWhen = stopWhen
         self.prepareStep = prepareStep
         self.toolApproval = toolApproval
@@ -205,6 +208,42 @@ public struct DirectAIChatTransport: AIChatTransport {
         self.sendFinish = sendFinish
         self.generateMessageID = generateMessageID
     }
+    /// Preserves the initializer released in 1.7.0 before tool-caller routing was added.
+    public init(
+        model: any LanguageModel,
+        executableTools: [AITool] = [],
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        requestOptions: AIChatRequestOptions = AIChatRequestOptions(),
+        timeoutNanoseconds: UInt64? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil,
+        sendReasoning: Bool = true,
+        sendSources: Bool = false,
+        sendFinish: Bool = true,
+        generateMessageID: @escaping @Sendable () -> String = { UUID().uuidString }
+    ) {
+        self.init(
+            model: model,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            toolCallers: [:],
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            requestOptions: requestOptions,
+            timeoutNanoseconds: timeoutNanoseconds,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            sendReasoning: sendReasoning,
+            sendSources: sendSources,
+            sendFinish: sendFinish,
+            generateMessageID: generateMessageID
+        )
+    }
+
 
     public func sendMessages(_ request: AIChatTransportRequest) throws -> AsyncThrowingStream<AIUIMessage, Error> {
         let modelMessages = try convertToModelMessages(request.messages)
@@ -230,6 +269,7 @@ public struct DirectAIChatTransport: AIChatTransport {
                 maxSteps: maxSteps,
                 stopWhen: stopWhen,
                 prepareStep: prepareStep,
+                toolCallers: toolCallers,
                 toolApproval: toolApproval,
                 timeoutNanoseconds: timeoutNanoseconds,
                 retryPolicy: retryPolicy,

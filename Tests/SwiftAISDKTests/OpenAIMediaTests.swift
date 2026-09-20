@@ -510,7 +510,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.openai.com/v1/images/edits")
     #expect(request.headers["authorization"] == "Bearer test-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.66")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.71")
     #expect(request.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let body = try #require(request.body)
     #expect(body.range(of: Data(#"name="model""#.utf8)) != nil)
@@ -525,4 +525,81 @@ import Testing
     #expect(body.range(of: Data("80".utf8)) != nil)
     #expect(body.range(of: Data(#"name="input_fidelity""#.utf8)) != nil)
     #expect(body.range(of: Data("high".utf8)) != nil)
+}
+
+@Test func openAIImageEditForwardsAbortSignalToURLImageAndMaskDownloadsLikeUpstream() async throws {
+    for downloadTarget in ["image", "mask"] {
+        let transport = OpenAIImageEditDownloadAbortTransport()
+        let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+        let model = try provider.imageModel("gpt-image-1")
+        let controller = AIAbortController()
+        let files = downloadTarget == "image"
+            ? [ImageInputFile(url: "https://example.com/image.png")]
+            : [ImageInputFile(data: Data([137, 80, 78, 71]), mediaType: "image/png")]
+        let mask = downloadTarget == "mask"
+            ? ImageInputFile(url: "https://example.com/mask.png")
+            : nil
+
+        let operation = Task {
+            try await model.generateImage(ImageGenerationRequest(
+                prompt: "edit",
+                files: files,
+                mask: mask,
+                abortSignal: controller.signal
+            ))
+        }
+
+        await transport.waitUntilDownloadStarted()
+        let downloadSignal = await transport.observedDownloadSignal()
+        #expect(downloadSignal === controller.signal)
+        controller.abort(reason: "caller stopped edit", reasonName: "AbortError")
+
+        do {
+            _ = try await operation.value
+            Issue.record("Expected \(downloadTarget) download to reject after caller abort")
+        } catch let error as AIAbortError {
+            #expect(error.reason == "caller stopped edit")
+            #expect(error.reasonName == "AbortError")
+        } catch {
+            Issue.record("Expected AIAbortError for \(downloadTarget) download, got \(error)")
+        }
+
+        let requests = await transport.requests()
+        #expect(requests.count == 1)
+        #expect(requests[0].method == "GET")
+        #expect(requests[0].url.absoluteString == "https://example.com/\(downloadTarget).png")
+    }
+}
+
+private actor OpenAIImageEditDownloadAbortTransport: AITransport {
+    private var recordedRequests: [AIHTTPRequest] = []
+    private var downloadSignal: AIAbortSignal?
+    private var didStartDownload = false
+    private var downloadWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func requests() -> [AIHTTPRequest] { recordedRequests }
+    func observedDownloadSignal() -> AIAbortSignal? { downloadSignal }
+
+    func waitUntilDownloadStarted() async {
+        if didStartDownload { return }
+        await withCheckedContinuation { downloadWaiters.append($0) }
+    }
+
+    func send(_ request: AIHTTPRequest) async throws -> AIHTTPResponse {
+        recordedRequests.append(request)
+        guard request.method == "GET" else {
+            return jsonResponse(#"{"data":[{"b64_json":"edited-b64"}]}"#)
+        }
+
+        didStartDownload = true
+        downloadSignal = request.abortSignal
+        let waiters = downloadWaiters
+        downloadWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        guard let downloadSignal else {
+            throw AIError.invalidResponse(provider: "openai.image", message: "Expected download abort signal")
+        }
+        _ = await downloadSignal.waitUntilAborted()
+        throw AIAbortError(reason: downloadSignal.reason, reasonName: downloadSignal.reasonName)
+    }
 }

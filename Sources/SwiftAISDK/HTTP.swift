@@ -689,7 +689,7 @@ private func httpHeaders(from response: HTTPURLResponse?) -> [String: String] {
     } ?? [:]
 }
 
-private func raceAbortSignal<Output: Sendable>(
+func raceAbortSignal<Output: Sendable>(
     _ abortSignal: AIAbortSignal,
     operation: @escaping @Sendable () async throws -> Output
 ) async throws -> Output {
@@ -1098,8 +1098,16 @@ private func downloadDataURL(_ url: URL) throws -> AIHTTPResponse {
     let metadata = String(absoluteString[absoluteString.index(absoluteString.startIndex, offsetBy: 5)..<commaIndex])
     let payload = String(absoluteString[absoluteString.index(after: commaIndex)...])
     let metadataParts = metadata.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
-    let mediaType = metadataParts.first?.isEmpty == false ? metadataParts[0] : "text/plain;charset=US-ASCII"
     let isBase64 = metadataParts.dropFirst().contains { $0.caseInsensitiveCompare("base64") == .orderedSame }
+    let mediaType: String
+    if metadata.isEmpty {
+        mediaType = "text/plain;charset=US-ASCII"
+    } else {
+        let contentTypeParts = metadataParts.filter {
+            $0.caseInsensitiveCompare("base64") != .orderedSame
+        }
+        mediaType = contentTypeParts.joined(separator: ";")
+    }
 
     let data: Data?
     if isBase64 {
@@ -1120,6 +1128,62 @@ private func downloadDataURL(_ url: URL) throws -> AIHTTPResponse {
         body: data,
         url: url
     )
+}
+
+/// Decodes text from a data URL while honoring an explicit charset for both
+/// base64 and percent-encoded payloads. Without a charset, bytes are mapped
+/// one-to-one like the byte string returned by JavaScript's `atob`.
+public func getTextFromDataURL(_ string: String) throws -> String {
+    guard let url = URL(string: string), url.scheme?.lowercased() == "data" else {
+        throw AIError.invalidArgument(argument: "url", message: "Expected a valid data URL.")
+    }
+    let response = try downloadDataURL(url)
+    let contentType = response.headerValue("content-type") ?? ""
+    let charset = contentType
+        .split(separator: ";")
+        .dropFirst()
+        .compactMap { component -> String? in
+            let parts = component.split(separator: "=", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard parts.count == 2, parts[0].lowercased() == "charset" else { return nil }
+            return parts[1]
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                .lowercased()
+        }
+        .first
+
+    let encoding: String.Encoding
+    switch charset {
+    case "utf-8", "utf8":
+        encoding = .utf8
+    case "us-ascii", "ascii":
+        encoding = .ascii
+    case "iso-8859-1", "latin1", "latin-1":
+        encoding = .isoLatin1
+    case "utf-16", "utf16":
+        encoding = .utf16
+    case "utf-16le", "utf16le":
+        encoding = .utf16LittleEndian
+    case "utf-16be", "utf16be":
+        encoding = .utf16BigEndian
+    case nil:
+        encoding = .isoLatin1
+    default:
+        throw AIError.invalidArgument(argument: "url", message: "Unsupported data URL charset '\(charset!)'.")
+    }
+
+    guard let text = String(data: response.body, encoding: encoding) else {
+        throw AIError.invalidArgument(
+            argument: "url",
+            message: "Data URL payload is not valid for charset '\(charset ?? "byte-string")'."
+        )
+    }
+    return text
+}
+
+public func getTextFromDataUrl(_ string: String) throws -> String {
+    try getTextFromDataURL(string)
 }
 
 private func parseContentLength(_ value: String) -> Int? {

@@ -14,8 +14,8 @@ private let imageMediaTypeSignatures: [MediaTypeSignature] = [
     MediaTypeSignature(mediaType: "image/bmp", bytesPrefix: [0x42, 0x4D, nil, nil, nil, nil, 0x00, 0x00, 0x00, 0x00]),
     MediaTypeSignature(mediaType: "image/tiff", bytesPrefix: [0x49, 0x49, 0x2A, 0x00]),
     MediaTypeSignature(mediaType: "image/tiff", bytesPrefix: [0x4D, 0x4D, 0x00, 0x2A]),
-    MediaTypeSignature(mediaType: "image/avif", bytesPrefix: [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]),
-    MediaTypeSignature(mediaType: "image/heic", bytesPrefix: [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])
+    MediaTypeSignature(mediaType: "image/avif", bytesPrefix: [0x00, 0x00, 0x00, nil, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]),
+    MediaTypeSignature(mediaType: "image/heic", bytesPrefix: [0x00, 0x00, 0x00, nil, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])
 ]
 
 private let documentMediaTypeSignatures: [MediaTypeSignature] = [
@@ -23,6 +23,10 @@ private let documentMediaTypeSignatures: [MediaTypeSignature] = [
 ]
 
 private let audioMediaTypeSignaturesWithoutMP4: [MediaTypeSignature] = [
+    MediaTypeSignature(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF0]),
+    MediaTypeSignature(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF1]),
+    MediaTypeSignature(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF8]),
+    MediaTypeSignature(mediaType: "audio/aac", bytesPrefix: [0xFF, 0xF9]),
     MediaTypeSignature(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xFB]),
     MediaTypeSignature(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xFA]),
     MediaTypeSignature(mediaType: "audio/mpeg", bytesPrefix: [0xFF, 0xF3]),

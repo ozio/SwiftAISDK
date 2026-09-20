@@ -76,7 +76,7 @@ import Testing
     #expect(requests[0].method == "POST")
     #expect(requests[0].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks")
     #expect(requests[0].headers["authorization"] == "Bearer ark-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/bytedance/2.0.43")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/bytedance/2.0.48")
     #expect(requests[0].headers["x-request-id"] == "req-1")
     let body = try decodeJSONBody(try #require(requests[0].body))
     #expect(body["model"]?.stringValue == "seedance-1-0-pro-250528")
@@ -91,7 +91,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks/task-1")
     #expect(requests[1].headers["authorization"] == "Bearer ark-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/bytedance/2.0.43")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/bytedance/2.0.48")
     #expect(requests[1].headers["x-request-id"] == "req-1")
 }
 
@@ -137,6 +137,55 @@ import Testing
     #expect(body["content"]?[5]?["video_url"]?["url"]?.stringValue == "https://example.com/ref.mp4")
     #expect(body["content"]?[6]?["role"]?.stringValue == "reference_audio")
     #expect(body["content"]?[6]?["audio_url"]?["url"]?.stringValue == "data:audio/mpeg;base64,YXVkaW8=")
+}
+
+@Test func byteDanceStartImageBecomesReferenceWhenInputReferencesExistLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-start-input-references"}"#),
+        jsonResponse(#"{"id":"task-start-input-references","status":"succeeded","content":{"video_url":"https://bytedance.example.com/start-input-references.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        image: ImageInputFile(url: "https://example.com/start.png"),
+        inputReferences: [ImageInputFile(url: "https://example.com/reference.png")],
+        providerOptions: ["bytedance": .object(["pollIntervalMs": 1, "pollTimeoutMs": 1_000])]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["content"]?[1]?["image_url"]?["url"]?.stringValue == "https://example.com/start.png")
+    #expect(body["content"]?[1]?["role"]?.stringValue == "reference_image")
+    #expect(body["content"]?[2]?["image_url"]?["url"]?.stringValue == "https://example.com/reference.png")
+    #expect(body["content"]?[2]?["role"]?.stringValue == "reference_image")
+}
+
+@Test func byteDanceStartImageBecomesReferenceWhenProviderReferencesExistLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"task-start-provider-references"}"#),
+        jsonResponse(#"{"id":"task-start-provider-references","status":"succeeded","content":{"video_url":"https://bytedance.example.com/start-provider-references.mp4"}}"#)
+    ])
+    let provider = try AIProviders.byteDance(settings: ProviderSettings(apiKey: "ark-key", transport: transport))
+    let model = try provider.videoModel("seedance-1-0-pro-250528")
+
+    _ = try await model.generateVideo(VideoGenerationRequest(
+        prompt: "cat running",
+        image: ImageInputFile(url: "https://example.com/start.png"),
+        providerOptions: [
+            "bytedance": .object([
+                "referenceImages": ["https://example.com/provider-reference.png"],
+                "pollIntervalMs": 1,
+                "pollTimeoutMs": 1_000
+            ])
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    #expect(body["content"]?[1]?["image_url"]?["url"]?.stringValue == "https://example.com/start.png")
+    #expect(body["content"]?[1]?["role"]?.stringValue == "reference_image")
+    #expect(body["content"]?[2]?["image_url"]?["url"]?.stringValue == "https://example.com/provider-reference.png")
+    #expect(body["content"]?[2]?["role"]?.stringValue == "reference_image")
 }
 
 @Test func byteDanceVideoMapsFrameImagesLikeUpstream() async throws {

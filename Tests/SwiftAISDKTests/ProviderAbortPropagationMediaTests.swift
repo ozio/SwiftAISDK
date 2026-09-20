@@ -146,7 +146,7 @@ import Testing
 @Test func replicateImageForwardsAbortSignalToSubmitAndDownloadRequests() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
     ])

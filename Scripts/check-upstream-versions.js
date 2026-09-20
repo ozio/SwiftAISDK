@@ -338,12 +338,14 @@ function classifyDiscoveredPackage(pkg) {
   const schemaPackages = new Set(["valibot"]);
   const corePackages = new Set(["provider", "provider-utils"]);
   const adapterPackages = new Set(["langchain", "llamaindex", "workflow"]);
+  const providerPackages = new Set(["typesafe-ai"]);
 
   if (corePackages.has(shortName)) return "core";
   if (adapterPackages.has(shortName) || description.includes("adapter")) return "adapter";
   if (uiPackages.has(shortName)) return "ui";
   if (toolingPackages.has(shortName)) return "tooling";
   if (schemaPackages.has(shortName)) return "schema";
+  if (providerPackages.has(shortName)) return "provider";
   if (description.includes("provider")) return "provider";
   return "unknown";
 }

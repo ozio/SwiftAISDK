@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-09-13
+Snapshot date: 2026-09-20
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.99`, `@ai-sdk/provider@4.0.14`,
-`@ai-sdk/provider-utils@5.0.40`, and `@ai-sdk/react@4.0.102`.
+snapshots, currently `ai@7.0.107`, `@ai-sdk/provider@4.0.17`,
+`@ai-sdk/provider-utils@5.0.45`, and `@ai-sdk/react@4.0.110`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.99 -> 7.0.107`
+- `@ai-sdk/provider@4.0.14 -> 4.0.17`
+- `@ai-sdk/provider-utils@5.0.40 -> 5.0.45`
+- `@ai-sdk/react@4.0.102 -> 4.0.110`
 - `ai@7.0.93 -> 7.0.99`
 - `@ai-sdk/provider@4.0.10 -> 4.0.14`
 - `@ai-sdk/provider-utils@5.0.36 -> 5.0.40`
@@ -69,6 +73,38 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.107`, `@ai-sdk/provider@4.0.17`, and
+  `@ai-sdk/provider-utils@5.0.45` add the experimental Evaluation V4 vertical.
+  `AI.experimentalEvaluate` validates Choice, Score, and Boolean questions and
+  answers, preserves rounding, usage, warnings, metadata, retries, and aborts,
+  and resolves direct or registry models. OpenAI, Anthropic, Google, and
+  Gateway expose provider adapters.
+- Dynamic tool callers now span `generateText`, `streamText`, and
+  `AIToolLoopAgent`. Local callers bind routed tools and announce their catalog
+  to the model; provider callers prepare provider options; deferred tool search
+  exposes matches on the next model preparation without mutating the active
+  step.
+- Unsupported prompt URLs are downloaded through the shared security policy
+  with abort propagation. A model selected by `prepareStep` now supplies the
+  provider/model identity recorded in step results, final response metadata,
+  and telemetry rather than leaking the original model identity.
+- Structured generation parses only the final tool-loop step, and structured
+  streams discard earlier tool-step text while preserving valid `null` and
+  empty-string partial outputs. Message pruning retains the originating call
+  for pending approvals, and preliminary chat tool output does not trigger an
+  automatic follow-up send.
+- Data URLs honor explicit UTF-8 and ISO-8859-1 charsets while retaining the
+  legacy byte-string fallback; media sniffing recognizes AAC, including
+  ID3-prefixed ADTS. Async video polling applies its deadline to an in-flight
+  status request. MCP persists authorization-server metadata and coalesces
+  concurrent or late stale-token 401 responses into one refresh.
+- Realtime V4 now models continuous conversation capabilities, server
+  WebSocket startup/finalization, context and audio-control commands,
+  acknowledgements, delegation/error correlation, usage, audio, and transcript
+  events. OpenAI Live provides the portable authenticated server-WebSocket
+  adapter and provider factory; browser WebRTC/client permissions,
+  provider-backed Responses delegation, non-Live OpenAI Realtime, and Google
+  Realtime 3.8 remain deferred.
 - `ai@7.0.99` and `@ai-sdk/provider@4.0.14` move Batch V4 ownership
   from individual language models to a provider service. Swift's public batch
   foundation accepts per-request model IDs and discriminated text/image
@@ -455,13 +491,14 @@ Port decisions:
 | `embed` | `covered` | `AI.embed`, `EmbeddingRequest`, `EmbeddingResult` | Single-value helper delegates through the embedding request shape. |
 | `embedMany` | `covered` | `AI.embedMany`, `EmbeddingModel.maxEmbeddingsPerCall`, `EmbeddingModel.maxInputBytesPerCall` | Splits once against the caller/model count limit and provider UTF-8 byte budget, keeps an individually oversized value intact, and aggregates usage/warnings/metadata in request order. |
 | `rerank` | `covered` | `AI.rerank`, `RerankingRequest`, `RerankingResult` | Native model family exists. |
+| `experimental_evaluate` | `covered` | `AI.experimentalEvaluate`, `AIEvaluationModelV4`, `AIEvaluationProvider`, `AIEvaluationModelReference` | Provider-neutral Choice, Score, and Boolean evaluation validates question/answer contracts, retries transient failures, preserves rounding/usage/warnings/metadata, and resolves direct, registry, or custom-provider models. OpenAI, Anthropic, Google, and Gateway expose adapters. |
 | `generateImage` | `covered` | `AI.generateImage`, `ImageGenerationRequest`, `ImageGenerationResult.calls` | Includes files, masks, provider options, aggregate metadata, per-call results, warnings, retries, and aborts. True request splitting and provider-specific cost aggregation across multiple calls remain deferred. |
 | `transcribe` | `covered` | `AI.transcribe`, `AudioTranscriptionRequest`, `detectMediaType` | Upstream now documents `transcribe`; older experimental naming is intentionally not mirrored. Shared media detection recognizes MP4/M4A from the ISO-BMFF `ftyp` box in an audio context and bounds ID3 scanning. |
 | `StreamingTranscriptionModel` | `covered` | `StreamingTranscriptionModel`, `AIStreamingAudioInput`, `StreamingTranscriptionPart`, `CartesiaStreamingTranscriptionModel`, `GatewayTranscriptionModel` | Provider-neutral duplex transcription lifecycle with Cartesia Ink 2 and Gateway adapters. Gateway adds a short-lived route-bound token factory; ElevenLabs realtime STT remains deferred. |
 | `generateSpeech` | `covered` | `AI.generateSpeech`, `SpeechRequest` | Native model family exists. |
 | `experimental_generateVideo` | `covered` | `AI.generateVideo`, `AI.startVideo`, `AI.getVideoStatus`, `VideoGenerationRequest`, `AsyncVideoModel`, `VideoGenerationPollOptions` | Stable Swift naming preserves unary generation and adds directly persistable V4 start/status, polling, webhook waiting, cancellation, metadata merging, logical-start idempotency, and count splitting. BFL, Fal, ByteDance, and Gateway are vertical adapters; Fal and Gateway support native callback URLs while BFL and ByteDance fall back to polling with a warning. |
 | `startTextBatch` / `getBatchStatus` / `getBatchResults` | `covered` | `AI.startTextBatch`, `AI.getBatchStatus`, `AI.getBatchResults`, `BatchLanguageModel` | Durable text batches expose persistable references, optional completion webhooks, normalized status/counts, full result content, and complete per-item terminal streams through Anthropic Messages Batch, OpenAI Responses Batch, Gateway Batch V4, and xAI Responses Batch. Gateway forwards webhooks; the direct providers warn that they are unsupported. |
-| `Experimental_RealtimeModelV4` | `covered` | `AIRealtimeModelV4`, `AIRealtimeSession`, `XAIRealtimeModel` | Provider-neutral client-secret, duplex event, audio/text/tool, abort and close lifecycle with xAI as the first full adapter. Full non-xAI realtime adapters remain deferred. |
+| `Experimental_RealtimeModelV4` | `covered` | `AIRealtimeModelV4`, `AIRealtimeSession`, `XAIRealtimeModel`, `OpenAILiveModel` | Provider-neutral turn-based and continuous duplex lifecycles with normalized audio/text/tool/delegation/usage/error events, aborts, and confirmed close behavior. xAI provides turn-based sessions and OpenAI Live provides authenticated continuous server WebSockets; browser WebRTC, provider-backed Responses delegation, non-Live OpenAI Realtime, and Google Realtime remain deferred. |
 | `Output` | `covered` | `Output.text/object/array/choice/json`, `AI.generateText(... output:)`, `AI.streamText(... output:)`, existing object-generation facades | Swift now mirrors the v6-style `generateText/streamText + Output.*` entry point while still keeping the older Swift-native object/array/enum/json facades. `Output.object` partial streaming uses `JSONValue` because Swift has no automatic `DeepPartial<T>`. |
 | `Agent` interface | `covered` | `AIAgent`, `AIAgentCallOptions` | Swift-native agent protocol mirrors upstream `version: "agent-v1"`, optional `id`, tool exposure, and generate/stream calls over model messages or prompts. |
 | `ToolLoopAgent` | `covered` | `AIToolLoopAgent`, tool-loop overloads on `AI.generateText` and `AI.streamText` | Reusable agent object wraps the existing Swift tool loop. Default `maxSteps` is 20 to match upstream `stepCountIs(20)` behavior. |
@@ -470,7 +507,7 @@ Port decisions:
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
 | `dynamicTool` | `swift-native` | `AITool.dynamic`, MCP tool conversion | Behavior exists; naming differs. |
-| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, paginated tool discovery, tool-call retries, tool conversion, annotations, structured-only results, issuer normalization, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.45`. OAuth scope reaches dynamic registration, and private credential endpoints are rejected without redirects. |
+| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, paginated tool discovery, tool-call retries, tool conversion, annotations, structured-only results, issuer normalization, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.54`. OAuth scope reaches dynamic registration, private credential endpoints are rejected without redirects, stored authorization-server metadata survives discovery failure, and concurrent stale-token 401 responses share one refresh. |
 | `Experimental_StdioMCPTransport` | `covered` | `MCPStdioTransport` | Swift uses stable transport naming. |
 | `jsonSchema` | `swift-native` | `AIJSONSchema`, `JSONValue`, `parseJSON`, schema validator | Usable JSON Schema adapter exists; exact factory naming does not. |
 | `zodSchema` | `out of scope candidate` | none | Zod is TypeScript-specific. Could document `AIJSONSchema` as the Swift alternative. |

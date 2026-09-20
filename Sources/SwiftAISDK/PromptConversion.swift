@@ -1,5 +1,60 @@
 import Foundation
 
+func downloadUnsupportedPromptAssets(
+    in request: LanguageModelRequest,
+    supportedURLs: [String: [AISupportedURLPattern]],
+    transport: any AITransport = URLSessionTransport.shared
+) async throws -> LanguageModelRequest {
+    var output = request
+
+    for messageIndex in output.messages.indices where output.messages[messageIndex].role == .user {
+        for partIndex in output.messages[messageIndex].content.indices {
+            guard case let .imageURL(url, providerMetadata) = output.messages[messageIndex].content[partIndex],
+                  !isURLSupported(mediaType: "image/*", url: url, supportedURLs: supportedURLs) else {
+                continue
+            }
+
+            try output.abortSignal?.throwIfAborted()
+            let response: AIHTTPResponse
+            do {
+                response = try await downloadURL(
+                    url,
+                    transport: transport,
+                    abortSignal: output.abortSignal
+                )
+            } catch {
+                if error is AIAbortError || error is CancellationError { throw error }
+                if let downloadError = error as? AIDownloadError { throw downloadError }
+                throw AIDownloadError(url: url, message: String(describing: error))
+            }
+            guard (200..<300).contains(response.statusCode) else {
+                throw AIDownloadError(
+                    url: url,
+                    message: "Download failed with HTTP status \(response.statusCode)."
+                )
+            }
+
+            let responseMediaType = response.headerValue("content-type")?
+                .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)[0]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            let mediaType = if let responseMediaType,
+                               responseMediaType.contains("/") {
+                responseMediaType
+            } else {
+                detectMediaType(data: response.body, topLevelType: "image") ?? "image/*"
+            }
+            output.messages[messageIndex].content[partIndex] = .data(
+                mimeType: mediaType,
+                data: response.body,
+                providerMetadata: providerMetadata
+            )
+        }
+    }
+
+    return output
+}
+
 func convertToLanguageModelPrompt(_ prompt: StandardizedPrompt) throws -> [AIMessage] {
     let approvedToolCallIDs = approvedToolCallIDs(from: prompt.messages)
     let messages = (prompt.instructions ?? []) + prompt.messages.map(convertToLanguageModelMessage)

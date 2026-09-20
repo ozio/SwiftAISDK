@@ -41,7 +41,7 @@ import Testing
     #expect(request.headers["authorization"] == "Bearer test-key")
     #expect(request.headers["openai-organization"] == "org-123")
     #expect(request.headers["openai-project"] == "proj-123")
-    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.66")
+    #expect(request.headers["user-agent"] == "ai-sdk/openai/4.0.71")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "gpt-5-mini")
     #expect(body["temperature"] == nil)
@@ -100,6 +100,70 @@ import Testing
     let content = try #require(body["input"]?[0]?["content"]?[0])
     #expect(content["type"]?.stringValue == "input_file")
     #expect(content["file_id"]?.stringValue == "file-pdf-12345")
+}
+
+@Test func openAIResponsesConvertsProviderReferencesInToolResultContentLikeUpstream() async throws {
+    let transport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"done"}"#))
+    let provider = try AIProviders.openAI(settings: ProviderSettings(apiKey: "test-key", transport: transport))
+    let model = try provider.languageModel("gpt-4.1")
+    let promptCacheBreakpoint: JSONValue = ["mode": "explicit"]
+
+    let result = try await model.generate(LanguageModelRequest(
+        messages: [
+            .toolResult(AIToolResult(
+                toolCallID: "call_123",
+                toolName: "search",
+                result: [
+                    "type": "content",
+                    "value": [
+                        [
+                            "type": "text",
+                            "text": "Referenced files:"
+                        ],
+                        [
+                            "type": "file",
+                            "mediaType": "application/pdf",
+                            "data": [
+                                "type": "reference",
+                                "reference": ["openai": "file-pdf-123"]
+                            ],
+                            "providerOptions": [
+                                "openai": ["promptCacheBreakpoint": promptCacheBreakpoint]
+                            ]
+                        ],
+                        [
+                            "type": "file",
+                            "mediaType": "image/png",
+                            "data": [
+                                "type": "reference",
+                                "reference": ["openai": "file-image-123"]
+                            ],
+                            "providerOptions": [
+                                "openai": [
+                                    "imageDetail": "high",
+                                    "promptCacheBreakpoint": promptCacheBreakpoint
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ))
+        ]
+    ))
+
+    let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
+    let output = try #require(body["input"]?[0]?["output"]?.arrayValue)
+    #expect(output.count == 3)
+    #expect(output[0] == ["type": "input_text", "text": "Referenced files:"])
+    #expect(output[1]["type"]?.stringValue == "input_file")
+    #expect(output[1]["file_id"]?.stringValue == "file-pdf-123")
+    #expect(output[1]["filename"] == nil)
+    #expect(output[1]["prompt_cache_breakpoint"] == promptCacheBreakpoint)
+    #expect(output[2]["type"]?.stringValue == "input_image")
+    #expect(output[2]["file_id"]?.stringValue == "file-image-123")
+    #expect(output[2]["detail"]?.stringValue == "high")
+    #expect(output[2]["prompt_cache_breakpoint"] == promptCacheBreakpoint)
+    #expect(result.warnings.isEmpty)
 }
 
 @Test func openAIResponsesThrowsWhenProviderReferenceCannotResolveOpenAILikeUpstream() async throws {
@@ -196,13 +260,14 @@ import Testing
     let input = try #require(body["input"]?.arrayValue)
     #expect(input.count == 3)
     #expect(input[0]["role"]?.stringValue == "assistant")
-    #expect(input[0]["content"]?[0]?["type"]?.stringValue == "output_text")
-    #expect(input[0]["content"]?[0]?["text"]?.stringValue == "I will search for that")
-    #expect(input[0]["id"]?.stringValue == "msg_001")
+    #expect(input[0]["content"]?.stringValue == "I will search for that")
+    #expect(input[0]["id"] == nil)
     #expect(input[0]["phase"]?.stringValue == "commentary")
-    #expect(input[1]["id"]?.stringValue == "msg_002")
+    #expect(input[1]["content"]?.stringValue == "The capital of France is Paris.")
+    #expect(input[1]["id"] == nil)
     #expect(input[1]["phase"]?.stringValue == "final_answer")
-    #expect(input[2]["id"]?.stringValue == "msg_003")
+    #expect(input[2]["content"]?.stringValue == "Hello")
+    #expect(input[2]["id"] == nil)
     #expect(input[2]["phase"] == nil)
 }
 
@@ -230,8 +295,7 @@ import Testing
     let textItem = try #require(input.first)
     let toolCall = try #require(input.dropFirst().first)
     #expect(textItem["role"]?.stringValue == "assistant")
-    #expect(textItem["content"]?[0]?["type"]?.stringValue == "output_text")
-    #expect(textItem["content"]?[0]?["text"]?.stringValue == "I will search for that information.")
+    #expect(textItem["content"]?.stringValue == "I will search for that information.")
     #expect(toolCall["type"]?.stringValue == "function_call")
     #expect(toolCall["call_id"]?.stringValue == "call_123")
     #expect(toolCall["name"]?.stringValue == "search")
@@ -543,13 +607,13 @@ import Testing
     #expect(input[1]["type"]?.stringValue == "item_reference")
     #expect(input[1]["id"]?.stringValue == "reasoning_001")
     #expect(input[2]["role"]?.stringValue == "assistant")
-    #expect(input[2]["content"]?[0]?["text"]?.stringValue == "First response")
+    #expect(input[2]["content"]?.stringValue == "First response")
     #expect(input[3]["role"]?.stringValue == "user")
     #expect(input[3]["content"]?[0]?["text"]?.stringValue == "Second user question")
     #expect(input[4]["type"]?.stringValue == "item_reference")
     #expect(input[4]["id"]?.stringValue == "reasoning_002")
     #expect(input[5]["role"]?.stringValue == "assistant")
-    #expect(input[5]["content"]?[0]?["text"]?.stringValue == "Second response")
+    #expect(input[5]["content"]?.stringValue == "Second response")
     #expect(result.warnings.isEmpty)
 }
 
@@ -596,14 +660,14 @@ import Testing
     #expect(input[1]["summary"]?[0]?["text"]?.stringValue == "First reasoning step (message 1)")
     #expect(input[1]["summary"]?[1]?["text"]?.stringValue == "Second reasoning step (message 1)")
     #expect(input[2]["role"]?.stringValue == "assistant")
-    #expect(input[2]["content"]?[0]?["text"]?.stringValue == "First response")
+    #expect(input[2]["content"]?.stringValue == "First response")
     #expect(input[3]["role"]?.stringValue == "user")
     #expect(input[4]["type"]?.stringValue == "reasoning")
     #expect(input[4]["id"]?.stringValue == "reasoning_002")
     #expect(input[4]["encrypted_content"]?.stringValue == "encrypted_content_002")
     #expect(input[4]["summary"]?[0]?["text"]?.stringValue == "First reasoning step (message 2)")
     #expect(input[5]["role"]?.stringValue == "assistant")
-    #expect(input[5]["content"]?[0]?["text"]?.stringValue == "Second response")
+    #expect(input[5]["content"]?.stringValue == "Second response")
     #expect(result.warnings.isEmpty)
 }
 
@@ -684,6 +748,6 @@ import Testing
     #expect(input[5]["call_id"]?.stringValue == "call_002")
     #expect(input[5]["output"]?.stringValue == #"{"result":4}"#)
     #expect(input[6]["role"]?.stringValue == "assistant")
-    #expect(input[6]["content"]?[0]?["text"]?.stringValue == "Based on my analysis and calculations, here is the final answer.")
+    #expect(input[6]["content"]?.stringValue == "Based on my analysis and calculations, here is the final answer.")
     #expect(result.warnings.isEmpty)
 }

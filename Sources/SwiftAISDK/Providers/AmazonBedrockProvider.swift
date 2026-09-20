@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.82"
+private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.88"
 
 public struct AmazonBedrockCredentials: Sendable {
     public var accessKeyID: String
@@ -90,6 +90,13 @@ public final class AmazonBedrockProvider: AIProvider, @unchecked Sendable {
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
         AmazonBedrockLanguageModel(modelID: modelID, config: runtimeConfig)
+    }
+
+    public func languageModel(
+        _ modelID: String,
+        settings: AmazonBedrockChatModelSettings
+    ) throws -> any LanguageModel {
+        AmazonBedrockLanguageModel(modelID: modelID, config: runtimeConfig, settings: settings)
     }
 
     public func embeddingModel(_ modelID: String) throws -> any EmbeddingModel {
@@ -371,6 +378,20 @@ private final class BedrockSigningTransport: AIStreamingTransport, @unchecked Se
     }
 }
 
+func bedrockHTTPStatusError(provider: String, response: AIHTTPResponse) -> AIError {
+    guard let raw = try? response.jsonValue(),
+          let message = raw["message"]?.stringValue else {
+        return apiCallError(provider: provider, response: response)
+    }
+    let body = raw["type"]?.stringValue.map { "\($0): \(message)" } ?? message
+    return apiCallError(
+        provider: provider,
+        statusCode: response.statusCode,
+        body: body,
+        headers: response.headers
+    )
+}
+
 struct BedrockRuntimeConfig: @unchecked Sendable {
     var providerID: String
     var region: String
@@ -388,7 +409,7 @@ struct BedrockRuntimeConfig: @unchecked Sendable {
     func sendJSONResponse(path: String, body: JSONValue, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) async throws -> (json: JSONValue, response: AIHTTPResponse) {
         let response = try await sendRequest(try request(path: path, body: body, headers: requestHeaders, abortSignal: abortSignal))
         guard (200..<300).contains(response.statusCode) else {
-            throw apiCallError(provider: providerID, response: response)
+            throw bedrockHTTPStatusError(provider: providerID, response: response)
         }
         return (try response.jsonValue(), response)
     }

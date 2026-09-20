@@ -25,8 +25,8 @@ import Testing
         responseFormat: .json(schema: schema)
     ))
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
-    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["elements"]?["minItems"]?.intValue == 2)
-    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["elements"]?["maxItems"]?.intValue == 4)
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["properties"]?["elements"]?["minItems"]?.intValue == 2)
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["properties"]?["elements"]?["maxItems"]?.intValue == 4)
 }
 
 @Test func googleUpstreamPrimitiveEnumsUseOpenAPIEnumEncoding() throws {
@@ -88,22 +88,23 @@ import Testing
     }
 }
 
-@Test func googleUpstreamMixedEnumFailurePropagatesBeforeRequest() async throws {
-    let transport = RecordingTransport(response: jsonResponse("{}"))
+@Test func googleUpstreamMixedEnumUsesLosslessJSONSchemaRequest() async throws {
+    let transport = RecordingTransport(response: jsonResponse(
+        #"{"candidates":[{"content":{"parts":[{"text":"Done"}]},"finishReason":"STOP"}]}"#
+    ))
     let provider = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: transport))
     let model = try provider.languageModel("gemini-3.7-flash")
-    let expected = AIError.invalidArgument(
-        argument: "schema",
-        message: "Google does not support this JSON Schema enum. Enum values must share one supported primitive type and match the schema type."
-    )
 
-    await #expect(throws: expected) {
-        _ = try await model.generate(LanguageModelRequest(
-            messages: [.user("Return structured output.")],
-            responseFormat: .json(schema: ["enum": ["text", 1]])
-        ))
-    }
-    #expect(await transport.requests().isEmpty)
+    _ = try await model.generate(LanguageModelRequest(
+        messages: [.user("Return structured output.")],
+        responseFormat: .json(schema: ["enum": ["text", 1]])
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests.count == 1)
+    let body = try decodeJSONBody(try #require(requests.first?.body))
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["enum"]?[0]?.stringValue == "text")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["enum"]?[1]?.intValue == 1)
 }
 
 @Test func googleUpstreamStrictForcedToolChoicesUseAnyMode() throws {
@@ -282,7 +283,7 @@ import Testing
     }
 }
 
-@Test func googleAndVertexUpstreamInlineLocalReferencesInRequests() async throws {
+@Test func googleAndVertexUpstreamPreserveLocalReferencesInRequests() async throws {
     let response = jsonResponse("""
     {"candidates":[{"content":{"parts":[{"text":"Done"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}
     """)
@@ -300,18 +301,7 @@ import Testing
             "Locale": ["type": "string", "enum": ["de", "en"]]
         ]
     ]
-    let expectedParameters: JSONValue = [
-        "type": "object",
-        "description": "Format a date",
-        "properties": [
-            "locale": [
-                "type": "string",
-                "enum": ["de", "en"],
-                "description": "Locale for formatting"
-            ]
-        ],
-        "required": ["locale"]
-    ]
+    let expectedJSONSchema = toolSchema
 
     let googleTransport = RecordingTransport(response: response)
     let google = try AIProviders.google(settings: ProviderSettings(apiKey: "gemini-key", transport: googleTransport))
@@ -326,8 +316,8 @@ import Testing
     let googleRequests = await googleTransport.requests()
     let googleToolBody = try decodeJSONBody(try #require(googleRequests.first?.body))
     let googleResponseBody = try decodeJSONBody(try #require(googleRequests.last?.body))
-    #expect(googleToolBody["tools"]?[0]?["functionDeclarations"]?[0]?["parameters"] == expectedParameters)
-    #expect(googleResponseBody["generationConfig"]?["responseSchema"] == expectedParameters)
+    #expect(googleToolBody["tools"]?[0]?["functionDeclarations"]?[0]?["parametersJsonSchema"] == expectedJSONSchema)
+    #expect(googleResponseBody["generationConfig"]?["responseJsonSchema"] == expectedJSONSchema)
 
     let vertexTransport = RecordingTransport(response: response)
     let vertex = try AIProviders.googleVertex(settings: GoogleVertexProviderSettings(
@@ -339,7 +329,7 @@ import Testing
         tools: ["formatDate": toolSchema]
     ))
     let vertexBody = try decodeJSONBody(try #require((await vertexTransport.requests()).first?.body))
-    #expect(vertexBody["tools"]?[0]?["functionDeclarations"]?[0]?["parameters"] == expectedParameters)
+    #expect(vertexBody["tools"]?[0]?["functionDeclarations"]?[0]?["parametersJsonSchema"] == expectedJSONSchema)
 }
 
 @Test func googleUpstreamFutureFullFlashModelsUseLowMinimumThinkingLevel() {

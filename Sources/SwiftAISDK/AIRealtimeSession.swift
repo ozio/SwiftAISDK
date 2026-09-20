@@ -3,10 +3,12 @@ import Foundation
 public enum AIRealtimeSessionError:
     Error,
     Equatable,
+    Hashable,
     CustomStringConvertible,
     Sendable {
     case closed
     case connectionEndedBeforeOpening
+    case unexpectedClosure(AIDuplexWebSocketCloseMetadata)
 
     public var description: String {
         switch self {
@@ -14,6 +16,10 @@ public enum AIRealtimeSessionError:
             return "The realtime session is closed."
         case .connectionEndedBeforeOpening:
             return "The realtime WebSocket ended before it opened."
+        case let .unexpectedClosure(metadata):
+            let suffix = metadata.reason.map { ": " + $0 } ?? ""
+            return "Realtime WebSocket closed unexpectedly (code "
+                + String(metadata.code) + suffix + ")"
         }
     }
 }
@@ -47,13 +53,22 @@ public final class AIRealtimeSession:
     private let abortSignal: AIAbortSignal?
     private let continuation: Continuation
     private let readyGate = AIRealtimeReadyGate()
+    private let finalizationGate = AIRealtimeReadyGate()
     private let sendQueue: AIRealtimeSendQueue
+    private let parseServerEvent: AIRealtimeServerEventParser
 
     private let lock = NSLock()
     private var eventTask: Task<Void, Never>?
     private var abortRegistration: AIAbortHandlerRegistration?
     private var opened = false
+    private var ready = false
+    private var closeStarted = false
+    private var finalizationConfirmed = false
+    private var requestedCloseMetadata: AIDuplexWebSocketCloseMetadata?
     private var completed = false
+
+    private static let gracefulCloseTimeoutNanoseconds: UInt64 =
+        15_000_000_000
 
     private init(
         model: any AIRealtimeModelV4,
@@ -69,6 +84,7 @@ public final class AIRealtimeSession:
         self.clientSecretExpiresAt = clientSecretExpiresAt
         self.connection = connection
         self.abortSignal = abortSignal
+        self.parseServerEvent = model.createServerEventParser()
 
         let pair = AsyncThrowingStream<AIRealtimeSessionEvent, Error>
             .makeStream()
@@ -109,6 +125,23 @@ public final class AIRealtimeSession:
             URLSessionDuplexWebSocketTransport.shared,
         abortSignal: AIAbortSignal? = nil
     ) async throws -> AIRealtimeSession {
+        let connections = model.capabilities?.connections
+            ?? [.clientSecretWebSocket]
+        if connections.contains(.serverWebSocket),
+           !connections.contains(.clientSecretWebSocket) {
+            return try await connectServer(
+                model: model,
+                sessionConfiguration: sessionConfiguration,
+                webSocketTransport: webSocketTransport,
+                abortSignal: abortSignal ?? clientSecretOptions.abortSignal
+            )
+        }
+        guard connections.contains(.clientSecretWebSocket) else {
+            throw AIError.invalidArgument(
+                argument: "model",
+                message: "The realtime model does not support client-secret WebSocket connections."
+            )
+        }
         var secretOptions = clientSecretOptions
         if secretOptions.abortSignal == nil {
             secretOptions.abortSignal = abortSignal
@@ -136,10 +169,55 @@ public final class AIRealtimeSession:
         abortSignal: AIAbortSignal? = nil
     ) async throws -> AIRealtimeSession {
         try abortSignal?.throwIfAborted()
-        let socketConfig = model.getWebSocketConfig(
+        let socketConfig = try model.getValidatedWebSocketConfig(
             token: clientSecret.token,
             url: clientSecret.url
         )
+        return try await connect(
+            model: model,
+            socketConfig: socketConfig,
+            sessionConfiguration: sessionConfiguration,
+            clientSecretExpiresAt: clientSecret.expiresAt,
+            webSocketTransport: webSocketTransport,
+            abortSignal: abortSignal
+        )
+    }
+
+    /// Connects directly from a trusted process with provider credentials.
+    public static func connectServer(
+        model: any AIRealtimeModelV4,
+        sessionConfiguration: AIRealtimeSessionConfiguration = .init(),
+        webSocketTransport: any AIDuplexWebSocketTransport =
+            URLSessionDuplexWebSocketTransport.shared,
+        abortSignal: AIAbortSignal? = nil
+    ) async throws -> AIRealtimeSession {
+        try abortSignal?.throwIfAborted()
+        let capabilities = model.capabilities
+        guard capabilities?.connections?.contains(.serverWebSocket) == true,
+              capabilities?.transports.contains(.webSocket) == true else {
+            throw AIError.invalidArgument(
+                argument: "model",
+                message: "The realtime model does not support server WebSocket connections."
+            )
+        }
+        return try await connect(
+            model: model,
+            socketConfig: try model.getServerWebSocketConfig(),
+            sessionConfiguration: sessionConfiguration,
+            clientSecretExpiresAt: nil,
+            webSocketTransport: webSocketTransport,
+            abortSignal: abortSignal
+        )
+    }
+
+    private static func connect(
+        model: any AIRealtimeModelV4,
+        socketConfig: AIRealtimeWebSocketConfiguration,
+        sessionConfiguration: AIRealtimeSessionConfiguration,
+        clientSecretExpiresAt: Int?,
+        webSocketTransport: any AIDuplexWebSocketTransport,
+        abortSignal: AIAbortSignal?
+    ) async throws -> AIRealtimeSession {
         guard let url = URL(string: socketConfig.url) else {
             throw AIError.invalidURL(socketConfig.url)
         }
@@ -154,7 +232,7 @@ public final class AIRealtimeSession:
         return AIRealtimeSession(
             model: model,
             configuration: sessionConfiguration,
-            clientSecretExpiresAt: clientSecret.expiresAt,
+            clientSecretExpiresAt: clientSecretExpiresAt,
             connection: connection,
             abortSignal: abortSignal
         )
@@ -166,6 +244,9 @@ public final class AIRealtimeSession:
 
     /// Sends a normalized client event after the connection is ready.
     public func send(_ event: AIRealtimeClientEvent) async throws {
+        guard acceptsSubmissions else {
+            throw AIRealtimeSessionError.closed
+        }
         try await sendQueue.send(event)
     }
 
@@ -217,18 +298,82 @@ public final class AIRealtimeSession:
         try await send(.responseCancel)
     }
 
+    public func muteInput(eventID: String? = nil) async throws {
+        try await send(.inputAudioMute(eventID: eventID))
+    }
+
+    public func unmuteInput(eventID: String? = nil) async throws {
+        try await send(.inputAudioUnmute(eventID: eventID))
+    }
+
+    public func appendContext(
+        _ content: String,
+        delegationID: String?,
+        eventID: String? = nil,
+        providerOptions: [String: JSONValue]? = nil
+    ) async throws {
+        try await send(.contextAppend(
+            content: content,
+            delegationID: delegationID,
+            eventID: eventID,
+            providerOptions: providerOptions
+        ))
+    }
+
     /// Closes the duplex connection and completes the lifecycle stream.
     public func close(
         code: Int = AIDuplexWebSocketCloseMetadata.normalClosure.code,
         reason: String? = nil
     ) async {
+        await closeImpl(code: code, reason: reason, eventID: nil)
+    }
+
+    /// Closes a continuous session with an event ID for provider correlation.
+    public func close(
+        code: Int = AIDuplexWebSocketCloseMetadata.normalClosure.code,
+        reason: String? = nil,
+        eventID: String
+    ) async {
+        await closeImpl(code: code, reason: reason, eventID: eventID)
+    }
+
+    private func closeImpl(
+        code: Int,
+        reason: String?,
+        eventID: String?
+    ) async {
         let metadata = AIDuplexWebSocketCloseMetadata(
             code: code,
             reason: reason
         )
+        if model.capabilities?.finalization == .sessionClose,
+           hasOpened,
+           isReady,
+           !isCompleted {
+            let shouldSend = beginGracefulClose(metadata: metadata)
+            if shouldSend {
+                do {
+                    try await sendQueue.send(.sessionClose(eventID: eventID))
+                } catch {
+                    fail(error)
+                    return
+                }
+            }
+            let timeout = Task { [weak self] in
+                try? await Task.sleep(
+                    nanoseconds: Self.gracefulCloseTimeoutNanoseconds
+                )
+                guard !Task.isCancelled else { return }
+                self?.complete(with: metadata, closeTransport: true)
+            }
+            _ = try? await finalizationGate.wait()
+            timeout.cancel()
+            return
+        }
         guard beginCompletion() else { return }
         await sendQueue.close()
         await readyGate.fail(AIRealtimeSessionError.closed)
+        await finalizationGate.succeed()
         continuation.yield(.closed(metadata))
         continuation.finish()
         let reasonData = reason.map { Data($0.utf8) }
@@ -266,21 +411,67 @@ public final class AIRealtimeSession:
                         fail(error)
                         return
                     }
-                    for normalized in model.parseServerEvent(raw) {
+                    var receivedSessionClosed = false
+                    for normalized in parseServerEvent(raw) {
+                        if case let .sessionStarted(_, delegationMode, _) =
+                            normalized {
+                            if delegationMode == .provider {
+                                fail(AIError.invalidArgument(
+                                    argument: "delegationMode",
+                                    message: "This realtime runtime supports client delegation only."
+                                ))
+                                return
+                            }
+                            markReady()
+                            await readyGate.succeed()
+                        }
                         continuation.yield(.server(normalized))
+                        if case .sessionClosed = normalized {
+                            markFinalizationConfirmed()
+                            await finalizationGate.succeed()
+                            receivedSessionClosed = true
+                        }
+                    }
+                    if receivedSessionClosed {
+                        let metadata = closeMetadata
+                            ?? AIDuplexWebSocketCloseMetadata.normalClosure
+                        complete(with: metadata, closeTransport: true)
+                        return
                     }
 
                 case let .closed(metadata):
-                    complete(with: metadata)
+                    if requiresConfirmedFinalization,
+                       !isFinalizationConfirmed {
+                        fail(
+                            AIRealtimeSessionError
+                                .unexpectedClosure(metadata),
+                            closeTransport: false
+                        )
+                    } else {
+                        complete(with: metadata)
+                    }
                     return
                 }
             }
 
             if !isCompleted {
                 if hasOpened {
-                    complete(with: .normalClosure)
+                    if requiresConfirmedFinalization,
+                       !isFinalizationConfirmed {
+                        fail(
+                            AIRealtimeSessionError.unexpectedClosure(
+                                .normalClosure
+                            ),
+                            closeTransport: false
+                        )
+                    } else {
+                        complete(with: .normalClosure)
+                    }
                 } else {
-                    fail(AIRealtimeSessionError.connectionEndedBeforeOpening)
+                    fail(
+                        AIRealtimeSessionError.connectionEndedBeforeOpening,
+                        closeTransport: false
+                    )
                 }
             }
         } catch {
@@ -296,15 +487,25 @@ public final class AIRealtimeSession:
     }
 
     private func sendSessionConfiguration() async throws {
+        let startup = model.capabilities?.startup ?? .sessionUpdate
+        let event: AIRealtimeClientEvent = startup == .sessionStart
+            ? .sessionStart(configuration)
+            : .sessionUpdate(configuration)
         guard let wireMessage = try await model.serializeClientEvent(
-            .sessionUpdate(configuration)
+            event
         ) else {
-            await readyGate.succeed()
+            if startup == .sessionUpdate {
+                markReady()
+                await readyGate.succeed()
+            }
             return
         }
         do {
             try await sendWireDirectly(wireMessage)
-            await readyGate.succeed()
+            if startup == .sessionUpdate {
+                markReady()
+                await readyGate.succeed()
+            }
         } catch {
             await readyGate.fail(error)
             throw error
@@ -344,23 +545,39 @@ public final class AIRealtimeSession:
         return try? JSONDecoder().decode(JSONValue.self, from: data)
     }
 
-    private func complete(with metadata: AIDuplexWebSocketCloseMetadata) {
+    private func complete(
+        with metadata: AIDuplexWebSocketCloseMetadata,
+        closeTransport: Bool = false
+    ) {
         guard beginCompletion() else { return }
         Task {
             await sendQueue.close()
             await readyGate.fail(AIRealtimeSessionError.closed)
+            await finalizationGate.succeed()
+            if closeTransport {
+                await connection.close(
+                    code: metadata.code,
+                    reason: metadata.reason.map { Data($0.utf8) }
+                )
+            }
         }
         continuation.yield(.closed(metadata))
         continuation.finish()
         cleanupAfterCompletion(cancelEventTask: false)
     }
 
-    private func fail(_ error: Error) {
+    private func fail(
+        _ error: Error,
+        closeTransport: Bool = true
+    ) {
         guard beginCompletion() else { return }
         Task {
             await sendQueue.close()
             await readyGate.fail(error)
-            await connection.close(code: 1011, reason: nil)
+            await finalizationGate.fail(error)
+            if closeTransport {
+                await connection.close(code: 1011, reason: nil)
+            }
         }
         continuation.finish(throwing: error)
         cleanupAfterCompletion(cancelEventTask: true)
@@ -375,6 +592,7 @@ public final class AIRealtimeSession:
         Task {
             await sendQueue.close()
             await readyGate.fail(CancellationError())
+            await finalizationGate.fail(CancellationError())
             await connection.close(code: 1000, reason: nil)
         }
         cleanupAfterCompletion(cancelEventTask: true)
@@ -386,10 +604,62 @@ public final class AIRealtimeSession:
         lock.unlock()
     }
 
+    private func markReady() {
+        lock.lock()
+        ready = true
+        lock.unlock()
+    }
+
+    private func beginGracefulClose(
+        metadata: AIDuplexWebSocketCloseMetadata
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !completed, !closeStarted else { return false }
+        closeStarted = true
+        requestedCloseMetadata = metadata
+        return true
+    }
+
+    private func markFinalizationConfirmed() {
+        lock.lock()
+        finalizationConfirmed = true
+        lock.unlock()
+    }
+
     private var hasOpened: Bool {
         lock.lock()
         defer { lock.unlock() }
         return opened
+    }
+
+    private var acceptsSubmissions: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let requiresReady = model.capabilities?.startup == .sessionStart
+        return !completed && !closeStarted && (!requiresReady || ready)
+    }
+
+    private var isReady: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ready
+    }
+
+    private var requiresConfirmedFinalization: Bool {
+        model.capabilities?.finalization == .sessionClose && hasOpened
+    }
+
+    private var isFinalizationConfirmed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finalizationConfirmed
+    }
+
+    private var closeMetadata: AIDuplexWebSocketCloseMetadata? {
+        lock.lock()
+        defer { lock.unlock() }
+        return requestedCloseMetadata
     }
 
     private var isCompleted: Bool {

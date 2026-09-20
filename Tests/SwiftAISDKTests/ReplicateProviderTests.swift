@@ -5,7 +5,7 @@ import Testing
 @Test func replicateImageUsesModelPredictionEndpoint() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("replicate-png".utf8))
     ])
@@ -29,7 +29,7 @@ import Testing
     let request = try #require(requests.first)
     #expect(request.url.absoluteString == "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions")
     #expect(request.headers["authorization"] == "Bearer replicate-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.41")
+    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.46")
     #expect(request.headers["prefer"] == "wait=30")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["input"]?["prompt"]?.stringValue == "cat")
@@ -43,10 +43,106 @@ import Testing
     #expect(requests[1].headers["user-agent"] == nil)
 }
 
+@Test func replicateImagePollsUntilOutputAfterSyncWaitExpiresLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"pending-prediction","status":"starting","output":null,"error":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pending-prediction"}}"#),
+        jsonResponse(#"{"id":"pending-prediction","status":"processing","output":null,"error":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pending-prediction"}}"#),
+        jsonResponse(#"{"id":"pending-prediction","status":"succeeded","output":["https://replicate.delivery/xezq/abc/out-0.webp"],"error":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pending-prediction"}}"#),
+        AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/webp"], body: Data("test-binary-content".utf8))
+    ])
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+    let result = try await model.generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: [
+            "replicate": .object([
+                "pollIntervalMillis": 1,
+                "maxPollAttempts": 100
+            ])
+        ]
+    ))
+
+    #expect(result.base64Images == [Data("test-binary-content".utf8).base64EncodedString()])
+    let requests = await transport.requests()
+    #expect(requests.map(\.method) == ["POST", "GET", "GET", "GET"])
+    #expect(requests[1].url.absoluteString == "https://api.replicate.com/v1/predictions/pending-prediction")
+    #expect(requests[1].headers["authorization"] == "Bearer replicate-key")
+    #expect(requests[2].headers["authorization"] == "Bearer replicate-key")
+    #expect(requests[3].headers["authorization"] == nil)
+    let body = try decodeJSONBody(try #require(requests[0].body))
+    #expect(body["input"]?["pollIntervalMillis"] == nil)
+    #expect(body["input"]?["maxPollAttempts"] == nil)
+}
+
+@Test func replicateImageStripsCredentialsFromForeignPollingOriginLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"pending-prediction","status":"starting","output":null,"urls":{"get":"https://status.example.com/predictions/pending-prediction"}}"#),
+        jsonResponse(#"{"id":"pending-prediction","status":"succeeded","output":["https://replicate.delivery/xezq/abc/out-0.webp"],"urls":{"get":"https://status.example.com/predictions/pending-prediction"}}"#),
+        AIHTTPResponse(statusCode: 200, body: Data("image".utf8))
+    ])
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+
+    _ = try await provider.imageModel("black-forest-labs/flux-schnell").generateImage(ImageGenerationRequest(
+        prompt: "cat",
+        providerOptions: ["replicate": ["pollIntervalMillis": 1, "maxPollAttempts": 100]]
+    ))
+
+    let requests = await transport.requests()
+    #expect(requests[1].url.absoluteString == "https://status.example.com/predictions/pending-prediction")
+    #expect(requests[1].headers["authorization"] == nil)
+}
+
+@Test func replicateImagePollingSurfacesTerminalFailuresLikeUpstream() async throws {
+    for status in ["failed", "canceled"] {
+        let transport = RecordingTransport(responses: [
+            jsonResponse(#"{"id":"pending-prediction","status":"starting","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pending-prediction"}}"#),
+            jsonResponse("""
+            {"id":"pending-prediction","status":"\(status)","output":null,"error":"Prediction did not complete","urls":{"get":"https://api.replicate.com/v1/predictions/pending-prediction"}}
+            """)
+        ])
+        let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+
+        await #expect(throws: AIError.invalidResponse(provider: "replicate", message: "Replicate image generation \(status): Prediction did not complete")) {
+            _ = try await provider.imageModel("black-forest-labs/flux-schnell").generateImage(ImageGenerationRequest(
+                prompt: "cat",
+                providerOptions: ["replicate": ["pollIntervalMillis": 1, "maxPollAttempts": 100]]
+            ))
+        }
+    }
+}
+
+@Test func replicateImageRejectsSucceededPredictionWithoutOutputLikeUpstream() async throws {
+    let provider = try AIProviders.replicate(settings: ProviderSettings(
+        apiKey: "replicate-key",
+        transport: RecordingTransport(response: jsonResponse(#"{"id":"completed-prediction","status":"succeeded","output":null,"error":null,"urls":{"get":"https://api.replicate.com/v1/predictions/completed-prediction"}}"#))
+    ))
+
+    await #expect(throws: AIError.invalidResponse(provider: "replicate", message: "Replicate image generation completed without output.")) {
+        _ = try await provider.imageModel("black-forest-labs/flux-schnell").generateImage(ImageGenerationRequest(prompt: "cat"))
+    }
+}
+
+@Test func replicateImageStopsAtConfiguredMaximumPollingAttemptsLikeUpstream() async throws {
+    let transport = RecordingTransport(responses: [
+        jsonResponse(#"{"id":"pending-prediction","status":"processing","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pending-prediction"}}"#),
+        jsonResponse(#"{"id":"pending-prediction","status":"processing","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pending-prediction"}}"#)
+    ])
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+
+    await #expect(throws: AIError.invalidResponse(provider: "replicate", message: "Replicate image generation did not complete after 2 polling attempts.")) {
+        _ = try await provider.imageModel("black-forest-labs/flux-schnell").generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["replicate": ["pollIntervalMillis": 1, "maxPollAttempts": 2]]
+        ))
+    }
+    #expect(await transport.requests().count == 3)
+}
+
 @Test func replicateAppendsVersionedUserAgentToCustomHeader() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("replicate-png".utf8))
     ])
@@ -61,7 +157,7 @@ import Testing
 
     let requests = await transport.requests()
     #expect(requests[0].headers["authorization"] == "Bearer replicate-key")
-    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/replicate/3.0.41")
+    #expect(requests[0].headers["user-agent"] == "CustomApp/1.0 ai-sdk/replicate/3.0.46")
     #expect(requests[1].headers["authorization"] == nil)
     #expect(requests[1].headers["user-agent"] == nil)
 }
@@ -87,7 +183,7 @@ import Testing
 
 @Test func replicateImageDownloadUsesUpstreamErrorMessageSchema() async throws {
     let transport = RecordingTransport(responses: [
-        jsonResponse(#"{"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}"#),
+        jsonResponse(#"{"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}"#),
         AIHTTPResponse(statusCode: 500, body: Data(#"{"error":"download failed"}"#.utf8))
     ])
     let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
@@ -101,7 +197,7 @@ import Testing
 @Test func replicateImageUsesStandardOptionsProviderOptionsAndWarnings() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("replicate-png".utf8))
     ])
@@ -144,7 +240,7 @@ import Testing
 
 @Test func replicateImageRejectsUnsafeOutputDownloadURL() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
-    {"id":"pred-1","status":"succeeded","output":["http://127.0.0.1/image.png"]}
+    {"id":"pred-1","status":"succeeded","output":["http://127.0.0.1/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
     """))
     let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
     let model = try provider.imageModel("black-forest-labs/flux-schnell")
@@ -161,7 +257,7 @@ import Testing
 @Test func replicateImageMapsEditingInputsAndNestedOptions() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"id":"pred-1","status":"succeeded","output":"https://replicate.example.com/edited.webp"}
+        {"id":"pred-1","status":"succeeded","output":"https://replicate.example.com/edited.webp","urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/webp"], body: Data("edited-webp".utf8))
     ])
@@ -200,7 +296,7 @@ import Testing
 @Test func replicateFlux2ImageMapsMultipleInputImages() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/flux.webp"]}
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/flux.webp"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/webp"], body: Data("flux-webp".utf8))
     ])
@@ -229,7 +325,7 @@ import Testing
 @Test func replicateFlux2ImageWarningsMirrorUpstreamLimits() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse("""
-        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/flux.webp"]}
+        {"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/flux.webp"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}
         """),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/webp"], body: Data("flux-webp".utf8))
     ])
@@ -285,7 +381,7 @@ import Testing
     let request = try #require(requests.first)
     #expect(request.url.absoluteString == "https://api.replicate.com/v1/models/owner/video-model/predictions")
     #expect(request.headers["authorization"] == "Bearer replicate-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.41")
+    #expect(request.headers["user-agent"] == "ai-sdk/replicate/3.0.46")
     #expect(request.headers["prefer"] == "wait=30")
     #expect(request.headers["X-Request-Header"] == "submit-only")
     let body = try decodeJSONBody(try #require(request.body))
@@ -299,7 +395,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.replicate.com/v1/predictions/pred-video")
     #expect(requests[1].headers["authorization"] == "Bearer replicate-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/replicate/3.0.41")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/replicate/3.0.46")
     #expect(requests[1].headers["prefer"] == nil)
     #expect(requests[1].headers["X-Request-Header"] == nil)
 }
@@ -447,6 +543,12 @@ import Testing
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.replicate.maxWaitTimeInSeconds", message: "Replicate maxWaitTimeInSeconds must be greater than 0 or null.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["replicate": ["maxWaitTimeInSeconds": 0]]))
     }
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.replicate.pollIntervalMillis", message: "Replicate pollIntervalMillis must be a nonnegative finite number or null.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["replicate": ["pollIntervalMillis": -1]]))
+    }
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.replicate.maxPollAttempts", message: "Replicate maxPollAttempts must be a positive integer or null.")) {
+        _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["replicate": ["maxPollAttempts": 1.5]]))
+    }
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.replicate.output_format", message: "Replicate output_format must be png, jpg, webp, or null.")) {
         _ = try await model.generateImage(ImageGenerationRequest(prompt: "cat", providerOptions: ["replicate": ["output_format": "gif"]]))
     }
@@ -458,7 +560,7 @@ import Testing
     }
 
     let nullNamespaceTransport = RecordingTransport(responses: [
-        jsonResponse(#"{"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"]}"#),
+        jsonResponse(#"{"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}"#),
         AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
     ])
     let nullNamespaceProvider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: nullNamespaceTransport))
@@ -471,6 +573,104 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await nullNamespaceTransport.requests()).first?.body))
     #expect(body["input"]?["guidance_scale"]?.intValue == 5)
+}
+
+@Test func replicateImagePollingAliasesRejectInvalidResolvedValuesWithoutTrapping() async throws {
+    let transport = RecordingTransport(response: jsonResponse("{}"))
+    let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+    let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.replicate.poll_interval_millis",
+        message: "Replicate poll_interval_millis must be a nonnegative finite number or null."
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["replicate": ["poll_interval_millis": -1]]
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.replicate.max_poll_attempts",
+        message: "Replicate max_poll_attempts must be a positive integer or null."
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["replicate": ["max_poll_attempts": -1]]
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.replicate.max_poll_attempts",
+        message: "Replicate max_poll_attempts must be a positive integer or null."
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["replicate": ["max_poll_attempts": 1.5]]
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.replicate.poll_interval_millis",
+        message: "Replicate poll_interval_millis must be a nonnegative finite number or null."
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            extraBody: ["replicate": ["poll_interval_millis": -1]]
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.replicate.poll_interval_millis",
+        message: "Replicate poll_interval_millis must be a nonnegative finite number or null."
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            extraBody: ["poll_interval_millis": .number(.infinity)]
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.replicate.maxPollAttempts",
+        message: "Replicate maxPollAttempts must be a positive integer or null."
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            extraBody: ["maxPollAttempts": 1.5]
+        ))
+    }
+    await #expect(throws: AIError.invalidArgument(
+        argument: "providerOptions.replicate.max_poll_attempts",
+        message: "Replicate max_poll_attempts must be a positive integer or null."
+    )) {
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            extraBody: ["replicate": ["max_poll_attempts": -1]]
+        ))
+    }
+
+    #expect(await transport.requests().isEmpty)
+}
+
+@Test func replicateImagePollingValidatesAfterPrecedenceAndBoundsAcceptedIntervals() async throws {
+    for interval in [0.0, 0.25] {
+        let transport = RecordingTransport(responses: [
+            jsonResponse(#"{"id":"pred-1","status":"processing","output":null,"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}"#),
+            jsonResponse(#"{"id":"pred-1","status":"succeeded","output":["https://replicate.example.com/image.png"],"urls":{"get":"https://api.replicate.com/v1/predictions/pred-1"}}"#),
+            AIHTTPResponse(statusCode: 200, headers: ["content-type": "image/png"], body: Data("png".utf8))
+        ])
+        let provider = try AIProviders.replicate(settings: ProviderSettings(apiKey: "replicate-key", transport: transport))
+        let model = try provider.imageModel("black-forest-labs/flux-schnell")
+
+        _ = try await model.generateImage(ImageGenerationRequest(
+            prompt: "cat",
+            providerOptions: ["replicate": ["pollIntervalMillis": .number(interval), "maxPollAttempts": 1]],
+            extraBody: ["poll_interval_millis": -1, "max_poll_attempts": -1]
+        ))
+
+        let requests = await transport.requests()
+        #expect(requests.count == 3)
+        let body = try decodeJSONBody(try #require(requests.first?.body))
+        #expect(body["input"]?["pollIntervalMillis"] == nil)
+        #expect(body["input"]?["poll_interval_millis"] == nil)
+        #expect(body["input"]?["maxPollAttempts"] == nil)
+        #expect(body["input"]?["max_poll_attempts"] == nil)
+    }
 }
 
 @Test func replicateProviderOptionsValidateLikeUpstreamVideoSchemaAndNullishOmit() async throws {

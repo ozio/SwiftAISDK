@@ -13,6 +13,7 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
     public func generateImage(_ request: ImageGenerationRequest) async throws -> ImageGenerationResult {
         let (model, version) = splitVersionedModelID(modelID)
         let options = try replicateProviderOptions(from: request)
+        let pollingOptions = try replicateImagePollingOptions(from: options)
         var input: [String: JSONValue] = ["prompt": .string(request.prompt)]
         if let size = request.size { input["size"] = .string(size) }
         if let aspectRatio = request.aspectRatio { input["aspect_ratio"] = .string(aspectRatio) }
@@ -36,7 +37,17 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
             throw replicateHTTPStatusError(provider: providerID, response: httpResponse)
         }
         let response = (json: try httpResponse.jsonValue(), response: httpResponse)
-        let raw = response.json
+        let prediction = try await pollReplicateImagePrediction(
+            response.json,
+            headers: request.headers,
+            intervalMilliseconds: pollingOptions.intervalMilliseconds,
+            maxAttempts: pollingOptions.maxAttempts,
+            abortSignal: request.abortSignal
+        )
+        let raw = prediction.json
+        guard raw["output"] != nil, raw["output"] != .null else {
+            throw AIError.invalidResponse(provider: providerID, message: "Replicate image generation completed without output.")
+        }
         let urls = mediaURLs(from: raw["output"])
         let base64Images = try await downloadReplicateImages(urls: urls, abortSignal: request.abortSignal)
         return ImageGenerationResult(
@@ -46,6 +57,57 @@ public final class ReplicateImageModel: ImageModel, @unchecked Sendable {
             warnings: preparedInputs.warnings,
             requestMetadata: imageGenerationRequestMetadata(request, body: .object(body)),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
+        )
+    }
+
+    private func pollReplicateImagePrediction(
+        _ initialPrediction: JSONValue,
+        headers requestHeaders: [String: String],
+        intervalMilliseconds: Int,
+        maxAttempts: Int,
+        abortSignal: AIAbortSignal?
+    ) async throws -> (json: JSONValue, response: AIHTTPResponse?) {
+        guard maxAttempts > 0 else {
+            throw AIError.invalidArgument(
+                argument: "providerOptions.replicate.maxPollAttempts",
+                message: "Replicate maxPollAttempts must be a positive integer or null."
+            )
+        }
+        var prediction = try replicateValidatedImagePrediction(initialPrediction, providerID: providerID)
+        var pollResponse: AIHTTPResponse?
+        let safeIntervalMilliseconds = max(intervalMilliseconds, 1)
+
+        for attempt in 0..<maxAttempts {
+            if try replicateCompletedImagePrediction(prediction, providerID: providerID) {
+                return (prediction, pollResponse)
+            }
+            guard let pollURL = prediction["urls"]?["get"]?.stringValue, !pollURL.isEmpty else {
+                throw AIError.invalidResponse(provider: providerID, message: "Replicate image prediction is pending but missing urls.get.")
+            }
+            let response = try await downloadURL(
+                pollURL,
+                transport: config.transport,
+                headers: config.headers.mergingHeaders(requestHeaders),
+                abortSignal: abortSignal,
+                trustedOrigin: config.baseURL,
+                credentialedOrigin: config.baseURL
+            )
+            guard (200..<300).contains(response.statusCode) else {
+                throw replicateHTTPStatusError(provider: providerID, response: response)
+            }
+            prediction = try replicateValidatedImagePrediction(response.jsonValue(), providerID: providerID)
+            pollResponse = response
+            if attempt < maxAttempts - 1 {
+                try await delay(safeIntervalMilliseconds, abortSignal: abortSignal)
+            }
+        }
+
+        if try replicateCompletedImagePrediction(prediction, providerID: providerID) {
+            return (prediction, pollResponse)
+        }
+        throw AIError.invalidResponse(
+            provider: providerID,
+            message: "Replicate image generation did not complete after \(maxAttempts) polling attempts."
         )
     }
 
@@ -178,7 +240,114 @@ private func replicateImageOptions(from options: [String: JSONValue]) -> [String
     }
     output.removeValue(forKey: "maxWaitTimeInSeconds")
     output.removeValue(forKey: "max_wait_time_in_seconds")
+    output.removeValue(forKey: "pollIntervalMillis")
+    output.removeValue(forKey: "poll_interval_millis")
+    output.removeValue(forKey: "maxPollAttempts")
+    output.removeValue(forKey: "max_poll_attempts")
     return output
+}
+
+private struct ReplicateImagePollingOptions {
+    var intervalMilliseconds: Int
+    var maxAttempts: Int
+}
+
+private func replicateImagePollingOptions(from options: [String: JSONValue]) throws -> ReplicateImagePollingOptions {
+    let intervalMilliseconds: Int
+    if let resolved = replicateResolvedImagePollingOption(
+        camelCaseKey: "pollIntervalMillis",
+        snakeCaseKey: "poll_interval_millis",
+        from: options
+    ) {
+        guard let number = resolved.value.doubleValue, number.isFinite, number >= 0 else {
+            throw AIError.invalidArgument(
+                argument: "providerOptions.replicate.\(resolved.key)",
+                message: "Replicate \(resolved.key) must be a nonnegative finite number or null."
+            )
+        }
+        let roundedMilliseconds = number.rounded(.up)
+        intervalMilliseconds = roundedMilliseconds >= Double(Int.max)
+            ? Int.max
+            : max(Int(roundedMilliseconds), 1)
+    } else {
+        intervalMilliseconds = 500
+    }
+
+    let maxAttempts: Int
+    if let resolved = replicateResolvedImagePollingOption(
+        camelCaseKey: "maxPollAttempts",
+        snakeCaseKey: "max_poll_attempts",
+        from: options
+    ) {
+        guard let number = resolved.value.doubleValue,
+              number.isFinite,
+              number > 0,
+              number.rounded() == number,
+              let integer = Int(exactly: number) else {
+            throw AIError.invalidArgument(
+                argument: "providerOptions.replicate.\(resolved.key)",
+                message: "Replicate \(resolved.key) must be a positive integer or null."
+            )
+        }
+        maxAttempts = integer
+    } else {
+        maxAttempts = 240
+    }
+
+    return ReplicateImagePollingOptions(
+        intervalMilliseconds: intervalMilliseconds,
+        maxAttempts: maxAttempts
+    )
+}
+
+private func replicateResolvedImagePollingOption(
+    camelCaseKey: String,
+    snakeCaseKey: String,
+    from options: [String: JSONValue]
+) -> (key: String, value: JSONValue)? {
+    if let value = options[camelCaseKey], value != .null {
+        return (camelCaseKey, value)
+    }
+    if let value = options[snakeCaseKey], value != .null {
+        return (snakeCaseKey, value)
+    }
+    return nil
+}
+
+private func replicateCompletedImagePrediction(_ prediction: JSONValue, providerID: String) throws -> Bool {
+    let status = prediction["status"]?.stringValue
+    if let status, !["starting", "processing", "succeeded", "failed", "canceled"].contains(status) {
+        throw AIError.invalidResponse(provider: providerID, message: "Replicate image prediction has invalid status: \(status)")
+    }
+    if status == "failed" || status == "canceled" {
+        let detail = prediction["error"]?.stringValue ?? "Unknown error"
+        throw AIError.invalidResponse(
+            provider: providerID,
+            message: "Replicate image generation \(status ?? "failed"): \(detail)"
+        )
+    }
+    return prediction["output"] != nil && prediction["output"] != .null || status == "succeeded"
+}
+
+private func replicateValidatedImagePrediction(_ prediction: JSONValue, providerID: String) throws -> JSONValue {
+    guard prediction.objectValue != nil,
+          let status = prediction["status"]?.stringValue,
+          ["starting", "processing", "succeeded", "failed", "canceled"].contains(status),
+          let pollURL = prediction["urls"]?["get"]?.stringValue,
+          !pollURL.isEmpty else {
+        throw AIError.invalidResponse(provider: providerID, message: "Replicate image prediction response is invalid.")
+    }
+    if let output = prediction["output"], output != .null {
+        if output.stringValue == nil {
+            guard let values = output.arrayValue, values.allSatisfy({ $0.stringValue != nil }) else {
+                throw AIError.invalidResponse(provider: providerID, message: "Replicate image prediction response is invalid.")
+            }
+        }
+    }
+    if let error = prediction["error"], error != .null, error.stringValue == nil {
+        throw AIError.invalidResponse(provider: providerID, message: "Replicate image prediction response is invalid.")
+    }
+    return prediction
 }
 
 private func replicateVideoOptions(from options: [String: JSONValue]) -> [String: JSONValue] {
@@ -282,6 +451,10 @@ private func replicateValidateImageProviderOptions(_ options: [String: JSONValue
         switch key {
         case "maxWaitTimeInSeconds":
             try replicateValidatePositiveNumberOrNull(value, argument: "providerOptions.replicate.maxWaitTimeInSeconds", label: "maxWaitTimeInSeconds")
+        case "pollIntervalMillis", "maxPollAttempts":
+            // Validate after merging extraBody and providerOptions so aliases use
+            // the same precedence and cannot bypass the runtime constraints.
+            break
         case "guidance_scale", "num_inference_steps":
             try replicateValidateNumberOrNull(value, argument: "providerOptions.replicate.\(key)", label: key)
         case "negative_prompt":

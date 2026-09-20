@@ -7,10 +7,16 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         "image/*": [AISupportedURLPattern(bedrockIsS3URL)]
     ]
     private let config: BedrockRuntimeConfig
+    private let settings: AmazonBedrockChatModelSettings
 
-    init(modelID: String, config: BedrockRuntimeConfig) {
+    init(
+        modelID: String,
+        config: BedrockRuntimeConfig,
+        settings: AmazonBedrockChatModelSettings = AmazonBedrockChatModelSettings()
+    ) {
         self.modelID = modelID
         self.config = config
+        self.settings = settings
     }
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
@@ -150,6 +156,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         bedrockApplyTopLevelReasoning(
             request.reasoning,
             modelID: modelID,
+            modelFamily: settings.modelFamily,
             maxOutputTokens: request.maxOutputTokens,
             providerOptions: &providerOptions,
             warnings: &warnings
@@ -170,9 +177,11 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         let responseJSONSchema = bedrockResponseJSONSchema(from: request.responseFormat)
         let isAnthropicModel = bedrockIsAnthropicModel(
             modelID: modelID,
+            modelFamily: settings.modelFamily,
             reasoningConfig: providerOptions["reasoningConfig"]
         )
-        let modelSupportsStructuredOutput = anthropicModelCapabilities(modelID).supportsStructuredOutput
+        let modelSupportsStructuredOutput = settings.modelFamily == .anthropic
+            || anthropicModelCapabilities(modelID).supportsStructuredOutput
         let structuredOutputMode = providerOptions["structuredOutputMode"]?.stringValue
             ?? request.providerOptions["anthropic"]?["structuredOutputMode"]?.stringValue
             ?? request.extraBody["anthropic"]?["structuredOutputMode"]?.stringValue
@@ -221,6 +230,8 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             from: effectiveTools,
             toolChoice: effectiveToolChoice,
             modelID: modelID,
+            modelFamily: settings.modelFamily,
+            reasoningConfig: providerOptions["reasoningConfig"],
             disableParallelToolUse: request.providerOptions["anthropic"]?["disableParallelToolUse"]?.boolValue
                 ?? request.extraBody["anthropic"]?["disableParallelToolUse"]?.boolValue
                 ?? false
@@ -461,6 +472,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         bedrockApplyReasoningConfig(
             providerOptions.removeValue(forKey: "reasoningConfig"),
             modelID: modelID,
+            modelFamily: settings.modelFamily,
             inferenceConfig: &inferenceConfig,
             providerOptions: &providerOptions,
             warnings: &warnings

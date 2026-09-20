@@ -309,7 +309,22 @@ func authInternal(
         authorizationServerURL = resourceMetadata?.authorizationServers.first
     } catch {}
 
-    let resolvedAuthorizationServerURL = authorizationServerURL ?? serverURL
+    // A callback can arrive after protected-resource discovery becomes
+    // unavailable. Prefer the authorization server pinned with the client over
+    // incorrectly treating the MCP resource server as a legacy OAuth server.
+    var clientInformation = try await provider.clientInformation()
+    let storedServerInformation: MCPOAuthAuthorizationServerInformation?
+    if let clientInformation {
+        storedServerInformation = try await storedAuthorizationServerInformation(
+            provider: provider,
+            clientInformation: clientInformation
+        )
+    } else {
+        storedServerInformation = try await provider.authorizationServerInformation()?.normalized
+    }
+    let resolvedAuthorizationServerURL = authorizationServerURL
+        ?? storedServerInformation?.authorizationServerURL
+        ?? serverURL
     let resource = try await MCPOAuth.selectResourceURL(
         serverURL: serverURL,
         provider: provider,
@@ -355,7 +370,6 @@ func authInternal(
         clientScope: provider.clientMetadata.scope
     )
 
-    var clientInformation = try await provider.clientInformation()
     if let clientInformation, clientInformation.issuer != nil,
        let storedInformation = try await storedAuthorizationServerInformation(
            provider: provider,

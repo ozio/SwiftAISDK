@@ -13,7 +13,9 @@ func anthropicGeneratedContent(
     from value: JSONValue?,
     providerID: String,
     citationDocuments: [AnthropicCitationDocument],
-    usesJSONToolResponseFormat: Bool = false
+    usesJSONToolResponseFormat: Bool = false,
+    toolNameMapping: AIToolNameMapping = AIToolNameMapping(),
+    markCodeExecutionDynamic: Bool = false
 ) -> AnthropicGeneratedContent {
     guard let parts = value?.arrayValue else {
         return AnthropicGeneratedContent(
@@ -126,12 +128,20 @@ func anthropicGeneratedContent(
                     rawValue: part
                 )
             } else {
-                toolCall = anthropicToolCall(from: part, providerID: providerID)
+                toolCall = anthropicToolCall(
+                    from: part,
+                    providerID: providerID,
+                    toolNameMapping: toolNameMapping
+                )
             }
             guard var toolCall else { continue }
             if type == "mcp_tool_use" {
                 toolCall.dynamic = true
                 toolCall.providerMetadata = mcpToolMetadata[toolCall.id] ?? [:]
+            } else if type == "server_tool_use",
+                      markCodeExecutionDynamic,
+                      part["name"]?.stringValue.map(anthropicCustomToolName(forProviderToolName:)) == "code_execution" {
+                toolCall.dynamic = true
             }
             toolCalls.append(toolCall)
             content.append(.toolCall(toolCall))
@@ -153,7 +163,8 @@ func anthropicGeneratedContent(
                 providerID: providerID,
                 serverToolNames: serverToolNames,
                 mcpToolNames: mcpToolNames,
-                mcpToolMetadata: mcpToolMetadata
+                mcpToolMetadata: mcpToolMetadata,
+                toolNameMapping: toolNameMapping
             ) {
                 toolResults.append(toolResult)
                 content.append(.toolResult(toolResult))
@@ -184,17 +195,22 @@ func anthropicToolResult(
     providerID: String,
     serverToolNames: [String: String],
     mcpToolNames: [String: String],
-    mcpToolMetadata: [String: [String: JSONValue]]
+    mcpToolMetadata: [String: [String: JSONValue]],
+    toolNameMapping: AIToolNameMapping = AIToolNameMapping()
 ) -> AIToolResult? {
     guard var result = anthropicToolResultWithoutCaller(
         from: part,
         providerID: providerID,
         serverToolNames: serverToolNames,
         mcpToolNames: mcpToolNames,
-        mcpToolMetadata: mcpToolMetadata
+        mcpToolMetadata: mcpToolMetadata,
+        toolNameMapping: toolNameMapping
     ) else {
         return nil
     }
+    result.toolName = toolNameMapping.toCustomToolName(
+        anthropicCustomToolName(forProviderToolName: result.toolName)
+    )
     if part["type"]?.stringValue == "web_fetch_tool_result"
         || part["type"]?.stringValue == "web_search_tool_result" {
         result.providerMetadata.merge(
@@ -209,7 +225,8 @@ private func anthropicToolResultWithoutCaller(
     providerID: String,
     serverToolNames: [String: String],
     mcpToolNames: [String: String],
-    mcpToolMetadata: [String: [String: JSONValue]]
+    mcpToolMetadata: [String: [String: JSONValue]],
+    toolNameMapping: AIToolNameMapping
 ) -> AIToolResult? {
     guard let type = part["type"]?.stringValue else { return nil }
     switch type {
@@ -331,7 +348,7 @@ private func anthropicToolResultWithoutCaller(
         guard let toolCallID = part["tool_use_id"]?.stringValue,
               let content = part["content"],
               let contentType = content["type"]?.stringValue else { return nil }
-        let toolName = anthropicToolSearchToolName(serverToolNames[toolCallID])
+        let toolName = anthropicToolSearchToolName(serverToolNames[toolCallID], toolNameMapping: toolNameMapping)
         if contentType == "tool_search_tool_search_result" {
             let references = content["tool_references"]?.arrayValue ?? []
             return AIToolResult(
@@ -414,13 +431,20 @@ private func anthropicToolResultWithoutCaller(
     }
 }
 
-func anthropicToolSearchToolName(_ providerToolName: String?) -> String {
-    switch providerToolName {
-    case "tool_search_tool_bm25", "tool_search_tool_regex":
-        return "tool_search"
-    default:
-        return "tool_search"
+func anthropicToolSearchToolName(
+    _ providerToolName: String?,
+    toolNameMapping: AIToolNameMapping = AIToolNameMapping()
+) -> String {
+    if providerToolName == "tool_search_tool_bm25" || providerToolName == "tool_search_tool_regex" {
+        return providerToolName!
     }
+    if toolNameMapping.toCustomToolName("tool_search_tool_bm25") != "tool_search_tool_bm25" {
+        return "tool_search_tool_bm25"
+    }
+    if toolNameMapping.toCustomToolName("tool_search_tool_regex") != "tool_search_tool_regex" {
+        return "tool_search_tool_regex"
+    }
+    return "tool_search_tool_regex"
 }
 
 func anthropicProviderMetadata(from raw: JSONValue, providerID: String, requestProviderOptions: [String: JSONValue] = [:]) -> [String: JSONValue] {
@@ -788,7 +812,11 @@ func anthropicCitationSource(from citation: JSONValue, citationDocuments: [Anthr
     }
 }
 
-func anthropicToolCall(from part: JSONValue, providerID: String = "anthropic") -> AIToolCall? {
+func anthropicToolCall(
+    from part: JSONValue,
+    providerID: String = "anthropic",
+    toolNameMapping: AIToolNameMapping = AIToolNameMapping()
+) -> AIToolCall? {
     guard let type = part["type"]?.stringValue else { return nil }
     switch type {
     case "tool_use":
@@ -803,10 +831,24 @@ func anthropicToolCall(from part: JSONValue, providerID: String = "anthropic") -
         )
     case "server_tool_use":
         guard let id = part["id"]?.stringValue, let name = part["name"]?.stringValue else { return nil }
+        let providerToolName = anthropicCustomToolName(forProviderToolName: name)
+        var input = part["input"] ?? .object([:])
+        if var object = input.objectValue {
+            if name == "text_editor_code_execution" || name == "bash_code_execution" {
+                if object["type"] == nil {
+                    object["type"] = .string(name)
+                }
+            } else if name == "code_execution",
+                      object["code"] != nil,
+                      object["type"] == nil {
+                object["type"] = .string("programmatic-tool-call")
+            }
+            input = .object(object)
+        }
         return AIToolCall(
             id: id,
-            name: anthropicCustomToolName(forProviderToolName: name),
-            arguments: anthropicJSONString(part["input"] ?? .object([:])) ?? "{}",
+            name: toolNameMapping.toCustomToolName(providerToolName),
+            arguments: anthropicJSONString(input) ?? "{}",
             providerExecuted: true,
             providerMetadata: anthropicCallerProviderMetadata(from: part["caller"], providerID: providerID),
             rawValue: part

@@ -446,7 +446,7 @@ import Testing
     #expect(code.result["return_code"]?.intValue == 0)
     #expect(code.result["content"]?[0]?["text"]?.stringValue == "ok")
 
-    let toolSearch = try #require(result.toolResults.first { $0.toolName == "tool_search" })
+    let toolSearch = try #require(result.toolResults.first { $0.toolName == "tool_search_tool_regex" })
     #expect(toolSearch.toolCallID == "srv_search_1")
     #expect(toolSearch.result[0]?["toolName"]?.stringValue == "weather")
 

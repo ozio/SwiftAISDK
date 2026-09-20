@@ -17,7 +17,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.69")
+    #expect(request.headers["user-agent"] == "ai-sdk/google/4.0.76")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["contents"]?[0]?["role"]?.stringValue == "user")
 }
@@ -47,7 +47,7 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["x-goog-api-key"] == "gemini-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.69")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/google/4.0.76")
 }
 @Test func googleCustomXGoogAPIKeyOverridesConfiguredAPIKeyLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
@@ -129,11 +129,11 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["generationConfig"]?["responseMimeType"]?.stringValue == "application/json")
-    #expect(body["generationConfig"]?["responseSchema"]?["type"]?.stringValue == "object")
-    #expect(body["generationConfig"]?["responseSchema"]?["properties"]?["location"]?["type"]?.stringValue == "string")
-    #expect(body["generationConfig"]?["responseSchema"]?["required"]?[0]?.stringValue == "location")
-    #expect(body["generationConfig"]?["responseSchema"]?["additionalProperties"] == nil)
-    #expect(body["generationConfig"]?["responseSchema"]?["$schema"] == nil)
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["type"]?.stringValue == "object")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["properties"]?["location"]?["type"]?.stringValue == "string")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["required"]?[0]?.stringValue == "location")
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["additionalProperties"]?.boolValue == false)
+    #expect(body["generationConfig"]?["responseJsonSchema"]?["$schema"]?.stringValue == "http://json-schema.org/draft-07/schema#")
     #expect(body["responseFormat"] == nil)
 }
 @Test func googleLanguageOmitsResponseSchemaWhenStructuredOutputsDisabled() async throws {
@@ -154,7 +154,7 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["generationConfig"]?["responseMimeType"]?.stringValue == "application/json")
-    #expect(body["generationConfig"]?["responseSchema"] == nil)
+    #expect(body["generationConfig"]?["responseJsonSchema"] == nil)
     #expect(body["structuredOutputs"] == nil)
     #expect(body["google"] == nil)
 }
@@ -467,10 +467,10 @@ import Testing
     let declaration = try #require(body["tools"]?[0]?["functionDeclarations"]?[0])
     #expect(declaration["name"]?.stringValue == "lookup")
     #expect(declaration["description"]?.stringValue == "Look up a value.")
-    #expect(declaration["parameters"]?["properties"]?["query"]?["type"]?.stringValue == "string")
-    #expect(declaration["parameters"]?["required"]?[0]?.stringValue == "query")
-    #expect(declaration["parameters"]?["additionalProperties"] == nil)
-    #expect(declaration["parameters"]?["$schema"] == nil)
+    #expect(declaration["parametersJsonSchema"]?["properties"]?["query"]?["type"]?.stringValue == "string")
+    #expect(declaration["parametersJsonSchema"]?["required"]?[0]?.stringValue == "query")
+    #expect(declaration["parametersJsonSchema"]?["additionalProperties"]?.boolValue == false)
+    #expect(declaration["parametersJsonSchema"]?["$schema"]?.stringValue == "http://json-schema.org/draft-07/schema#")
     #expect(body["toolConfig"]?["functionCallingConfig"]?["mode"]?.stringValue == "ANY")
     #expect(body["toolConfig"]?["functionCallingConfig"]?["allowedFunctionNames"]?[0]?.stringValue == "lookup")
     #expect(body["toolChoice"] == nil)

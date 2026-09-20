@@ -108,7 +108,10 @@ public final class DeepSeekLanguageModel: LanguageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         )
         let raw = response.json
-        let choice = raw["choices"]?[0]
+        guard let choices = raw["choices"]?.arrayValue, !choices.isEmpty else {
+            throw AIError.invalidResponse(provider: providerID, message: "Response did not contain any choices.")
+        }
+        let choice: JSONValue? = choices[0]
         let reasoning = choice?["message"]?["reasoning_content"]?.stringValue ?? ""
         let toolCalls = deepSeekToolCalls(from: choice?["message"]?["tool_calls"])
         guard let text = choice?["message"]?["content"]?.stringValue ?? (toolCalls.isEmpty ? nil : "") else {

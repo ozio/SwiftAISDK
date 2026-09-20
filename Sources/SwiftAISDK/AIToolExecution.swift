@@ -256,13 +256,14 @@ func executeToolCalls(
             guard let tool = toolsByName[parsedCall.name] else {
                 throw AINoSuchToolError(toolName: parsedCall.name, availableToolNames: Array(toolsByName.keys))
             }
+            let toolContext = try validatedToolContext(for: tool, toolCall: parsedCall, request: request)
             if invokeInputAvailableCallbacks {
                 await tool.onInputAvailable?(AIToolInputAvailableContext(
                     toolCallID: parsedCall.id,
                     input: refinedArguments,
                     messages: request.messages,
                     abortSignal: request.abortSignal,
-                    toolContext: request.toolContexts[tool.name]
+                    toolContext: toolContext
                 ))
             }
             await telemetry?.recordToolStart(stepIndex: stepIndex, call: parsedCall, tool: tool)
@@ -356,7 +357,6 @@ func executeToolCalls(
                 continue
             }
             let resultValue: JSONValue
-            let toolContext = try validatedToolContext(for: tool, toolCall: parsedCall, request: request)
             let executionContext = AIToolExecutionContext(
                 toolCallID: parsedCall.id,
                 messages: request.messages,
@@ -569,4 +569,234 @@ func validateToolArguments(_ arguments: JSONValue, schema: JSONValue, call: AITo
             validationError: issue
         )
     }
+}
+
+struct AIPreparedToolSet: Sendable {
+    var executionTools: [AITool]
+    var modelTools: [AITool]
+    var callerMessages: [AIMessage]
+}
+
+actor AIToolDiscoveryState {
+    private var discovered: Set<String> = []
+
+    func prepare(
+        tools: [AITool],
+        routing: AIToolCallerRouting
+    ) throws -> AIPreparedToolSet {
+        let allTools = try toolsByName(from: tools)
+        try validateRouting(routing, tools: allTools)
+        try validateDeferredTools(tools, routing: routing, allTools: allTools)
+
+        var activeTools = tools.filter { !$0.deferLoading || discovered.contains($0.name) }
+        for index in activeTools.indices where activeTools[index].toolSearchMarker {
+            let searchName = activeTools[index].name
+            let search: @Sendable (JSONValue) async throws -> JSONValue = { [self] input in
+                try await search(
+                    input: input,
+                    searchName: searchName,
+                    tools: tools,
+                    routing: routing
+                )
+            }
+            activeTools[index].execute = search
+            activeTools[index].executeWithContext = { input, _ in try await search(input) }
+        }
+
+        var execution = try toolsByName(from: activeTools)
+        var model = execution
+        var localToolsByCaller: [String: [String: AITool]] = [:]
+        var callerMessages: [AIMessage] = []
+
+        for (toolName, callerNames) in routing {
+            guard var tool = execution[toolName] else { continue }
+            var availableDirectly = false
+            var availableToProvider = false
+
+            for callerName in callerNames {
+                if callerName == AIDirectToolCallerName {
+                    availableDirectly = true
+                    continue
+                }
+                guard let caller = execution[callerName]?.toolCaller else { continue }
+                switch caller {
+                case .provider(let prepareProviderOptions):
+                    availableToProvider = true
+                    tool.providerOptions = prepareProviderOptions(tool.providerOptions)
+                case .local:
+                    localToolsByCaller[callerName, default: [:]][toolName] = tool
+                }
+            }
+
+            execution[toolName] = tool
+            if availableDirectly || availableToProvider {
+                model[toolName] = tool
+            } else {
+                model[toolName] = nil
+            }
+        }
+
+        for callerTool in activeTools {
+            guard case let .local(bind, prepareModelMessage)? = callerTool.toolCaller else {
+                continue
+            }
+            let callerTools = localToolsByCaller[callerTool.name] ?? [:]
+            let boundCaller = bind(callerTools)
+            execution[callerTool.name] = boundCaller
+            guard model[callerTool.name] != nil else { continue }
+            if let prepareModelMessage {
+                if let content = prepareModelMessage(callerTools) {
+                    callerMessages.append(.user(content))
+                }
+            } else {
+                model[callerTool.name] = boundCaller
+            }
+        }
+
+        return AIPreparedToolSet(
+            executionTools: activeTools.compactMap { execution[$0.name] },
+            modelTools: activeTools.compactMap { model[$0.name] },
+            callerMessages: callerMessages
+        )
+    }
+
+    private func search(
+        input: JSONValue,
+        searchName: String,
+        tools: [AITool],
+        routing: AIToolCallerRouting
+    ) throws -> JSONValue {
+        guard let query = input["query"]?.stringValue else {
+            throw AIInvalidToolInputError(
+                toolName: searchName,
+                message: "Tool search query must be a non-empty string."
+            )
+        }
+
+        let searchCallers = callers(for: searchName, routing: routing)
+        let terms = Set(toolSearchTokens(query))
+        guard !terms.isEmpty else {
+            return ["tools": []]
+        }
+        let matches = tools.enumerated().compactMap { index, candidate -> (tool: AITool, score: Int, index: Int)? in
+            guard candidate.deferLoading,
+                  !candidate.toolSearchMarker,
+                  !Set(callers(for: candidate.name, routing: routing)).isDisjoint(with: searchCallers) else {
+                return nil
+            }
+            let nameTerms = Set(toolSearchTokens(candidate.name))
+            let descriptionTerms = Set(toolSearchTokens(candidate.description ?? ""))
+            let score = terms.reduce(0) { partial, term in
+                partial + (nameTerms.contains(term) ? 2 : 0) + (descriptionTerms.contains(term) ? 1 : 0)
+            }
+            return score > 0 ? (candidate, score, index) : nil
+        }
+        .sorted { lhs, rhs in
+            lhs.score == rhs.score ? lhs.index < rhs.index : lhs.score > rhs.score
+        }
+        .prefix(5)
+
+        for match in matches {
+            discovered.insert(match.tool.name)
+        }
+
+        return .object([
+            "tools": .array(matches.map { match in
+                .object([
+                    "name": .string(match.tool.name),
+                    "description": match.tool.description.map(JSONValue.string)
+                ].compactMapValues { $0 })
+            })
+        ])
+    }
+
+    private func validateRouting(
+        _ routing: AIToolCallerRouting,
+        tools: [String: AITool]
+    ) throws {
+        for (toolName, callers) in routing {
+            guard tools[toolName] != nil else {
+                throw AIError.invalidArgument(
+                    argument: "toolCallers",
+                    message: "Unknown tool '\(toolName)'."
+                )
+            }
+            for caller in callers where caller != AIDirectToolCallerName {
+                guard tools[caller]?.toolCaller != nil else {
+                    throw AIError.invalidArgument(
+                        argument: "toolCallers",
+                        message: "Tool '\(toolName)' contains invalid caller '\(caller)'."
+                    )
+                }
+            }
+        }
+    }
+
+    private func validateDeferredTools(
+        _ tools: [AITool],
+        routing: AIToolCallerRouting,
+        allTools: [String: AITool]
+    ) throws {
+        for tool in tools where tool.deferLoading || tool.toolSearchMarker {
+            let toolCallers = callers(for: tool.name, routing: routing)
+            let invalidCaller = toolCallers.contains { callerName in
+                guard callerName != AIDirectToolCallerName else { return false }
+                guard let definition = allTools[callerName]?.toolCaller else { return true }
+                guard case let .local(_, prepareModelMessage) = definition else { return true }
+                return prepareModelMessage == nil
+            }
+            if invalidCaller || (tool.toolSearchMarker && tool.deferLoading) {
+                throw AIError.invalidArgument(
+                    argument: "executableTools",
+                    message: "Tool '\(tool.name)' must be callable directly or through a local caller with a model message; the search tool itself must not defer loading."
+                )
+            }
+        }
+    }
+
+    private func callers(
+        for toolName: String,
+        routing: AIToolCallerRouting
+    ) -> Set<String> {
+        Set(routing[toolName] ?? [AIDirectToolCallerName])
+    }
+}
+
+func appendToolCallerMessages(
+    _ messages: [AIMessage],
+    additions: [AIMessage]
+) -> [AIMessage] {
+    guard !additions.isEmpty else { return messages }
+
+    let latestUserText = messages.reversed().first(where: { message in
+        message.role == .user
+            && message.content.count == 1
+            && message.content[0].text != nil
+    })?.content[0].text
+    var existingUserText = Set(latestUserText.map { [$0] } ?? [])
+    var appended: [AIMessage] = []
+
+    for addition in additions {
+        guard addition.role == .user,
+              addition.content.count == 1,
+              let content = addition.content[0].text,
+              !existingUserText.contains(content) else {
+            continue
+        }
+        existingUserText.insert(content)
+        appended.append(addition)
+    }
+
+    return appended.isEmpty ? messages : messages + appended
+}
+
+private func toolSearchTokens(_ value: String) -> [String] {
+    let separated = value.replacingOccurrences(
+        of: #"([\p{Ll}\d])([\p{Lu}])"#,
+        with: "$1 $2",
+        options: .regularExpression
+    )
+    return separated.lowercased().components(
+        separatedBy: CharacterSet.alphanumerics.inverted
+    ).filter { !$0.isEmpty }
 }

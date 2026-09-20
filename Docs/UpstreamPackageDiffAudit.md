@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-09-13
+Snapshot date: 2026-09-20
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every changed tracked package was packed at both the
@@ -19,6 +19,90 @@ Status meanings:
 - `out-of-scope`: the changed package is a framework/product surface that this
   provider-facing Swift package does not expose.
 - `current`: the tracked package has no published version drift.
+
+## 2026-09-20 Weekly Audit
+
+Fresh npm metadata, all 96 old/latest tarballs for the 48 drifted rows, and
+upstream `vercel/ai@20dd00abba618d5a516e0fee40ccd3e18a2bd1fb` were
+audited. Of 50 tracked rows, 18 received portable Swift work, 2 were already
+covered by shared behavior, 27 were package-local version/dependency-only,
+React was out of scope, and LMNT plus Vercel remained current.
+
+| Package | Reference -> latest | Result |
+| --- | ---: | --- |
+| `ai` | `7.0.99 -> 7.0.107` | `ported` — Adds the Evaluation V4 facade, downloadable prompt URLs with aborts, per-step model/provider telemetry identity, dynamic tool-caller routing, final-step structured output with streaming partials, approval-aware pruning/chat behavior, charset and raw-AAC handling, wall-clock video polling deadlines, and the continuous realtime session foundation. React/browser WebRTC and Node-only cookie/DNS mechanics remain outside the Swift runtime. |
+| `@ai-sdk/provider` | `4.0.14 -> 4.0.17` | `ported` — Adds provider-neutral Evaluation V4 types, validation/errors, and continuous realtime capabilities while preserving the existing turn-based realtime contract. Browser WebRTC/client-permission ownership remains deferred. |
+| `@ai-sdk/provider-utils` | `5.0.40 -> 5.0.45` | `ported` — Adds the shared Evaluation language-model adapter, dynamic tool-caller discovery support, AVIF/HEIC wildcard media recognition, and AAC ADTS detection; JavaScript-only Undici/DOMException mechanics were not copied. |
+| `@ai-sdk/react` | `4.0.102 -> 4.0.110` | `out-of-scope` — Record the version drift but do not transplant React commit, StrictMode, Fetch Headers identity, useObject reducer, or browser WebRTC ownership into Swift core. Portable realtime protocol work is owned by the ai/provider/openai rows. |
+| `@ai-sdk/mcp` | `2.0.49 -> 2.0.54` | `ported` — OAuth retries reuse a stored authorization-server choice when discovery is unavailable, and concurrent stale-token 401 responses coalesce behind one actor-safe refresh before retrying. |
+| `@ai-sdk/openai` | `4.0.66 -> 4.0.71` | `ported` — Adds assistant easy-input and provider-reference mappings, image detail/cache-breakpoint propagation, image/mask aborts, Evaluation V4, and the authenticated continuous OpenAI Live adapter for `gpt-live-1`. Browser WebRTC, provider-backed Responses delegation, and non-Live OpenAI Realtime remain deferred. |
+| `@ai-sdk/azure` | `4.0.70 -> 4.0.75` | `version-only` — No Azure-owned runtime patch was required; the baseline and User-Agent evidence were advanced after the shared OpenAI Responses mapping passed focused coverage. |
+| `@ai-sdk/openai-compatible` | `3.0.48 -> 3.0.53` | `covered` — The shared Swift chat stream already represents the runtime behavior; focused provider evidence and the 3.0.53 baseline/User-Agent were synchronized without a parser rewrite. |
+| `@ai-sdk/open-responses` | `2.0.44 -> 2.0.49` | `version-only` — Version, User-Agent, and docs evidence advanced to 2.0.49. Evaluation and dynamic tool callers remain shared core/provider surfaces rather than synthetic Open Responses APIs. |
+| `@ai-sdk/gateway` | `4.0.80 -> 4.0.87` | `ported` — Adds native Gateway Evaluation discovery/model execution, strict request validation, exact headers and error mapping, provider aliases, and upstream-shaped fixture coverage. |
+| `@ai-sdk/xai` | `4.0.58 -> 5.0.4` | `ported` — Aligns Responses strict schemas and batch decoupling and advances provider identity to 5.0.4. Swift retains the existing Chat Completions entry point as a documented legacy source-compatible shim instead of making this minor release breaking; new code should use Responses. |
+| `@ai-sdk/alibaba` | `2.0.45 -> 2.0.51` | `ported` — Adds `preserveThinking` with model-aware defaults and preserves assistant reasoning history across subsequent requests. |
+| `@ai-sdk/amazon-bedrock` | `5.0.82 -> 5.0.88` | `ported` — Adds opaque Anthropic-family handling, recursive strict schemas, current 20260318 web-tool warnings/bindings, and non-2xx streaming response parity while retaining forward-compatible Fable IDs. |
+| `@ai-sdk/anthropic` | `4.0.53 -> 4.0.58` | `ported` — Adds 20260318 web-search/web-fetch tools, deferred tool-result lifecycle, custom aliases, implicit code execution behavior, and the shared Evaluation V4 adapter. |
+| `@ai-sdk/anthropic-aws` | `2.0.45 -> 2.0.50` | `version-only` — @ai-sdk/anthropic-aws 2.0.45..2.0.50 has no published runtime or test-source change: the extracted src trees are byte-identical (Git tree ef2f038f2793750c62ae3c4d14a0655c25df5938); drift is changelog, manifest, and dependency metadata only. The Swift reference/User-Agent ledger advanced without behavioral code changes. |
+| `@ai-sdk/cerebras` | `3.0.48 -> 3.0.53` | `version-only` — @ai-sdk/cerebras 3.0.48..3.0.53 has no published runtime or test-source change: the extracted src trees are byte-identical (Git tree 6d2021c770caee155cf7940c605a210810407006); drift is changelog, manifest, and dependency metadata only. The Swift reference/User-Agent ledger advanced without behavioral code changes. |
+| `@ai-sdk/deepseek` | `3.0.44 -> 3.0.49` | `ported` — Empty `choices` now fails with the exact structural response error instead of falling through to an unrelated no-text failure. |
+| `@ai-sdk/google` | `4.0.69 -> 4.0.76` | `ported` — Adds lossless JSON Schema construction, corrected block reasons, accumulated stream metadata and usage, image count parity, and Evaluation V4. Google realtime 3.8 remains deferred pending a dedicated provider pass. |
+| `@ai-sdk/google-vertex` | `5.0.81 -> 5.0.88` | `covered` — Direct Vertex runtime behavior is already covered for the new Fable ID and does not serialize image count. Version/User-Agent documentation advanced; the upstream maxImagesPerCall=1 change still exposes a shared image-batching gap rather than a Vertex-specific request bug. |
+| `@ai-sdk/groq` | `4.0.41 -> 4.0.46` | `version-only` — @ai-sdk/groq 4.0.41..4.0.46 has no published runtime or test-source change: the extracted src trees are byte-identical (Git tree e29531dc1d5bac7863070703f71053c486d5be28); drift is changelog, manifest, and dependency metadata only. The Swift reference/User-Agent ledger advanced without behavioral code changes. |
+| `@ai-sdk/huggingface` | `2.0.48 -> 2.0.53` | `version-only` — @ai-sdk/huggingface 2.0.48..2.0.53 has no published runtime or test-source change: the extracted src trees are byte-identical (Git tree 271ac959d53c4a3d8a7c30104b520e78e614aea6); drift is changelog, manifest, and dependency metadata only. The Swift reference/User-Agent ledger advanced without behavioral code changes. |
+| `@ai-sdk/mistral` | `4.0.43 -> 4.0.48` | `version-only` — @ai-sdk/mistral 4.0.43..4.0.48 has no published runtime or test-source change: the extracted src trees are byte-identical (Git tree 14dc7658bf5fd2ffc8cf1a1b48415fceb7b16580); drift is changelog, manifest, and dependency metadata only. The Swift reference/User-Agent ledger advanced without behavioral code changes. |
+| `@ai-sdk/moonshotai` | `3.0.49 -> 3.0.54` | `version-only` — @ai-sdk/moonshotai 3.0.49..3.0.54 has no published runtime or test-source change: the extracted src trees are byte-identical (Git tree 1d1031bfafb783b9fe440338f38faa87adf7a582); drift is changelog, manifest, and dependency metadata only. The Swift reference/User-Agent ledger advanced without behavioral code changes. |
+| `@ai-sdk/perplexity` | `4.0.43 -> 4.0.48` | `version-only` — @ai-sdk/perplexity 4.0.43..4.0.48 has no published runtime or test-source change: the extracted src trees are byte-identical (Git tree 09ad8a41d9d073f620ba9955d385491eb2b2d1e7); drift is changelog, manifest, and dependency metadata only. The Swift reference/User-Agent ledger advanced without behavioral code changes. |
+| `@ai-sdk/togetherai` | `3.0.49 -> 3.0.54` | `ported` — Gemini image requests omit unsupported diffusion fields and seed, emit the upstream seed warning, and preserve size plus provider options. |
+| `@ai-sdk/assemblyai` | `3.0.40 -> 3.0.45` | `version-only` — Package-local source and tests are unchanged; the npm baseline and Swift User-Agent advanced from 3.0.40 to 3.0.45. |
+| `@ai-sdk/baseten` | `2.1.26 -> 2.1.31` | `version-only` — No Baseten runtime or test delta; the dependency baseline and User-Agent identity advanced from 2.1.26 to 2.1.31. |
+| `@ai-sdk/black-forest-labs` | `2.0.41 -> 2.0.46` | `ported` — Image polling now enforces a wall-clock deadline that can cancel a hung poll request rather than checking time only between completed requests. |
+| `@ai-sdk/bytedance` | `2.0.43 -> 2.0.48` | `ported` — A start image combined with references now receives the upstream `reference_image` role unless a last frame makes it `first_frame`. |
+| `@ai-sdk/cartesia` | `3.0.35 -> 3.0.40` | `version-only` — Cartesia package behavior and tests are unchanged; the baseline/User-Agent advanced from 3.0.35 to 3.0.40. |
+| `@ai-sdk/cohere` | `4.0.41 -> 4.0.46` | `version-only` — No Cohere package-local behavior drift; only the 4.0.46 baseline and versioned User-Agent evidence changed. |
+| `@ai-sdk/deepgram` | `3.1.11 -> 3.1.16` | `version-only` — Deepgram source/tests are unchanged; the baseline and User-Agent identity advanced from 3.1.11 to 3.1.16. |
+| `@ai-sdk/deepinfra` | `3.0.48 -> 3.0.53` | `version-only` — DeepInfra package source/tests did not change; the baseline/User-Agent advanced to 3.0.53. |
+| `@ai-sdk/elevenlabs` | `3.0.41 -> 3.0.46` | `version-only` — ElevenLabs package-local behavior is unchanged; the baseline and versioned User-Agent advanced to 3.0.46. |
+| `@ai-sdk/fal` | `3.0.41 -> 3.0.46` | `version-only` — Fal provider source/tests are unchanged; the baseline/User-Agent advanced to 3.0.46 while shared download security remains core-owned. |
+| `@ai-sdk/fish-audio` | `3.0.18 -> 3.0.23` | `version-only` — Fish Audio package behavior is unchanged; the baseline and provider version/User-Agent constant advanced to 3.0.23. |
+| `@ai-sdk/fireworks` | `3.0.51 -> 3.0.56` | `ported` — Image polling now enforces a cancellable wall-clock deadline, including a request that never returns. |
+| `@ai-sdk/gmicloud` | `3.0.19 -> 3.0.24` | `version-only` — GMI Cloud package-local source/tests are unchanged; the baseline and User-Agent constant advanced to 3.0.24. |
+| `@ai-sdk/gladia` | `3.0.40 -> 3.0.45` | `version-only` — Gladia behavior/tests are unchanged; the baseline/User-Agent advanced to 3.0.45, while Node-only download mechanics remain outside the provider runtime. |
+| `@ai-sdk/hume` | `3.0.40 -> 3.0.45` | `version-only` — Hume package source/tests are unchanged; the baseline and versioned User-Agent advanced to 3.0.45. |
+| `@ai-sdk/klingai` | `4.0.42 -> 4.0.47` | `version-only` — KlingAI package-local behavior is unchanged; the baseline/User-Agent advanced from 4.0.42 to 4.0.47. |
+| `@ai-sdk/lmnt` | `3.0.36 -> 3.0.36` | `current` — LMNT remains current at 3.0.36; exact tag source/tests and the published tarball show no action. |
+| `@ai-sdk/luma` | `3.0.41 -> 3.0.46` | `version-only` — Luma source/tests are unchanged; the baseline and versioned User-Agent advanced to 3.0.46. |
+| `@ai-sdk/minimax` | `3.0.30 -> 3.0.35` | `version-only` — MiniMax package-local source/tests are unchanged; the baseline and both User-Agent suffixes advanced to 3.0.35. |
+| `@ai-sdk/prodia` | `2.0.41 -> 2.0.46` | `version-only` — Prodia provider source/tests are unchanged; the baseline/User-Agent advanced to 2.0.46 while shared download security remains core-owned. |
+| `@ai-sdk/quiverai` | `2.0.40 -> 2.0.45` | `ported` — Adds the Arrow 2/Telos surface: animation and SVG editing, reference preparation/validation, current model/options and limits, credits, vectorization, and animation metadata. |
+| `@ai-sdk/replicate` | `3.0.41 -> 3.0.46` | `ported` — Continues polling predictions after synchronous wait expiry with current options, terminal errors, trusted-origin credentials, and missing-output handling. |
+| `@ai-sdk/revai` | `3.0.40 -> 3.0.45` | `version-only` — Rev AI source/tests are unchanged; the baseline and User-Agent advanced from 3.0.40 to 3.0.45. |
+| `@ai-sdk/vercel` | `3.0.30 -> 3.0.30` | `current` — Vercel remains current at 3.0.30; exact tarball source plus matching repository test snapshot show no action. |
+| `@ai-sdk/voyage` | `2.0.40 -> 2.0.45` | `version-only` — Voyage provider behavior/tests are unchanged; the baseline and User-Agent identity advanced from 2.0.40 to 2.0.45. |
+
+### 2026-09-20 Audit Evidence
+
+- Exact registry-prefix discovery returned 87 live `@ai-sdk/*` names. The
+  canonical sorted-name list with a trailing newline has SHA-256
+  `709381c5b12ec13c8b445aa504980cf42f6795f63b331ac39a3fddb4a89a47c9`.
+  npm search returned 71 names and omitted 16 exact-prefix packages.
+- The tracked set contains 50 rows, including unscoped `ai`; 38 scoped names
+  remain untracked. Two are provider packages: existing gap
+  `@ai-sdk/zai@3.0.15` and newly published evaluation provider
+  `@ai-sdk/typesafe-ai@3.0.4`. Neither is auto-implemented in this pass.
+- The executable upstream inventory grows from 881 to 919 paths. Between
+  `6c6c2210b9532a4c369615c044a16d595f3db117` and the current ref, 137
+  executable paths changed (43 added, 89 modified, five deleted), plus 18
+  declaration-only paths. Exact grouped decisions and hashes are in
+  `Docs/FreshUpstreamTestDiffAudit.md`.
+- Published npm tarballs supplied versioned source and declarations. Matching
+  package tags supplied tests omitted from tarballs; LMNT and Vercel retain
+  their documented provenance exceptions because their current releases are
+  unchanged or absent from upstream main.
+- The machine-readable ignored reports used for integration cover all ten
+  required behavior areas for every tracked package exactly once. This public
+  table is the durable package-by-package decision record.
 
 ## 2026-09-13 Weekly Audit
 

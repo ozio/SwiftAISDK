@@ -1,8 +1,8 @@
 import Foundation
 
-public final class AnthropicProvider: AIProvider, @unchecked Sendable {
+public final class AnthropicProvider: AIProvider, AIEvaluationProvider, @unchecked Sendable {
     public let providerID = "anthropic"
-    public let supportedCapabilities: Set<ModelCapability> = [.language]
+    public let supportedCapabilities: Set<ModelCapability> = [.language, .evaluation]
     private let config: ModelHTTPConfig
     private let languageProviderID: String
     private let skillsProviderID: String
@@ -21,7 +21,7 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
             }
             headers["x-api-key"] = headers["x-api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.53")
+        headers = withUserAgentSuffix(headers, "ai-sdk/anthropic/4.0.58")
         headers["anthropic-version"] = headers["anthropic-version"] ?? "2023-06-01"
         languageProviderID = settings.name ?? "anthropic.messages"
         skillsProviderID = anthropicSkillsProviderID(from: languageProviderID)
@@ -39,6 +39,14 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
 
     public func languageModel(_ modelID: String) throws -> any LanguageModel {
         AnthropicBatchLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID))
+    }
+
+    /// Creates an experimental Choice/Score/Boolean evaluation model using Messages.
+    public func evaluationModel(_ modelID: String) throws -> any AIEvaluationModelV4 {
+        EvaluationLanguageModel(
+            model: AnthropicBatchLanguageModel(modelID: modelID, config: config.withProviderID(languageProviderID)),
+            providerID: anthropicEvaluationProviderID(from: languageProviderID)
+        )
     }
 
     public func messages(_ modelID: String) throws -> any BatchLanguageModel {
@@ -95,6 +103,13 @@ public final class AnthropicProvider: AIProvider, @unchecked Sendable {
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
     }
+}
+
+private func anthropicEvaluationProviderID(from languageProviderID: String) -> String {
+    if languageProviderID.hasSuffix(".messages") {
+        return String(languageProviderID.dropLast(".messages".count)) + ".evaluation"
+    }
+    return languageProviderID + ".evaluation"
 }
 
 private func anthropicSkillsProviderID(from languageProviderID: String) -> String {

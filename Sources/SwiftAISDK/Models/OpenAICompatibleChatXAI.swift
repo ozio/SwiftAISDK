@@ -1,5 +1,11 @@
 import Foundation
 
+// @ai-sdk/xai 5 removed the Chat Completions surface in favor of Responses.
+// SwiftAISDK intentionally keeps this implementation as a deprecated,
+// source-compatible provider.chat(...) shim. New code should use
+// provider.languageModel(...) or provider.responses(...). Responses and Batch
+// code must remain independent of these compatibility helpers.
+
 func xaiChatWarnings(for request: LanguageModelRequest) -> [AIWarning] {
     var warnings: [AIWarning] = []
     if request.topK != nil { warnings.append(AIWarning(type: "unsupported", feature: "topK")) }

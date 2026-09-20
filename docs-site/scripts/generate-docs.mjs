@@ -92,6 +92,7 @@ function readProviderRows() {
       dubbing,
       video,
       reranking,
+      evaluation,
       files,
       skills,
     ] = splitMarkdownRow(line);
@@ -112,6 +113,7 @@ function readProviderRows() {
       dubbing,
       video,
       reranking,
+      evaluation,
       files,
       skills,
       notes: notes.get(providerID) ?? '',
@@ -161,6 +163,7 @@ function generateProviders() {
     ['dubbing', 'Dubbing'],
     ['video', 'Video'],
     ['reranking', 'Reranking'],
+    ['evaluation', 'Evaluation'],
     ['files', 'Files'],
     ['skills', 'Skills'],
   ];
@@ -175,13 +178,13 @@ function generateProviders() {
   const table = rows
     .map(
       (row) =>
-        `| [\`${row.providerID}\`](${providerSlug(row.providerID)}/) | \`${row.upstreamPackage}\` | ${row.factories} | ${marker(row.language)} | ${marker(row.completion)} | ${marker(row.embedding)} | ${marker(row.image)} | ${marker(row.transcription)} | ${marker(row.speech)} | ${marker(row.audioGeneration)} | ${marker(row.audioTransformation)} | ${marker(row.dubbing)} | ${marker(row.video)} | ${marker(row.reranking)} | ${marker(row.files)} | ${marker(row.skills)} |`,
+        `| [\`${row.providerID}\`](${providerSlug(row.providerID)}/) | \`${row.upstreamPackage}\` | ${row.factories} | ${marker(row.language)} | ${marker(row.completion)} | ${marker(row.embedding)} | ${marker(row.image)} | ${marker(row.transcription)} | ${marker(row.speech)} | ${marker(row.audioGeneration)} | ${marker(row.audioTransformation)} | ${marker(row.dubbing)} | ${marker(row.video)} | ${marker(row.reranking)} | ${marker(row.evaluation)} | ${marker(row.files)} | ${marker(row.skills)} |`,
     )
     .join('\n');
 
   writeGenerated(
     join(contentRoot, 'providers/index.mdx'),
-    `---\ntitle: Provider matrix\ndescription: Generated provider capability overview for SwiftAISDK.\n---\n\nThis page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.\n\n<div class="capability-grid">\n${capabilityList}\n</div>\n\n| Provider | Upstream package | Swift factories | Language | Completion | Embedding | Image | Transcription | Speech | Audio generation | Audio transformation | Dubbing | Video | Reranking | Files | Skills |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${table}\n`,
+    `---\ntitle: Provider matrix\ndescription: Generated provider capability overview for SwiftAISDK.\n---\n\nThis page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.\n\n<div class="capability-grid">\n${capabilityList}\n</div>\n\n| Provider | Upstream package | Swift factories | Language | Completion | Embedding | Image | Transcription | Speech | Audio generation | Audio transformation | Dubbing | Video | Reranking | Evaluation | Files | Skills |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${table}\n`,
   );
 
   for (const row of rows) {
@@ -197,6 +200,7 @@ function generateProviders() {
       ['Dubbing', row.dubbing],
       ['Video', row.video],
       ['Reranking', row.reranking],
+      ['Evaluation', row.evaluation],
       ['Files', row.files],
       ['Skills', row.skills],
     ].filter(([, supported]) => supported);

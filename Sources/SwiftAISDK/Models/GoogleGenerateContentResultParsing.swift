@@ -127,6 +127,11 @@ func googleGenerateContentProviderMetadata(from raw: JSONValue, includeNullDefau
     } else if includeNullDefaults {
         google["finishMessage"] = .null
     }
+    if let usageMetadata = raw["usageMetadata"] {
+        google["usageMetadata"] = usageMetadata
+    } else if includeNullDefaults {
+        google["usageMetadata"] = .null
+    }
     if let serviceTier = raw["usageMetadata"]?["serviceTier"] {
         google["serviceTier"] = serviceTier
     } else if includeNullDefaults {
@@ -139,6 +144,7 @@ func googleGenerateContentProviderMetadata(from raw: JSONValue, includeNullDefau
 func googleFinalizeGenerateContentProviderMetadata(_ providerMetadata: [String: JSONValue]) -> [String: JSONValue] {
     var google = providerMetadata["google"]?.objectValue ?? [:]
     google["finishMessage"] = google["finishMessage"] ?? .null
+    google["usageMetadata"] = google["usageMetadata"] ?? .null
     google["serviceTier"] = google["serviceTier"] ?? .null
     return ["google": .object(google)]
 }
@@ -157,12 +163,28 @@ func googleMergeProviderMetadata(_ current: [String: JSONValue], _ incoming: [St
     return output
 }
 
+
 func googleGenerateContentUsage(from raw: JSONValue) -> TokenUsage? {
-    guard raw["usageMetadata"] != nil else { return nil }
+    guard let usage = raw["usageMetadata"] else { return nil }
+    return googleGenerateContentUsage(fromUsageMetadata: usage)
+}
+
+func googleGenerateContentUsage(fromUsageMetadata usage: JSONValue) -> TokenUsage {
+    let promptTokens = usage["promptTokenCount"]?.intValue ?? 0
+    let toolUsePromptTokens = usage["toolUsePromptTokenCount"]?.intValue ?? 0
+    let cachedContentTokens = usage["cachedContentTokenCount"]?.intValue ?? 0
+    let candidateTokens = usage["candidatesTokenCount"]?.intValue ?? 0
+    let thoughtTokens = usage["thoughtsTokenCount"]?.intValue ?? 0
+    let inputTokens = promptTokens + toolUsePromptTokens
     return TokenUsage(
-        inputTokens: raw["usageMetadata"]?["promptTokenCount"]?.intValue,
-        outputTokens: raw["usageMetadata"]?["candidatesTokenCount"]?.intValue,
-        totalTokens: raw["usageMetadata"]?["totalTokenCount"]?.intValue
+        inputTokens: inputTokens,
+        outputTokens: candidateTokens + thoughtTokens,
+        totalTokens: usage["totalTokenCount"]?.intValue,
+        inputTokensNoCache: inputTokens - cachedContentTokens,
+        inputTokensCacheRead: cachedContentTokens,
+        outputTextTokens: candidateTokens,
+        outputReasoningTokens: thoughtTokens,
+        rawValue: usage
     )
 }
 
@@ -183,9 +205,19 @@ func googleGenerateContentFinishReason(_ reason: String?, hasToolCalls: Bool) ->
     }
 }
 
+func googleConfirmedPromptBlockReason(_ reason: String?) -> String? {
+    guard let reason,
+          !reason.isEmpty,
+          reason != "BLOCK_REASON_UNSPECIFIED",
+          reason != "BLOCKED_REASON_UNSPECIFIED" else {
+        return nil
+    }
+    return reason
+}
+
 func googleGenerateContentFinishReason(from raw: JSONValue, hasToolCalls: Bool) -> String? {
     let candidateFinishReason = raw["candidates"]?[0]?["finishReason"]?.stringValue
-    let promptBlockReason = raw["promptFeedback"]?["blockReason"]?.stringValue
+    let promptBlockReason = googleConfirmedPromptBlockReason(raw["promptFeedback"]?["blockReason"]?.stringValue)
     if candidateFinishReason == nil, promptBlockReason != nil {
         return "content-filter"
     }

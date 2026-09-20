@@ -54,6 +54,7 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private let transport: any AITransport
     private let streamingTransport: (any AIStreamingTransport)?
     private let authProvider: (any MCPOAuthProvider)?
+    private let authorizationRecovery = MCPAuthorizationRecoveryCoordinator()
     private var protocolVersion: String?
     private var sessionID: String?
     private let terminateSessionOnClose: Bool
@@ -318,9 +319,10 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             return response
         }
         if response.statusCode == 401, let authProvider, !triedAuth {
-            await authProvider.invalidateCredentials(.tokens)
             let parameters = mcpOAuthWWWAuthenticateParameters(from: response.headers)
-            let authorized = try await authProvider.authorize(
+            let authorized = try await authorizationRecovery.recover(
+                provider: authProvider,
+                failedAuthorization: mcpAuthorizationHeader(in: requestHeaders),
                 resourceMetadataURL: parameters.resourceMetadataURL,
                 scope: parameters.scope
             )
@@ -391,9 +393,11 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             return response
         }
         if response.statusCode == 401, let authProvider, !triedAuth {
-            await authProvider.invalidateCredentials(.tokens)
+            response.cancelBody()
             let parameters = mcpOAuthWWWAuthenticateParameters(from: response.headers)
-            let authorized = try await authProvider.authorize(
+            let authorized = try await authorizationRecovery.recover(
+                provider: authProvider,
+                failedAuthorization: mcpAuthorizationHeader(in: requestHeaders),
                 resourceMetadataURL: parameters.resourceMetadataURL,
                 scope: parameters.scope
             )
@@ -658,5 +662,61 @@ public final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
             }
         }
         return .array([])
+    }
+}
+
+private func mcpAuthorizationHeader(in headers: [String: String]) -> String? {
+    headers.first {
+        $0.key.caseInsensitiveCompare("authorization") == .orderedSame
+    }?.value
+}
+
+private actor MCPAuthorizationRecoveryCoordinator {
+    private var nextID = 0
+    private var inFlight: (id: Int, task: Task<Bool, Error>)?
+
+    func recover(
+        provider: any MCPOAuthProvider,
+        failedAuthorization: String?,
+        resourceMetadataURL: URL?,
+        scope: String?
+    ) async throws -> Bool {
+        let currentAuthorization = try await provider.accessToken().flatMap { token in
+            token.isEmpty ? nil : "Bearer \(token)"
+        }
+
+        // A late 401 for an older request must not invalidate credentials that
+        // another request has already refreshed.
+        if let currentAuthorization, currentAuthorization != failedAuthorization {
+            return true
+        }
+
+        if let inFlight {
+            return try await inFlight.task.value
+        }
+
+        nextID += 1
+        let id = nextID
+        let task = Task<Bool, Error> {
+            await provider.invalidateCredentials(.tokens)
+            return try await provider.authorize(
+                resourceMetadataURL: resourceMetadataURL,
+                scope: scope
+            )
+        }
+        inFlight = (id, task)
+
+        do {
+            let result = try await task.value
+            if inFlight?.id == id {
+                inFlight = nil
+            }
+            return result
+        } catch {
+            if inFlight?.id == id {
+                inFlight = nil
+            }
+            throw error
+        }
     }
 }

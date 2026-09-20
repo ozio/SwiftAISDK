@@ -376,3 +376,20 @@ import Testing
         ]))
     }
 }
+
+@Test func xAI5RetainsLegacySwiftChatShimWhileDefaultingToResponses() throws {
+    let provider = try AIProviders.xAI(settings: ProviderSettings(
+        apiKey: "xai-key",
+        transport: RecordingTransport(responses: [])
+    ))
+
+    let defaultModel = try provider.languageModel("grok-4.3")
+    let responsesModel = try provider.responses("grok-4.3")
+    let chatShim = try provider.chat("grok-4.3")
+
+    // @ai-sdk/xai 5 removed Chat. Swift keeps this legacy route only as a
+    // source-compatibility shim; default and explicit modern routing stay Responses.
+    #expect(defaultModel.providerID == "xai.responses")
+    #expect(responsesModel.providerID == "xai.responses")
+    #expect(chatShim.providerID == "xai.chat")
+}

@@ -2,7 +2,7 @@
 
 SwiftAISDK is a SwiftPM port of the provider-facing parts of Vercel AI SDK.
 It provides provider factories plus an `AI` facade for text, durable batches,
-structured output, embeddings, media, streaming and realtime audio, reranking,
+structured output, evaluation, embeddings, media, streaming and realtime audio, reranking,
 file operations, middleware, MCP tools, and typed tool execution.
 
 Licensed under the [Apache License 2.0](LICENSE). SwiftAISDK is an independent
@@ -537,14 +537,53 @@ duplex transport preserves Gateway auth/team subprotocols, splits large audio
 frames safely, and maps provider stream metadata and errors into the shared
 Swift lifecycle.
 
+## Evaluation V4
+
+`AI.experimentalEvaluate` evaluates Choice, Score, and Boolean questions over
+one shared JSON state. OpenAI, Anthropic, and Google adapt their structured
+language models; Gateway can call a native Evaluation V4 model directly.
+
+```swift
+let anthropic = try AIProviders.anthropic()
+let evaluator = try anthropic.evaluationModel("claude-sonnet-4-6")
+
+let result = try await AI.experimentalEvaluate(
+    model: evaluator,
+    state: [
+        "answer": "Paris",
+        "reference": "Paris"
+    ],
+    questions: [
+        "correct": .boolean(
+            instructions: "Does the answer match the reference?"
+        ),
+        "quality": .score(
+            instructions: "Rate answer quality.",
+            criteria: ["Incorrect", "Partially correct", "Fully correct"]
+        ),
+        "tone": .choice(
+            instructions: "Classify the tone.",
+            criteria: [
+                "neutral": "Plain and factual.",
+                "promotional": "Persuasive or sales-oriented."
+            ]
+        )
+    ]
+)
+```
+
+Answers keep the caller's question IDs and preserve provider usage, warnings,
+metadata, response headers/body, and declared rounding. Model IDs can also be
+resolved through `AIProviderRegistry` or `customProvider`.
+
 ## Realtime Sessions
 
 `AIRealtimeModelV4` and `AIRealtimeSession` provide a provider-neutral duplex
-session for text, audio, tool calls, normalized server events, aborts, and
-explicit close/cancel behavior. xAI is the first full Realtime V4 adapter: it
-creates an ephemeral client secret, negotiates the WebSocket subprotocol, maps
-session/audio/text/tool events, and keeps provider-specific events available as
-custom events.
+session for turn-based or continuous text/audio conversations, tool calls,
+normalized server events, aborts, and explicit close/cancel behavior. xAI
+provides the turn-based adapter: it creates an ephemeral client secret,
+negotiates the WebSocket subprotocol, maps session/audio/text/tool events, and
+keeps provider-specific events available as custom events.
 
 ```swift
 let xai = try AIProviders.xAI()
@@ -573,8 +612,38 @@ for try await event in session {
 }
 ```
 
-Full provider adapters for non-xAI realtime speech sessions, Google/OpenAI
-streaming translation, and ElevenLabs realtime transcription remain deferred.
+OpenAI Live uses the same session lifecycle in continuous mode over an
+authenticated server WebSocket. Audio is consumed continuously, so callers do
+not send `commitAudio()` or `createResponse()`:
+
+```swift
+let openAI = try AIProviders.openAI()
+let liveModel = try openAI.experimentalRealtime("gpt-live-1")
+let live = try await AIRealtimeSession.connect(
+    model: liveModel,
+    sessionConfiguration: .init(
+        instructions: "Answer briefly.",
+        inputAudioFormat: .init(type: "audio/pcm", rate: 24_000),
+        outputAudioFormat: .init(type: "audio/pcm", rate: 24_000)
+    )
+)
+
+try await live.appendAudio(pcmChunk)
+try await live.muteInput()
+try await live.unmuteInput()
+
+for try await event in live {
+    if case let .server(.audioChunk(delta, _)) = event {
+        // Decode or enqueue the base64 audio delta.
+    }
+}
+```
+
+OpenAI Live confirms `session.start` readiness and `session.close`
+finalization, and exposes continuous usage, transcript, audio, delegation,
+acknowledgement, and correlated error events. Browser WebRTC, provider-backed
+Responses delegation, non-Live OpenAI Realtime models, Google realtime, and
+ElevenLabs realtime transcription remain deferred.
 
 ## Middleware
 
@@ -604,13 +673,16 @@ let simulatedStream = wrapLanguageModel(model, middleware: simulateStreamingMidd
 
 ## MCP
 
-`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.45`: initialize handshake,
+`MCPClient` mirrors the core of official `@ai-sdk/mcp@2.0.54`: initialize handshake,
 tool discovery, dynamic `AITool` conversion, resources, prompts, elicitation,
 HTTP/SSE transport, stdio transport, and OAuth helpers.
 OAuth providers can implement `authorize(resourceMetadataURL:scope:)` to receive
 the scope advertised by `WWW-Authenticate` or Protected Resource Metadata; the
 existing `authorize(resourceMetadataURL:)` requirement remains source-compatible.
-The 2.0.45 behavior is absorbed in the protocol/HTTP transport and OAuth layers
+The 2.0.54 behavior is absorbed in the protocol/HTTP transport and OAuth layers:
+stored authorization-server information survives a discovery failure, and
+concurrent stale-token 401 responses share one authorization refresh instead
+of racing or clearing a newly saved token. Earlier behavior remains available
 without changing the high-level `MCPClient` workflow. `MCPToolAnnotations`
 provides typed access to standard title/read-only/destructive/idempotent/open-
 world hints while the raw annotation object remains available; these are

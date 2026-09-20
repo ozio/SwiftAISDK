@@ -41,15 +41,8 @@ func googleStreamParts(from raw: JSONValue) -> [LanguageStreamPart] {
     }
     if raw["candidates"]?[0]?["finishReason"]?.stringValue != nil || raw["usageMetadata"] != nil {
         parts.append(.finishMetadata(
-            reason: googleGenerateContentFinishReason(
-                raw["candidates"]?[0]?["finishReason"]?.stringValue,
-                hasToolCalls: false
-            ) ?? "other",
-            usage: TokenUsage(
-                inputTokens: raw["usageMetadata"]?["promptTokenCount"]?.intValue,
-                outputTokens: raw["usageMetadata"]?["candidatesTokenCount"]?.intValue,
-                totalTokens: raw["usageMetadata"]?["totalTokenCount"]?.intValue
-            ),
+            reason: googleGenerateContentFinishReason(from: raw, hasToolCalls: false) ?? "other",
+            usage: googleGenerateContentUsage(from: raw),
             providerMetadata: googleFinalizeGenerateContentProviderMetadata(
                 googleGenerateContentProviderMetadata(from: raw, includeNullDefaults: false)
             )
@@ -67,6 +60,7 @@ struct GoogleGenerateContentStreamState {
     private var lastCodeExecutionToolCallID: String?
     private var lastServerToolCallID: String?
     private var latestFinishReason: String?
+    private var confirmedPromptBlockReason: String?
     private var latestUsage: TokenUsage?
     private var latestProviderMetadata: [String: JSONValue] = [:]
     private var emittedSourceKeys: Set<String> = []
@@ -104,11 +98,24 @@ struct GoogleGenerateContentStreamState {
         if includeRawChunks {
             parts.append(.raw(raw))
         }
-        latestUsage = googleGenerateContentUsage(from: raw) ?? latestUsage
         latestProviderMetadata = googleMergeProviderMetadata(
             latestProviderMetadata,
             googleGenerateContentProviderMetadata(from: raw, includeNullDefaults: false)
         )
+        if let usageMetadata = latestProviderMetadata["google"]?["usageMetadata"] {
+            latestUsage = googleGenerateContentUsage(fromUsageMetadata: usageMetadata)
+        }
+        if confirmedPromptBlockReason == nil {
+            confirmedPromptBlockReason = googleConfirmedPromptBlockReason(
+                raw["promptFeedback"]?["blockReason"]?.stringValue
+            )
+        }
+
+        // A confirmed prompt block is terminal for generated content, but later
+        // chunks can still contribute usage and provider metadata.
+        if confirmedPromptBlockReason != nil {
+            return parts
+        }
 
         for source in googleGenerateContentSources(from: raw) {
             let key = googleSourceDeduplicationKey(source)
@@ -263,10 +270,12 @@ struct GoogleGenerateContentStreamState {
             parts.append(.textEnd(id: id))
         }
         currentTextID = nil
-        let finishReason = googleGenerateContentFinishReason(
-            latestFinishReason,
-            hasToolCalls: sawToolCalls || !finishedToolParts.isEmpty
-        ) ?? "other"
+        let finishReason = confirmedPromptBlockReason != nil
+            ? "content-filter"
+            : googleGenerateContentFinishReason(
+                latestFinishReason,
+                hasToolCalls: sawToolCalls || !finishedToolParts.isEmpty
+            ) ?? "other"
         let providerMetadata = googleFinalizeGenerateContentProviderMetadata(latestProviderMetadata)
         parts.append(.finishMetadata(reason: finishReason, usage: latestUsage, providerMetadata: providerMetadata))
         return parts

@@ -4,12 +4,12 @@ description: Run bidirectional text, audio, and tool sessions over a provider Re
 ---
 
 `AIRealtimeModelV4` is the provider-neutral model contract for ephemeral client
-secrets, WebSocket configuration, session options, normalized server events,
-and client events. `AIRealtimeSession` owns the connection lifecycle, sends the
-initial session configuration after the socket opens, and exposes events as an
-`AsyncSequence`.
+secrets, direct WebSocket configuration, session options, normalized server
+events, and client events. `AIRealtimeSession` owns the connection lifecycle,
+starts each session according to the model's turn-based or continuous
+capability, and exposes events as an `AsyncSequence`.
 
-xAI is the first full adapter:
+xAI provides the turn-based adapter:
 
 ```swift
 let xai = try AIProviders.xAI()
@@ -56,11 +56,55 @@ events, and preserves unknown provider events as `.custom`. Pass an
 `AIAbortSignal` to `connect` for caller-owned cancellation, or use
 `session.close()` / `session.cancel()` for an explicit terminal lifecycle.
 
+OpenAI Live provides the continuous adapter. It becomes ready after the
+provider's `session.start` event and finalizes an explicit close after the
+matching `session.close` acknowledgement:
+
+```swift
+let openAI = try AIProviders.openAI()
+let model = try openAI.experimentalRealtime("gpt-live-1")
+
+let session = try await AIRealtimeSession.connect(
+    model: model,
+    sessionConfiguration: AIRealtimeSessionConfiguration(
+        instructions: "Answer briefly.",
+        inputAudioFormat: AIRealtimeAudioFormat(
+            type: "audio/pcm",
+            rate: 24_000
+        ),
+        outputAudioFormat: AIRealtimeAudioFormat(
+            type: "audio/pcm",
+            rate: 24_000
+        )
+    )
+)
+
+try await session.appendAudio(pcmChunk)
+try await session.muteInput()
+try await session.unmuteInput()
+
+for try await event in session {
+    switch event {
+    case let .server(.audioChunk(base64Audio, _)):
+        enqueueForPlayback(base64Audio)
+    case let .server(.transcriptFragment(_, text, _, _, _)):
+        renderTranscript(text)
+    default:
+        break
+    }
+}
+```
+
+The adapter connects with authenticated `ws` or `wss` configuration, validates
+known protocol events while preserving unknown events as `.custom`, and maps
+audio, transcript, usage, delegation, acknowledgement, and error events onto
+the shared contract.
+
 ## Scope
 
 Realtime sessions are separate from `StreamingTranscriptionModel`, which only
 streams audio in and transcript events out. Cartesia Ink 2 and Gateway use that
-narrower transcription contract. Full non-xAI realtime speech sessions,
-ElevenLabs realtime transcription, and Google/OpenAI streaming translation
-remain deferred until their provider-specific session semantics are translated
-onto the shared duplex contracts.
+narrower transcription contract. Browser WebRTC/client-permission flows,
+provider-backed Responses delegation, non-Live OpenAI Realtime models, Google
+realtime, and ElevenLabs realtime transcription remain deferred until their
+provider-specific semantics are translated onto the shared duplex contracts.

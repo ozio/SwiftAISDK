@@ -108,6 +108,25 @@ private func pruneToolCalls(_ messages: [AIMessage], setting: AIPruneToolCalls) 
         }
     }
 
+    // A retained approval response is only useful together with the approval
+    // request and tool call that originated it, even when they fall before the
+    // pruning boundary.
+    var approvalIDToToolCallID: [String: String] = [:]
+    for message in messages where message.role == .assistant {
+        for part in message.content {
+            guard case let .toolApprovalRequest(request) = part,
+                  let toolCallID = request.toolCallID else {
+                continue
+            }
+            approvalIDToToolCallID[request.id] = toolCallID
+        }
+    }
+    for approvalID in keptApprovalIDs {
+        if let toolCallID = approvalIDToToolCallID[approvalID] {
+            keptToolCallIDs.insert(toolCallID)
+        }
+    }
+
     var toolCallIDToToolName: [String: String] = [:]
     for message in messages where message.role == .assistant || message.role == .tool {
         for part in message.content {

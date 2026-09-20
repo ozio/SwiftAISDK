@@ -77,12 +77,58 @@ public enum AnthropicTools {
         webTool(id: "anthropic.web_fetch_20260209", name: "web_fetch", maxUses: maxUses, allowedDomains: allowedDomains, blockedDomains: blockedDomains, citations: citations, maxContentTokens: maxContentTokens)
     }
 
+    public static func webFetch_20260318(
+        maxUses: Int? = nil,
+        allowedDomains: [String]? = nil,
+        blockedDomains: [String]? = nil,
+        citations: JSONValue? = nil,
+        maxContentTokens: Int? = nil,
+        useCache: Bool? = nil,
+        responseInclusion: String? = nil
+    ) -> JSONValue {
+        webTool(
+            id: "anthropic.web_fetch_20260318",
+            name: "web_fetch",
+            maxUses: maxUses,
+            allowedDomains: allowedDomains,
+            blockedDomains: blockedDomains,
+            citations: citations,
+            maxContentTokens: maxContentTokens,
+            useCache: useCache,
+            responseInclusion: responseInclusion,
+            inputSchema: anthropicWebFetch20260318InputSchema,
+            outputSchema: anthropicWebFetch20260318OutputSchema,
+            supportsDeferredResults: true
+        )
+    }
+
     public static func webSearch_20250305(maxUses: Int? = nil, allowedDomains: [String]? = nil, blockedDomains: [String]? = nil, userLocation: JSONValue? = nil) -> JSONValue {
         webTool(id: "anthropic.web_search_20250305", name: "web_search", maxUses: maxUses, allowedDomains: allowedDomains, blockedDomains: blockedDomains, userLocation: userLocation)
     }
 
     public static func webSearch_20260209(maxUses: Int? = nil, allowedDomains: [String]? = nil, blockedDomains: [String]? = nil, userLocation: JSONValue? = nil) -> JSONValue {
         webTool(id: "anthropic.web_search_20260209", name: "web_search", maxUses: maxUses, allowedDomains: allowedDomains, blockedDomains: blockedDomains, userLocation: userLocation)
+    }
+
+    public static func webSearch_20260318(
+        maxUses: Int? = nil,
+        allowedDomains: [String]? = nil,
+        blockedDomains: [String]? = nil,
+        userLocation: JSONValue? = nil,
+        responseInclusion: String? = nil
+    ) -> JSONValue {
+        webTool(
+            id: "anthropic.web_search_20260318",
+            name: "web_search",
+            maxUses: maxUses,
+            allowedDomains: allowedDomains,
+            blockedDomains: blockedDomains,
+            userLocation: userLocation,
+            responseInclusion: responseInclusion,
+            inputSchema: anthropicWebSearch20260318InputSchema,
+            outputSchema: anthropicWebSearch20260318OutputSchema,
+            supportsDeferredResults: true
+        )
     }
 
     public static func toolSearchRegex_20251119() -> JSONValue {
@@ -93,13 +139,24 @@ public enum AnthropicTools {
         providerTool(id: "anthropic.tool_search_bm25_20251119", name: "tool_search_tool_bm25")
     }
 
-    static func providerTool(id: String, name: String, args: [String: JSONValue] = [:]) -> JSONValue {
-        .object([
+    static func providerTool(
+        id: String,
+        name: String,
+        args: [String: JSONValue] = [:],
+        inputSchema: JSONValue? = nil,
+        outputSchema: JSONValue? = nil,
+        supportsDeferredResults: Bool = false
+    ) -> JSONValue {
+        var tool: [String: JSONValue] = [
             "type": .string("provider"),
             "id": .string(id),
             "name": .string(name),
             "args": .object(args)
-        ])
+        ]
+        if let inputSchema { tool["inputSchema"] = inputSchema }
+        if let outputSchema { tool["outputSchema"] = outputSchema }
+        if supportsDeferredResults { tool["supportsDeferredResults"] = true }
+        return .object(tool)
     }
 
     private static func computerTool(id: String, displayWidthPx: Int, displayHeightPx: Int, displayNumber: Int?) -> JSONValue {
@@ -118,7 +175,12 @@ public enum AnthropicTools {
         blockedDomains: [String]?,
         citations: JSONValue? = nil,
         maxContentTokens: Int? = nil,
-        userLocation: JSONValue? = nil
+        userLocation: JSONValue? = nil,
+        useCache: Bool? = nil,
+        responseInclusion: String? = nil,
+        inputSchema: JSONValue? = nil,
+        outputSchema: JSONValue? = nil,
+        supportsDeferredResults: Bool = false
     ) -> JSONValue {
         providerTool(id: id, name: name, args: JSONValue.object([
             "maxUses": maxUses.map { .number(Double($0)) },
@@ -126,9 +188,91 @@ public enum AnthropicTools {
             "blockedDomains": blockedDomains.map { .array($0.map(JSONValue.string)) },
             "citations": citations,
             "maxContentTokens": maxContentTokens.map { .number(Double($0)) },
-            "userLocation": userLocation
-        ]).objectValue ?? [:])
+            "userLocation": userLocation,
+            "useCache": useCache.map(JSONValue.bool),
+            "responseInclusion": responseInclusion.map(JSONValue.string)
+        ]).objectValue ?? [:], inputSchema: inputSchema, outputSchema: outputSchema, supportsDeferredResults: supportsDeferredResults)
     }
+
+    private static let anthropicWebSearch20260318InputSchema: JSONValue = [
+        "type": "object",
+        "properties": ["query": ["type": "string"]],
+        "required": ["query"],
+        "additionalProperties": false
+    ]
+
+    private static let anthropicWebSearch20260318OutputSchema: JSONValue = [
+        "type": "array",
+        "items": [
+            "type": "object",
+            "properties": [
+                "url": ["type": "string"],
+                "title": ["type": ["string", "null"]],
+                "pageAge": ["type": ["string", "null"]],
+                "encryptedContent": ["type": "string"],
+                "type": ["const": "web_search_result"]
+            ],
+            "required": ["url", "title", "pageAge", "encryptedContent", "type"],
+            "additionalProperties": false
+        ]
+    ]
+
+    private static let anthropicWebFetch20260318InputSchema: JSONValue = [
+        "type": "object",
+        "properties": ["url": ["type": "string"]],
+        "required": ["url"],
+        "additionalProperties": false
+    ]
+
+    private static let anthropicWebFetch20260318OutputSchema: JSONValue = [
+        "type": "object",
+        "properties": [
+            "type": ["const": "web_fetch_result"],
+            "url": ["type": "string"],
+            "content": [
+                "type": "object",
+                "properties": [
+                    "type": ["const": "document"],
+                    "title": ["type": ["string", "null"]],
+                    "citations": [
+                        "type": "object",
+                        "properties": ["enabled": ["type": "boolean"]],
+                        "required": ["enabled"],
+                        "additionalProperties": false
+                    ],
+                    "source": [
+                        "anyOf": [
+                            [
+                                "type": "object",
+                                "properties": [
+                                    "type": ["const": "base64"],
+                                    "mediaType": ["const": "application/pdf"],
+                                    "data": ["type": "string"]
+                                ],
+                                "required": ["type", "mediaType", "data"],
+                                "additionalProperties": false
+                            ],
+                            [
+                                "type": "object",
+                                "properties": [
+                                    "type": ["const": "text"],
+                                    "mediaType": ["const": "text/plain"],
+                                    "data": ["type": "string"]
+                                ],
+                                "required": ["type", "mediaType", "data"],
+                                "additionalProperties": false
+                            ]
+                        ]
+                    ]
+                ],
+                "required": ["type", "title", "source"],
+                "additionalProperties": false
+            ],
+            "retrievedAt": ["type": ["string", "null"]]
+        ],
+        "required": ["type", "url", "content", "retrievedAt"],
+        "additionalProperties": false
+    ]
 }
 
 public enum GoogleVertexAnthropicTools {
@@ -168,8 +312,10 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         "anthropic.memory_20250818": "memory",
         "anthropic.web_search_20250305": "web_search",
         "anthropic.web_search_20260209": "web_search",
+        "anthropic.web_search_20260318": "web_search",
         "anthropic.web_fetch_20250910": "web_fetch",
         "anthropic.web_fetch_20260209": "web_fetch",
+        "anthropic.web_fetch_20260318": "web_fetch",
         "anthropic.tool_search_regex_20251119": "tool_search_tool_regex",
         "anthropic.tool_search_bm25_20251119": "tool_search_tool_bm25",
         "anthropic.advisor_20260301": "advisor"
@@ -217,7 +363,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             from: raw["content"],
             providerID: providerID,
             citationDocuments: anthropicCitationDocuments(from: request.messages),
-            usesJSONToolResponseFormat: preparedRequest.usesJSONToolResponseFormat
+            usesJSONToolResponseFormat: preparedRequest.usesJSONToolResponseFormat,
+            toolNameMapping: preparedRequest.toolNameMapping,
+            markCodeExecutionDynamic: preparedRequest.markCodeExecutionDynamic
         )
         guard let text = generatedContent.text else {
             throw AIError.invalidResponse(provider: providerID, message: "No text block found in Anthropic response.")
@@ -275,8 +423,15 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                         ignoresTextBlocks: preparedRequest.usesJSONToolResponseFormat
                     )
                     var jsonToolText = AnthropicStreamingJSONToolText()
-                    var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
-                    var toolCalls = AnthropicStreamingToolCalls(providerID: providerID)
+                    var providerToolResults = AnthropicStreamingProviderToolResults(
+                        providerID: providerID,
+                        toolNameMapping: preparedRequest.toolNameMapping
+                    )
+                    var toolCalls = AnthropicStreamingToolCalls(
+                        providerID: providerID,
+                        toolNameMapping: preparedRequest.toolNameMapping,
+                        markCodeExecutionDynamic: preparedRequest.markCodeExecutionDynamic
+                    )
                     var realToolCallCount = 0
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
@@ -378,6 +533,12 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                             activeMessageID = nil
                         default:
                             break
+                        }
+                        for part in toolCalls.apply(messageStartContent: raw["message"]?["content"]) {
+                            if case .toolCall = part {
+                                realToolCallCount += 1
+                            }
+                            continuation.yield(part)
                         }
                         for part in contentBlocks.apply(event: raw) {
                             continuation.yield(part)
@@ -553,7 +714,10 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             betas: betas,
             warnings: warnings,
             usesJSONToolResponseFormat: usesJSONToolResponseFormat,
-            toolNameMapping: toolNameMapping
+            toolNameMapping: toolNameMapping,
+            markCodeExecutionDynamic: anthropicHasDynamicFilteringWebToolWithoutCodeExecution(
+                preparedTools.tools
+            )
         )
     }
 
@@ -1685,12 +1849,27 @@ private func moveAnthropicToolUseBlocksToEnd(_ content: [JSONValue]) -> [JSONVal
     return nonToolUseBlocks + toolUseBlocks
 }
 
+func amazonBedrockThinkingBindingBody(_ body: [String: JSONValue]) -> [String: JSONValue] {
+    guard var thinking = body["thinking"]?.objectValue,
+          let blockBinding = thinking["block_binding"]?.objectValue else {
+        return body
+    }
+    var output = body
+    let mismatchBehavior = blockBinding["prefix_mismatch_behavior"] ?? blockBinding["mismatch_behavior"]
+    thinking["block_binding"] = .object([
+        "mismatch_behavior": mismatchBehavior
+    ].compactMapValues { $0 })
+    output["thinking"] = .object(thinking)
+    return output
+}
+
 struct AnthropicPreparedCall {
     var body: [String: JSONValue]
     var betas: [String]
     var warnings: [AIWarning]
     var usesJSONToolResponseFormat: Bool = false
     var toolNameMapping: AIToolNameMapping = AIToolNameMapping()
+    var markCodeExecutionDynamic: Bool = false
 }
 
 private func anthropicSupportedHTTPURL(_ value: String) -> Bool {
@@ -1715,14 +1894,16 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
 
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let prepared = try await preparedCall(for: request)
-        let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
+        let body = amazonBedrockThinkingBindingBody(amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas))
         let response = try await config.sendJSONResponse(path: "/model/\(bedrockEncodeModelID(modelID))/invoke", body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         let generatedContent = anthropicGeneratedContent(
             from: raw["content"],
             providerID: providerID,
             citationDocuments: anthropicCitationDocuments(from: request.messages),
-            usesJSONToolResponseFormat: prepared.usesJSONToolResponseFormat
+            usesJSONToolResponseFormat: prepared.usesJSONToolResponseFormat,
+            toolNameMapping: prepared.toolNameMapping,
+            markCodeExecutionDynamic: prepared.markCodeExecutionDynamic
         )
         guard let text = generatedContent.text else {
             throw AIError.invalidResponse(provider: providerID, message: "No text block found in Bedrock Anthropic response.")
@@ -1748,7 +1929,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
             let task = Task {
                 do {
                     let prepared = try await preparedCall(for: request, stream: true)
-                    let body = amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas)
+                    let body = amazonBedrockThinkingBindingBody(amazonBedrockAnthropicBody(prepared.body, betas: prepared.betas))
                     let httpRequest = try config.request(
                         path: "/model/\(bedrockEncodeModelID(modelID))/invoke-with-response-stream",
                         body: .object(body),
@@ -1762,7 +1943,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                             url: httpRequest.url.absoluteString,
                             maxBytes: httpRequest.maxResponseBytes ?? AIDefaultMaxDownloadSize
                         )
-                        throw apiCallError(provider: providerID, response: AIHTTPResponse(
+                        throw bedrockHTTPStatusError(provider: providerID, response: AIHTTPResponse(
                             statusCode: response.statusCode,
                             headers: response.headers,
                             body: responseBody,
@@ -1782,8 +1963,15 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                         ignoresTextBlocks: prepared.usesJSONToolResponseFormat
                     )
                     var jsonToolText = AnthropicStreamingJSONToolText()
-                    var providerToolResults = AnthropicStreamingProviderToolResults(providerID: providerID)
-                    var toolCalls = AnthropicStreamingToolCalls(providerID: providerID)
+                    var providerToolResults = AnthropicStreamingProviderToolResults(
+                        providerID: providerID,
+                        toolNameMapping: prepared.toolNameMapping
+                    )
+                    var toolCalls = AnthropicStreamingToolCalls(
+                        providerID: providerID,
+                        toolNameMapping: prepared.toolNameMapping,
+                        markCodeExecutionDynamic: prepared.markCodeExecutionDynamic
+                    )
                     var realToolCallCount = 0
                     let citationDocuments = anthropicCitationDocuments(from: request.messages)
                     var sourceCounter = 0
@@ -1887,6 +2075,12 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 }
                             default:
                                 break
+                            }
+                            for part in toolCalls.apply(messageStartContent: raw["message"]?["content"]) {
+                                if case .toolCall = part {
+                                    realToolCallCount += 1
+                                }
+                                continuation.yield(part)
                             }
                             for part in contentBlocks.apply(event: raw) {
                                 continuation.yield(part)

@@ -27,11 +27,16 @@ func alibabaPreparedCall(
     var options = try alibabaOptions(from: request)
     let responseFormat = alibabaResolvedResponseFormat(request: request, options: &options)
     let toolChoiceInput = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
-    let preparedMessages = alibabaMessages(request.messages)
+    let explicitPreserveThinking = options.removeValue(forKey: "preserve_thinking")?.boolValue
+    let preserveThinking = explicitPreserveThinking ?? alibabaSupportsPreservedThinking(modelID)
+    let preparedMessages = alibabaMessages(request.messages, preserveThinking: preserveThinking)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
         "messages": .array(preparedMessages.messages)
     ]
+    if explicitPreserveThinking != nil || alibabaSupportsPreservedThinking(modelID) {
+        body["preserve_thinking"] = .bool(preserveThinking)
+    }
     warnings += preparedMessages.warnings
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
     if let topP = request.topP { body["top_p"] = .number(topP) }
@@ -70,15 +75,41 @@ func alibabaPreparedCall(
     return AlibabaPreparedCall(body: transformRequestBody?(body) ?? body, warnings: warnings)
 }
 
-func alibabaMessages(_ messages: [AIMessage]) -> AlibabaPreparedMessages {
+func alibabaMessages(_ messages: [AIMessage], preserveThinking: Bool = false) -> AlibabaPreparedMessages {
     var output: [JSONValue] = []
     var warnings: [AIWarning] = []
-    for message in messages {
-        let prepared = alibabaMessageJSONs(message)
+    let lastUserMessageIndex = messages.lastIndex { $0.role == .user } ?? -1
+    for (index, message) in messages.enumerated() {
+        let prepared = alibabaMessageJSONs(
+            message,
+            includeReasoning: preserveThinking || index > lastUserMessageIndex
+        )
         output += prepared.messages
         warnings += prepared.warnings
     }
     return AlibabaPreparedMessages(messages: output, warnings: warnings)
+}
+
+private func alibabaSupportsPreservedThinking(_ modelID: String) -> Bool {
+    let models: Set<String> = [
+        "kimi-k2.7-code",
+        "qwen3.6-max-preview",
+        "qwen3.6-plus",
+        "qwen3.6-plus-2026-04-02",
+        "qwen3.7-flash",
+        "qwen3.7-flash-2026-07-15",
+        "qwen3.7-max",
+        "qwen3.7-max-2026-05-17",
+        "qwen3.7-max-2026-05-20",
+        "qwen3.7-max-2026-06-08",
+        "qwen3.7-max-preview",
+        "qwen3.7-plus",
+        "qwen3.7-plus-2026-05-26",
+        "qwen3.8-flash",
+        "qwen3.8-max",
+        "qwen3.8-max-0902"
+    ]
+    return models.contains(modelID)
 }
 
 struct AlibabaPreparedMessageParts {
@@ -86,7 +117,7 @@ struct AlibabaPreparedMessageParts {
     var warnings: [AIWarning]
 }
 
-func alibabaMessageJSONs(_ message: AIMessage) -> AlibabaPreparedMessages {
+func alibabaMessageJSONs(_ message: AIMessage, includeReasoning: Bool = false) -> AlibabaPreparedMessages {
     switch message.role {
     case .system:
         return AlibabaPreparedMessages(messages: [.object([
@@ -102,7 +133,13 @@ func alibabaMessageJSONs(_ message: AIMessage) -> AlibabaPreparedMessages {
     case .assistant:
         let toolCalls = message.content.compactMap(alibabaAssistantToolCallJSON)
         let text = message.combinedText
-        guard !text.isEmpty || !toolCalls.isEmpty else {
+        let reasoning = includeReasoning
+            ? message.content.compactMap { part -> String? in
+                if case let .reasoning(value, _) = part { return value }
+                return nil
+            }.joined()
+            : ""
+        guard !text.isEmpty || !toolCalls.isEmpty || !reasoning.isEmpty else {
             return AlibabaPreparedMessages(messages: [], warnings: [])
         }
         var output: [String: JSONValue] = [
@@ -111,6 +148,9 @@ func alibabaMessageJSONs(_ message: AIMessage) -> AlibabaPreparedMessages {
         ]
         if !toolCalls.isEmpty {
             output["tool_calls"] = .array(toolCalls)
+        }
+        if !reasoning.isEmpty {
+            output["reasoning_content"] = .string(reasoning)
         }
         return AlibabaPreparedMessages(messages: [.object(output)], warnings: [])
     case .tool:

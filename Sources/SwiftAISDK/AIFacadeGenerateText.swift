@@ -8,7 +8,10 @@ extension AI {
         telemetry: Telemetry.Options? = nil,
         includeResponseBody: Bool = false
     ) async throws -> TextGenerationResult {
-        let request = try prepareLanguageModelCallOptions(request)
+        let request = try await downloadUnsupportedPromptAssets(
+            in: prepareLanguageModelCallOptions(request),
+            supportedURLs: model.supportedURLs
+        )
         let result = try await withTelemetry(
             operationID: "ai.generateText",
             providerID: model.providerID,
@@ -25,6 +28,9 @@ extension AI {
             wrapLanguageModelCall: true
         ) {
             var result = try await model.generate(request)
+            if result.responseMetadata.modelID == nil {
+                result.responseMetadata.modelID = model.modelID
+            }
             result.responseMetadata = result.responseMetadata.includingBody(includeResponseBody)
             if result.requestMetadata == AIRequestMetadata() {
                 result.requestMetadata = AIRequestMetadata(body: languageRequestMetadataBody(request), headers: request.headers)
@@ -34,6 +40,8 @@ extension AI {
                 result.steps = [
                     AIToolStep(
                         index: 0,
+                        providerID: model.providerID,
+                        modelID: model.modelID,
                         content: result.content,
                         text: result.text,
                         reasoning: result.reasoning,
@@ -67,6 +75,7 @@ extension AI {
         request: LanguageModelRequest,
         executableTools: [AITool],
         maxSteps: Int = 5,
+        toolCallers: AIToolCallerRouting = [:],
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
@@ -91,7 +100,6 @@ extension AI {
 
         let initialRequest = request
         var currentRequest = request
-        currentRequest.tools.merge(toolsDictionary(from: executableTools)) { _, typed in typed }
 
         var steps: [AIToolStep] = []
         var allToolResults: [AIToolResult] = []
@@ -109,6 +117,7 @@ extension AI {
             telemetry: telemetry
         )
 
+        let toolDiscovery = AIToolDiscoveryState()
         for index in 0..<maxSteps {
             if index > 0 {
                 try initialRequest.abortSignal?.throwIfAborted()
@@ -138,12 +147,18 @@ extension AI {
             ))
             let stepModel = prepared?.model ?? model
             let stepTools = prepared?.executableTools ?? executableTools
-            let toolsByName = try toolsByName(from: stepTools)
+            let preparedTools = try await toolDiscovery.prepare(tools: stepTools, routing: toolCallers)
+            let executionTools = preparedTools.executionTools
+            let toolsByName = try toolsByName(from: executionTools)
             var stepRequest = prepared?.request ?? currentRequest
+            stepRequest.messages = appendToolCallerMessages(
+                stepRequest.messages,
+                additions: preparedTools.callerMessages
+            )
             if prepared?.executableTools != nil {
-                stepRequest.tools = toolsDictionary(from: stepTools)
+                stepRequest.tools = toolsDictionary(from: preparedTools.modelTools)
             } else {
-                stepRequest.tools.merge(toolsDictionary(from: stepTools)) { _, typed in typed }
+                stepRequest.tools.merge(toolsDictionary(from: preparedTools.modelTools)) { _, typed in typed }
             }
 
             await toolTelemetry.recordStepStart(
@@ -151,7 +166,7 @@ extension AI {
                 maxSteps: maxSteps,
                 model: stepModel,
                 request: stepRequest,
-                tools: stepTools
+                tools: executionTools
             )
             var result = try await generateText(
                 model: stepModel,
@@ -206,6 +221,8 @@ extension AI {
                 let finalResponseMessages = responseMessages + (try await makeResponseMessages(from: result.content))
                 let finalStep = AIToolStep(
                     index: index,
+                    providerID: stepModel.providerID,
+                    modelID: stepModel.modelID,
                     content: result.content,
                     text: result.text,
                     reasoning: result.reasoning,
@@ -257,6 +274,8 @@ extension AI {
             allContent.append(contentsOf: result.content)
             let step = AIToolStep(
                 index: index,
+                providerID: stepModel.providerID,
+                modelID: stepModel.modelID,
                 content: result.content,
                 text: result.text,
                 reasoning: result.reasoning,
@@ -327,6 +346,7 @@ extension AI {
         tools: [String: JSONValue] = [:],
         executableTools: [AITool] = [],
         maxSteps: Int = 5,
+        toolCallers: AIToolCallerRouting = [:],
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
@@ -378,6 +398,7 @@ extension AI {
             request: request,
             executableTools: executableTools,
             maxSteps: maxSteps,
+            toolCallers: toolCallers,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
@@ -414,6 +435,7 @@ extension AI {
         output: AIOutput<FinalOutput, PartialOutput>,
         executableTools: [AITool],
         maxSteps: Int = 5,
+        toolCallers: AIToolCallerRouting = [:],
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
@@ -430,6 +452,7 @@ extension AI {
             request: outputRequest,
             executableTools: executableTools,
             maxSteps: maxSteps,
+            toolCallers: toolCallers,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
@@ -438,7 +461,12 @@ extension AI {
             retryPolicy: retryPolicy,
             telemetry: telemetry
         )
-        return try await output.optionalResultFromTextResult(textResult, model.providerID, repairText)
+        let finalStepResult = structuredOutputTextResult(textResult)
+        return try await output.optionalResultFromTextResult(
+            finalStepResult,
+            textResult.finalStep?.providerID ?? model.providerID,
+            repairText
+        )
     }
 
     public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
@@ -495,6 +523,7 @@ extension AI {
         output: AIOutput<FinalOutput, PartialOutput>,
         executableTools: [AITool],
         maxSteps: Int = 5,
+        toolCallers: AIToolCallerRouting = [:],
         stopWhen: [AIStopCondition] = [],
         prepareStep: AIPrepareStep? = nil,
         toolApproval: AIToolApproval? = nil,
@@ -539,6 +568,7 @@ extension AI {
             output: output,
             executableTools: executableTools,
             maxSteps: maxSteps,
+            toolCallers: toolCallers,
             stopWhen: stopWhen,
             prepareStep: prepareStep,
             toolApproval: toolApproval,
@@ -551,6 +581,201 @@ extension AI {
         )
     }
 
+}
+
+// Source-compatible overloads preserve the public signatures released in 1.7.0.
+extension AI {
+    public static func generateText(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        executableTools: [AITool],
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil,
+        includeResponseBody: Bool = false
+    ) async throws -> TextGenerationResult {
+        try await generateText(
+            model: model,
+            request: request,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            toolCallers: [:],
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
+            repairToolCall: repairToolCall,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            includeResponseBody: includeResponseBody
+        )
+    }
+
+    public static func generateText(
+        model: any LanguageModel,
+        prompt: String,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        responseFormat: AIResponseFormat? = nil,
+        reasoning: String? = nil,
+        tools: [String: JSONValue] = [:],
+        executableTools: [AITool] = [],
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        toolChoice: JSONValue? = nil,
+        includeRawChunks: Bool = false,
+        includeResponseBody: Bool = false,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        telemetry: Telemetry.Options? = nil
+    ) async throws -> TextGenerationResult {
+        try await generateText(
+            model: model,
+            prompt: prompt,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            responseFormat: responseFormat,
+            reasoning: reasoning,
+            tools: tools,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            toolCallers: [:],
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
+            repairToolCall: repairToolCall,
+            retryPolicy: retryPolicy,
+            toolChoice: toolChoice,
+            includeRawChunks: includeRawChunks,
+            includeResponseBody: includeResponseBody,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers,
+            abortSignal: abortSignal,
+            telemetry: telemetry
+        )
+    }
+
+    public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        request: LanguageModelRequest,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        executableTools: [AITool],
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> AIOutputGenerationResult<FinalOutput?> {
+        try await generateText(
+            model: model,
+            request: request,
+            output: output,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            toolCallers: [:],
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
+            repairToolCall: repairToolCall,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
+            repairText: repairText
+        )
+    }
+
+    public static func generateText<FinalOutput: Sendable, PartialOutput: Sendable>(
+        model: any LanguageModel,
+        prompt: String,
+        output: AIOutput<FinalOutput, PartialOutput>,
+        executableTools: [AITool],
+        maxSteps: Int = 5,
+        stopWhen: [AIStopCondition] = [],
+        prepareStep: AIPrepareStep? = nil,
+        toolApproval: AIToolApproval? = nil,
+        toolApprovalSecret: String? = nil,
+        repairToolCall: AIToolCallRepair? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        topK: Int? = nil,
+        presencePenalty: Double? = nil,
+        frequencyPenalty: Double? = nil,
+        seed: Int? = nil,
+        maxOutputTokens: Int? = nil,
+        stopSequences: [String] = [],
+        reasoning: String? = nil,
+        providerOptions: [String: JSONValue] = [:],
+        extraBody: [String: JSONValue] = [:],
+        headers: [String: String] = [:],
+        abortSignal: AIAbortSignal? = nil,
+        retryPolicy: AIRetryPolicy = .default,
+        telemetry: Telemetry.Options? = nil,
+        jsonInstruction: AIJSONInstruction? = nil,
+        repairText: (@Sendable (AIObjectRepairContext) async throws -> String?)? = nil
+    ) async throws -> AIOutputGenerationResult<FinalOutput?> {
+        try await generateText(
+            model: model,
+            prompt: prompt,
+            output: output,
+            executableTools: executableTools,
+            maxSteps: maxSteps,
+            toolCallers: [:],
+            stopWhen: stopWhen,
+            prepareStep: prepareStep,
+            toolApproval: toolApproval,
+            toolApprovalSecret: toolApprovalSecret,
+            repairToolCall: repairToolCall,
+            temperature: temperature,
+            topP: topP,
+            topK: topK,
+            presencePenalty: presencePenalty,
+            frequencyPenalty: frequencyPenalty,
+            seed: seed,
+            maxOutputTokens: maxOutputTokens,
+            stopSequences: stopSequences,
+            reasoning: reasoning,
+            providerOptions: providerOptions,
+            extraBody: extraBody,
+            headers: headers,
+            abortSignal: abortSignal,
+            retryPolicy: retryPolicy,
+            telemetry: telemetry,
+            jsonInstruction: jsonInstruction,
+            repairText: repairText
+        )
+    }
 }
 
 private extension AIResponseMetadata {
