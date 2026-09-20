@@ -592,7 +592,7 @@ actor AIToolDiscoveryState {
         for index in activeTools.indices where activeTools[index].toolSearchMarker {
             let searchName = activeTools[index].name
             let search: @Sendable (JSONValue) async throws -> JSONValue = { [self] input in
-                try await search(
+                try await self.search(
                     input: input,
                     searchName: searchName,
                     tools: tools,
