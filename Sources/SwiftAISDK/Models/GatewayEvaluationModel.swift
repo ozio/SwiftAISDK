@@ -18,6 +18,8 @@ public final class GatewayEvaluationModel: AIEvaluationModelV4, @unchecked Senda
     public func doEvaluate(
         _ options: AIEvaluationModelV4CallOptions
     ) async throws -> AIEvaluationModelV4Result {
+        try validateGatewayEvaluationProviderOptions(options.providerOptions)
+
         var body: [String: JSONValue] = [
             "state": options.state,
             "questions": .object(options.questions.mapValues(gatewayEvaluationQuestion))
@@ -78,6 +80,20 @@ public final class GatewayEvaluationModel: AIEvaluationModelV4, @unchecked Senda
             )
         }
 
+        let responseModelID: String
+        if let returnedModel = raw["model"] {
+            guard let returnedModel = returnedModel.stringValue else {
+                throw gatewayEvaluationResponseError(
+                    message: "Gateway evaluation response model is invalid.",
+                    response: response,
+                    raw: raw
+                )
+            }
+            responseModelID = returnedModel
+        } else {
+            responseModelID = modelID
+        }
+
         var answers: [String: AIEvaluationAnswer] = [:]
         answers.reserveCapacity(rawAnswers.count)
         for (questionID, value) in rawAnswers {
@@ -100,12 +116,162 @@ public final class GatewayEvaluationModel: AIEvaluationModelV4, @unchecked Senda
                 raw: raw
             ),
             response: AIResponseMetadata(
-                modelID: modelID,
+                modelID: responseModelID,
                 headers: response.headers,
                 body: raw
             )
         )
     }
+}
+
+private let gatewayEvaluationFallbackMaxConditionDepth = 5
+private let gatewayEvaluationFallbackMaxConditionsPerList = 20
+private let gatewayEvaluationFallbackMaxQuestionLength = 256
+private let gatewayEvaluationFallbackMaxModelLength = 256
+
+private func validateGatewayEvaluationProviderOptions(
+    _ providerOptions: [String: JSONValue]
+) throws {
+    guard let value = providerOptions["gateway"] else { return }
+    guard let gatewayOptions = value.objectValue else {
+        throw gatewayEvaluationProviderOptionsError("Gateway evaluation provider options must be an object.")
+    }
+    guard let modelsValue = gatewayOptions["models"] else { return }
+    guard let models = modelsValue.arrayValue else {
+        throw gatewayEvaluationProviderOptionsError("Gateway evaluation models must be an array.")
+    }
+
+    var conditionalCount = 0
+    for (index, entry) in models.enumerated() {
+        if entry.stringValue != nil { continue }
+        guard let fallback = entry.objectValue,
+              Set(fallback.keys) == Set(["model", "when"]),
+              let model = fallback["model"]?.stringValue,
+              !model.isEmpty,
+              model.utf16.count <= gatewayEvaluationFallbackMaxModelLength,
+              let condition = fallback["when"] else {
+            throw gatewayEvaluationProviderOptionsError("Gateway conditional model fallbacks are invalid.")
+        }
+        conditionalCount += 1
+        guard conditionalCount == 1 else {
+            throw gatewayEvaluationProviderOptionsError("Gateway models support at most one conditional evaluation fallback.")
+        }
+        guard index == 0 else {
+            throw gatewayEvaluationProviderOptionsError("A conditional Gateway evaluation fallback must be the first models entry.")
+        }
+        try validateGatewayEvaluationFallbackCondition(condition, depth: 1)
+    }
+}
+
+private func validateGatewayEvaluationFallbackCondition(
+    _ value: JSONValue,
+    depth: Int
+) throws {
+    guard let condition = value.objectValue else {
+        throw gatewayEvaluationProviderOptionsError("Gateway evaluation fallback conditions must be objects.")
+    }
+
+    if Set(condition.keys) == Set(["question", "confidenceBelow"]) {
+        try validateGatewayEvaluationQuestionID(condition["question"])
+        try validateGatewayEvaluationProbability(
+            condition["confidenceBelow"],
+            message: "Gateway confidenceBelow must be a finite number from 0 through 1."
+        )
+        return
+    }
+
+    if Set(condition.keys) == Set(["question", "probabilityBetween"]) {
+        try validateGatewayEvaluationQuestionID(condition["question"])
+        guard let bounds = condition["probabilityBetween"]?.arrayValue,
+              bounds.count == 2 else {
+            throw gatewayEvaluationProviderOptionsError("Gateway probabilityBetween must contain exactly two probabilities.")
+        }
+        try validateGatewayEvaluationProbability(
+            bounds[0],
+            message: "Gateway probabilityBetween values must be finite numbers from 0 through 1."
+        )
+        try validateGatewayEvaluationProbability(
+            bounds[1],
+            message: "Gateway probabilityBetween values must be finite numbers from 0 through 1."
+        )
+        guard let minimum = bounds[0].doubleValue,
+              let maximum = bounds[1].doubleValue,
+              minimum <= maximum else {
+            throw gatewayEvaluationProviderOptionsError("Gateway probabilityBetween minimum must not exceed its maximum.")
+        }
+        return
+    }
+
+    guard depth < gatewayEvaluationFallbackMaxConditionDepth else {
+        throw gatewayEvaluationProviderOptionsError(
+            "Gateway evaluation fallback conditions can be nested at most \(gatewayEvaluationFallbackMaxConditionDepth) levels deep."
+        )
+    }
+
+    if Set(condition.keys) == Set(["any"]) {
+        try validateGatewayEvaluationConditionList(condition["any"], depth: depth + 1)
+        return
+    }
+    if Set(condition.keys) == Set(["all"]) {
+        try validateGatewayEvaluationConditionList(condition["all"], depth: depth + 1)
+        return
+    }
+    if Set(condition.keys) == Set(["atLeast"]),
+       let atLeast = condition["atLeast"]?.objectValue,
+       Set(atLeast.keys) == Set(["count", "conditions"]),
+       let countValue = atLeast["count"]?.doubleValue,
+       countValue.isFinite,
+       countValue.rounded(.towardZero) == countValue,
+       let count = Int(exactly: countValue),
+       let conditions = atLeast["conditions"]?.arrayValue,
+       count >= 1,
+       count <= conditions.count {
+        try validateGatewayEvaluationConditionList(.array(conditions), depth: depth + 1)
+        return
+    }
+
+    throw gatewayEvaluationProviderOptionsError("Gateway evaluation fallback condition is invalid.")
+}
+
+private func validateGatewayEvaluationConditionList(
+    _ value: JSONValue?,
+    depth: Int
+) throws {
+    guard let conditions = value?.arrayValue,
+          !conditions.isEmpty,
+          conditions.count <= gatewayEvaluationFallbackMaxConditionsPerList else {
+        throw gatewayEvaluationProviderOptionsError(
+            "Gateway evaluation condition lists must contain 1 through \(gatewayEvaluationFallbackMaxConditionsPerList) conditions."
+        )
+    }
+    for condition in conditions {
+        try validateGatewayEvaluationFallbackCondition(condition, depth: depth)
+    }
+}
+
+private func validateGatewayEvaluationQuestionID(_ value: JSONValue?) throws {
+    guard let question = value?.stringValue,
+          !question.isEmpty,
+          question.utf16.count <= gatewayEvaluationFallbackMaxQuestionLength else {
+        throw gatewayEvaluationProviderOptionsError(
+            "Gateway evaluation fallback question IDs must contain 1 through \(gatewayEvaluationFallbackMaxQuestionLength) characters."
+        )
+    }
+}
+
+private func validateGatewayEvaluationProbability(
+    _ value: JSONValue?,
+    message: String
+) throws {
+    guard let probability = value?.doubleValue,
+          probability.isFinite,
+          (0...1).contains(probability) else {
+        throw gatewayEvaluationProviderOptionsError(message)
+    }
+}
+
+private func gatewayEvaluationProviderOptionsError(_ message: String) -> AIError {
+    .invalidArgument(argument: "providerOptions.gateway.models", message: message)
 }
 
 private func gatewayEvaluationQuestion(_ question: AIEvaluationQuestion) -> JSONValue {

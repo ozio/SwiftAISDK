@@ -25,11 +25,22 @@ func alibabaPreparedCall(
 ) throws -> AlibabaPreparedCall {
     var warnings = alibabaWarnings(for: request)
     var options = try alibabaOptions(from: request)
-    let responseFormat = alibabaResolvedResponseFormat(request: request, options: &options)
+    let resolvedResponseFormat = alibabaResolvedResponseFormat(
+        request: request,
+        modelID: modelID,
+        options: &options
+    )
     let toolChoiceInput = request.toolChoice ?? options.removeValue(forKey: "toolChoice")
     let explicitPreserveThinking = options.removeValue(forKey: "preserve_thinking")?.boolValue
     let preserveThinking = explicitPreserveThinking ?? alibabaSupportsPreservedThinking(modelID)
-    let preparedMessages = alibabaMessages(request.messages, preserveThinking: preserveThinking)
+    let messages = resolvedResponseFormat.injectJSONInstruction
+        ? injectJSONInstruction(
+            into: request.messages,
+            schema: resolvedResponseFormat.schema,
+            instruction: AIJSONInstruction()
+        )
+        : request.messages
+    let preparedMessages = alibabaMessages(messages, preserveThinking: preserveThinking)
     var body: [String: JSONValue] = [
         "model": .string(modelID),
         "messages": .array(preparedMessages.messages)
@@ -61,8 +72,11 @@ func alibabaPreparedCall(
     if !request.tools.isEmpty {
         warnings += alibabaToolChoiceWarnings(from: toolChoiceInput)
     }
-    if let responseFormat {
+    if let responseFormat = resolvedResponseFormat.value {
         body["response_format"] = responseFormat
+    }
+    if let warning = resolvedResponseFormat.warning {
+        warnings.append(warning)
     }
     alibabaApplyThinking(request: request, options: &options, body: &body, warnings: &warnings)
     body.merge(options) { _, new in new }

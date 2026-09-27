@@ -16,7 +16,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/responses")
     #expect(request.headers["authorization"] == "Bearer xai-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(request.headers["user-agent"] == "ai-sdk/xai/5.0.10")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "grok-4")
     #expect(body["input"]?[0]?["content"]?[0]?["type"]?.stringValue == "input_text")
@@ -36,12 +36,11 @@ import Testing
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer xai-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/xai/5.0.4")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/xai/5.0.10")
 }
 
 @Test func xAIResponsesWarnsForUnsupportedSamplingSettingsInGenerateAndStream() async throws {
     let expectedWarnings = [
-        AIWarning(type: "unsupported", feature: "topK"),
         AIWarning(type: "unsupported", feature: "frequencyPenalty"),
         AIWarning(type: "unsupported", feature: "presencePenalty")
     ]
@@ -54,6 +53,8 @@ import Testing
         frequencyPenalty: 0.5
     ))
     #expect(generateResult.warnings == expectedWarnings)
+    let generateBody = try decodeJSONBody(try #require((await generateTransport.requests()).first?.body))
+    #expect(generateBody["top_k"]?.intValue == 10)
 
     let streamTransport = RecordingTransport(response: sseResponse("""
     data: {"type":"response.completed","response":{"id":"resp-warnings","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}
@@ -71,6 +72,8 @@ import Testing
         if case let .streamStart(warnings) = part { streamWarnings = warnings }
     }
     #expect(streamWarnings == expectedWarnings)
+    let streamBody = try decodeJSONBody(try #require((await streamTransport.requests()).first?.body))
+    #expect(streamBody["top_k"]?.intValue == 10)
 }
 @Test func xAIProviderAliasesUseUpstreamProviderIDsAndOptions() async throws {
     let responsesTransport = RecordingTransport(response: jsonResponse(#"{"id":"resp-1","status":"completed","output_text":"xai responses"}"#))
@@ -186,10 +189,10 @@ import Testing
         ))
     }
 
-    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.include", message: "xAI include must contain only file_search_call.results or be null.")) {
+    await #expect(throws: AIError.invalidArgument(argument: "providerOptions.xai.include", message: "xAI include contains an unsupported value.")) {
         _ = try await model.generate(LanguageModelRequest(
             messages: [.user("Hi")],
-            providerOptions: ["xai": ["include": ["reasoning.encrypted_content"]]]
+            providerOptions: ["xai": ["include": ["unsupported.value"]]]
         ))
     }
 }
@@ -394,7 +397,7 @@ import Testing
     #expect(request.url.absoluteString == "https://open.example.test/custom/responses")
     #expect(request.headers["authorization"] == "Bearer open-key")
     #expect(request.headers["x-custom"] == "yes")
-    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.49")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.54")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "local-model")
     #expect(body["instructions"]?.stringValue == "Be terse.")
@@ -439,7 +442,7 @@ import Testing
     #expect(model.providerID == "open-responses.responses")
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer custom-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.49")
+    #expect(request.headers["user-agent"] == "ai-sdk/open-responses/2.0.54")
 
     await #expect(throws: AIError.invalidArgument(argument: "providerOptions.open-responses", message: "Open Responses provider options must be an object.")) {
         _ = try await model.generate(LanguageModelRequest(

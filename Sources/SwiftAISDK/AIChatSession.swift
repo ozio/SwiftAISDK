@@ -66,6 +66,9 @@ public final class AIChatSession: ObservableObject {
     private var currentAbortController: AIAbortController?
     private var activeRunID: UUID?
     private var activeResponseMessageID: String?
+    private var activeConsumedApprovalMessageID: String?
+    private var pendingApprovalMessageID: String?
+    private var consumedApprovalMessageIDs: Set<String> = []
     private var activeRequestOptions = AIChatSessionRequestOptions()
 
     public init(
@@ -97,6 +100,17 @@ public final class AIChatSession: ObservableObject {
         options: AIChatSessionRequestOptions = AIChatSessionRequestOptions()
     ) -> Task<Void, Never> {
         stop()
+        if let approvalMessageID = pendingApprovalMessageID ?? latestApprovalResumeTarget() {
+            return startStream(
+                trigger: .submitMessage,
+                messageID: approvalMessageID,
+                responseMessageID: approvalMessageID,
+                requestMessages: messages,
+                options: options,
+                consumedApprovalMessageID: approvalMessageID
+            )
+        }
+
         guard let lastMessageID = messages.last?.id else {
             return failStart(AIError.invalidArgument(
                 argument: "messages",
@@ -257,12 +271,15 @@ public final class AIChatSession: ObservableObject {
             currentTask = nil
             activeRunID = nil
             activeResponseMessageID = nil
+            activeConsumedApprovalMessageID = nil
             status = .ready
         }
     }
 
     public func setMessages(_ messages: [AIUIMessage]) {
         self.messages = messages
+        pendingApprovalMessageID = nil
+        consumedApprovalMessageIDs.removeAll()
     }
 
     public func clearError() {
@@ -302,13 +319,23 @@ public final class AIChatSession: ObservableObject {
         metadata: [String: JSONValue] = [:],
         options: AIChatSessionRequestOptions = AIChatSessionRequestOptions()
     ) {
+        let approvalMessageID = messages.last(where: { message in
+            message.role == .assistant && message.parts.contains { part in
+                guard case let .toolApprovalRequest(request) = part else { return false }
+                return request.id == response.id
+            }
+        })?.id
         messages.append(AIUIMessage(
             id: id ?? generateMessageID(),
             role: .tool,
             parts: [.toolApprovalResponse(response)],
             metadata: metadata
         ))
-        triggerAutomaticSendIfNeeded(options: options)
+        if let approvalMessageID {
+            consumedApprovalMessageIDs.remove(approvalMessageID)
+        }
+        pendingApprovalMessageID = approvalMessageID
+        triggerAutomaticSendIfNeeded(options: options, approvalMessageID: approvalMessageID)
     }
 
     private func startStream(
@@ -316,12 +343,17 @@ public final class AIChatSession: ObservableObject {
         messageID: String?,
         responseMessageID: String,
         requestMessages: [AIUIMessage],
-        options: AIChatSessionRequestOptions
+        options: AIChatSessionRequestOptions,
+        consumedApprovalMessageID: String? = nil
     ) -> Task<Void, Never> {
         let runID = UUID()
         let controller = AIAbortController()
         activeRunID = runID
         activeResponseMessageID = responseMessageID
+        activeConsumedApprovalMessageID = consumedApprovalMessageID
+        if consumedApprovalMessageID != nil {
+            pendingApprovalMessageID = nil
+        }
         activeRequestOptions = options
         currentAbortController = controller
         status = .submitted
@@ -380,11 +412,21 @@ public final class AIChatSession: ObservableObject {
         let finishReason = finishedMessage?.metadata["finishReason"]?.stringValue
         let isDisconnect = error.map(isDisconnectError) ?? false
         let isError = error != nil
+        let consumedApprovalMessageID = activeConsumedApprovalMessageID
 
         currentTask = nil
         currentAbortController = nil
         activeRunID = nil
         activeResponseMessageID = nil
+        activeConsumedApprovalMessageID = nil
+        if isError,
+           pendingApprovalMessageID == nil,
+           let consumedApprovalMessageID {
+            pendingApprovalMessageID = consumedApprovalMessageID
+        }
+        if !isAbort, !isError, let consumedApprovalMessageID {
+            consumedApprovalMessageIDs.insert(consumedApprovalMessageID)
+        }
         if let error {
             self.error = error
             onError?(error)
@@ -419,6 +461,7 @@ public final class AIChatSession: ObservableObject {
         currentAbortController = nil
         activeRunID = nil
         activeResponseMessageID = nil
+        activeConsumedApprovalMessageID = nil
         status = .ready
     }
 
@@ -429,7 +472,10 @@ public final class AIChatSession: ObservableObject {
         return Task {}
     }
 
-    private func triggerAutomaticSendIfNeeded(options: AIChatSessionRequestOptions) {
+    private func triggerAutomaticSendIfNeeded(
+        options: AIChatSessionRequestOptions,
+        approvalMessageID: String? = nil
+    ) {
         guard !isRunning, sendAutomaticallyWhen?(messages) == true else { return }
         guard messages.last?.parts.contains(where: { part in
             guard case let .toolResult(result) = part else { return false }
@@ -437,6 +483,18 @@ public final class AIChatSession: ObservableObject {
         }) != true else {
             return
         }
+        if let approvalMessageID {
+            _ = startStream(
+                trigger: .submitMessage,
+                messageID: approvalMessageID,
+                responseMessageID: approvalMessageID,
+                requestMessages: messages,
+                options: options,
+                consumedApprovalMessageID: approvalMessageID
+            )
+            return
+        }
+
         guard let lastMessageID = messages.last?.id else { return }
         let responseID = generateMessageID()
         messages.append(.assistant(id: responseID))
@@ -455,6 +513,28 @@ public final class AIChatSession: ObservableObject {
         }
         let description = String(describing: error).lowercased()
         return description.contains("network") || description.contains("connection")
+    }
+
+    private func latestApprovalResumeTarget() -> String? {
+        var respondedApprovalIDs: Set<String> = []
+        for message in messages {
+            for part in message.parts {
+                guard case let .toolApprovalResponse(response) = part else { continue }
+                respondedApprovalIDs.insert(response.id)
+            }
+        }
+        guard !respondedApprovalIDs.isEmpty else { return nil }
+
+        for message in messages.reversed()
+        where message.role == .assistant && !consumedApprovalMessageIDs.contains(message.id) {
+            for part in message.parts {
+                guard case let .toolApprovalRequest(request) = part else { continue }
+                if respondedApprovalIDs.contains(request.id) {
+                    return message.id
+                }
+            }
+        }
+        return nil
     }
 
     private func regenerationTarget(messageID: String?) -> (id: String, index: Array<AIUIMessage>.Index, role: MessageRole)? {

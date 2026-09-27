@@ -105,7 +105,38 @@ public struct GatewayTakoSearchConfig: Equatable, Sendable {
     }
 }
 
+public struct GatewayBrowserbaseFetchConfig: Equatable, Sendable {
+    public var allowRedirects: Bool?
+    public var allowInsecureSSL: Bool?
+    public var proxies: Bool?
+    public var format: String?
+    public var schema: JSONValue?
+
+    public init(
+        allowRedirects: Bool? = nil,
+        allowInsecureSSL: Bool? = nil,
+        proxies: Bool? = nil,
+        format: String? = nil,
+        schema: JSONValue? = nil
+    ) {
+        self.allowRedirects = allowRedirects
+        self.allowInsecureSSL = allowInsecureSSL
+        self.proxies = proxies
+        self.format = format
+        self.schema = schema
+    }
+}
+
+public struct GatewayBrowserbaseSearchConfig: Equatable, Sendable {
+    public var numResults: Int?
+
+    public init(numResults: Int? = nil) {
+        self.numResults = numResults
+    }
+}
+
 public enum GatewayTools {
+
     public static func perplexitySearch(
         maxResults: Int? = nil,
         maxTokensPerPage: Int? = nil,
@@ -212,6 +243,26 @@ public enum GatewayTools {
 
         return providerTool(id: "gateway.tako_search", name: "tako_search", args: args)
     }
+    public static func browserbaseSearch(
+        _ config: GatewayBrowserbaseSearchConfig = GatewayBrowserbaseSearchConfig()
+    ) -> JSONValue {
+        var args: [String: JSONValue] = [:]
+        if let numResults = config.numResults { args["numResults"] = .number(Double(numResults)) }
+        return providerTool(id: "gateway.browserbase_search", name: "browserbase_search", args: args)
+    }
+
+    public static func browserbaseFetch(
+        _ config: GatewayBrowserbaseFetchConfig = GatewayBrowserbaseFetchConfig()
+    ) -> JSONValue {
+        var args: [String: JSONValue] = [:]
+        if let allowRedirects = config.allowRedirects { args["allowRedirects"] = .bool(allowRedirects) }
+        if let allowInsecureSSL = config.allowInsecureSSL { args["allowInsecureSsl"] = .bool(allowInsecureSSL) }
+        if let proxies = config.proxies { args["proxies"] = .bool(proxies) }
+        if let format = config.format { args["format"] = .string(format) }
+        if let schema = config.schema { args["schema"] = schema }
+        return providerTool(id: "gateway.browserbase_fetch", name: "browserbase_fetch", args: args)
+    }
+
 
     private static func providerTool(id: String, name: String, args: [String: JSONValue]) -> JSONValue {
         .object([
@@ -796,6 +847,24 @@ public final class GatewayBatchProvider: AIBatchProvider, @unchecked Sendable {
                 task.cancel()
             }
         }
+    }
+
+    public func cancelBatch(_ options: AIBatchOperationOptions) async throws -> AIBatchCancelResult {
+        try options.abortSignal?.throwIfAborted()
+        let request = try config.request(
+            path: "/batch/cancel",
+            modelID: "batch",
+            body: .object(["batchId": .string(options.batchID)]),
+            headers: options.headers,
+            abortSignal: options.abortSignal
+        )
+        let response = try await config.transport.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw apiCallError(provider: providerID, response: response)
+        }
+        let raw = try response.jsonValue()
+        _ = try gatewayBatchStatus(from: raw, providerID: providerID)
+        return AIBatchCancelResult(providerMetadata: gatewayProviderMetadata(raw["providerMetadata"]))
     }
 }
 

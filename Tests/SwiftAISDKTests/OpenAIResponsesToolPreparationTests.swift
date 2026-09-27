@@ -607,6 +607,6 @@ import Testing
     #expect(strictTool["parameters"]?["strict"] == nil)
     #expect(nonStrictTool["strict"]?.boolValue == false)
     #expect(nonStrictTool["parameters"]?["strict"] == nil)
-    #expect(defaultTool["strict"] == nil)
+    #expect(defaultTool["strict"]?.boolValue == false)
     #expect(defaultTool["parameters"]?["strict"] == nil)
 }

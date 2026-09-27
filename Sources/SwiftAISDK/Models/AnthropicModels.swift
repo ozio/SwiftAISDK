@@ -47,6 +47,14 @@ public enum AnthropicTools {
         ]).objectValue ?? [:])
     }
 
+    public static func computerToolset_20260801(configs: [String: JSONValue]? = nil) -> JSONValue {
+        providerTool(
+            id: "anthropic.computer_toolset_20260801",
+            name: "computer",
+            args: configs.map { ["configs": .object($0)] } ?? [:]
+        )
+    }
+
     public static func memory_20250818() -> JSONValue {
         providerTool(id: "anthropic.memory_20250818", name: "memory")
     }
@@ -303,6 +311,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         "anthropic.code_execution_20260120": "code_execution",
         "anthropic.computer_20241022": "computer",
         "anthropic.computer_20250124": "computer",
+        "anthropic.computer_20251124": "computer",
+        "anthropic.computer_toolset_20260801": "computer",
         "anthropic.text_editor_20241022": "str_replace_editor",
         "anthropic.text_editor_20250124": "str_replace_editor",
         "anthropic.text_editor_20250429": "str_replace_based_edit_tool",
@@ -443,6 +453,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     var container: JSONValue = .null
                     var contextManagement: JSONValue = .null
                     var inputTransformations: JSONValue = .null
+                    var safeguardResults: JSONValue = .null
                     var didReceiveMessageStart = false
                     var isMessageOpen = false
                     var activeMessageID: String?
@@ -471,6 +482,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                         container: container,
                                         contextManagement: contextManagement,
                                         inputTransformations: inputTransformations,
+                                        safeguardResults: safeguardResults,
                                         providerID: providerID,
                                         requestProviderOptions: request.providerOptions
                                     )
@@ -528,6 +540,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                             if let value = raw["input_transformations"], value != .null {
                                 inputTransformations = value
                             }
+                            if let value = raw["delta"]?["safeguard_results"], value != .null {
+                                safeguardResults = value
+                            }
                         case "message_stop":
                             isMessageOpen = false
                             activeMessageID = nil
@@ -575,6 +590,7 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                                     container: container,
                                     contextManagement: contextManagement,
                                     inputTransformations: inputTransformations,
+                                    safeguardResults: safeguardResults,
                                     providerID: providerID,
                                     requestProviderOptions: request.providerOptions
                                 )
@@ -651,7 +667,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             disableParallelToolUse: providerOptions.disableParallelToolUse,
             supportsStructuredOutput: supportsStructuredOutput,
             supportsStrictTools: supportsStrictToolDefinitions,
-            defaultEagerInputStreaming: eagerInputStreaming
+            defaultEagerInputStreaming: eagerInputStreaming,
+            rejectsForcedToolUse: capabilities.rejectsForcedToolUse
         )
         if !preparedTools.tools.isEmpty {
             body["tools"] = .array(preparedTools.tools)
@@ -660,9 +677,22 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             body["tool_choice"] = toolChoice
         }
         body.merge(providerOptions.body) { _, new in new }
+        if body["context_management"] != nil, body["compaction"] != nil {
+            throw AIError.invalidArgument(
+                argument: "providerOptions",
+                message: "Anthropic provider options `compaction` and `contextManagement` cannot be used together."
+            )
+        }
         anthropicApplyTopLevelReasoning(
             request.reasoning,
             to: &body,
+            modelID: modelID,
+            capabilities: capabilities,
+            warnings: &warnings
+        )
+        anthropicNormalizeThinkingForCapabilities(
+            in: &body,
+            modelID: modelID,
             capabilities: capabilities,
             warnings: &warnings
         )
@@ -678,6 +708,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
             to: &body,
             supportsStructuredOutput: supportsStructuredOutput,
             structuredOutputMode: providerOptions.structuredOutputMode,
+            rejectsForcedToolUse: capabilities.rejectsForcedToolUse,
+            modelID: modelID,
             disableParallelToolUse: providerOptions.disableParallelToolUse,
             eagerInputStreaming: eagerInputStreaming,
             warnings: &warnings
@@ -749,13 +781,27 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     ))
                     warnedAboutInitialToolChanges = true
                 }
+                let text = message.combinedText
+                if let effort = systemOptions.effort,
+                   systemOptions.clearAt == nil,
+                   toolChanges.isEmpty,
+                   text.isEmpty {
+                    if !betas.contains("mid-conversation-output-config-2026-07-01") {
+                        betas.append("mid-conversation-output-config-2026-07-01")
+                    }
+                    conversation.append(.object([
+                        "role": .string("system"),
+                        "content": .array([] as [JSONValue]),
+                        "output_config": .object(["effort": .string(effort)])
+                    ]))
+                    continue
+                }
                 if systemOptions.clearAt != nil || systemOptions.effort != nil {
                     warnings.append(AIWarning(
                         type: "other",
-                        message: "clearAt and effort on the initial system message are not supported by Anthropic. These options have been ignored."
+                        message: "clearAt and effort on this initial system message are not supported by Anthropic. Use a separate effort-only system message with empty content to set effort. These options have been ignored."
                     ))
                 }
-                let text = message.combinedText
                 if !text.isEmpty || (toolChanges.isEmpty && systemOptions.clearAt == nil && systemOptions.effort == nil) {
                     var block: [String: JSONValue] = ["type": .string("text"), "text": .string(text)]
                     anthropicApplyCacheControl(
@@ -781,8 +827,8 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     betas.append("mid-conversation-system-clear-at-2026-08-21")
                 }
                 if systemOptions.effort != nil,
-                   !betas.contains("mid-conversation-effort-2026-08-01") {
-                    betas.append("mid-conversation-effort-2026-08-01")
+                   !betas.contains("mid-conversation-output-config-2026-07-01") {
+                    betas.append("mid-conversation-output-config-2026-07-01")
                 }
             }
             var converted = try messageJSON(
@@ -810,6 +856,10 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     systemOptions,
                     to: converted
                 )
+            }
+            if message.role == .assistant,
+               converted["content"]?.arrayValue?.isEmpty == true {
+                continue
             }
             appendAnthropicMessage(
                 converted,
@@ -970,6 +1020,22 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
         parts += try message.content.compactMap { part -> JSONValue? in
             switch part {
             case let .text(text, providerMetadata):
+                let providerKey = anthropicProviderMetadataKey(from: providerID)
+                let metadata = providerMetadata[providerKey] ?? providerMetadata["anthropic"]
+                if metadata?["type"]?.stringValue == "compaction" {
+                    guard !text.isEmpty else { return nil }
+                    if !betas.contains("compact-2026-09-04") {
+                        betas.append("compact-2026-09-04")
+                    }
+                    var block: [String: JSONValue] = [
+                        "type": .string("compaction"),
+                        "content": .string(text)
+                    ]
+                    if let signature = metadata?["signature"]?.stringValue {
+                        block["signature"] = .string(signature)
+                    }
+                    return .object(block)
+                }
                 var block: [String: JSONValue] = ["type": .string("text"), "text": .string(text)]
                 anthropicApplyPartProviderOptions(
                     providerMetadata,
@@ -1103,6 +1169,31 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                     )
                     return .object(block)
                 }
+                if let toolsetName = anthropicToolsetName(from: call.providerMetadata, providerID: providerID) {
+                    var input = anthropicToolArguments(call.arguments).objectValue ?? [:]
+                    guard let action = input.removeValue(forKey: "action")?.stringValue else {
+                        warnings.append(AIWarning(
+                            type: "other",
+                            message: "toolset tool call for tool \(call.name) is missing the action"
+                        ))
+                        return nil
+                    }
+                    var block: [String: JSONValue] = [
+                        "type": .string("tool_use"),
+                        "id": .string(call.id),
+                        "name": .string(action),
+                        "toolset_name": .string(toolsetName),
+                        "input": .object(input)
+                    ]
+                    if let caller { block["caller"] = caller }
+                    anthropicApplyCacheControl(
+                        anthropicCacheControl(from: call.providerMetadata),
+                        to: &block,
+                        cacheBreakpointCount: &cacheBreakpointCount,
+                        warnings: &warnings
+                    )
+                    return .object(block)
+                }
                 var block: [String: JSONValue] = [
                     "type": .string("tool_use"),
                     "id": .string(call.id),
@@ -1152,6 +1243,9 @@ public final class AnthropicLanguageModel: LanguageModel, @unchecked Sendable {
                 ]
                 if converted.isError {
                     block["is_error"] = true
+                }
+                if let toolsetName = anthropicToolsetName(from: result.providerMetadata, providerID: providerID) {
+                    block["toolset_name"] = .string(toolsetName)
                 }
                 anthropicApplyCacheControl(
                     anthropicToolResultCacheControl(result),
@@ -1987,6 +2081,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                     var container: JSONValue = .null
                     var contextManagement: JSONValue = .null
                     var inputTransformations: JSONValue = .null
+                    var safeguardResults: JSONValue = .null
                     var didEmitTerminal = false
 
                     func emitTerminal() {
@@ -2007,6 +2102,7 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 container: container,
                                 contextManagement: contextManagement,
                                 inputTransformations: inputTransformations,
+                                safeguardResults: safeguardResults,
                                 providerID: providerID,
                                 requestProviderOptions: request.providerOptions
                             )
@@ -2072,6 +2168,9 @@ public final class AmazonBedrockAnthropicLanguageModel: LanguageModel, @unchecke
                                 }
                                 if let value = raw["input_transformations"], value != .null {
                                     inputTransformations = value
+                                }
+                                if let value = raw["delta"]?["safeguard_results"], value != .null {
+                                    safeguardResults = value
                                 }
                             default:
                                 break

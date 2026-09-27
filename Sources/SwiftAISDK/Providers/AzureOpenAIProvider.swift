@@ -31,11 +31,11 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             headers["api-key"] = headers["api-key"] ?? key
         }
-        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.75")
+        headers = withUserAgentSuffix(headers, "ai-sdk/azure/4.0.82")
         let baseURL = withoutTrailingSlash(basePrefix)
         let baseURLInfo = try azureOpenAIBaseURLInfo(settings.baseURL)
         let transport = tokenProvider.map { AzureOpenAITokenProviderTransport(base: settings.transport, tokenProvider: $0) } ?? settings.transport
-        let config = ModelHTTPConfig(providerID: providerID, baseURL: baseURL, headers: headers, transport: transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, explicitMessageItemType: baseURLInfo.isFoundryProject) { modelID, path in
+        let config = ModelHTTPConfig(providerID: providerID, baseURL: baseURL, headers: headers, transport: transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, transformRequestBody: settings.transformRequestBody, explicitMessageItemType: baseURLInfo.isFoundryProject, url: { modelID, path in
             let urlString: String
             if useDeploymentBasedURLs {
                 urlString = "\(baseURL)/deployments/\(modelID)\(path)"
@@ -54,7 +54,7 @@ public final class AzureOpenAIProvider: AIProvider, @unchecked Sendable {
             }
             guard let url = components.url else { throw AIError.invalidURL(urlString) }
             return url
-        }
+        })
         self.config = config
         provider = OpenAICompatibleProvider(providerID: providerID, supportedCapabilities: supportedCapabilities, config: config)
     }

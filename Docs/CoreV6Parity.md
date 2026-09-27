@@ -1,14 +1,14 @@
 # Core V7 Parity
 
-Snapshot date: 2026-09-20
+Snapshot date: 2026-09-27
 
 This document tracks SwiftAISDK against the current AI SDK Core and Errors
 reference. It is intentionally high-level: product status belongs in
 `PortingStatus.md`, provider package drift belongs in `ProviderVersionLedger.md`,
 and provider behavior belongs in focused tests.
 Implementation-sensitive UI/chat items are also checked against npm source
-snapshots, currently `ai@7.0.107`, `@ai-sdk/provider@4.0.17`,
-`@ai-sdk/provider-utils@5.0.45`, and `@ai-sdk/react@4.0.110`.
+snapshots, currently `ai@7.0.117`, `@ai-sdk/provider@4.0.18`,
+`@ai-sdk/provider-utils@5.0.49`, and `@ai-sdk/react@4.0.120`.
 
 References:
 
@@ -20,6 +20,10 @@ References:
 
 Checked npm package diffs:
 
+- `ai@7.0.107 -> 7.0.117`
+- `@ai-sdk/provider@4.0.17 -> 4.0.18`
+- `@ai-sdk/provider-utils@5.0.45 -> 5.0.49`
+- `@ai-sdk/react@4.0.110 -> 4.0.120`
 - `ai@7.0.99 -> 7.0.107`
 - `@ai-sdk/provider@4.0.14 -> 4.0.17`
 - `@ai-sdk/provider-utils@5.0.40 -> 5.0.45`
@@ -73,6 +77,60 @@ Checked npm package diffs:
 
 Port decisions:
 
+- `ai@7.0.117` has the same published runtime source as `7.0.116` and only advances `@ai-sdk/gateway`. Its sole exact-tag test delta replaces the stale `typesafe-ai/jev-latest` Gateway evaluation fixture with `typesafe-ai/jev`; Swift request tests and public Gateway examples use that current identifier.
+- `ai@7.0.116` materializes HTTP(S)-backed generated file and reasoning-file
+  outputs for generate, stream, and batch results while preserving opaque
+  non-HTTP URI strings. URL policy, redirect validation, credential stripping,
+  aborts, and response limits are shared; resolver-backed connection-address
+  pinning remains an explicit platform design gap and is not implied by
+  hostname validation.
+- Embedding models can expose `providerOptionsTransformer` to slice per-value
+  options with each automatic batch. Retries reuse the already transformed
+  batch options, keeping multimodal values and provider options aligned under
+  count and byte limits. Speech media detection now recognizes canonical L16,
+  mu-law, and A-law output types.
+- Tool approval requests retain the pre-refinement `inputSchemaInput` alongside
+  the approved refined arguments. Persisted approvals re-run schema validation
+  and refinement and reject either representation when it has changed; chat
+  approval responses resume the assistant message that originated the request,
+  even when later messages exist.
+- Reasoning pruning now treats `.reasoningFile` parts like textual reasoning:
+  `.all` and `.beforeLastMessage` remove both forms within their selected scope
+  while leaving ordinary file content intact.
+- Routed local-caller-only tools are not advertised for direct model execution.
+  If a provider still emits a direct call, the facade returns a non-executing
+  tool-error result; the advertised local caller remains bound and executable.
+- `AIUIMessageStreamReducer.snapshots` accepts an existing `originalMessage`
+  and an async single-fire `onEnd` callback. Terminal events distinguish normal
+  completion, provider abort, failure, and consumer cancellation without
+  inventing a successful finish for early iterator termination.
+- Evaluation now supports `runtimeContext`, `onStart`, `onEnd`, and typed
+  lifecycle payloads. Telemetry emits `modelCallStart`/`modelCallEnd` around
+  the logical evaluation model call, carries validated answers/usage/metadata,
+  and includes only runtime-context keys explicitly allowlisted through
+  `Telemetry.Options.includeRuntimeContext`.
+  Existing 1.9.0 call sites and stored function references remain source
+  compatible through exact overloads for evaluation, UI stream snapshots,
+  approval requests, Open Responses factories, and telemetry initializers.
+  Exhaustive switches over `Telemetry.Event.Kind` must add handling for
+  `modelCallStart` and `modelCallEnd`; this is the only intentional Swift
+  source migration required by the new telemetry surface.
+- `@ai-sdk/provider@4.0.18` requires no representation rewrite: Swift's
+  provider-neutral file data is already a string and therefore preserves
+  opaque URIs without forcing Foundation URL normalization.
+- `@ai-sdk/provider-utils@5.0.49` adds the public `fetchUntrustedURL` security
+  contract. Only explicitly safe first-hop headers are forwarded to untrusted
+  origins; arbitrary credentials require an exact credentialed origin and are
+  stripped permanently after a cross-origin redirect.
+- `@ai-sdk/mcp@2.0.60` preserves caller-supplied stdio environment values,
+  drops discovery protocol headers on cross-origin redirects, and distinguishes
+  dynamically registered OAuth clients from pre-registered clients before
+  invalidating credentials after `invalid_client` or `unauthorized_client`.
+- Overlap-safe reasoning extraction tracks each text ID independently,
+  preserves both reasoning and visible text, and emits globally stable
+  reasoning IDs. Positioned empty system-control messages remain available to
+  Responses providers for validated reasoning-effort updates.
+- `@ai-sdk/react@4.0.120` has byte-identical published source and no changed exact-tag React tests relative to `4.0.119`; it only advances the `ai` dependency to `7.0.117`. The throttled completion-hook behavior introduced in `4.0.119` remains outside this framework-neutral SwiftPM package, while its portable stream cancellation behavior is represented by the native `AsyncSequence`/UI-message lifecycle above.
 - `ai@7.0.107`, `@ai-sdk/provider@4.0.17`, and
   `@ai-sdk/provider-utils@5.0.45` add the experimental Evaluation V4 vertical.
   `AI.experimentalEvaluate` validates Choice, Score, and Boolean questions and
@@ -507,7 +565,7 @@ Port decisions:
 | `pipeAgentUIStreamToResponse` | `out of scope candidate` | none | Same as above. |
 | `tool` | `swift-native` | `AITool` | Swift uses a concrete typed tool struct rather than a TS inference helper. |
 | `dynamicTool` | `swift-native` | `AITool.dynamic`, MCP tool conversion | Behavior exists; naming differs. |
-| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, paginated tool discovery, tool-call retries, tool conversion, annotations, structured-only results, issuer normalization, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.54`. OAuth scope reaches dynamic registration, private credential endpoints are rejected without redirects, stored authorization-server metadata survives discovery failure, and concurrent stale-token 401 responses share one refresh. |
+| `createMCPClient` | `covered` | `MCPClient.connect`, `MCPHTTPTransport`, `MCPStdioTransport`, `MCPApps` | Broad MCP client, transport, OAuth, resources, prompts, completions, elicitation, MCP Apps metadata/resource helpers, session resume callbacks, initial initialize result reuse, paginated tool discovery, tool-call retries, tool conversion, annotations, structured-only results, issuer normalization, and non-successful POST/SSE diagnostics through `@ai-sdk/mcp@2.0.60`. OAuth scope reaches dynamic registration, preserves pre-registered client credentials on client-auth failures, removes discovery protocol headers across origins, keeps caller-supplied stdio environment values, rejects private credential endpoints without redirects, reuses stored authorization-server metadata after discovery failure, and coalesces concurrent stale-token refreshes. |
 | `Experimental_StdioMCPTransport` | `covered` | `MCPStdioTransport` | Swift uses stable transport naming. |
 | `jsonSchema` | `swift-native` | `AIJSONSchema`, `JSONValue`, `parseJSON`, schema validator | Usable JSON Schema adapter exists; exact factory naming does not. |
 | `zodSchema` | `out of scope candidate` | none | Zod is TypeScript-specific. Could document `AIJSONSchema` as the Swift alternative. |

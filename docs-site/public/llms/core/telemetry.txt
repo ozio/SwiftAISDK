@@ -94,6 +94,7 @@ Telemetry events carry the operation, provider, model, call ID, duration, usage,
 - `abort` when the caller aborts the operation.
 - `error` when an operation fails.
 - `stepStart` and `stepEnd` for multi-step tool loops.
+- `modelCallStart` and `modelCallEnd` around an evaluation model call.
 - `toolStart`, `toolEnd`, and `toolError` for tool execution.
 
 Common operation IDs include:
@@ -109,6 +110,8 @@ Common operation IDs include:
 - `ai.generateSpeech`
 - `ai.generateVideo`
 - `ai.rerank`
+- `ai.evaluate`
+- `ai.evaluate.doEvaluate`
 
 Tool loop events use suffixed operation IDs such as `ai.generateText.step` and `ai.generateText.tool`.
 
@@ -131,6 +134,24 @@ let result = try await model.generateText(
 ```
 
 `includesInput` and `includesOutput` are copied onto each event so downstream integrations can preserve the caller's redaction intent.
+
+Evaluation can also carry request-local runtime context. Callbacks receive the
+complete dictionary, while telemetry receives only keys explicitly allowlisted
+with `includeRuntimeContext`:
+
+```swift
+let telemetry = Telemetry.Options(
+    functionID: "evaluation.safety",
+    includeRuntimeContext: [
+        "tenant": true,
+        "requestSecret": false
+    ]
+)
+```
+
+If the allowlist is omitted, evaluation telemetry records no runtime-context
+keys. This keeps application-only callback context from leaking to an
+observability integration by default.
 
 ## Wrapping Execution
 

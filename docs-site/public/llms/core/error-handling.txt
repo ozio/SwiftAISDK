@@ -226,6 +226,10 @@ Cancellation also propagates when a caller stops consuming a language stream ear
 Provider-controlled download URLs are followed manually. SwiftAISDK validates
 every redirect target before issuing the next request, preserves provider
 credentials for same-origin hops, and removes them when the origin changes.
+Use `fetchUntrustedURL` for the same policy in application-owned downloads. It
+forwards only the safe first-hop header allowlist to an unrelated origin;
+arbitrary credentials require an exact `credentialedOrigin` and stay removed
+after any cross-origin redirect.
 This does not yet claim resolver-backed DNS answer pinning; that remains a
 transport-level gap.
 

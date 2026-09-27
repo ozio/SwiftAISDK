@@ -326,10 +326,39 @@ func validateApprovedToolApprovals(
             }
         }
 
+        let inputSchemaInput = approval.approvalRequest.inputSchemaInput ?? arguments
         do {
-            try validateToolArguments(arguments, schema: tool.parameters, call: toolCall)
+            try validateToolArguments(inputSchemaInput, schema: tool.parameters, call: toolCall)
         } catch let error as AIInvalidToolInputError {
             invalid.append(AIInvalidCollectedToolApproval(approval: approval, error: error))
+            continue
+        }
+
+        let revalidatedArguments: JSONValue
+        do {
+            revalidatedArguments = try await tool.refineArguments?(inputSchemaInput) ?? inputSchemaInput
+        } catch {
+            invalid.append(AIInvalidCollectedToolApproval(
+                approval: approval,
+                error: AIInvalidToolInputError(
+                    toolName: toolCall.name,
+                    toolCallID: toolCall.id,
+                    input: inputSchemaInput,
+                    message: "Approved tool input could not be refined: \(error)"
+                )
+            ))
+            continue
+        }
+        guard revalidatedArguments == arguments else {
+            invalid.append(AIInvalidCollectedToolApproval(
+                approval: approval,
+                error: AIInvalidToolInputError(
+                    toolName: toolCall.name,
+                    toolCallID: toolCall.id,
+                    input: inputSchemaInput,
+                    message: "Approved tool input does not match the validated schema output."
+                )
+            ))
             continue
         }
 

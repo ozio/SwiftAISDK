@@ -73,7 +73,7 @@ import Testing
     }
 }
 
-@Test func xAIResponsesReasoningGateAndSummaryObjectMatchUpstream() async throws {
+@Test func xAIResponsesReasoningGateAndDeprecatedSummaryOmissionMatchUpstream() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"id":"resp-unsupported","status":"completed","output_text":"done"}"#),
         jsonResponse(#"{"id":"resp-auto","status":"completed","output_text":"done"}"#),
@@ -108,12 +108,9 @@ import Testing
     let unsupportedBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(unsupportedBody["reasoning"] == nil)
 
-    for (index, summary) in ["auto", "concise", "detailed"].enumerated() {
+    for (index, _) in ["auto", "concise", "detailed"].enumerated() {
         let body = try decodeJSONBody(try #require(requests[index + 1].body))
-        #expect(body["reasoning"] == [
-            "effort": "high",
-            "summary": .string(summary)
-        ])
+        #expect(body["reasoning"] == ["effort": "high"])
         #expect(body["reasoningEffort"] == nil)
         #expect(body["reasoningSummary"] == nil)
     }

@@ -17,6 +17,8 @@ struct AnthropicModelCapabilities {
     var rejectsSamplingParameters: Bool
     var supportsXhighEffort: Bool
     var rejectsThinkingDisabledAboveHighEffort: Bool
+    var rejectsThinkingDisabled: Bool
+    var rejectsForcedToolUse: Bool
     var isKnownModel: Bool
 }
 
@@ -37,6 +39,8 @@ let anthropicLanguageProviderOptionKeys: Set<String> = [
     "fallbacks",
     "serviceTier",
     "anthropicBeta",
+    "safeguards",
+    "compaction",
     "contextManagement"
 ]
 
@@ -142,6 +146,14 @@ func anthropicAutomaticBetas(from body: [String: JSONValue]) -> [String] {
         add("mcp-client-2025-04-04")
     }
 
+    if body["safeguards"]?.arrayValue?.isEmpty == false {
+        add("dangerous-tool-use-2026-09-03")
+    }
+
+    if body["compaction"] != nil {
+        add("compact-2026-09-04")
+    }
+
     if let contextManagement = body["context_management"]?.objectValue {
         add("context-management-2025-06-27")
         if contextManagement["edits"]?.arrayValue?.contains(where: { edit in
@@ -198,6 +210,9 @@ func anthropicOptions(from extraBody: [String: JSONValue]) -> [String: JSONValue
     }
     if let contextManagement = output.removeValue(forKey: "contextManagement") {
         output["context_management"] = anthropicContextManagement(contextManagement)
+    }
+    if let safeguards = output.removeValue(forKey: "safeguards") {
+        output["safeguards"] = anthropicSafeguards(safeguards)
     }
     if let mcpServers = output.removeValue(forKey: "mcpServers") {
         output["mcp_servers"] = anthropicMCPServers(mcpServers)
@@ -270,6 +285,15 @@ func anthropicContextManagement(_ value: JSONValue) -> JSONValue {
     return .object(object)
 }
 
+func anthropicSafeguards(_ value: JSONValue) -> JSONValue {
+    guard let safeguards = value.arrayValue else { return value }
+    return .array(safeguards.map { safeguard in
+        guard var object = safeguard.objectValue else { return safeguard }
+        anthropicMoveKey("classifierContext", to: "classifier_context", in: &object)
+        return .object(object)
+    })
+}
+
 func anthropicMCPServers(_ value: JSONValue) -> JSONValue {
     guard let servers = value.arrayValue else { return value }
     return .array(servers.map { server in
@@ -315,140 +339,70 @@ func anthropicStandardWarnings(for request: LanguageModelRequest) -> [AIWarning]
 }
 
 func anthropicModelCapabilities(_ modelID: String) -> AnthropicModelCapabilities {
+    func capabilities(
+        maxOutputTokens: Int,
+        supportsStructuredOutput: Bool,
+        supportsAdaptiveThinking: Bool,
+        rejectsSamplingParameters: Bool,
+        supportsXhighEffort: Bool,
+        rejectsThinkingDisabledAboveHighEffort: Bool = false,
+        rejectsThinkingDisabled: Bool = false,
+        rejectsForcedToolUse: Bool = false,
+        isKnownModel: Bool
+    ) -> AnthropicModelCapabilities {
+        AnthropicModelCapabilities(
+            maxOutputTokens: maxOutputTokens,
+            supportsStructuredOutput: supportsStructuredOutput,
+            supportsAdaptiveThinking: supportsAdaptiveThinking,
+            rejectsSamplingParameters: rejectsSamplingParameters,
+            supportsXhighEffort: supportsXhighEffort,
+            rejectsThinkingDisabledAboveHighEffort: rejectsThinkingDisabledAboveHighEffort,
+            rejectsThinkingDisabled: rejectsThinkingDisabled,
+            rejectsForcedToolUse: rejectsForcedToolUse,
+            isKnownModel: isKnownModel
+        )
+    }
+
+    if modelID.contains("claude-opus-5-5") {
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, rejectsThinkingDisabled: true, rejectsForcedToolUse: true, isKnownModel: true)
+    }
     if modelID.contains("claude-opus-5") {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 128_000,
-            supportsStructuredOutput: true,
-            supportsAdaptiveThinking: true,
-            rejectsSamplingParameters: true,
-            supportsXhighEffort: true,
-            rejectsThinkingDisabledAboveHighEffort: true,
-            isKnownModel: true
-        )
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: true)
     }
-    if modelID.contains("claude-opus-4-8") ||
-        modelID.contains("claude-opus-4-7") ||
-        modelID.contains("claude-fable-5") ||
-        modelID.contains("claude-sonnet-5") {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 128_000,
-            supportsStructuredOutput: true,
-            supportsAdaptiveThinking: true,
-            rejectsSamplingParameters: true,
-            supportsXhighEffort: true,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: true
-        )
+    if modelID.contains("claude-fable-5-1") {
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabled: true, rejectsForcedToolUse: true, isKnownModel: true)
     }
-    if modelID.contains("claude-sonnet-4-6") ||
-        modelID.contains("claude-opus-4-6") {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 128_000,
-            supportsStructuredOutput: true,
-            supportsAdaptiveThinking: true,
-            rejectsSamplingParameters: false,
-            supportsXhighEffort: false,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: true
-        )
+    if modelID.contains("claude-fable-5") {
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabled: true, isKnownModel: true)
     }
-    if modelID.contains("claude-sonnet-4-5") ||
-        modelID.contains("claude-opus-4-5") ||
-        modelID.contains("claude-haiku-4-5") {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 64_000,
-            supportsStructuredOutput: true,
-            supportsAdaptiveThinking: false,
-            rejectsSamplingParameters: false,
-            supportsXhighEffort: false,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: true
-        )
+    if modelID.contains("claude-opus-4-8") || modelID.contains("claude-opus-4-7") || modelID.contains("claude-sonnet-5") {
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, isKnownModel: true)
+    }
+    if modelID.contains("claude-sonnet-4-6") || modelID.contains("claude-opus-4-6") {
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: true)
+    }
+    if modelID.contains("claude-sonnet-4-5") || modelID.contains("claude-opus-4-5") || modelID.contains("claude-haiku-4-5") {
+        return capabilities(maxOutputTokens: 64_000, supportsStructuredOutput: true, supportsAdaptiveThinking: false, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: true)
     }
     if modelID.contains("claude-opus-4-1") {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 32_000,
-            supportsStructuredOutput: true,
-            supportsAdaptiveThinking: false,
-            rejectsSamplingParameters: false,
-            supportsXhighEffort: false,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: true
-        )
+        return capabilities(maxOutputTokens: 32_000, supportsStructuredOutput: true, supportsAdaptiveThinking: false, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: true)
     }
-    if modelID.range(
-        of: #"claude-sonnet-4(?:-|@)"#,
-        options: .regularExpression
-    ) != nil {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 64_000,
-            supportsStructuredOutput: false,
-            supportsAdaptiveThinking: false,
-            rejectsSamplingParameters: false,
-            supportsXhighEffort: false,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: true
-        )
+    if modelID.range(of: #"claude-sonnet-4(?:-|@)"#, options: .regularExpression) != nil {
+        return capabilities(maxOutputTokens: 64_000, supportsStructuredOutput: false, supportsAdaptiveThinking: false, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: true)
     }
-    if modelID.range(
-        of: #"claude-opus-4(?:-|@)"#,
-        options: .regularExpression
-    ) != nil {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 32_000,
-            supportsStructuredOutput: false,
-            supportsAdaptiveThinking: false,
-            rejectsSamplingParameters: false,
-            supportsXhighEffort: false,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: true
-        )
+    if modelID.range(of: #"claude-opus-4(?:-|@)"#, options: .regularExpression) != nil {
+        return capabilities(maxOutputTokens: 32_000, supportsStructuredOutput: false, supportsAdaptiveThinking: false, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: true)
     }
     if modelID.contains("claude-3-haiku") {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 4_096,
-            supportsStructuredOutput: false,
-            supportsAdaptiveThinking: false,
-            rejectsSamplingParameters: false,
-            supportsXhighEffort: false,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: true
-        )
+        return capabilities(maxOutputTokens: 4_096, supportsStructuredOutput: false, supportsAdaptiveThinking: false, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: true)
     }
-    if modelID.range(
-        of: #"claude-(?:instant(?:-|$)|v?2(?=$|[-.:])|3(?=$|[-.]))"#,
-        options: .regularExpression
-    ) != nil {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 4_096,
-            supportsStructuredOutput: false,
-            supportsAdaptiveThinking: false,
-            rejectsSamplingParameters: false,
-            supportsXhighEffort: false,
-            rejectsThinkingDisabledAboveHighEffort: false,
-            isKnownModel: false
-        )
+    if modelID.range(of: #"claude-(?:instant(?:-|$)|v?2(?=$|[-.:])|3(?=$|[-.]))"#, options: .regularExpression) != nil {
+        return capabilities(maxOutputTokens: 4_096, supportsStructuredOutput: false, supportsAdaptiveThinking: false, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: false)
     }
     if modelID.contains("claude-") {
-        return AnthropicModelCapabilities(
-            maxOutputTokens: 128_000,
-            supportsStructuredOutput: true,
-            supportsAdaptiveThinking: true,
-            rejectsSamplingParameters: true,
-            supportsXhighEffort: true,
-            rejectsThinkingDisabledAboveHighEffort: true,
-            isKnownModel: false
-        )
+        return capabilities(maxOutputTokens: 128_000, supportsStructuredOutput: true, supportsAdaptiveThinking: true, rejectsSamplingParameters: true, supportsXhighEffort: true, rejectsThinkingDisabledAboveHighEffort: true, isKnownModel: false)
     }
-    return AnthropicModelCapabilities(
-        maxOutputTokens: 4_096,
-        supportsStructuredOutput: false,
-        supportsAdaptiveThinking: false,
-        rejectsSamplingParameters: false,
-        supportsXhighEffort: false,
-        rejectsThinkingDisabledAboveHighEffort: false,
-        isKnownModel: false
-    )
+    return capabilities(maxOutputTokens: 4_096, supportsStructuredOutput: false, supportsAdaptiveThinking: false, rejectsSamplingParameters: false, supportsXhighEffort: false, isKnownModel: false)
 }
 
 func anthropicSamplingParameters(
@@ -513,6 +467,7 @@ func anthropicClampedTemperature(_ temperature: Double?, warnings: inout [AIWarn
 func anthropicApplyTopLevelReasoning(
     _ reasoning: String?,
     to body: inout [String: JSONValue],
+    modelID: String,
     capabilities: AnthropicModelCapabilities,
     warnings: inout [AIWarning]
 ) {
@@ -521,6 +476,7 @@ func anthropicApplyTopLevelReasoning(
 
     let config = anthropicReasoningConfig(
         reasoning,
+        modelID: modelID,
         capabilities: capabilities,
         warnings: &warnings
     )
@@ -539,10 +495,19 @@ func anthropicApplyTopLevelReasoning(
 
 func anthropicReasoningConfig(
     _ reasoning: String,
+    modelID: String,
     capabilities: AnthropicModelCapabilities,
     warnings: inout [AIWarning]
 ) -> (thinking: JSONValue, effort: String?)? {
     if reasoning == "none" {
+        if capabilities.rejectsThinkingDisabled {
+            warnings.append(AIWarning(
+                type: "compatibility",
+                feature: "reasoning",
+                message: "reasoning 'none' is not supported by \(modelID); it always uses adaptive thinking. Using effort 'low' to minimize thinking instead."
+            ))
+            return (["type": "adaptive"], "low")
+        }
         return (["type": "disabled"], nil)
     }
 
@@ -617,6 +582,31 @@ func anthropicApplyMaxTokenLimit(
     body["max_tokens"] = .number(Double(capabilities.maxOutputTokens))
 }
 
+func anthropicNormalizeThinkingForCapabilities(
+    in body: inout [String: JSONValue],
+    modelID: String,
+    capabilities: AnthropicModelCapabilities,
+    warnings: inout [AIWarning]
+) {
+    guard capabilities.rejectsThinkingDisabled,
+          let thinkingType = body["thinking"]?["type"]?.stringValue else { return }
+    if thinkingType == "disabled" {
+        body.removeValue(forKey: "thinking")
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "providerOptions.anthropic.thinking",
+            message: "thinking cannot be disabled for \(modelID); it always uses adaptive thinking. The thinking setting has been removed. Lower 'effort' to reduce thinking."
+        ))
+    } else if thinkingType == "enabled" {
+        body["thinking"] = .object(["type": .string("adaptive")])
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "providerOptions.anthropic.thinking",
+            message: "budget-based thinking is not supported by \(modelID); it always uses adaptive thinking. Using adaptive thinking instead. Use 'effort' to control how much the model thinks."
+        ))
+    }
+}
+
 func anthropicApplyDisabledThinkingEffortLimit(
     to body: inout [String: JSONValue],
     modelID: String,
@@ -644,6 +634,8 @@ func anthropicApplyResponseFormat(
     to body: inout [String: JSONValue],
     supportsStructuredOutput: Bool,
     structuredOutputMode: String?,
+    rejectsForcedToolUse: Bool,
+    modelID: String,
     disableParallelToolUse: Bool?,
     eagerInputStreaming: Bool,
     warnings: inout [AIWarning]
@@ -661,8 +653,16 @@ func anthropicApplyResponseFormat(
             ))
             return false
         }
-        let useNativeOutputFormat = structuredOutputMode == "outputFormat"
+        var useNativeOutputFormat = structuredOutputMode == "outputFormat"
             || (structuredOutputMode != "jsonTool" && supportsStructuredOutput)
+        if !useNativeOutputFormat, rejectsForcedToolUse, supportsStructuredOutput {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "providerOptions.anthropic.structuredOutputMode",
+                message: "structuredOutputMode 'jsonTool' is not supported by \(modelID) because it rejects forced tool use. Using 'outputFormat' instead."
+            ))
+            useNativeOutputFormat = true
+        }
         guard useNativeOutputFormat else {
             if disableParallelToolUse == false {
                 warnings.append(AIWarning(

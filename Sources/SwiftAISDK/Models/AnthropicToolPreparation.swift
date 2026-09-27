@@ -14,7 +14,8 @@ func anthropicPrepareTools(
     disableParallelToolUse: Bool? = nil,
     supportsStructuredOutput: Bool = true,
     supportsStrictTools: Bool = true,
-    defaultEagerInputStreaming: Bool = false
+    defaultEagerInputStreaming: Bool = false,
+    rejectsForcedToolUse: Bool = false
 ) throws -> AnthropicPreparedTools {
     var prepared = AnthropicPreparedTools()
 
@@ -109,6 +110,18 @@ func anthropicPrepareTools(
         case "anthropic.computer_20251124":
             addBeta("computer-use-2025-11-24")
             prepared.tools.append(anthropicComputerTool(type: "computer_20251124", args: args, includeZoom: true))
+        case "anthropic.computer_toolset_20260801":
+            var wireTool: [String: JSONValue] = ["type": .string("computer_toolset_20260801")]
+            if let configs = args["configs"]?.objectValue {
+                wireTool["configs"] = .object(configs.mapValues { config in
+                    guard let object = config.objectValue else { return config }
+                    return .object([
+                        "enabled": object["enabled"] ?? .null,
+                        "defer_loading": object["deferLoading"] ?? .null
+                    ].filter { $0.value != .null })
+                })
+            }
+            prepared.tools.append(.object(wireTool))
         case "anthropic.text_editor_20241022":
             addBeta("computer-use-2024-10-22")
             prepared.tools.append(.object(["type": "text_editor_20241022", "name": "str_replace_editor"]))
@@ -177,12 +190,31 @@ func anthropicPrepareTools(
             prepared.warnings.append(AIWarning(type: "unsupported", feature: "provider-defined tool \(id)"))
         }
     }
-    let choice = anthropicToolChoice(from: toolChoice, disableParallelToolUse: disableParallelToolUse)
-    if choice.omitTools {
-        prepared.tools = []
-        prepared.toolChoice = nil
-    } else if !prepared.tools.isEmpty {
-        prepared.toolChoice = choice.value
+    let requestedChoiceType = toolChoice?["type"]?.stringValue ?? toolChoice?.stringValue
+    if rejectsForcedToolUse, requestedChoiceType == "required" || requestedChoiceType == "any" {
+        prepared.warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "toolChoice",
+            message: "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+        ))
+        prepared.toolChoice = anthropicToolChoice(from: .object(["type": .string("auto")]), disableParallelToolUse: disableParallelToolUse).value
+    } else if rejectsForcedToolUse, requestedChoiceType == "tool" {
+        let selectedName = toolChoice?["toolName"]?.stringValue ?? toolChoice?["name"]?.stringValue ?? ""
+        prepared.warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "toolChoice",
+            message: "toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '\(selectedName)' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."
+        ))
+        prepared.tools = prepared.tools.filter { $0["name"]?.stringValue == selectedName }
+        prepared.toolChoice = anthropicToolChoice(from: .object(["type": .string("auto")]), disableParallelToolUse: disableParallelToolUse).value
+    } else {
+        let choice = anthropicToolChoice(from: toolChoice, disableParallelToolUse: disableParallelToolUse)
+        if choice.omitTools {
+            prepared.tools = []
+            prepared.toolChoice = nil
+        } else if !prepared.tools.isEmpty {
+            prepared.toolChoice = choice.value
+        }
     }
     return prepared
 }

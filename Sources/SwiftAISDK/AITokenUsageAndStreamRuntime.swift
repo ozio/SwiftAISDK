@@ -393,6 +393,7 @@ func forwardLanguageStream(
     _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
     to continuation: AsyncThrowingStream<LanguageStreamPart, Error>.Continuation,
     toolsByName: [String: AITool] = [:],
+    executionToolsByName: [String: AITool]? = nil,
     request: LanguageModelRequest? = nil,
     repairToolCall: AIToolCallRepair? = nil,
     partIDReserver: LanguageStreamPartIDReserver? = nil
@@ -401,6 +402,7 @@ func forwardLanguageStream(
         internalLanguageStream(stream),
         to: continuation,
         toolsByName: toolsByName,
+        executionToolsByName: executionToolsByName,
         request: request,
         repairToolCall: repairToolCall,
         partIDReserver: partIDReserver
@@ -411,10 +413,12 @@ func forwardLanguageStream(
     _ stream: AsyncThrowingStream<StreamTextTelemetryPart, Error>,
     to continuation: AsyncThrowingStream<LanguageStreamPart, Error>.Continuation,
     toolsByName: [String: AITool] = [:],
+    executionToolsByName: [String: AITool]? = nil,
     request: LanguageModelRequest? = nil,
     repairToolCall: AIToolCallRepair? = nil,
     partIDReserver: LanguageStreamPartIDReserver? = nil
 ) async throws -> LanguageStreamToolStep {
+    let callbackToolsByName = executionToolsByName ?? toolsByName
     var step = LanguageStreamToolStep()
     var inputToolNamesByID: [String: String] = [:]
     var validatedToolContextIDs: Set<String> = []
@@ -467,7 +471,7 @@ func forwardLanguageStream(
         switch forwardedPart {
         case let .toolInputStart(id, name, _, _, _, _):
             inputToolNamesByID[id] = name
-            guard let tool = toolsByName[name], let callback = tool.onInputStart else { break }
+            guard let tool = callbackToolsByName[name], let callback = tool.onInputStart else { break }
             let toolContext = try validatedStreamingToolContext(
                 toolCallID: id,
                 toolName: name,
@@ -484,7 +488,7 @@ func forwardLanguageStream(
             ))
         case let .toolInputDelta(id, delta, _):
             guard let name = inputToolNamesByID[id],
-                  let tool = toolsByName[name],
+                  let tool = callbackToolsByName[name],
                   let callback = tool.onInputDelta else { break }
             let toolContext = try validatedStreamingToolContext(
                 toolCallID: id,
@@ -510,7 +514,7 @@ func forwardLanguageStream(
                 validatedToolContextsByID[call.id] = nil
             }
             guard shouldInvokeInputAvailable,
-                  let tool = toolsByName[name],
+                  let tool = callbackToolsByName[name],
                   let callback = tool.onInputAvailable else { break }
             let toolContext = try validatedStreamingToolContext(
                 toolCallID: call.id,

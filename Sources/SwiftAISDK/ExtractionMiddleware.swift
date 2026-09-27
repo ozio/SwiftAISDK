@@ -289,23 +289,32 @@ func extractReasoningStream(
     AsyncThrowingStream { continuation in
         let task = Task {
             do {
-                var textBuffer = ""
-                var textID = "0"
-                var textStartMetadata: [String: JSONValue] = [:]
-                var textDeltaMetadata: [String: JSONValue] = [:]
-                var textEndMetadata: [String: JSONValue] = [:]
-                var sawTextPart = false
+                var textBuffers: [String: String] = [:]
+                var textStartMetadata: [String: [String: JSONValue]] = [:]
+                var textDeltaMetadata: [String: [String: JSONValue]] = [:]
+                var textEndMetadata: [String: [String: JSONValue]] = [:]
+                var activeTextIDs = Set<String>()
+                var textIDOrder: [String] = []
+                var reasoningIDCounter = 0
 
-                func flushExtractedText() {
-                    guard sawTextPart else { return }
+                func markTextID(_ id: String) {
+                    if activeTextIDs.insert(id).inserted {
+                        textIDOrder.append(id)
+                    }
+                }
+
+                func flushExtractedText(id textID: String) {
+                    guard activeTextIDs.contains(textID) else { return }
+                    let textBuffer = textBuffers[textID] ?? ""
+                    let startMetadata = textStartMetadata[textID] ?? [:]
+                    let endMetadata = textEndMetadata[textID] ?? [:]
                     let input = startWithReasoning ? "<\(tagName)>" + textBuffer : textBuffer
-                    var pendingDeltaMetadata = textDeltaMetadata
+                    var pendingDeltaMetadata = textDeltaMetadata[textID] ?? [:]
                     func takeDeltaMetadata() -> [String: JSONValue] {
                         defer { pendingDeltaMetadata = [:] }
                         return pendingDeltaMetadata
                     }
                     if let segments = extractTaggedSegments(text: input, tagName: tagName) {
-                        var reasoningIndex = 0
                         var reasoningSegmentCount = 0
                         var textSegmentCount = 0
                         var emittedTextStart = false
@@ -313,7 +322,8 @@ func extractReasoningStream(
                         for segment in segments {
                             switch segment {
                             case let .reasoning(reasoning):
-                                let reasoningID = "reasoning-\(reasoningIndex)"
+                                let reasoningID = "reasoning-\(reasoningIDCounter)"
+                                reasoningIDCounter += 1
                                 continuation.yield(.reasoningStart(id: reasoningID))
                                 let delta = (reasoningSegmentCount > 0 ? separator : "") + reasoning
                                 let providerMetadata = takeDeltaMetadata()
@@ -325,11 +335,10 @@ func extractReasoningStream(
                                     ))
                                 }
                                 continuation.yield(.reasoningEnd(id: reasoningID))
-                                reasoningIndex += 1
                                 reasoningSegmentCount += 1
                             case let .text(text):
                                 if !emittedTextStart {
-                                    continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
+                                    continuation.yield(.textStart(id: textID, providerMetadata: startMetadata))
                                     emittedTextStart = true
                                 }
                                 let delta = (textSegmentCount > 0 ? separator : "") + text
@@ -346,7 +355,7 @@ func extractReasoningStream(
                         }
 
                         if !emittedTextStart {
-                            continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
+                            continuation.yield(.textStart(id: textID, providerMetadata: startMetadata))
                         }
                         if !pendingDeltaMetadata.isEmpty {
                             continuation.yield(.textDeltaPart(
@@ -355,17 +364,17 @@ func extractReasoningStream(
                                 providerMetadata: takeDeltaMetadata()
                             ))
                         }
-                        continuation.yield(.textEnd(id: textID, providerMetadata: textEndMetadata))
+                        continuation.yield(.textEnd(id: textID, providerMetadata: endMetadata))
                     } else if !textBuffer.isEmpty {
-                        continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
+                        continuation.yield(.textStart(id: textID, providerMetadata: startMetadata))
                         continuation.yield(.textDeltaPart(
                             id: textID,
                             delta: textBuffer,
                             providerMetadata: takeDeltaMetadata()
                         ))
-                        continuation.yield(.textEnd(id: textID, providerMetadata: textEndMetadata))
+                        continuation.yield(.textEnd(id: textID, providerMetadata: endMetadata))
                     } else {
-                        continuation.yield(.textStart(id: textID, providerMetadata: textStartMetadata))
+                        continuation.yield(.textStart(id: textID, providerMetadata: startMetadata))
                         if !pendingDeltaMetadata.isEmpty {
                             continuation.yield(.textDeltaPart(
                                 id: textID,
@@ -373,37 +382,43 @@ func extractReasoningStream(
                                 providerMetadata: takeDeltaMetadata()
                             ))
                         }
-                        continuation.yield(.textEnd(id: textID, providerMetadata: textEndMetadata))
+                        continuation.yield(.textEnd(id: textID, providerMetadata: endMetadata))
                     }
-                    textBuffer = ""
-                    textStartMetadata = [:]
-                    textDeltaMetadata = [:]
-                    textEndMetadata = [:]
-                    sawTextPart = false
+                    textBuffers[textID] = nil
+                    textStartMetadata[textID] = nil
+                    textDeltaMetadata[textID] = nil
+                    textEndMetadata[textID] = nil
+                    activeTextIDs.remove(textID)
+                }
+
+                func flushAllExtractedText() {
+                    for id in textIDOrder where activeTextIDs.contains(id) {
+                        flushExtractedText(id: id)
+                    }
+                    textIDOrder.removeAll()
                 }
 
                 for try await part in canonicalLanguageStream(stream, providerID: "extract-reasoning-middleware") {
                     switch part {
                     case let .textStart(id, providerMetadata):
-                        textID = id
-                        textStartMetadata = providerMetadata
-                        sawTextPart = true
+                        markTextID(id)
+                        textStartMetadata[id] = providerMetadata
                     case let .textDeltaPart(id, delta, providerMetadata):
-                        textID = id
-                        textBuffer += delta
-                        textDeltaMetadata.merge(providerMetadata) { _, new in new }
-                        sawTextPart = true
-                    case let .textEnd(_, providerMetadata):
-                        textEndMetadata = providerMetadata
-                        flushExtractedText()
+                        markTextID(id)
+                        textBuffers[id, default: ""] += delta
+                        textDeltaMetadata[id, default: [:]].merge(providerMetadata) { _, new in new }
+                    case let .textEnd(id, providerMetadata):
+                        markTextID(id)
+                        textEndMetadata[id] = providerMetadata
+                        flushExtractedText(id: id)
                     case .finishMetadata:
-                        flushExtractedText()
+                        flushAllExtractedText()
                         continuation.yield(part)
                     default:
                         continuation.yield(part)
                     }
                 }
-                flushExtractedText()
+                flushAllExtractedText()
                 continuation.finish()
             } catch {
                 continuation.finish(throwing: error)

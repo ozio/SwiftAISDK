@@ -222,12 +222,27 @@ import Testing
     #expect(failedFinishReason == "error")
     #expect(failedTotalTokens == 1)
 }
-@Test func perplexityLanguageUsesNativeChatShapeAndKeepsMetadata() async throws {
+@Test func perplexityLanguageModelUsesAgentAPIByDefault() async throws {
+    let transport = RecordingTransport(response: jsonResponse("""
+    {"id":"resp-agent","created_at":1710000000,"model":"pplx","object":"response","status":"completed","output":[{"type":"message","id":"msg-1","content":[{"type":"output_text","text":"agent answer","annotations":[]}]}]}
+    """))
+    let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
+    let result = try await provider.languageModel("fast").generate(.init(messages: [.user("Research")]))
+
+    #expect(result.text == "agent answer")
+    let request = try #require(await transport.requests().first)
+    #expect(request.url.absoluteString == "https://api.perplexity.ai/v1/agent")
+    let body = try decodeJSONBody(try #require(request.body))
+    #expect(body["preset"]?.stringValue == "fast")
+    #expect(body["model"] == nil)
+}
+
+@Test func perplexityChatModelUsesNativeSonarShapeAndKeepsMetadata() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}],"citations":["https://example.com/a"],"images":[{"image_url":"https://img.example.com/a.png","origin_url":"https://origin.example.com","height":512,"width":768}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"reasoning_tokens":1,"citation_tokens":2,"num_search_queries":1,"cost":{"request_cost":0.01,"total_cost":0.02}}}
     """))
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
-    let model = try provider.languageModel("sonar")
+    let model = try provider.chatModel("sonar")
 
     let result = try await model.generate(LanguageModelRequest(
         messages: [
@@ -253,10 +268,11 @@ import Testing
     #expect(result.usage?.outputTextTokens == 4)
     #expect(result.usage?.rawValue?["reasoning_tokens"]?.intValue == 1)
     #expect(result.sources.count == 1)
-    #expect(result.sources[0].id == "citation-0")
-    #expect(result.sources[0].sourceType == "url")
-    #expect(result.sources[0].url == "https://example.com/a")
-    #expect(result.sources[0].providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
+    let source = try #require(result.sources.first)
+    #expect(source.id == "citation-0")
+    #expect(source.sourceType == "url")
+    #expect(source.url == "https://example.com/a")
+    #expect(source.providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
     #expect(result.rawValue["citations"]?[0]?.stringValue == "https://example.com/a")
     #expect(result.rawValue["images"]?[0]?["image_url"]?.stringValue == "https://img.example.com/a.png")
     #expect(result.providerMetadata["perplexity"]?["images"]?[0]?["imageUrl"]?.stringValue == "https://img.example.com/a.png")
@@ -269,7 +285,7 @@ import Testing
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.perplexity.ai/chat/completions")
     #expect(request.headers["authorization"] == "Bearer pplx-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/4.0.48")
+    #expect(request.headers["user-agent"] == "ai-sdk/perplexity/5.0.1")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "sonar")
     #expect(body["temperature"]?.doubleValue == 0.2)
@@ -286,12 +302,12 @@ import Testing
     #expect(content?[2]?["file_url"]?["url"]?.stringValue == Data("pdf".utf8).base64EncodedString())
     #expect(content?[2]?["file_name"]?.stringValue == "brief.pdf")
 }
-@Test func perplexityLanguageTreatsProviderDefaultReasoningAsNoopLikeUpstream() async throws {
+@Test func perplexitySonarTreatsProviderDefaultReasoningAsNoopLikeUpstream() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"ppl-provider-default","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}
     """))
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
-    let model = try provider.languageModel("sonar")
+    let model = try provider.sonarModel("sonar")
 
     let result = try await model.generate(LanguageModelRequest(
         messages: [.user("Hi")],
@@ -303,7 +319,7 @@ import Testing
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["reasoning"] == nil)
 }
-@Test func perplexityLanguageAppliesTransformRequestBodyToGenerateAndStream() async throws {
+@Test func perplexitySonarAppliesTransformRequestBodyToGenerateAndStream() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
     {"id":"ppl-transform","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}
     """))
@@ -316,7 +332,7 @@ import Testing
             return body
         }
     ))
-    let model = try provider.languageModel("sonar")
+    let model = try provider.sonarModel("sonar")
 
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
@@ -340,7 +356,7 @@ import Testing
             return body
         }
     ))
-    let streamModel = try streamProvider.languageModel("sonar")
+    let streamModel = try streamProvider.sonarModel("sonar")
 
     for try await _ in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {}
 
@@ -348,12 +364,12 @@ import Testing
     #expect(streamBody["stream"]?.boolValue == true)
     #expect(streamBody["search_domain_filter"]?[0]?.stringValue == "example.com")
 }
-@Test func perplexityLanguageMapsStructuredFormatWarningsAndMetadata() async throws {
+@Test func perplexitySonarMapsStructuredFormatWarningsAndMetadata() async throws {
     let transport = RecordingTransport(response: jsonResponse("""
     {"id":"ppl-structured","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"{\\"ok\\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":6,"total_tokens":11}}
     """, headers: ["pplx-header": "structured"]))
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
-    let model = try provider.languageModel("sonar")
+    let model = try provider.sonarModel("sonar")
 
     let result = try await model.generate(LanguageModelRequest(
         messages: [.user("JSON")],
@@ -421,12 +437,12 @@ import Testing
         ]))
     }
 }
-@Test func perplexityLanguageMapsMissingFinishReasonToOtherLikeUpstream() async throws {
+@Test func perplexitySonarMapsMissingFinishReasonToOtherLikeUpstream() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
     {"id":"ppl-no-finish","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":null}]}
     """))
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: generateTransport))
-    let model = try provider.languageModel("sonar")
+    let model = try provider.sonarModel("sonar")
 
     let result = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
 
@@ -439,7 +455,7 @@ import Testing
 
     """))
     let streamProvider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: streamTransport))
-    let streamModel = try streamProvider.languageModel("sonar")
+    let streamModel = try streamProvider.sonarModel("sonar")
 
     var finishReason: String?
     for try await part in streamModel.stream(LanguageModelRequest(messages: [.user("Hi")])) {
@@ -450,20 +466,20 @@ import Testing
 
     #expect(finishReason == "other")
 }
-@Test func perplexityGenerateResponseValidationMatchesUpstreamSchema() async throws {
+@Test func perplexitySonarGenerateResponseValidationMatchesUpstreamSchema() async throws {
     let provider = try AIProviders.perplexity(settings: ProviderSettings(
         apiKey: "pplx-key",
         transport: RecordingTransport(response: jsonResponse("""
         {"id":"ppl-invalid","model":"sonar","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}
         """))
     ))
-    let model = try provider.languageModel("sonar")
+    let model = try provider.sonarModel("sonar")
 
     await #expect(throws: AIError.invalidResponse(provider: "perplexity", message: "Perplexity response is invalid.")) {
         _ = try await model.generate(LanguageModelRequest(messages: [.user("Hi")]))
     }
 }
-@Test func perplexityLanguageStreamsNativeChunksWithUsage() async throws {
+@Test func perplexitySonarStreamsNativeChunksWithUsage() async throws {
     let transport = RecordingTransport(response: sseResponse("""
     data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":null},"finish_reason":null}]}
 
@@ -475,7 +491,7 @@ import Testing
 
     """))
     let provider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: transport))
-    let model = try provider.languageModel("sonar")
+    let model = try provider.sonarModel("sonar")
 
     var streamStartWarnings: [AIWarning]?
     var textLifecycle: [String] = []
@@ -514,9 +530,10 @@ import Testing
     #expect(streamStartWarnings == [])
     #expect(textLifecycle == ["start:0", "delta:0:hel", "delta:0:lo", "end:0"])
     #expect(sources.count == 1)
-    #expect(sources[0].id == "citation-0")
-    #expect(sources[0].url == "https://example.com/a")
-    #expect(sources[0].providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
+    let source = try #require(sources.first)
+    #expect(source.id == "citation-0")
+    #expect(source.url == "https://example.com/a")
+    #expect(source.providerMetadata["perplexity"]?["citationIndex"]?.intValue == 0)
     #expect(finishReason == "stop")
     #expect(totalTokens == 5)
     #expect(outputReasoningTokens == 1)

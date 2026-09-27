@@ -477,8 +477,8 @@ private func googleInteractionsVideoProcessing(
     if let object = processing.objectValue,
        object["type"]?.stringValue == "static" {
         var output: [String: JSONValue] = ["type": .string("static")]
-        if let value = object["startOffset"]?.doubleValue { output["start_offset"] = .number(value) }
-        if let value = object["endOffset"]?.doubleValue { output["end_offset"] = .number(value) }
+        if let value = object["startOffset"]?.doubleValue { output["start_offset"] = .string(googleInteractionsDuration(value)) }
+        if let value = object["endOffset"]?.doubleValue { output["end_offset"] = .string(googleInteractionsDuration(value)) }
         if let value = object["fps"]?.doubleValue { output["fps"] = .number(value) }
         return .object(output)
     }
@@ -487,6 +487,11 @@ private func googleInteractionsVideoProcessing(
         message: "google.interactions: invalid providerOptions.google.processing on video file part; expected \"agentic\", \"static\", or a static processing configuration. Option dropped."
     ))
     return nil
+}
+
+private func googleInteractionsDuration(_ seconds: Double) -> String {
+    let value = seconds.rounded(.towardZero) == seconds ? String(Int(seconds)) : String(seconds)
+    return "\(value)s"
 }
 
 func googleInteractionsOptions(from extraBody: [String: JSONValue], callResponseFormat: JSONValue?, providerResponseFormat: JSONValue?, isAgent: Bool) -> [String: JSONValue] {

@@ -6,14 +6,14 @@ working audit, not a generated inventory.
 
 Snapshot:
 
-- Date: `2026-09-20`
-- Baseline upstream ref: `vercel/ai@6c6c2210b9532a4c369615c044a16d595f3db117`
-- Current upstream ref: `vercel/ai@20dd00abba618d5a516e0fee40ccd3e18a2bd1fb`
+- Date: `2026-09-27`
+- Baseline upstream ref: `vercel/ai@20dd00abba618d5a516e0fee40ccd3e18a2bd1fb`
+- Current upstream ref: `vercel/ai@18b2b32deeea8982bd252996b0616fd1d9730b83`
 - Diff command:
 
   ```sh
   git -C <vercel-ai-checkout> diff --name-status \
-    6c6c2210b9532a4c369615c044a16d595f3db117..20dd00abba618d5a516e0fee40ccd3e18a2bd1fb \
+    20dd00abba618d5a516e0fee40ccd3e18a2bd1fb..18b2b32deeea8982bd252996b0616fd1d9730b83 \
     -- 'packages/**/*.test.ts' 'packages/**/*.test.tsx' \
        'packages/**/*.test.mts' 'packages/**/*.spec.ts' \
        'packages/**/*.spec.tsx' 'packages/**/*.spec.mts' \
@@ -31,6 +31,60 @@ Status meanings:
 - `no-swift-action`: upstream diff does not add portable Swift behavior.
 - `out-of-scope`: package/product surface is intentionally not exposed by
   SwiftAISDK per `Docs/AgentPortingGuide.md`.
+
+## 2026-09-27 Diff
+
+The generated executable inventory grows from 919 to 948 files while remaining
+at 81 groups. The exact comparison contains 169 executable changes (33 added,
+132 modified, four deleted) and 27 declaration-test changes (11 added,
+16 modified), for 196 unique classified paths. The executable name-status
+SHA-256 is `e907a43d2cba0d55062c8ce22b320f205dd1d056f71fbd8b6a3430a279f3d127`;
+the declaration name-status SHA-256 is
+`b67dba79253c2cd102a86576b67bf4fa4fda9caeaee40ba940fe1d5487656c05`.
+
+| Behavior group | Paths | Status | Swift evidence / rationale |
+| --- | ---: | --- | --- |
+| `core-generated-files-and-tool-routing` | 6 | `ported` | Generate, stream, and batch materialize URL-backed files with shared abort/security handling while preserving opaque URIs; local-caller-only targets cannot execute through unexpected direct model calls. |
+| `core-generated-file-dns-pinning` | 1 | `deferred` | URL and redirect validation do not pin the resolver-selected connection address; a native URLSession/Network transport design is still required. |
+| `core-embedding-provider-options` | 3 | `ported` | The embedding model hook slices per-value provider options into each automatic batch and reuses transformed options on retry. |
+| `core-evaluation-telemetry` | 2 | `ported` | Evaluation start/end callbacks, model-call events, usage/results, errors, and allowlisted runtime context are covered. |
+| `core-speech-media-detection` | 1 | `ported` | L16, mu-law, and A-law formats map to canonical audio media types. |
+| `core-tool-approval-persistence` | 10 | `ported` | Schema-input provenance, refinement replay, tamper rejection, and earlier-message approval resume are covered. |
+| `core-ui-stream-cancellation` | 4 | `ported` | The async UI reducer calls one terminal callback and distinguishes cancel, abort, failure, and completion. |
+| `core-reasoning-stream-and-control` | 2 | `ported` | Per-text-ID overlapping extraction preserves text/reasoning with globally stable reasoning IDs, positioned provider control messages survive normalization, and reasoning pruning removes reasoning-file parts in scope. |
+| `core-js-compatibility-no-action` | 9 | `no-swift-action` | Provider V3, DOM streams, Node diagnostics, and TypeScript-only surfaces are not synthesized in Swift. |
+| `alibaba-json-schema-routing` | 2 | `ported` | Model-specific structured-output routing and request fixtures are translated. |
+| `amazon-bedrock-model-routing-and-tools` | 5 | `ported` | Capability/routing tables, forced-tool fallbacks, reasoning gates, Mantle routing, and deterministic Mistral IDs are covered. |
+| `anthropic-compaction-safeguards-opus55-toolset` | 5 | `ported` | Compaction, safeguards, Opus 5.5 gates, effort controls, and computer toolset request/result mapping are covered. |
+| `deepseek-tool-result-images` | 1 | `ported` | V4/Flash tool-result image forms remain validated multimodal content instead of collapsing to JSON text. |
+| `gateway-conditional-evaluation-and-browserbase` | 7 | `ported` | Conditional fallback/model attribution, Browserbase tools, filters, and lifecycle-status validation for batch cancellation are covered. |
+| `google-files-embedding-image-and-speech` | 9 | `ported` | File replay, schema/URI handling, embedding option slicing, finish metadata, Interactions offsets, and Gemini TTS are covered. |
+| `google-vertex-gcs-tool-results` | 1 | `ported` | Vertex enables the shared `gs://` tool-result path without credential forwarding to unrelated origins. |
+| `groq-empty-choice-error` | 1 | `ported` | Empty unary choices throw the exact structural response error. |
+| `mcp-environment-and-oauth-client-lifecycle` | 2 | `ported` | Stdio environment precedence and dynamic-vs-pre-registered OAuth credential lifecycle are covered. |
+| `open-responses-errors-custom-tools-and-input` | 5 | `ported` | Dynamic transport/error hooks, custom tools/results, JSON-object mode, stream-done fallback, and strict regex/lark grammar validation are covered. |
+| `openai-gpt6-schema-reasoning-and-speech` | 7 | `ported` | GPT-6 Sol/Luna capabilities, schemas, nested errors, positioned reasoning validation/deduplication, transcript fallback, and speech precedence are covered. |
+| `perplexity-agent-api-migration` | 4 | `ported` | Captured Agent API unary/stream fixtures cover multimodal history, tools, nullish optional events, sources, usage, and errors. |
+| `provider-utils-untrusted-url-fetch` | 4 | `ported` | Private-host rejection, origin-scoped credentials, redirect stripping, aborts, and limits are covered; DNS pinning stays separate. |
+| `quiverai-language-provider` | 3 | `ported` | Arrow 2 language requests, custom tools, strict retry/error mapping with integer status codes, and stream behavior are covered without JavaScript workflow serialization. |
+| `xai-response-identifiers-batch-and-video` | 4 | `ported` | Responses metadata/options and Imagine Video 1.5 storage, keyframe, audio, reference-precedence, and limit behavior are covered. |
+| `examples-and-live-integration-no-action` | 3 | `no-swift-action` | JavaScript example harnesses are not copied; deterministic provider tests own the portable behavior. |
+| `provider-test-maintenance-only` | 10 | `no-swift-action` | Formatting, snapshots, and TypeScript lint cleanup do not justify Swift runtime churn. |
+| `harness-core-product-surface` | 18 | `out-of-scope` | HarnessV1 is a separate product subsystem requiring its own architecture decision. |
+| `harness-runtime-adapters` | 52 | `out-of-scope` | Coding-agent runtime adapters are not model providers and depend on an unimplemented harness core. |
+| `sandbox-adapters` | 10 | `out-of-scope` | JustBash and Vercel sandbox integrations are separate product surfaces. |
+| `javascript-product-integrations` | 5 | `out-of-scope` | React, OpenTelemetry, workflow, and external JavaScript integrations are outside provider-facing Swift parity. |
+
+Coverage reconciliation: 88 paths are portable and ported, one is deferred,
+22 require no Swift action, and 85 are out of scope. The 30 group counts total
+exactly 196, so deleted files and declaration-only paths remain visible rather
+than disappearing from provider-only summaries.
+
+Late exact-tag verification of `ai@7.0.117`, `@ai-sdk/react@4.0.120`,
+`@ai-sdk/gateway@4.0.95`, and `@ai-sdk/perplexity@5.0.1` found no new test
+path. The changed assertions cover the current Gateway evaluation fixture,
+conditional evaluation fallback/model attribution, and nullish Perplexity Agent
+SSE fields; React tests are unchanged. The path counts above remain stable.
 
 Follow-up on 2026-09-20: the user subsequently authorized complete ports of
 `@ai-sdk/typesafe-ai@3.0.4` and `@ai-sdk/zai@3.0.15`. Their provider runtime,

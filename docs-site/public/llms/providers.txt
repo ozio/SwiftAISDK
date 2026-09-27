@@ -4,7 +4,7 @@ Source URL: /providers/
 
 This page is generated from the package capability matrix. Update [ProviderCapabilityMatrix.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderCapabilityMatrix.swift) first when provider coverage changes.
 
-Language: 34
+Language: 35
 Completion: 7
 Embedding: 17
 Image: 18
@@ -64,7 +64,7 @@ Skills: 3
 | [`openai-compatible`](openai-compatible/) | `@ai-sdk/openai-compatible` | `AIProviders.openAICompatible` | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  |  |  |  |  |  |
 | [`perplexity`](perplexity/) | `@ai-sdk/perplexity` | `AIProviders.perplexity` | ✅ |  | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | [`prodia`](prodia/) | `@ai-sdk/prodia` | `AIProviders.prodia` | ✅ |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |
-| [`quiverai`](quiverai/) | `@ai-sdk/quiverai` | `AIProviders.quiverAI` |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |
+| [`quiverai`](quiverai/) | `@ai-sdk/quiverai` | `AIProviders.quiverAI` | ✅ |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |
 | [`replicate`](replicate/) | `@ai-sdk/replicate` | `AIProviders.replicate` |  |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |
 | [`revai`](revai/) | `@ai-sdk/revai` | `AIProviders.revAI` |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |
 | [`togetherai`](togetherai/) | `@ai-sdk/togetherai` | `AIProviders.togetherAI` | ✅ | ✅ | ✅ | ✅ |  |  |  |  |  |  | ✅ |  |  |  |

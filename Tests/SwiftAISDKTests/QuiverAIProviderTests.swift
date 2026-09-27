@@ -42,7 +42,7 @@ struct QuiverAIProviderTests {
     let request = try #require(await transport.requests().first)
     #expect(request.url.absoluteString == "https://api.quiver.ai/v1/svgs/generations")
     #expect(request.headers["authorization"] == "Bearer quiver-key")
-    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/2.0.45")
+    #expect(request.headers["user-agent"] == "ai-sdk/quiverai/2.0.50")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["model"]?.stringValue == "arrow-1")
     #expect(body["prompt"]?.stringValue == "Draw a square icon.")
@@ -71,7 +71,7 @@ struct QuiverAIProviderTests {
 
     let request = try #require(await transport.requests().first)
     #expect(request.headers["authorization"] == "Bearer quiver-key")
-    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/quiverai/2.0.45")
+    #expect(request.headers["user-agent"] == "CustomApp/1.0 ai-sdk/quiverai/2.0.50")
 }
 
 @Test func quiverAIReadsEnvironmentSettingsLikeUpstream() async throws {
@@ -319,8 +319,7 @@ struct QuiverAIProviderTests {
         #expect(apiError.provider == "quiverai.image")
         #expect(apiError.statusCode == 429)
         #expect(apiError.isRetryable)
-        #expect(apiError.responseBody.contains("Slow down."))
-        #expect(apiError.responseBody.contains(#""request_id":"req_1""#))
+        #expect(apiError.responseBody == "Slow down.")
     }
 
     let clientTransport = RecordingTransport(response: AIHTTPResponse(

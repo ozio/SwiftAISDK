@@ -11,7 +11,7 @@ public enum AIProviders {
         if let project = settings.project {
             settings.headers["OpenAI-Project"] = settings.headers["OpenAI-Project"] ?? project
         }
-        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.71", supportsProviderOwnedBatch: true)
+        return try OpenAICompatibleProvider(providerID: providerID, defaultBaseURL: "https://api.openai.com/v1", authorization: .bearer(environmentVariables: ["OPENAI_API_KEY"]), supportedCapabilities: [.language, .completion, .embedding, .image, .transcription, .speech], settings: settings, routesLikeOpenAI: true, userAgentSuffix: "ai-sdk/openai/4.0.78", supportsProviderOwnedBatch: true)
     }
 
     public static func anthropic(settings: ProviderSettings = ProviderSettings()) throws -> AnthropicProvider {
@@ -122,7 +122,7 @@ public enum AIProviders {
                 maxEmbeddingsPerCall: maxEmbeddingsPerCall,
                 transformRequestBody: transformRequestBody
             ),
-            userAgentSuffix: "ai-sdk/openai-compatible/3.0.53",
+            userAgentSuffix: "ai-sdk/openai-compatible/3.0.57",
             usesOpenAICompatibleSurfaceIDs: true
         )
     }
@@ -238,16 +238,62 @@ public enum AIProviders {
         try HuggingFaceProvider(settings: settings)
     }
 
-    public static func openResponses(name: String, url: String, settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
+    /// Source-compatible Open Responses factory retained from SwiftAISDK 1.9.0.
+    public static func openResponses(
+        name: String,
+        url: String,
+        settings: ProviderSettings = ProviderSettings()
+    ) throws -> OpenAICompatibleProvider {
+        try openResponses(
+            name: name,
+            url: url,
+            settings: settings,
+            customToolID: "open-responses.custom",
+            structuredOutputs: true,
+            getResponseErrorMetadata: nil,
+            dynamicHeaders: nil,
+            failedResponseHandler: nil,
+            userAgentSuffix: nil
+        )
+    }
+
+    public static func openResponses(
+        name: String,
+        url: String,
+        settings: ProviderSettings = ProviderSettings(),
+        customToolID: String = "open-responses.custom",
+        structuredOutputs: Bool = true,
+        getResponseErrorMetadata: (@Sendable (JSONValue) -> OpenResponsesErrorMetadata)? = nil,
+        dynamicHeaders: (@Sendable () -> [String: String])? = nil,
+        failedResponseHandler: (@Sendable (AIHTTPResponse) -> OpenResponsesFailedResponse)? = nil,
+        userAgentSuffix: String? = nil
+    ) throws -> OpenAICompatibleProvider {
         var headers: [String: String] = [:]
         if let apiKey = settings.apiKey {
             headers["Authorization"] = "Bearer \(apiKey)"
         }
         headers.merge(settings.headers) { _, custom in custom }
-        headers = withUserAgentSuffix(headers, "ai-sdk/open-responses/2.0.49")
         let endpoint = try requireURL(url)
         let base = "\(endpoint.scheme ?? "https")://\(endpoint.host ?? "")"
-        let config = ModelHTTPConfig(providerID: "\(name).responses", baseURL: base, headers: headers, transport: settings.transport, includeUsage: settings.includeUsage, queryParams: settings.queryParams, supportsStructuredOutputs: settings.supportsStructuredOutputs, maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall, strictResponseInput: settings.strictResponseInput, transformRequestBody: settings.transformRequestBody, responsesRequestMode: .openResponses(providerOptionsName: name)) { _, _ in endpoint }
+        let config = ModelHTTPConfig(
+            providerID: "\(name).responses",
+            baseURL: base,
+            headers: headers,
+            transport: settings.transport,
+            dynamicHeaders: dynamicHeaders,
+            userAgentSuffix: userAgentSuffix ?? "ai-sdk/open-responses/2.0.54",
+            includeUsage: settings.includeUsage,
+            queryParams: settings.queryParams,
+            supportsStructuredOutputs: structuredOutputs,
+            maxEmbeddingsPerCall: settings.maxEmbeddingsPerCall,
+            strictResponseInput: settings.strictResponseInput,
+            transformRequestBody: settings.transformRequestBody,
+            responsesRequestMode: .openResponses(providerOptionsName: name),
+            getResponseErrorMetadata: getResponseErrorMetadata,
+            openResponsesCustomToolID: customToolID,
+            failedResponseHandler: failedResponseHandler,
+            url: { _, _ in endpoint }
+        )
         return OpenAICompatibleProvider(providerID: "\(name).responses", supportedCapabilities: [.language], config: config)
     }
 
@@ -345,7 +391,7 @@ public enum AIProviders {
     public static func quiverAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider {
         var settings = settings
         settings.baseURL = settings.baseURL ?? environmentValue(["QUIVERAI_BASE_URL"])
-        return try OpenAICompatibleProvider(providerID: "quiverai", defaultBaseURL: "https://api.quiver.ai/v1", authorization: .bearer(environmentVariables: ["QUIVERAI_API_KEY"]), supportedCapabilities: [.image], settings: settings)
+        return try OpenAICompatibleProvider(providerID: "quiverai", defaultBaseURL: "https://api.quiver.ai/v1", authorization: .bearer(environmentVariables: ["QUIVERAI_API_KEY"]), supportedCapabilities: [.language, .image], settings: settings)
     }
 
 }
@@ -401,5 +447,5 @@ private func perplexityHeaders(settings: ProviderSettings) throws -> [String: St
         throw AIError.missingAPIKey(provider: "perplexity", environmentVariables: ["PERPLEXITY_API_KEY"])
     }
     headers["Authorization"] = headers["Authorization"] ?? "Bearer \(key)"
-    return withUserAgentSuffix(headers, "ai-sdk/perplexity/4.0.48")
+    return withUserAgentSuffix(headers, "ai-sdk/perplexity/5.0.1")
 }

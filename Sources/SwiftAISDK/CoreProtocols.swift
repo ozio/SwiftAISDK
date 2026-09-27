@@ -123,12 +123,15 @@ public protocol EmbeddingModel: Sendable {
     var maxEmbeddingsPerCall: Int? { get }
     /// Maximum aggregate UTF-8 input bytes the model accepts in one embedding call.
     var maxInputBytesPerCall: Int? { get }
+    /// Transforms options for one automatic batch while retaining access to the full value list.
+    var providerOptionsTransformer: AIEmbeddingProviderOptionsTransformer? { get }
     func embed(_ request: EmbeddingRequest) async throws -> EmbeddingResult
 }
 
 public extension EmbeddingModel {
     var maxEmbeddingsPerCall: Int? { nil }
     var maxInputBytesPerCall: Int? { nil }
+    var providerOptionsTransformer: AIEmbeddingProviderOptionsTransformer? { nil }
 }
 
 public protocol ImageModel: Sendable {

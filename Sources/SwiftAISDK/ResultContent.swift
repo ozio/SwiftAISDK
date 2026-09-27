@@ -1,5 +1,118 @@
 import Foundation
 
+func resolveGeneratedFile(
+    _ file: AIStreamFile,
+    abortSignal: AIAbortSignal?,
+    transport: any AITransport = URLSessionTransport.shared
+) async throws -> AIStreamFile {
+    guard file.data == nil, file.providerReference == nil, let url = file.url else {
+        return file
+    }
+
+    try abortSignal?.throwIfAborted()
+    let response: AIHTTPResponse
+    do {
+        response = try await downloadURL(url, transport: transport, abortSignal: abortSignal)
+    } catch {
+        if error is AIAbortError || error is CancellationError { throw error }
+        if let downloadError = error as? AIDownloadError { throw downloadError }
+        throw AIDownloadError(url: url, message: String(describing: error))
+    }
+    guard (200..<300).contains(response.statusCode) else {
+        throw AIDownloadError(
+            url: url,
+            message: "Download failed with HTTP status \(response.statusCode)."
+        )
+    }
+
+    var resolved = file
+    resolved.data = response.body
+    resolved.url = nil
+    return resolved
+}
+
+func materializeGeneratedFileContent(
+    _ content: [AIResultContentPart],
+    abortSignal: AIAbortSignal?,
+    transport: any AITransport = URLSessionTransport.shared
+) async throws -> [AIResultContentPart] {
+    var output: [AIResultContentPart] = []
+    output.reserveCapacity(content.count)
+
+    for part in content {
+        switch part {
+        case let .file(file):
+            output.append(.file(try await resolveGeneratedFile(
+                file,
+                abortSignal: abortSignal,
+                transport: transport
+            )))
+        case let .reasoningFile(file):
+            output.append(.reasoningFile(try await resolveGeneratedFile(
+                file,
+                abortSignal: abortSignal,
+                transport: transport
+            )))
+        default:
+            output.append(part)
+        }
+    }
+    return output
+}
+
+func materializeGeneratedFiles(
+    in result: TextGenerationResult,
+    abortSignal: AIAbortSignal?,
+    transport: any AITransport = URLSessionTransport.shared
+) async throws -> TextGenerationResult {
+    var result = result
+    result.content = try await materializeGeneratedFileContent(
+        result.content,
+        abortSignal: abortSignal,
+        transport: transport
+    )
+    result.refreshDerivedContent()
+    return result
+}
+
+func resolvingGeneratedFileStream(
+    _ stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+    abortSignal: AIAbortSignal?,
+    transport: any AITransport = URLSessionTransport.shared
+) -> AsyncThrowingStream<LanguageStreamPart, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            do {
+                for try await part in stream {
+                    try Task.checkCancellation()
+                    switch part {
+                    case let .file(file):
+                        continuation.yield(.file(try await resolveGeneratedFile(
+                            file,
+                            abortSignal: abortSignal,
+                            transport: transport
+                        )))
+                    case let .reasoningFile(file):
+                        continuation.yield(.reasoningFile(try await resolveGeneratedFile(
+                            file,
+                            abortSignal: abortSignal,
+                            transport: transport
+                        )))
+                    default:
+                        continuation.yield(part)
+                    }
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { @Sendable _ in
+            task.cancel()
+        }
+    }
+}
+
 extension AIResultContentPart {
     var responseMessagePart: AIContentPart? {
         switch self {

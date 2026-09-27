@@ -13,11 +13,11 @@ description: Public SwiftAISDK APIs for providers.
 | Function | 19 |
 | Global Variable | 7 |
 | Initializer | 43 |
-| Instance Method | 238 |
+| Instance Method | 239 |
 | Instance Property | 176 |
 | Structure | 22 |
 | Type Alias | 4 |
-| Type Method | 75 |
+| Type Method | 76 |
 | Type Property | 3 |
 
 ## Public symbols
@@ -281,6 +281,7 @@ description: Public SwiftAISDK APIs for providers.
 | Instance Method | `skills()` | `func skills() -> any AISkillsClient` | [Sources/SwiftAISDK/Providers/AnthropicProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/AnthropicProvider.swift) |
 | Instance Method | `skills()` | `func skills() throws -> any AISkillsClient` | [Sources/SwiftAISDK/Providers/CustomProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/CustomProvider.swift) |
 | Instance Method | `skills()` | `func skills() throws -> any AISkillsClient` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
+| Instance Method | `sonarModel(_:)` | `func sonarModel(_ modelID: String) throws -> any LanguageModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `soundEffects(_:)` | `func soundEffects(_ modelID: String = "eleven_text_to_sound_v2") throws -> any AudioGenerationModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `soundEffectsModel(_:)` | `func soundEffectsModel(_ modelID: String = "eleven_text_to_sound_v2") throws -> any AudioGenerationModel` | [Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/OpenAICompatibleProvider.swift) |
 | Instance Method | `speech(_:)` | `func speech(_ modelID: String) throws -> any SpeechModel` | [Sources/SwiftAISDK/Providers/FishAudioProvider.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/FishAudioProvider.swift) |
@@ -614,6 +615,7 @@ description: Public SwiftAISDK APIs for providers.
 | Type Method | `openAI(settings:)` | `static func openAI(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `openAICompatible(name:baseURL:apiKey:headers:queryParams:transport:includeUsage:supportsStructuredOutputs:maxEmbeddingsPerCall:transformRequestBody:)` | `static func openAICompatible(name: String, baseURL: String, apiKey: String? = nil, headers: [String : String] = [:], queryParams: [String : String] = [:], transport: any AITransport = URLSessionTransport.shared, includeUsage: Bool = false, supportsStructuredOutputs: Bool = false, maxEmbeddingsPerCall: Int? = nil, transformRequestBody: (@Sendable ([String : JSONValue]) -> [String : JSONValue])? = nil) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `openResponses(name:url:settings:)` | `static func openResponses(name: String, url: String, settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
+| Type Method | `openResponses(name:url:settings:customToolID:structuredOutputs:getResponseErrorMetadata:dynamicHeaders:failedResponseHandler:userAgentSuffix:)` | `static func openResponses(name: String, url: String, settings: ProviderSettings = ProviderSettings(), customToolID: String = "open-responses.custom", structuredOutputs: Bool = true, getResponseErrorMetadata: (@Sendable (JSONValue) -> OpenResponsesErrorMetadata)? = nil, dynamicHeaders: (@Sendable () -> [String : String])? = nil, failedResponseHandler: (@Sendable (AIHTTPResponse) -> OpenResponsesFailedResponse)? = nil, userAgentSuffix: String? = nil) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `perplexity(settings:)` | `static func perplexity(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `prodia(settings:)` | `static func prodia(settings: ProviderSettings = ProviderSettings()) throws -> OpenAICompatibleProvider` | [Sources/SwiftAISDK/Providers/ProviderRegistry.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/Providers/ProviderRegistry.swift) |
 | Type Method | `providerError(_:)` | `static func providerError(_ error: AIStreamProviderError) -> LanguageStreamPart` | [Sources/SwiftAISDK/StreamProviderError.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/StreamProviderError.swift) |

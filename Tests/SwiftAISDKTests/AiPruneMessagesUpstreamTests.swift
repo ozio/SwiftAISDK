@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SwiftAISDK
 
@@ -19,6 +20,44 @@ import Testing
     #expect(result[1].reasoning == nil)
     #expect(result[3].reasoning == "I have got the weather in Tokyo and Busan.")
     #expect(result[3].content == [.text("The weather in Tokyo is sunny. I could not get the weather in Busan.")])
+}
+
+@Test func aiPruneMessagesRemovesReasoningFilesLikeUpstream() {
+    let firstFile = AIStreamFile(
+        mediaType: "application/json",
+        data: Data("first".utf8)
+    )
+    let lastFile = AIStreamFile(
+        mediaType: "application/json",
+        data: Data("last".utf8)
+    )
+    let messages: [AIMessage] = [
+        .user("start"),
+        AIMessage(role: .assistant, content: [
+            .reasoning("first thought"),
+            .reasoningFile(firstFile),
+            .text("first answer")
+        ]),
+        .user("continue"),
+        AIMessage(role: .assistant, content: [
+            .reasoning("last thought"),
+            .reasoningFile(lastFile),
+            .text("last answer")
+        ])
+    ]
+
+    #expect(pruneMessages(messages, reasoning: .all) == [
+        .user("start"),
+        .assistant("first answer"),
+        .user("continue"),
+        .assistant("last answer")
+    ])
+    #expect(pruneMessages(messages, reasoning: .beforeLastMessage) == [
+        .user("start"),
+        .assistant("first answer"),
+        .user("continue"),
+        messages[3]
+    ])
 }
 
 @Test func aiPruneMessagesRemovesAllToolPartsLikeUpstream() {

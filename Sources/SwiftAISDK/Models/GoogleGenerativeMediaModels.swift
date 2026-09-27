@@ -4,6 +4,32 @@ public final class GoogleEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     public let providerID: String
     public let modelID: String
     public var maxEmbeddingsPerCall: Int? { 100 }
+    public var providerOptionsTransformer: AIEmbeddingProviderOptionsTransformer? {
+        { context in
+            guard var google = context.providerOptions["google"]?.objectValue,
+                  let content = google["content"]?.arrayValue else {
+                return context.providerOptions
+            }
+            guard content.count == context.values.count else {
+                throw AIError.invalidArgument(
+                    argument: "providerOptions.google.content",
+                    message: "The number of multimodal content entries (\(content.count)) must match the number of values (\(context.values.count))."
+                )
+            }
+            guard context.startIndex >= 0,
+                  context.endIndex >= context.startIndex,
+                  context.endIndex <= content.count else {
+                throw AIError.invalidArgument(
+                    argument: "providerOptions.google.content",
+                    message: "The automatic embedding batch range is outside the Google content array."
+                )
+            }
+            var providerOptions = context.providerOptions
+            google["content"] = .array(Array(content[context.startIndex..<context.endIndex]))
+            providerOptions["google"] = .object(google)
+            return providerOptions
+        }
+    }
     private let config: ModelHTTPConfig
 
     init(modelID: String, config: ModelHTTPConfig) {
@@ -267,6 +293,7 @@ public final class GoogleImageGenerationModel: ImageModel, @unchecked Sendable {
             rawValue: raw,
             warnings: warnings,
             providerMetadata: googleGenerateContentProviderMetadata(from: raw).merging(["google": .object([
+                "finishReason": raw["candidates"]?[0]?["finishReason"] ?? .null,
                 "images": .array(images.map { _ in .object([:]) })
             ])]) { old, new in
                 var object = old.objectValue ?? [:]
@@ -292,87 +319,15 @@ public final class GoogleSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = googleSpeechProviderOptions(from: request)
-        let multiSpeakerVoiceConfig = options["multiSpeakerVoiceConfig"]
-        var warnings: [AIWarning] = []
-        if request.speed != nil {
-            warnings.append(AIWarning(
-                type: "unsupported",
-                feature: "speed",
-                message: "Google speech models do not support the `speed` option."
-            ))
-        }
-        if request.language != nil {
-            warnings.append(AIWarning(
-                type: "unsupported",
-                feature: "language",
-                message: "Google speech models do not support the `language` option."
-            ))
-        }
-
-        let text: String
-        if let instructions = request.instructions, !instructions.isEmpty {
-            if multiSpeakerVoiceConfig != nil {
-                warnings.append(AIWarning(
-                    type: "unsupported",
-                    feature: "instructions",
-                    message: "Google speech models ignore `instructions` when `multiSpeakerVoiceConfig` is set."
-                ))
-                text = request.text
-            } else {
-                text = "\(instructions): \(request.text)"
-            }
-        } else {
-            text = request.text
-        }
-
-        let outputFormat: GoogleSpeechOutputFormat
-        switch request.format?.lowercased() {
-        case nil, "wav":
-            outputFormat = .wav
-        case "pcm":
-            outputFormat = .pcm
-            warnings.append(AIWarning(
-                type: "unsupported",
-                feature: "outputFormat",
-                message: "Google speech returns raw PCM only when `format` is `pcm`; WAV is the default wrapped output."
-            ))
-        case let format?:
-            outputFormat = .wav
-            warnings.append(AIWarning(
-                type: "unsupported",
-                feature: "outputFormat",
-                message: "Google speech does not support `\(format)`. Falling back to WAV."
-            ))
-        }
-
-        var speechConfig: [String: JSONValue] = [:]
-        if let multiSpeakerVoiceConfig {
-            speechConfig["multiSpeakerVoiceConfig"] = multiSpeakerVoiceConfig
-        } else {
-            speechConfig["voiceConfig"] = .object([
-                "prebuiltVoiceConfig": .object([
-                    "voiceName": .string(request.voice ?? "Kore")
-                ])
-            ])
-        }
-        let body = JSONValue.object([
-            "contents": .array([
-                .object([
-                    "role": .string("user"),
-                    "parts": .array([.object(["text": .string(text)])])
-                ])
-            ]),
-            "generationConfig": .object([
-                "responseModalities": .array([.string("AUDIO")]),
-                "speechConfig": .object(speechConfig)
-            ])
-        ])
-
+        let prepared = try googlePrepareSpeechRequest(
+            request,
+            modelID: modelID,
+            options: googleSpeechProviderOptions(from: request)
+        )
         let response = try await config.sendJSONResponse(
             path: "/models/\(modelID):generateContent",
             modelID: modelID,
-            body: body,
+            body: prepared.body,
             headers: request.headers,
             abortSignal: request.abortSignal
         )
@@ -380,27 +335,33 @@ public final class GoogleSpeechModel: SpeechModel, @unchecked Sendable {
         let inlineData = googleSpeechInlineData(from: raw)
         let mimeType = inlineData.mimeType
         let sampleRate = googleSpeechSampleRate(from: mimeType) ?? 24_000
-        let pcm = inlineData.data.flatMap { Data(base64Encoded: $0) } ?? Data()
-        let audio: Data
-        let contentType: String
-        switch outputFormat {
-        case .wav:
-            audio = pcm.isEmpty ? pcm : googleSpeechWAVData(fromPCM: pcm, sampleRate: sampleRate)
-            contentType = "audio/wav"
-        case .pcm:
-            audio = pcm
-            contentType = mimeType ?? "audio/L16;rate=\(sampleRate)"
+        let bytes = inlineData.data.flatMap { Data(base64Encoded: $0) } ?? Data()
+        let shouldWrapPCM = prepared.outputFormat == "AUDIO_WAV"
+            && googleSpeechMimeTypeIsPCM(mimeType, usesStructuredSpeech: prepared.usesStructuredSpeech)
+            && !bytes.isEmpty
+        let audio = shouldWrapPCM ? googleSpeechWAVData(fromPCM: bytes, sampleRate: sampleRate) : bytes
+        var warnings = prepared.warnings
+        if prepared.outputFormat == "AUDIO_L16", !prepared.usesStructuredSpeech, !bytes.isEmpty {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "outputFormat",
+                message: "Returning raw PCM audio (signed 16-bit little-endian, mono, \(sampleRate) Hz). These bytes have no container header and are not directly playable."
+            ))
         }
 
         return SpeechResult(
             audio: audio,
-            contentType: contentType,
+            contentType: googleSpeechContentType(
+                mimeType: mimeType,
+                outputFormat: prepared.outputFormat,
+                wrappedPCMAsWAV: shouldWrapPCM
+            ),
             warnings: warnings,
             providerMetadata: ["google": .object([
                 "sampleRate": .number(Double(sampleRate)),
                 "mimeType": mimeType.map(JSONValue.string) ?? .null
             ])],
-            requestMetadata: AIRequestMetadata(body: body, headers: request.headers),
+            requestMetadata: AIRequestMetadata(body: prepared.body, headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }

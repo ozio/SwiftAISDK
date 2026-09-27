@@ -27,6 +27,14 @@ public enum MCPOAuth {
         } catch let error as MCPOAuthServerError {
             switch error.code {
             case "invalid_client", "unauthorized_client":
+                // A callback exchange cannot be restarted safely, and a
+                // pre-registered client is owned by the application rather
+                // than the SDK. Only dynamically registered clients may be
+                // invalidated and registered again automatically.
+                let isDynamicallyRegistered = await provider.isClientInformationDynamicallyRegistered()
+                if authorizationCode != nil || !isDynamicallyRegistered {
+                    throw error
+                }
                 await provider.invalidateCredentials(.all)
             case "invalid_grant":
                 await provider.invalidateCredentials(.tokens)

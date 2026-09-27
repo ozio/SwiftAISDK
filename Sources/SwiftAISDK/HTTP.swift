@@ -943,6 +943,39 @@ public func validateDownloadURL(_ string: String) throws -> URL {
     return url
 }
 
+public func fetchUntrustedURL(
+    _ string: String,
+    transport: any AITransport,
+    headers: [String: String] = [:],
+    abortSignal: AIAbortSignal? = nil,
+    maxBytes: Int = AIDefaultMaxDownloadSize,
+    trustedOrigin: String? = nil,
+    credentialedOrigin: String? = nil,
+    untrustedFirstHopHeaders: [String] = []
+) async throws -> AIHTTPResponse {
+    let sanitizedHeaders = sanitizedDownloadRequestHeaders(headers)
+    let resolvedCredentialedOrigin = credentialedOrigin ?? trustedOrigin
+    let firstHopHeaders: [String: String]
+    if let resolvedCredentialedOrigin, isSameOrigin(string, resolvedCredentialedOrigin) {
+        firstHopHeaders = sanitizedHeaders
+    } else {
+        let allowedHeaders = safeUntrustedFirstHopHeaders.union(
+            untrustedFirstHopHeaders.map { $0.lowercased() }
+        )
+        firstHopHeaders = sanitizedHeaders.filter {
+            allowedHeaders.contains($0.key.lowercased())
+        }
+    }
+    return try await downloadURL(
+        string,
+        transport: transport,
+        headers: firstHopHeaders,
+        abortSignal: abortSignal,
+        maxBytes: maxBytes,
+        trustedOrigin: trustedOrigin
+    )
+}
+
 func downloadURL(
     _ string: String,
     transport: AITransport,
@@ -1046,6 +1079,13 @@ func streamDownloadURL(
 }
 
 private let httpRedirectStatusCodes: Set<Int> = [301, 302, 303, 307, 308]
+
+private let safeUntrustedFirstHopHeaders: Set<String> = [
+    "accept", "accept-language", "baggage", "cache-control", "idempotency-key",
+    "if-match", "if-modified-since", "if-none-match", "if-range",
+    "if-unmodified-since", "pragma", "range", "traceparent", "tracestate",
+    "user-agent", "x-correlation-id", "x-request-id"
+]
 
 private let blockedDownloadRequestHeaders: Set<String> = [
     "connection", "keep-alive", "te", "trailer", "transfer-encoding", "upgrade",

@@ -119,8 +119,9 @@ import Testing
 }
 
 @Test func openResponsesSurfacesSuccessfulBodyErrorBeforeNoOutputFallbackLikeUpstream() async throws {
+    let responseBody = #"{"id":"resp-error","status":"failed","error":{"code":"server_error","message":"The upstream provider failed to generate a response."}}"#
     let transport = RecordingTransport(response: jsonResponse(
-        #"{"id":"resp-error","status":"failed","error":{"code":"server_error","message":"The upstream provider failed to generate a response."}}"#,
+        responseBody,
         headers: ["x-request-id": "request-error"]
     ))
     let provider = try AIProviders.openResponses(
@@ -137,7 +138,10 @@ import Testing
         #expect(error.provider == "open-responses.responses")
         #expect(error.statusCode == 400)
         #expect(error.responseHeaders["x-request-id"] == "request-error")
-        #expect(error.responseBody == "The upstream provider failed to generate a response.")
+        #expect(
+            try decodeJSONBody(Data(error.responseBody.utf8))
+                == decodeJSONBody(Data(responseBody.utf8))
+        )
         #expect(error.isRetryable == false)
     }
 }

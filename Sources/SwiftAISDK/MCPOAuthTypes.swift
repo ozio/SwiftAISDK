@@ -463,6 +463,10 @@ public protocol MCPOAuthClientProvider: Sendable {
     func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async
 
     func clientInformation() async throws -> MCPOAuthClientInformation?
+    /// Returns true only when the current client information came from a
+    /// dynamic registration response. Pre-registered credentials must not be
+    /// discarded after an OAuth client-authentication error.
+    func isClientInformationDynamicallyRegistered() async -> Bool
     func saveClientInformation(_ clientInformation: MCPOAuthClientInformation) async throws
     func authorizationServerInformation() async throws -> MCPOAuthAuthorizationServerInformation?
     func saveAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) async throws
@@ -480,6 +484,7 @@ public extension MCPOAuthClientProvider {
     func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async {}
 
     func clientInformation() async throws -> MCPOAuthClientInformation? { nil }
+    func isClientInformationDynamicallyRegistered() async -> Bool { false }
     func saveClientInformation(_ clientInformation: MCPOAuthClientInformation) async throws {}
     func authorizationServerInformation() async throws -> MCPOAuthAuthorizationServerInformation? { nil }
     func saveAuthorizationServerInformation(_ information: MCPOAuthAuthorizationServerInformation) async throws {}

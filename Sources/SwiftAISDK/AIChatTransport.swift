@@ -277,9 +277,14 @@ public struct DirectAIChatTransport: AIChatTransport {
             )
         }
 
+        let originalMessage = request.responseMessageID.flatMap { responseMessageID in
+            request.messages.last { $0.id == responseMessageID }
+        }
+
         return AIUIMessageStreamReducer.snapshots(
             from: filteredLanguageStream(languageStream),
-            messageID: request.responseMessageID ?? generateMessageID()
+            messageID: request.responseMessageID ?? generateMessageID(),
+            originalMessage: originalMessage
         )
     }
 

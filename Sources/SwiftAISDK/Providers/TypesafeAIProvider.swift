@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published `@ai-sdk/typesafe-ai` package version mirrored by this port.
-public let typeSafeAIProviderVersion = "3.0.4"
+public let typeSafeAIProviderVersion = "3.0.8"
 
 /// Creates a TypeSafe AI provider using the same defaults as
 /// `createTypeSafeAi` from `@ai-sdk/typesafe-ai`.

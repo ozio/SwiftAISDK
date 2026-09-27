@@ -33,15 +33,26 @@ print(answer.text)
 
 For local processes, use `MCPStdioTransport`. For remote servers, use `MCPHTTPTransport`.
 
-SwiftAISDK tracks `@ai-sdk/mcp@2.0.54`. The current client absorbs its
+SwiftAISDK tracks `@ai-sdk/mcp@2.0.60`. The current client absorbs its
 protocol/HTTP transport and OAuth compatibility hardening behind the same
 `MCPClient.connect` workflow. Non-successful POST/SSE responses retain HTTP
 status, URL, and response-body diagnostics; existing tool-discovery code does
 not need a migration.
 
+For `MCPStdioTransport`, explicitly configured environment values win over the
+small inherited process allowlist. This includes intentionally replacing
+`PATH`, `HOME`, or another inherited key for the child process.
+
 OAuth retries reuse a stored authorization-server choice when discovery is
 temporarily unavailable, and concurrent requests that observe the same stale
 token coalesce behind one refresh before they retry.
+
+OAuth providers with dynamically registered client credentials should override
+`isClientInformationDynamicallyRegistered()` to return `true` for those stored
+credentials. On `invalid_client` or `unauthorized_client`, SwiftAISDK discards
+and re-registers only dynamically registered clients; pre-registered client
+information is preserved. The MCP protocol-version discovery header is also
+removed when a redirect crosses origins.
 
 Each discovered definition retains its complete raw `annotations` value and
 offers typed `MCPToolAnnotations` access to `title`, `readOnlyHint`,

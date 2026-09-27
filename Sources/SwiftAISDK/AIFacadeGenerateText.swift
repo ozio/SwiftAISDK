@@ -28,6 +28,10 @@ extension AI {
             wrapLanguageModelCall: true
         ) {
             var result = try await model.generate(request)
+            result = try await materializeGeneratedFiles(
+                in: result,
+                abortSignal: request.abortSignal
+            )
             if result.responseMetadata.modelID == nil {
                 result.responseMetadata.modelID = model.modelID
             }
@@ -149,7 +153,11 @@ extension AI {
             let stepTools = prepared?.executableTools ?? executableTools
             let preparedTools = try await toolDiscovery.prepare(tools: stepTools, routing: toolCallers)
             let executionTools = preparedTools.executionTools
-            let toolsByName = try toolsByName(from: executionTools)
+            let modelToolsByName = try toolsByName(from: preparedTools.modelTools)
+            let directExecutionTools = executionTools.filter {
+                modelToolsByName[$0.name] != nil
+            }
+            let executionToolsByName = try toolsByName(from: directExecutionTools)
             var stepRequest = prepared?.request ?? currentRequest
             stepRequest.messages = appendToolCallerMessages(
                 stepRequest.messages,
@@ -184,21 +192,21 @@ extension AI {
                 do {
                     let forwarded = try await forwardedToolCall(
                         call,
-                        toolsByName: toolsByName,
+                        toolsByName: modelToolsByName,
                         repairToolCall: repairToolCall,
                         request: stepRequest
                     )
                     forwardedCalls.append(forwarded.call)
                 } catch {
                     guard isToolCallResultError(error) else { throw error }
-                    let annotatedCall = annotateToolCalls([call], toolsByName: toolsByName)[0]
+                    let annotatedCall = annotateToolCalls([call], toolsByName: executionToolsByName)[0]
                     forwardedCalls.append(annotatedCall)
                     if !annotatedCall.providerExecuted {
                         await toolTelemetry.recordToolError(stepIndex: index, call: call, error: error)
                         preExecutionToolResults.append(toolCallErrorResult(
                             error,
                             toolCall: annotatedCall,
-                            dynamic: annotatedCall.dynamic || (toolsByName[annotatedCall.name]?.dynamic == true)
+                            dynamic: annotatedCall.dynamic || (executionToolsByName[annotatedCall.name]?.dynamic == true)
                         ))
                         preExecutionToolResultIDs.insert(annotatedCall.id)
                     }
@@ -253,7 +261,7 @@ extension AI {
 
             let toolExecution = try await executeToolCalls(
                 executableCalls,
-                toolsByName: toolsByName,
+                toolsByName: executionToolsByName,
                 request: stepRequest,
                 toolApproval: toolApproval,
                 repairToolCall: repairToolCall,

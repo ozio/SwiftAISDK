@@ -40,3 +40,8 @@ let result = try await AI.generateSpeech(
 - `providerMetadata`
 - `requestMetadata`
 - `responseMetadata`
+
+The facade resolves `contentType` from detected bytes first, then the response
+header, requested format, and provider metadata. Headerless raw requests with
+those requested formats now retain canonical `audio/l16`, `audio/mulaw`, or `audio/alaw` types instead of
+falling through to the generic MP3 default.

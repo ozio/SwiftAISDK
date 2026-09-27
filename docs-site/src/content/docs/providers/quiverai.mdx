@@ -13,11 +13,31 @@ description: "quiverai provider capabilities and factories."
 
 ## Capabilities
 
+- Language
 - Image
+
+## Arrow 2 language models
+
+Use `languageModel("arrow-2")` for Responses-based language generation.
+Quiver custom tools use the provider-specific helper and text format:
+
+```swift
+let quiver = try AIProviders.quiverAI()
+let arrow = try quiver.languageModel("arrow-2")
+let result = try await arrow.generate(LanguageModelRequest(
+    messages: [.user("Render a diagram.")],
+    tools: [
+        "render": QuiverAITools.customTool(
+            name: "render",
+            format: QuiverAITools.textFormat()
+        )
+    ]
+))
+```
 
 ## Notes
 
-SVG image generation and vectorization mirror upstream QuiverAI 2.0.45: `QUIVERAI_API_KEY`/`QUIVERAI_BASE_URL`, versioned user-agent suffix, `arrow-1`/`arrow-1.1`/`arrow-1.1-max`, `providerOptions.quiverai` generation and vectorize options, reference limits, warnings for unsupported standard image options, and retryable API error metadata. The 2026-09-20 pass adds Arrow 2 and Telos generation, animation, editing, vectorization, reference preparation, credits, metadata, and revised limits.
+Responses language generation, SVG image generation, and vectorization mirror upstream QuiverAI 2.0.50: `QUIVERAI_API_KEY`/`QUIVERAI_BASE_URL`, versioned user-agent suffix, `arrow-1`/`arrow-1.1`/`arrow-1.1-max`, `providerOptions.quiverai` generation and vectorize options, reference limits, warnings for unsupported standard image options, and retryable API error metadata. The 2026-09-20 pass adds Arrow 2 and Telos generation, animation, editing, vectorization, reference preparation, credits, metadata, and revised limits. The 2026-09-27 pass adds the Arrow Responses language surface, custom tools, reasoning options, and explicit structured-output warnings.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

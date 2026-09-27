@@ -1,5 +1,28 @@
 import Foundation
 
+public enum OpenResponsesTools {
+    public static func customTool(
+        name: String,
+        description: String? = nil,
+        format: JSONValue? = nil,
+        providerID: String = "open-responses.custom"
+    ) -> JSONValue {
+        var args: [String: JSONValue] = [:]
+        if let description { args["description"] = .string(description) }
+        if let format { args["format"] = format }
+        return .object([
+            "type": .string("provider"),
+            "id": .string(providerID),
+            "name": .string(name),
+            "args": .object(args)
+        ])
+    }
+
+    public static func textFormat() -> JSONValue {
+        .object(["type": .string("text")])
+    }
+}
+
 func openAIResponsesTools(
     from tools: [String: JSONValue],
     supportsAsyncToolCalling: Bool = true,
@@ -62,6 +85,9 @@ func openAIResponsesTools(
             warnings.append(contentsOf: normalizedParameters.warnings)
         }
         function["parameters"] = parameters
+        if function["strict"] == nil {
+            function["strict"] = .bool(false)
+        }
         if let deferLoading = openAIOptions?["deferLoading"] ?? openAIOptions?["defer_loading"] {
             function["defer_loading"] = deferLoading
         }
@@ -256,7 +282,7 @@ func openAIResponsesProviderTool(
         if let value = args["serverDescription"] ?? args["server_description"] { tool["server_description"] = value }
         if let value = args["serverUrl"] ?? args["server_url"] { tool["server_url"] = value }
         return .object(tool)
-    case "openai.custom":
+    case "openai.custom", "open-responses.custom", "quiverai.custom":
         customToolNames.insert(name)
         var tool: [String: JSONValue] = ["type": .string("custom"), "name": .string(name)]
         if let description = args["description"] { tool["description"] = description }
@@ -340,6 +366,7 @@ func openAIResponsesAsyncToolOption(
 
 func normalizeOpenAIJSONSchema(_ schema: JSONValue) throws -> (schema: JSONValue, warnings: [AIWarning]) {
     var removedPropertyNames = false
+    var removedLookaroundPattern = false
 
     func normalizeDefinition(_ definition: JSONValue) throws -> JSONValue {
         if definition.boolValue != nil { return definition }
@@ -363,6 +390,10 @@ func normalizeOpenAIJSONSchema(_ schema: JSONValue) throws -> (schema: JSONValue
             }
             removedPropertyNames = true
             object.removeValue(forKey: "propertyNames")
+        }
+        if let pattern = object["pattern"]?.stringValue, openAIContainsRegexLookaround(pattern) {
+            object.removeValue(forKey: "pattern")
+            removedLookaroundPattern = true
         }
         for key in ["properties", "patternProperties", "definitions", "$defs"] {
             if let nested = object[key] { object[key] = try normalizeRecord(nested) }
@@ -392,16 +423,59 @@ func normalizeOpenAIJSONSchema(_ schema: JSONValue) throws -> (schema: JSONValue
     }
 
     let normalized = try normalizeSchema(schema)
-    let warnings = removedPropertyNames
-        ? [AIWarning(
+    var warnings: [AIWarning] = []
+    if removedPropertyNames {
+        warnings.append(AIWarning(
             type: "compatibility",
             feature: "JSON Schema propertyNames",
             message: "OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints."
-        )]
-        : []
+        ))
+    }
+    if removedLookaroundPattern {
+        warnings.append(AIWarning(
+            type: "compatibility",
+            feature: "JSON Schema pattern with regex lookaround",
+            message: "OpenAI does not support regex lookaround in JSON Schema patterns. The pattern was removed before sending the schema, so OpenAI will not enforce that constraint."
+        ))
+    }
     return (normalized, warnings)
 }
 
+private func openAIContainsRegexLookaround(_ pattern: String) -> Bool {
+    let characters = Array(pattern)
+    var escaped = false
+    var inCharacterClass = false
+    for index in characters.indices {
+        let character = characters[index]
+        if escaped {
+            escaped = false
+            continue
+        }
+        if character == "\\" {
+            escaped = true
+            continue
+        }
+        if character == "[" {
+            inCharacterClass = true
+            continue
+        }
+        if character == "]" {
+            inCharacterClass = false
+            continue
+        }
+        guard !inCharacterClass,
+              character == "(",
+              index + 2 < characters.count,
+              characters[index + 1] == "?" else { continue }
+        let prefix = characters[index + 2]
+        if prefix == "=" || prefix == "!" { return true }
+        if prefix == "<", index + 3 < characters.count {
+            let suffix = characters[index + 3]
+            if suffix == "=" || suffix == "!" { return true }
+        }
+    }
+    return false
+}
 func openAIResponsesToolChoice(
     from value: JSONValue?,
     customToolNames: Set<String>,

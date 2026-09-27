@@ -29,6 +29,7 @@ struct AIToolExecutionBatch: Sendable {
 struct AIParsedToolCall: Equatable, Sendable {
     var toolCall: AIToolCall
     var input: JSONValue
+    var inputSchemaInput: JSONValue?
 }
 
 func toolResponseMessages(
@@ -84,7 +85,11 @@ func parseToolCall(
 ) async throws -> AIParsedToolCall {
     guard let toolsByName else {
         if call.providerExecuted {
-            return AIParsedToolCall(toolCall: call, input: try toolArguments(from: call))
+            return AIParsedToolCall(
+                toolCall: call,
+                input: try toolArguments(from: call),
+                inputSchemaInput: nil
+            )
         }
         throw AINoSuchToolError(toolName: call.name)
     }
@@ -123,7 +128,11 @@ private func parseToolCallWithoutRepair(
 ) async throws -> AIParsedToolCall {
     guard let tool = toolsByName[call.name] else {
         if call.providerExecuted {
-            return AIParsedToolCall(toolCall: call, input: try toolArguments(from: call))
+            return AIParsedToolCall(
+                toolCall: call,
+                input: try toolArguments(from: call),
+                inputSchemaInput: nil
+            )
         }
         throw AINoSuchToolError(toolName: call.name, availableToolNames: Array(toolsByName.keys))
     }
@@ -147,7 +156,12 @@ private func parseToolCallWithoutRepair(
     if tool.dynamic {
         parsedCall.dynamic = true
     }
-    return AIParsedToolCall(toolCall: parsedCall, input: refinedArguments)
+    let inputSchemaInput: JSONValue? = arguments == refinedArguments ? .none : arguments
+    return AIParsedToolCall(
+        toolCall: parsedCall,
+        input: refinedArguments,
+        inputSchemaInput: inputSchemaInput
+    )
 }
 
 private func isRepairableToolCallError(_ error: any Error) -> Bool {
@@ -253,6 +267,7 @@ func executeToolCalls(
             )
             let parsedCall = parsedToolCall.toolCall
             let refinedArguments = parsedToolCall.input
+            let inputSchemaInput = parsedToolCall.inputSchemaInput
             guard let tool = toolsByName[parsedCall.name] else {
                 throw AINoSuchToolError(toolName: parsedCall.name, availableToolNames: Array(toolsByName.keys))
             }
@@ -287,6 +302,7 @@ func executeToolCalls(
                     toolName: parsedCall.name,
                     arguments: parsedCall.arguments,
                     toolCallID: parsedCall.id,
+                    inputSchemaInput: inputSchemaInput,
                     isAutomatic: true,
                     providerMetadata: parsedCall.providerMetadata
                 )
@@ -305,6 +321,7 @@ func executeToolCalls(
                     toolName: parsedCall.name,
                     arguments: parsedCall.arguments,
                     toolCallID: parsedCall.id,
+                    inputSchemaInput: inputSchemaInput,
                     isAutomatic: true,
                     providerMetadata: parsedCall.providerMetadata
                 )
@@ -342,6 +359,7 @@ func executeToolCalls(
                     toolName: parsedCall.name,
                     arguments: parsedCall.arguments,
                     toolCallID: parsedCall.id,
+                    inputSchemaInput: inputSchemaInput,
                     reason: approvalDecision.userApprovalReason,
                     providerMetadata: parsedCall.providerMetadata
                 )

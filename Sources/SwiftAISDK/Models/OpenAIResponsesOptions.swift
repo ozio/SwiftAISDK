@@ -12,12 +12,24 @@ func openResponsesProviderOptions(providerOptions: [String: JSONValue], provider
         guard value != .null else { continue }
         switch key {
         case "reasoningEffort":
-            guard value.stringValue != nil else {
+            guard let effort = value.stringValue else {
                 throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName).reasoningEffort", message: "Open Responses reasoningEffort must be a string.")
+            }
+            if providerOptionsName == "quiverai", !["low", "medium", "high", "xhigh"].contains(effort) {
+                throw AIError.invalidArgument(
+                    argument: "providerOptions.quiverai.reasoningEffort",
+                    message: "Unsupported reasoning effort: \(effort)"
+                )
             }
         case "reasoningSummary":
             guard let summary = value.stringValue, ["concise", "detailed", "auto"].contains(summary) else {
                 throw AIError.invalidArgument(argument: "providerOptions.\(providerOptionsName).reasoningSummary", message: "Open Responses reasoningSummary must be concise, detailed, or auto.")
+            }
+            if providerOptionsName == "quiverai", summary != "auto" {
+                throw AIError.invalidArgument(
+                    argument: "providerOptions.quiverai.reasoningSummary",
+                    message: "Unsupported reasoning summary: \(summary)"
+                )
             }
         default:
             break
@@ -28,11 +40,29 @@ func openResponsesProviderOptions(providerOptions: [String: JSONValue], provider
 }
 
 
-func openResponsesFunctionTools(from tools: [String: JSONValue]) -> [JSONValue] {
+func openResponsesFunctionTools(from tools: [String: JSONValue], customToolID: String? = nil) -> [JSONValue] {
     tools.compactMap { name, schema in
         var parameters = schema
-        guard parameters["type"]?.stringValue != "provider" else {
-            return nil
+        if parameters["type"]?.stringValue == "provider" {
+            guard parameters["id"]?.stringValue == customToolID else { return nil }
+            let args = parameters["args"]?.objectValue ?? [:]
+            var custom: [String: JSONValue] = [
+                "type": .string("custom"),
+                "name": .string(parameters["name"]?.stringValue ?? name)
+            ]
+            if let description = args["description"]?.stringValue {
+                custom["description"] = .string(description)
+            }
+            if let format = args["format"],
+               format["type"]?.stringValue == "grammar",
+               let syntax = format["syntax"]?.stringValue,
+               ["regex", "lark"].contains(syntax),
+               format["definition"]?.stringValue != nil {
+                custom["format"] = format
+            } else if args["format"]?["type"]?.stringValue == "text" {
+                custom["format"] = .object(["type": .string("text")])
+            }
+            return .object(custom)
         }
         var tool: [String: JSONValue] = [
             "type": .string("function"),
@@ -53,7 +83,7 @@ func openResponsesFunctionTools(from tools: [String: JSONValue]) -> [JSONValue] 
     }
 }
 
-func openResponsesToolChoice(from value: JSONValue?) -> JSONValue? {
+func openResponsesToolChoice(from value: JSONValue?, customToolNames: Set<String> = []) -> JSONValue? {
     if let string = value?.stringValue {
         switch string {
         case "auto", "none", "required":
@@ -68,7 +98,9 @@ func openResponsesToolChoice(from value: JSONValue?) -> JSONValue? {
         return object["type"]
     case "tool":
         guard let name = object["toolName"]?.stringValue ?? object["tool_name"]?.stringValue else { return nil }
-        return .object(["type": .string("function"), "name": .string(name)])
+        return customToolNames.contains(name)
+            ? .object(["type": .string("custom"), "name": .string(name)])
+            : .object(["type": .string("function"), "name": .string(name)])
     default:
         return nil
     }
@@ -76,13 +108,14 @@ func openResponsesToolChoice(from value: JSONValue?) -> JSONValue? {
 
 func openResponsesTextFormat(from responseFormat: AIResponseFormat?) -> JSONValue? {
     guard let responseFormat, case let .json(schema, name, description) = responseFormat else { return nil }
-    var format: [String: JSONValue] = ["type": .string("json_schema")]
-    if let schema {
-        format["name"] = .string(name ?? "response")
-        if let description { format["description"] = .string(description) }
-        format["schema"] = schema
-        format["strict"] = .bool(true)
+    guard let schema else {
+        return .object(["type": .string("json_object")])
     }
+    var format: [String: JSONValue] = ["type": .string("json_schema")]
+    format["name"] = .string(name ?? "response")
+    if let description { format["description"] = .string(description) }
+    format["schema"] = schema
+    format["strict"] = .bool(true)
     return .object(format)
 }
 
@@ -142,6 +175,8 @@ func openAIResponsesInputMessageJSON(
     useDeveloperRoleForSystem: Bool = false,
     explicitMessageItemType: Bool = false,
     programmaticToolCallIDs: Set<String> = [],
+    configurationUpdateUnsupportedReason: String? = nil,
+    supportedConfigurationUpdateReasoningEfforts: [String]? = nil,
     warnings: inout [AIWarning]
 ) throws -> [JSONValue] {
     if message.role == .tool {
@@ -391,6 +426,46 @@ func openAIResponsesInputMessageJSON(
             }
         }
         return output
+    }
+
+    if message.role == .system {
+        let namespace = openAICompatibleProviderMetadataNamespace(providerID)
+        let options = message.providerMetadata[namespace]?.objectValue
+            ?? message.providerMetadata["openai"]?.objectValue
+        let effortValue = options?["reasoningEffortUpdate"]
+            ?? options?["reasoning_effort_update"]
+        if let effortValue {
+            guard let effort = effortValue.stringValue,
+                  ["none", "low", "medium", "high", "xhigh", "max"].contains(effort) else {
+                throw AIError.invalidArgument(
+                    argument: "messages.providerMetadata.\(namespace).reasoningEffortUpdate",
+                    message: "Message-level reasoningEffortUpdate must be none, low, medium, high, xhigh, or max."
+                )
+            }
+            guard message.combinedText.isEmpty else {
+                throw AIError.invalidArgument(
+                    argument: "messages.providerMetadata.\(namespace).reasoningEffortUpdate",
+                    message: "Message-level reasoningEffortUpdate requires empty system message content."
+                )
+            }
+            if let configurationUpdateUnsupportedReason {
+                throw AIError.invalidArgument(
+                    argument: "messages.providerMetadata.\(namespace).reasoningEffortUpdate",
+                    message: configurationUpdateUnsupportedReason
+                )
+            }
+            if let supportedConfigurationUpdateReasoningEfforts,
+               !supportedConfigurationUpdateReasoningEfforts.contains(effort) {
+                throw AIError.invalidArgument(
+                    argument: "messages.providerMetadata.\(namespace).reasoningEffortUpdate",
+                    message: "The selected model only supports these reasoning efforts: \(supportedConfigurationUpdateReasoningEfforts.joined(separator: ", "))."
+                )
+            }
+            return [.object([
+                "type": .string("configuration_update"),
+                "reasoning": .object(["effort": .string(effort)])
+            ])]
+        }
     }
 
     let role = message.role == .system && useDeveloperRoleForSystem ? "developer" : message.role.rawValue
@@ -1151,6 +1226,7 @@ func openAILanguageModelCapabilities(_ modelID: String) -> OpenAILanguageModelCa
     let gptVersion = openAIGPTVersion(modelID)
     let isGPTChatModel = gptVersion?.minor == nil && (gptVersion?.variant?.hasPrefix("chat") ?? false)
     let isGPT6OrLaterModel = gptVersion.map { $0.major >= 6 } ?? false
+    let isGPT6SolOrLuna = modelID == "gpt-6-sol" || modelID == "gpt-6-luna"
     let isReasoningModel = oSeriesVersion != nil
         || (gptVersion.map { $0.major >= 5 } == true && !isGPTChatModel)
     let supportsNonReasoningParameters = gptVersion.map {
@@ -1161,9 +1237,11 @@ func openAILanguageModelCapabilities(_ modelID: String) -> OpenAILanguageModelCa
         supportsNonReasoningParameters: supportsNonReasoningParameters,
         supportsConfigurationUpdate: isGPT6OrLaterModel,
         supportsAsyncToolCalling: isGPT6OrLaterModel,
-        supportedReasoningEfforts: isGPT6OrLaterModel
-            ? ["low", "medium", "high", "xhigh", "max"]
-            : nil
+        supportedReasoningEfforts: isGPT6SolOrLuna
+            ? ["none", "low", "medium", "high", "xhigh", "max"]
+            : isGPT6OrLaterModel
+                ? ["low", "medium", "high", "xhigh", "max"]
+                : nil
     )
 }
 

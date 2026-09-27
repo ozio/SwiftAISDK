@@ -74,7 +74,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 }
             }
 
-            if let toolCall = bedrockToolCall(from: block, index: index) {
+            if let toolCall = bedrockToolCall(from: block, index: index, modelID: modelID) {
                 if prepared.usesJsonResponseTool, toolCall.name == "json" {
                     text += toolCall.arguments
                     content.append(.text(toolCall.arguments))
@@ -119,6 +119,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         includeRawChunks: request.includeRawChunks,
                         warnings: prepared.warnings,
                         jsonResponseToolName: prepared.usesJsonResponseTool ? "json" : nil,
+                        modelID: modelID,
                         extractJSONObjectText: prepared.usesJsonInstruction,
                         emit: { part in
                             continuation.yield(part)
@@ -172,6 +173,52 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
         if request.seed != nil {
             warnings.append(AIWarning(type: "unsupported", feature: "seed"))
         }
+        let capabilities = anthropicModelCapabilities(modelID)
+        let openAIModelID = bedrockOpenAIModelID(modelID)
+        let isOpenAIModel = openAIModelID != nil
+        let isOpenAIGptOssModel = openAIModelID?.hasPrefix("openai.gpt-oss-") == true
+        var temperature = request.temperature
+        var topP = request.topP
+        var topK = request.topK
+        var stopSequences = request.stopSequences
+        if capabilities.rejectsSamplingParameters {
+            if temperature != nil {
+                warnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "temperature is not supported by \(modelID) and will be ignored"))
+                temperature = nil
+            }
+            if topK != nil {
+                warnings.append(AIWarning(type: "unsupported", feature: "topK", message: "topK is not supported by \(modelID) and will be ignored"))
+                topK = nil
+            }
+            if topP != nil {
+                warnings.append(AIWarning(type: "unsupported", feature: "topP", message: "topP is not supported by \(modelID) and will be ignored"))
+                topP = nil
+            }
+        }
+        if !isOpenAIModel || isOpenAIGptOssModel, let value = temperature {
+            if value > 1 {
+                warnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "\(value) exceeds bedrock maximum of 1.0. clamped to 1.0"))
+                temperature = 1
+            } else if value < 0 {
+                warnings.append(AIWarning(type: "unsupported", feature: "temperature", message: "\(value) is below bedrock minimum of 0. clamped to 0"))
+                temperature = 0
+            }
+        }
+        if isOpenAIModel {
+            let unsupported: [(String, Bool)] = [
+                ("temperature", !isOpenAIGptOssModel && temperature != nil),
+                ("topP", !isOpenAIGptOssModel && topP != nil),
+                ("stopSequences", !stopSequences.isEmpty)
+            ]
+            for (feature, isPresent) in unsupported where isPresent {
+                warnings.append(AIWarning(type: "unsupported", feature: feature, message: "\(feature) is not supported by this OpenAI model on the Converse API"))
+            }
+            if !isOpenAIGptOssModel {
+                temperature = nil
+                topP = nil
+            }
+            stopSequences = []
+        }
         var effectiveTools = request.tools
         var effectiveToolChoice = request.toolChoice ?? providerOptions["toolChoice"] ?? request.extraBody["toolChoice"]
         let responseJSONSchema = bedrockResponseJSONSchema(from: request.responseFormat)
@@ -180,8 +227,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
             modelFamily: settings.modelFamily,
             reasoningConfig: providerOptions["reasoningConfig"]
         )
-        let modelSupportsStructuredOutput = settings.modelFamily == .anthropic
-            || anthropicModelCapabilities(modelID).supportsStructuredOutput
+        let modelSupportsStructuredOutput = settings.modelFamily == .anthropic || capabilities.supportsStructuredOutput
         let structuredOutputMode = providerOptions["structuredOutputMode"]?.stringValue
             ?? request.providerOptions["anthropic"]?["structuredOutputMode"]?.stringValue
             ?? request.extraBody["anthropic"]?["structuredOutputMode"]?.stringValue
@@ -208,10 +254,11 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                 || (structuredOutputMode == "auto" && modelSupportsNativeStructuredOutput))
         let usesJsonInstruction = responseJSONSchema != nil
             && !useNativeStructuredOutput
-            && structuredOutputMode != "jsonTool"
             && isAnthropicModel
-            && !bedrockSupportsStrictToolSpec(modelID: modelID)
-            && !request.tools.isEmpty
+            && (capabilities.rejectsForcedToolUse
+                || (structuredOutputMode != "jsonTool"
+                    && !bedrockSupportsStrictToolSpec(modelID: modelID)
+                    && !request.tools.isEmpty))
         let usesJsonResponseTool = responseJSONSchema != nil && !useNativeStructuredOutput && !usesJsonInstruction
         if let responseJSONSchema, useNativeStructuredOutput {
             bedrockMergeAdditionalModelRequestFields([
@@ -408,7 +455,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         }
                         content.append(.object([
                             "toolUse": .object([
-                                "toolUseId": .string(call.id),
+                                "toolUseId": .string(bedrockNormalizeToolCallID(call.id, modelID: modelID)),
                                 "name": .string(bedrockSanitizeToolName(call.name)),
                                 "input": bedrockToolArguments(call.arguments)
                             ])
@@ -425,7 +472,7 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
                         }
                         content.append(.object([
                             "toolResult": .object([
-                                "toolUseId": .string(result.toolCallID),
+                                "toolUseId": .string(bedrockNormalizeToolCallID(result.toolCallID, modelID: modelID)),
                                 "content": .array(try bedrockToolResultContent(result, documentCounter: &documentCounter)),
                                 "status": .string(result.isError ? "error" : "success")
                             ])
@@ -465,10 +512,10 @@ public final class AmazonBedrockLanguageModel: LanguageModel, @unchecked Sendabl
 
         var inferenceConfig: [String: JSONValue] = [:]
         if let maxOutputTokens = request.maxOutputTokens { inferenceConfig["maxTokens"] = .number(Double(maxOutputTokens)) }
-        if let temperature = request.temperature { inferenceConfig["temperature"] = .number(min(max(temperature, 0), 1)) }
-        if let topP = request.topP { inferenceConfig["topP"] = .number(topP) }
-        if let topK = request.topK { inferenceConfig["topK"] = .number(Double(topK)) }
-        if !request.stopSequences.isEmpty { inferenceConfig["stopSequences"] = .array(request.stopSequences) }
+        if let temperature { inferenceConfig["temperature"] = .number(temperature) }
+        if let topP { inferenceConfig["topP"] = .number(topP) }
+        if let topK { inferenceConfig["topK"] = .number(Double(topK)) }
+        if !stopSequences.isEmpty { inferenceConfig["stopSequences"] = .array(stopSequences) }
         bedrockApplyReasoningConfig(
             providerOptions.removeValue(forKey: "reasoningConfig"),
             modelID: modelID,

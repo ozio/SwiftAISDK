@@ -101,6 +101,17 @@ func openAIResponsesProviderMetadata(from raw: JSONValue, providerID: String) ->
     if let serviceTier = raw["service_tier"], serviceTier != .null {
         metadata["serviceTier"] = serviceTier
     }
+    if openAICompatibleProviderRoot(providerID) == "xai" {
+        if let cost = raw["usage"]?["cost_in_usd_ticks"], cost != .null {
+            metadata["costInUsdTicks"] = cost
+        }
+        if let promptCacheKey = raw["prompt_cache_key"], promptCacheKey != .null {
+            metadata["promptCacheKey"] = promptCacheKey
+        }
+        if let safetyIdentifier = raw["safety_identifier"], safetyIdentifier != .null {
+            metadata["safetyIdentifier"] = safetyIdentifier
+        }
+    }
     if let reasoningContext = raw["reasoning"]?["context"], reasoningContext != .null {
         metadata["reasoningContext"] = reasoningContext
     }

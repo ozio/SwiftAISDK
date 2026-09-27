@@ -61,7 +61,7 @@ Gateway sends the Evaluation V4 wire contract directly:
 
 ```swift
 let gateway = try AIProviders.gateway()
-let model = try gateway.evaluationModel("typesafe-ai/jev-latest")
+let model = try gateway.evaluationModel("typesafe-ai/jev")
 let result = try await AI.experimentalEvaluate(
     model: model,
     state: ["response": responseText],
@@ -71,8 +71,44 @@ let result = try await AI.experimentalEvaluate(
 )
 ```
 
-This does not imply a direct `@ai-sdk/typesafe-ai` Swift provider. Gateway
-routes the model; a standalone Typesafe AI provider remains a separate port.
+Gateway routes the model through its native endpoint. For a direct TypeSafe AI
+call, use `AIProviders.typeSafeAI().evaluationModel("jev-latest")`; both routes
+return the same provider-neutral `AIEvaluationResult` shape.
+
+## Lifecycle callbacks and telemetry
+
+Evaluation accepts request-local `runtimeContext` plus async `onStart` and
+`onEnd` callbacks. Callback payloads receive the complete runtime context;
+`onEnd` runs only after a successful, validated result.
+
+```swift
+let result = try await AI.experimentalEvaluate(
+    model: model,
+    state: ["response": responseText],
+    questions: [
+        "safe": .boolean(instructions: "Is the response safe?")
+    ],
+    telemetry: Telemetry.Options(
+        functionID: "release.safety",
+        includeRuntimeContext: ["tenant": true]
+    ),
+    runtimeContext: [
+        "tenant": "acme",
+        "requestSecret": "callback-only"
+    ],
+    onStart: { event in
+        print("evaluating", event.callID)
+    },
+    onEnd: { event in
+        print("answers", event.answers)
+    }
+)
+```
+
+Telemetry records the outer `ai.evaluate` lifecycle and the underlying
+`ai.evaluate.doEvaluate` model call. Only runtime-context keys explicitly set
+to `true` in `includeRuntimeContext` are copied to telemetry events; this does
+not redact the callback payload.
 
 ## Registry and custom providers
 

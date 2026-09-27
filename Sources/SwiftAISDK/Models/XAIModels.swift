@@ -296,6 +296,53 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         if let aspectRatio = request.aspectRatio, mode != "edit-video", mode != "extend-video" {
             body["aspect_ratio"] = .string(aspectRatio)
         }
+        if let generateAudio = request.generateAudio {
+            if mode != "edit-video", mode != "extend-video" {
+                body["generate_audio"] = .bool(generateAudio)
+            } else {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "generateAudio",
+                    message: "xAI \(mode == "edit-video" ? "video editing" : "video extension") does not support generateAudio."
+                ))
+            }
+        }
+        if let storage = options["storageOptions"]?.objectValue {
+            var storageOptions: [String: JSONValue] = ["filename": storage["filename"] ?? .null]
+            if let expiresAfter = storage["expiresAfter"] {
+                storageOptions["expires_after"] = expiresAfter
+            }
+            if let publicURL = storage["publicUrl"] {
+                if let publicObject = publicURL.objectValue {
+                    var mapped: [String: JSONValue] = [:]
+                    if let expiresAfter = publicObject["expiresAfter"] {
+                        mapped["expires_after"] = expiresAfter
+                    }
+                    storageOptions["public_url"] = .object(mapped)
+                } else {
+                    storageOptions["public_url"] = publicURL
+                }
+            }
+            body["storage_options"] = .object(storageOptions)
+        }
+        if let keyframes = options["keyframes"]?.arrayValue, !keyframes.isEmpty {
+            if modelID != "grok-imagine-video-1.5" || mode == "edit-video" || mode == "extend-video" {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "keyframes",
+                    message: modelID != "grok-imagine-video-1.5"
+                        ? "xAI only supports keyframes with \"grok-imagine-video-1.5\"."
+                        : "xAI \(mode == "edit-video" ? "video editing" : "video extension") does not support keyframes."
+                ))
+            } else {
+                body["keyframes"] = .array(keyframes.compactMap { keyframe in
+                    guard let object = keyframe.objectValue,
+                          let imageURL = object["imageUrl"],
+                          let timestamp = object["timestampSeconds"] else { return nil }
+                    return .object(["image": .object(["url": imageURL]), "timestamp_s": timestamp])
+                })
+            }
+        }
         if mode != "edit-video", mode != "extend-video" {
             if let resolution = options["resolution"], resolution != .null {
                 body["resolution"] = resolution
@@ -313,7 +360,7 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         }
         for (key, value) in options {
             switch key {
-            case "mode", "pollIntervalMs", "pollTimeoutMs", "resolution", "referenceImageUrls", "reference_image_urls", "referenceVoiceIds", "reference_voice_ids":
+            case "mode", "pollIntervalMs", "pollTimeoutMs", "resolution", "referenceImageUrls", "reference_image_urls", "referenceVoiceIds", "reference_voice_ids", "keyframes", "storageOptions":
                 continue
             case "videoUrl", "video_url":
                 if mode == "edit-video" || mode == "extend-video" {
@@ -332,20 +379,28 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
 
         if mode == "reference-to-video" {
             let references = xaiVideoReferenceURLs(from: request, options: options, warnings: &warnings)
+            let referenceAudios = xaiVideoReferenceAudioURLs(from: request)
             if !references.isEmpty {
                 body["reference_images"] = .array(references.map { .object(["url": .string($0)]) })
-            } else {
+            } else if referenceAudios.isEmpty {
                 warnings.append(AIWarning(
                     type: "unsupported",
                     feature: "referenceImages",
                     message: "xAI reference-to-video requires at least one image reference. The video will be generated without reference images."
                 ))
             }
+            var audioInputs: [JSONValue] = referenceAudios.map { .object(["url": .string($0)]) }
             if let referenceVoiceIDs = (options["referenceVoiceIds"] ?? options["reference_voice_ids"])?.arrayValue,
                !referenceVoiceIDs.isEmpty {
-                body["reference_audios"] = .array(referenceVoiceIDs.compactMap { voiceID in
+                audioInputs.append(contentsOf: referenceVoiceIDs.compactMap { voiceID in
                     voiceID.stringValue.map { .object(["voice_id": .string($0)]) }
                 })
+            }
+            if !audioInputs.isEmpty {
+                if audioInputs.count > 3 {
+                    warnings.append(AIWarning(type: "unsupported", feature: "inputReferences", message: "xAI reference-to-video supports at most 3 audio references. Only the first 3 were used."))
+                }
+                body["reference_audios"] = .array(Array(audioInputs.prefix(3)))
             }
             if body["resolution"]?.stringValue == "1080p" {
                 warnings.append(AIWarning(
@@ -359,9 +414,9 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
             warnings.append(AIWarning(
                 type: "unsupported",
                 feature: "inputReferences",
-                message: xaiHasImageInputReference(request)
-                    ? "xAI only supports inputReferences for reference-to-video generation. The reference images were ignored."
-                    : "xAI reference-to-video requires at least one image reference. The references were ignored."
+                message: xaiHasImageInputReference(request) || xaiHasAudioInputReference(request)
+                    ? "xAI only supports inputReferences for reference-to-video generation. The references were ignored."
+                    : "xAI reference-to-video requires at least one image or audio reference. The references were ignored."
             ))
         }
         if mode != "reference-to-video",
@@ -383,6 +438,19 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         if let image = request.image, body["image"] == nil {
             if let url = xaiStartImageURL(image, feature: "image", warnings: &warnings) {
                 body["image"] = .object(["url": .string(url)])
+            }
+        }
+        if let lastFrame = request.frameImages.first(where: { $0.frameType == .lastFrame }) {
+            if modelID != "grok-imagine-video-1.5" || mode == "edit-video" || mode == "extend-video" || isVideoInputFile(lastFrame.image) {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "frameImages",
+                    message: modelID != "grok-imagine-video-1.5"
+                        ? "xAI only supports last_frame with \"grok-imagine-video-1.5\". The last frame was ignored."
+                        : "xAI only accepts an image last_frame for video generation. The last frame was ignored."
+                ))
+            } else if let url = xaiStartImageURL(lastFrame.image, feature: "frameImages", warnings: &warnings) {
+                body["last_frame"] = .object(["url": .string(url)])
             }
         }
         if body["resolution"]?.stringValue == "1080p", modelID == "grok-imagine-video" {
@@ -408,7 +476,8 @@ public final class XAIVideoModel: VideoModel, @unchecked Sendable {
         guard raw["video"]?["respect_moderation"]?.boolValue != false else {
             throw AIError.invalidResponse(provider: providerID, message: "Video generation was blocked due to a content policy violation.")
         }
-        guard let url = raw["video"]?["url"]?.stringValue else {
+        guard let url = raw["video"]?["url"]?.stringValue
+            ?? raw["video"]?["file_output"]?["public_url"]?.stringValue else {
             throw AIError.invalidResponse(provider: providerID, message: "Video generation completed but no video URL was returned.")
         }
         return VideoGenerationResult(
@@ -861,6 +930,50 @@ private func xaiValidateVideoProviderOptions(_ options: [String: JSONValue]) thr
             guard value == .null || ["480p", "720p", "1080p"].contains(value.stringValue ?? "") else {
                 throw AIError.invalidArgument(argument: "providerOptions.xai.resolution", message: "xAI resolution must be 480p, 720p, 1080p, or null.")
             }
+        case "keyframes":
+            guard let keyframes = value.arrayValue, keyframes.count <= 4 else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.keyframes", message: "xAI keyframes must contain at most 4 entries.")
+            }
+            for keyframe in keyframes {
+                guard let object = keyframe.objectValue,
+                      let imageURL = object["imageUrl"]?.stringValue,
+                      !imageURL.isEmpty,
+                      let timestamp = object["timestampSeconds"]?.doubleValue,
+                      timestamp > 0 else {
+                    throw AIError.invalidArgument(argument: "providerOptions.xai.keyframes", message: "Each xAI keyframe must contain a non-empty imageUrl and a positive timestampSeconds.")
+                }
+            }
+        case "storageOptions":
+            guard let storage = value.objectValue,
+                  let filename = storage["filename"]?.stringValue,
+                  !filename.isEmpty else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.storageOptions", message: "xAI storageOptions must contain a non-empty filename.")
+            }
+            if let expiresAfter = storage["expiresAfter"] {
+                guard let seconds = expiresAfter.intValue,
+                      expiresAfter.doubleValue == Double(seconds),
+                      (1...2_592_000).contains(seconds) else {
+                    throw AIError.invalidArgument(argument: "providerOptions.xai.storageOptions.expiresAfter", message: "xAI storage expiresAfter must be a positive integer no greater than 2592000.")
+                }
+            }
+            if let publicURL = storage["publicUrl"] {
+                if publicURL.boolValue == nil {
+                    guard let publicObject = publicURL.objectValue else {
+                        throw AIError.invalidArgument(argument: "providerOptions.xai.storageOptions.publicUrl", message: "xAI storage publicUrl must be a boolean or an object.")
+                    }
+                    if let expiresAfter = publicObject["expiresAfter"] {
+                        guard let seconds = expiresAfter.intValue,
+                              expiresAfter.doubleValue == Double(seconds),
+                              (3_600...2_592_000).contains(seconds) else {
+                            throw AIError.invalidArgument(argument: "providerOptions.xai.storageOptions.publicUrl.expiresAfter", message: "xAI public URL expiresAfter must be an integer from 3600 through 2592000.")
+                        }
+                    }
+                }
+            }
+        case "user":
+            guard value.stringValue != nil else {
+                throw AIError.invalidArgument(argument: "providerOptions.xai.user", message: "xAI user must be a string.")
+            }
         default:
             break
         }
@@ -944,13 +1057,6 @@ private func xaiVideoWarnings(for request: VideoGenerationRequest, options: [Str
             message: "xAI video extension does not support custom resolution."
         ))
     }
-    if request.frameImages.contains(where: { $0.frameType == .lastFrame }) {
-        warnings.append(AIWarning(
-            type: "unsupported",
-            feature: "frameImages",
-            message: "xAI video models do not support last_frame frameImages. The last_frame image will be ignored."
-        ))
-    }
     return warnings
 }
 
@@ -985,10 +1091,13 @@ private func xaiImageFileURL(_ file: ImageInputFile) -> String {
 }
 
 private func xaiReferenceImageURL(_ file: ImageInputFile, warnings: inout [AIWarning]) -> String? {
+    if xaiIsAudioReference(file) {
+        return nil
+    }
     guard xaiIsImageReference(file) else {
         let message: String
         if isVideoInputFile(file) {
-            message = "xAI reference-to-video accepts image references only. The video reference was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video."
+            message = "xAI reference-to-video does not accept video references. The video reference was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video."
         } else {
             message = "xAI reference-to-video accepts image references only. The non-image reference was ignored."
         }
@@ -1007,6 +1116,15 @@ private func xaiHasImageInputReference(_ request: VideoGenerationRequest) -> Boo
     request.inputReferences.contains(where: xaiIsImageReference)
 }
 
+private func xaiIsAudioReference(_ file: ImageInputFile) -> Bool {
+    guard let mediaType = file.mediaType else { return false }
+    return topLevelMediaType(mediaType.lowercased()) == "audio"
+}
+
+private func xaiHasAudioInputReference(_ request: VideoGenerationRequest) -> Bool {
+    request.inputReferences.contains(where: xaiIsAudioReference)
+}
+
 private func xaiVideoReferenceURLs(
     from request: VideoGenerationRequest,
     options: [String: JSONValue],
@@ -1018,6 +1136,12 @@ private func xaiVideoReferenceURLs(
     return (options["referenceImageUrls"] ?? options["reference_image_urls"])?
         .arrayValue?
         .compactMap(\.stringValue) ?? []
+}
+
+private func xaiVideoReferenceAudioURLs(from request: VideoGenerationRequest) -> [String] {
+    request.inputReferences.compactMap { file in
+        xaiIsAudioReference(file) ? xaiImageFileURL(file) : nil
+    }
 }
 
 private func xaiStartImageURL(_ file: ImageInputFile, feature: String, warnings: inout [AIWarning]) -> String? {
@@ -1054,10 +1178,10 @@ private func xaiVideoMode(from extraBody: [String: JSONValue], request: VideoGen
         return "edit-video"
     }
     let references = extraBody["referenceImageUrls"]?.arrayValue ?? extraBody["reference_image_urls"]?.arrayValue
-    if references?.isEmpty == false, request.frameImages.isEmpty {
+    if references?.isEmpty == false {
         return "reference-to-video"
     }
-    if xaiHasImageInputReference(request), request.frameImages.isEmpty {
+    if xaiHasImageInputReference(request) || xaiHasAudioInputReference(request) {
         return "reference-to-video"
     }
     return nil
@@ -1092,6 +1216,21 @@ private func xaiVideoProviderMetadata(from raw: JSONValue, requestID: String, ur
     }
     if let progress = raw["progress"] {
         metadata["progress"] = progress
+    }
+    if let fileOutput = raw["video"]?["file_output"]?.objectValue {
+        var mapped: [String: JSONValue] = [:]
+        if let fileID = fileOutput["file_id"] { mapped["fileId"] = fileID }
+        if let filename = fileOutput["filename"] { mapped["filename"] = filename }
+        if let expiresAt = fileOutput["expires_at"] { mapped["expiresAt"] = expiresAt }
+        if let publicURL = fileOutput["public_url"] { mapped["publicUrl"] = publicURL }
+        if let publicURLError = fileOutput["public_url_error"] { mapped["publicUrlError"] = publicURLError }
+        if let publicURLExpiresAt = fileOutput["public_url_expires_at"] {
+            mapped["publicUrlExpiresAt"] = publicURLExpiresAt
+        }
+        metadata["fileOutput"] = .object(mapped)
+    }
+    if let storageError = raw["video"]?["storage_error"] {
+        metadata["storageError"] = storageError
     }
     return ["xai": .object(metadata)]
 }

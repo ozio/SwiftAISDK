@@ -10,7 +10,7 @@ Source URL: /components/mcp/
 | Class | 3 |
 | Enumeration | 8 |
 | Initializer | 40 |
-| Instance Method | 67 |
+| Instance Method | 69 |
 | Instance Property | 209 |
 | Protocol | 3 |
 | Structure | 37 |
@@ -112,6 +112,8 @@ Source URL: /components/mcp/
 | Instance Method | `invalidateCredentials(_:)` | `func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Method | `invalidateCredentials(_:)` | `func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
 | Instance Method | `invalidateCredentials(_:)` | `func invalidateCredentials(_ scope: MCPOAuthCredentialScope) async` | [Sources/SwiftAISDK/MCPTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPTypes.swift) |
+| Instance Method | `isClientInformationDynamicallyRegistered()` | `func isClientInformationDynamicallyRegistered() async -> Bool` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
+| Instance Method | `isClientInformationDynamicallyRegistered()` | `func isClientInformationDynamicallyRegistered() async -> Bool` | [Sources/SwiftAISDK/MCPOAuthTypes.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPOAuthTypes.swift) |
 | Instance Method | `listResources(cursor:options:)` | `func listResources(cursor: String? = nil, options: MCPRequestOptions? = nil) async throws -> MCPListResourcesResult` | [Sources/SwiftAISDK/MCPClientActor.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPClientActor.swift) |
 | Instance Method | `listResourceTemplates(options:)` | `func listResourceTemplates(options: MCPRequestOptions? = nil) async throws -> MCPListResourceTemplatesResult` | [Sources/SwiftAISDK/MCPClientActor.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPClientActor.swift) |
 | Instance Method | `listTools(cursor:)` | `func listTools(cursor: String? = nil) async throws -> MCPListToolsResult` | [Sources/SwiftAISDK/MCPClientActor.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/MCPClientActor.swift) |

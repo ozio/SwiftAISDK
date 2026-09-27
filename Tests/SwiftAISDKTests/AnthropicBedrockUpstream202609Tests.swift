@@ -65,7 +65,7 @@ private func amazonBedrockSeptemberCall(
     #expect(inlineSystem["clear_at"]?.stringValue == "next_user_message")
     #expect(inlineSystem["output_config"]?["effort"]?.stringValue == "xhigh")
     #expect(request.headers["anthropic-beta"]?.contains("mid-conversation-system-clear-at-2026-08-21") == true)
-    #expect(request.headers["anthropic-beta"]?.contains("mid-conversation-effort-2026-08-01") == true)
+    #expect(request.headers["anthropic-beta"]?.contains("mid-conversation-output-config-2026-07-01") == true)
 }
 
 @Test func anthropicInitialSystemControlsAreDroppedWithWarningLikeUpstream() async throws {
@@ -94,7 +94,7 @@ private func amazonBedrockSeptemberCall(
     #expect(request.headers["anthropic-beta"] == nil)
     #expect(result.warnings.contains(AIWarning(
         type: "other",
-        message: "clearAt and effort on the initial system message are not supported by Anthropic. These options have been ignored."
+        message: "clearAt and effort on this initial system message are not supported by Anthropic. Use a separate effort-only system message with empty content to set effort. These options have been ignored."
     )))
 }
 
@@ -185,7 +185,7 @@ private func amazonBedrockSeptemberCall(
     #expect(awsBody["thinking"]?["block_binding"]?["prefix_mismatch_behavior"]?.stringValue == "drop_block")
     for beta in [
         "mid-conversation-system-clear-at-2026-08-21",
-        "mid-conversation-effort-2026-08-01",
+        "mid-conversation-output-config-2026-07-01",
         "thinking-display-updates-2026-08-18",
         "thinking-binding-controls-2026-08-01"
     ] {
@@ -204,7 +204,7 @@ private func amazonBedrockSeptemberCall(
     let bedrockBody = try decodeJSONBody(try #require(bedrockRequest.body))
     let bedrockBetas = bedrockBody["anthropic_beta"]?.arrayValue?.compactMap(\.stringValue) ?? []
     #expect(bedrockBetas.contains("mid-conversation-system-clear-at-2026-08-21"))
-    #expect(bedrockBetas.contains("mid-conversation-effort-2026-08-01"))
+    #expect(bedrockBetas.contains("mid-conversation-output-config-2026-07-01"))
     #expect(bedrockBetas.contains("thinking-display-updates-2026-08-18"))
     #expect(bedrockBetas.contains("thinking-binding-controls-2026-08-01"))
 }

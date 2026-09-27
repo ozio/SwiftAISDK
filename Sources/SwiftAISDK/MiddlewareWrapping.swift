@@ -262,6 +262,7 @@ final class AIWrappedEmbeddingModel: EmbeddingModel, @unchecked Sendable {
     let modelID: String
     var maxEmbeddingsPerCall: Int? { model.maxEmbeddingsPerCall }
     var maxInputBytesPerCall: Int? { model.maxInputBytesPerCall }
+    var providerOptionsTransformer: AIEmbeddingProviderOptionsTransformer? { model.providerOptionsTransformer }
 
     init(
         model: any EmbeddingModel,

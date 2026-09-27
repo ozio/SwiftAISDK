@@ -119,3 +119,18 @@ stays active after the model stream while client-side tools execute; when it
 fires, both the provider request and tool context see an aborted signal whose
 reason name is `TimeoutError`. Typed `AI.streamText(..., output: Output.*,
 timeout: ...)` overloads use the same timeout lifecycle.
+
+## Files and UI snapshots
+
+Streamed file and reasoning-file parts use the same materialization policy as
+`generateText`: `data:` and HTTP(S) URLs become inline data before the part is
+emitted, while provider references stay opaque. Downloads honor aborts,
+redirect validation, private-host rejection, and byte limits. Resolver-backed
+DNS address pinning is still a transport-level gap.
+
+`AIUIMessageStreamReducer.snapshots` can continue an existing
+`originalMessage` instead of starting a new assistant message. Its async
+`onEnd` callback fires at most once with the final message and an outcome of
+`completed`, `aborted`, `failed`, or `unknown`. Consumer cancellation reports
+`unknown` with `isCancelled == true`; an `AIAbortError` reports `aborted` with
+`isAborted == true`.

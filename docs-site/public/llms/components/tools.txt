@@ -10,9 +10,9 @@ Source URL: /components/tools/
 | Enumeration | 4 |
 | Function | 2 |
 | Global Variable | 1 |
-| Initializer | 29 |
+| Initializer | 30 |
 | Instance Method | 4 |
-| Instance Property | 151 |
+| Instance Property | 152 |
 | Structure | 25 |
 | Type Alias | 8 |
 | Type Method | 5 |
@@ -73,6 +73,7 @@ Source URL: /components/tools/
 | Initializer | `init(id:sourceType:url:title:mediaType:filename:providerMetadata:rawValue:)` | `init(id: String, sourceType: String, url: String? = nil, title: String? = nil, mediaType: String? = nil, filename: String? = nil, providerMetadata: [String : JSONValue] = [:], rawValue: JSONValue? = nil)` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(id:timestamp:modelID:headers:body:)` | `init(id: String? = nil, timestamp: Date? = nil, modelID: String? = nil, headers: [String : String] = [:], body: JSONValue? = nil)` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(id:toolName:arguments:toolCallID:descriptor:reason:isAutomatic:providerMetadata:)` | `init(id: String, toolName: String, arguments: String, toolCallID: String? = nil, descriptor: JSONValue? = nil, reason: String? = nil, isAutomatic: Bool = false, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
+| Initializer | `init(id:toolName:arguments:toolCallID:inputSchemaInput:descriptor:reason:isAutomatic:providerMetadata:)` | `init(id: String, toolName: String, arguments: String, toolCallID: String? = nil, inputSchemaInput: JSONValue? = nil, descriptor: JSONValue? = nil, reason: String? = nil, isAutomatic: Bool = false, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(id:toolName:arguments:toolCallID:isAutomatic:providerMetadata:)` | `init(id: String, toolName: String, arguments: String, toolCallID: String? = nil, isAutomatic: Bool = false, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(id:toolName:arguments:toolCallID:reason:isAutomatic:providerMetadata:)` | `init(id: String, toolName: String, arguments: String, toolCallID: String? = nil, reason: String? = nil, isAutomatic: Bool = false, providerMetadata: [String : JSONValue] = [:])` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Initializer | `init(index:content:text:reasoning:finishReason:usage:files:toolCalls:toolResults:toolApprovalRequests:toolApprovalResponses:sources:warnings:providerMetadata:responseMetadata:)` | `init(index: Int, content: [AIResultContentPart] = [], text: String, reasoning: String = "", finishReason: String? = nil, usage: TokenUsage? = nil, files: [AIStreamFile] = [], toolCalls: [AIToolCall] = [], toolResults: [AIToolResult] = [], toolApprovalRequests: [AIToolApprovalRequest] = [], toolApprovalResponses: [AIToolApprovalResponse] = [], sources: [AISource] = [], warnings: [AIWarning] = [], providerMetadata: [String : JSONValue] = [:], responseMetadata: AIResponseMetadata = AIResponseMetadata())` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
@@ -149,6 +150,7 @@ Source URL: /components/tools/
 | Instance Property | `input` | `var input: JSONValue` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `input` | `var input: JSONValue` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `inputExamples` | `var inputExamples: [JSONValue]` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
+| Instance Property | `inputSchemaInput` | `var inputSchemaInput: JSONValue?` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `inputTextDelta` | `var inputTextDelta: String` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `isAutomatic` | `var isAutomatic: Bool` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |
 | Instance Property | `isError` | `var isError: Bool` | [Sources/SwiftAISDK/CoreTools.swift](https://github.com/ozio/SwiftAISDK/blob/main/Sources/SwiftAISDK/CoreTools.swift) |

@@ -1,6 +1,6 @@
 # Porting Status
 
-Snapshot date: 2026-09-20
+Snapshot date: 2026-09-27
 
 SwiftAISDK currently ports the provider-facing parts of Vercel AI SDK into a
 SwiftPM library. The package has a broad Swift-native facade, provider registry,
@@ -24,7 +24,8 @@ for exact evidence.
   provider-neutral realtime sessions.
 - Experimental Evaluation V4 is available through `AI.experimentalEvaluate`
   with Choice, Score, and Boolean questions, provider/default-registry model
-  resolution, and OpenAI, Anthropic, Google, and Gateway adapters.
+  resolution, a native TypeSafe AI provider, and OpenAI, Anthropic, Google, and
+  Gateway adapters.
 - HTTP language-model streaming consumes SSE and Amazon EventStream bodies
   incrementally through `AIStreamingTransport`; first parts can arrive before
   response EOF, and abort or early consumer termination cancels the body read.
@@ -55,14 +56,60 @@ for exact evidence.
 | Latest upstream test diff audit | `Docs/FreshUpstreamTestDiffAudit.md` |
 
 Provider and core package versions were checked against npm registry metadata
-on 2026-09-20. The packages changed by this weekly pass were reviewed from
+on 2026-09-27. The packages changed by this weekly pass were reviewed from
 their exact published tarballs; per-package decisions are recorded in
-`Docs/UpstreamPackageDiffAudit.md`. The current upstream inventory contains
-919 executable test/spec paths in 81 groups. The fresh diff audit separately
-classifies all 137 changed executable paths and all 18 changed declaration
-test (`test-d`) paths.
+`Docs/UpstreamPackageDiffAudit.md`. The current upstream inventory contains 948
+executable test/spec paths in 81 groups. The fresh diff audit separately
+classifies 169 changed executable paths and 27 declaration-test (`test-d`)
+paths: 88 portable, one deferred, 22 with no Swift action, and 85 out of scope.
 
 ## Provider State
+
+The 2026-09-27 weekly pass audited all 52 tracked core and provider/product
+rows from fresh registry data and exact published tarballs. Fifty rows moved,
+while LMNT and Vercel remained current. Sixteen rows required direct portable
+work, Azure and provider-neutral file URIs were covered through shared/existing
+behavior, five TypeScript-only cleanups required no Swift behavior change,
+26 rows were version/dependency identity synchronization, and React remained
+out of scope.
+
+Core work adds generated-file materialization across generate, stream, and
+batch; credential-isolating untrusted URL fetches; per-batch embedding option
+transforms; L16/mu-law/A-law speech detection; evaluation callbacks and
+telemetry; approval schema-input provenance; deterministic earlier-message
+approval resume; UI-stream terminal callbacks; per-text-ID overlap-safe
+reasoning with globally stable reasoning IDs;
+reasoning-file pruning; and local-caller-only routing that rejects direct model
+calls without disabling the bound caller. MCP custom environments and OAuth
+client provenance now match 2.0.60. Swift continues to preserve opaque provider
+file URI strings directly.
+
+Provider work adds model-specific Alibaba structured output; Bedrock model,
+forced-tool, reasoning, Mistral-ID, and Mantle routing updates; Anthropic
+compaction, safeguards, Opus 5.5, effort, and toolset behavior; DeepSeek
+multimodal tool results with image MIME validation; Gateway Browserbase/filter
+and validated batch cancellation, plus conditional Evaluation fallback routing
+with actual-response model attribution; current Google/Vertex files,
+embedding, speech, metadata, and model behavior; exact Groq empty-choice
+failures; Open Responses custom tools/results, transport hooks, stream
+fallback, and grammar validation; current OpenAI GPT-6/schema,
+positioned-reasoning, transcript, and speech behavior; xAI Responses options
+and Imagine Video 1.5 reference routing; and the Perplexity 5 Agent API
+migration with nullish Agent SSE fields. QuiverAI now exposes Arrow 2 language
+generation over Responses in addition to its image surface.
+
+Exact registry-prefix discovery still finds 87 live `@ai-sdk/*` names (SHA-256
+`709381c5b12ec13c8b445aa504980cf42f6795f63b331ac39a3fddb4a89a47c9`).
+The 51 tracked scoped names leave 36 untracked framework, harness, workflow,
+sandbox, schema, telemetry, tooling, or reservation packages. No new or
+unimplemented model-provider package appeared. `@ai-sdk/spacexai@0.0.0`
+remains a 46-byte empty reservation with no implementation to port.
+
+The only newly deferred portable test is resolver-backed address pinning for
+generated-file downloads. URL/redirect validation and credential isolation are
+implemented, but hostname validation alone does not pin the address used by
+`URLSession`; that requires a deliberate platform-native resolver/transport
+design.
 
 The 2026-09-20 weekly pass audited the 50 previously tracked core and
 provider/product rows: 18 were `ported`, two were `covered` by shared behavior,
@@ -307,7 +354,7 @@ one of these is true:
 | P1 | `URLSessionTransport` currently adapts `URLSession.AsyncBytes` into one `Data` value per byte. This preserves minimum latency and correct cancellation, but adds allocation overhead and offers no demand-aware backpressure. | Introduce a cancelable, demand-driven `AIHTTPBody` sequence backed by a delegate-owned `URLSession`, with bounded lossless buffering and explicit high/low watermarks. Keep the injected-session compatibility path until delegate, authentication, cache, metrics, and lifecycle semantics can be preserved. |
 | P1 | xAI realtime and OpenAI Live server WebSocket are represented, but browser WebRTC/client permissions, provider-backed Responses delegation, non-Live OpenAI Realtime, Google Realtime 3.8, ElevenLabs realtime STT, and streaming translation remain deferred. | Extend `AIRealtimeModelV4` one complete transport/provider vertical at a time; do not advertise browser or delegation modes until their native lifecycle is implemented and tested. |
 | P1 | Batch V4 has Anthropic, OpenAI Responses, Gateway, Google, and xAI adapters. Async Video V4 has Black Forest Labs, Fal, ByteDance, and Gateway adapters, but other capable providers still use unary or internal-polling paths. | Migrate additional batch/video providers incrementally when persisted operation state, native webhook behavior, and provider-specific cancellation semantics can be translated with focused tests. |
-| P1 | `@ai-sdk/provider-utils@5.0.45` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
+| P1 | `@ai-sdk/provider-utils@5.0.49` retains resolver-backed DNS address pinning for validated downloads; Swift validates literal/private hosts and every redirect and removes provider credentials across origins, but does not pin the resolved address. | Add resolver-aware connection pinning at the transport layer before claiming DNS-rebinding parity. |
 | P1 | Upstream preserves repeated tool-call IDs across explicit UI stream steps; Swift stream parts do not expose step boundaries. | Add a public step-boundary representation, then scope reducer tool-part identity to the active step with backwards lookup for late results. |
 | P1 | Provider option ergonomics are harder to discover than the core facade. | Add compact provider option examples to docs-site for non-obvious schemas and Swift differences. |
 | P1 | Tooling is broad but can be more polished. | Improve validation diagnostics, typed result/error surfaces, and provider-defined tool helper docs. |

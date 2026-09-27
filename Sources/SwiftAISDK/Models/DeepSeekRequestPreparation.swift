@@ -299,13 +299,132 @@ func deepSeekMessages(
                 output.append(.object([
                     "role": .string("tool"),
                     "tool_call_id": .string(result.toolCallID),
-                    "content": .string(deepSeekToolResultContent(result))
+                    "content": try deepSeekToolResultContentValue(result, providerOptionsName: providerOptionsName, warnings: &warnings)
                 ]))
             }
         }
     }
 
     return DeepSeekPreparedMessages(messages: output, warnings: warnings)
+}
+
+private func deepSeekToolResultContentValue(
+    _ result: AIToolResult,
+    providerOptionsName: String,
+    warnings: inout [AIWarning]
+) throws -> JSONValue {
+    let output = result.modelOutput ?? result.result
+    guard let object = output.objectValue,
+          object["type"]?.stringValue == "content",
+          let values = object["value"]?.arrayValue else {
+        return .string(deepSeekToolResultContent(result))
+    }
+
+    let hasImagePart = values.contains { item in
+        guard item["type"]?.stringValue == "file",
+              topLevelMediaType(item["mediaType"]?.stringValue ?? "") == "image" else {
+            return false
+        }
+        switch item["data"]?["type"]?.stringValue {
+        case "reference", "url", "data": return true
+        default: return false
+        }
+    }
+    guard hasImagePart else {
+        return .string(deepSeekToolResultContent(result))
+    }
+
+    var content: [JSONValue] = []
+    for item in values {
+        if item["type"]?.stringValue == "text" {
+            content.append(.object([
+                "type": .string("text"),
+                "text": .string(item["text"]?.stringValue ?? "")
+            ]))
+            continue
+        }
+        guard item["type"]?.stringValue == "file",
+              let mediaType = item["mediaType"]?.stringValue,
+              topLevelMediaType(mediaType) == "image",
+              let data = item["data"] else {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "tool result content part type: \(item["type"]?.stringValue ?? "unknown")"
+            ))
+            continue
+        }
+        switch data["type"]?.stringValue {
+        case "reference":
+            let reference = data["reference"]?.objectValue?.reduce(into: AIProviderReference()) { output, entry in
+                if let value = entry.value.stringValue { output[entry.key] = value }
+            } ?? [:]
+            content.append(.object([
+                "type": .string("file"),
+                "file_id": .string(try resolveProviderReference(reference, provider: "deepseek"))
+            ]))
+        case "url":
+            let url = data["url"]?.stringValue ?? ""
+            let resolvedMediaType = mediaType
+                .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+                .first
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                ?? mediaType.lowercased()
+            guard isFullMediaType(resolvedMediaType) else {
+                throw AIError.invalidArgument(
+                    argument: "mediaType",
+                    message: "File of media type \"\(mediaType)\" must specify subtype since it could not be auto-detected."
+                )
+            }
+            guard deepSeekSupportedImageMediaTypes.contains(resolvedMediaType) else {
+                throw AIError.invalidArgument(argument: "mediaType", message: "DeepSeek supports JPEG, PNG, GIF, and WebP image inputs.")
+            }
+            guard url.utf16.count <= 8_192 else {
+                throw AIError.invalidArgument(
+                    argument: "messages",
+                    message: "DeepSeek image URLs must not exceed 8192 characters."
+                )
+            }
+            let options = try deepSeekFilePartOptions(
+                item["providerOptions"]?.objectValue ?? [:],
+                providerOptionsName: providerOptionsName
+            )
+            content.append(deepSeekImageURLPart(url, detail: options.imageDetail))
+        case "data":
+            let base64 = data["data"]?.stringValue ?? ""
+            let resolvedMediaType: String
+            if isFullMediaType(mediaType) {
+                resolvedMediaType = mediaType
+            } else if let bytes = Data(base64Encoded: base64) {
+                resolvedMediaType = try resolveFullMediaType(mediaType: mediaType, data: bytes)
+            } else {
+                throw AIError.invalidArgument(
+                    argument: "mediaType",
+                    message: "File of media type \"\(mediaType)\" must specify subtype since it could not be auto-detected."
+                )
+            }
+            guard deepSeekSupportedImageMediaTypes.contains(resolvedMediaType) else {
+                throw AIError.invalidArgument(
+                    argument: "mediaType",
+                    message: "DeepSeek supports JPEG, PNG, GIF, and WebP image inputs."
+                )
+            }
+            let dataURLMediaType = resolvedMediaType == "image/jpg" ? "image/jpeg" : resolvedMediaType
+            let options = try deepSeekFilePartOptions(
+                item["providerOptions"]?.objectValue ?? [:],
+                providerOptionsName: providerOptionsName
+            )
+            content.append(deepSeekImageURLPart(
+                "data:\(dataURLMediaType);base64,\(base64)",
+                detail: options.imageDetail
+            ))
+        default:
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "tool result content part type: file with data type: \(data["type"]?.stringValue ?? "unknown")"
+            ))
+        }
+    }
+    return .array(content)
 }
 
 func deepSeekIsV4Model(_ modelID: String) -> Bool {

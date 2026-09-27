@@ -1,6 +1,6 @@
 # Upstream Package Diff Audit
 
-Snapshot date: 2026-09-20
+Snapshot date: 2026-09-27
 
 This audit records the published npm tarball comparison used by the weekly
 SwiftAISDK upstream check. Every changed tracked package was packed at both the
@@ -19,6 +19,84 @@ Status meanings:
 - `out-of-scope`: the changed package is a framework/product surface that this
   provider-facing Swift package does not expose.
 - `current`: the tracked package has no published version drift.
+
+## 2026-09-27 Weekly Audit
+
+Fresh npm registry metadata, 100 old/latest published tarballs, exact package
+tags, and `vercel/ai@18b2b32deeea8982bd252996b0616fd1d9730b83`
+were audited. Of 52 tracked rows, 50 moved and two were current. Sixteen rows
+required direct portable work, two were covered by shared or already lossless
+Swift behavior, five contained TypeScript-only mechanical cleanup, 26 were
+version/dependency identity synchronization, and React remained out of scope.
+
+| Package | Reference -> latest | Result |
+| --- | ---: | --- |
+| `ai` | `7.0.107 -> 7.0.117` | `ported` — Adds generated-file materialization, embedding option slicing, evaluation callbacks/telemetry, approval provenance and earlier-message resume, UI-stream cancellation outcomes, per-text-ID overlap-safe reasoning with globally stable reasoning IDs, reasoning-file pruning, local-caller-only direct-call rejection, speech media detection, and provider adaptation fixes. Resolver-backed address pinning remains explicitly deferred. The `7.0.117` runtime source is unchanged from `7.0.116`; its sole exact-tag test delta updates the Gateway evaluation fixture from `typesafe-ai/jev-latest` to `typesafe-ai/jev`, and the package advances Gateway to `4.0.95`. |
+| `@ai-sdk/provider` | `4.0.17 -> 4.0.18` | `covered` — Swift provider file data already preserves opaque URI strings without forced URL normalization. |
+| `@ai-sdk/provider-utils` | `5.0.45 -> 5.0.49` | `ported` — Adds credential-isolating untrusted URL fetching, safe redirects, generated-file resolution support, aligned embedding batches, and approval transform validation. |
+| `@ai-sdk/react` | `4.0.110 -> 4.0.120` | `out-of-scope` — The `4.0.120` published source and exact-tag React tests are unchanged from `4.0.119`; only the dependency on `ai` advances to `7.0.117`. React throttling and hook lifecycle remain outside Swift provider/core APIs, while portable cancellation behavior is implemented in the native UI-message stream. |
+| `@ai-sdk/mcp` | `2.0.54 -> 2.0.60` | `ported` — Custom stdio environment values win, discovery headers do not cross origins, and only dynamically registered OAuth clients are invalidated for client-credential errors. |
+| `@ai-sdk/alibaba` | `2.0.51 -> 2.0.56` | `ported` — Model-family capability routing chooses native JSON Schema output or the correct JSON-object/instruction fallback. |
+| `@ai-sdk/amazon-bedrock` | `5.0.88 -> 5.0.97` | `ported` — Adds current model-aware forced-tool, reasoning and sampling fallbacks, duplicate-safe Mistral call IDs, and OpenAI Mantle routing. |
+| `@ai-sdk/anthropic` | `4.0.58 -> 4.0.65` | `ported` — Adds on-demand signed compaction, safeguards metadata, Opus 5.5 capability rules, positioned effort updates, and the 20260801 computer toolset. |
+| `@ai-sdk/azure` | `4.0.75 -> 4.0.82` | `covered` — Azure inherits Responses `strict: false` handling, GPT-6 capability routing, and validated positioned reasoning-effort controls from the shared OpenAI implementation. |
+| `@ai-sdk/deepseek` | `3.0.49 -> 3.0.54` | `ported` — V4 and Flash tool-result messages retain inline, URL, and provider-referenced images as validated multimodal content, including image MIME checks. |
+| `@ai-sdk/gateway` | `4.0.87 -> 4.0.95` | `ported` — Adds Browserbase search/fetch tools, richer `has` filters, current model/speech settings, validated conditional Evaluation V4 fallbacks, actual-response model attribution, and batch cancellation responses that require a valid lifecycle status. |
+| `@ai-sdk/google` | `4.0.76 -> 4.0.82` | `ported` — Adds Gemini 3.8 TTS, lossless file/function-response replay, per-batch embedding options, interaction offsets, and finish/metadata fixes. |
+| `@ai-sdk/google-vertex` | `5.0.88 -> 5.0.95` | `ported` — Adds Claude Opus 5/5.5 IDs and permits `gs://` tool-result files through the shared Google path without leaking unrelated credentials. |
+| `@ai-sdk/groq` | `4.0.46 -> 4.0.50` | `ported` — A successful unary response without choices now throws the exact structural response error. |
+| `@ai-sdk/open-responses` | `2.0.49 -> 2.0.54` | `ported` — Adds dynamic headers/user-agent and error hooks, JSON-object mode, custom tools and replay, structured-output/custom-tool switches, stream-done fallback, cache-write usage, and strict regex/lark grammar-format validation. |
+| `@ai-sdk/openai` | `4.0.71 -> 4.0.78` | `ported` — Adds GPT-6 Sol/Luna `none` reasoning behavior, strict-default and schema fixes, nested/null stream errors, transcript fallback text, positioned reasoning-control validation/deduplication, regex cleanup, and speech option precedence. |
+| `@ai-sdk/perplexity` | `4.0.48 -> 5.0.1` | `ported` — Language generation migrates to the fully validated `/v1/agent` surface with presets/direct models, multimodal history, tools, reasoning, sources, nullish stream events, usage and cost; `sonarModel`/`chatModel` retain the legacy Sonar Chat Completions route and embeddings remain separate. |
+| `@ai-sdk/quiverai` | `2.0.45 -> 2.0.50` | `ported` — Adds Arrow 2 Responses-based language generation, custom tools, reasoning validation, stateless replay, unary/stream metadata, and strict retry/error mapping with exact-integer embedded status codes alongside the existing image surface. |
+| `@ai-sdk/xai` | `5.0.4 -> 5.0.10` | `ported` — Adds Grok 4.7 and current Responses options/identifiers plus Imagine Video 1.5 storage, keyframes, last-frame/audio controls, reference-mode precedence, and combined-reference/voice limits. |
+| `@ai-sdk/anthropic-aws` | `2.0.50 -> 2.0.57` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/assemblyai` | `3.0.45 -> 3.0.49` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/baseten` | `2.1.31 -> 2.1.35` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/black-forest-labs` | `2.0.46 -> 2.0.50` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/bytedance` | `2.0.48 -> 2.0.52` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/cartesia` | `3.0.40 -> 3.0.44` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/cerebras` | `3.0.53 -> 3.0.57` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/cohere` | `4.0.46 -> 4.0.50` | `covered` — The only source changes remove unreachable TypeScript returns; Swift behavior is unchanged. |
+| `@ai-sdk/deepgram` | `3.1.16 -> 3.1.20` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/deepinfra` | `3.0.53 -> 3.0.57` | `covered` — The only source changes remove a redundant constructor and nullish fallbacks after validated options. |
+| `@ai-sdk/elevenlabs` | `3.0.46 -> 3.0.50` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/fal` | `3.0.46 -> 3.0.50` | `covered` — The only source change removes an unreachable return after an exhaustive TypeScript switch. |
+| `@ai-sdk/fireworks` | `3.0.56 -> 3.0.60` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/fish-audio` | `3.0.23 -> 3.0.27` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/gladia` | `3.0.45 -> 3.0.49` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/gmicloud` | `3.0.24 -> 3.0.28` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/huggingface` | `2.0.53 -> 2.0.57` | `covered` — The only source change removes an unreachable TypeScript Responses-stream return. |
+| `@ai-sdk/hume` | `3.0.45 -> 3.0.49` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/klingai` | `4.0.47 -> 4.0.51` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/lmnt` | `3.0.36 -> 3.0.36` | `current` — No registry drift. |
+| `@ai-sdk/luma` | `3.0.46 -> 3.0.50` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/minimax` | `3.0.35 -> 3.0.42` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/mistral` | `4.0.48 -> 4.0.52` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/moonshotai` | `3.0.54 -> 3.0.58` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/openai-compatible` | `3.0.53 -> 3.0.57` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/prodia` | `2.0.46 -> 2.0.50` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/replicate` | `3.0.46 -> 3.0.50` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/revai` | `3.0.45 -> 3.0.49` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/togetherai` | `3.0.54 -> 3.0.58` | `covered` — The only source change removes unreachable TypeScript fallback logic after a validated output mode. |
+| `@ai-sdk/typesafe-ai` | `3.0.4 -> 3.0.8` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/vercel` | `3.0.30 -> 3.0.30` | `current` — No registry drift. |
+| `@ai-sdk/voyage` | `2.0.45 -> 2.0.49` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+| `@ai-sdk/zai` | `3.0.15 -> 3.0.19` | `version-only` — Published source is byte-identical apart from release identity/dependency propagation. |
+
+### 2026-09-27 Audit Evidence
+
+- Exact registry-prefix enumeration found 87 scoped names; `npm search --json`
+  found only 72 and omitted 15. The canonical exact-name set has SHA-256
+  `709381c5b12ec13c8b445aa504980cf42f6795f63b331ac39a3fddb4a89a47c9`.
+- The exact prefix is unchanged from 2026-09-20. It contains 51 tracked scoped
+  names and 36 untracked non-provider/product/reservation names, with zero new
+  unimplemented provider packages.
+- `@ai-sdk/spacexai@0.0.0` remains an empty reservation: one 46-byte
+  `package.json`, no source, no public exports, and no provider capability.
+- Exact package-tag tests or fixtures changed for 21 packages. The separately
+  maintained fresh-test audit covers the full upstream repository diff rather
+  than treating package tarballs as if they contained tests.
 
 ## 2026-09-20 Authorized Provider Follow-up
 

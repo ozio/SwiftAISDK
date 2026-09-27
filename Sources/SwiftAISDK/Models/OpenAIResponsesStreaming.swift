@@ -50,7 +50,9 @@ struct OpenAIResponsesStreamingToolCalls {
             buffers[index] = OpenAICompatibleToolCallBuffer(
                 id: toolCall.id,
                 name: toolCall.name,
-                arguments: "",
+                arguments: item["type"]?.stringValue == "custom_tool_call"
+                    ? item["input"]?.stringValue ?? ""
+                    : item["arguments"]?.stringValue ?? "",
                 inputStarted: true,
                 rawValue: item
             )
@@ -82,6 +84,14 @@ struct OpenAIResponsesStreamingToolCalls {
                 parts.append(.toolInputDelta(id: id, delta: delta))
             }
             return parts
+        case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
+            guard let index = raw["output_index"]?.intValue else { return [] }
+            var buffer = buffers[index] ?? OpenAICompatibleToolCallBuffer()
+            buffer.arguments = type == "response.function_call_arguments.done"
+                ? raw["arguments"]?.stringValue ?? buffer.arguments
+                : raw["input"]?.stringValue ?? buffer.arguments
+            buffers[index] = buffer
+            return []
         case "response.code_interpreter_call_code.delta":
             guard let index = raw["output_index"]?.intValue,
                   let buffer = buffers[index],
@@ -225,8 +235,19 @@ struct OpenAIResponsesStreamingToolCalls {
             }
             let suppressedParallel = suppressedParallelIndexes.remove(index) != nil
             let bufferedParallelDeltas = suppressedParallelDeltas.removeValue(forKey: index) ?? []
+            let bufferedArguments = buffers[index]?.arguments ?? ""
             buffers[index] = nil
-            guard let toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
+            guard var toolCall = openAIResponsesToolCall(from: item, providerID: providerID, toolNameAliases: toolNameAliases) else { return [] }
+            let itemHasEmptyCustomInput = item["type"]?.stringValue == "custom_tool_call"
+                && (item["input"]?.stringValue ?? "").isEmpty
+            if (toolCall.arguments.isEmpty || itemHasEmptyCustomInput),
+               !bufferedArguments.isEmpty {
+                if item["type"]?.stringValue == "custom_tool_call" {
+                    toolCall.arguments = openAIResponsesJSONString(.string(bufferedArguments)) ?? bufferedArguments
+                } else {
+                    toolCall.arguments = bufferedArguments
+                }
+            }
             if suppressedParallel,
                let expanded = openAIResponsesExpandedParallelToolCalls(
                    from: toolCall,

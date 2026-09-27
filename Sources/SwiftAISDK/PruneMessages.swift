@@ -58,10 +58,12 @@ public func pruneMessages(
             var output = message
             output.reasoning = nil
             output.content = message.content.filter { part in
-                if case .reasoning = part {
-                    return false
+                switch part {
+                case .reasoning, .reasoningFile:
+                    false
+                default:
+                    true
                 }
-                return true
             }
             return output
         }

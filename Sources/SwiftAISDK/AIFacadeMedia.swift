@@ -61,6 +61,9 @@ extension AI {
             maxEmbeddingsPerCall: effectiveMaxEmbeddingsPerCall,
             maxInputBytesPerCall: model.maxInputBytesPerCall
         )
+        let shouldTransformProviderOptions = effectiveMaxEmbeddingsPerCall != nil
+            || model.maxInputBytesPerCall != nil
+
         let request = EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal)
         if chunks.isEmpty {
             return try await withTelemetry(
@@ -86,7 +89,19 @@ extension AI {
             }
         }
         guard chunks.count > 1 else {
-            return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
+            let transformedOptions = if shouldTransformProviderOptions {
+                try await model.providerOptionsTransformer?(
+                    AIEmbeddingProviderOptionsTransformContext(
+                        providerOptions: providerOptions,
+                        values: values,
+                        startIndex: 0,
+                        endIndex: values.count
+                    )
+                ) ?? providerOptions
+            } else {
+                providerOptions
+            }
+            return try await embed(model: model, request: EmbeddingRequest(values: values, dimensions: dimensions, providerOptions: transformedOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal), retryPolicy: retryPolicy, telemetry: telemetry)
         }
 
         return try await withTelemetry(
@@ -111,9 +126,21 @@ extension AI {
             var requestMetadata = AIRequestMetadata(body: embeddingRequestMetadataBody(request), headers: request.headers)
             var responseMetadata = AIResponseMetadata()
 
+            var nextChunkStartIndex = 0
             for chunk in chunks {
+                let startIndex = nextChunkStartIndex
+                let endIndex = startIndex + chunk.count
+                nextChunkStartIndex = endIndex
+                let chunkProviderOptions = try await model.providerOptionsTransformer?(
+                    AIEmbeddingProviderOptionsTransformContext(
+                        providerOptions: providerOptions,
+                        values: values,
+                        startIndex: startIndex,
+                        endIndex: endIndex
+                    )
+                ) ?? providerOptions
                 let result = try await withRetry(policy: retryPolicy) {
-                    try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: providerOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal))
+                    try await model.embed(EmbeddingRequest(values: chunk, dimensions: dimensions, providerOptions: chunkProviderOptions, extraBody: extraBody, headers: headers, abortSignal: abortSignal))
                 }
                 try validateEmbeddingResultCount(
                     result.embeddings.count,
@@ -817,8 +844,17 @@ private func resolvedSpeechMediaType(
     }
 
     let normalizedOutputFormat = outputFormat?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    if normalizedOutputFormat == "pcm" || normalizedOutputFormat == "audio/pcm" {
+    switch normalizedOutputFormat {
+    case "pcm", "audio/pcm":
         return "audio/pcm"
+    case "audio/l16":
+        return "audio/l16"
+    case "mulaw", "audio/mulaw":
+        return "audio/mulaw"
+    case "alaw", "audio/alaw":
+        return "audio/alaw"
+    default:
+        break
     }
 
     if let providerContentType {

@@ -1,6 +1,6 @@
 import Foundation
 
-private let aiBatchUserAgent = "ai/7.0.107"
+private let aiBatchUserAgent = "ai/7.0.117"
 
 extension AI {
     /// Starts a provider-owned Batch V4 operation. Unlike the legacy text-only
@@ -199,7 +199,11 @@ extension AI {
                     for try await item in stream {
                         try Task.checkCancellation()
                         try signal?.throwIfAborted()
-                        continuation.yield(convertBatchItemResult(item, providerID: provider.providerID))
+                        continuation.yield(try await convertBatchItemResult(
+                            item,
+                            providerID: provider.providerID,
+                            abortSignal: signal
+                        ))
                     }
                     continuation.finish()
                 } catch {
@@ -435,9 +439,10 @@ extension AI {
                     for try await item in stream {
                         try Task.checkCancellation()
                         try operationAbortSignal?.throwIfAborted()
-                        continuation.yield(convertTextBatchItemResult(
+                        continuation.yield(try await convertTextBatchItemResult(
                             item,
-                            providerID: model.providerID
+                            providerID: model.providerID,
+                            abortSignal: operationAbortSignal
                         ))
                     }
                     continuation.finish()
@@ -505,11 +510,16 @@ private func validateBatchReference(_ batch: AIBatchReference, provider: any AIB
 
 private func convertBatchItemResult(
     _ item: AIBatchV4ItemResult,
-    providerID: String
-) -> BatchItemResult {
+    providerID: String,
+    abortSignal: AIAbortSignal?
+) async throws -> BatchItemResult {
     switch item {
     case let .text(result):
-        return .text(convertTextBatchItemResult(result, providerID: providerID))
+        return .text(try await convertTextBatchItemResult(
+            result,
+            providerID: providerID,
+            abortSignal: abortSignal
+        ))
     case let .image(result):
         switch result {
         case let .succeeded(id, value):
@@ -604,10 +614,15 @@ private func batchOperationAbortSignal(
 
 private func convertTextBatchItemResult(
     _ item: AIBatchItemResult<TextGenerationResult>,
-    providerID: String
-) -> TextBatchItemResult {
+    providerID: String,
+    abortSignal: AIAbortSignal?
+) async throws -> TextBatchItemResult {
     switch item {
-    case let .succeeded(id, result):
+    case let .succeeded(id, providerResult):
+        let result = try await materializeGeneratedFiles(
+            in: providerResult,
+            abortSignal: abortSignal
+        )
         let response = result.responseMetadata == AIResponseMetadata() ? nil : result.responseMetadata
         var usage = result.usage ?? TokenUsage()
         if usage.totalTokens == nil,

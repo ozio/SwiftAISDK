@@ -27,7 +27,7 @@ struct GatewayEvaluationTests {
             baseURL: "https://api.test.com",
             transport: transport
         ))
-        let model = try provider.evaluationModel("typesafe-ai/jev-latest")
+        let model = try provider.evaluationModel("typesafe-ai/jev")
         let abortController = AIAbortController()
 
         let result = try await model.doEvaluate(AIEvaluationModelV4CallOptions(
@@ -39,7 +39,7 @@ struct GatewayEvaluationTests {
         ))
 
         #expect(model.providerID == "gateway")
-        #expect(model.modelID == "typesafe-ai/jev-latest")
+        #expect(model.modelID == "typesafe-ai/jev")
         #expect(model.supportedQuestionTypes == [.choice, .score, .boolean])
         #expect(result.answers == [
             "correct": .boolean(probability: 0.97),
@@ -54,7 +54,7 @@ struct GatewayEvaluationTests {
             message: "ignored"
         )])
         #expect(result.providerMetadata == ["gateway": ["cost": "0.002"]])
-        #expect(result.response?.modelID == "typesafe-ai/jev-latest")
+        #expect(result.response?.modelID == "typesafe-ai/jev")
         #expect(result.response?.headers["x-request-id"] == "req-123")
         let expectedResponseBody = try JSONDecoder().decode(JSONValue.self, from: Data(raw.utf8))
         #expect(result.response?.body == expectedResponseBody)
@@ -65,7 +65,7 @@ struct GatewayEvaluationTests {
         #expect(request.headers["authorization"] == "Bearer gateway-key")
         #expect(request.headers["Custom-Header"] == "test-value")
         #expect(request.headers["ai-evaluation-model-specification-version"] == "4")
-        #expect(request.headers["ai-model-id"] == "typesafe-ai/jev-latest")
+        #expect(request.headers["ai-model-id"] == "typesafe-ai/jev")
         let requestBody = try decodeJSONBody(try #require(request.body))
         #expect(requestBody["state"] == "The capital of France is Paris.")
         #expect(requestBody["questions"]?["correct"]?["type"] == "boolean")
@@ -176,12 +176,12 @@ struct GatewayEvaluationTests {
         let transport = RecordingTransport(response: jsonResponse("""
         {
           "models": [{
-            "id": "typesafe-ai/jev-latest",
+            "id": "typesafe-ai/jev",
             "name": "Jev",
             "modelType": "evaluation",
             "specification": {
               "provider": "typesafe-ai",
-              "modelId": "jev-latest"
+              "modelId": "jev"
             }
           }]
         }
@@ -194,8 +194,8 @@ struct GatewayEvaluationTests {
 
         let entry = try #require(try await provider.getAvailableModels().first)
         #expect(entry == GatewayModelEntry(
-            id: "typesafe-ai/jev-latest", name: "Jev", modelType: "evaluation",
-            provider: "typesafe-ai", modelID: "jev-latest"
+            id: "typesafe-ai/jev", name: "Jev", modelType: "evaluation",
+            provider: "typesafe-ai", modelID: "jev"
         ))
         #expect(await transport.requests().first?.url.absoluteString == "https://api.test.com/config")
     }

@@ -16,6 +16,8 @@ func openResponsesInput(
     providerID: String,
     providerOptionsName: String? = nil,
     strictResponseInput: Bool = false,
+    customToolNames: Set<String> = [],
+    omitReasoningText: Bool = false,
     toolNamespaces: [String: JSONValue] = [:]
 ) -> OpenResponsesPreparedInput {
     var input: [JSONValue] = []
@@ -112,7 +114,7 @@ func openResponsesInput(
                     }
                     if let reasoningContent {
                         reasoningItem["content"] = .array(reasoningContent)
-                    } else if !hasReasoningContent, !text.isEmpty {
+                    } else if !omitReasoningText, !hasReasoningContent, !text.isEmpty {
                         reasoningItem["content"] = .array([.object([
                             "type": .string("reasoning_text"),
                             "text": .string(text)
@@ -154,12 +156,23 @@ func openResponsesInput(
                 case let .toolCall(call):
                     flushAssistantContent()
                     let providerData = call.providerMetadata[metadataNamespace]?.objectValue
-                    var callObject: [String: JSONValue] = [
-                        "type": .string("function_call"),
-                        "call_id": .string(call.id),
-                        "name": .string(call.name),
-                        "arguments": .string(openAIResponsesSerializedToolCallArguments(call.arguments))
-                    ]
+                    let isCustomTool = customToolNames.contains(call.name)
+                    var callObject: [String: JSONValue]
+                    if isCustomTool {
+                        callObject = [
+                            "type": .string("custom_tool_call"),
+                            "call_id": .string(call.id),
+                            "name": .string(call.name),
+                            "input": .string(call.arguments)
+                        ]
+                    } else {
+                        callObject = [
+                            "type": .string("function_call"),
+                            "call_id": .string(call.id),
+                            "name": .string(call.name),
+                            "arguments": .string(openAIResponsesSerializedToolCallArguments(call.arguments))
+                        ]
+                    }
                     if let itemID = providerData?["itemId"]?.stringValue {
                         callObject["id"] = .string(itemID)
                     }
@@ -176,7 +189,7 @@ func openResponsesInput(
             for part in message.content {
                 guard case let .toolResult(result) = part else { continue }
                 input.append(.object([
-                    "type": .string("function_call_output"),
+                    "type": .string(customToolNames.contains(result.toolName) ? "custom_tool_call_output" : "function_call_output"),
                     "call_id": .string(result.toolCallID),
                     "output": openResponsesToolResultOutput(
                         result,

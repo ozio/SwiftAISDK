@@ -326,7 +326,7 @@ import Testing
 }
 @Test func perplexityLanguageForwardsAbortSignalToGenerateAndStreamRequests() async throws {
     let generateTransport = RecordingTransport(response: jsonResponse("""
-    {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+    {"id":"ppl-1","created_at":1710000000,"model":"sonar","object":"response","status":"completed","output":[{"type":"message","id":"msg-1","content":[{"type":"output_text","text":"ok","annotations":[]}]}]}
     """))
     let generateProvider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: generateTransport))
     let generateModel = try generateProvider.languageModel("sonar")
@@ -338,7 +338,7 @@ import Testing
     #expect(generateRequest.abortSignal === generateController.signal)
 
     let streamTransport = RecordingTransport(response: sseResponse("""
-    data: {"id":"ppl-1","created":1710000000,"model":"sonar","choices":[{"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
+    data: {"type":"response.completed","response":{"id":"ppl-1","created_at":1710000000,"model":"sonar","object":"response","status":"completed","output":[{"type":"message","id":"msg-1","content":[{"type":"output_text","text":"ok","annotations":[]}]}]}}
 
     """))
     let streamProvider = try AIProviders.perplexity(settings: ProviderSettings(apiKey: "pplx-key", transport: streamTransport))

@@ -159,6 +159,12 @@ sources, tool calls, and tool results. The `text` property remains a convenience
 projection. Google merges empty-text thought signatures onto the associated
 reasoning or tool part so they survive later model-message replay.
 
+Successful text items also materialize URL-backed generated files and
+reasoning files before they are emitted. The same private-host, redirect, size,
+and abort protections used by `generateText` apply; provider file references
+remain opaque. Resolver-backed DNS address pinning remains deferred at the
+transport layer.
+
 ## Legacy text-only API
 
 The model-owned API remains source compatible for existing callers:

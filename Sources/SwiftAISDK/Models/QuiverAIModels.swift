@@ -1,5 +1,24 @@
 import Foundation
 
+public enum QuiverAITools {
+    public static func customTool(
+        name: String,
+        description: String? = nil,
+        format: JSONValue? = nil
+    ) -> JSONValue {
+        OpenResponsesTools.customTool(
+            name: name,
+            description: description,
+            format: format,
+            providerID: "quiverai.custom"
+        )
+    }
+
+    public static func textFormat() -> JSONValue {
+        OpenResponsesTools.textFormat()
+    }
+}
+
 public enum QuiverAIImageReference: Equatable, Sendable {
     case url(String)
     case base64(String)

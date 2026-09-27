@@ -47,6 +47,7 @@ struct BedrockStreamState {
     var latestFinishReason: String?
     var latestUsage: TokenUsage?
     var jsonResponseToolName: String?
+    var modelID: String
     var jsonObjectTextExtractor: BedrockJSONObjectTextExtractor?
     var isJsonResponseFromTool = false
     private var contentBlocks: [Int: ContentBlock] = [:]
@@ -56,9 +57,11 @@ struct BedrockStreamState {
 
     init(
         jsonResponseToolName: String? = nil,
+        modelID: String = "",
         jsonObjectTextExtractor: BedrockJSONObjectTextExtractor? = nil
     ) {
         self.jsonResponseToolName = jsonResponseToolName
+        self.modelID = modelID
         self.jsonObjectTextExtractor = jsonObjectTextExtractor
     }
 
@@ -122,7 +125,8 @@ struct BedrockStreamState {
         if let start = raw["contentBlockStart"],
            let toolUse = start["start"]?["toolUse"] {
             let index = start["contentBlockIndex"]?.intValue ?? 0
-            let id = toolUse["toolUseId"]?.stringValue ?? "tool-call-\(index)"
+            let rawID = toolUse["toolUseId"]?.stringValue ?? "tool-call-\(index)"
+            let id = bedrockNormalizeToolCallID(rawID, modelID: modelID)
             let name = toolUse["name"]?.stringValue ?? "tool-\(index)"
             contentBlocks[index] = .tool
             toolCalls[index] = BedrockStreamingToolCall(id: id, name: name, rawValue: toolUse)
@@ -399,6 +403,7 @@ func streamFromBedrockResponse(
     includeRawChunks: Bool = false,
     warnings: [AIWarning] = [],
     jsonResponseToolName: String? = nil,
+    modelID: String = "",
     extractJSONObjectText: Bool = false,
     emit: @Sendable (LanguageStreamPart) -> Void
 ) async throws {
@@ -419,6 +424,7 @@ func streamFromBedrockResponse(
     emit(.streamStart(warnings: warnings))
     var state = BedrockStreamState(
         jsonResponseToolName: jsonResponseToolName,
+        modelID: modelID,
         jsonObjectTextExtractor: extractJSONObjectText ? BedrockJSONObjectTextExtractor() : nil
     )
     var parser = BedrockRawStreamParser(

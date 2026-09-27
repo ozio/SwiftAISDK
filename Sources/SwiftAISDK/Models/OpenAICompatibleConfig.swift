@@ -462,11 +462,35 @@ enum ModelHTTPFailedResponseHandling: Sendable {
     case openAICompatible
 }
 
+public struct OpenResponsesErrorMetadata: Equatable, Sendable {
+    public var statusCode: Int?
+    public var isRetryable: Bool?
+
+    public init(statusCode: Int? = nil, isRetryable: Bool? = nil) {
+        self.statusCode = statusCode
+        self.isRetryable = isRetryable
+    }
+}
+
+public struct OpenResponsesFailedResponse: Equatable, Sendable {
+    public var statusCode: Int?
+    public var responseBody: String
+    public var isRetryable: Bool?
+
+    public init(statusCode: Int? = nil, responseBody: String, isRetryable: Bool? = nil) {
+        self.statusCode = statusCode
+        self.responseBody = responseBody
+        self.isRetryable = isRetryable
+    }
+}
+
 struct ModelHTTPConfig: @unchecked Sendable {
     var providerID: String
     var baseURL: String
     var modelURL: String?
     var headers: [String: String]
+    var dynamicHeaders: (@Sendable () -> [String: String])?
+    var userAgentSuffix: String?
     var transport: any AITransport
     var includeUsage: Bool
     var queryParams: [String: String]
@@ -475,6 +499,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var strictResponseInput: Bool
     var transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])?
     var responsesRequestMode: ResponsesRequestMode
+    var getResponseErrorMetadata: (@Sendable (JSONValue) -> OpenResponsesErrorMetadata)?
+    var openResponsesCustomToolID: String?
     var supportsWebSearchSourcesInclude: Bool
     var explicitMessageItemType: Bool
     var openAIBackedProviderRoot: String?
@@ -482,6 +508,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
     var deepSeekSupportsThinking: Bool
     var allowsEmptyTextResponse: Bool
     var failedResponseHandling: ModelHTTPFailedResponseHandling
+    var failedResponseHandler: (@Sendable (AIHTTPResponse) -> OpenResponsesFailedResponse)?
     var url: @Sendable (String, String) throws -> URL
 
     init(
@@ -490,6 +517,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         modelURL: String? = nil,
         headers: [String: String],
         transport: any AITransport,
+        dynamicHeaders: (@Sendable () -> [String: String])? = nil,
+        userAgentSuffix: String? = nil,
         includeUsage: Bool = false,
         queryParams: [String: String] = [:],
         supportsStructuredOutputs: Bool = false,
@@ -497,6 +526,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         strictResponseInput: Bool = false,
         transformRequestBody: (@Sendable ([String: JSONValue]) -> [String: JSONValue])? = nil,
         responsesRequestMode: ResponsesRequestMode = .openAICompatible,
+        getResponseErrorMetadata: (@Sendable (JSONValue) -> OpenResponsesErrorMetadata)? = nil,
+        openResponsesCustomToolID: String? = nil,
         supportsWebSearchSourcesInclude: Bool = true,
         explicitMessageItemType: Bool = false,
         openAIBackedProviderRoot: String? = nil,
@@ -504,6 +535,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         deepSeekSupportsThinking: Bool = true,
         allowsEmptyTextResponse: Bool = false,
         failedResponseHandling: ModelHTTPFailedResponseHandling = .raw,
+        failedResponseHandler: (@Sendable (AIHTTPResponse) -> OpenResponsesFailedResponse)? = nil,
         url: (@Sendable (String, String) throws -> URL)? = nil
     ) {
         self.providerID = providerID
@@ -511,6 +543,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.baseURL = normalizedBaseURL
         self.modelURL = modelURL.map(withoutTrailingSlash)
         self.headers = headers
+        self.dynamicHeaders = dynamicHeaders
+        self.userAgentSuffix = userAgentSuffix
         self.transport = transport
         self.includeUsage = includeUsage
         self.queryParams = queryParams
@@ -519,6 +553,8 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.strictResponseInput = strictResponseInput
         self.transformRequestBody = transformRequestBody
         self.responsesRequestMode = responsesRequestMode
+        self.getResponseErrorMetadata = getResponseErrorMetadata
+        self.openResponsesCustomToolID = openResponsesCustomToolID
         self.supportsWebSearchSourcesInclude = supportsWebSearchSourcesInclude
         self.explicitMessageItemType = explicitMessageItemType
         self.openAIBackedProviderRoot = openAIBackedProviderRoot
@@ -526,6 +562,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
         self.deepSeekSupportsThinking = deepSeekSupportsThinking
         self.allowsEmptyTextResponse = allowsEmptyTextResponse
         self.failedResponseHandling = failedResponseHandling
+        self.failedResponseHandler = failedResponseHandler
         self.url = url ?? { _, path in
             try openAICompatibleURL("\(normalizedBaseURL)\(path)", queryParams: queryParams)
         }
@@ -543,7 +580,10 @@ struct ModelHTTPConfig: @unchecked Sendable {
     }
 
     func rawRequest(path: String, modelID: String, body: Data, contentType: String?, headers requestHeaders: [String: String] = [:], abortSignal: AIAbortSignal? = nil) throws -> AIHTTPRequest {
-        var headers = self.headers.mergingHeaders(requestHeaders)
+        var providerHeaders = self.headers
+        if let dynamicHeaders { providerHeaders.merge(dynamicHeaders()) { _, dynamic in dynamic } }
+        if let userAgentSuffix { providerHeaders = withUserAgentSuffix(providerHeaders, userAgentSuffix) }
+        var headers = providerHeaders.mergingHeaders(requestHeaders)
         if let contentType {
             headers["content-type"] = headers["content-type"] ?? contentType
         }
@@ -575,6 +615,17 @@ struct ModelHTTPConfig: @unchecked Sendable {
     }
 
     func httpStatusError(_ response: AIHTTPResponse) -> AIError {
+        if let failedResponseHandler {
+            let failure = failedResponseHandler(response)
+            return .apiCall(AIAPICallError(
+                provider: providerID,
+                url: response.url?.absoluteString,
+                statusCode: failure.statusCode ?? response.statusCode,
+                responseHeaders: response.headers,
+                responseBody: failure.responseBody,
+                isRetryable: failure.isRetryable
+            ))
+        }
         switch failedResponseHandling {
         case .raw:
             return apiCallError(provider: providerID, response: response)
@@ -590,12 +641,17 @@ struct ModelHTTPConfig: @unchecked Sendable {
             modelURL: modelURL,
             headers: headers,
             transport: transport,
+            dynamicHeaders: dynamicHeaders,
+            userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            getResponseErrorMetadata: getResponseErrorMetadata,
+            openResponsesCustomToolID: openResponsesCustomToolID,
             supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
             explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
@@ -603,6 +659,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             deepSeekSupportsThinking: deepSeekSupportsThinking,
             allowsEmptyTextResponse: allowsEmptyTextResponse,
             failedResponseHandling: failedResponseHandling,
+            failedResponseHandler: failedResponseHandler,
             url: url
         )
     }
@@ -614,12 +671,17 @@ struct ModelHTTPConfig: @unchecked Sendable {
             modelURL: modelURL,
             headers: headers,
             transport: transport,
+            dynamicHeaders: dynamicHeaders,
+            userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            getResponseErrorMetadata: getResponseErrorMetadata,
+            openResponsesCustomToolID: openResponsesCustomToolID,
             supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
             explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
@@ -627,6 +689,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             deepSeekSupportsThinking: supportsThinking,
             allowsEmptyTextResponse: allowsEmptyTextResponse,
             failedResponseHandling: failedResponseHandling,
+            failedResponseHandler: failedResponseHandler,
             url: url
         )
     }
@@ -638,12 +701,17 @@ struct ModelHTTPConfig: @unchecked Sendable {
             modelURL: modelURL,
             headers: headers,
             transport: transport,
+            dynamicHeaders: dynamicHeaders,
+            userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            getResponseErrorMetadata: getResponseErrorMetadata,
+            openResponsesCustomToolID: openResponsesCustomToolID,
             supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
             explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
@@ -651,6 +719,7 @@ struct ModelHTTPConfig: @unchecked Sendable {
             deepSeekSupportsThinking: deepSeekSupportsThinking,
             allowsEmptyTextResponse: allowsEmptyTextResponse,
             failedResponseHandling: failedResponseHandling,
+            failedResponseHandler: failedResponseHandler,
             url: url
         )
     }
@@ -662,19 +731,25 @@ struct ModelHTTPConfig: @unchecked Sendable {
             modelURL: modelURL,
             headers: headers,
             transport: transport,
+            dynamicHeaders: dynamicHeaders,
+            userAgentSuffix: userAgentSuffix,
             includeUsage: includeUsage,
             queryParams: queryParams,
             supportsStructuredOutputs: supportsStructuredOutputs,
             maxEmbeddingsPerCall: maxEmbeddingsPerCall,
+            strictResponseInput: strictResponseInput,
             transformRequestBody: transformRequestBody,
             responsesRequestMode: responsesRequestMode,
+            getResponseErrorMetadata: getResponseErrorMetadata,
+            openResponsesCustomToolID: openResponsesCustomToolID,
             supportsWebSearchSourcesInclude: supportsWebSearchSourcesInclude,
             explicitMessageItemType: explicitMessageItemType,
             openAIBackedProviderRoot: openAIBackedProviderRoot,
             usesGenericOpenAICompatibleProviderOptions: usesGenericOpenAICompatibleProviderOptions,
             deepSeekSupportsThinking: deepSeekSupportsThinking,
             allowsEmptyTextResponse: allowsEmptyTextResponse,
-            failedResponseHandling: failedResponseHandling
+            failedResponseHandling: failedResponseHandling,
+            failedResponseHandler: failedResponseHandler
         )
     }
 

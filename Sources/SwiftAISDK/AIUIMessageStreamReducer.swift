@@ -1,5 +1,64 @@
 import Foundation
 
+public enum AIUIMessageStreamOutcome: String, Equatable, Hashable, Sendable {
+    case completed
+    case aborted
+    case failed
+    case unknown
+}
+
+public struct AIUIMessageStreamEndEvent: Equatable, Sendable {
+    public var message: AIUIMessage
+    public var isAborted: Bool
+    public var isCancelled: Bool
+    public var outcome: AIUIMessageStreamOutcome
+    public var errorDescription: String?
+
+    public init(
+        message: AIUIMessage,
+        isAborted: Bool,
+        isCancelled: Bool,
+        outcome: AIUIMessageStreamOutcome,
+        errorDescription: String? = nil
+    ) {
+        self.message = message
+        self.isAborted = isAborted
+        self.isCancelled = isCancelled
+        self.outcome = outcome
+        self.errorDescription = errorDescription
+    }
+}
+
+private actor AIUIMessageStreamLifecycleState {
+    private var message: AIUIMessage
+    private var didEnd = false
+
+    init(message: AIUIMessage) {
+        self.message = message
+    }
+
+    func update(_ message: AIUIMessage) {
+        self.message = message
+    }
+
+    func claimEnd(
+        outcome: AIUIMessageStreamOutcome,
+        isAborted: Bool = false,
+        isCancelled: Bool = false,
+        errorDescription: String? = nil
+    ) -> AIUIMessageStreamEndEvent? {
+        guard !didEnd else { return nil }
+        didEnd = true
+        return AIUIMessageStreamEndEvent(
+            message: message,
+            isAborted: isAborted,
+            isCancelled: isCancelled,
+            outcome: outcome,
+            errorDescription: errorDescription
+        )
+    }
+}
+
 public struct AIUIMessageStreamReducer: Sendable {
     public private(set) var message: AIUIMessage
 
@@ -102,34 +161,101 @@ public struct AIUIMessageStreamReducer: Sendable {
         return message
     }
 
+    /// Source-compatible stream entry point retained from SwiftAISDK 1.9.0.
     public static func snapshots(
         from stream: AsyncThrowingStream<LanguageStreamPart, Error>,
         messageID: String = UUID().uuidString,
         terminateOnError: Bool = false
     ) -> AsyncThrowingStream<AIUIMessage, Error> {
+        snapshots(
+            from: stream,
+            messageID: messageID,
+            terminateOnError: terminateOnError,
+            originalMessage: nil,
+            onEnd: nil
+        )
+    }
+
+    public static func snapshots(
+        from stream: AsyncThrowingStream<LanguageStreamPart, Error>,
+        messageID: String = UUID().uuidString,
+        terminateOnError: Bool = false,
+        originalMessage: AIUIMessage? = nil,
+        onEnd: (@Sendable (AIUIMessageStreamEndEvent) async -> Void)? = nil
+    ) -> AsyncThrowingStream<AIUIMessage, Error> {
         AsyncThrowingStream { continuation in
+            let initialMessage = originalMessage ?? .assistant(id: messageID)
+            let lifecycle = AIUIMessageStreamLifecycleState(message: initialMessage)
             let task = Task {
-                var reducer = AIUIMessageStreamReducer(message: .assistant(id: messageID))
+                var reducer = AIUIMessageStreamReducer(message: initialMessage)
                 do {
                     for try await part in stream {
                         try Task.checkCancellation()
                         if terminateOnError, case let .error(message, _) = part {
                             throw AIUIMessageStreamError(message: message, chunkType: "error")
                         }
-                        continuation.yield(try reducer.consume(part))
+                        let snapshot = try reducer.consume(part)
+                        await lifecycle.update(snapshot)
+                        continuation.yield(snapshot)
                     }
                     if reducer.finishNormalization() {
+                        await lifecycle.update(reducer.message)
                         continuation.yield(reducer.message)
                     }
+                    if let event = await lifecycle.claimEnd(outcome: .completed) {
+                        await onEnd?(event)
+                    }
                     continuation.finish()
+                } catch is CancellationError {
+                    if let event = await lifecycle.claimEnd(
+                        outcome: .unknown,
+                        isCancelled: true
+                    ) {
+                        await onEnd?(event)
+                    }
+                    continuation.finish()
+                } catch let error as AIAbortError {
+                    if let event = await lifecycle.claimEnd(
+                        outcome: .aborted,
+                        isAborted: true,
+                        errorDescription: String(describing: error)
+                    ) {
+                        await onEnd?(event)
+                    }
+                    continuation.finish(throwing: error)
                 } catch let error as AIUIMessageStreamError {
+                    if let event = await lifecycle.claimEnd(
+                        outcome: .failed,
+                        errorDescription: String(describing: error)
+                    ) {
+                        await onEnd?(event)
+                    }
                     continuation.finish(throwing: error)
                 } catch {
-                    continuation.finish(throwing: AIUIMessageStreamError(message: String(describing: error)))
+                    let streamError = AIUIMessageStreamError(message: String(describing: error))
+                    if let event = await lifecycle.claimEnd(
+                        outcome: .failed,
+                        errorDescription: String(describing: error)
+                    ) {
+                        await onEnd?(event)
+                    }
+                    continuation.finish(throwing: streamError)
                 }
             }
 
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { termination in
+                if case .cancelled = termination {
+                    Task {
+                        if let event = await lifecycle.claimEnd(
+                            outcome: .unknown,
+                            isCancelled: true
+                        ) {
+                            await onEnd?(event)
+                        }
+                    }
+                }
+                task.cancel()
+            }
         }
     }
 

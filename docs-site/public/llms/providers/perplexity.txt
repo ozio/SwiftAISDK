@@ -15,9 +15,23 @@ Source URL: /providers/perplexity/
 - Language
 - Embedding
 
+## Perplexity 5 migration
+
+`languageModel(...)` and the callable provider now use the Agent API
+at `/v1/agent`. Existing Sonar Chat Completions users must choose
+`chatModel(...)` or `sonarModel(...)` explicitly.
+
+```swift
+let perplexity = try AIProviders.perplexity()
+let agent = try perplexity.languageModel("fast")        // /v1/agent
+let callableAgent = try perplexity("fast")              // /v1/agent
+let sonar = try perplexity.sonarModel("sonar")          // /chat/completions
+let sameSonar = try perplexity.chatModel("sonar")       // /chat/completions
+```
+
 ## Notes
 
-Perplexity chat and quantized embeddings mirror upstream Perplexity 4.0.48: `PERPLEXITY_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language and embedding/textEmbedding aliases, `/chat/completions` and `/v1/embeddings`, text/image/PDF message conversion, JSON schema response format, providerOptions.perplexity passthrough including quantized embedding dimensions and signed/binary base64 decoding with a 512-value preflight limit, citations/images/cost metadata, optional and null streaming delta content, reasoning-token separation from completion tokens with corrected total accounting, Perplexity error schema, and warnings for unsupported topK/stop/seed/custom reasoning while treating provider-default reasoning as a no-op. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
+Perplexity Agent language models, legacy Sonar chat, and quantized embeddings mirror upstream Perplexity 5.0.1: `PERPLEXITY_API_KEY`, custom base URL and headers, versioned user-agent suffix, callable/language Agent surface plus chat/sonar compatibility and embedding/textEmbedding aliases, `/v1/agent`, `/chat/completions`, and `/v1/embeddings`, text/image/PDF message conversion, JSON schema response format, providerOptions.perplexity passthrough including quantized embedding dimensions and signed/binary base64 decoding with a 512-value preflight limit, citations/images/cost metadata, optional and null streaming delta content, reasoning-token separation from completion tokens with corrected total accounting, Perplexity error schema, and warnings for unsupported topK/stop/seed/custom reasoning while treating provider-default reasoning as a no-op. Perplexity 5.0.1 accepts explicit null values for optional Agent SSE fields without failing the stream, including null content indexes that retain the base text-part ID. The 5.0.0 migration makes `languageModel` and the callable provider use the Agent API; use `chatModel` or `sonarModel` for the legacy Sonar Chat Completions API. ProviderV4 type names, ESM-only packaging, Node 22 engines, optional JS headers config, and workflow serialization helpers are JS-only upstream concerns.
 
 Factory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.
 

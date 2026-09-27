@@ -18,7 +18,8 @@ func telemetryEvent(
     providerMetadata: [String: JSONValue] = [:],
     responseMetadata: AIResponseMetadata = AIResponseMetadata(),
     useResponseModelID: Bool = false,
-    errorDescription: String? = nil
+    errorDescription: String? = nil,
+    runtimeContext: [String: JSONValue] = [:]
 ) -> Telemetry.Event {
     let includesInput = options?.includesInput ?? true
     let includesOutput = options?.includesOutput ?? true
@@ -44,6 +45,7 @@ func telemetryEvent(
         responseMetadata: responseMetadata,
         errorDescription: errorDescription,
         metadata: options?.metadata ?? [:],
+        runtimeContext: runtimeContext,
         includesInput: includesInput,
         includesOutput: includesOutput
     )

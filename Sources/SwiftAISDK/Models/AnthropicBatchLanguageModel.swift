@@ -658,6 +658,10 @@ private func normalizedAnthropicBatchMessage(_ message: JSONValue) -> JSONValue?
     for part in rawContent {
         guard let type = part["type"]?.stringValue else { return Optional<JSONValue>.none }
         guard knownAnthropicBatchContentTypes.contains(type) else { continue }
+        if type == "compaction",
+           part["content"]?.stringValue?.isEmpty != false {
+            continue
+        }
         guard isValidAnthropicBatchContentPart(part) else { return Optional<JSONValue>.none }
         content.append(part)
     }

@@ -141,6 +141,54 @@ function yamlString(value) {
   return JSON.stringify(value);
 }
 
+function providerGuide(providerID) {
+  switch (providerID) {
+    case 'perplexity':
+      return [
+        '',
+        '## Perplexity 5 migration',
+        '',
+        '`languageModel(...)` and the callable provider now use the Agent API',
+        'at `/v1/agent`. Existing Sonar Chat Completions users must choose',
+        '`chatModel(...)` or `sonarModel(...)` explicitly.',
+        '',
+        '```swift',
+        'let perplexity = try AIProviders.perplexity()',
+        'let agent = try perplexity.languageModel("fast")        // /v1/agent',
+        'let callableAgent = try perplexity("fast")              // /v1/agent',
+        'let sonar = try perplexity.sonarModel("sonar")          // /chat/completions',
+        'let sameSonar = try perplexity.chatModel("sonar")       // /chat/completions',
+        '```',
+        '',
+      ].join('\n');
+    case 'quiverai':
+      return [
+        '',
+        '## Arrow 2 language models',
+        '',
+        'Use `languageModel("arrow-2")` for Responses-based language generation.',
+        'Quiver custom tools use the provider-specific helper and text format:',
+        '',
+        '```swift',
+        'let quiver = try AIProviders.quiverAI()',
+        'let arrow = try quiver.languageModel("arrow-2")',
+        'let result = try await arrow.generate(LanguageModelRequest(',
+        '    messages: [.user("Render a diagram.")],',
+        '    tools: [',
+        '        "render": QuiverAITools.customTool(',
+        '            name: "render",',
+        '            format: QuiverAITools.textFormat()',
+        '        )',
+        '    ]',
+        '))',
+        '```',
+        '',
+      ].join('\n');
+    default:
+      return '';
+  }
+}
+
 function generateProviders() {
   const rows = readProviderRows();
   const providersRoot = join(contentRoot, 'providers');
@@ -208,9 +256,10 @@ function generateProviders() {
       ? capabilities.map(([label]) => `- ${label}`).join('\n')
       : '- No capabilities recorded yet.';
     const note = row.notes ? `\n## Notes\n\n${row.notes}\n` : '';
+    const guide = providerGuide(row.providerID);
     writeGenerated(
       join(contentRoot, `providers/${providerSlug(row.providerID)}.mdx`),
-      `---\ntitle: ${yamlString(row.providerID)}\ndescription: ${yamlString(`${row.providerID} provider capabilities and factories.`)}\n---\n\n## Package\n\n\`${row.upstreamPackage}\`\n\n## Factories\n\n${row.factories}\n\n## Capabilities\n\n${capabilityListText}\n${note}\nFactory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.\n\nReturn to the [provider matrix](/providers/).\n`,
+      `---\ntitle: ${yamlString(row.providerID)}\ndescription: ${yamlString(`${row.providerID} provider capabilities and factories.`)}\n---\n\n## Package\n\n\`${row.upstreamPackage}\`\n\n## Factories\n\n${row.factories}\n\n## Capabilities\n\n${capabilityListText}\n${guide}${note}\nFactory argument requirements are defined by the public Swift factory signatures. Use [Public symbols](/reference/generated/public-symbols/) when you need the exact initializer or factory declaration.\n\nReturn to the [provider matrix](/providers/).\n`,
     );
   }
 }
@@ -529,6 +578,10 @@ function generateLLMSFiles() {
   writeGenerated(join(publicRoot, 'llms.txt'), llms);
 }
 
+const providersOnly = process.argv.includes('--providers-only');
+
 generateProviders();
-generateReference();
-generateLLMSFiles();
+if (!providersOnly) {
+  generateReference();
+  generateLLMSFiles();
+}

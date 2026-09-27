@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.88"
+private let amazonBedrockUserAgent = "ai-sdk/amazon-bedrock/5.0.97"
 
 public struct AmazonBedrockCredentials: Sendable {
     public var accessKeyID: String
@@ -192,7 +192,14 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
 
     public init(settings: AmazonBedrockProviderSettings = AmazonBedrockProviderSettings()) throws {
         let region = settings.region ?? environmentValue(["AWS_REGION", "AWS_DEFAULT_REGION"]) ?? "us-east-1"
-        let baseURL = settings.baseURL ?? "https://bedrock-mantle.\(region).api.aws/v1"
+        let customBaseURL = settings.baseURL.map(withoutTrailingSlash)
+        let defaultRoot = "https://bedrock-mantle.\(region).api.aws"
+        let baseURL = customBaseURL ?? "\(defaultRoot)/v1"
+        let resolveURL: @Sendable (String, String) throws -> URL = { modelID, path in
+            let resolvedBaseURL = customBaseURL
+                ?? "\(defaultRoot)/\(bedrockMantleUsesOpenAIRoute(modelID) ? "openai/v1" : "v1")"
+            return try openAICompatibleURL("\(resolvedBaseURL)\(path)", queryParams: [:])
+        }
         let auth = try bedrockAuth(settings: settings, providerID: providerID)
 
         let headers = withUserAgentSuffix(settings.headers, amazonBedrockUserAgent)
@@ -208,7 +215,8 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
             providerID: "bedrock-mantle.chat",
             baseURL: baseURL,
             headers: headers,
-            transport: transport
+            transport: transport,
+            url: resolveURL
         )
         let responsesConfig = ModelHTTPConfig(
             providerID: "bedrock-mantle.responses",
@@ -216,7 +224,8 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
             headers: headers,
             transport: transport,
             supportsWebSearchSourcesInclude: false,
-            openAIBackedProviderRoot: "openai"
+            openAIBackedProviderRoot: "openai",
+            url: resolveURL
         )
         chatProvider = OpenAICompatibleProvider(providerID: "bedrock-mantle.chat", supportedCapabilities: [.language], config: chatConfig)
         responsesProvider = OpenAICompatibleProvider(providerID: "bedrock-mantle.responses", supportedCapabilities: [.language], config: responsesConfig)
@@ -257,6 +266,12 @@ public final class BedrockMantleProvider: AIProvider, @unchecked Sendable {
     public func rerankingModel(_ modelID: String) throws -> any RerankingModel {
         throw AIError.unsupportedModel(provider: providerID, capability: .reranking, modelID: modelID)
     }
+}
+
+func bedrockMantleUsesOpenAIRoute(_ modelID: String) -> Bool {
+    (modelID.hasPrefix("openai.gpt-") && !modelID.hasPrefix("openai.gpt-oss-"))
+        || modelID.hasPrefix("google.gemma-4")
+        || modelID.hasPrefix("xai.")
 }
 
 func resolveAmazonBedrockBaseURL(

@@ -274,6 +274,10 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
     public var toolCallID: String?
     public var toolName: String
     public var arguments: String
+    /// Original input validated by the tool schema before `refineArguments`
+    /// transformed it. This is preserved only when it differs from `arguments`
+    /// so approved operations can be reconstructed and revalidated safely.
+    public var inputSchemaInput: JSONValue?
     /// Provider-computed information that UI clients can use when presenting
     /// the approval request. The SDK preserves this value without interpreting it.
     public var descriptor: JSONValue?
@@ -287,6 +291,7 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
         toolName: String,
         arguments: String,
         toolCallID: String? = nil,
+        inputSchemaInput: JSONValue? = nil,
         descriptor: JSONValue? = nil,
         reason: String? = nil,
         isAutomatic: Bool = false,
@@ -296,10 +301,36 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.arguments = arguments
+        self.inputSchemaInput = inputSchemaInput
         self.descriptor = descriptor
         self.reason = reason
         self.isAutomatic = isAutomatic
         self.providerMetadata = providerMetadata
+    }
+
+    /// Source-compatible initializer retained from SwiftAISDK 1.9.0, before
+    /// approval requests preserved their pre-refinement schema input.
+    public init(
+        id: String,
+        toolName: String,
+        arguments: String,
+        toolCallID: String? = nil,
+        descriptor: JSONValue? = nil,
+        reason: String? = nil,
+        isAutomatic: Bool = false,
+        providerMetadata: [String: JSONValue] = [:]
+    ) {
+        self.init(
+            id: id,
+            toolName: toolName,
+            arguments: arguments,
+            toolCallID: toolCallID,
+            inputSchemaInput: nil,
+            descriptor: descriptor,
+            reason: reason,
+            isAutomatic: isAutomatic,
+            providerMetadata: providerMetadata
+        )
     }
 
     /// Source-compatible initializer retained from approval requests that
@@ -318,6 +349,7 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
             toolName: toolName,
             arguments: arguments,
             toolCallID: toolCallID,
+            inputSchemaInput: nil,
             descriptor: nil,
             reason: reason,
             isAutomatic: isAutomatic,
@@ -340,6 +372,7 @@ public struct AIToolApprovalRequest: Equatable, Hashable, Sendable {
             toolName: toolName,
             arguments: arguments,
             toolCallID: toolCallID,
+            inputSchemaInput: nil,
             descriptor: nil,
             reason: nil,
             isAutomatic: isAutomatic,

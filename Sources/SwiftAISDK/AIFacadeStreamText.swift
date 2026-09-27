@@ -103,8 +103,12 @@ extension AI {
                     stream,
                     providerID: model.providerID
                 )
+                let resolvedFileStream = resolvingGeneratedFileStream(
+                    canonicalStream,
+                    abortSignal: downloadedRequest.abortSignal
+                )
                 let outputTimedStream = streamWithSemanticOutputTimeouts(
-                    forwardedLanguageStream(canonicalStream, request: downloadedRequest),
+                    forwardedLanguageStream(resolvedFileStream, request: downloadedRequest),
                     firstChunkNanoseconds: timeout?.firstChunkNanoseconds,
                     chunkNanoseconds: timeout?.chunkNanoseconds,
                     abortController: semanticTimeoutController
@@ -320,7 +324,11 @@ extension AI {
                         let stepTools = prepared?.executableTools ?? executableTools
                         let preparedTools = try await toolDiscovery.prepare(tools: stepTools, routing: toolCallers)
                         let executionTools = preparedTools.executionTools
-                        let toolsByName = try toolsByName(from: executionTools)
+                        let modelToolsByName = try toolsByName(from: preparedTools.modelTools)
+                        let directExecutionTools = executionTools.filter {
+                            modelToolsByName[$0.name] != nil
+                        }
+                        let executionToolsByName = try toolsByName(from: directExecutionTools)
                         var stepRequest = try prepareLanguageModelCallOptions(
                             prepared?.request ?? stepCurrentRequest
                         )
@@ -370,7 +378,8 @@ extension AI {
                                 logWarnings: true
                             ),
                             to: continuation,
-                            toolsByName: toolsByName,
+                            toolsByName: modelToolsByName,
+                            executionToolsByName: executionToolsByName,
                             request: stepRequest,
                             repairToolCall: repairToolCall,
                             partIDReserver: partIDReserver
@@ -436,7 +445,7 @@ extension AI {
                             }
                             let stepResponseMessages = try await toResponseMessages(
                                 content: completedStep.content.compactMap(\.responseMessagePart),
-                                toolsByName: toolsByName
+                                toolsByName: executionToolsByName
                             )
                             responseMessages.append(contentsOf: stepResponseMessages)
                             currentRequest = stepRequest
@@ -453,7 +462,7 @@ extension AI {
 
                         let toolExecution = try await executeToolCalls(
                             executableCalls,
-                            toolsByName: toolsByName,
+                            toolsByName: executionToolsByName,
                             request: stepRequest,
                             toolApproval: toolApproval,
                             repairToolCall: repairToolCall,
@@ -498,7 +507,7 @@ extension AI {
                         }
                         let stepResponseMessages = try await toResponseMessages(
                             content: completedStep.content.compactMap(\.responseMessagePart),
-                            toolsByName: toolsByName
+                            toolsByName: executionToolsByName
                         )
                         responseMessages.append(contentsOf: stepResponseMessages)
                         currentRequest = stepRequest

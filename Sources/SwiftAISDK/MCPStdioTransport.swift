@@ -259,7 +259,7 @@ private func mcpStdioEnvExecutableURL() -> URL {
     return URL(fileURLWithPath: "/bin/env")
 }
 
-private func mcpStdioEnvironment(_ custom: [String: String]) -> [String: String] {
+func mcpStdioEnvironment(_ custom: [String: String]) -> [String: String] {
     #if os(Windows)
     let inheritedKeys = [
         "APPDATA",
@@ -280,7 +280,13 @@ private func mcpStdioEnvironment(_ custom: [String: String]) -> [String: String]
 
     var environment = custom
     let processEnvironment = ProcessInfo.processInfo.environment
+    #if os(Windows)
+    let customKeys = Set(custom.keys.map { $0.uppercased() })
+    #else
+    let customKeys = Set(custom.keys)
+    #endif
     for key in inheritedKeys {
+        guard !customKeys.contains(key) else { continue }
         guard let value = processEnvironment[key], !value.hasPrefix("()") else { continue }
         environment[key] = value
     }

@@ -6,6 +6,41 @@ func bedrockEncodeModelID(_ modelID: String) -> String {
     return modelID.addingPercentEncoding(withAllowedCharacters: allowed) ?? modelID
 }
 
+func bedrockIsMistralModel(_ modelID: String) -> Bool {
+    modelID.contains("mistral.")
+}
+
+func bedrockNormalizeToolCallID(_ toolCallID: String, modelID: String) -> String {
+    guard bedrockIsMistralModel(modelID) else { return toolCallID }
+    guard toolCallID.range(of: #"^[A-Za-z0-9]{9}$"#, options: .regularExpression) == nil else {
+        return toolCallID
+    }
+
+    // Match the JavaScript package exactly: FNV-1a over UTF-16 code units,
+    // reduced into the full nine-character base62 identifier space.
+    let base62Characters = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+    let base = UInt64(base62Characters.count)
+    let outputLength = 9
+    var identifierSpace: UInt64 = 1
+    for _ in 0..<outputLength {
+        identifierSpace &*= base
+    }
+
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for codeUnit in toolCallID.utf16 {
+        hash ^= UInt64(codeUnit)
+        hash &*= 1_099_511_628_211
+    }
+
+    var value = hash % identifierSpace
+    var output = Array(repeating: Character("0"), count: outputLength)
+    for index in stride(from: outputLength - 1, through: 0, by: -1) {
+        output[index] = base62Characters[Int(value % base)]
+        value /= base
+    }
+    return String(output)
+}
+
 let bedrockDocumentMimeTypes: [String: String] = [
     "application/pdf": "pdf",
     "text/csv": "csv",
@@ -247,9 +282,26 @@ func bedrockPrepareTools(
     var warnings: [AIWarning] = []
     var bedrockTools: [JSONValue] = []
     var supportedTools: [String: JSONValue] = [:]
+    var preparedToolChoice = toolChoice
     let forcedToolName = bedrockForcedToolName(from: toolChoice)
+    let rejectsForcedToolUse = anthropicModelCapabilities(modelID).rejectsForcedToolUse
+    let forcedToolChoiceType = toolChoice?.stringValue ?? toolChoice?["type"]?.stringValue
+    if rejectsForcedToolUse, forcedToolChoiceType == "tool" || forcedToolChoiceType == "required" {
+        let detail = forcedToolChoiceType == "tool"
+            ? "Only the '\(forcedToolName ?? "")' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."
+            : "Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "toolChoice",
+            message: "toolChoice '\(forcedToolChoiceType ?? "")' is not supported by this model because it rejects forced tool use. \(detail)"
+        ))
+        preparedToolChoice = .object(["type": .string("auto")])
+    }
 
     for (name, schema) in tools {
+        if let forcedToolName, forcedToolName != name {
+            continue
+        }
         if schema["type"]?.stringValue == "provider" {
             let id = schema["id"]?.stringValue ?? name
             let unsupportedWebTools: Set<String> = [
@@ -277,10 +329,6 @@ func bedrockPrepareTools(
             } else {
                 warnings.append(AIWarning(type: "unsupported", feature: "tool \(id)"))
             }
-            continue
-        }
-
-        if let forcedToolName, forcedToolName != name {
             continue
         }
 
@@ -325,19 +373,26 @@ func bedrockPrepareTools(
         modelFamily: modelFamily,
         reasoningConfig: reasoningConfig
     )
-    let toolChoiceType = toolChoice?.stringValue ?? toolChoice?["type"]?.stringValue
+    if usesAnthropicProviderTools,
+       let anthropicChoice = anthropicToolChoice(
+           from: preparedToolChoice,
+           disableParallelToolUse: disableParallelToolUse
+       ).value {
+        additionalModelRequestFields = ["tool_choice": anthropicChoice]
+    }
+    let preparedToolChoiceType = preparedToolChoice?.stringValue ?? preparedToolChoice?["type"]?.stringValue
     if isAnthropicModel,
        !usesAnthropicProviderTools,
        disableParallelToolUse,
-       toolChoiceType != "none" {
+       preparedToolChoiceType != "none" {
         var anthropicToolChoice: [String: JSONValue]
-        switch toolChoiceType {
+        switch preparedToolChoiceType {
         case "required":
             anthropicToolChoice = ["type": .string("any")]
         case "tool":
             anthropicToolChoice = [
                 "type": .string("tool"),
-                "name": .string(bedrockForcedToolName(from: toolChoice) ?? "")
+                "name": .string(bedrockForcedToolName(from: preparedToolChoice) ?? "")
             ]
         default:
             anthropicToolChoice = ["type": .string("auto")]
@@ -345,7 +400,7 @@ func bedrockPrepareTools(
         anthropicToolChoice["disable_parallel_tool_use"] = .bool(true)
         additionalModelRequestFields = ["tool_choice": .object(anthropicToolChoice)]
     }
-    if let choice = bedrockToolChoice(from: toolChoice),
+    if let choice = bedrockToolChoice(from: preparedToolChoice),
        !usesAnthropicProviderTools,
        additionalModelRequestFields == nil {
         if choice == .null {
@@ -631,29 +686,55 @@ func bedrockApplyTopLevelReasoning(
     warnings: inout [AIWarning]
 ) {
     guard isCustomReasoning(reasoning), let reasoning else { return }
-    let existing = providerOptions["reasoningConfig"]?.objectValue ?? [:]
+    let explicitReasoningConfig = providerOptions["reasoningConfig"]?.objectValue
     let isAnthropicModel = bedrockIsAnthropicModel(
         modelID: modelID,
         modelFamily: modelFamily,
         reasoningConfig: providerOptions["reasoningConfig"]
     )
-    var reasoningConfig: [String: JSONValue]
+    let capabilities = anthropicModelCapabilities(modelID)
+    let isOpenAIModel = bedrockOpenAIModelID(modelID) != nil
+    let isNovaReasoningModel = modelID.contains("amazon.nova-2-lite-v1:0")
+    var reasoningConfig: [String: JSONValue] = [:]
 
-    if reasoning == "none" {
-        reasoningConfig = ["type": .string("disabled")]
-    } else if isAnthropicModel {
-        let budget = mapReasoningToProviderBudget(
-            reasoning: reasoning,
-            maxOutputTokens: maxOutputTokens ?? 4096,
-            maxReasoningBudget: maxOutputTokens ?? 4096,
-            warnings: &warnings
-        )
-        reasoningConfig = ["type": .string("enabled")]
-        if let budget {
-            reasoningConfig["budgetTokens"] = .number(Double(budget))
+    if isAnthropicModel {
+        if reasoning == "none" {
+            reasoningConfig = ["type": .string("disabled")]
+        } else if capabilities.supportsAdaptiveThinking {
+            reasoningConfig = ["type": .string("adaptive")]
+            if let effort = mapReasoningToProviderEffort(
+                reasoning: reasoning,
+                effortMap: [
+                    "minimal": "low",
+                    "low": "low",
+                    "medium": "medium",
+                    "high": "high",
+                    "xhigh": "max"
+                ],
+                warnings: &warnings
+            ) {
+                reasoningConfig["maxReasoningEffort"] = .string(effort)
+            }
+        } else {
+            let maximum = capabilities.isKnownModel
+                ? capabilities.maxOutputTokens
+                : (maxOutputTokens ?? 4_096)
+            let budget = mapReasoningToProviderBudget(
+                reasoning: reasoning,
+                maxOutputTokens: maximum,
+                maxReasoningBudget: maximum,
+                warnings: &warnings
+            )
+            reasoningConfig = ["type": .string("enabled")]
+            if let budget {
+                reasoningConfig["budgetTokens"] = .number(Double(budget))
+            }
         }
-    } else {
-        reasoningConfig = [:]
+    } else if reasoning != "none",
+              isOpenAIModel || isNovaReasoningModel || explicitReasoningConfig != nil {
+        if isNovaReasoningModel {
+            reasoningConfig["type"] = .string("enabled")
+        }
         if let effort = mapReasoningToProviderEffort(
             reasoning: reasoning,
             effortMap: [
@@ -667,9 +748,17 @@ func bedrockApplyTopLevelReasoning(
         ) {
             reasoningConfig["maxReasoningEffort"] = .string(effort)
         }
+    } else if reasoning != "none" {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "reasoning",
+            message: "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig."
+        ))
     }
 
-    reasoningConfig.merge(existing) { _, existing in existing }
+    if let explicitReasoningConfig {
+        reasoningConfig.merge(explicitReasoningConfig) { _, explicit in explicit }
+    }
     if reasoningConfig["type"]?.stringValue == "disabled" {
         reasoningConfig.removeValue(forKey: "budgetTokens")
         reasoningConfig.removeValue(forKey: "maxReasoningEffort")
@@ -722,17 +811,21 @@ func bedrockDeduplicatedWarnings(_ warnings: [AIWarning]) -> [AIWarning] {
     return output
 }
 
-func bedrockToolCalls(from value: JSONValue?) -> [AIToolCall] {
+func bedrockToolCalls(from value: JSONValue?, modelID: String = "") -> [AIToolCall] {
     value?.arrayValue?.enumerated().compactMap { index, part in
-        bedrockToolCall(from: part, index: index)
+        bedrockToolCall(from: part, index: index, modelID: modelID)
     } ?? []
 }
 
-func bedrockToolCall(from part: JSONValue, index: Int) -> AIToolCall? {
+func bedrockToolCall(from part: JSONValue, index: Int, modelID: String = "") -> AIToolCall? {
     guard let toolUse = part["toolUse"] else { return nil }
     let name = toolUse["name"]?.stringValue ?? "tool-\(index)"
+    let rawID = resolvedToolCallID(
+        toolUse["toolUseId"]?.stringValue,
+        whenMissing: "tool-call-\(index)"
+    )
     return AIToolCall(
-        id: resolvedToolCallID(toolUse["toolUseId"]?.stringValue, whenMissing: "tool-call-\(index)"),
+        id: bedrockNormalizeToolCallID(rawID, modelID: modelID),
         name: name,
         arguments: bedrockToolArguments(toolUse["input"]),
         rawValue: part

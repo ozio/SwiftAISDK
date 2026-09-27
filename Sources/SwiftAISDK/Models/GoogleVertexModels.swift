@@ -14,6 +14,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
     public func generate(_ request: LanguageModelRequest) async throws -> TextGenerationResult {
         let resolvedRequest = try await googleVertexRequestByDownloadingToolResultFiles(
             request,
+            modelID: modelID,
             transport: config.transport,
             maxBytes: config.toolResultDownloadsMaxBytes
         )
@@ -47,6 +48,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
                 do {
                     let resolvedRequest = try await googleVertexRequestByDownloadingToolResultFiles(
                         request,
+                        modelID: modelID,
                         transport: config.transport,
                         maxBytes: config.toolResultDownloadsMaxBytes
                     )
@@ -90,6 +92,7 @@ public final class GoogleVertexLanguageModel: LanguageModel, @unchecked Sendable
 
 func googleVertexRequestByDownloadingToolResultFiles(
     _ request: LanguageModelRequest,
+    modelID: String,
     transport: any AITransport,
     maxBytes: Int
 ) async throws -> LanguageModelRequest {
@@ -114,6 +117,7 @@ func googleVertexRequestByDownloadingToolResultFiles(
             if let modelOutput = result.modelOutput {
                 result.modelOutput = try await googleVertexDownloadedToolResultOutput(
                     modelOutput,
+                    supportsGoogleCloudStorageURLs: googleMessageTargetIsGemini3(modelID),
                     transport: transport,
                     abortSignal: request.abortSignal,
                     maxBytes: maxBytes
@@ -121,6 +125,7 @@ func googleVertexRequestByDownloadingToolResultFiles(
             } else {
                 result.result = try await googleVertexDownloadedToolResultOutput(
                     result.result,
+                    supportsGoogleCloudStorageURLs: googleMessageTargetIsGemini3(modelID),
                     transport: transport,
                     abortSignal: request.abortSignal,
                     maxBytes: maxBytes
@@ -140,6 +145,7 @@ func googleVertexRequestByDownloadingToolResultFiles(
 
 func googleVertexDownloadedToolResultOutput(
     _ output: JSONValue,
+    supportsGoogleCloudStorageURLs: Bool = false,
     transport: any AITransport,
     abortSignal: AIAbortSignal?,
     maxBytes: Int
@@ -155,6 +161,13 @@ func googleVertexDownloadedToolResultOutput(
         guard part["type"]?.stringValue == "file",
               part["data"]?["type"]?.stringValue == "url",
               let url = part["data"]?["url"]?.stringValue else {
+            resolvedContent.append(part)
+            continue
+        }
+        if supportsGoogleCloudStorageURLs,
+           url.hasPrefix("gs://"),
+           let mediaType = part["mediaType"]?.stringValue,
+           googleVertexSupportsCloudStorageToolResultMediaType(mediaType) {
             resolvedContent.append(part)
             continue
         }
@@ -360,66 +373,14 @@ public final class GoogleVertexSpeechModel: SpeechModel, @unchecked Sendable {
     }
 
     public func speak(_ request: SpeechRequest) async throws -> SpeechResult {
-        let options = googleVertexSpeechProviderOptions(from: request)
-        let multiSpeakerVoiceConfig = options["multiSpeakerVoiceConfig"]
-        var warnings: [AIWarning] = []
-        if request.speed != nil {
-            warnings.append(AIWarning(type: "unsupported", feature: "speed", message: "Google Vertex speech models do not support the `speed` option."))
-        }
-        if request.language != nil {
-            warnings.append(AIWarning(type: "unsupported", feature: "language", message: "Google Vertex speech models do not support the `language` option."))
-        }
-
-        let text: String
-        if let instructions = request.instructions, !instructions.isEmpty {
-            if multiSpeakerVoiceConfig != nil {
-                warnings.append(AIWarning(type: "unsupported", feature: "instructions", message: "Google Vertex speech models ignore `instructions` when `multiSpeakerVoiceConfig` is set."))
-                text = request.text
-            } else {
-                text = "\(instructions): \(request.text)"
-            }
-        } else {
-            text = request.text
-        }
-
-        let outputFormat: GoogleVertexSpeechOutputFormat
-        switch request.format?.lowercased() {
-        case nil, "wav":
-            outputFormat = .wav
-        case "pcm":
-            outputFormat = .pcm
-            warnings.append(AIWarning(type: "unsupported", feature: "outputFormat", message: "Google Vertex speech returns raw PCM only when `format` is `pcm`; WAV is the default wrapped output."))
-        case let format?:
-            outputFormat = .wav
-            warnings.append(AIWarning(type: "unsupported", feature: "outputFormat", message: "Google Vertex speech does not support `\(format)`. Falling back to WAV."))
-        }
-
-        var speechConfig: [String: JSONValue] = [:]
-        if let multiSpeakerVoiceConfig {
-            speechConfig["multiSpeakerVoiceConfig"] = multiSpeakerVoiceConfig
-        } else {
-            speechConfig["voiceConfig"] = .object([
-                "prebuiltVoiceConfig": .object([
-                    "voiceName": .string(request.voice ?? "Kore")
-                ])
-            ])
-        }
-
-        let body = JSONValue.object([
-            "contents": .array([
-                .object([
-                    "role": .string("user"),
-                    "parts": .array([.object(["text": .string(text)])])
-                ])
-            ]),
-            "generationConfig": .object([
-                "responseModalities": .array([.string("AUDIO")]),
-                "speechConfig": .object(speechConfig)
-            ])
-        ])
+        let prepared = try googlePrepareSpeechRequest(
+            request,
+            modelID: modelID,
+            options: googleVertexSpeechProviderOptions(from: request)
+        )
         let response = try await config.sendJSONResponse(
             path: "/models/\(modelID):generateContent",
-            body: body,
+            body: prepared.body,
             headers: request.headers,
             abortSignal: request.abortSignal
         )
@@ -427,27 +388,33 @@ public final class GoogleVertexSpeechModel: SpeechModel, @unchecked Sendable {
         let inlineData = googleVertexSpeechInlineData(from: raw)
         let mimeType = inlineData.mimeType
         let sampleRate = googleVertexSpeechSampleRate(from: mimeType) ?? 24_000
-        let pcm = inlineData.data.flatMap { Data(base64Encoded: $0) } ?? Data()
-        let audio: Data
-        let contentType: String
-        switch outputFormat {
-        case .wav:
-            audio = pcm.isEmpty ? pcm : googleVertexSpeechWAVData(fromPCM: pcm, sampleRate: sampleRate)
-            contentType = "audio/wav"
-        case .pcm:
-            audio = pcm
-            contentType = mimeType ?? "audio/L16;rate=\(sampleRate)"
+        let bytes = inlineData.data.flatMap { Data(base64Encoded: $0) } ?? Data()
+        let shouldWrapPCM = prepared.outputFormat == "AUDIO_WAV"
+            && googleSpeechMimeTypeIsPCM(mimeType, usesStructuredSpeech: prepared.usesStructuredSpeech)
+            && !bytes.isEmpty
+        let audio = shouldWrapPCM ? googleVertexSpeechWAVData(fromPCM: bytes, sampleRate: sampleRate) : bytes
+        var warnings = prepared.warnings
+        if prepared.outputFormat == "AUDIO_L16", !prepared.usesStructuredSpeech, !bytes.isEmpty {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "outputFormat",
+                message: "Returning raw PCM audio (signed 16-bit little-endian, mono, \(sampleRate) Hz). These bytes have no container header and are not directly playable."
+            ))
         }
 
         return SpeechResult(
             audio: audio,
-            contentType: contentType,
+            contentType: googleSpeechContentType(
+                mimeType: mimeType,
+                outputFormat: prepared.outputFormat,
+                wrappedPCMAsWAV: shouldWrapPCM
+            ),
             warnings: warnings,
             providerMetadata: ["googleVertex": .object([
                 "sampleRate": .number(Double(sampleRate)),
                 "mimeType": mimeType.map(JSONValue.string) ?? .null
             ])],
-            requestMetadata: AIRequestMetadata(body: body, headers: request.headers),
+            requestMetadata: AIRequestMetadata(body: prepared.body, headers: request.headers),
             responseMetadata: aiResponseMetadata(from: raw, response: response.response, modelID: modelID)
         )
     }
@@ -844,6 +811,7 @@ private func googleGenerateContentBody(_ request: LanguageModelRequest, modelID:
             message,
             modelID: modelID,
             includeFunctionCallIDs: false,
+            supportsGoogleCloudStorageToolResults: googleMessageTargetIsGemini3(modelID),
             warnings: &warnings
         )
     }

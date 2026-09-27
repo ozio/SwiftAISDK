@@ -39,7 +39,7 @@ import Testing
     let speechRequest = try #require(await speechTransport.requests().first)
     #expect(speechRequest.url.absoluteString == "https://api.x.ai/v1/tts")
     #expect(speechRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(speechRequest.headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(speechRequest.headers["user-agent"] == "ai-sdk/xai/5.0.10")
     let speechBody = try decodeJSONBody(try #require(speechRequest.body))
     #expect(speechBody["text"]?.stringValue == "Hello [pause] world")
     #expect(speechBody["voice_id"]?.stringValue == "eve")
@@ -85,7 +85,7 @@ import Testing
     let transcriptionRequest = try #require(await transcriptionTransport.requests().first)
     #expect(transcriptionRequest.url.absoluteString == "https://api.x.ai/v1/stt")
     #expect(transcriptionRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(transcriptionRequest.headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(transcriptionRequest.headers["user-agent"] == "ai-sdk/xai/5.0.10")
     #expect(transcriptionRequest.headers["content-type"]?.hasPrefix("multipart/form-data; boundary=SwiftAISDK-") == true)
     let transcriptionBody = String(data: try #require(transcriptionRequest.body), encoding: .utf8) ?? ""
     #expect(transcriptionBody.contains("name=\"audio_format\""))
@@ -248,7 +248,7 @@ import Testing
     let imageRequest = try #require(imageRequests.first)
     #expect(imageRequest.url.absoluteString == "https://api.x.ai/v1/images/generations")
     #expect(imageRequest.headers["authorization"] == "Bearer xai-key")
-    #expect(imageRequest.headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(imageRequest.headers["user-agent"] == "ai-sdk/xai/5.0.10")
     let imageBody = try decodeJSONBody(try #require(imageRequest.body))
     #expect(imageBody["model"]?.stringValue == "grok-2-image")
     #expect(imageBody["prompt"]?.stringValue == "cat")
@@ -280,7 +280,7 @@ import Testing
     #expect(requests.count == 2)
     #expect(requests[0].url.absoluteString == "https://api.x.ai/v1/videos/generations")
     #expect(requests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[0].headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(requests[0].headers["user-agent"] == "ai-sdk/xai/5.0.10")
     let videoBody = try decodeJSONBody(try #require(requests[0].body))
     #expect(videoBody["model"]?.stringValue == "grok-2-video")
     #expect(videoBody["prompt"]?.stringValue == "cat running")
@@ -290,7 +290,7 @@ import Testing
     #expect(requests[1].method == "GET")
     #expect(requests[1].url.absoluteString == "https://api.x.ai/v1/videos/vid-1")
     #expect(requests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(requests[1].headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(requests[1].headers["user-agent"] == "ai-sdk/xai/5.0.10")
 
     let editTransport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"edit-1"}"#),
@@ -312,9 +312,9 @@ import Testing
     let editRequests = await editTransport.requests()
     #expect(editRequests[0].url.absoluteString == "https://api.x.ai/v1/videos/edits")
     #expect(editRequests[0].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[0].headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(editRequests[0].headers["user-agent"] == "ai-sdk/xai/5.0.10")
     #expect(editRequests[1].headers["authorization"] == "Bearer xai-key")
-    #expect(editRequests[1].headers["user-agent"] == "ai-sdk/xai/5.0.4")
+    #expect(editRequests[1].headers["user-agent"] == "ai-sdk/xai/5.0.10")
     let editBody = try decodeJSONBody(try #require(editRequests[0].body))
     #expect(editBody["video"]?["url"]?.stringValue == "https://x.ai/source.mp4")
     #expect(editBody["aspect_ratio"] == nil)
@@ -497,13 +497,13 @@ import Testing
     #expect(result.warnings.contains(AIWarning(
         type: "unsupported",
         feature: "frameImages",
-        message: "xAI video models do not support last_frame frameImages. The last_frame image will be ignored."
+        message: "xAI only supports last_frame with \"grok-imagine-video-1.5\". The last frame was ignored."
     )))
     let request = try #require((await transport.requests()).first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/videos/generations")
     let body = try decodeJSONBody(try #require(request.body))
     #expect(body["image"]?["url"]?.stringValue == "https://example.com/first.png")
-    #expect(body["reference_images"] == nil)
+    #expect(body["reference_images"]?[0]?["url"]?.stringValue == "https://example.com/legacy-reference.png")
 }
 
 @Test func xAIVideoMapsFileFrameImageLikeUpstream() async throws {
@@ -610,7 +610,7 @@ import Testing
     )))
 }
 
-@Test func xAIVideoDoesNotRouteNonImageReferencesOrVoicesToReferenceMode() async throws {
+@Test func xAIVideoRoutesAudioReferencesAndIgnoresVideoReferencesLikeUpstream() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"non-image-reference"}"#),
         jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/non-image-reference.mp4","respect_moderation":true}}"#)
@@ -627,16 +627,12 @@ import Testing
 
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["reference_images"] == nil)
-    #expect(body["reference_audios"] == nil)
+    #expect(body["reference_audios"]?[0]?["url"]?.stringValue == "https://example.com/voice.mp3")
+    #expect(body["reference_audios"]?[1]?["voice_id"]?.stringValue == "eve")
     #expect(result.warnings.contains(AIWarning(
         type: "unsupported",
         feature: "inputReferences",
-        message: "xAI reference-to-video requires at least one image reference. The references were ignored."
-    )))
-    #expect(result.warnings.contains(AIWarning(
-        type: "unsupported",
-        feature: "referenceVoiceIds",
-        message: "xAI only supports reference voices for reference-to-video generation. The reference voices were ignored."
+        message: "xAI reference-to-video does not accept video references. The video reference was ignored. Use providerOptions.xai.mode \"extend-video\" to continue from a video."
     )))
 }
 
@@ -708,7 +704,7 @@ import Testing
     #expect(await expiredTransport.requests().count == 2)
 }
 
-@Test func xAIVideoIgnoresInputReferencesWithFrameImagesLikeUpstream() async throws {
+@Test func xAIVideoCombinesInputReferencesWithFrameImagesLikeUpstream() async throws {
     let transport = RecordingTransport(responses: [
         jsonResponse(#"{"request_id":"frame-over-refs"}"#),
         jsonResponse(#"{"status":"done","video":{"url":"https://x.ai/frame-over-refs.mp4","respect_moderation":true}}"#)
@@ -727,14 +723,10 @@ import Testing
         providerOptions: ["xai": ["pollIntervalMs": 1]]
     ))
 
-    #expect(result.warnings.contains(AIWarning(
-        type: "unsupported",
-        feature: "inputReferences",
-        message: "xAI only supports inputReferences for reference-to-video generation. The reference images were ignored."
-    )))
+    #expect(result.warnings.isEmpty)
     let body = try decodeJSONBody(try #require((await transport.requests()).first?.body))
     #expect(body["image"]?["url"]?.stringValue == "https://example.com/first.png")
-    #expect(body["reference_images"] == nil)
+    #expect(body["reference_images"]?[0]?["url"]?.stringValue == "https://example.com/ref-1.png")
 }
 
 @Test func xAIVideoIgnoresInputReferencesInEditModeLikeUpstream() async throws {
@@ -762,7 +754,7 @@ import Testing
     #expect(result.warnings.contains(AIWarning(
         type: "unsupported",
         feature: "inputReferences",
-        message: "xAI only supports inputReferences for reference-to-video generation. The reference images were ignored."
+        message: "xAI only supports inputReferences for reference-to-video generation. The references were ignored."
     )))
     let request = try #require((await transport.requests()).first)
     #expect(request.url.absoluteString == "https://api.x.ai/v1/videos/edits")

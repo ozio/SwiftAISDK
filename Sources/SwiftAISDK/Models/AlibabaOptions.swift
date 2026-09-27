@@ -94,16 +94,86 @@ func alibabaValidateLanguageProviderOptions(_ options: [String: JSONValue]) thro
     return output
 }
 
-func alibabaResolvedResponseFormat(request: LanguageModelRequest, options: inout [String: JSONValue]) -> JSONValue? {
-    if let responseFormat = request.responseFormat {
+struct AlibabaResolvedResponseFormat {
+    var value: JSONValue?
+    var schema: JSONValue?
+    var injectJSONInstruction: Bool
+    var warning: AIWarning?
+}
+
+func alibabaResolvedResponseFormat(
+    request: LanguageModelRequest,
+    modelID: String,
+    options: inout [String: JSONValue]
+) -> AlibabaResolvedResponseFormat {
+    let responseFormat: JSONValue?
+    let requestsJSON: Bool
+    if let requestFormat = request.responseFormat {
         options.removeValue(forKey: "responseFormat")
         options.removeValue(forKey: "response_format")
-        return alibabaResponseFormatJSON(responseFormat)
+        switch requestFormat {
+        case .text:
+            return AlibabaResolvedResponseFormat(
+                value: nil,
+                schema: nil,
+                injectJSONInstruction: false,
+                warning: nil
+            )
+        case .json:
+            requestsJSON = true
+        }
+        responseFormat = alibabaResponseFormatJSON(requestFormat)
+    } else if let option = options.removeValue(forKey: "responseFormat") {
+        requestsJSON = option["type"]?.stringValue == "json"
+        responseFormat = alibabaResponseFormat(from: option)
+    } else {
+        responseFormat = options.removeValue(forKey: "response_format")
+        requestsJSON = responseFormat?["type"]?.stringValue == "json_object"
+            || responseFormat?["type"]?.stringValue == "json_schema"
     }
-    if let responseFormat = options.removeValue(forKey: "responseFormat") {
-        return alibabaResponseFormat(from: responseFormat)
+
+    guard requestsJSON, let responseFormat else {
+        return AlibabaResolvedResponseFormat(
+            value: responseFormat,
+            schema: nil,
+            injectJSONInstruction: false,
+            warning: nil
+        )
     }
-    return options.removeValue(forKey: "response_format")
+
+    let schema = responseFormat["json_schema"]?["schema"]
+    if let schema, !alibabaSupportsJSONSchemaOutput(modelID) {
+        return AlibabaResolvedResponseFormat(
+            value: .object(["type": .string("json_object")]),
+            schema: schema,
+            injectJSONInstruction: true,
+            warning: AIWarning(
+                type: "compatibility",
+                feature: "responseFormat JSON schema",
+                message: "Alibaba does not support JSON Schema output for model \(modelID). JSON Object mode is used instead. The schema was injected into the system message and will only be validated locally."
+            )
+        )
+    }
+
+    return AlibabaResolvedResponseFormat(
+        value: responseFormat,
+        schema: schema,
+        injectJSONInstruction: schema == nil,
+        warning: nil
+    )
+}
+
+func alibabaSupportsJSONSchemaOutput(_ modelID: String) -> Bool {
+    let supportedFamilies = [
+        "qwen3.7-plus",
+        "qwen3.7-flash",
+        "qwen3.7-max",
+        "qwen3.8-max",
+        "qwen3.8-flash"
+    ]
+    return supportedFamilies.contains { family in
+        modelID == family || modelID.hasPrefix("\(family)-")
+    }
 }
 
 func alibabaResponseFormatJSON(_ responseFormat: AIResponseFormat) -> JSONValue? {

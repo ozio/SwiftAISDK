@@ -56,16 +56,20 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
         let separateReasoning = choice?["message"]?["reasoning_content"]?.stringValue
             ?? choice?["message"]?["reasoning"]?.stringValue
             ?? ""
-        var orderedContent = responseContent.map { part -> AIResultContentPart in
+        let audioTranscript = choice?["message"]?["audio"]?["transcript"]?.stringValue
+        var orderedContent = responseContent.compactMap { part -> AIResultContentPart? in
             switch part {
             case let .text(text):
-                return .text(text)
+                return text.isEmpty ? nil : .text(text)
             case let .reasoning(reasoning):
                 return .reasoning(reasoning)
             }
         }
         if !separateReasoning.isEmpty {
             orderedContent.append(.reasoning(separateReasoning))
+        }
+        if contentText.isEmpty, let audioTranscript, !audioTranscript.isEmpty {
+            orderedContent.append(.text(audioTranscript))
         }
         orderedContent.append(contentsOf: toolCalls.map(AIResultContentPart.toolCall))
         let contentValue = choice?["message"]?["content"]
@@ -74,8 +78,17 @@ public final class OpenAICompatibleChatModel: LanguageModel, @unchecked Sendable
             : choice?["text"]?.stringValue
                 ?? raw["output_text"]?.stringValue
                 ?? raw["text"]?.stringValue
-        let text = contentValue?.stringValue
-            ?? (contentValue?.arrayValue != nil ? contentText : nil)
+        let messageText: String?
+        if let string = contentValue?.stringValue, !string.isEmpty {
+            messageText = string
+        } else if contentValue?.arrayValue != nil, !contentText.isEmpty {
+            messageText = contentText
+        } else {
+            messageText = nil
+        }
+        let usableAudioTranscript = audioTranscript.flatMap { $0.isEmpty ? nil : $0 }
+        let text = messageText
+            ?? usableAudioTranscript
             ?? legacyText
         guard let text = text ?? (toolCalls.isEmpty && !config.allowsEmptyTextResponse ? nil : "") else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in chat completion response.")

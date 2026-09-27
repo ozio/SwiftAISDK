@@ -10,6 +10,7 @@ struct AnthropicToolCallBuffer {
     var rawValue: JSONValue
     var firstDelta: Bool = true
     var providerToolInputType: String?
+    var toolsetAction: String?
 }
 
 enum AnthropicStreamingContentBlock {
@@ -54,9 +55,18 @@ struct AnthropicStreamingContentBlocks {
                 return [.reasoningStart(id: id, providerMetadata: metadata)]
             case "compaction":
                 let metadata = anthropicContentBlockProviderMetadata([
-                    "type": .string("compaction")
+                    "type": .string("compaction"),
+                    "signature": block["signature"]
                 ], providerID: providerID)
                 blocks[index] = .text(providerMetadata: metadata)
+                if block["signature"]?.stringValue != nil,
+                   let content = block["content"]?.stringValue,
+                   !content.isEmpty {
+                    return [
+                        .textStart(id: id, providerMetadata: metadata),
+                        .textDeltaPart(id: id, delta: content)
+                    ]
+                }
                 return [.textStart(id: id, providerMetadata: metadata)]
             default:
                 return []
@@ -300,11 +310,20 @@ struct AnthropicStreamingToolCalls {
                 toolCall.dynamic = true
             }
             let providerToolInputType = anthropicProviderToolInputType(from: block)
+            let toolsetAction = block["toolset_name"]?.stringValue == nil
+                ? nil
+                : block["name"]?.stringValue
             let hasEmptyProviderToolInput = providerToolInputType != nil
                 && block["input"]?.objectValue?.isEmpty == true
-            let initialArguments = hasEmptyProviderToolInput
-                ? ""
-                : (toolCall.arguments == "{}" ? "" : toolCall.arguments)
+            let toolsetInput = anthropicJSONString(block["input"] ?? .object([:])) ?? "{}"
+            let initialArguments: String
+            if toolsetAction != nil {
+                initialArguments = toolsetInput == "{}" ? "" : toolsetInput
+            } else {
+                initialArguments = hasEmptyProviderToolInput
+                    ? ""
+                    : (toolCall.arguments == "{}" ? "" : toolCall.arguments)
+            }
             buffers[index] = AnthropicToolCallBuffer(
                 id: toolCall.id,
                 name: toolCall.name,
@@ -314,7 +333,8 @@ struct AnthropicStreamingToolCalls {
                 providerMetadata: toolCall.providerMetadata,
                 rawValue: block,
                 firstDelta: initialArguments.isEmpty,
-                providerToolInputType: providerToolInputType
+                providerToolInputType: providerToolInputType,
+                toolsetAction: toolsetAction
             )
             var parts: [LanguageStreamPart] = [
                 .toolInputStart(
@@ -325,9 +345,11 @@ struct AnthropicStreamingToolCalls {
                     providerMetadata: toolCall.providerMetadata
                 )
             ]
-            parts.append(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: initialArguments, index: index))
-            if !initialArguments.isEmpty {
-                parts.append(.toolInputDelta(id: toolCall.id, delta: initialArguments))
+            if toolsetAction == nil {
+                parts.append(.toolCallDelta(id: toolCall.id, name: toolCall.name, argumentsDelta: initialArguments, index: index))
+                if !initialArguments.isEmpty {
+                    parts.append(.toolInputDelta(id: toolCall.id, delta: initialArguments))
+                }
             }
             return parts
         case "content_block_delta":
@@ -343,6 +365,9 @@ struct AnthropicStreamingToolCalls {
                 buffer.firstDelta = false
             }
             buffers[index] = buffer
+            if buffer.toolsetAction != nil {
+                return []
+            }
             var parts: [LanguageStreamPart] = [.toolCallDelta(id: buffer.id, name: buffer.name, argumentsDelta: patchedDelta, index: index)]
             if !patchedDelta.isEmpty {
                 parts.append(.toolInputDelta(id: buffer.id, delta: patchedDelta))
@@ -352,12 +377,27 @@ struct AnthropicStreamingToolCalls {
             guard let index = raw["index"]?.intValue, let buffer = buffers.removeValue(forKey: index) else {
                 return []
             }
-            return [
+            var finalArguments = buffer.arguments.isEmpty ? "{}" : buffer.arguments
+            var leadingParts: [LanguageStreamPart] = []
+            if let action = buffer.toolsetAction,
+               let parsed = try? decodeJSONBody(Data(finalArguments.utf8)),
+               var object = parsed.objectValue {
+                object["action"] = .string(action)
+                finalArguments = anthropicJSONString(.object(object)) ?? finalArguments
+                leadingParts.append(.toolCallDelta(
+                    id: buffer.id,
+                    name: buffer.name,
+                    argumentsDelta: finalArguments,
+                    index: index
+                ))
+                leadingParts.append(.toolInputDelta(id: buffer.id, delta: finalArguments))
+            }
+            return leadingParts + [
                 .toolInputEnd(id: buffer.id, providerMetadata: buffer.providerMetadata),
                 .toolCall(AIToolCall(
                     id: buffer.id,
                     name: buffer.name,
-                    arguments: buffer.arguments.isEmpty ? "{}" : buffer.arguments,
+                    arguments: finalArguments,
                     providerExecuted: buffer.providerExecuted,
                     dynamic: buffer.dynamic,
                     providerMetadata: buffer.providerMetadata,

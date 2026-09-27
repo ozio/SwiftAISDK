@@ -8,6 +8,8 @@ public enum Telemetry {
             case end
             case abort
             case error
+            case modelCallStart
+            case modelCallEnd
             case stepStart
             case stepEnd
             case toolStart
@@ -33,6 +35,7 @@ public enum Telemetry {
         public var responseMetadata: AIResponseMetadata
         public var errorDescription: String?
         public var metadata: [String: JSONValue]
+        public var runtimeContext: [String: JSONValue]
         public var includesInput: Bool
         public var includesOutput: Bool
 
@@ -55,6 +58,7 @@ public enum Telemetry {
             responseMetadata: AIResponseMetadata = AIResponseMetadata(),
             errorDescription: String? = nil,
             metadata: [String: JSONValue] = [:],
+            runtimeContext: [String: JSONValue] = [:],
             includesInput: Bool = true,
             includesOutput: Bool = true
         ) {
@@ -76,8 +80,58 @@ public enum Telemetry {
             self.responseMetadata = responseMetadata
             self.errorDescription = errorDescription
             self.metadata = metadata
+            self.runtimeContext = runtimeContext
             self.includesInput = includesInput
             self.includesOutput = includesOutput
+        }
+
+        /// Source-compatible initializer retained from SwiftAISDK 1.9.0,
+        /// before events could carry a filtered runtime context.
+        public init(
+            kind: Kind,
+            callID: String,
+            operationID: String,
+            providerID: String,
+            modelID: String? = nil,
+            functionID: String? = nil,
+            attempt: Int? = nil,
+            maxRetries: Int? = nil,
+            delayNanoseconds: UInt64? = nil,
+            durationNanoseconds: UInt64? = nil,
+            input: JSONValue? = nil,
+            output: JSONValue? = nil,
+            usage: TokenUsage? = nil,
+            warnings: [AIWarning] = [],
+            providerMetadata: [String: JSONValue] = [:],
+            responseMetadata: AIResponseMetadata = AIResponseMetadata(),
+            errorDescription: String? = nil,
+            metadata: [String: JSONValue] = [:],
+            includesInput: Bool = true,
+            includesOutput: Bool = true
+        ) {
+            self.init(
+                kind: kind,
+                callID: callID,
+                operationID: operationID,
+                providerID: providerID,
+                modelID: modelID,
+                functionID: functionID,
+                attempt: attempt,
+                maxRetries: maxRetries,
+                delayNanoseconds: delayNanoseconds,
+                durationNanoseconds: durationNanoseconds,
+                input: input,
+                output: output,
+                usage: usage,
+                warnings: warnings,
+                providerMetadata: providerMetadata,
+                responseMetadata: responseMetadata,
+                errorDescription: errorDescription,
+                metadata: metadata,
+                runtimeContext: [:],
+                includesInput: includesInput,
+                includesOutput: includesOutput
+            )
         }
     }
 
@@ -134,6 +188,7 @@ public enum Telemetry {
         public var includesOutput: Bool
         public var functionID: String?
         public var metadata: [String: JSONValue]
+        public var includeRuntimeContext: [String: Bool]?
         public var integrations: [any Integration]?
 
         public init(
@@ -142,6 +197,7 @@ public enum Telemetry {
             includesOutput: Bool = true,
             functionID: String? = nil,
             metadata: [String: JSONValue] = [:],
+            includeRuntimeContext: [String: Bool]? = nil,
             integrations: [any Integration]? = nil
         ) {
             self.isEnabled = isEnabled
@@ -149,7 +205,29 @@ public enum Telemetry {
             self.includesOutput = includesOutput
             self.functionID = functionID
             self.metadata = metadata
+            self.includeRuntimeContext = includeRuntimeContext
             self.integrations = integrations
+        }
+
+        /// Source-compatible initializer retained from SwiftAISDK 1.9.0,
+        /// before telemetry options selected runtime-context fields.
+        public init(
+            isEnabled: Bool = true,
+            includesInput: Bool = true,
+            includesOutput: Bool = true,
+            functionID: String? = nil,
+            metadata: [String: JSONValue] = [:],
+            integrations: [any Integration]? = nil
+        ) {
+            self.init(
+                isEnabled: isEnabled,
+                includesInput: includesInput,
+                includesOutput: includesOutput,
+                functionID: functionID,
+                metadata: metadata,
+                includeRuntimeContext: nil,
+                integrations: integrations
+            )
         }
 
         public static let disabled = Options(isEnabled: false)

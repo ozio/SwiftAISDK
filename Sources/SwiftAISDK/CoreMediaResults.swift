@@ -1,5 +1,28 @@
 import Foundation
 
+public struct AIEmbeddingProviderOptionsTransformContext: Sendable {
+    public var providerOptions: [String: JSONValue]
+    public var values: [String]
+    public var startIndex: Int
+    public var endIndex: Int
+
+    public init(
+        providerOptions: [String: JSONValue],
+        values: [String],
+        startIndex: Int,
+        endIndex: Int
+    ) {
+        self.providerOptions = providerOptions
+        self.values = values
+        self.startIndex = startIndex
+        self.endIndex = endIndex
+    }
+}
+
+public typealias AIEmbeddingProviderOptionsTransformer = @Sendable (
+    AIEmbeddingProviderOptionsTransformContext
+) async throws -> [String: JSONValue]
+
 public struct EmbeddingRequest: Sendable {
     public var values: [String]
     public var dimensions: Int?

@@ -82,6 +82,217 @@ func googleSpeechProviderOptions(from request: SpeechRequest) -> [String: JSONVa
     return options.filter { $0.key != "google" && $0.key != "googleVertex" && $0.key != "vertex" }
 }
 
+struct GooglePreparedSpeechRequest {
+    var body: JSONValue
+    var warnings: [AIWarning]
+    var outputFormat: String
+    var usesStructuredSpeech: Bool
+}
+
+func googlePrepareSpeechRequest(
+    _ request: SpeechRequest,
+    modelID: String,
+    options: [String: JSONValue]
+) throws -> GooglePreparedSpeechRequest {
+    let usesStructuredSpeech = !modelID.hasPrefix("gemini-2.5-")
+        && !modelID.hasPrefix("gemini-3.1-")
+    var warnings: [AIWarning] = []
+
+    if request.voice?.hasPrefix("voice_") == true || request.voice?.hasPrefix("voicekey_") == true {
+        throw AIError.invalidArgument(
+            argument: "voice",
+            message: "Custom voices are not supported. Use a prebuilt voice instead."
+        )
+    }
+
+    let multiSpeakerVoiceConfig = options["multiSpeakerVoiceConfig"]
+    let speakerVoiceConfigs = multiSpeakerVoiceConfig?["speakerVoiceConfigs"]?.arrayValue ?? []
+    if speakerVoiceConfigs.contains(where: { $0["voiceConfig"]?.objectValue?.keys.contains("voice") == true }) {
+        throw AIError.invalidArgument(
+            argument: "voice",
+            message: "Custom voices are not supported. Use a prebuilt voice instead."
+        )
+    }
+
+    if request.speed != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "speed",
+            message: "Google Gemini TTS models do not support the `speed` option. It was ignored."
+        ))
+    }
+    if request.language != nil {
+        warnings.append(AIWarning(
+            type: "unsupported",
+            feature: "language",
+            message: "Google Gemini TTS models do not support the `language` option. Language is detected automatically from the input text."
+        ))
+    }
+
+    var parts: [JSONValue]
+    if usesStructuredSpeech {
+        if options["turns"] != nil, options["speechMetadata"] != nil {
+            throw AIError.invalidArgument(
+                argument: "providerOptions",
+                message: "Set speechMetadata on each turn when using turns."
+            )
+        }
+
+        let turns = options["turns"]?.arrayValue
+        if options["turns"] != nil, turns?.isEmpty != false {
+            throw AIError.invalidArgument(
+                argument: "providerOptions",
+                message: "Google TTS turns must contain at least one turn."
+            )
+        }
+        if turns != nil, !request.text.isEmpty {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "text",
+                message: "Google TTS turns replace the top-level text."
+            ))
+        }
+
+        let configuredSpeakers = Set(speakerVoiceConfigs.compactMap { $0["speaker"]?.stringValue })
+        let sourceParts = turns ?? [
+            .object([
+                "text": .string(request.text),
+                "speechMetadata": options["speechMetadata"] ?? .null
+            ])
+        ]
+        parts = try sourceParts.map { part in
+            guard let text = part["text"]?.stringValue else {
+                throw AIError.invalidArgument(argument: "providerOptions", message: "Every Google TTS turn must contain text.")
+            }
+            let metadata = part["speechMetadata"]?.objectValue
+            let speaker = metadata?["speaker"]?.stringValue
+            let style = metadata?["style"]?.stringValue ?? request.instructions
+            if multiSpeakerVoiceConfig != nil,
+               (speaker == nil || !configuredSpeakers.contains(speaker!)) {
+                throw AIError.invalidArgument(
+                    argument: "speechMetadata.speaker",
+                    message: "Every multi-speaker turn must specify a speechMetadata.speaker matching a configured speaker."
+                )
+            }
+            var output: [String: JSONValue] = ["text": .string(text)]
+            if style != nil || speaker != nil {
+                output["speechMetadata"] = .object([
+                    "style": style.map(JSONValue.string) ?? .null,
+                    "speaker": speaker.map(JSONValue.string) ?? .null
+                ].filter { $0.value != .null })
+            }
+            return .object(output)
+        }
+    } else {
+        if options["turns"] != nil || options["speechMetadata"] != nil {
+            throw AIError.invalidArgument(
+                argument: "providerOptions",
+                message: "Structured speech metadata and turns require Gemini 3.8 TTS."
+            )
+        }
+        var promptText = request.text
+        if let instructions = request.instructions {
+            if multiSpeakerVoiceConfig != nil {
+                warnings.append(AIWarning(
+                    type: "unsupported",
+                    feature: "instructions",
+                    message: "Google Gemini TTS ignores `instructions` when `multiSpeakerVoiceConfig` is set, because prepending them would break multi-speaker transcript parsing."
+                ))
+            } else {
+                promptText = "\(instructions): \(request.text)"
+            }
+        }
+        parts = [.object(["text": .string(promptText)])]
+    }
+
+    let transcript = (options["turns"]?.arrayValue?.compactMap { $0["text"]?.stringValue }.joined()) ?? request.text
+    guard !transcript.isEmpty else {
+        throw AIError.invalidArgument(argument: "text", message: "Speech input must contain a non-empty transcript.")
+    }
+
+    let formats: [String: String] = usesStructuredSpeech
+        ? [
+            "wav": "AUDIO_WAV",
+            "audio/wav": "AUDIO_WAV",
+            "pcm": "AUDIO_L16",
+            "audio/l16": "AUDIO_L16",
+            "mulaw": "AUDIO_MULAW",
+            "audio/mulaw": "AUDIO_MULAW",
+            "alaw": "AUDIO_ALAW",
+            "audio/alaw": "AUDIO_ALAW"
+        ]
+        : ["wav": "AUDIO_WAV", "pcm": "AUDIO_L16"]
+    let requestedFormat = request.format?.lowercased()
+    let outputFormat: String
+    if let requestedFormat, let supported = formats[requestedFormat] {
+        outputFormat = supported
+    } else {
+        outputFormat = "AUDIO_WAV"
+        if let requestedFormat {
+            warnings.append(AIWarning(
+                type: "unsupported",
+                feature: "outputFormat",
+                message: "Unsupported output format: \(requestedFormat). Using wav instead."
+            ))
+        }
+    }
+
+    let speechConfig: JSONValue
+    if let multiSpeakerVoiceConfig {
+        speechConfig = .object(["multiSpeakerVoiceConfig": multiSpeakerVoiceConfig])
+    } else {
+        speechConfig = .object([
+            "voiceConfig": .object([
+                "prebuiltVoiceConfig": .object([
+                    "voiceName": .string(request.voice ?? "Kore")
+                ])
+            ])
+        ])
+    }
+    var generationConfig: [String: JSONValue] = [
+        "responseModalities": .array([.string("AUDIO")]),
+        "speechConfig": speechConfig
+    ]
+    if usesStructuredSpeech, request.format != nil {
+        generationConfig["responseFormat"] = .object([
+            "audio": .object(["mimeType": .string(outputFormat)])
+        ])
+    }
+    return GooglePreparedSpeechRequest(
+        body: .object([
+            "contents": .array([.object([
+                "role": .string("user"),
+                "parts": .array(parts)
+            ])]),
+            "generationConfig": .object(generationConfig)
+        ]),
+        warnings: warnings,
+        outputFormat: outputFormat,
+        usesStructuredSpeech: usesStructuredSpeech
+    )
+}
+
+func googleSpeechContentType(
+    mimeType: String?,
+    outputFormat: String,
+    wrappedPCMAsWAV: Bool
+) -> String {
+    if wrappedPCMAsWAV { return "audio/wav" }
+    if let mimeType { return mimeType }
+    switch outputFormat {
+    case "AUDIO_L16": return "audio/L16"
+    case "AUDIO_MULAW": return "audio/mulaw"
+    case "AUDIO_ALAW": return "audio/alaw"
+    default: return "audio/wav"
+    }
+}
+
+func googleSpeechMimeTypeIsPCM(_ mimeType: String?, usesStructuredSpeech: Bool) -> Bool {
+    guard let mimeType else { return !usesStructuredSpeech }
+    let lower = mimeType.lowercased()
+    return lower.hasPrefix("audio/l16") || lower.hasPrefix("audio/pcm")
+}
+
 func googleVideoInstance(for request: VideoGenerationRequest, options: [String: JSONValue]) -> (instance: [String: JSONValue], warnings: [AIWarning]) {
     var instance: [String: JSONValue] = ["prompt": .string(request.prompt)]
     var warnings: [AIWarning] = []

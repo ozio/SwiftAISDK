@@ -31,16 +31,19 @@ public final class GroqLanguageModel: LanguageModel, @unchecked Sendable {
             abortSignal: request.abortSignal
         )
         let raw = response.json
-        let choice = raw["choices"]?[0]
-        let toolCalls = groqToolCalls(from: choice?["message"]?["tool_calls"])
-        let reasoning = choice?["message"]?["reasoning"]?.stringValue ?? ""
-        guard let text = choice?["message"]?["content"]?.stringValue ?? (!toolCalls.isEmpty || !reasoning.isEmpty ? "" : nil) else {
+        guard let choice = raw["choices"]?.arrayValue?.first else {
+            throw AIError.invalidResponse(provider: providerID, message: "Response did not contain any choices.")
+        }
+
+        let toolCalls = groqToolCalls(from: choice["message"]?["tool_calls"])
+        let reasoning = choice["message"]?["reasoning"]?.stringValue ?? ""
+        guard let text = choice["message"]?["content"]?.stringValue ?? (!toolCalls.isEmpty || !reasoning.isEmpty ? "" : nil) else {
             throw AIError.invalidResponse(provider: providerID, message: "No text content found in Groq response.")
         }
         return TextGenerationResult(
             text: text,
             reasoning: reasoning,
-            finishReason: groqFinishReason(choice?["finish_reason"]?.stringValue),
+            finishReason: groqFinishReason(choice["finish_reason"]?.stringValue),
             usage: groqUsage(from: raw["usage"]),
             toolCalls: toolCalls,
             rawValue: raw,

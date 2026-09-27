@@ -47,6 +47,12 @@ Every provider response must also contain exactly one vector for each input in
 that request. A mismatch is rejected before the facade merges chunked results,
 preventing silently shifted input/vector associations.
 
+Custom embedding models can expose `providerOptionsTransformer`. When the
+facade splits an `embedMany` request, the transformer receives the full value
+list plus the current `startIndex`/`endIndex` range and returns options for that
+batch. The transformed options stay stable across retries of that batch, so
+parallel provider-option arrays remain aligned with their input values.
+
 ## Options
 
 - `dimensions` requests a provider-supported embedding size.

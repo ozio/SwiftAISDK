@@ -105,12 +105,13 @@ func anthropicGeneratedContent(
             sources.append(contentsOf: partSources)
             content.append(contentsOf: partSources.map(AIResultContentPart.source))
         case "compaction":
-            let partText = part["content"]?.stringValue ?? ""
+            guard let partText = part["content"]?.stringValue, !partText.isEmpty else { continue }
             text += partText
             content.append(.text(
                 partText,
                 providerMetadata: anthropicContentBlockProviderMetadata([
-                    "type": .string("compaction")
+                    "type": .string("compaction"),
+                    "signature": part["signature"]
                 ], providerID: providerID)
             ))
         case "tool_use" where part["name"]?.stringValue == "json" && usesJSONToolResponseFormat:
@@ -455,6 +456,7 @@ func anthropicProviderMetadata(from raw: JSONValue, providerID: String, requestP
         container: anthropicContainerMetadata(from: raw["container"]) ?? .null,
         contextManagement: anthropicContextManagementMetadata(from: raw["context_management"]) ?? .null,
         inputTransformations: raw["input_transformations"] ?? .null,
+        safeguardResults: raw["safeguard_results"] ?? .null,
         providerID: providerID,
         requestProviderOptions: requestProviderOptions
     )
@@ -467,6 +469,7 @@ func anthropicProviderMetadata(
     container: JSONValue,
     contextManagement: JSONValue,
     inputTransformations: JSONValue = .null,
+    safeguardResults: JSONValue = .null,
     providerID: String,
     requestProviderOptions: [String: JSONValue] = [:]
 ) -> [String: JSONValue] {
@@ -482,6 +485,9 @@ func anthropicProviderMetadata(
     }
     if inputTransformations != .null {
         metadataObject["inputTransformations"] = inputTransformations
+    }
+    if safeguardResults != .null {
+        metadataObject["safeguardResults"] = safeguardResults
     }
     let metadata: JSONValue = .object(metadataObject)
     return Dictionary(uniqueKeysWithValues: anthropicProviderMetadataKeys(from: providerID, requestProviderOptions: requestProviderOptions).map {
@@ -822,11 +828,24 @@ func anthropicToolCall(
     case "tool_use":
         guard let id = part["id"]?.stringValue, let name = part["name"]?.stringValue else { return nil }
         guard name != "json" else { return nil }
+        let toolsetName = part["toolset_name"]?.stringValue
+        var input = part["input"]?.objectValue ?? [:]
+        if toolsetName != nil {
+            input["action"] = .string(name)
+        }
+        let customName = toolsetName.map(toolNameMapping.toCustomToolName) ?? name
+        var providerMetadata = anthropicCallerProviderMetadata(from: part["caller"], providerID: providerID)
+        if let toolsetName {
+            let key = anthropicProviderMetadataKey(from: providerID)
+            var object = providerMetadata[key]?.objectValue ?? [:]
+            object["toolsetName"] = .string(toolsetName)
+            providerMetadata[key] = .object(object)
+        }
         return AIToolCall(
             id: id,
-            name: name,
-            arguments: anthropicJSONString(part["input"] ?? .object([:])) ?? "{}",
-            providerMetadata: anthropicCallerProviderMetadata(from: part["caller"], providerID: providerID),
+            name: customName,
+            arguments: anthropicJSONString(.object(input)) ?? "{}",
+            providerMetadata: providerMetadata,
             rawValue: part
         )
     case "server_tool_use":
@@ -865,6 +884,15 @@ func anthropicToolCall(
     default:
         return nil
     }
+}
+
+func anthropicToolsetName(
+    from providerMetadata: [String: JSONValue],
+    providerID: String
+) -> String? {
+    let key = anthropicProviderMetadataKey(from: providerID)
+    return providerMetadata[key]?["toolsetName"]?.stringValue
+        ?? providerMetadata["anthropic"]?["toolsetName"]?.stringValue
 }
 
 func anthropicCallerProviderMetadata(from value: JSONValue?, providerID: String) -> [String: JSONValue] {

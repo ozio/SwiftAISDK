@@ -191,6 +191,7 @@ func googleGenerateContentMessageJSON(
     _ message: AIMessage,
     modelID: String,
     includeFunctionCallIDs: Bool = true,
+    supportsGoogleCloudStorageToolResults: Bool = false,
     warnings: inout [AIWarning]
 ) throws -> JSONValue {
     let role = message.role == .assistant ? "model" : "user"
@@ -220,6 +221,7 @@ func googleGenerateContentMessageJSON(
             part,
             modelID: modelID,
             includeFunctionCallIDs: includeFunctionCallIDs,
+            supportsGoogleCloudStorageToolResults: supportsGoogleCloudStorageToolResults,
             warnings: &warnings
         ))
     }
@@ -230,6 +232,7 @@ func googleGenerateContentParts(
     _ part: AIContentPart,
     modelID: String,
     includeFunctionCallIDs: Bool = true,
+    supportsGoogleCloudStorageToolResults: Bool = false,
     warnings: inout [AIWarning]
 ) throws -> [JSONValue] {
     switch part {
@@ -260,7 +263,8 @@ func googleGenerateContentParts(
         return googleGenerateContentToolResultParts(
             result,
             modelID: modelID,
-            includeFunctionCallIDs: includeFunctionCallIDs
+            includeFunctionCallIDs: includeFunctionCallIDs,
+            supportsGoogleCloudStorageToolResults: supportsGoogleCloudStorageToolResults
         )
     case .reasoningFile, .custom, .toolApprovalRequest, .toolApprovalResponse:
         return [.object(["text": .string("")])]
@@ -274,6 +278,10 @@ func googleGenerateContentToolCallPart(
     skipMissingSignatureMitigation: Bool = false,
     warnings: inout [AIWarning]
 ) -> JSONValue {
+    if call.providerExecuted, call.name == "code_execution" {
+        return .object(["executableCode": googleToolArguments(call.arguments)])
+    }
+
     let thoughtSignature = googleThoughtSignature(from: call.providerMetadata)
     let effectiveThoughtSignature: JSONValue?
     if thoughtSignature == nil,
@@ -315,14 +323,24 @@ func googleGenerateContentToolCallPart(
 func googleGenerateContentToolResultParts(
     _ result: AIToolResult,
     modelID: String,
-    includeFunctionCallIDs: Bool = true
+    includeFunctionCallIDs: Bool = true,
+    supportsGoogleCloudStorageToolResults: Bool = false
 ) -> [JSONValue] {
+    let output = result.modelOutput ?? result.result
+    let unwrappedOutput = output["type"]?.stringValue == "json"
+        ? (output["value"] ?? output)
+        : output
+    if result.toolName == "code_execution",
+       unwrappedOutput["outcome"] != nil {
+        return [.object(["codeExecutionResult": unwrappedOutput])]
+    }
+
     if let serverTool = googleServerToolMetadata(from: result.providerMetadata) {
         var output: [String: JSONValue] = [
             "toolResponse": .object([
                 "toolType": .string(serverTool.type),
                 "id": .string(serverTool.id),
-                "response": result.modelOutput ?? result.result
+                "response": unwrappedOutput
             ])
         ]
         if let thoughtSignature = googleThoughtSignature(from: result.providerMetadata) {
@@ -331,7 +349,6 @@ func googleGenerateContentToolResultParts(
         return [.object(output)]
     }
 
-    let output = result.modelOutput ?? result.result
     if output["type"]?.stringValue == "content",
        let value = output["value"]?.arrayValue {
         return googleGenerateContentToolResultContentParts(
@@ -339,13 +356,14 @@ func googleGenerateContentToolResultParts(
             toolCallID: result.toolCallID,
             content: value,
             supportsFunctionResponseParts: googleMessageTargetIsGemini3(modelID),
-            includeFunctionCallIDs: includeFunctionCallIDs
+            includeFunctionCallIDs: includeFunctionCallIDs,
+            supportsGoogleCloudStorageToolResults: supportsGoogleCloudStorageToolResults
         )
     }
 
     var functionResponse: [String: JSONValue] = [
         "name": .string(result.toolName),
-        "response": output
+        "response": googleSerializeFunctionResponseContent(unwrappedOutput)
     ]
     if includeFunctionCallIDs {
         functionResponse["id"] = .string(result.toolCallID)
@@ -360,7 +378,8 @@ func googleGenerateContentToolResultContentParts(
     toolCallID: String,
     content: [JSONValue],
     supportsFunctionResponseParts: Bool,
-    includeFunctionCallIDs: Bool = true
+    includeFunctionCallIDs: Bool = true,
+    supportsGoogleCloudStorageToolResults: Bool = false
 ) -> [JSONValue] {
     var textParts: [String] = []
     var inlineParts: [JSONValue] = []
@@ -371,7 +390,11 @@ func googleGenerateContentToolResultContentParts(
         case "text":
             textParts.append(contentPart["text"]?.stringValue ?? "")
         case "file", "image-data", "file-data":
-            if let inlineData = googleInlineDataFromToolContent(contentPart) {
+            if supportsFunctionResponseParts,
+               supportsGoogleCloudStorageToolResults,
+               let fileData = googleCloudStorageFileDataFromToolContent(contentPart) {
+                inlineParts.append(fileData)
+            } else if let inlineData = googleInlineDataFromToolContent(contentPart) {
                 if supportsFunctionResponseParts {
                     inlineParts.append(inlineData)
                 } else {
@@ -420,10 +443,63 @@ func googleGenerateContentToolResultContentParts(
 
 func googleInlineDataFromToolContent(_ contentPart: JSONValue) -> JSONValue? {
     if let mediaType = contentPart["mediaType"]?.stringValue,
-       let data = contentPart["data"]?["data"]?.stringValue ?? contentPart["data"]?.stringValue {
-        return .object(["inlineData": .object(["mimeType": .string(mediaType), "data": .string(data)])])
+       let rawData = contentPart["data"]?["data"]?.stringValue ?? contentPart["data"]?.stringValue {
+        let dataURL = googleParseBase64DataURL(rawData)
+        let base64 = dataURL?.data ?? rawData
+        var resolvedMediaType = dataURL?.mediaType ?? mediaType
+        if !isFullMediaType(resolvedMediaType),
+           let bytes = Data(base64Encoded: base64),
+           let fullMediaType = try? resolveFullMediaType(mediaType: resolvedMediaType, data: bytes) {
+            resolvedMediaType = fullMediaType
+        }
+        return .object(["inlineData": .object(["mimeType": .string(resolvedMediaType), "data": .string(base64)])])
     }
     return nil
+}
+
+func googleCloudStorageFileDataFromToolContent(_ contentPart: JSONValue) -> JSONValue? {
+    guard let mediaType = contentPart["mediaType"]?.stringValue,
+          googleVertexSupportsCloudStorageToolResultMediaType(mediaType),
+          contentPart["data"]?["type"]?.stringValue == "url",
+          let url = contentPart["data"]?["url"]?.stringValue,
+          url.hasPrefix("gs://") else {
+        return nil
+    }
+    return .object(["fileData": .object(["mimeType": .string(mediaType), "fileUri": .string(url)])])
+}
+
+func googleVertexSupportsCloudStorageToolResultMediaType(_ mediaType: String) -> Bool {
+    ["image/png", "image/jpeg", "image/webp", "application/pdf", "text/plain"].contains(mediaType.lowercased())
+}
+
+private func googleParseBase64DataURL(_ value: String) -> (mediaType: String, data: String)? {
+    guard value.hasPrefix("data:"),
+          let separator = value.range(of: ";base64,") else {
+        return nil
+    }
+    let mediaType = String(value[value.index(value.startIndex, offsetBy: 5)..<separator.lowerBound])
+    let data = String(value[separator.upperBound...])
+    guard !mediaType.isEmpty, !data.isEmpty else { return nil }
+    return (mediaType, data)
+}
+
+func googleSerializeFunctionResponseContent(_ value: JSONValue) -> JSONValue {
+    googleContainsJSONSchemaReference(value)
+        ? .string(googleJSONString(value) ?? String(describing: value))
+        : value
+}
+
+func googleContainsJSONSchemaReference(_ value: JSONValue) -> Bool {
+    switch value {
+    case let .array(values):
+        return values.contains(where: googleContainsJSONSchemaReference)
+    case let .object(values):
+        return values.contains { key, nestedValue in
+            key == "$ref" || googleContainsJSONSchemaReference(nestedValue)
+        }
+    case .string, .number, .bool, .null:
+        return false
+    }
 }
 
 func googleMessageTargetIsGemini3(_ modelID: String) -> Bool {

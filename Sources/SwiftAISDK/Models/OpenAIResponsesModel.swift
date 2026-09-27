@@ -16,13 +16,19 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         let response = try await config.sendJSONResponse(path: "/responses", modelID: modelID, body: .object(prepared.body), headers: request.headers, abortSignal: request.abortSignal)
         let raw = response.json
         if case .openResponses = config.responsesRequestMode {
-            if let errorMessage = raw["error"]?["message"]?.stringValue {
+            if let error = raw["error"], let errorMessage = error["message"]?.stringValue {
+                let metadata = config.getResponseErrorMetadata?(error)
+                let responseBody = (try? encodeJSONBody(raw))
+                    .flatMap { String(data: $0, encoding: .utf8) }
+                    ?? errorMessage
                 throw AIError.apiCall(AIAPICallError(
                     provider: providerID,
-                    statusCode: 400,
+                    url: response.response.url?.absoluteString,
+                    requestBody: .object(prepared.body),
+                    statusCode: metadata?.statusCode ?? 400,
                     responseHeaders: response.response.headers,
-                    responseBody: errorMessage,
-                    isRetryable: false
+                    responseBody: responseBody,
+                    isRetryable: metadata?.isRetryable
                 ))
             }
             let hasOutput = raw["output"] != nil && raw["output"] != .null
@@ -113,7 +119,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                     let httpRequest = try config.request(path: "/responses", modelID: modelID, body: .object(body), headers: request.headers, abortSignal: request.abortSignal)
                     let response = try await config.streamRequest(httpRequest)
                     guard (200..<300).contains(response.statusCode) else {
-                        throw apiCallError(provider: providerID, response: try await bufferedHTTPResponse(from: response, request: httpRequest))
+                        let buffered = try await bufferedHTTPResponse(from: response, request: httpRequest)
+                        throw config.httpStatusError(buffered)
                     }
                     let responseHead = httpResponseHead(from: response, request: httpRequest)
                     continuation.yield(.streamStart(warnings: prepared.warnings))
@@ -178,7 +185,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                 ? xaiResponsesStreamProviderError(from: raw)
                                 : shouldThrowPreOutputStreamErrors
                                     ? openAIProviderStreamError(from: raw)
-                                    : nil {
+                                    : openResponsesStreamProviderError(from: raw) {
                                 continuation.yield(.providerError(providerError))
                             } else {
                                 continuation.yield(.error(
@@ -525,7 +532,7 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                                     ? xaiResponsesStreamProviderError(from: raw)
                                     : shouldThrowPreOutputStreamErrors
                                         ? openAIProviderStreamError(from: raw)
-                                        : nil {
+                                        : openResponsesStreamProviderError(from: raw) {
                                     continuation.yield(.providerError(providerError))
                                 } else {
                                     continuation.yield(.error(
@@ -652,10 +659,10 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         let reasoningEffortUpdate: String?
         if let reasoningEffortUpdateValue {
             guard let value = reasoningEffortUpdateValue.stringValue,
-                  ["low", "medium", "high", "xhigh", "max"].contains(value) else {
+                  ["none", "low", "medium", "high", "xhigh", "max"].contains(value) else {
                 throw AIError.invalidArgument(
                     argument: "providerOptions.openai.reasoningEffortUpdate",
-                    message: "reasoningEffortUpdate must be low, medium, high, xhigh, or max."
+                    message: "reasoningEffortUpdate must be none, low, medium, high, xhigh, or max."
                 )
             }
             reasoningEffortUpdate = value
@@ -729,6 +736,19 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         let toolSearchToolName = declaredToolSearchToolName
             ?? (declaresRegularToolSearchFunction ? nil : "tool_search")
         let useDeveloperRoleForSystem = isEffectiveReasoningModel
+        let capabilities = openAILanguageModelCapabilities(modelID)
+        let configurationUpdateUnsupportedReason: String?
+        if !capabilities.supportsConfigurationUpdate {
+            configurationUpdateUnsupportedReason = "reasoningEffortUpdate is only supported by GPT-6 and later models"
+        } else if options["reasoning"]?["mode"]?.stringValue == "pro"
+            || options["context_management"] != nil
+            || options["truncation"]?.stringValue == "auto" {
+            configurationUpdateUnsupportedReason = "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
+        } else {
+            configurationUpdateUnsupportedReason = nil
+        }
+
+
         let compactionTrigger = (options.removeValue(forKey: "compactionTrigger")
             ?? options.removeValue(forKey: "compaction_trigger"))?.boolValue == true
         let preparedMessages = openAIResponsesMessagesByCollapsingParallelToolResults(
@@ -767,28 +787,45 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
                 useDeveloperRoleForSystem: useDeveloperRoleForSystem,
                 explicitMessageItemType: config.explicitMessageItemType,
                 programmaticToolCallIDs: programmaticToolCallIDs,
+                configurationUpdateUnsupportedReason: configurationUpdateUnsupportedReason,
+                supportedConfigurationUpdateReasoningEfforts: capabilities.supportedReasoningEfforts,
                 warnings: &warnings
             )
         }
         if let reasoningEffortUpdate {
-            let capabilities = openAILanguageModelCapabilities(modelID)
-            let configurationUpdateIsSupported = capabilities.supportsConfigurationUpdate
-                && options["reasoning"]?["mode"]?.stringValue != "pro"
-                && options["context_management"] == nil
-                && options["truncation"]?.stringValue != "auto"
-            if configurationUpdateIsSupported {
-                input.insert(.object([
-                    "type": .string("configuration_update"),
-                    "reasoning": .object(["effort": .string(reasoningEffortUpdate)])
-                ]), at: 0)
-            } else {
+            let unsupportedReason = configurationUpdateUnsupportedReason ?? {
+                guard let supportedEfforts = capabilities.supportedReasoningEfforts,
+                      !supportedEfforts.contains(reasoningEffortUpdate) else {
+                    return nil
+                }
+                return "\(modelID) only supports the following reasoning efforts: \(supportedEfforts.joined(separator: ", "))"
+            }()
+            if let unsupportedReason {
                 warnings.append(AIWarning(
                     type: "unsupported",
                     feature: "reasoningEffortUpdate",
-                    message: capabilities.supportsConfigurationUpdate
-                        ? "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
-                        : "reasoningEffortUpdate is only supported by GPT-6 and later models"
+                    message: unsupportedReason
                 ))
+            } else {
+                let firstEffort = input.first?["type"]?.stringValue == "configuration_update"
+                    ? input.first?["reasoning"]?["effort"]?.stringValue
+                    : nil
+                if firstEffort != reasoningEffortUpdate {
+                    input.insert(.object([
+                        "type": .string("configuration_update"),
+                        "reasoning": .object(["effort": .string(reasoningEffortUpdate)])
+                    ]), at: 0)
+                }
+            }
+        }
+        if input.count > 1 {
+            for index in 1..<input.count
+            where input[index - 1]["type"]?.stringValue == "configuration_update"
+                && input[index]["type"]?.stringValue == "configuration_update" {
+                throw AIError.invalidArgument(
+                    argument: "messages",
+                    message: "Adjacent reasoning effort configuration updates are not supported."
+                )
             }
         }
         if compactionTrigger {
@@ -845,11 +882,20 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
     }
 
     private func openResponsesPreparedRequest(for request: LanguageModelRequest, stream: Bool, providerOptionsName: String) throws -> OpenAICompatibleResponsesPreparedRequest {
+        let customToolID = config.openResponsesCustomToolID ?? "open-responses.custom"
+        let customToolNames = Set(request.tools.compactMap { name, schema -> String? in
+            guard schema["type"]?.stringValue == "provider",
+                  schema["id"]?.stringValue == customToolID else { return nil }
+            return schema["name"]?.stringValue ?? name
+        })
+
         let preparedInput = openResponsesInput(
             from: request.messages,
             providerID: providerID,
             providerOptionsName: providerOptionsName,
-            strictResponseInput: config.strictResponseInput
+            strictResponseInput: config.strictResponseInput,
+            customToolNames: customToolNames,
+            omitReasoningText: providerOptionsName == "quiverai"
         )
         let providerOptions = try openResponsesProviderOptions(providerOptions: request.providerOptions, providerOptionsName: providerOptionsName)
         var warnings = openResponsesWarnings(for: request, includePenaltyWarnings: false) + preparedInput.warnings
@@ -867,6 +913,8 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         var reasoning: [String: JSONValue] = [:]
         if let providerReasoningEffort = providerOptions["reasoningEffort"] {
             reasoning["effort"] = providerReasoningEffort
+        } else if providerOptionsName == "quiverai", request.reasoning == "none" {
+            warnings.append(AIWarning(type: "unsupported", feature: "reasoning effort none"))
         } else if isCustomReasoning(request.reasoning),
            let requestedReasoning = request.reasoning,
            let effort = mapReasoningToProviderEffort(
@@ -887,19 +935,39 @@ public final class OpenAICompatibleResponsesModel: LanguageModel, @unchecked Sen
         if !reasoning.isEmpty { body["reasoning"] = .object(reasoning) }
         for (_, schema) in request.tools where schema["type"]?.stringValue == "provider" {
             let toolID = schema["id"]?.stringValue ?? "unknown"
+            if toolID == customToolID { continue }
             warnings.append(AIWarning(type: "unsupported", feature: "provider-defined tool \(toolID)"))
         }
-        let tools = openResponsesFunctionTools(from: request.tools)
+        let tools = openResponsesFunctionTools(from: request.tools, customToolID: customToolID)
         if !tools.isEmpty { body["tools"] = .array(tools) }
-        if let toolChoice = openResponsesToolChoice(from: request.toolChoice ?? request.extraBody["toolChoice"]) {
+        if let toolChoice = openResponsesToolChoice(from: request.toolChoice ?? request.extraBody["toolChoice"], customToolNames: customToolNames) {
             body["tool_choice"] = toolChoice
         }
-        if let textFormat = openResponsesTextFormat(from: request.responseFormat) {
+        if !config.supportsStructuredOutputs, request.responseFormat != nil {
+            warnings.append(AIWarning(type: "unsupported", feature: "responseFormat", message: "This Open Responses endpoint does not support structured outputs."))
+        } else if let textFormat = openResponsesTextFormat(from: request.responseFormat) {
             body["text"] = .object(["format": textFormat])
         }
         return OpenAICompatibleResponsesPreparedRequest(
             body: config.transformRequestBody?(body) ?? body,
             warnings: warnings
+        )
+    }
+
+    private func openResponsesStreamProviderError(from raw: JSONValue) -> AIStreamProviderError? {
+        guard case .openResponses = config.responsesRequestMode else { return nil }
+        let error = raw["response"]?["error"] ?? raw["error"] ?? raw
+        let message = error["message"]?.stringValue
+            ?? raw["message"]?.stringValue
+            ?? "Open Responses stream error."
+        let metadata = config.getResponseErrorMetadata?(error)
+        return AIStreamProviderError(
+            message: message,
+            type: raw["type"]?.stringValue,
+            code: error["code"],
+            statusCode: metadata?.statusCode,
+            isRetryable: metadata?.isRetryable,
+            data: raw
         )
     }
 }
@@ -918,16 +986,19 @@ func openAIResponsesKnownStreamEventValidationMessage(_ raw: JSONValue) -> Strin
 
     let isMissingOutputIndex = raw["output_index"]?.intValue == nil
     switch type {
-    case "response.function_call_arguments.delta":
+    case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
         guard raw["item_id"]?.stringValue != nil,
               !isMissingOutputIndex,
               raw["delta"]?.stringValue != nil else {
             return "Known response chunk failed schema validation"
         }
-    case "response.function_call_arguments.done":
+    case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
+        let completedInput = type == "response.function_call_arguments.done"
+            ? raw["arguments"]?.stringValue
+            : raw["input"]?.stringValue
         guard raw["item_id"]?.stringValue != nil,
               !isMissingOutputIndex,
-              raw["arguments"]?.stringValue != nil else {
+              completedInput != nil else {
             return "Known response chunk failed schema validation"
         }
     case "response.output_item.added", "response.output_item.done":

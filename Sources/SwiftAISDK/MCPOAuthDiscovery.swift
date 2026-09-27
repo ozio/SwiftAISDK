@@ -137,19 +137,26 @@ func discoveryGET(
     transport: any AITransport
 ) async throws -> AIHTTPResponse {
     var currentURL = url
+    var headers = protocolVersion.isEmpty ? [:] : ["MCP-Protocol-Version": protocolVersion]
     let redirectStatuses: Set<Int> = [301, 302, 303, 307, 308]
     for _ in 0...10 {
         try assertSafeMCPOAuthEndpoint(currentURL, trustedOrigin: trustedOrigin)
         let response = try await transport.send(AIHTTPRequest(
             method: "GET",
             url: currentURL,
-            headers: protocolVersion.isEmpty ? [:] : ["MCP-Protocol-Version": protocolVersion],
+            headers: headers,
             followRedirects: false
         ))
         if redirectStatuses.contains(response.statusCode),
            let location = response.headerValue("location"),
            let nextURL = URL(string: location, relativeTo: currentURL)?.absoluteURL {
             try assertSafeMCPOAuthEndpoint(nextURL, trustedOrigin: trustedOrigin)
+            if !isSameOrigin(currentURL.absoluteString, nextURL.absoluteString) {
+                // Protocol metadata is safe on the untrusted first hop, but
+                // follows provider-utils by withholding it after a redirect
+                // crosses origins.
+                headers = [:]
+            }
             currentURL = nextURL
             continue
         }

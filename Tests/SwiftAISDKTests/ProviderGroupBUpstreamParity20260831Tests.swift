@@ -473,7 +473,6 @@ private func providerGroupBParallelMetadata(index: Int, cacheBreakpoint: Bool = 
     #expect(started.batchID == "batch_123")
     #expect(started.status.status == .pending)
     #expect(started.warnings.contains { $0.requestID == nil && $0.warning.feature == "webhookUrl" })
-    #expect(started.warnings.contains { $0.requestID == "germany" && $0.warning.feature == "topK" })
     #expect(started.providerMetadata["xai"]?["inputFileId"]?.stringValue == "file_123")
     #expect(started.providerMetadata["xai"]?["inputFileExpiresAt"]?.stringValue == "2023-11-16T22:13:20.000Z")
 

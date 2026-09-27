@@ -113,6 +113,17 @@ If an approved persisted call no longer validates against the current tool
 schema, SwiftAISDK does not execute it; the model receives a tool-error result
 and can continue the turn safely.
 
+When `refineArguments` changes a tool input, `AIToolApprovalRequest` stores the
+schema-validated original value in `inputSchemaInput` and the refined value in
+`arguments`. Approval replay validates the original value again, reruns the
+refinement, and rejects tampering before execution. Persist both fields with
+the approval request; do not reconstruct one from the other.
+
+Approval continuation also searches earlier assistant messages, not only the
+last message. A persisted approval response can therefore resume its matching
+tool call after later conversation messages without executing the approved
+operation twice.
+
 `AIToolApprovalRequest.descriptor` retains opaque provider-computed display
 information through validation and telemetry. Treat it as untrusted UI metadata,
 not as authorization evidence. A failed tool result's provider metadata is also
@@ -155,6 +166,17 @@ let dynamicTool = AITool.dynamic(
 }
 ```
 
+## Tool Callers
+
+`experimentalToolCaller` can route a tool through a local caller or provider
+caller. A local-caller-only target is omitted from the model-facing tool list;
+the bound caller is advertised and remains executable. If a provider emits the
+hidden target name directly anyway, SwiftAISDK returns a tool-error result and
+does not run the target.
+
+Provider callers instead keep the tool model-visible and rewrite its provider
+options before the request.
+
 ## OpenAI Responses Allow Lists
 
 OpenAI 4.0.43 `allowedTools` limits the tools that Responses may choose while
@@ -194,6 +216,8 @@ shape.
 action alongside background, fidelity, mask, model, output, quality, and size
 options.
 
-The generic Open Responses 2.0.28 provider intentionally does not gain this
-execution surface: provider-defined tools emit an unsupported warning and are
-dropped, matching upstream behavior.
+The generic Open Responses 2.0.54 provider does not inherit OpenAI's
+`allowedTools` hosted-tool allow-list. It does support its own custom-tool
+surface through `OpenResponsesTools.customTool(...)` and
+`OpenResponsesTools.textFormat()`, including generated and streamed custom tool
+calls and results.

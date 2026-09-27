@@ -86,6 +86,7 @@ func xaiResponsesPreparedRequest(
     if let maxOutputTokens = request.maxOutputTokens { body["max_output_tokens"] = .number(Double(maxOutputTokens)) }
     if let temperature = request.temperature { body["temperature"] = .number(temperature) }
     if let topP = request.topP { body["top_p"] = .number(topP) }
+    if let topK = request.topK { body["top_k"] = .number(Double(topK)) }
     if let seed = request.seed { body["seed"] = .number(Double(seed)) }
     if let responseFormat = xaiResponsesTextFormat(from: request.responseFormat) {
         body["text"] = .object(["format": responseFormat])
@@ -104,15 +105,18 @@ func xaiResponsesPreparedRequest(
     ) {
         reasoning["effort"] = .string(reasoningEffort)
     }
-    if let reasoningSummary = options["reasoningSummary"] {
-        reasoning["summary"] = reasoningSummary
-    }
     if !reasoning.isEmpty {
         body["reasoning"] = .object(reasoning)
     }
     if let serviceTier = options["serviceTier"] {
         body["service_tier"] = serviceTier
     }
+    if let minP = options["minP"] { body["min_p"] = minP }
+    if let maxTurns = options["maxTurns"] { body["max_turns"] = maxTurns }
+    if let parallelToolCalls = options["parallelToolCalls"] { body["parallel_tool_calls"] = parallelToolCalls }
+    if let promptCacheKey = options["promptCacheKey"] { body["prompt_cache_key"] = promptCacheKey }
+    if let safetyIdentifier = options["safetyIdentifier"] { body["safety_identifier"] = safetyIdentifier }
+    if let user = options["user"] { body["user"] = user }
     if options["store"]?.boolValue == false {
         body["store"] = .bool(false)
     }
@@ -170,6 +174,12 @@ private func xaiResponsesMergedOptions(providerOptions: [String: JSONValue], ext
     raw.removeValue(forKey: "serviceTier")
     raw.removeValue(forKey: "logprobs")
     raw.removeValue(forKey: "topLogprobs")
+    raw.removeValue(forKey: "minP")
+    raw.removeValue(forKey: "maxTurns")
+    raw.removeValue(forKey: "parallelToolCalls")
+    raw.removeValue(forKey: "promptCacheKey")
+    raw.removeValue(forKey: "safetyIdentifier")
+    raw.removeValue(forKey: "user")
     raw.removeValue(forKey: "store")
     raw.removeValue(forKey: "previousResponseId")
     raw.removeValue(forKey: "include")
@@ -177,7 +187,10 @@ private func xaiResponsesMergedOptions(providerOptions: [String: JSONValue], ext
 }
 
 private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue], argumentPrefix: String, allowUnknown: Bool) throws -> XAIResponsesOptions {
-    let allowedKeys: Set<String> = ["reasoningEffort", "reasoningSummary", "serviceTier", "logprobs", "topLogprobs", "store", "previousResponseId", "include"]
+    let allowedKeys: Set<String> = [
+        "reasoningEffort", "reasoningSummary", "serviceTier", "logprobs", "topLogprobs", "minP", "maxTurns",
+        "parallelToolCalls", "promptCacheKey", "safetyIdentifier", "store", "previousResponseId", "user", "include"
+    ]
     var values: [String: JSONValue] = [:]
     var raw: [String: JSONValue] = [:]
     for (key, value) in options {
@@ -198,7 +211,7 @@ private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue],
             guard let serviceTier = value.stringValue, ["default", "priority"].contains(serviceTier) else {
                 throw AIError.invalidArgument(argument: "\(argumentPrefix).serviceTier", message: "xAI serviceTier must be default or priority.")
             }
-        case "logprobs", "store":
+        case "logprobs", "parallelToolCalls", "store":
             guard value.boolValue != nil else {
                 throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "xAI \(key) must be a boolean.")
             }
@@ -208,15 +221,34 @@ private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue],
                   (0...8).contains(topLogprobs) else {
                 throw AIError.invalidArgument(argument: "\(argumentPrefix).topLogprobs", message: "xAI topLogprobs must be an integer from 0 to 8.")
             }
-        case "previousResponseId":
+        case "minP":
+            guard let minP = value.doubleValue, (0...1).contains(minP) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).minP", message: "xAI minP must be a number from 0 to 1.")
+            }
+        case "maxTurns":
+            guard let maxTurns = value.intValue,
+                  value.doubleValue == Double(maxTurns) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).maxTurns", message: "xAI maxTurns must be an integer.")
+            }
+        case "previousResponseId", "promptCacheKey", "safetyIdentifier", "user":
             guard value.stringValue != nil else {
-                throw AIError.invalidArgument(argument: "\(argumentPrefix).previousResponseId", message: "xAI previousResponseId must be a string.")
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).\(key)", message: "xAI \(key) must be a string.")
             }
         case "include":
             if value == .null { continue }
+            let allowedInclude: Set<String> = [
+                "file_search_call.results",
+                "web_search_call.action.sources",
+                "code_interpreter_call.outputs",
+                "reasoning.encrypted_content",
+                "no_inline_citations"
+            ]
             guard let values = value.arrayValue,
-                  values.allSatisfy({ $0.stringValue == "file_search_call.results" }) else {
-                throw AIError.invalidArgument(argument: "\(argumentPrefix).include", message: "xAI include must contain only file_search_call.results or be null.")
+                  values.allSatisfy({ value in
+                      guard let string = value.stringValue else { return false }
+                      return allowedInclude.contains(string)
+                  }) else {
+                throw AIError.invalidArgument(argument: "\(argumentPrefix).include", message: "xAI include contains an unsupported value.")
             }
         default:
             break
@@ -228,9 +260,6 @@ private func xaiValidateResponsesProviderOptions(_ options: [String: JSONValue],
 
 private func xaiResponsesWarnings(for request: LanguageModelRequest) -> [AIWarning] {
     var warnings: [AIWarning] = []
-    if request.topK != nil {
-        warnings.append(AIWarning(type: "unsupported", feature: "topK"))
-    }
     if request.frequencyPenalty != nil {
         warnings.append(AIWarning(type: "unsupported", feature: "frequencyPenalty"))
     }
