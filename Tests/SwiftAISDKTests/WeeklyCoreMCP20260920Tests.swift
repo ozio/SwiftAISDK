@@ -562,7 +562,7 @@ struct WeeklyCoreMCP20260920Tests {
 
     @Test func inFlightVideoStatusCannotOutlivePollTimeout() async throws {
         let model = WeeklySlowStatusVideoModel()
-        let started = DispatchTime.now().uptimeNanoseconds
+        defer { model.releaseStatus() }
 
         do {
             _ = try await AI.generateVideo(
@@ -571,17 +571,21 @@ struct WeeklyCoreMCP20260920Tests {
                 retryPolicy: .none,
                 poll: VideoGenerationPollOptions(
                     intervalMilliseconds: 0,
-                    timeoutMilliseconds: 20,
+                    timeoutMilliseconds: 1_000,
                     delay: { _, _ in }
                 )
             )
             Issue.record("Expected the in-flight status request to time out.")
         } catch let error as VideoGenerationOperationError {
-            #expect(error == .timedOut(milliseconds: 20))
+            #expect(error == .timedOut(milliseconds: 1_000))
         }
 
-        let elapsedMilliseconds = (DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-        #expect(elapsedMilliseconds < 150)
+        // Observe the stalled request rather than impose a scheduler-sensitive
+        // wall-clock bound on CI. The model deliberately ignores cancellation.
+        let statusSignal = try #require(model.statusSignal)
+        #expect(statusSignal.isAborted)
+        #expect(statusSignal.reasonName == "TimeoutError")
+        #expect(!model.didFinishStatus)
     }
 }
 
@@ -686,6 +690,24 @@ private final class WeeklySlowStatusVideoModel: AsyncVideoModel, @unchecked Send
     let providerID = "weekly.video"
     let modelID = "slow-status"
     let supportsUnaryVideoGeneration = false
+    private let lock = NSLock()
+    private var pendingStatus: CheckedContinuation<Void, Never>?
+    private var released = false
+    private var capturedSignal: AIAbortSignal?
+    private var finishedStatus = false
+
+    var statusSignal: AIAbortSignal? { lock.withLock { capturedSignal } }
+    var didFinishStatus: Bool { lock.withLock { finishedStatus } }
+
+    func releaseStatus() {
+        let continuation = lock.withLock {
+            released = true
+            let pending = pendingStatus
+            pendingStatus = nil
+            return pending
+        }
+        continuation?.resume()
+    }
 
     func startVideoGeneration(
         _ request: VideoGenerationOperationStartRequest
@@ -696,11 +718,24 @@ private final class WeeklySlowStatusVideoModel: AsyncVideoModel, @unchecked Send
     func videoGenerationStatus(
         _ request: VideoGenerationOperationStatusRequest
     ) async throws -> VideoGenerationOperationStatusResult {
+        lock.withLock { capturedSignal = request.abortSignal }
         await withCheckedContinuation { continuation in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
+            let alreadyReleased = lock.withLock {
+                if released { return true }
+                pendingStatus = continuation
+                return false
+            }
+            if alreadyReleased {
                 continuation.resume()
+            } else {
+                // A broken implementation still terminates and fails the
+                // unfinished-status assertion instead of hanging the suite.
+                DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+                    self.releaseStatus()
+                }
             }
         }
+        lock.withLock { finishedStatus = true }
         return .pending()
     }
 }

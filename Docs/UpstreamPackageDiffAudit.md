@@ -161,6 +161,8 @@ Final checks on the release source tree passed:
 
 Credentialed live-provider tests were not enabled. The release adds public APIs without changing existing call, initializer or iterator signatures. SwiftPM versioning is carried by the annotated git tag; private docs-site and default MCP client versions are unchanged.
 
+The first hosted 2.1.0 serial run executed all 3,008 tests and exposed one pre-existing scheduler-sensitive video polling assertion: 153 ms elapsed versus a strict 150 ms wall-clock bound. The timeout itself behaved correctly. The maintenance repair replaces that bound with an explicit stalled-status fixture: it verifies the timeout error, the forwarded abort signal, and return before the cancellation-ignoring status request finishes. A one-second request budget permits runner scheduling; a five-second watchdog prevents a broken implementation from hanging the suite. Library, example and docs-site source trees are unchanged. The focused regression passes, including 10/10 repeat runs; the complete parallel and serial suites each pass 3,008 tests in 22 suites after the repair. It is released under a new patch tag; the published 2.1.0 tag is preserved.
+
 ## 2026-09-27 Weekly Audit
 
 Fresh npm registry metadata, 100 old/latest published tarballs, exact package
